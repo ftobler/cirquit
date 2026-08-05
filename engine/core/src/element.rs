@@ -141,7 +141,9 @@ pub trait Element {
     }
 
     /// Live parameter change from the UI (sliders, dialogs). Returns true if
-    /// the matrix must be rebuilt rather than just re-stamped.
+    /// the parameter was applied; false if the name was not recognised, so the
+    /// caller can fall back to a full rebuild instead of silently dropping the
+    /// edit.
     fn set_param(&mut self, _name: &str, _value: f64) -> bool {
         false
     }

@@ -78,8 +78,10 @@ impl Element for Switch {
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         if name == "momentary" {
             self.momentary = value != 0.0;
+            true
+        } else {
+            false
         }
-        false
     }
 }
 
@@ -246,7 +248,7 @@ impl Element for OpAmp {
             "minOut" => self.min_out = value,
             _ => return false,
         }
-        false
+        true
     }
 
     fn reset(&mut self) {

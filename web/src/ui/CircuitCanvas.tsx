@@ -57,6 +57,7 @@ export function CircuitCanvas({ engine }: Props) {
   const dotPhaseRef = useRef(new Map<number, number>());
   const lastFrameRef = useRef(performance.now());
   const loadedRevision = useRef(-1);
+  const appliedParamRevision = useRef(-1);
   const [, forceRender] = useState(0);
 
   // Reading the store through refs keeps the animation loop off React's
@@ -118,6 +119,35 @@ export function CircuitCanvas({ engine }: Props) {
         const err = engine.setCircuit(elements, settings, scopes);
         const warnings = err ? [err] : engine.warnings();
         useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
+        // The reload serialised the current elements, so any queued value
+        // edits are already in effect. Mark them consumed and drop the queue,
+        // or they would be replayed against the fresh circuit below.
+        appliedParamRevision.current = state.paramRevision;
+        if (state.pendingParams.size > 0 || state.pendingStates.size > 0) {
+          state.clearPending();
+        }
+      }
+
+      // Apply value-only edits through the engine's fast paths so the clock
+      // and reactive-element state survive slider drags and switch throws.
+      if (engine && appliedParamRevision.current !== state.paramRevision) {
+        appliedParamRevision.current = state.paramRevision;
+        let forceReload = false;
+        for (const { id, name, value } of state.pendingParams.values()) {
+          if (!engine.setParam(id, name, value)) forceReload = true;
+        }
+        for (const [id, s] of state.pendingStates) {
+          if (!engine.setState(id, s)) forceReload = true;
+        }
+        if (forceReload) {
+          // A param the engine cannot patch live (unknown id or name) would
+          // otherwise read as a dead slider; rebuild the whole circuit.
+          dotPhaseRef.current.clear();
+          const err = engine.setCircuit(elements, settings, scopes);
+          const warnings = err ? [err] : engine.warnings();
+          useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
+        }
+        state.clearPending();
       }
 
       // Advance the simulation.
@@ -262,7 +292,7 @@ export function CircuitCanvas({ engine }: Props) {
       if (def?.interactive && state.running && !ev.altKey) {
         const throwCount = Math.max(2, hit.params.throwCount ?? 2);
         const next = ((hit.state ?? 0) + 1) % (hit.kind === 'switch' ? 2 : throwCount);
-        state.updateElement(hit.id, { state: next });
+        state.setElementState(hit.id, next);
         dragRef.current = { mode: 'none' };
         return;
       }

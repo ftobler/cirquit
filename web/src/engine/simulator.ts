@@ -179,11 +179,12 @@ export class SimEngine {
     return i < 0 ? undefined : i;
   }
 
-  setParam(id: number, name: string, value: number): void {
-    this.sim.setParam(id, name, value);
+  /** Live parameter edit; false means the engine cannot patch this one. */
+  setParam(id: number, name: string, value: number): boolean {
+    return this.sim.setParam(id, name, value);
   }
 
-  setState(id: number, state: number): void {
-    this.sim.setState(id, state);
+  setState(id: number, state: number): boolean {
+    return this.sim.setState(id, state);
   }
 }

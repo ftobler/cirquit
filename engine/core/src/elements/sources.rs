@@ -208,10 +208,10 @@ impl Element for VoltageSource {
     }
 
     fn set_param(&mut self, name: &str, value: f64) -> bool {
-        // A DC source folds its value into the constant matrix, so changing it
-        // requires a re-stamp; AC values are applied per step.
-        let changed = self.gen.set_param(name, value);
-        changed && self.gen.waveform == Waveform::Dc
+        // AC values are applied per step, so any recognised parameter takes
+        // effect without a rebuild; a DC value lives in the constant matrix
+        // and the caller's restamp picks it up.
+        self.gen.set_param(name, value)
     }
 }
 

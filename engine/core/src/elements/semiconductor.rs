@@ -295,7 +295,7 @@ impl Element for BipolarTransistor {
             "betaReverse" if value > 0.0 => self.beta_r = value,
             _ => return false,
         }
-        false
+        true
     }
 
     fn reset(&mut self) {

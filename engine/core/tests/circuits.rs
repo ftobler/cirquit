@@ -143,6 +143,107 @@ fn rc_network_charges_on_its_time_constant() {
 }
 
 #[test]
+fn param_change_preserves_sim_time() {
+    // Changing a resistance takes the live set_param path, which must not
+    // rewind the clock; only a full set_circuit may.
+    let dt = 1e-6;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6), ("initialVoltage", 0.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(1000); // one time constant, t = 1 ms
+    let t = c.time();
+    assert!(t > 0.0, "circuit never advanced");
+
+    assert!(c.set_param(2, "resistance", 2000.0));
+    assert_eq!(c.time(), t, "param edit rewound the clock");
+}
+
+#[test]
+fn capacitor_charge_survives_a_param_change() {
+    // Doubling the resistance must leave the capacitor voltage untouched
+    // (the charge is state, not re-derived) while the continued charging
+    // follows the new tau = 2 ms instead of the old 1 ms.
+    let dt = 1e-6;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6), ("initialVoltage", 0.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    c.run(1000); // one old time constant
+    let v_before = c.element_voltages()[2];
+    let expected = 10.0 * (1.0 - (-1.0f64).exp());
+    assert!(close(v_before, expected, 0.02), "got {v_before}");
+
+    assert!(c.set_param(2, "resistance", 2000.0));
+    let v_after = c.element_voltages()[2];
+    assert!(
+        close(v_after, v_before, 1e-12),
+        "charge moved on edit: {v_after} vs {v_before}"
+    );
+
+    // One old-tau more (1 ms) at the new tau (2 ms): the remaining gap to the
+    // supply shrinks by exp(-1/2) instead of exp(-1).
+    c.run(1000);
+    let v = c.element_voltages()[2];
+    let expected = 10.0 - (10.0 - v_before) * (-0.5f64).exp();
+    assert!(close(v, expected, 0.02), "got {v}, expected {expected}");
+}
+
+#[test]
+fn set_param_rejects_unknown_ids_and_names() {
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    // No element carries this id.
+    assert!(!c.set_param(99, "resistance", 2000.0));
+    // The resistor has no such parameter; the UI falls back to a full reload.
+    assert!(!c.set_param(2, "bogus", 2000.0));
+}
+
+#[test]
 fn rl_network_settles_to_ohms_law() {
     // An inductor is a short at DC, so the steady-state current is V/R.
     let c = &mut build(
@@ -415,6 +516,68 @@ fn switch_can_be_toggled_at_runtime() {
     assert!(c.set_state(3, 0));
     c.run(5);
     assert!(close(c.element_currents()[1], 0.01, 1e-9));
+}
+
+#[test]
+fn set_state_on_a_switch_preserves_time() {
+    // Opening a switch removes its current unknown, so set_state reallocates
+    // the matrix; that path must not reset the clock either.
+    let dt = 1e-5;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "switch", &[[100, 0], [100, 100]], &[("position", 0.0)]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, true),
+    );
+    c.run(5);
+    assert!(close(c.element_currents()[1], 0.01, 1e-9));
+    let t = c.time();
+    assert!(t > 0.0, "circuit never advanced");
+
+    assert!(c.set_state(3, 1));
+    assert_eq!(c.time(), t, "switch throw rewound the clock");
+
+    c.run(5);
+    assert!(
+        c.element_currents()[1].abs() < 1e-6,
+        "current still flows with the switch open"
+    );
+}
+
+#[test]
+fn set_circuit_rewinds_to_zero() {
+    let spec = CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        options: Some(opts(1e-5, true)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    c.set_circuit(&spec).unwrap();
+    c.run(5);
+    assert!(c.time() > 0.0, "circuit never advanced");
+
+    // Topology edits take the slow path and restart from zero on purpose, so
+    // the contract stays pinned while the value path changes around it.
+    c.set_circuit(&spec).unwrap();
+    assert_eq!(c.time(), 0.0, "full reload must restart the clock");
 }
 
 #[test]
