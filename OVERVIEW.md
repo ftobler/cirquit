@@ -158,8 +158,8 @@ fetch it).
 - **Sparse matrices.** Dense LU is `O(n³)`. Fine to a few hundred nodes;
   circuits in the thousands will need a sparse solver.
 - **Device model libraries.** Diodes, transistors and MOSFETs upstream carry
-  named model libraries. Here they take direct parameters, and the model name
-  in a file is ignored.
+  named model libraries. Here they take direct parameters; the model name in a
+  file is preserved but not looked up.
 - **Scope line fidelity.** `o` lines are parsed for their element attachment
   only; the remaining display fields are preserved verbatim but not
   interpreted. Sliders (`38`), hints (`h`) and subcircuit definitions are
@@ -268,8 +268,8 @@ Dump codes implemented so far, with their trailing field order:
 | `v`   | voltage source  | waveform, frequency, maxVoltage, bias, phaseShift, duty    |
 | `R`   | rail            | same as voltage source                                     |
 | `i`   | current source  | current, maxVoltage                                        |
-| `d`   | diode           | modelName                                                  |
-| `z`   | zener           | modelName                                                  |
+| `d`   | diode           | fwdrop (FLAG_FWDROP), or modelName (FLAG_MODEL)             |
+| `z`   | zener           | fwdrop (FLAG_FWDROP), zvoltage (legacy), or modelName (FLAG_MODEL) |
 | `t`   | transistor      | pnp, lastVbe, lastVbc, beta, modelName                     |
 | `s`   | switch          | position, momentary, [label]                               |
 | `S`   | SPDT switch     | position, momentary, link, throwCount                      |
@@ -290,8 +290,9 @@ verbatim on save.
 Waveform codes: `0` DC, `1` sine, `2` square, `3` triangle, `4` sawtooth,
 `5` pulse, `6` noise.
 
-Text tokens that may contain spaces are escaped: space becomes `\s`, newline
-`\n`, backslash `\\`.
+Text tokens that may contain spaces are escaped with upstream's full set: space
+`\s`, newline `\n`, carriage return `\r`, backslash `\\`, `+` `\p`, `=` `\q`,
+`#` `\h`, `&` `\a`, and the empty string as `\0`.
 
 ---
 

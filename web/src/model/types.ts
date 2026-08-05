@@ -21,6 +21,8 @@ export interface CircuitElement {
   params: Record<string, number>;
   /** Free text: node labels, annotations, slider captions. */
   text?: string;
+  /** Named device-model reference, carried through from the file format. */
+  modelName?: string;
   /** Interactive state, such as a switch position. */
   state?: number;
 }
@@ -58,6 +60,10 @@ export interface ElementDef {
   parse?(tokens: string[], e: CircuitElement): void;
   /** Writes the tokens that follow `flags` on a netlist line. */
   dump?(e: CircuitElement): (string | number)[];
+  /** Replaces `e.flags` in the saved line, for formats whose token layout is
+   *  conditional on a flag bit the parse already consumed (e.g. a diode's
+   *  FLAG_MODEL). Absent means the element's own flags are written. */
+  dumpFlags?(e: CircuitElement): number;
   draw(g: DrawContext, e: CircuitElement): void;
   fields?: FieldDef[];
   defaults?: Record<string, number>;

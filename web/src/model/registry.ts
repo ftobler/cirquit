@@ -611,8 +611,33 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'd',
     postCount: 2,
     posts: twoPosts,
-    defaults: { forwardVoltage: 0.805 },
-    fields: [{ name: 'forwardVoltage', label: 'Forward drop', unit: 'V' }],
+    // The default matches upstream's "default" model (DiodeModel.java:83):
+    // fwdrop 0.805904783, n = 2, series resistance 0. Is is derived from the
+    // forward drop, so it is not a UI field.
+    defaults: { forwardVoltage: 0.805904783, seriesResistance: 0, emissionCoefficient: 2 },
+    // FLAG_MODEL (bit 2) carries an escaped model name; FLAG_FWDROP (bit 1)
+    // carries the forward drop the model was derived from.
+    parse: (t, e) => {
+      if ((e.flags & 2) !== 0) e.modelName = t[0];
+      else if ((e.flags & 1) !== 0) e.params.forwardVoltage = Number(t[0]);
+    },
+    dump: (e) =>
+      // Upstream's value form is the single fwdrop token, from which the model
+      // derives everything else; seriesResistance and emissionCoefficient are
+      // engine params that a named model would encode, so they intentionally do
+      // not survive a save in the value form.
+      e.modelName != null
+        ? [e.modelName]
+        : [e.params.forwardVoltage ?? 0.805904783],
+    // The value form must carry exactly FLAG_FWDROP: with bit 2 (FLAG_MODEL)
+    // left over from a loaded name, a reload would read the fwdrop token as a
+    // bogus model name and silently lose the edit.
+    dumpFlags: (e) => (e.modelName != null ? e.flags | 2 : (e.flags & ~2) | 1),
+    fields: [
+      { name: 'forwardVoltage', label: 'Forward drop', unit: 'V' },
+      { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
+      { name: 'emissionCoefficient', label: 'Emission coefficient' },
+    ],
     draw: (g, e) => drawDiodeBody(g, e, false),
   },
   {

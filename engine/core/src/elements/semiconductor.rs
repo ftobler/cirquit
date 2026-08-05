@@ -47,12 +47,26 @@ pub struct Diode {
     base: Base,
     /// Saturation current.
     leakage: f64,
-    /// Emission-scaled thermal voltage, derived from the rated forward drop.
+    /// Emission-scaled thermal voltage, `emcoef * VT`.
     vscale: f64,
     vcrit: f64,
     /// Reverse breakdown voltage; zero disables the branch.
     z_voltage: f64,
     z_offset: f64,
+    /// Rated forward drop, used to derive `leakage` when no saturation current
+    /// is given (DiodeModel.java:149).
+    fwdrop: f64,
+    /// Emission coefficient (n), 2 for the default model.
+    emcoef: f64,
+    /// True when `saturationCurrent` was supplied, so forward-drop edits do
+    /// not overwrite an explicit saturation current.
+    explicit_sat: bool,
+    /// Fixed series resistance between the cathode terminal and the junction.
+    /// Zero means the junction sits directly on post 1.
+    series_resistance: f64,
+    /// Node index of the cathode side of the junction: 2 when the series
+    /// resistor is present, else 1 (DiodeElm.java:72-82).
+    diode_end: usize,
     last_v: f64,
     geq: f64,
     ieq: f64,
@@ -68,11 +82,23 @@ impl Diode {
     }
 
     fn build(spec: &ElementSpec, z_voltage: f64) -> Self {
-        let leakage = spec.param("saturationCurrent", 1e-14).max(1e-20);
-        let fwdrop = spec.param("forwardVoltage", 0.805).max(0.05);
-        // Scale the exponential so the diode passes 1 A at its rated forward
-        // drop, which is how the original parameterises its models.
-        let vscale = fwdrop / (1.0 / leakage + 1.0).ln();
+        const DEFAULT_FWDROP: f64 = 0.805_904_783; // DiodeElm.java:51 defaultdrop
+
+        let fwdrop = spec.param("forwardVoltage", DEFAULT_FWDROP).max(0.05);
+        let emcoef = spec.param("emissionCoefficient", 2.0).max(0.1);
+        let vscale = emcoef * VT; // DiodeModel.java:333
+        let vdcoef = 1.0 / vscale;
+        // An explicit saturation current wins; otherwise the curve is anchored
+        // so the rated forward drop is on it, which is exactly how upstream
+        // derives the default model (DiodeModel.java:149). With the defaults
+        // this is bit-exact to the "default" model's Is.
+        let explicit = spec.param("saturationCurrent", 0.0);
+        let leakage = if explicit > 0.0 {
+            explicit
+        } else {
+            1.0 / ((fwdrop * vdcoef).exp() - 1.0)
+        };
+        let series_resistance = spec.param("seriesResistance", 0.0).max(0.0);
         // Place the breakdown knee so ~5 mA flows at the rated Zener voltage.
         let z_offset = if z_voltage > 0.0 {
             z_voltage - vscale * (0.005 / leakage + 1.0).ln()
@@ -86,10 +112,32 @@ impl Diode {
             vcrit: critical_voltage(vscale, leakage),
             z_voltage,
             z_offset,
+            fwdrop,
+            emcoef,
+            explicit_sat: explicit > 0.0,
+            series_resistance,
+            diode_end: if series_resistance > 0.0 { 2 } else { 1 },
             last_v: 0.0,
             geq: 0.0,
             ieq: 0.0,
         }
+    }
+
+    /// Saturation current implied by the rated forward drop under the current
+    /// scale voltage, the inverse of the derivation in `build`.
+    fn derived_leakage(&self) -> f64 {
+        1.0 / ((self.fwdrop / self.vscale).exp() - 1.0)
+    }
+
+    /// Keeps the breakdown knee consistent with the forward parameters that
+    /// define it. Uses the same offset formula as `build`; the zener plan
+    /// replaces both with the upstream thermal form together.
+    fn recompute_z_offset(&mut self) {
+        self.z_offset = if self.z_voltage > 0.0 {
+            self.z_voltage - self.vscale * (0.005 / self.leakage + 1.0).ln()
+        } else {
+            0.0
+        };
     }
 
     /// Current and its derivative at `v`.
@@ -129,9 +177,34 @@ impl Element for Diode {
         true
     }
 
+    /// The series resistor's junction side is an extra node, invisible to the
+    /// TypeScript side, exactly as upstream's `getInternalNodeCount`
+    /// (DiodeElm.java:82).
+    fn internal_node_count(&self) -> usize {
+        if self.series_resistance > 0.0 {
+            1
+        } else {
+            0
+        }
+    }
+
+    fn stamp(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
+        // The series resistor is constant for the whole run, so it belongs in
+        // the constant pass: it sits between post 1 and the internal node,
+        // while the nonlinear junction (node 0 to internal node) is stamped by
+        // do_step (DiodeElm.java:166-175).
+        if self.series_resistance > 0.0 {
+            s.resistor(
+                self.base.nodes[1],
+                self.base.nodes[2],
+                self.series_resistance,
+            );
+        }
+    }
+
     fn do_step(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
-        let (n0, n1) = (self.base.nodes[0], self.base.nodes[1]);
-        let mut v = self.base.voltage_diff();
+        let (n0, nend) = (self.base.nodes[0], self.base.nodes[self.diode_end]);
+        let mut v = self.base.volts[0] - self.base.volts[self.diode_end];
         if (v - self.last_v).abs() > CONVERGENCE_V {
             s.not_converged();
         }
@@ -153,12 +226,48 @@ impl Element for Diode {
         let (i, g) = self.evaluate(v);
         self.geq = g;
         self.ieq = i - g * v;
-        s.conductance(n0, n1, g);
-        s.current_source(n0, n1, self.ieq);
+        s.conductance(n0, nend, g);
+        s.current_source(n0, nend, self.ieq);
     }
 
     fn calculate_current(&mut self, _ctx: &SimCtx) {
-        self.base.current = self.geq * self.base.voltage_diff() + self.ieq;
+        // The junction current across the diode proper, not the terminal
+        // current: with series resistance the two differ by the resistor.
+        self.base.current =
+            self.geq * (self.base.volts[0] - self.base.volts[self.diode_end]) + self.ieq;
+    }
+
+    fn set_param(&mut self, name: &str, value: f64) -> bool {
+        match name {
+            "forwardVoltage" => {
+                self.fwdrop = value.max(0.05);
+                if !self.explicit_sat {
+                    self.leakage = self.derived_leakage();
+                }
+            }
+            "emissionCoefficient" => {
+                self.emcoef = value.max(0.1);
+                self.vscale = self.emcoef * VT;
+                if !self.explicit_sat {
+                    self.leakage = self.derived_leakage();
+                }
+            }
+            "saturationCurrent" => {
+                self.leakage = value.max(1e-20);
+                self.explicit_sat = true;
+            }
+            "breakdownVoltage" => {
+                self.z_voltage = value;
+            }
+            // Changing between zero and non-zero series resistance changes
+            // `internal_node_count`, which a live patch cannot do: the caller
+            // must rebuild.
+            "seriesResistance" => return false,
+            _ => return false,
+        }
+        self.vcrit = critical_voltage(self.vscale, self.leakage);
+        self.recompute_z_offset();
+        true
     }
 
     fn reset(&mut self) {

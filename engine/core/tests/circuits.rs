@@ -371,6 +371,110 @@ fn zener_clamps_in_breakdown() {
 }
 
 #[test]
+fn diode_knee_matches_upstream_default_model() {
+    // A current source forces a known current through a bare diode, so the
+    // terminal voltage is vscale*ln(I/Is + 1) with the upstream "default"
+    // model: Is = 1.7143528192808883e-7, n = 2, vscale = 2*vt = 0.05173.
+    // Three points pin both Is and n; the old port model (Is = 1e-14,
+    // n ~ 0.97) misses all three.
+    let knee = |i: f64| {
+        let c = &mut build(
+            vec![
+                elm(1, "current", &[[0, 0], [100, 0]], &[("current", i)]),
+                elm(2, "diode", &[[100, 0], [100, 100]], &[]),
+                elm(3, "wire", &[[100, 100], [0, 0]], &[]),
+                elm(4, "ground", &[[0, 0]], &[]),
+            ],
+            opts(1e-5, true),
+        );
+        c.run(20);
+        c.element_voltages()[1]
+    };
+
+    assert!(
+        close(knee(1e-4), 0.32954, 5e-3),
+        "at 100 uA got {}",
+        knee(1e-4)
+    );
+    assert!(
+        close(knee(1e-3), 0.4486, 5e-3),
+        "at 1 mA got {}",
+        knee(1e-3)
+    );
+    assert!(
+        close(knee(1e-2), 0.56768, 5e-3),
+        "at 10 mA got {}",
+        knee(1e-2)
+    );
+}
+
+#[test]
+fn diode_series_resistance_drops_the_voltage() {
+    // Same current-source loop with a 1 k series resistance inside the diode.
+    // The junction still sits at 0.4486 V (1 mA through the default model), so
+    // the terminal drop is 0.4486 + 1e-3*1000 = 1.4486 V and the current is
+    // still 1 mA. Without the internal node + resistor path the terminal
+    // voltage would read 0.4486 V.
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 0], [100, 0]], &[("current", 1e-3)]),
+            elm(
+                2,
+                "diode",
+                &[[100, 0], [100, 100]],
+                &[("seriesResistance", 1000.0)],
+            ),
+            elm(3, "wire", &[[100, 100], [0, 0]], &[]),
+            elm(4, "ground", &[[0, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(20);
+    assert!(
+        close(c.element_voltages()[1], 1.4486, 1e-2),
+        "terminal drop was {}",
+        c.element_voltages()[1]
+    );
+    assert!(
+        close(c.element_currents()[1], 1e-3, 1e-6),
+        "current was {}",
+        c.element_currents()[1]
+    );
+}
+
+#[test]
+fn diode_param_edits_take_the_live_path() {
+    // A forward-drop edit must apply via set_param without rewinding the
+    // clock, while seriesResistance changes internal_node_count and must be
+    // rejected so the caller falls back to a full rebuild.
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 0], [100, 0]], &[("current", 1e-3)]),
+            elm(2, "diode", &[[100, 0], [100, 100]], &[]),
+            elm(3, "wire", &[[100, 100], [0, 0]], &[]),
+            elm(4, "ground", &[[0, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(20);
+    let t = c.time();
+    assert!(t > 0.0, "circuit never advanced");
+
+    assert!(c.set_param(2, "forwardVoltage", 1.0));
+    assert_eq!(c.time(), t, "param edit rewound the clock");
+    c.run(20);
+    // Raising the forward drop to 1 V drops Is and lifts the knee.
+    assert!(
+        c.element_voltages()[1] > 0.5,
+        "knee was {}",
+        c.element_voltages()[1]
+    );
+
+    assert!(!c.set_param(2, "seriesResistance", 1000.0));
+    assert!(!c.set_param(2, "bogus", 1.0));
+}
+
+#[test]
 fn inverting_opamp_has_the_textbook_gain() {
     // Vout = -Rf/Rin * Vin, with the non-inverting input grounded.
     let c = &mut build(

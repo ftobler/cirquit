@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { escapeToken, parseCircuit, serializeCircuit, unescapeToken } from './netlist';
+import { makeElement } from '../state/store';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
 import { parseSetupList } from './library';
 import { compressCircuit, decompressCircuit } from './urlShare';
@@ -117,6 +118,53 @@ describe('token escaping', () => {
     const text = 'a label with spaces';
     expect(unescapeToken(escapeToken(text))).toBe(text);
     expect(escapeToken(text)).not.toContain(' ');
+  });
+});
+
+describe('diode file format', () => {
+  /** Parses a single `d` line and re-emits it, returning the `d` line. */
+  const diodeLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('d ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('diode line with a model name round-trips', () => {
+    const { e, elementLine } = diodeLine('d 176 80 384 80 2 1N4148');
+    expect(e.modelName).toBe('1N4148');
+    expect(e.flags).toBe(2);
+    expect(elementLine).toBe('d 176 80 384 80 2 1N4148');
+  });
+
+  it('diode line with legacy fwdrop round-trips', () => {
+    const { e, elementLine } = diodeLine('d 272 176 320 128 1 0.805904783');
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    expect(elementLine).toBe('d 272 176 320 128 1 0.805904783');
+  });
+
+  it('escaped model names survive', () => {
+    const { e, elementLine } = diodeLine('d 1 2 3 4 2 fwdrop\\q0.805904783');
+    expect(e.modelName).toBe('fwdrop=0.805904783');
+    expect(elementLine).toBe('d 1 2 3 4 2 fwdrop\\q0.805904783');
+  });
+
+  it('a bare diode line saves with the upstream forward drop', () => {
+    const { e, elementLine } = diodeLine('d 176 80 384 80 0');
+    // No tokens: the element falls back to its defaults, which are the
+    // upstream default model's values.
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    expect(elementLine).toBe('d 176 80 384 80 1 0.805904783');
+  });
+
+  it('a fresh diode defaults to the upstream model values', () => {
+    const e = makeElement('diode', 0, 0, 32, 0);
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    expect(e.params.emissionCoefficient).toBe(2);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    // Only the forward drop survives the value form; seriesResistance and
+    // emissionCoefficient are engine params, as upstream's one-token dump.
+    expect(out).toContain('d 0 0 32 0 1 0.805904783');
   });
 });
 

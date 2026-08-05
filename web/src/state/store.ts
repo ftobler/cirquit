@@ -126,6 +126,15 @@ const clone = (s: Pick<AppState, 'elements' | 'scopes'>): Snapshot => ({
 
 const UNDO_LIMIT = 100;
 
+/** Diode/zener model parameters: editing one invalidates the stored model name. */
+const DIODE_MODEL_PARAMS = [
+  'forwardVoltage',
+  'seriesResistance',
+  'emissionCoefficient',
+  'saturationCurrent',
+  'breakdownVoltage',
+];
+
 export const useStore = create<AppState>((set, get) => ({
   elements: [],
   selectedIds: [],
@@ -216,9 +225,16 @@ export const useStore = create<AppState>((set, get) => ({
 
   setParam: (id, name, value) =>
     set((s) => ({
-      elements: s.elements.map((e) =>
-        e.id === id ? { ...e, params: { ...e.params, [name]: value } } : e,
-      ),
+      elements: s.elements.map((e) => {
+        if (e.id !== id) return e;
+        const next = { ...e, params: { ...e.params, [name]: value } };
+        // Editing a diode/zener model value makes the stored model name stale;
+        // drop it so the next save writes the value form, not the dead name.
+        if ((e.kind === 'diode' || e.kind === 'zener') && DIODE_MODEL_PARAMS.includes(name)) {
+          delete next.modelName;
+        }
+        return next;
+      }),
       // Queue the edit for the engine's set_param fast path rather than
       // bumping `revision` (which would trigger a full rebuild and rewind the
       // clock). A Map keyed by id and name coalesces slider drags to the last

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, GRID_SIZE, type CircuitElement, type SimSettings } from '../model/types';
 import { postsOf } from '../model/registry';
-import { parseCircuit } from '../io/netlist';
+import { parseCircuit, serializeCircuit } from '../io/netlist';
 import { postPatch } from '../render/geometry';
 import { hasUnsavedChanges, makeElement, useStore } from './store';
 
@@ -475,6 +475,55 @@ describe('copy, paste and duplicate', () => {
     useStore.getState().select([a]);
     useStore.getState().pasteFromClipboard();
     expect(useStore.getState().elements).toHaveLength(1);
+  });
+});
+
+describe('diode model name', () => {
+  it('editing a value drops the model name', () => {
+    const [loaded] = parseCircuit('d 176 80 384 80 2 1N4148').elements;
+    expect(loaded.modelName).toBe('1N4148');
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+    expect(useStore.getState().elements[0].modelName).toBe('1N4148');
+
+    useStore.getState().setParam(id, 'forwardVoltage', 0.9);
+
+    const e = useStore.getState().elements[0];
+    expect(e.modelName).toBeUndefined();
+    expect(e.params.forwardVoltage).toBe(0.9);
+  });
+
+  it('keeps the model name when a non-model param is edited', () => {
+    const [loaded] = parseCircuit('d 176 80 384 80 2 1N4148').elements;
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+
+    useStore.getState().setParam(id, 'resistance', 5);
+
+    expect(useStore.getState().elements[0].modelName).toBe('1N4148');
+  });
+
+  it('load-edit-save-reload keeps the edit as a value, not a stale model name', () => {
+    // Regression: the value form used to keep FLAG_MODEL (bit 2) from the
+    // loaded line, so a reload read the fwdrop token as a bogus model name and
+    // silently lost the edit.
+    const [loaded] = parseCircuit('d 176 80 384 80 2 1N4148').elements;
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+
+    useStore.getState().setParam(id, 'forwardVoltage', 0.9);
+    expect(useStore.getState().elements[0].modelName).toBeUndefined();
+
+    const line =
+      serializeCircuit(useStore.getState().elements, { ...DEFAULT_SETTINGS })
+        .trim()
+        .split('\n')
+        .find((l) => l.startsWith('d ')) ?? '';
+    expect(line).toBe('d 176 80 384 80 1 0.9');
+
+    const [again] = parseCircuit(line).elements;
+    expect(again.params.forwardVoltage).toBe(0.9);
+    expect(again.modelName).toBeUndefined();
   });
 });
 
