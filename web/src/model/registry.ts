@@ -189,15 +189,27 @@ function drawGroundSymbol(g: DrawContext, e: CircuitElement): void {
   }
 }
 
+/**
+ * Free end of a switch lever: at the contact when closed, lifted when open.
+ *
+ * The lever pivots at lead1; open, it lifts away from the contact. Positive
+ * perpendicular is up on screen (canvas y grows downward), matching upstream
+ * and the SPDT throw offsets.
+ */
+export function switchLeverTip(lead1: Point, lead2: Point, closed: boolean): Point {
+  return closed ? lead2 : interp(lead1, lead2, 1, OPEN_HS);
+}
+
 function drawSwitchBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
   const closed = (e.state ?? e.params.position ?? 0) === 0;
-  const color = voltageColor(g, closed ? g.voltages[0] : g.voltages[0]);
+  // The lever is always at the pivot's potential; it is connected to lead1
+  // whether it is closed or not.
+  const color = voltageColor(g, g.voltages[0]);
   circle(g, lead1, 2.5, color, true, 1);
   circle(g, lead2, 2.5, voltageColor(g, g.voltages[1]), true, 1);
-  // The lever pivots at lead1; open, it lifts away from the contact.
-  const tip = closed ? lead2 : interp(lead1, lead2, 1, -12);
+  const tip = switchLeverTip(lead1, lead2, closed);
   line(g, lead1, tip, color);
   if (closed) currentDots(g, lead1, lead2, g.current);
 }
