@@ -118,8 +118,10 @@ impl Element for Resistor {
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         if name == "resistance" && value > 0.0 {
             self.resistance = value;
+            true
+        } else {
+            false
         }
-        false
     }
 }
 

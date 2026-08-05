@@ -38,6 +38,16 @@ interface AppState {
   redoStack: Snapshot[];
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
   revision: number;
+  /** Bumped by value-only edits, applied to the live engine without a rebuild. */
+  paramRevision: number;
+  /** Value edits not yet pushed to the engine, keyed `${id}:${name}`. */
+  pendingParams: Map<string, { id: number; name: string; value: number }>;
+  /** Switch state edits not yet pushed to the engine, keyed by element id. */
+  pendingStates: Map<number, number>;
+  /** Menu shown by a right-click, or null when closed. */
+  contextMenu: { x: number; y: number; target: number | null } | null;
+  /** Netlist text of the last copied or cut selection. */
+  clipboard: string | null;
 
   setRunning(running: boolean): void;
   toggleRunning(): void;
@@ -55,6 +65,12 @@ interface AppState {
   moveElements(ids: number[], dx: number, dy: number): void;
   deleteSelected(): void;
   setParam(id: number, name: string, value: number): void;
+  /** Edits the element's free text (annotations, labels). */
+  setText(id: number, text: string): void;
+  /** Interactive state change (switch throw), routed through the live engine. */
+  setElementState(id: number, state: number): void;
+  /** Drops queued value edits; the frame loop calls this after applying them. */
+  clearPending(): void;
 
   addScope(elementId: number, value: Scope['value']): void;
   removeScope(id: number): void;
@@ -67,6 +83,14 @@ interface AppState {
   commit(): void;
   undo(): void;
   redo(): void;
+
+  openContextMenu(x: number, y: number, target: number | null): void;
+  closeContextMenu(): void;
+  selectAll(): void;
+  copySelection(): void;
+  cutSelection(): void;
+  pasteFromClipboard(): void;
+  duplicateSelection(): void;
 }
 
 /** Rounds a coordinate to the nearest grid intersection. */
@@ -90,12 +114,20 @@ export const useStore = create<AppState>((set, get) => ({
   running: true,
   tool: null,
   view: { x: 0, y: 0, scale: 1 },
-  dark: window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true,
+  dark:
+    typeof window !== 'undefined'
+      ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true)
+      : true,
   status: '',
   problem: null,
   undoStack: [],
   redoStack: [],
   revision: 0,
+  paramRevision: 0,
+  pendingParams: new Map(),
+  pendingStates: new Map(),
+  contextMenu: null,
+  clipboard: null,
 
   setRunning: (running) => set({ running }),
   toggleRunning: () => set((s) => ({ running: !s.running })),
@@ -108,9 +140,10 @@ export const useStore = create<AppState>((set, get) => ({
   updateSettings: (patch) =>
     set((s) => {
       const settings = { ...s.settings, ...patch };
-      // Timestep changes alter every companion model, so the engine has to
-      // rebuild rather than just carry on.
-      const reload = patch.timeStep !== undefined || patch.stepsPerFrame !== undefined;
+      // Only the timestep changes every companion model's conductance, so
+      // only it forces a rebuild. Everything else is a per-frame argument or
+      // display-only and must not restart the simulation.
+      const reload = patch.timeStep !== undefined;
       return { settings, revision: reload ? s.revision + 1 : s.revision };
     }),
 
@@ -165,8 +198,46 @@ export const useStore = create<AppState>((set, get) => ({
       elements: s.elements.map((e) =>
         e.id === id ? { ...e, params: { ...e.params, [name]: value } } : e,
       ),
-      revision: s.revision + 1,
+      // Queue the edit for the engine's set_param fast path rather than
+      // bumping `revision` (which would trigger a full rebuild and rewind the
+      // clock). A Map keyed by id and name coalesces slider drags to the last
+      // value.
+      pendingParams: new Map(s.pendingParams).set(`${id}:${name}`, { id, name, value }),
+      paramRevision: s.paramRevision + 1,
     })),
+
+  setText: (id, text) =>
+    set((s) => {
+      const target = s.elements.find((e) => e.id === id);
+      if (!target) return s;
+      // The netlist format is line-based, so a raw newline would split the
+      // element in two on the next save. Strip CR and LF at the door.
+      const clean = text.replace(/[\r\n]/g, '');
+      // A labeled node's text is structural, not display-only: the engine
+      // merges nodes that share a label, so it must reload to learn the
+      // change. Every other text-bearing element is display-only and can take
+      // the fast path without restarting the simulation.
+      const reload = target.kind === 'labeledNode';
+      return {
+        elements: s.elements.map((e) => (e.id === id ? { ...e, text: clean } : e)),
+        revision: reload ? s.revision + 1 : s.revision,
+        paramRevision: reload ? s.paramRevision : s.paramRevision + 1,
+      };
+    }),
+
+  setElementState: (id, state) =>
+    set((s) => ({
+      elements: s.elements.map((e) => (e.id === id ? { ...e, state } : e)),
+      pendingStates: new Map(s.pendingStates).set(id, state),
+      paramRevision: s.paramRevision + 1,
+    })),
+
+  clearPending: () =>
+    set((s) =>
+      s.pendingParams.size === 0 && s.pendingStates.size === 0
+        ? s
+        : { pendingParams: new Map(), pendingStates: new Map() },
+    ),
 
   addScope: (elementId, value) =>
     set((s) => {
@@ -261,7 +332,71 @@ export const useStore = create<AppState>((set, get) => ({
         revision: s.revision + 1,
       };
     }),
+
+  openContextMenu: (x, y, target) =>
+    set((s) => {
+      // Right-clicking an element outside the selection selects it alone so
+      // the menu's copy and delete act on it; one already selected keeps the
+      // whole group. Empty canvas leaves the selection untouched.
+      const selectedIds =
+        target !== null && !s.selectedIds.includes(target) ? [target] : s.selectedIds;
+      return { contextMenu: { x, y, target }, selectedIds };
+    }),
+
+  closeContextMenu: () => set({ contextMenu: null }),
+
+  selectAll: () => set((s) => ({ selectedIds: s.elements.map((e) => e.id) })),
+
+  copySelection: () => {
+    const s = get();
+    if (s.selectedIds.length === 0) return;
+    const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
+    set({ clipboard: serializeCircuit(selected, s.settings) });
+  },
+
+  cutSelection: () => {
+    // Put the selection on the clipboard first, then let the existing delete
+    // remove it with its single commit, so cut is one undo step.
+    get().copySelection();
+    get().deleteSelected();
+  },
+
+  pasteFromClipboard: () => {
+    const text = get().clipboard;
+    if (text === null) return;
+    insertElementsFromText(text);
+  },
+
+  duplicateSelection: () => {
+    const s = get();
+    if (s.selectedIds.length === 0) return;
+    const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
+    // The same serialise-then-insert path as paste, but without touching the
+    // clipboard, so Ctrl+D cannot clobber what the user copied.
+    insertElementsFromText(serializeCircuit(selected, s.settings));
+  },
 }));
+
+/** Shared insert path for paste and duplicate: parse, re-id, offset a grid step. */
+function insertElementsFromText(text: string): void {
+  const parsed = parseCircuit(text);
+  if (parsed.elements.length === 0) return;
+  const state = useStore.getState();
+  state.commit();
+  const added = parsed.elements.map((e) => ({
+    ...e,
+    id: allocateId(),
+    x1: e.x1 + GRID_SIZE,
+    y1: e.y1 + GRID_SIZE,
+    x2: e.x2 + GRID_SIZE,
+    y2: e.y2 + GRID_SIZE,
+  }));
+  useStore.setState((s) => ({
+    elements: [...s.elements, ...added],
+    selectedIds: added.map((e) => e.id),
+    revision: s.revision + 1,
+  }));
+}
 
 /** Builds a new element of `kind` spanning the given points. */
 export function makeElement(kind: string, x1: number, y1: number, x2: number, y2: number) {

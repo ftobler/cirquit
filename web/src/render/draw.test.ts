@@ -1,6 +1,21 @@
-import { describe, expect, it } from 'vitest';
-import { calcLeads, formatValue, interp, interp2 } from './draw';
-import type { CircuitElement } from '../model/types';
+import { describe, expect, it, vi } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import {
+  calcLeads,
+  CANVAS_FONT_FAMILY,
+  canvasFont,
+  COIL_LOOPS,
+  coilPoints,
+  currentDots,
+  formatValue,
+  interp,
+  interp2,
+  makeTheme,
+  rectCorners,
+} from './draw';
+import { TOO_FAST } from './dots';
+import { postsOf, switchLeverTip } from '../model/registry';
+import type { CircuitElement, DrawContext, Point } from '../model/types';
 
 const element = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
   id: 1,
@@ -19,10 +34,18 @@ describe('geometry', () => {
   });
 
   it('offsets perpendicular to the segment', () => {
-    // Displacing a horizontal line moves it vertically.
+    // Displacing a horizontal line moves it vertically, and positive g is up
+    // on screen (canvas y grows downward).
     const p = interp({ x: 0, y: 0 }, { x: 100, y: 0 }, 0.5, 10);
     expect(p.x).toBe(50);
-    expect(Math.abs(p.y)).toBe(10);
+    expect(p.y).toBe(-10);
+  });
+
+  it('rotates the perpendicular with the segment', () => {
+    // A vertical line displaces sideways instead.
+    const p = interp({ x: 0, y: 0 }, { x: 0, y: 100 }, 0.5, 10);
+    expect(p.x).toBe(10);
+    expect(p.y).toBe(50);
   });
 
   it('returns mirrored pairs', () => {
@@ -45,6 +68,205 @@ describe('geometry', () => {
   });
 });
 
+describe('rectangle', () => {
+  it('squares a horizontal element at halfHeight', () => {
+    const c = rectCorners({ x: 0, y: 0 }, { x: 32, y: 0 }, 6);
+    expect(c.map((p) => p.x).sort((a, b) => a - b)).toEqual([0, 0, 32, 32]);
+    expect(c.map((p) => p.y).sort((a, b) => a - b)).toEqual([-6, -6, 6, 6]);
+    // One corner at each combination of the two x and two y values.
+    expect(new Set(c.map((p) => `${p.x},${p.y}`))).toEqual(
+      new Set(['0,-6', '32,-6', '32,6', '0,6']),
+    );
+  });
+
+  it('swaps the perpendicular for a vertical element', () => {
+    // A vertical axis displaces sideways, not vertically; this catches a
+    // swapped perpendicular in the helper.
+    const c = rectCorners({ x: 0, y: 0 }, { x: 0, y: 32 }, 6);
+    expect(c.map((p) => p.x).sort((a, b) => a - b)).toEqual([-6, -6, 6, 6]);
+    expect(c.map((p) => p.y).sort((a, b) => a - b)).toEqual([0, 0, 32, 32]);
+  });
+
+  it('keeps diagonal corners halfHeight from the axis', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 32, y: 32 };
+    for (const p of rectCorners(a, b, 6)) {
+      const d =
+        Math.abs((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)) /
+        Math.hypot(b.y - a.y, b.x - a.x);
+      expect(d).toBeCloseTo(6, 9);
+    }
+  });
+
+  it('has edges |b - a| long and 2*halfHeight short', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 32, y: 32 };
+    const [a1, b1, b2, a2] = rectCorners(a, b, 6);
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const long = [Math.hypot(b1.x - a1.x, b1.y - a1.y), Math.hypot(a2.x - b2.x, a2.y - b2.y)];
+    const short = [Math.hypot(b2.x - b1.x, b2.y - b1.y), Math.hypot(a1.x - a2.x, a1.y - a2.y)];
+    for (const e of long) expect(e).toBeCloseTo(len, 9);
+    for (const e of short) expect(e).toBeCloseTo(12, 9);
+  });
+
+  it("returns four corners; closing the loop is the caller's job", () => {
+    expect(rectCorners({ x: 0, y: 0 }, { x: 32, y: 0 }, 6)).toHaveLength(4);
+  });
+});
+
+describe('inductor coil', () => {
+  // Signed perpendicular offset of `p` from the a->b axis, positive on the
+  // side a positive interp `g` lands on: the 2D cross product of (b - a) and
+  // (p - a), normalised by |b - a|.
+  const side = (a: Point, b: Point, p: Point) =>
+    ((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)) /
+    Math.hypot(b.y - a.y, b.x - a.x);
+
+  // Along-axis position of `p`, the projection onto the unit a->b direction.
+  const along = (a: Point, b: Point, p: Point) =>
+    ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) /
+    Math.hypot(b.y - a.y, b.x - a.x);
+
+  function assertSameSide(a: Point, b: Point): void {
+    for (const p of coilPoints(a, b, COIL_LOOPS)) {
+      expect(side(a, b, p)).toBeGreaterThanOrEqual(-1e-9);
+    }
+  }
+
+  function assertPeakRadius(a: Point, b: Point): void {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const offsets = coilPoints(a, b, COIL_LOOPS).map((p) => side(a, b, p));
+    expect(Math.max(...offsets)).toBeCloseTo(len / (2 * COIL_LOOPS), 9);
+    expect(Math.min(...offsets)).toBeCloseTo(0, 9);
+  }
+
+  function assertEndpoints(a: Point, b: Point): void {
+    const pts = coilPoints(a, b, COIL_LOOPS);
+    expect(pts[0].x).toBeCloseTo(a.x, 9);
+    expect(pts[0].y).toBeCloseTo(a.y, 9);
+    expect(pts[pts.length - 1].x).toBeCloseTo(b.x, 9);
+    expect(pts[pts.length - 1].y).toBeCloseTo(b.y, 9);
+  }
+
+  function assertEvenCentres(a: Point, b: Point): void {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const r = len / (2 * COIL_LOOPS);
+    // Each loop apex sits at full radius, and there is one per loop.
+    const maxima = coilPoints(a, b, COIL_LOOPS).filter(
+      (p) => Math.abs(side(a, b, p) - r) <= 1e-9,
+    );
+    expect(maxima).toHaveLength(COIL_LOOPS);
+    for (let k = 0; k < COIL_LOOPS; k++) {
+      expect(along(a, b, maxima[k])).toBeCloseTo(len * ((2 * k + 1) / (2 * COIL_LOOPS)), 9);
+    }
+  }
+
+  it('crosses the axis exactly twice between the endpoints', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 32, y: 0 };
+    const interior = coilPoints(a, b, COIL_LOOPS).slice(1, -1);
+    const crossings = interior.filter((p) => Math.abs(side(a, b, p)) <= 1e-9);
+    expect(crossings).toHaveLength(2);
+  });
+
+  it('bulges every loop to the same side', () => {
+    assertSameSide({ x: 0, y: 0 }, { x: 32, y: 0 });
+  });
+
+  it('peaks at |b-a|/(2*loops) and returns to the axis', () => {
+    assertPeakRadius({ x: 0, y: 0 }, { x: 32, y: 0 });
+  });
+
+  it('lands the first and last points on the leads', () => {
+    assertEndpoints({ x: 0, y: 0 }, { x: 32, y: 0 });
+  });
+
+  it('spaces the loop centres evenly at 1/6, 3/6, 5/6', () => {
+    assertEvenCentres({ x: 0, y: 0 }, { x: 32, y: 0 });
+  });
+
+  it('keeps side, radius, endpoints and spacing when vertical', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 0, y: 32 };
+    assertSameSide(a, b);
+    assertPeakRadius(a, b);
+    assertEndpoints(a, b);
+    assertEvenCentres(a, b);
+  });
+
+  it('keeps side, radius, endpoints and spacing at 45 degrees', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 32, y: 32 };
+    assertSameSide(a, b);
+    assertPeakRadius(a, b);
+    assertEndpoints(a, b);
+    assertEvenCentres(a, b);
+  });
+
+  it('draws true semicircles, not sine humps', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 32, y: 0 };
+    const len = 32;
+    const r = len / (2 * COIL_LOOPS);
+    // Quarter point of the first loop: theta = PI/4, step 3 of 12.
+    const p = coilPoints(a, b, COIL_LOOPS)[3];
+    expect(side(a, b, p)).toBeCloseTo(r * Math.sin(Math.PI / 4), 9);
+    expect(along(a, b, p)).toBeCloseTo(r * (1 - Math.cos(Math.PI / 4)), 9);
+  });
+});
+
+describe('switch lever', () => {
+  const lead1: Point = { x: 34, y: 0 };
+  const lead2: Point = { x: 66, y: 0 };
+
+  it('lifts upward when open on a left-to-right switch', () => {
+    const tip = switchLeverTip(lead1, lead2, false);
+    expect(tip.y).toBeLessThan(lead2.y);
+  });
+
+  it('sits on the contact when closed', () => {
+    expect(switchLeverTip(lead1, lead2, true)).toBe(lead2);
+  });
+
+  it('lifts by OPEN_HS units', () => {
+    const tip = switchLeverTip(lead1, lead2, false);
+    const d =
+      Math.abs((tip.x - lead1.x) * (lead2.y - lead1.y) - (tip.y - lead1.y) * (lead2.x - lead1.x)) /
+      Math.hypot(lead2.x - lead1.x, lead2.y - lead1.y);
+    expect(d).toBeCloseTo(16, 9);
+  });
+
+  it('opens to the same side as the SPDT throws', () => {
+    const spdt: CircuitElement = {
+      id: 2,
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 100,
+      y2: 0,
+      flags: 0,
+      params: { throwCount: 2 },
+    };
+    const openThrow = postsOf(spdt)[1];
+    const leverTip = switchLeverTip({ x: 0, y: 0 }, { x: 100, y: 0 }, false);
+    const a: Point = { x: 0, y: 0 };
+    const b: Point = { x: 100, y: 0 };
+    // Signed perpendicular offset from the a->b axis, positive for a positive g.
+    const side = (p: Point) =>
+      ((p.x - a.x) * (b.y - a.y) + (p.y - a.y) * (a.x - b.x)) / Math.hypot(b.y - a.y, a.x - b.x);
+    expect(side(openThrow)).toBeGreaterThan(0);
+    expect(Math.sign(side(leverTip))).toBe(Math.sign(side(openThrow)));
+  });
+
+  it('keeps the lever rigid when rotated', () => {
+    const a: Point = { x: 0, y: 0 };
+    const b: Point = { x: 0, y: 100 };
+    const tip = switchLeverTip(a, b, false);
+    expect(tip.x - a.x).toBe(16);
+    expect(Math.hypot(tip.x - b.x, tip.y - b.y)).toBe(16);
+  });
+});
+
 describe('value formatting', () => {
   it('uses engineering prefixes', () => {
     expect(formatValue(4700, 'Ω')).toBe('4.7k Ω');
@@ -60,5 +282,114 @@ describe('value formatting', () => {
 
   it('keeps the sign', () => {
     expect(formatValue(-2.5, 'V')).toBe('-2.5 V');
+  });
+});
+
+describe('current dots', () => {
+  interface CtxStub {
+    fillStyle: string;
+    strokeStyle: string;
+    lineWidth: number;
+    globalAlpha: number;
+    beginPath: ReturnType<typeof vi.fn>;
+    moveTo: ReturnType<typeof vi.fn>;
+    lineTo: ReturnType<typeof vi.fn>;
+    stroke: ReturnType<typeof vi.fn>;
+    arc: ReturnType<typeof vi.fn>;
+    fill: ReturnType<typeof vi.fn>;
+    save: ReturnType<typeof vi.fn>;
+    restore: ReturnType<typeof vi.fn>;
+  }
+
+  const mkCtx = (): { ctx: CanvasRenderingContext2D; calls: string[] } => {
+    const calls: string[] = [];
+    const record = (name: string) => vi.fn(() => calls.push(name));
+    const stub: CtxStub = {
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      globalAlpha: 1,
+      beginPath: record('beginPath'),
+      moveTo: record('moveTo'),
+      lineTo: record('lineTo'),
+      stroke: record('stroke'),
+      arc: record('arc'),
+      fill: record('fill'),
+      save: record('save'),
+      restore: record('restore'),
+    };
+    return { ctx: stub as unknown as CanvasRenderingContext2D, calls };
+  };
+
+  const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext => ({
+    ctx,
+    theme: makeTheme(false),
+    voltages: [],
+    current: 1e-3,
+    voltage: 0,
+    dotPhase,
+    showCurrent: true,
+    showValues: false,
+    showVoltageColor: false,
+    selected: false,
+    voltageRange: 5,
+    scale: 1,
+  });
+
+  it('draws a translucent flow line instead of dots when too fast', () => {
+    const { ctx, calls } = mkCtx();
+    currentDots(context(ctx, TOO_FAST), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
+    expect(calls).toContain('stroke');
+    expect(calls).not.toContain('arc');
+  });
+
+  it('keeps drawing dots for a finite phase', () => {
+    const { ctx, calls } = mkCtx();
+    currentDots(context(ctx, 2), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
+    expect(calls).toContain('arc');
+    expect(calls).not.toContain('stroke');
+  });
+});
+
+describe('canvas font', () => {
+  it('composes a font string at a given size', () => {
+    expect(canvasFont(11)).toBe(`11px ${CANVAS_FONT_FAMILY}`);
+  });
+
+  it('names Roboto in the family', () => {
+    expect(canvasFont(10)).toContain('Roboto');
+  });
+
+  it('keeps a generic sans-serif fallback', () => {
+    // A canvas font string with no generic fallback is silently ignored by
+    // some browsers.
+    expect(CANVAS_FONT_FAMILY).toMatch(/sans-serif$/);
+  });
+
+  // The source scan reads files off disk, which the node vitest environment
+  // permits; paths resolve from this file's URL so the check works no matter
+  // where vitest is invoked from.
+  it('keeps raw font families out of every call site', async () => {
+    const files: Record<string, string> = {
+      draw: new URL('./draw.ts', import.meta.url).pathname,
+      registry: new URL('../model/registry.ts', import.meta.url).pathname,
+      scope: new URL('../ui/ScopePanel.tsx', import.meta.url).pathname,
+    };
+    const offenders: string[] = [];
+    for (const [name, path] of Object.entries(files)) {
+      const src = await readFile(path, 'utf8');
+      for (const [i, line] of src.split('\n').entries()) {
+        // The canvasFont definition itself is the one allowed builder.
+        if (/\.font\s*=\s*[`'"]/.test(line) && !line.includes('canvasFont')) {
+          offenders.push(`${name}:${i + 1}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps the CSS body shorthand in step with the canvas family', async () => {
+    const css = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/font:\s*[^;}]*Roboto/);
   });
 });

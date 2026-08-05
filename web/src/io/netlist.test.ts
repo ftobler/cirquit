@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { escapeToken, parseCircuit, serializeCircuit, unescapeToken } from './netlist';
-import { DEFAULT_SETTINGS } from '../model/types';
+import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
 import { parseSetupList } from './library';
 import { compressCircuit, decompressCircuit } from './urlShare';
 
@@ -86,11 +86,103 @@ describe('netlist parsing', () => {
   });
 });
 
+describe('subset dump', () => {
+  const dropId = (e: CircuitElement) => {
+    const { id, ...rest } = e;
+    void id;
+    return rest;
+  };
+
+  it('dumps two elements out of the whole circuit and reparses them equal apart from ids', () => {
+    const parsed = parseCircuit(SAMPLE);
+    const subset = parsed.elements.slice(0, 2);
+    const text = serializeCircuit(subset, { ...DEFAULT_SETTINGS, ...parsed.settings });
+
+    const back = parseCircuit(text);
+    // Exactly the two selected, none of the other five.
+    expect(back.elements).toHaveLength(2);
+    expect(back.elements.map((e) => e.kind)).toEqual(['resistor', 'switch']);
+    expect(back.scopes).toHaveLength(0);
+    expect(back.elements.map(dropId)).toEqual(subset.map(dropId));
+  });
+});
+
 describe('token escaping', () => {
   it('round-trips text containing spaces', () => {
     const text = 'a label with spaces';
     expect(unescapeToken(escapeToken(text))).toBe(text);
     expect(escapeToken(text)).not.toContain(' ');
+  });
+});
+
+describe('text element', () => {
+  // The line layout is `x x1 y1 x2 y2 flags size text...`; the text is every
+  // token after the size and may contain spaces.
+  const LINE = 'x 100 200 0 0 0 12 hello world here';
+
+  const roundTrip = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const [again] = parseCircuit(out).elements;
+    const elementLine = out.split('\n').find((l) => l.startsWith('x ')) ?? '';
+    return { e, out, again, elementLine };
+  };
+
+  it('parses the text after the size token and re-emits it losslessly', () => {
+    const { e, elementLine, again } = roundTrip(LINE);
+    expect(e.text).toBe('hello world here');
+    expect(e.params.size).toBe(12);
+    // Spaces are escaped on save, so the re-parsed text is the source of
+    // truth, not the literal line.
+    expect(elementLine).toBe('x 100 200 0 0 0 12 hello\\sworld\\shere');
+    expect(again.text).toBe('hello world here');
+    expect(again.params.size).toBe(12);
+  });
+
+  it('round-trips empty text as empty, not a literal undefined', () => {
+    const { e, again } = roundTrip('x 100 200 0 0 0 12');
+    expect(e.text).toBe('');
+    expect(again.text).toBe('');
+  });
+
+  it('never writes a raw newline into the file', () => {
+    const e: CircuitElement = {
+      id: 1,
+      kind: 'decoration',
+      x1: 100,
+      y1: 200,
+      x2: 0,
+      y2: 0,
+      flags: 0,
+      params: { size: 12 },
+      text: 'line1\nline2',
+    };
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    // The element stays on one line because the newline is escaped, and the
+    // escape survives a load.
+    const lines = out.split('\n').filter((l) => l.startsWith('x '));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('line1\\nline2');
+    expect(parseCircuit(out).elements[0].text).toBe('line1\nline2');
+  });
+
+  it('keeps non-ASCII characters intact', () => {
+    const { again } = roundTrip('x 100 200 0 0 0 12 µ 5 Ω hér');
+    expect(again.text).toBe('µ 5 Ω hér');
+  });
+
+  it('defaults a missing size token to 12', () => {
+    const { e } = roundTrip('x 100 200 0 0 0');
+    expect(e.params.size).toBe(12);
+    expect(e.text).toBe('');
+  });
+
+  it('treats a size of 0 in a file as 12', () => {
+    const { e, elementLine } = roundTrip('x 100 200 0 0 0 0 hello');
+    expect(e.params.size).toBe(12);
+    expect(e.text).toBe('hello');
+    // The clamp at draw time must not change the file format.
+    expect(elementLine).toBe('x 100 200 0 0 0 12 hello');
   });
 });
 
@@ -108,7 +200,7 @@ describe('url sharing', () => {
 describe('circuit library index', () => {
   it('groups entries under their headings', () => {
     const groups = parseSetupList(
-      ['### comment', '+Basics', 'ohms.txt Ohm\'s Law', '>lrc.txt LRC Circuit', '-'].join('\n'),
+      ['### comment', '+Basics', "ohms.txt Ohm's Law", '>lrc.txt LRC Circuit', '-'].join('\n'),
     );
     expect(groups).toHaveLength(1);
     expect(groups[0].title).toBe('Basics');

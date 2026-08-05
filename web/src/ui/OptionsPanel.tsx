@@ -6,6 +6,14 @@ import { formatValue } from '../render/draw';
 import type { FieldDef } from '../model/types';
 import { useStore } from '../state/store';
 
+/** Holds the live options panel root so the context menu's Edit can focus it. */
+let panelRef: HTMLElement | null = null;
+
+/** Moves keyboard focus to the options panel; a no-op while it is not mounted. */
+export function focusOptionsPanel(): void {
+  panelRef?.focus();
+}
+
 interface Props {
   engine: SimEngine | null;
 }
@@ -16,14 +24,26 @@ function Field({
   onChange,
 }: {
   field: FieldDef;
-  value: number;
-  onChange: (v: number) => void;
+  value: number | string;
+  onChange: (v: number | string) => void;
 }) {
+  if (field.type === 'text') {
+    return (
+      <label className="field">
+        <span>{field.label}</span>
+        <input type="text" value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} />
+      </label>
+    );
+  }
+
+  // Every remaining field type is numeric; recover the number for them.
+  const v = typeof value === 'string' ? Number(value) : value;
+
   if (field.type === 'choice') {
     return (
       <label className="field">
         <span>{field.label}</span>
-        <select value={value} onChange={(e) => onChange(Number(e.target.value))}>
+        <select value={v} onChange={(e) => onChange(Number(e.target.value))}>
           {field.choices?.map((c) => (
             <option key={c.value} value={c.value}>
               {c.label}
@@ -38,14 +58,14 @@ function Field({
     return (
       <label className="field">
         <span>
-          {field.label} <em>{value.toFixed(2)}</em>
+          {field.label} <em>{v.toFixed(2)}</em>
         </span>
         <input
           type="range"
           min={field.min}
           max={field.max}
           step={(field.max - field.min) / 100}
-          value={value}
+          value={v}
           onChange={(e) => onChange(Number(e.target.value))}
         />
       </label>
@@ -60,11 +80,11 @@ function Field({
       </span>
       <input
         type="number"
-        value={value}
+        value={v}
         step="any"
         onChange={(e) => {
-          const v = Number(e.target.value);
-          if (Number.isFinite(v)) onChange(v);
+          const n = Number(e.target.value);
+          if (Number.isFinite(n)) onChange(n);
         }}
       />
     </label>
@@ -76,6 +96,7 @@ export function OptionsPanel({ engine }: Props) {
   const selectedIds = useStore((s) => s.selectedIds);
   const settings = useStore((s) => s.settings);
   const setParam = useStore((s) => s.setParam);
+  const setText = useStore((s) => s.setText);
   const updateSettings = useStore((s) => s.updateSettings);
   const addScope = useStore((s) => s.addScope);
   const problem = useStore((s) => s.problem);
@@ -88,7 +109,13 @@ export function OptionsPanel({ engine }: Props) {
   const voltage = idx !== undefined && engine ? engine.elementVoltages()[idx] : undefined;
 
   return (
-    <div className="options">
+    <div
+      className="options"
+      tabIndex={-1}
+      ref={(el) => {
+        panelRef = el;
+      }}
+    >
       {problem && <div className="problem">{problem}</div>}
 
       {selected && def ? (
@@ -108,8 +135,12 @@ export function OptionsPanel({ engine }: Props) {
             <Field
               key={f.name}
               field={f}
-              value={selected.params[f.name] ?? 0}
-              onChange={(v) => setParam(selected.id, f.name, v)}
+              value={f.target === 'text' ? (selected.text ?? '') : (selected.params[f.name] ?? 0)}
+              onChange={(v) =>
+                f.target === 'text'
+                  ? setText(selected.id, String(v))
+                  : setParam(selected.id, f.name, Number(v))
+              }
             />
           ))}
           <div className="row">

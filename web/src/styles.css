@@ -34,7 +34,7 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font: 13px/1.45 'Roboto Variable', Roboto, system-ui, sans-serif;
   overflow: hidden;
 }
 
@@ -49,6 +49,7 @@ body {
 .menubar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap; /* at narrow widths the run controls wrap down instead of overflowing the right edge */
   gap: 6px;
   padding: 6px 10px;
   background: var(--panel);
@@ -69,8 +70,12 @@ body {
   margin: 0 4px;
 }
 
-.menubar .grow {
-  flex: 1;
+.menubar .run-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto; /* the run controls never shrink; the file buttons give way first */
+  margin-left: auto;
 }
 
 button {
@@ -126,7 +131,10 @@ button.active,
 }
 
 .menu-item {
-  display: block;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
   width: 100%;
   text-align: left;
   border: none;
@@ -136,6 +144,32 @@ button.active,
 
 .menu-item:hover {
   background: var(--bg);
+}
+
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.menu-item:disabled:hover {
+  background: transparent;
+}
+
+.menu-shortcut {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
+}
+
+.context-menu {
+  position: fixed;
+  width: 200px;
+  padding: 4px;
 }
 
 /* ---- layout ---- */
@@ -242,6 +276,7 @@ h3 {
 }
 
 .field input[type='number'],
+.field input[type='text'],
 .field select {
   width: 100%;
   font: inherit;

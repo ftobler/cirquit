@@ -7,7 +7,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor, postsOf } from '../model/registry';
 import { GRID_SIZE, type CircuitElement, type DrawContext, type Point } from '../model/types';
+import { dotPhaseStep, TOO_FAST, wrapPhase } from '../render/dots';
 import { makeTheme } from '../render/draw';
+import { distanceToElement, nearestPost, postAt, postPatch } from '../render/geometry';
 import { makeElement, snap, useStore } from '../state/store';
 
 /** How close the pointer must be to an element to hit it, in circuit units. */
@@ -21,41 +23,17 @@ type Drag =
   | { mode: 'none' }
   | { mode: 'place'; start: Point; id: number }
   | { mode: 'move'; last: Point; moved: boolean }
+  | { mode: 'dragpost'; id: number; post: 1 | 2; moved: boolean }
   | { mode: 'select'; start: Point; current: Point }
   | { mode: 'pan'; startClient: Point; startView: Point };
-
-/** Shortest distance from `p` to the segment `a`-`b`. */
-function distanceToSegment(p: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lenSq = dx * dx + dy * dy;
-  if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
-  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
-}
-
-/** Distance from a point to an element, measured against all of its limbs. */
-function distanceToElement(p: Point, e: CircuitElement): number {
-  const posts = postsOf(e);
-  if (posts.length <= 1) {
-    return Math.hypot(p.x - e.x1, p.y - e.y1);
-  }
-  const body = distanceToSegment(p, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 });
-  // Multi-terminal parts have limbs off the main axis, so also test each
-  // terminal against the body line.
-  const limbs = posts.map((q) => distanceToSegment(q, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }));
-  const nearPost = Math.min(...posts.map((q) => Math.hypot(p.x - q.x, p.y - q.y)));
-  void limbs;
-  return Math.min(body, nearPost);
-}
 
 export function CircuitCanvas({ engine }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<Drag>({ mode: 'none' });
-  const animTimeRef = useRef(0);
+  const dotPhaseRef = useRef(new Map<number, number>());
   const lastFrameRef = useRef(performance.now());
   const loadedRevision = useRef(-1);
+  const appliedParamRevision = useRef(-1);
   const [, forceRender] = useState(0);
 
   // Reading the store through refs keeps the animation loop off React's
@@ -94,6 +72,10 @@ export function CircuitCanvas({ engine }: Props) {
   useEffect(() => {
     let raf = 0;
 
+    // This loop redraws every frame, so a first frame painted in the fallback
+    // face is replaced as soon as Roboto lands; no document.fonts.ready
+    // invalidation is needed. If this ever becomes a draw-on-demand renderer,
+    // the redraw has to be triggered from document.fonts.ready.
     const frame = () => {
       raf = requestAnimationFrame(frame);
       const canvas = canvasRef.current;
@@ -111,9 +93,41 @@ export function CircuitCanvas({ engine }: Props) {
       // Reload the engine whenever the netlist changed.
       if (engine && loadedRevision.current !== state.revision) {
         loadedRevision.current = state.revision;
+        // A new netlist invalidates every element's accumulated phase, and
+        // clearing the map stops it growing across circuit loads.
+        dotPhaseRef.current.clear();
         const err = engine.setCircuit(elements, settings, scopes);
         const warnings = err ? [err] : engine.warnings();
         useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
+        // The reload serialised the current elements, so any queued value
+        // edits are already in effect. Mark them consumed and drop the queue,
+        // or they would be replayed against the fresh circuit below.
+        appliedParamRevision.current = state.paramRevision;
+        if (state.pendingParams.size > 0 || state.pendingStates.size > 0) {
+          state.clearPending();
+        }
+      }
+
+      // Apply value-only edits through the engine's fast paths so the clock
+      // and reactive-element state survive slider drags and switch throws.
+      if (engine && appliedParamRevision.current !== state.paramRevision) {
+        appliedParamRevision.current = state.paramRevision;
+        let forceReload = false;
+        for (const { id, name, value } of state.pendingParams.values()) {
+          if (!engine.setParam(id, name, value)) forceReload = true;
+        }
+        for (const [id, s] of state.pendingStates) {
+          if (!engine.setState(id, s)) forceReload = true;
+        }
+        if (forceReload) {
+          // A param the engine cannot patch live (unknown id or name) would
+          // otherwise read as a dead slider; rebuild the whole circuit.
+          dotPhaseRef.current.clear();
+          const err = engine.setCircuit(elements, settings, scopes);
+          const warnings = err ? [err] : engine.warnings();
+          useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
+        }
+        state.clearPending();
       }
 
       // Advance the simulation.
@@ -126,7 +140,6 @@ export function CircuitCanvas({ engine }: Props) {
           if (!stats.converged && stats.error) {
             useStore.getState().setProblem(stats.error);
           }
-          animTimeRef.current += elapsed;
         }
         currents = engine.elementCurrents();
         nodeVoltages = engine.nodeVoltages();
@@ -154,8 +167,6 @@ export function CircuitCanvas({ engine }: Props) {
         drawGrid(ctx, view.x, view.y, width / view.scale, height / view.scale, theme.grid);
       }
 
-      const speedFactor = Math.pow(1.08, settings.currentSpeed - 50) * 8;
-
       for (const e of elements) {
         const def = defFor(e.kind);
         if (!def) continue;
@@ -170,9 +181,13 @@ export function CircuitCanvas({ engine }: Props) {
         });
         const current = idx !== undefined && currents ? (currents[idx] ?? 0) : 0;
 
-        // Signed log keeps both microamps and amps visibly in motion.
-        const rate =
-          Math.sign(current) * Math.log1p(Math.abs(current) * 1e4) * speedFactor;
+        // Phase is integrated per element so changing the speed or the current
+        // mid-run cannot teleport the dots. Only advance while running, so a
+        // pause freezes them in place.
+        const step = dotPhaseStep(current, settings.currentSpeed, elapsed);
+        const phase =
+          step === TOO_FAST ? TOO_FAST : wrapPhase((dotPhaseRef.current.get(e.id) ?? 0) + step);
+        if (running) dotPhaseRef.current.set(e.id, phase === TOO_FAST ? 0 : phase);
 
         const g: DrawContext = {
           ctx,
@@ -180,7 +195,7 @@ export function CircuitCanvas({ engine }: Props) {
           voltages,
           current,
           voltage: voltages.length >= 2 ? voltages[0] - voltages[1] : (voltages[0] ?? 0),
-          dotPhase: animTimeRef.current * rate,
+          dotPhase: phase,
           showCurrent: settings.showCurrent,
           showValues: settings.showValues,
           showVoltageColor: settings.showVoltageColor,
@@ -228,6 +243,11 @@ export function CircuitCanvas({ engine }: Props) {
     const state = useStore.getState();
     const p = toCircuit(ev.clientX, ev.clientY);
 
+    // Right-click belongs to the context menu, which fires its contextmenu
+    // event after this pointerdown. Entering a drag or a pan here would commit
+    // an undo step and leave a stale drag state behind the menu.
+    if (ev.button === 2) return;
+
     // Middle button, or space held, pans.
     if (ev.button === 1 || ev.shiftKey) {
       dragRef.current = {
@@ -257,7 +277,7 @@ export function CircuitCanvas({ engine }: Props) {
       if (def?.interactive && state.running && !ev.altKey) {
         const throwCount = Math.max(2, hit.params.throwCount ?? 2);
         const next = ((hit.state ?? 0) + 1) % (hit.kind === 'switch' ? 2 : throwCount);
-        state.updateElement(hit.id, { state: next });
+        state.setElementState(hit.id, next);
         dragRef.current = { mode: 'none' };
         return;
       }
@@ -265,7 +285,16 @@ export function CircuitCanvas({ engine }: Props) {
         state.select(ev.ctrlKey ? [...state.selectedIds, hit.id] : [hit.id]);
       }
       state.commit();
-      dragRef.current = { mode: 'move', last: p, moved: false };
+      // Ctrl does two things depending on whether the pointer moves: without
+      // a move it is a plain additive selection, done above; with one it
+      // grabs the nearer endpoint and drags only that post, stretching or
+      // rotating the element. The additive selection from pointer-down stays
+      // either way.
+      if (ev.ctrlKey && (def?.postCount ?? 0) > 1) {
+        dragRef.current = { mode: 'dragpost', id: hit.id, post: nearestPost(p, hit), moved: false };
+      } else {
+        dragRef.current = { mode: 'move', last: p, moved: false };
+      }
       return;
     }
 
@@ -301,6 +330,22 @@ export function CircuitCanvas({ engine }: Props) {
         if (gx !== 0 || gy !== 0) {
           state.moveElements(state.selectedIds, gx, gy);
           dragRef.current = { mode: 'move', last: p, moved: true };
+        }
+        break;
+      }
+      case 'dragpost': {
+        // Snap to absolute grid coordinates, not to a delta: a group keeps
+        // its internal spacing, a single post should land exactly on the grid
+        // so the dragged end can connect to a wire that ends there.
+        const x = state.settings.snapToGrid ? snap(p.x) : Math.round(p.x);
+        const y = state.settings.snapToGrid ? snap(p.y) : Math.round(p.y);
+        const e = state.elements.find((q) => q.id === drag.id);
+        // A no-op update would bump `revision` and make the engine reload
+        // mid-cell, so only touch the store when the endpoint actually moved.
+        // If the element vanished mid-drag there is nothing to write either.
+        if (e !== undefined && !postAt(e, drag.post, x, y)) {
+          state.updateElement(drag.id, postPatch(drag.post, x, y));
+          dragRef.current = { ...drag, moved: true };
         }
         break;
       }
@@ -341,6 +386,19 @@ export function CircuitCanvas({ engine }: Props) {
       state.setTool(null);
     }
 
+    if (drag.mode === 'dragpost') {
+      const e = state.elements.find((x) => x.id === drag.id);
+      const def = e ? defFor(e.kind) : undefined;
+      // A post dragged onto its partner leaves a zero-length element, which is
+      // almost never meant. Do not delete mid-drag: the user may be passing
+      // through on the way somewhere. On release, undo the whole drag and say
+      // why.
+      if (drag.moved && e && def && def.postCount > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
+        state.undo();
+        state.setStatus('Reverted: that drag would have collapsed the element to a point.');
+      }
+    }
+
     dragRef.current = { mode: 'none' };
     canvasRef.current?.releasePointerCapture(ev.pointerId);
     forceRender((n) => n + 1);
@@ -359,6 +417,14 @@ export function CircuitCanvas({ engine }: Props) {
     });
   };
 
+  const onContextMenu = (ev: React.MouseEvent<HTMLCanvasElement>) => {
+    ev.preventDefault();
+    const hit = hitTest(toCircuit(ev.clientX, ev.clientY));
+    // The store applies the selection-on-right-click rule; only the hit test
+    // (which needs circuit coordinates) stays here.
+    useStore.getState().openContextMenu(ev.clientX, ev.clientY, hit?.id ?? null);
+  };
+
   return (
     <canvas
       ref={canvasRef}
@@ -368,7 +434,7 @@ export function CircuitCanvas({ engine }: Props) {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onWheel={onWheel}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={onContextMenu}
     />
   );
 }

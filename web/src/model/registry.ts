@@ -12,8 +12,12 @@
 
 import {
   arrowHead,
+  bodyRect,
   calcLeads,
+  canvasFont,
   circle,
+  COIL_LOOPS,
+  coilPoints,
   currentDots,
   drawLeads,
   elementLength,
@@ -63,13 +67,7 @@ function drawResistorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
-  // Six-segment zigzag between the leads.
-  const pts: Point[] = [lead1];
-  for (let i = 0; i < 6; i++) {
-    pts.push(interp(lead1, lead2, (i + 0.5) / 6, i % 2 === 0 ? 6 : -6));
-  }
-  pts.push(lead2);
-  polyline(g, pts, color);
+  bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, 32 x 12 as upstream
   currentDots(g, lead1, lead2, g.current);
   label(g, e, formatValue(e.params.resistance ?? 0, 'Ω'));
 }
@@ -88,16 +86,7 @@ function drawInductorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
-  // Four half-circle humps approximated with a dense polyline, which keeps
-  // the coil looking right at any rotation.
-  const pts: Point[] = [];
-  const segments = 40;
-  for (let i = 0; i <= segments; i++) {
-    const f = i / segments;
-    const hump = Math.sin(f * Math.PI * 4);
-    pts.push(interp(lead1, lead2, f, -hump * 6));
-  }
-  polyline(g, pts, color);
+  polyline(g, coilPoints(lead1, lead2, COIL_LOOPS), color);
   currentDots(g, lead1, lead2, g.current);
   label(g, e, formatValue(e.params.inductance ?? 0, 'H'));
 }
@@ -116,7 +105,7 @@ function drawWaveformGlyph(g: DrawContext, centre: Point, waveform: number, r: n
   if (waveform === 0) {
     // DC: a plus toward the positive terminal and a minus toward the other.
     g.ctx.fillStyle = color;
-    g.ctx.font = '11px system-ui, sans-serif';
+    g.ctx.font = canvasFont(11);
     g.ctx.textAlign = 'center';
     g.ctx.textBaseline = 'middle';
     g.ctx.fillText('+', centre.x, centre.y - r * 0.45);
@@ -189,15 +178,27 @@ function drawGroundSymbol(g: DrawContext, e: CircuitElement): void {
   }
 }
 
+/**
+ * Free end of a switch lever: at the contact when closed, lifted when open.
+ *
+ * The lever pivots at lead1; open, it lifts away from the contact. Positive
+ * perpendicular is up on screen (canvas y grows downward), matching upstream
+ * and the SPDT throw offsets.
+ */
+export function switchLeverTip(lead1: Point, lead2: Point, closed: boolean): Point {
+  return closed ? lead2 : interp(lead1, lead2, 1, OPEN_HS);
+}
+
 function drawSwitchBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
   const closed = (e.state ?? e.params.position ?? 0) === 0;
-  const color = voltageColor(g, closed ? g.voltages[0] : g.voltages[0]);
+  // The lever is always at the pivot's potential; it is connected to lead1
+  // whether it is closed or not.
+  const color = voltageColor(g, g.voltages[0]);
   circle(g, lead1, 2.5, color, true, 1);
   circle(g, lead2, 2.5, voltageColor(g, g.voltages[1]), true, 1);
-  // The lever pivots at lead1; open, it lifts away from the contact.
-  const tip = closed ? lead2 : interp(lead1, lead2, 1, -12);
+  const tip = switchLeverTip(lead1, lead2, closed);
   line(g, lead1, tip, color);
   if (closed) currentDots(g, lead1, lead2, g.current);
 }
@@ -221,7 +222,7 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
   polyline(g, [t1, t2, lead2, t1], g.theme.wire, 2);
 
   g.ctx.fillStyle = g.theme.text;
-  g.ctx.font = '10px system-ui, sans-serif';
+  g.ctx.font = canvasFont(10);
   g.ctx.textAlign = 'center';
   g.ctx.textBaseline = 'middle';
   const m = interp(lead1, lead2, 0.28, OPAMP_HEIGHT);
@@ -261,10 +262,7 @@ function drawPotBody(g: DrawContext, e: CircuitElement): void {
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
   line(g, p1, lead1, voltageColor(g, g.voltages[0]));
   line(g, lead2, p2, voltageColor(g, g.voltages[1]));
-  const pts: Point[] = [lead1];
-  for (let i = 0; i < 6; i++) pts.push(interp(lead1, lead2, (i + 0.5) / 6, i % 2 === 0 ? 6 : -6));
-  pts.push(lead2);
-  polyline(g, pts, color);
+  bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, 32 x 12 as upstream
 
   const wiper = potPosts(e)[2];
   const contact = interp(lead1, lead2, e.params.position ?? 0.5, 0);
@@ -460,7 +458,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
       const [a, b] = interp2(p1, p2, 0.6, 10);
       line(g, a, b, color, 3);
       g.ctx.fillStyle = g.theme.text;
-      g.ctx.font = '10px system-ui, sans-serif';
+      g.ctx.font = canvasFont(10);
       g.ctx.textAlign = 'center';
       g.ctx.textBaseline = 'bottom';
       const t = interp(p1, p2, 1.0);
@@ -626,6 +624,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: '207',
     postCount: 1,
     posts: onePost,
+    fields: [{ name: 'text', label: 'Text', type: 'text', target: 'text' }],
     parse: (t, e) => {
       e.text = t.join(' ');
     },
@@ -633,7 +632,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     draw(g, e) {
       const p = { x: e.x1, y: e.y1 };
       const text = e.text ?? '';
-      g.ctx.font = '11px system-ui, sans-serif';
+      g.ctx.font = canvasFont(11);
       const w = g.ctx.measureText(text).width + 10;
       g.ctx.fillStyle = g.theme.panel;
       g.ctx.strokeStyle = g.selected ? g.theme.selection : voltageColor(g, g.voltages[0]);
@@ -661,7 +660,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
       const p = { x: e.x1, y: e.y1 };
       circle(g, p, 4, voltageColor(g, g.voltages[0]), false, 2);
       g.ctx.fillStyle = g.theme.text;
-      g.ctx.font = '11px system-ui, sans-serif';
+      g.ctx.font = canvasFont(11);
       g.ctx.textAlign = 'left';
       g.ctx.textBaseline = 'middle';
       g.ctx.fillText(formatValue(g.voltages[0] ?? 0, 'V'), p.x + 8, p.y);
@@ -683,7 +682,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
       const mid = interp(lead1, lead2, 0.5);
       circle(g, mid, 9, g.theme.wire, false, 1.5);
       g.ctx.fillStyle = g.theme.text;
-      g.ctx.font = '9px system-ui, sans-serif';
+      g.ctx.font = canvasFont(9);
       g.ctx.textAlign = 'center';
       g.ctx.textBaseline = 'middle';
       g.ctx.fillText('V', mid.x, mid.y);
@@ -697,6 +696,10 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'x',
     postCount: 1,
     posts: onePost,
+    fields: [
+      { name: 'text', label: 'Text', type: 'text', target: 'text' },
+      { name: 'size', label: 'Size', unit: 'px' },
+    ],
     parse: (t, e) => {
       e.params.size = Number(t[0]) || 12;
       e.text = t.slice(1).join(' ');
@@ -704,7 +707,9 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dump: (e) => [e.params.size ?? 12, e.text ?? ''],
     draw(g, e) {
       g.ctx.fillStyle = g.selected ? g.theme.selection : g.theme.text;
-      g.ctx.font = `${e.params.size ?? 12}px system-ui, sans-serif`;
+      // A zero or negative size would make an invalid font string and blank
+      // the whole frame's drawing, so clamp at one pixel.
+      g.ctx.font = canvasFont(Math.max(1, e.params.size ?? 12));
       g.ctx.textAlign = 'left';
       g.ctx.textBaseline = 'middle';
       g.ctx.fillText(e.text ?? '', e.x1, e.y1);

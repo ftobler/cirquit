@@ -1,6 +1,18 @@
 /** Drawing primitives shared by every element renderer. */
 
 import type { CircuitElement, DrawContext, Point, Theme } from '../model/types';
+import { DOT_SPACING, TOO_FAST } from './dots';
+
+/**
+ * Canvas text stack. A 2D context inherits nothing from CSS, so the family has
+ * to be repeated here; keep it in step with the body rule in styles.css.
+ */
+export const CANVAS_FONT_FAMILY = "'Roboto Variable', Roboto, system-ui, sans-serif";
+
+/** Builds a canvas `font` string at a given pixel size. */
+export function canvasFont(px: number): string {
+  return `${px}px ${CANVAS_FONT_FAMILY}`;
+}
 
 /**
  * Point along `a -> b` at fraction `f`, displaced `g` units perpendicular to
@@ -123,25 +135,117 @@ export function triangle(g: DrawContext, a: Point, b: Point, c: Point, color: st
   g.ctx.fill();
 }
 
-/** Arrowhead at `tip`, pointing away from `from`. */
-export function arrowHead(g: DrawContext, from: Point, tip: Point, size: number, color: string) {
-  const [l, r] = interp2(from, tip, 1 - size / Math.max(1, Math.hypot(tip.x - from.x, tip.y - from.y)), size / 2);
-  triangle(g, tip, l, r, color);
+/**
+ * The four corners of the rectangle straddling the segment `a`-`b`,
+ * `halfHeight` to each side, ordered `[a1, b1, b2, a2]` for a closed loop.
+ *
+ * Same perpendicular as `interp`, but without the grid rounding, so the box is
+ * an exact rectangle at any angle: the long edges equal `|b - a|` and the
+ * short edges equal `2 * halfHeight`. Rounding the corners would skew those
+ * lengths by up to a pixel on diagonal elements.
+ */
+export function rectCorners(a: Point, b: Point, halfHeight: number): [Point, Point, Point, Point] {
+  let px = b.y - a.y;
+  let py = a.x - b.x;
+  const r = Math.hypot(px, py);
+  if (r === 0) return [a, a, a, a];
+  px /= r;
+  py /= r;
+  const a1 = { x: a.x + halfHeight * px, y: a.y + halfHeight * py };
+  const a2 = { x: a.x - halfHeight * px, y: a.y - halfHeight * py };
+  const b1 = { x: b.x + halfHeight * px, y: b.y + halfHeight * py };
+  const b2 = { x: b.x - halfHeight * px, y: b.y - halfHeight * py };
+  return [a1, b1, b2, a2];
 }
 
-/** Spacing between current-flow dots, in circuit units. */
-const DOT_SPACING = 8;
+/**
+ * Rectangle straddling the segment `a`-`b`, `halfHeight` to each side. Built
+ * from interpolated points rather than `strokeRect` because the context is not
+ * rotated per element; this keeps the box square to the element at any angle.
+ * The loop is closed by repeating the first corner.
+ */
+export function bodyRect(g: DrawContext, a: Point, b: Point, halfHeight: number, color: string): void {
+  const [a1, b1, b2, a2] = rectCorners(a, b, halfHeight);
+  polyline(g, [a1, b1, b2, a2, a1], color);
+}
+
+/** Loops in an inductor coil. Upstream scales this with length; a fixed three
+ *  reads better at the 32-unit body every inductor uses. */
+export const COIL_LOOPS = 3;
+
+/**
+ * Same-side semicircles along `a`-`b`: the coil symbol. Each loop is a
+ * 180-degree arc of radius `len/(2*loops)` bulging to one side, so the curve
+ * returns to the axis between loops. Alternating sides would draw a zigzag,
+ * which is the American resistor symbol, not a coil.
+ *
+ * Computed without the grid rounding `interp` applies, like `rectCorners`, so
+ * the radius and along-axis spacing stay exact at any rotation; rounding would
+ * shrink the peak by up to a pixel and break the geometric tests.
+ */
+export function coilPoints(a: Point, b: Point, loops: number, steps = 12): Point[] {
+  let px = b.y - a.y;
+  let py = a.x - b.x;
+  const len = Math.hypot(px, py);
+  if (len === 0) return [a, b];
+  px /= len;
+  py /= len;
+  const radius = len / (2 * loops);
+  const pts: Point[] = [];
+  for (let k = 0; k < loops; k++) {
+    for (let s = 0; s <= steps; s++) {
+      if (k > 0 && s === 0) continue;  // duplicates the previous loop's endpoint
+      const theta = Math.PI * (s / steps);
+      // The (1 - cos theta) / 2 mapping makes the loop a true semicircle: it
+      // is at full radius at the midpoint and meets the axis vertically.
+      const f = (k + (1 - Math.cos(theta)) / 2) / loops;
+      const offset = Math.sin(theta) * radius;
+      pts.push({
+        x: a.x + f * (b.x - a.x) + offset * px,
+        y: a.y + f * (b.y - a.y) + offset * py,
+      });
+    }
+  }
+  return pts;
+}
+
+/** Arrowhead at `tip`, pointing away from `from`. */
+export function arrowHead(g: DrawContext, from: Point, tip: Point, size: number, color: string) {
+  const [l, r] = interp2(
+    from,
+    tip,
+    1 - size / Math.max(1, Math.hypot(tip.x - from.x, tip.y - from.y)),
+    size / 2,
+  );
+  triangle(g, tip, l, r, color);
+}
 
 /**
  * Animated dots showing current direction and magnitude along a segment.
  *
  * `dotPhase` accumulates `current * speed` over time, so faster current moves
- * the dots faster and reversing the current reverses them.
+ * the dots faster and reversing the current reverses them. The caller wraps it
+ * into `[0, DOT_SPACING)` each frame, except for `TOO_FAST`, which renders as
+ * a translucent flow line because aliased dots read as motion in the wrong
+ * direction.
  */
 export function currentDots(g: DrawContext, a: Point, b: Point, current: number): void {
   if (!g.showCurrent || !Number.isFinite(current) || current === 0) return;
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   if (len < 1) return;
+
+  if (g.dotPhase === TOO_FAST) {
+    g.ctx.save();
+    g.ctx.globalAlpha = 0.5;
+    g.ctx.strokeStyle = g.theme.currentDot;
+    g.ctx.lineWidth = 4;
+    g.ctx.beginPath();
+    g.ctx.moveTo(a.x, a.y);
+    g.ctx.lineTo(b.x, b.y);
+    g.ctx.stroke();
+    g.ctx.restore();
+    return;
+  }
 
   // Wrap the phase into one dot interval so the pattern is continuous.
   let offset = g.dotPhase % DOT_SPACING;
@@ -196,7 +300,7 @@ export function label(g: DrawContext, e: CircuitElement, text: string, offset = 
   const p = interp(p1, p2, 0.5, offset);
   const horizontal = Math.abs(e.x2 - e.x1) >= Math.abs(e.y2 - e.y1);
   g.ctx.fillStyle = g.theme.text;
-  g.ctx.font = `${Math.max(9, 11)}px system-ui, sans-serif`;
+  g.ctx.font = canvasFont(11);
   g.ctx.textAlign = horizontal ? 'center' : 'left';
   g.ctx.textBaseline = 'middle';
   g.ctx.fillText(text, p.x, p.y);

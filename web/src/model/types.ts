@@ -31,10 +31,12 @@ export interface FieldDef {
   label: string;
   /** Unit suffix, formatted with engineering prefixes. */
   unit?: string;
-  type?: 'number' | 'choice' | 'bool';
+  type?: 'number' | 'choice' | 'bool' | 'text';
   choices?: { value: number; label: string }[];
   min?: number;
   max?: number;
+  /** Reads `e.text` rather than `e.params[name]`. Only meaningful for `text`. */
+  target?: 'param' | 'text';
 }
 
 /** Everything the app needs to know about an element type. */
@@ -95,7 +97,7 @@ export interface DrawContext {
   current: number;
   /** Voltage across the element. */
   voltage: number;
-  /** Advances with simulated time; drives the current-flow animation. */
+  /** Advances each animation frame; drives the current-flow animation. */
   dotPhase: number;
   showCurrent: boolean;
   showValues: boolean;

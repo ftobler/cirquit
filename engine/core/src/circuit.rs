@@ -133,6 +133,10 @@ impl Circuit {
         self.options = spec.options.clone().unwrap_or_default();
         self.warnings.clear();
         self.error = None;
+        // Rebuilding is the topology path: adding, deleting or moving an
+        // element renumbers nodes, so the state vector's meaning changes.
+        // Restarting from zero is deliberate, not an oversight; carrying old
+        // voltages across would be worse.
         self.ctx = SimCtx {
             time: 0.0,
             dt: self.options.time_step,
@@ -535,12 +539,16 @@ impl Circuit {
         }
     }
 
-    /// Live parameter edit from the UI. Returns false if the id is unknown.
+    /// Live parameter edit from the UI. Returns false if the id is unknown or
+    /// the element does not recognise the parameter name; the caller then has
+    /// to rebuild the whole circuit rather than silently drop the edit.
     pub fn set_param(&mut self, id: u32, name: &str, value: f64) -> bool {
         let Some(&ei) = self.id_index.get(&id) else {
             return false;
         };
-        self.elements[ei].set_param(name, value);
+        if !self.elements[ei].set_param(name, value) {
+            return false;
+        }
         self.restamp();
         true
     }

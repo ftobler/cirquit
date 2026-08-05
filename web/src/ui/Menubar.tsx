@@ -52,21 +52,6 @@ export function Menubar() {
     <header className="menubar">
       <strong className="brand">Circuit Simulator</strong>
 
-      <button type="button" className="primary" onClick={toggleRunning}>
-        {running ? 'Pause' : 'Run'}
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          // Reloading the netlist into itself is the simplest reset that also
-          // clears element state such as capacitor charge.
-          const text = toNetlist();
-          loadNetlist(text);
-        }}
-      >
-        Reset
-      </button>
-
       <span className="sep" />
 
       <button type="button" onClick={newCircuit}>
@@ -146,7 +131,24 @@ export function Menubar() {
         )}
       </div>
 
-      <span className="grow" />
+      <div className="run-group">
+        <button type="button" className="primary" onClick={toggleRunning} title="Run/Pause (Space)">
+          {running ? 'Pause' : 'Run'}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            // Reloading the netlist into itself is the simplest reset that also
+            // clears element state such as capacitor charge.
+            const text = toNetlist();
+            loadNetlist(text);
+          }}
+        >
+          Reset
+        </button>
+      </div>
+
+      <span className="sep" />
 
       <button type="button" onClick={() => setDark(!dark)} title="Toggle theme">
         {dark ? '☀' : '☾'}
