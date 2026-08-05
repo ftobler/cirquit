@@ -62,8 +62,9 @@ describe('rotateElement', () => {
     const a = element('opamp', 0, 0, 160, 0);
     const r = rotateElement(a);
     expect(r).toMatchObject({ x1: 80, y1: 80, x2: 80, y2: -80, flags: 1 });
-    // Inverting input lead rides the rigid quarter turn to the left flank.
-    expect(postsOf(r)[0]).toEqual({ x: 72, y: 80 });
+    // Inverting input lead rides the rigid quarter turn to the left flank, 16
+    // off the axis at the default size 2.
+    expect(postsOf(r)[0]).toEqual({ x: 64, y: 80 });
   });
 
   it('keeps the collector and emitter on the same side of a rotated transistor', () => {
@@ -107,9 +108,10 @@ describe('mirrorElement', () => {
     const a = element('opamp', 0, 0, 160, 0);
     const m = mirrorElement(a);
     expect(m).toMatchObject({ x1: 160, y1: 0, x2: 0, y2: 0 });
-    // Rigid mirror of the leads: inverting was above the axis, stays above.
-    expect(postsOf(m)[0]).toEqual({ x: 160, y: -8 });
-    expect(postsOf(m)[1]).toEqual({ x: 160, y: 8 });
+    // Rigid mirror of the leads: inverting was above the axis, stays above,
+    // at the default size 2 half separation of 16.
+    expect(postsOf(m)[0]).toEqual({ x: 160, y: -16 });
+    expect(postsOf(m)[1]).toEqual({ x: 160, y: 16 });
   });
 
   it('is a no-op on a part without a mirror', () => {

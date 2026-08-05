@@ -393,8 +393,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "amp-integ.txt",
@@ -402,8 +403,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "amp-invert.txt",
@@ -429,8 +431,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "amp-schmitt.txt",
@@ -1801,8 +1804,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "graycode.txt",
@@ -2857,8 +2861,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "phasecomp.txt",
@@ -3398,8 +3403,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "rossler.txt",

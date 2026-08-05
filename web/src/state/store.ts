@@ -457,7 +457,10 @@ export function makeElement(kind: string, x1: number, y1: number, x2: number, y2
     y1,
     x2,
     y2,
-    flags: 0,
+    // The per-kind default flags are part of the file format: a new voltage
+    // source must save FLAG_SHOW_VOLTAGE or upstream loads it with the value
+    // hidden, and so on. Unknown kinds default to 0.
+    flags: def?.defaultFlags ?? 0,
     params: { ...(def?.defaults ?? {}) },
     state: def?.interactive ? 0 : undefined,
   };

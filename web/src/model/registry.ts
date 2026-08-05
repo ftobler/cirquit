@@ -19,6 +19,7 @@ import {
   COIL_LOOPS,
   coilPoints,
   currentDots,
+  dsign,
   drawLeads,
   elementLength,
   endpoints,
@@ -32,19 +33,29 @@ import {
   voltageColor,
 } from '../render/draw';
 import type { CircuitElement, DrawContext, ElementDef, Point } from './types';
+import { GRID_SIZE } from './types';
 
-/** Perpendicular half-separation of op-amp inputs, from the original. */
-const OPAMP_HEIGHT = 8;
-const OPAMP_WIDTH = 13;
 /** Perpendicular offset of switch throws and transistor collector/emitter. */
 const OPEN_HS = 16;
 /**
  * File-format flag bit shared by the asymmetric parts: for the op-amp it swaps
  * the two input leads ("Swap Inputs" upstream), for the transistor it swaps
  * which side of the base-to-output axis the collector and emitter hang off
- * ("Swap E/C" upstream). Same bit, meaning per type.
+ * ("Swap E/C" upstream). Same bit, meaning per type. transform.ts flips it on
+ * rotate/mirror.
  */
 export const FLAG_SWAP = 1;
+const OPAMP_SWAP = FLAG_SWAP;   // OpAmpElm.java:28
+const OPAMP_SMALL = 2;          // OpAmpElm.java:29
+const OPAMP_GAIN = 8;           // OpAmpElm.java:31
+const TRANSISTOR_FLIP = FLAG_SWAP; // TransistorElm.java:44
+const POT_SHOW_VALUES = 1;      // PotElm.java:32
+const POT_FLIP = 2;             // PotElm.java:33
+const POT_FLIP_OFFSET = 4;      // PotElm.java:34
+const SWITCH2_CENTER_OFF = 1;   // Switch2Elm.java:30
+const VOLTAGE_SHOW_VOLTAGE = 16; // VoltageElm.java:32
+const PROBE_SHOW_VOLTAGE = 1;   // ProbeElm.java:30
+const PROBE_CIRCLE = 2;         // ProbeElm.java:31
 
 const twoPosts = (e: CircuitElement): Point[] => [
   { x: e.x1, y: e.y1 },
@@ -211,28 +222,30 @@ function drawSwitchBody(g: DrawContext, e: CircuitElement): void {
 }
 
 function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
-  const [, p2] = endpoints(e);
+  const [p1, p2] = endpoints(e);
   const [lead1, lead2] = opAmpBodyLeads(e);
   const posts = opAmpPosts(e);
-  const [inAnchor, nonAnchor] = opAmpInputAnchors(e);
-  const [minusAnchor, plusAnchor] = opAmpLabelAnchors(e);
+  const hs = opampInputSign(e, p1, p2);
 
   // Input leads run from the posts to the triangle base, so they never cross a
-  // mirrored body: the anchors carry the same flag-derived side as the posts.
-  line(g, posts[0], inAnchor, voltageColor(g, g.voltages[0]));
-  line(g, posts[1], nonAnchor, voltageColor(g, g.voltages[1]));
+  // swapped body: the anchors carry the same flag-derived side as the posts.
+  line(g, posts[0], interp(lead1, lead2, 0, hs), voltageColor(g, g.voltages[0]));
+  line(g, posts[1], interp(lead1, lead2, 0, -hs), voltageColor(g, g.voltages[1]));
   line(g, lead2, p2, voltageColor(g, g.voltages[2]));
 
-  const [t1, t2] = interp2(lead1, lead2, 0, opAmpInputOffset(e) * 2);
+  const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
   triangle(g, t1, t2, lead2, g.theme.panel);
   polyline(g, [t1, t2, lead2, t1], g.theme.wire, 2);
 
+  // The minus glyph sits on the inverting input, the plus on the other.
+  const minus = interp(lead1, lead2, 0.28, hs);
+  const plus = interp(lead1, lead2, 0.28, -hs);
   g.ctx.fillStyle = g.theme.text;
-  g.ctx.font = canvasFont(10);
+  g.ctx.font = canvasFont(opampSize(e) === 2 ? 14 : 10);  // OpAmpElm.java:139
   g.ctx.textAlign = 'center';
   g.ctx.textBaseline = 'middle';
-  g.ctx.fillText('−', minusAnchor.x, minusAnchor.y);
-  g.ctx.fillText('+', plusAnchor.x, plusAnchor.y);
+  g.ctx.fillText('−', minus.x, minus.y);
+  g.ctx.fillText('+', plus.x, plus.y);
   currentDots(g, lead2, p2, g.current);
 }
 
@@ -245,11 +258,12 @@ function drawTransistorBody(g: DrawContext, e: CircuitElement): void {
   // Base lead up to the vertical bar.
   const barCentre = interp(p1, p2, 0.72);
   line(g, p1, barCentre, baseColor);
+  // The bar straddles the axis; the sign only picks which endpoint is which.
   const [barTop, barBottom] = interp2(p1, p2, 0.72, OPEN_HS * 0.6);
   line(g, barTop, barBottom, baseColor, 3);
 
   // Collector and emitter leads leave the bar on their posts' side, so a
-  // mirrored body's leads do not cross over the symbol.
+  // flipped or mirrored body's leads do not cross over the symbol.
   const [c1, e1] = transistorBarContacts(e);
   line(g, c1, posts[1], voltageColor(g, g.voltages[1]));
   line(g, e1, posts[2], voltageColor(g, g.voltages[2]));
@@ -280,51 +294,71 @@ function drawPotBody(g: DrawContext, e: CircuitElement): void {
 // Multi-terminal geometry
 // ---------------------------------------------------------------------------
 
-/**
- * Upstream's `dsign`: sign of the axis direction, +1 for a part drawn right or
- * down, -1 for left or up. The hanging posts of an op-amp or transistor sit on
- * the side this picks, which is what keeps their terminal coordinates identical
- * to the original in every orientation, not just a right-pointing one.
- */
-function dsign(e: CircuitElement): number {
-  return e.y1 === e.y2 ? Math.sign(e.x2 - e.x1) : Math.sign(e.y2 - e.y1);
+/** Default op-amp geometry is size 2 (16/26); FLAG_SMALL selects the 8/13
+ *  small variant (OpAmpElm.java:113-118). */
+function opampSize(e: CircuitElement): number {
+  return (e.flags & OPAMP_SMALL) !== 0 ? 1 : 2;
+}
+
+function opampHeight(e: CircuitElement): number {
+  return 8 * opampSize(e);
+}
+
+function opampWidth(e: CircuitElement): number {
+  return 13 * opampSize(e);
 }
 
 /** The op-amp body's two lead stubs, base and apex of the triangle. */
 function opAmpBodyLeads(e: CircuitElement): [Point, Point] {
   const [p1, p2] = endpoints(e);
   const dn = elementLength(e);
-  const ww = Math.min(OPAMP_WIDTH, dn / 2);
+  const ww = Math.min(opampWidth(e), dn / 2);
   const f = (dn - ww * 2) / (2 * dn);
   return [interp(p1, p2, f), interp(p1, p2, 1 - f)];
 }
 
-/** Signed perpendicular offset of the inverting input, shared by the posts and
- *  the drawing so leads and labels track a mirrored body. */
-function opAmpInputOffset(e: CircuitElement): number {
-  return OPAMP_HEIGHT * dsign(e) * ((e.flags & FLAG_SWAP) !== 0 ? -1 : 1);
+/** Signed perpendicular offset of the inverting input: the size-scaled half
+ *  separation, oriented by `dsign`, then negated by FLAG_SWAP. Shared by the
+ *  posts and the drawing so leads and labels track a swapped body
+ *  (OpAmpElm.java:127-129). */
+export function opampInputSign(e: CircuitElement, p1: Point, p2: Point): number {
+  let hs = opampHeight(e) * dsign(p1, p2);
+  if ((e.flags & OPAMP_SWAP) !== 0) hs = -hs;
+  return hs;
 }
 
 /** Body points where the op-amp's input leads attach, inverting first, ordered
  *  like `opAmpPosts`. */
 export function opAmpInputAnchors(e: CircuitElement): [Point, Point] {
+  const [p1, p2] = endpoints(e);
   const [lead1, lead2] = opAmpBodyLeads(e);
-  return interp2(lead1, lead2, 0, opAmpInputOffset(e));
+  const hs = opampInputSign(e, p1, p2);
+  return [interp(lead1, lead2, 0, hs), interp(lead1, lead2, 0, -hs)];
 }
 
 /** Centres of the minus and plus glyphs, inverting and non-inverting sides. */
 export function opAmpLabelAnchors(e: CircuitElement): [Point, Point] {
+  const [p1, p2] = endpoints(e);
   const [lead1, lead2] = opAmpBodyLeads(e);
-  const hs = opAmpInputOffset(e);
+  const hs = opampInputSign(e, p1, p2);
   return [interp(lead1, lead2, 0.28, hs), interp(lead1, lead2, 0.28, -hs)];
 }
 
+function opAmpPosts(e: CircuitElement): Point[] {
+  const [p1, p2] = endpoints(e);
+  const [inverting, nonInverting] = interp2(p1, p2, 0, opampInputSign(e, p1, p2));
+  return [inverting, nonInverting, p2];
+}
+
 /** Signed side factor for the transistor's collector and emitter, combining
- *  pnp, the axis direction and FLAG_SWAP ("Swap E/C" upstream) exactly as the
- *  original does. */
+ *  the pnp sign, `dsign` and FLAG_FLIP exactly as the original does
+ *  (TransistorElm.java:218-220, `hs2 = hs*dsign*pnp`). */
 export function transistorSideFactor(e: CircuitElement): number {
+  const [p1, p2] = endpoints(e);
+  let d = dsign(p1, p2);
+  if ((e.flags & TRANSISTOR_FLIP) !== 0) d = -d;
   const pnp = (e.params.pnp ?? 1) === -1 ? -1 : 1;
-  return pnp * dsign(e) * ((e.flags & FLAG_SWAP) !== 0 ? -1 : 1);
+  return d * pnp;
 }
 
 /** Points on the base bar where the collector and emitter leads attach,
@@ -334,30 +368,51 @@ export function transistorBarContacts(e: CircuitElement): [Point, Point] {
   return interp2(p1, p2, 0.72, OPEN_HS * 0.6 * transistorSideFactor(e));
 }
 
-function opAmpPosts(e: CircuitElement): Point[] {
-  const [p1, p2] = endpoints(e);
-  const [inverting, nonInverting] = interp2(p1, p2, 0, opAmpInputOffset(e));
-  return [inverting, nonInverting, p2];
-}
-
 function transistorPosts(e: CircuitElement): Point[] {
   const [p1, p2] = endpoints(e);
-  const [coll, emit] = interp2(p1, p2, 1, OPEN_HS * transistorSideFactor(e));
+  let d = dsign(p1, p2);
+  if ((e.flags & TRANSISTOR_FLIP) !== 0) d = -d;
+  const pnp = (e.params.pnp ?? 1) === -1 ? -1 : 1;
+  const [coll, emit] = interp2(p1, p2, 1, OPEN_HS * d * pnp);
   return [p1, coll, emit];
 }
 
+/**
+ * Replicates `PotElm.setPoints` (PotElm.java:184-209): the far post snaps to
+ * the dominant axis and, on a drag, the wiper offset comes from the perpendicular
+ * drag delta instead of a fixed side. The file stores the dragged x2,y2 while
+ * the posts use the normalized endpoint, exactly like upstream.
+ */
 function potPosts(e: CircuitElement): Point[] {
   const [p1, p2] = endpoints(e);
-  const wiper = interp(p1, p2, 0.5, -OPEN_HS);
-  return [p1, p2, wiper];
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  let end = p2;
+  let offset = 0;
+  if (Math.abs(dx) > Math.abs(dy) !== ((e.flags & POT_FLIP) !== 0)) {
+    const myLen = 2 * GRID_SIZE * Math.sign(dx) * Math.ceil(Math.abs(dx) / (2 * GRID_SIZE));
+    end = { x: p1.x + myLen, y: p1.y };  // PotElm.java:190-192
+    offset = dx < 0 ? dy : -dy;          // PotElm.java:191
+  } else {
+    const myLen = 2 * GRID_SIZE * Math.sign(dy) * Math.ceil(Math.abs(dy) / (2 * GRID_SIZE));
+    if (dy !== 0) {
+      end = { x: p1.x, y: p1.y + myLen };  // PotElm.java:196-197
+      offset = dy > 0 ? dx : -dx;          // PotElm.java:197
+    }
+  }
+  if (offset === 0)
+    offset = (e.flags & POT_FLIP_OFFSET) !== 0 ? -GRID_SIZE : GRID_SIZE;  // PotElm.java:201-202
+  return [p1, end, interp(p1, end, 0.5, offset)];  // post3, PotElm.java:209
 }
 
 function switch2Posts(e: CircuitElement): Point[] {
   const [p1, p2] = endpoints(e);
   const throws = Math.max(2, e.params.throwCount ?? 2);
   const posts: Point[] = [p1];
+  // Upstream uses Java integer division here (Switch2Elm.java:76), so the
+  // spacing stays grid-aligned for every even throw count.
   for (let i = 0; i < throws; i++) {
-    const hs = i === 0 && throws === 2 ? OPEN_HS : -OPEN_HS * (i - (throws - 1) / 2);
+    const hs = i === 0 && throws === 2 ? OPEN_HS : -OPEN_HS * (i - Math.floor((throws - 1) / 2));
     posts.push(interp(p1, p2, 1, hs));
   }
   return posts;
@@ -375,7 +430,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'w',
     postCount: 2,
     posts: twoPosts,
-    defaultLength: 2,
+    defaultLength: 4,  // 64 px, upstream's default getDragLength()
     draw(g, e) {
       const [p1, p2] = endpoints(e);
       line(g, p1, p2, voltageColor(g, g.voltages[0]));
@@ -389,6 +444,8 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'g',
     postCount: 1,
     posts: onePost,
+    vertical: true,   // GroundElm.java:36, always placed vertically
+    defaultLength: 2, // 32 px, GroundElm.java:140
     parse: (t, e) => readParams(t, e, ['symbolType']),
     dump: writeParams(['symbolType']),
     draw: drawGroundSymbol,
@@ -446,6 +503,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     postCount: 3,
     posts: potPosts,
     canMirror: true,
+    defaultFlags: POT_SHOW_VALUES,  // PotElm.java:51
     defaults: { maxResistance: 1000, position: 0.5 },
     parse: (t, e) => readParams(t, e, ['maxResistance', 'position']),
     dump: (e) => [e.params.maxResistance ?? 1000, e.params.position ?? 0.5, e.text ?? 'Resistance'],
@@ -462,6 +520,9 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'v',
     postCount: 2,
     posts: twoPosts,
+    vertical: true,       // VoltageElm.java:93
+    defaultLength: 4,     // 64 px, default getDragLength()
+    defaultFlags: VOLTAGE_SHOW_VOLTAGE,
     defaults: { waveform: 0, frequency: 40, maxVoltage: 5, bias: 0, phaseShift: 0, dutyCycle: 0.5 },
     parse: (t, e) =>
       readParams(t, e, ['waveform', 'frequency', 'maxVoltage', 'bias', 'phaseShift', 'dutyCycle']),
@@ -499,6 +560,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'R',
     postCount: 1,
     posts: onePost,
+    defaultFlags: VOLTAGE_SHOW_VOLTAGE,  // RailElm.java:23-24, inherits the voltage source flag
     defaults: { waveform: 0, frequency: 40, maxVoltage: 5, bias: 0, phaseShift: 0, dutyCycle: 0.5 },
     parse: (t, e) =>
       readParams(t, e, ['waveform', 'frequency', 'maxVoltage', 'bias', 'phaseShift', 'dutyCycle']),
@@ -574,6 +636,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     postCount: 3,
     posts: transistorPosts,
     canMirror: true,
+    noDiagonal: true,  // TransistorElm.java:80
     defaults: { pnp: 1, beta: 100 },
     // The file sign is the type: +1 is NPN, -1 is PNP, and the optional 5th
     // token is the model name. A non-negative pnp (including the legacy 0
@@ -642,6 +705,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     postCount: 3,
     posts: switch2Posts,
     interactive: true,
+    noDiagonal: true,  // Switch2Elm.java:35,51
     defaults: { position: 0, throwCount: 2 },
     parse: (t, e) => {
       const p = t[0];
@@ -667,8 +731,16 @@ export const ELEMENT_DEFS: ElementDef[] = [
         line(g, interp(p1, p2, 0.75, 0), p, voltageColor(g, g.voltages[i + 1]));
         circle(g, interp(p1, p2, 0.75, 0), 2, g.theme.wire, true, 1);
       });
-      line(g, lead1, posts[sel], voltageColor(g, g.voltages[0]));
-      currentDots(g, p1, posts[sel], g.current);
+      // Center-off is the open middle position: the lever rests on the pole
+      // where the throws fan out rather than on a throw, so `posts[sel]`
+      // would be out of range (Switch2Elm.java:82,108-109).
+      const centerOff =
+        (e.flags & SWITCH2_CENTER_OFF) !== 0 &&
+        (e.params.throwCount ?? 2) === 2 &&
+        (e.state ?? 0) === 2;
+      const tip = centerOff ? interp(p1, p2, 0.75) : posts[Math.min(sel, posts.length - 1)];
+      line(g, lead1, tip, voltageColor(g, g.voltages[0]));
+      if (!centerOff) currentDots(g, p1, tip, g.current);
     },
   },
   {
@@ -679,6 +751,8 @@ export const ELEMENT_DEFS: ElementDef[] = [
     postCount: 3,
     posts: opAmpPosts,
     canMirror: true,
+    noDiagonal: true,  // OpAmpElm.java:34
+    defaultFlags: OPAMP_GAIN,  // OpAmpElm.java:38,40
     defaults: { maxOut: 15, minOut: -15, gain: 100000 },
     parse: (t, e) => readParams(t, e, ['maxOut', 'minOut', 'gbw', 'volts0', 'volts1', 'gain']),
     dump: (e) => [
@@ -752,6 +826,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'p',
     postCount: 2,
     posts: twoPosts,
+    defaultFlags: PROBE_SHOW_VOLTAGE | PROBE_CIRCLE,  // ProbeElm.java:52
     parse: (t, e) => readParams(t, e, ['meter', 'scale', 'resistance']),
     dump: writeParams(['meter', 'scale', 'resistance']),
     draw(g, e) {
@@ -775,20 +850,21 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'x',
     postCount: 1,
     posts: onePost,
+    defaults: { size: 24 },  // TextElm.java:44
     fields: [
       { name: 'text', label: 'Text', type: 'text', target: 'text' },
       { name: 'size', label: 'Size', unit: 'px' },
     ],
     parse: (t, e) => {
-      e.params.size = Number(t[0]) || 12;
+      e.params.size = Number(t[0]) || 24;
       e.text = t.slice(1).join(' ');
     },
-    dump: (e) => [e.params.size ?? 12, e.text ?? ''],
+    dump: (e) => [e.params.size ?? 24, e.text ?? ''],
     draw(g, e) {
       g.ctx.fillStyle = g.selected ? g.theme.selection : g.theme.text;
       // A zero or negative size would make an invalid font string and blank
       // the whole frame's drawing, so clamp at one pixel.
-      g.ctx.font = canvasFont(Math.max(1, e.params.size ?? 12));
+      g.ctx.font = canvasFont(Math.max(1, e.params.size ?? 24));
       g.ctx.textAlign = 'left';
       g.ctx.textBaseline = 'middle';
       g.ctx.fillText(e.text ?? '', e.x1, e.y1);

@@ -263,7 +263,11 @@ export function CircuitCanvas({ engine }: Props) {
       const y = snap(p.y);
       const def = defFor(state.tool);
       const len = (def?.defaultLength ?? 0) * GRID_SIZE;
-      const id = state.addElement(makeElement(state.tool, x, y, x + len, y));
+      // Grounds and voltage sources drop vertically, the rest horizontally,
+      // matching upstream's getDragVertical override.
+      const x2 = def?.vertical ? x : x + len;
+      const y2 = def?.vertical ? y + len : y;
+      const id = state.addElement(makeElement(state.tool, x, y, x2, y2));
       dragRef.current = { mode: 'place', start: { x, y }, id };
       state.select([id]);
       return;
@@ -319,9 +323,16 @@ export function CircuitCanvas({ engine }: Props) {
         break;
       }
       case 'place': {
-        const x = snap(p.x);
-        const y = snap(p.y);
-        state.updateElement(drag.id, { x2: x, y2: y });
+        let x2 = snap(p.x);
+        let y2 = snap(p.y);
+        const def = state.tool ? defFor(state.tool) : undefined;
+        if (def?.noDiagonal) {
+          // Upstream snaps the drag to the dominant axis, so a transistor,
+          // op-amp or SPDT cannot end up diagonal (CircuitElm.java:560-566).
+          if (Math.abs(x2 - drag.start.x) < Math.abs(y2 - drag.start.y)) x2 = drag.start.x;
+          else y2 = drag.start.y;
+        }
+        state.updateElement(drag.id, { x2, y2 });
         break;
       }
       case 'move': {

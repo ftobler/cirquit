@@ -67,6 +67,15 @@ export interface ElementDef {
   interactive?: boolean;
   /** Default length in grid units when dragged out from the toolbox. */
   defaultLength?: number;
+  /** Elements upstream forces vertical on toolbar placement (ground, voltage). */
+  vertical?: boolean;
+  /** Elements whose placement drag snaps to the dominant axis, so a
+   *  transistor, op-amp or SPDT can never be drawn diagonal. */
+  noDiagonal?: boolean;
+  /** File-format flags a freshly created element saves, matching the upstream
+   *  constructor defaults (e.g. `FLAG_SHOW_VOLTAGE` on a new voltage source).
+   *  Absent means 0. */
+  defaultFlags?: number;
   /** Whether Mirror is offered. Default false: most bodies are symmetric, and
    *  a two-post part mirrored about its own centre is just a swap, which has
    *  its own command. Rotation needs no flag, being defined for every element

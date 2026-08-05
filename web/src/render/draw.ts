@@ -15,9 +15,24 @@ export function canvasFont(px: number): string {
 }
 
 /**
+ * Upstream's `dsign` (CircuitElm.java:335): sign of the axis direction, +1 for
+ * a part drawn right or down, -1 for left or up. The hanging posts of an
+ * op-amp or transistor sit on the side this picks, which is what keeps their
+ * terminal coordinates identical to the original in every orientation.
+ */
+export function dsign(a: Point, b: Point): number {
+  return b.y === a.y ? Math.sign(b.x - a.x) : Math.sign(b.y - a.y);
+}
+
+/**
  * Point along `a -> b` at fraction `f`, displaced `g` units perpendicular to
  * the line. Coordinates are rounded, so terminals land exactly on the grid and
  * two elements meeting at a post always agree on the pixel.
+ *
+ * The `+ .48` is upstream's half-point floor (CircuitElm.java:404-405,
+ * :420-421), not a rounding bug: a raw coordinate of exactly x.5 lands on x,
+ * the integer below, where `Math.round` would nudge it to x+1 and move the
+ * post off the grid orientation the original tooling snapped to.
  */
 export function interp(a: Point, b: Point, f: number, g = 0): Point {
   let px = b.y - a.y;
@@ -27,8 +42,8 @@ export function interp(a: Point, b: Point, f: number, g = 0): Point {
   px /= r;
   py /= r;
   return {
-    x: Math.round(a.x + f * (b.x - a.x) + g * px),
-    y: Math.round(a.y + f * (b.y - a.y) + g * py),
+    x: Math.floor(a.x + f * (b.x - a.x) + g * px + 0.48),
+    y: Math.floor(a.y + f * (b.y - a.y) + g * py + 0.48),
   };
 }
 

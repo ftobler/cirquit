@@ -275,18 +275,18 @@ describe('text element', () => {
     expect(again.text).toBe('µ 5 Ω hér');
   });
 
-  it('defaults a missing size token to 12', () => {
+  it('defaults a missing size token to 24, the upstream constructor size', () => {
     const { e } = roundTrip('x 100 200 0 0 0');
-    expect(e.params.size).toBe(12);
+    expect(e.params.size).toBe(24);
     expect(e.text).toBe('');
   });
 
-  it('treats a size of 0 in a file as 12', () => {
+  it('treats a size of 0 in a file as 24', () => {
     const { e, elementLine } = roundTrip('x 100 200 0 0 0 0 hello');
-    expect(e.params.size).toBe(12);
+    expect(e.params.size).toBe(24);
     expect(e.text).toBe('hello');
     // The clamp at draw time must not change the file format.
-    expect(elementLine).toBe('x 100 200 0 0 0 12 hello');
+    expect(elementLine).toBe('x 100 200 0 0 0 24 hello');
   });
 });
 

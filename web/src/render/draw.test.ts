@@ -7,6 +7,7 @@ import {
   COIL_LOOPS,
   coilPoints,
   currentDots,
+  dsign,
   formatValue,
   interp,
   interp2,
@@ -66,6 +67,35 @@ describe('geometry', () => {
     const [l1, l2] = calcLeads(element(0, 0, 10, 0), 32);
     expect(l1).toEqual({ x: 0, y: 0 });
     expect(l2).toEqual({ x: 10, y: 0 });
+  });
+});
+
+describe('interp rounding', () => {
+  it('rounds an exact half-fraction toward the integer below', () => {
+    // Upstream floors x + .48 (CircuitElm.java:404-405), so a raw 1.5 lands
+    // on 1, where Math.round would give 2.
+    expect(interp({ x: 0, y: 0 }, { x: 3, y: 0 }, 0.5)).toEqual({ x: 1, y: 0 });
+  });
+
+  it('rounds a negative half-fraction down as well', () => {
+    // floor(-1.5 + .48) = floor(-1.02) = -2.
+    expect(interp({ x: 0, y: 0 }, { x: -3, y: 0 }, 0.5)).toEqual({ x: -2, y: 0 });
+  });
+
+  it('keeps the existing geometry exact under the new rounding mode', () => {
+    expect(interp({ x: 0, y: 0 }, { x: 100, y: 0 }, 0.5, 10)).toEqual({ x: 50, y: -10 });
+    const [l1, l2] = calcLeads(element(0, 0, 100, 0), 32);
+    expect(l1).toEqual({ x: 34, y: 0 });
+    expect(l2).toEqual({ x: 66, y: 0 });
+  });
+});
+
+describe('dsign', () => {
+  it('is +1 for a part drawn right or down, -1 for left or up', () => {
+    expect(dsign({ x: 0, y: 0 }, { x: 32, y: 0 })).toBe(1);
+    expect(dsign({ x: 0, y: 0 }, { x: -32, y: 0 })).toBe(-1);
+    expect(dsign({ x: 0, y: 0 }, { x: 0, y: 32 })).toBe(1);
+    expect(dsign({ x: 0, y: 0 }, { x: 0, y: -32 })).toBe(-1);
   });
 });
 

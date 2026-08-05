@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, GRID_SIZE, type CircuitElement, type SimSettings } fr
 import { postsOf } from '../model/registry';
 import { parseCircuit } from '../io/netlist';
 import { postPatch } from '../render/geometry';
-import { useStore, hasUnsavedChanges } from './store';
+import { hasUnsavedChanges, makeElement, useStore } from './store';
 
 /** A pristine store, matching the initialiser in store.ts. */
 const fresh = () => ({
@@ -57,6 +57,27 @@ const dropId = (e: CircuitElement) => {
   void id;
   return rest;
 };
+
+describe('creation defaults', () => {
+  it('new elements save the upstream default flags', () => {
+    // A new part must round-trip to upstream with its features on: without
+    // these, upstream loads the file with FLAG_SHOW_VOLTAGE, FLAG_SHOW_VALUES,
+    // FLAG_SHOWVOLTAGE|FLAG_CIRCLE and FLAG_GAIN all off.
+    expect(makeElement('voltage', 0, 0, 0, 64).flags).toBe(16);
+    expect(makeElement('rail', 0, 0, 0, 64).flags).toBe(16);
+    expect(makeElement('potentiometer', 0, 0, 32, 0).flags).toBe(1);
+    expect(makeElement('probe', 0, 0, 32, 0).flags).toBe(3);
+    expect(makeElement('opamp', 0, 0, 26, 0).flags).toBe(8);
+    // Everything else creates with flags 0.
+    expect(makeElement('resistor', 0, 0, 32, 0).flags).toBe(0);
+    expect(makeElement('transistor', 0, 0, 32, 0).flags).toBe(0);
+    expect(makeElement('switch2', 0, 0, 32, 0).flags).toBe(0);
+  });
+
+  it('creates text at the upstream size of 24', () => {
+    expect(makeElement('decoration', 0, 0, 0, 0).params.size).toBe(24);
+  });
+});
 
 describe('value edits go through the fast path', () => {
   it('setParam bumps paramRevision and not revision', () => {
