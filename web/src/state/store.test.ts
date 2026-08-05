@@ -15,7 +15,6 @@ const fresh = () => ({
   running: true,
   tool: null,
   view: { x: 0, y: 0, scale: 1 },
-  dark: true,
   status: '',
   problem: null,
   undoStack: [],

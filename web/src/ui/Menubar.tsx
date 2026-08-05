@@ -17,8 +17,6 @@ function download(filename: string, text: string): void {
 export function Menubar() {
   const running = useStore((s) => s.running);
   const toggleRunning = useStore((s) => s.toggleRunning);
-  const dark = useStore((s) => s.dark);
-  const setDark = useStore((s) => s.setDark);
   const newCircuit = useStore((s) => s.newCircuit);
   const loadNetlist = useStore((s) => s.loadNetlist);
   const toNetlist = useStore((s) => s.toNetlist);
@@ -147,12 +145,6 @@ export function Menubar() {
           Reset
         </button>
       </div>
-
-      <span className="sep" />
-
-      <button type="button" onClick={() => setDark(!dark)} title="Toggle theme">
-        {dark ? '☀' : '☾'}
-      </button>
     </header>
   );
 }

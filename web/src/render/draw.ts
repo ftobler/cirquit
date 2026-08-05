@@ -306,34 +306,19 @@ export function label(g: DrawContext, e: CircuitElement, text: string, offset = 
   g.ctx.fillText(text, p.x, p.y);
 }
 
-export function makeTheme(dark: boolean): Theme {
-  return dark
-    ? {
-        background: '#0d1117',
-        grid: '#1b2230',
-        wire: '#c9d1d9',
-        text: '#8b949e',
-        selection: '#58a6ff',
-        highlight: '#f0883e',
-        negative: '#ff5555',
-        neutral: '#6e7781',
-        positive: '#3fb950',
-        currentDot: '#ffd866',
-        panel: '#161b22',
-        border: '#30363d',
-      }
-    : {
-        background: '#ffffff',
-        grid: '#eaeef2',
-        wire: '#24292f',
-        text: '#57606a',
-        selection: '#0969da',
-        highlight: '#bc4c00',
-        negative: '#cf222e',
-        neutral: '#8c959f',
-        positive: '#1a7f37',
-        currentDot: '#9a6700',
-        panel: '#f6f8fa',
-        border: '#d0d7de',
-      };
+export function makeTheme(): Theme {
+  return {
+    background: '#0d1117',
+    grid: '#1b2230',
+    wire: '#c9d1d9',
+    text: '#8b949e',
+    selection: '#58a6ff',
+    highlight: '#f0883e',
+    negative: '#ff5555',
+    neutral: '#6e7781',
+    positive: '#3fb950',
+    currentDot: '#ffd866',
+    panel: '#161b22',
+    border: '#30363d',
+  };
 }

@@ -20,7 +20,6 @@ const UNIT: Record<string, string> = { voltage: 'V', current: 'A', power: 'W' };
 
 function ScopeTrace({ engine, scopeId, title }: { engine: SimEngine | null; scopeId: number; title: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dark = useStore((s) => s.dark);
 
   useEffect(() => {
     let raf = 0;
@@ -37,7 +36,7 @@ function ScopeTrace({ engine, scopeId, title }: { engine: SimEngine | null; scop
       if (!ctx) return;
 
       const index = engine.scopeIndexOf(scopeId);
-      const theme = makeTheme(dark);
+      const theme = makeTheme();
       const dpr = window.devicePixelRatio || 1;
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
@@ -90,7 +89,7 @@ function ScopeTrace({ engine, scopeId, title }: { engine: SimEngine | null; scop
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [engine, scopeId, title, dark]);
+  }, [engine, scopeId, title]);
 
   return <canvas ref={canvasRef} className="scope-canvas" />;
 }

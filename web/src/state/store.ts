@@ -38,7 +38,6 @@ interface AppState {
   /** Element kind currently armed for placement; null means select mode. */
   tool: string | null;
   view: ViewTransform;
-  dark: boolean;
   status: string;
   /** Set when the engine reports a problem. */
   problem: string | null;
@@ -61,7 +60,6 @@ interface AppState {
   toggleRunning(): void;
   setTool(tool: string | null): void;
   setView(view: ViewTransform): void;
-  setDark(dark: boolean): void;
   setStatus(status: string): void;
   setProblem(problem: string | null): void;
   updateSettings(patch: Partial<SimSettings>): void;
@@ -128,10 +126,6 @@ export const useStore = create<AppState>((set, get) => ({
   running: true,
   tool: null,
   view: { x: 0, y: 0, scale: 1 },
-  dark:
-    typeof window !== 'undefined'
-      ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true)
-      : true,
   status: '',
   problem: null,
   undoStack: [],
@@ -147,7 +141,6 @@ export const useStore = create<AppState>((set, get) => ({
   toggleRunning: () => set((s) => ({ running: !s.running })),
   setTool: (tool) => set({ tool }),
   setView: (view) => set({ view }),
-  setDark: (dark) => set({ dark }),
   setStatus: (status) => set({ status }),
   setProblem: (problem) => set({ problem }),
 

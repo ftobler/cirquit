@@ -88,7 +88,7 @@ export function CircuitCanvas({ engine }: Props) {
       lastFrameRef.current = now;
 
       const state = stateRef.current;
-      const { elements, settings, view, selectedIds, dark, running, scopes } = state;
+      const { elements, settings, view, selectedIds, running, scopes } = state;
 
       // Reload the engine whenever the netlist changed.
       if (engine && loadedRevision.current !== state.revision) {
@@ -155,7 +155,7 @@ export function CircuitCanvas({ engine }: Props) {
         canvas.height = height * dpr;
       }
 
-      const theme = makeTheme(dark);
+      const theme = makeTheme();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = theme.background;
       ctx.fillRect(0, 0, width, height);

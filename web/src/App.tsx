@@ -22,7 +22,6 @@ o 2 64 0 4099
 export default function App() {
   const [engine, setEngine] = useState<SimEngine | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
-  const dark = useStore((s) => s.dark);
   const status = useStore((s) => s.status);
   const loadNetlist = useStore((s) => s.loadNetlist);
 
@@ -42,10 +41,6 @@ export default function App() {
       cancelled = true;
     };
   }, [loadNetlist]);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  }, [dark]);
 
   // Keyboard shortcuts.
   useEffect(() => {

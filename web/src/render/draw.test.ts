@@ -323,7 +323,7 @@ describe('current dots', () => {
 
   const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext => ({
     ctx,
-    theme: makeTheme(false),
+    theme: makeTheme(),
     voltages: [],
     current: 1e-3,
     voltage: 0,
