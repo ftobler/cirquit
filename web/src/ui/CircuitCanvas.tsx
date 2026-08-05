@@ -96,6 +96,10 @@ export function CircuitCanvas({ engine }: Props) {
   useEffect(() => {
     let raf = 0;
 
+    // This loop redraws every frame, so a first frame painted in the fallback
+    // face is replaced as soon as Roboto lands; no document.fonts.ready
+    // invalidation is needed. If this ever becomes a draw-on-demand renderer,
+    // the redraw has to be triggered from document.fonts.ready.
     const frame = () => {
       raf = requestAnimationFrame(frame);
       const canvas = canvasRef.current;

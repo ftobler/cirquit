@@ -14,6 +14,7 @@ import {
   arrowHead,
   bodyRect,
   calcLeads,
+  canvasFont,
   circle,
   COIL_LOOPS,
   coilPoints,
@@ -104,7 +105,7 @@ function drawWaveformGlyph(g: DrawContext, centre: Point, waveform: number, r: n
   if (waveform === 0) {
     // DC: a plus toward the positive terminal and a minus toward the other.
     g.ctx.fillStyle = color;
-    g.ctx.font = '11px system-ui, sans-serif';
+    g.ctx.font = canvasFont(11);
     g.ctx.textAlign = 'center';
     g.ctx.textBaseline = 'middle';
     g.ctx.fillText('+', centre.x, centre.y - r * 0.45);
@@ -221,7 +222,7 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
   polyline(g, [t1, t2, lead2, t1], g.theme.wire, 2);
 
   g.ctx.fillStyle = g.theme.text;
-  g.ctx.font = '10px system-ui, sans-serif';
+  g.ctx.font = canvasFont(10);
   g.ctx.textAlign = 'center';
   g.ctx.textBaseline = 'middle';
   const m = interp(lead1, lead2, 0.28, OPAMP_HEIGHT);
@@ -457,7 +458,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
       const [a, b] = interp2(p1, p2, 0.6, 10);
       line(g, a, b, color, 3);
       g.ctx.fillStyle = g.theme.text;
-      g.ctx.font = '10px system-ui, sans-serif';
+      g.ctx.font = canvasFont(10);
       g.ctx.textAlign = 'center';
       g.ctx.textBaseline = 'bottom';
       const t = interp(p1, p2, 1.0);
@@ -630,7 +631,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     draw(g, e) {
       const p = { x: e.x1, y: e.y1 };
       const text = e.text ?? '';
-      g.ctx.font = '11px system-ui, sans-serif';
+      g.ctx.font = canvasFont(11);
       const w = g.ctx.measureText(text).width + 10;
       g.ctx.fillStyle = g.theme.panel;
       g.ctx.strokeStyle = g.selected ? g.theme.selection : voltageColor(g, g.voltages[0]);
@@ -658,7 +659,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
       const p = { x: e.x1, y: e.y1 };
       circle(g, p, 4, voltageColor(g, g.voltages[0]), false, 2);
       g.ctx.fillStyle = g.theme.text;
-      g.ctx.font = '11px system-ui, sans-serif';
+      g.ctx.font = canvasFont(11);
       g.ctx.textAlign = 'left';
       g.ctx.textBaseline = 'middle';
       g.ctx.fillText(formatValue(g.voltages[0] ?? 0, 'V'), p.x + 8, p.y);
@@ -680,7 +681,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
       const mid = interp(lead1, lead2, 0.5);
       circle(g, mid, 9, g.theme.wire, false, 1.5);
       g.ctx.fillStyle = g.theme.text;
-      g.ctx.font = '9px system-ui, sans-serif';
+      g.ctx.font = canvasFont(9);
       g.ctx.textAlign = 'center';
       g.ctx.textBaseline = 'middle';
       g.ctx.fillText('V', mid.x, mid.y);
@@ -701,7 +702,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dump: (e) => [e.params.size ?? 12, e.text ?? ''],
     draw(g, e) {
       g.ctx.fillStyle = g.selected ? g.theme.selection : g.theme.text;
-      g.ctx.font = `${e.params.size ?? 12}px system-ui, sans-serif`;
+      g.ctx.font = canvasFont(e.params.size ?? 12);
       g.ctx.textAlign = 'left';
       g.ctx.textBaseline = 'middle';
       g.ctx.fillText(e.text ?? '', e.x1, e.y1);

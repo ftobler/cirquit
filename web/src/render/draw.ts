@@ -4,6 +4,17 @@ import type { CircuitElement, DrawContext, Point, Theme } from '../model/types';
 import { DOT_SPACING, TOO_FAST } from './dots';
 
 /**
+ * Canvas text stack. A 2D context inherits nothing from CSS, so the family has
+ * to be repeated here; keep it in step with the body rule in styles.css.
+ */
+export const CANVAS_FONT_FAMILY = "'Roboto Variable', Roboto, system-ui, sans-serif";
+
+/** Builds a canvas `font` string at a given pixel size. */
+export function canvasFont(px: number): string {
+  return `${px}px ${CANVAS_FONT_FAMILY}`;
+}
+
+/**
  * Point along `a -> b` at fraction `f`, displaced `g` units perpendicular to
  * the line. Coordinates are rounded, so terminals land exactly on the grid and
  * two elements meeting at a post always agree on the pixel.
@@ -289,7 +300,7 @@ export function label(g: DrawContext, e: CircuitElement, text: string, offset = 
   const p = interp(p1, p2, 0.5, offset);
   const horizontal = Math.abs(e.x2 - e.x1) >= Math.abs(e.y2 - e.y1);
   g.ctx.fillStyle = g.theme.text;
-  g.ctx.font = `${Math.max(9, 11)}px system-ui, sans-serif`;
+  g.ctx.font = canvasFont(11);
   g.ctx.textAlign = horizontal ? 'center' : 'left';
   g.ctx.textBaseline = 'middle';
   g.ctx.fillText(text, p.x, p.y);

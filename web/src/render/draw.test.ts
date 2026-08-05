@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import {
   calcLeads,
+  CANVAS_FONT_FAMILY,
+  canvasFont,
   COIL_LOOPS,
   coilPoints,
   currentDots,
@@ -345,5 +348,48 @@ describe('current dots', () => {
     currentDots(context(ctx, 2), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
     expect(calls).toContain('arc');
     expect(calls).not.toContain('stroke');
+  });
+});
+
+describe('canvas font', () => {
+  it('composes a font string at a given size', () => {
+    expect(canvasFont(11)).toBe(`11px ${CANVAS_FONT_FAMILY}`);
+  });
+
+  it('names Roboto in the family', () => {
+    expect(canvasFont(10)).toContain('Roboto');
+  });
+
+  it('keeps a generic sans-serif fallback', () => {
+    // A canvas font string with no generic fallback is silently ignored by
+    // some browsers.
+    expect(CANVAS_FONT_FAMILY).toMatch(/sans-serif$/);
+  });
+
+  // The source scan reads files off disk, which the node vitest environment
+  // permits; paths resolve from this file's URL so the check works no matter
+  // where vitest is invoked from.
+  it('keeps raw font families out of every call site', async () => {
+    const files: Record<string, string> = {
+      draw: new URL('./draw.ts', import.meta.url).pathname,
+      registry: new URL('../model/registry.ts', import.meta.url).pathname,
+      scope: new URL('../ui/ScopePanel.tsx', import.meta.url).pathname,
+    };
+    const offenders: string[] = [];
+    for (const [name, path] of Object.entries(files)) {
+      const src = await readFile(path, 'utf8');
+      for (const [i, line] of src.split('\n').entries()) {
+        // The canvasFont definition itself is the one allowed builder.
+        if (/\.font\s*=\s*[`'"]/.test(line) && !line.includes('canvasFont')) {
+          offenders.push(`${name}:${i + 1}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps the CSS body shorthand in step with the canvas family', async () => {
+    const css = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/font:\s*[^;}]*Roboto/);
   });
 });

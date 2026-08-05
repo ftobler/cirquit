@@ -9,7 +9,7 @@
 import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
-import { formatValue, makeTheme } from '../render/draw';
+import { canvasFont, formatValue, makeTheme } from '../render/draw';
 import { useStore } from '../state/store';
 
 interface Props {
@@ -24,6 +24,11 @@ function ScopeTrace({ engine, scopeId, title }: { engine: SimEngine | null; scop
 
   useEffect(() => {
     let raf = 0;
+
+    // This loop redraws every frame, so a first frame painted in the fallback
+    // face is replaced as soon as Roboto lands; no document.fonts.ready
+    // invalidation is needed. If this ever becomes a draw-on-demand renderer,
+    // the redraw has to be triggered from document.fonts.ready.
     const draw = () => {
       raf = requestAnimationFrame(draw);
       const canvas = canvasRef.current;
@@ -78,7 +83,7 @@ function ScopeTrace({ engine, scopeId, title }: { engine: SimEngine | null; scop
       ctx.stroke();
 
       ctx.fillStyle = theme.text;
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = canvasFont(10);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillText(`${title}  ±${formatValue(peak)}`, 4, 3);
