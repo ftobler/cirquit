@@ -507,8 +507,8 @@ fn switch_can_be_toggled_at_runtime() {
     c.run(5);
     assert!(close(c.element_currents()[1], 0.01, 1e-9));
 
-    // Opening removes a voltage-source unknown, so this exercises the
-    // reallocation path as well as the stamp.
+    // Opening un-merges the switch's terminals, so this exercises the
+    // reanalyze path as well as the stamp.
     assert!(c.set_state(3, 1));
     c.run(5);
     assert!(c.element_currents()[1].abs() < 1e-6);
@@ -520,8 +520,8 @@ fn switch_can_be_toggled_at_runtime() {
 
 #[test]
 fn set_state_on_a_switch_preserves_time() {
-    // Opening a switch removes its current unknown, so set_state reallocates
-    // the matrix; that path must not reset the clock either.
+    // Opening a switch un-merges its terminals, so set_state re-runs the
+    // topology pass; that path must not reset the clock either.
     let dt = 1e-5;
     let c = &mut build(
         vec![
@@ -720,4 +720,206 @@ fn reset_returns_the_circuit_to_its_initial_state() {
         c.element_voltages()[2].abs() < 0.1,
         "capacitor did not discharge on reset"
     );
+}
+
+#[test]
+fn parallel_wires_do_not_singularise_the_matrix() {
+    // Two wires in parallel used to stamp two identical 0 V source rows and
+    // make the matrix singular. The analyser now merges both into the ground
+    // node, and the recovery splits the resistor current between them.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "wire", &[[100, 0], [0, 100]], &[]),
+            elm(4, "wire", &[[100, 0], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(5);
+    assert!(report.converged, "parallel wires made the matrix singular");
+    assert!(report.error.is_none());
+    assert!(close(c.element_voltages()[1], 5.0, 1e-9));
+    assert!(close(c.element_currents()[1], 5e-3, 1e-9));
+    assert!(
+        close(c.element_currents()[2], 2.5e-3, 1e-9),
+        "first wire took {}",
+        c.element_currents()[2]
+    );
+    assert!(
+        close(c.element_currents()[3], 2.5e-3, 1e-9),
+        "second wire took {}",
+        c.element_currents()[3]
+    );
+}
+
+#[test]
+fn pure_wire_ring_solves() {
+    // A closed ring of wires has no drive and used to stamp three 0 V rows,
+    // rank 2 of 3. All three merge into a single node, the matrix is empty,
+    // and every wire reports zero.
+    let c = &mut build(
+        vec![
+            elm(1, "wire", &[[0, 0], [100, 0]], &[]),
+            elm(2, "wire", &[[100, 0], [100, 100]], &[]),
+            elm(3, "wire", &[[100, 100], [0, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(5);
+    assert!(report.converged, "wire ring did not solve");
+    assert!(report.error.is_none());
+    assert_eq!(c.node_count(), 1);
+    for (i, iw) in c.element_currents().iter().enumerate() {
+        assert!(close(*iw, 0.0, 1e-12), "wire {i} current was {iw}");
+    }
+}
+
+#[test]
+fn closed_switch_in_parallel_with_wire_solves() {
+    // A closed switch stamps the same constraint as a wire, so the two in
+    // parallel used to be a duplicate row. Both merge into the ground node;
+    // the recovery pins the split at half the resistor current each.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "switch", &[[100, 0], [0, 100]], &[("position", 0.0)]),
+            elm(4, "wire", &[[100, 0], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(5);
+    assert!(
+        report.converged,
+        "switch in parallel with a wire went singular"
+    );
+    assert!(report.error.is_none());
+    assert!(close(c.element_currents()[1], 5e-3, 1e-9));
+    let switch_i = c.element_currents()[2];
+    let wire_i = c.element_currents()[3];
+    assert!(close(switch_i + wire_i, 5e-3, 1e-9));
+    assert!(close(switch_i, 2.5e-3, 1e-9), "switch took {switch_i}");
+    assert!(close(wire_i, 2.5e-3, 1e-9), "wire took {wire_i}");
+}
+
+#[test]
+fn zero_length_wire_solves() {
+    // A wire with both posts at one coordinate stamped an all-zero row. It now
+    // stamps nothing, and the recovery derives a finite current from the
+    // neighbour sum at its single coordinate.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "wire", &[[100, 0], [100, 0]], &[]),
+            // The divider's return path, so the source's negative terminal is
+            // grounded through the same node the zero-length wire sits on.
+            elm(4, "wire", &[[0, 100], [100, 0]], &[]),
+            elm(5, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(5);
+    assert!(report.converged, "zero-length wire went singular");
+    assert!(report.error.is_none());
+    assert!(close(c.element_currents()[1], 5e-3, 1e-9));
+    let wire_i = c.element_currents()[2];
+    assert!(wire_i.is_finite(), "zero-length wire current was {wire_i}");
+}
+
+#[test]
+fn wire_current_keeps_its_sign() {
+    // The recovered wire current must match the old 0 V stamp's convention:
+    // positive when current enters post 0, so the UI dots do not reverse.
+    let make = |flipped: bool| {
+        let posts = if flipped {
+            [[0, 100], [100, 100]]
+        } else {
+            [[100, 100], [0, 100]]
+        };
+        build(
+            vec![
+                elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+                elm(
+                    2,
+                    "resistor",
+                    &[[0, 0], [100, 0]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(
+                    3,
+                    "resistor",
+                    &[[100, 0], [100, 100]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(4, "wire", &posts, &[]),
+                elm(5, "ground", &[[0, 100]], &[]),
+            ],
+            opts(1e-5, true),
+        )
+    };
+
+    let mut c = make(false);
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 5e-3, 1e-9),
+        "wire current was {}",
+        c.element_currents()[3]
+    );
+
+    let mut c = make(true);
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], -5e-3, 1e-9),
+        "flipped wire current was {}",
+        c.element_currents()[3]
+    );
+}
+
+#[test]
+fn wire_merge_shrinks_the_matrix() {
+    // The divider's bottom rail was four nodes plus two voltage-source
+    // unknowns. The wire merge folds the wire's two coordinates into the
+    // ground node, so the matrix drops to three nodes and one source unknown.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    assert_eq!(c.node_count(), 3);
+    assert_eq!(c.vs_count(), 1);
 }
