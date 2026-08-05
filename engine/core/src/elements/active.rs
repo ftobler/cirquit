@@ -42,37 +42,24 @@ impl Element for Switch {
     fn post_count(&self) -> usize {
         2
     }
-    fn voltage_source_count(&self) -> usize {
-        if self.closed() {
-            1
-        } else {
-            0
-        }
-    }
     fn connects(&self, _a: usize, _b: usize) -> bool {
         self.closed()
     }
-    fn stamp(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
-        if self.closed() {
-            s.voltage_source(
-                self.base.nodes[0],
-                self.base.nodes[1],
-                self.base.vs_base,
-                0.0,
-            );
-        }
+    /// A closed switch is an ideal short like a wire: the analyser merges its
+    /// terminals and the matrix never sees it. An open switch contributes
+    /// nothing either way, so no position carries a current unknown.
+    fn removable_wire(&self) -> bool {
+        self.closed()
     }
     fn calculate_current(&mut self, _ctx: &SimCtx) {
-        self.base.current = if self.closed() {
-            self.base.vs_currents[0]
-        } else {
-            0.0
-        };
+        // The recovery pass owns a closed switch's current; an open switch is
+        // an open circuit. `vs_currents` is empty in both positions.
+        self.base.current = 0.0;
     }
     fn set_state(&mut self, state: i32) -> bool {
         self.position = state.clamp(0, 1);
-        // Changing position changes the number of unknowns, so the caller has
-        // to reallocate rather than just re-stamp.
+        // Changing position changes which terminals merge, so the caller has
+        // to re-analyse rather than just re-stamp.
         true
     }
     fn set_param(&mut self, name: &str, value: f64) -> bool {
@@ -138,6 +125,15 @@ impl Element for MultiThrowSwitch {
     }
     fn calculate_current(&mut self, _ctx: &SimCtx) {
         self.base.current = self.base.vs_currents[0];
+    }
+    fn current_into_node(&self, post: usize) -> f64 {
+        if post == 0 {
+            -self.base.current
+        } else if post == self.selected_post() {
+            self.base.current
+        } else {
+            0.0
+        }
     }
     fn set_state(&mut self, state: i32) -> bool {
         self.position = state.rem_euclid(self.throw_count as i32);
@@ -239,6 +235,16 @@ impl Element for OpAmp {
 
     fn calculate_current(&mut self, _ctx: &SimCtx) {
         self.base.current = self.base.vs_currents[0];
+    }
+
+    fn current_into_node(&self, post: usize) -> f64 {
+        // The inputs draw nothing; the output source delivers its solved
+        // current into the output node.
+        if post == 2 {
+            self.base.current
+        } else {
+            0.0
+        }
     }
 
     fn set_param(&mut self, name: &str, value: f64) -> bool {

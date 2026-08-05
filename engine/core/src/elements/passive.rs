@@ -11,8 +11,10 @@ const DC_OPEN: f64 = 1e8;
 /// point, standing in for a short.
 const DC_SHORT: f64 = 1e-6;
 
-/// An ideal wire. Modelled as a zero-volt source so its current is solved for
-/// rather than being indeterminate.
+/// An ideal wire. Merged out of the matrix before stamping, so its two
+/// endpoints become one node and the matrix never allocates a row or a
+/// current unknown for it. Its current is indeterminate to the solve, so the
+/// recovery pass derives it from the currents of the elements around it.
 pub struct Wire {
     base: Base,
 }
@@ -38,15 +40,8 @@ impl Element for Wire {
     fn post_count(&self) -> usize {
         2
     }
-    fn voltage_source_count(&self) -> usize {
-        1
-    }
-    fn stamp(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
-        let vs = self.base.vs_base;
-        s.voltage_source(self.base.nodes[0], self.base.nodes[1], vs, 0.0);
-    }
-    fn calculate_current(&mut self, _ctx: &SimCtx) {
-        self.base.current = self.base.vs_currents[0];
+    fn removable_wire(&self) -> bool {
+        true
     }
 }
 
@@ -133,6 +128,9 @@ pub struct Potentiometer {
     position: f64,
     r0: f64,
     r1: f64,
+    /// Current through the second track half, positive flowing post 1 to the
+    /// wiper. Tracked so the wire-current recovery can balance the wiper node.
+    r1_current: f64,
 }
 
 impl Potentiometer {
@@ -143,6 +141,7 @@ impl Potentiometer {
             position: spec.param("position", 0.5),
             r0: 0.0,
             r1: 0.0,
+            r1_current: 0.0,
         };
         p.recompute();
         p
@@ -176,6 +175,15 @@ impl Element for Potentiometer {
     }
     fn calculate_current(&mut self, _ctx: &SimCtx) {
         self.base.current = (self.base.volts[0] - self.base.volts[2]) / self.r0;
+        self.r1_current = (self.base.volts[1] - self.base.volts[2]) / self.r1;
+    }
+    fn current_into_node(&self, post: usize) -> f64 {
+        match post {
+            0 => -self.base.current,
+            1 => -self.r1_current,
+            2 => self.base.current + self.r1_current,
+            _ => 0.0,
+        }
     }
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         match name {

@@ -6,7 +6,7 @@ use crate::element::{Element, SimCtx};
 use crate::elements::build_element;
 use crate::matrix::{LinearSystem, SolveError};
 use crate::scope::ScopeTrace;
-use crate::spec::{CircuitSpec, ScopeValue, SimOptions};
+use crate::spec::{CircuitSpec, ElementSpec, ScopeValue, SimOptions};
 use crate::stamp::{Stamper, GROUND};
 
 /// Conductance tied from every floating subcircuit to ground so the matrix
@@ -55,6 +55,10 @@ pub struct StepReport {
 
 pub struct Circuit {
     elements: Vec<Box<dyn Element>>,
+    /// Original element specs, kept so a topology edit can re-run analysis
+    /// (post coordinates survive on the built elements, but specs are the
+    /// canonical copy).
+    specs: Vec<ElementSpec>,
     /// UI-assigned id per element, parallel to `elements`.
     ids: Vec<u32>,
     id_index: HashMap<u32, usize>,
@@ -80,6 +84,7 @@ impl Circuit {
     pub fn new() -> Self {
         Self {
             elements: Vec::new(),
+            specs: Vec::new(),
             ids: Vec::new(),
             id_index: HashMap::new(),
             sys: LinearSystem::new(),
@@ -113,6 +118,10 @@ impl Circuit {
 
     pub fn node_count(&self) -> usize {
         self.node_count
+    }
+
+    pub fn vs_count(&self) -> usize {
+        self.vs_count
     }
 
     pub fn element_count(&self) -> usize {
@@ -163,8 +172,9 @@ impl Circuit {
             self.ids.push(es.id);
             self.elements.push(elm);
         }
+        self.specs = spec.elements.clone();
 
-        self.assign_nodes(spec);
+        self.assign_nodes(&spec.elements);
         self.allocate_and_stamp();
         self.build_scopes(spec);
 
@@ -175,18 +185,18 @@ impl Circuit {
     }
 
     /// Works out which terminals share a node.
-    fn assign_nodes(&mut self, spec: &CircuitSpec) {
+    fn assign_nodes(&mut self, specs: &[ElementSpec]) {
         // Flatten every terminal into one index space.
         let mut offsets = Vec::with_capacity(self.elements.len());
         let mut total = 0usize;
-        for es in &spec.elements {
+        for es in specs {
             offsets.push(total);
             total += es.posts.len();
         }
 
         let mut uf = UnionFind::new(total.max(1));
         let mut by_coord: HashMap<[i32; 2], usize> = HashMap::new();
-        for (ei, es) in spec.elements.iter().enumerate() {
+        for (ei, es) in specs.iter().enumerate() {
             for (pi, post) in es.posts.iter().enumerate() {
                 let gi = offsets[ei] + pi;
                 match by_coord.entry(*post) {
@@ -209,6 +219,18 @@ impl Circuit {
                         v.insert(gi);
                     }
                 }
+            }
+        }
+
+        // Wires and closed switches are ideal shorts: merge their two endpoints
+        // so the matrix never sees them, exactly as upstream's wire closure
+        // does. Unioning the coordinate-merged roots collapses chains, rings
+        // and parallel wires into one node each.
+        for (ei, elm) in self.elements.iter().enumerate() {
+            if elm.removable_wire() && elm.post_count() >= 2 {
+                let r0 = uf.find(offsets[ei]);
+                let r1 = uf.find(offsets[ei] + 1);
+                uf.union(r0, r1);
             }
         }
 
@@ -254,6 +276,7 @@ impl Circuit {
             let base = elm.base_mut();
             base.nodes = vec![GROUND; posts + internal];
             base.volts = vec![0.0; posts + internal];
+            base.posts = specs[ei].posts.clone();
             for pi in 0..posts {
                 base.nodes[pi] = id_of_root[&uf.find(offsets[ei] + pi)];
             }
@@ -293,9 +316,9 @@ impl Circuit {
         pins
     }
 
-    /// Assigns voltage-source unknowns and sizes the matrix. Must re-run
-    /// whenever an element's unknown count can change, which switches do when
-    /// they open or close.
+    /// Assigns voltage-source unknowns and sizes the matrix. Re-runs on every
+    /// analysis pass; per-element unknown counts are static now that wires and
+    /// closed switches merge out of the matrix and only the SPDT keeps one.
     fn allocate(&mut self) {
         self.vs_count = 0;
         self.nonlinear = false;
@@ -347,6 +370,16 @@ impl Circuit {
             ));
         }
         self.restamp();
+    }
+
+    /// Re-runs the topology analysis after an interactive edit that can merge
+    /// or unmerge terminals, such as closing a switch. Unlike `set_circuit`,
+    /// it leaves the sim clock alone: a throw must not rewind the trace.
+    fn reanalyze(&mut self) {
+        // `assign_nodes` borrows the specs while `&mut self` is in play, so
+        // hand it a clone rather than borrowing `self.specs` through `self`.
+        self.assign_nodes(&self.specs.clone());
+        self.allocate_and_stamp();
     }
 
     fn build_scopes(&mut self, spec: &CircuitSpec) {
@@ -447,9 +480,87 @@ impl Circuit {
         let ctx = self.ctx;
         for elm in self.elements.iter_mut() {
             elm.calculate_current(&ctx);
+        }
+        self.recover_wire_currents();
+        for elm in self.elements.iter_mut() {
             elm.step_finished(&ctx);
         }
         report
+    }
+
+    /// Recovers the current through each wire and closed switch after a solve.
+    /// The matrix never sees these elements, so their currents come from KCL
+    /// at their endpoint coordinates: a chain or tree resolves in order from
+    /// its driven end, and any loop that remains (two parallel wires, a fed
+    /// ring) is solved as a minimum-norm problem, the deterministic split for
+    /// ideal shorts. Upstream reports "wire loop detected" on such loops;
+    /// minimum-norm is the port's deliberate improvement.
+    fn recover_wire_currents(&mut self) {
+        let mut coords: Vec<[i32; 2]> = Vec::new();
+        let mut coord_id: HashMap<[i32; 2], usize> = HashMap::new();
+        let mut edges: Vec<[usize; 2]> = Vec::new();
+        let mut edge_elm: Vec<usize> = Vec::new();
+
+        for (ei, elm) in self.elements.iter().enumerate() {
+            if elm.removable_wire() && elm.post_count() >= 2 {
+                let c0 = coord_of(&mut coord_id, &mut coords, elm.base().posts[0]);
+                let c1 = coord_of(&mut coord_id, &mut coords, elm.base().posts[1]);
+                edges.push([c0, c1]);
+                edge_elm.push(ei);
+            }
+        }
+        if edges.is_empty() {
+            return;
+        }
+
+        // Net current each coordinate receives from the non-removable world.
+        let mut injection = vec![0.0; coords.len()];
+        for elm in self.elements.iter() {
+            if elm.removable_wire() && elm.post_count() >= 2 {
+                continue;
+            }
+            for pi in 0..elm.post_count() {
+                let Some(&c) = coord_id.get(&elm.base().posts[pi]) else {
+                    continue;
+                };
+                injection[c] += elm.current_into_node(pi);
+            }
+        }
+
+        let mut resolved = vec![false; edges.len()];
+        let mut currents = vec![0.0; edges.len()];
+
+        // Resolve chains and trees in the natural order: a wire whose other
+        // endpoint is fully determined derives its current from KCL there.
+        loop {
+            let mut progress = false;
+            for i in 0..edges.len() {
+                if resolved[i] {
+                    continue;
+                }
+                let (c0, c1) = (edges[i][0], edges[i][1]);
+                if can_resolve(&edges, &resolved, i, c0) {
+                    currents[i] = kcl_sum(&edges, &resolved, &injection, c0, &currents);
+                    resolved[i] = true;
+                    progress = true;
+                } else if c1 != c0 && can_resolve(&edges, &resolved, i, c1) {
+                    currents[i] = -kcl_sum(&edges, &resolved, &injection, c1, &currents);
+                    resolved[i] = true;
+                    progress = true;
+                }
+            }
+            if !progress {
+                break;
+            }
+        }
+
+        if resolved.iter().any(|&r| !r) {
+            resolve_stuck_wires(&edges, &mut resolved, &mut currents, &injection);
+        }
+
+        for (i, &ei) in edge_elm.iter().enumerate() {
+            self.elements[ei].base_mut().current = currents[i];
+        }
     }
 
     /// Copies the solution vector into node voltages and per-element state.
@@ -553,17 +664,14 @@ impl Circuit {
         true
     }
 
-    /// Interactive state change, e.g. flipping a switch. Reallocates because
-    /// an opening switch removes its current unknown from the system.
+    /// Interactive state change, e.g. flipping a switch. Throwing a switch can
+    /// merge or unmerge its terminals, so the whole topology pass re-runs.
     pub fn set_state(&mut self, id: u32, state: i32) -> bool {
         let Some(&ei) = self.id_index.get(&id) else {
             return false;
         };
-        let realloc = self.elements[ei].set_state(state);
-        if realloc {
-            self.allocate();
-        }
-        self.restamp();
+        self.elements[ei].set_state(state);
+        self.reanalyze();
         true
     }
 
@@ -598,5 +706,197 @@ impl Circuit {
             }
         }
         out
+    }
+}
+
+/// Index for a coordinate, allocating one on first sight.
+fn coord_of(
+    coord_id: &mut HashMap<[i32; 2], usize>,
+    coords: &mut Vec<[i32; 2]>,
+    c: [i32; 2],
+) -> usize {
+    if let Some(&i) = coord_id.get(&c) {
+        i
+    } else {
+        let i = coords.len();
+        coord_id.insert(c, i);
+        coords.push(c);
+        i
+    }
+}
+
+/// True when every other unresolved wire touching `c` is resolved, so wire `i`
+/// is free to determine its current from KCL at `c`. Self-loops (both posts at
+/// one coordinate) never block: they neither draw nor deliver net current, so
+/// their own current is whatever the neighbours leave.
+fn can_resolve(edges: &[[usize; 2]], resolved: &[bool], i: usize, c: usize) -> bool {
+    for (j, e) in edges.iter().enumerate() {
+        if j == i || resolved[j] || e[0] == e[1] {
+            continue;
+        }
+        if e[0] == c || e[1] == c {
+            return false;
+        }
+    }
+    true
+}
+
+/// Net current KCL assigns to the wire being resolved at `c`: what the
+/// non-removable elements push in, plus what already-resolved wires at `c`
+/// deliver (`+current` when `c` is their post 1 side, `-current` when it is
+/// their post 0 side). A resolved self-loop contributes nothing.
+fn kcl_sum(
+    edges: &[[usize; 2]],
+    resolved: &[bool],
+    injection: &[f64],
+    c: usize,
+    currents: &[f64],
+) -> f64 {
+    let mut sum = injection[c];
+    for (j, e) in edges.iter().enumerate() {
+        if !resolved[j] || e[0] == e[1] {
+            continue;
+        }
+        if e[0] == c {
+            sum -= currents[j];
+        } else if e[1] == c {
+            sum += currents[j];
+        }
+    }
+    sum
+}
+
+/// Solves the KCL system of a stuck wire subgraph (a cycle with no leaf to
+/// resolve from) by minimum norm. Coordinates are the nodes, each unresolved
+/// wire an edge with current positive from post 0 to post 1, so the incidence
+/// matrix `B` satisfies `B I = b` with `b` the negated net injection. The
+/// minimum-norm solution `I = B^T (B B^T)^+ b` is deterministic: parallel
+/// shorts split equally, an undriven ring reports zero everywhere.
+fn resolve_stuck_wires(
+    edges: &[[usize; 2]],
+    resolved: &mut [bool],
+    currents: &mut [f64],
+    injection: &[f64],
+) {
+    // Split the leftovers into connected components over their coordinates, so
+    // each cycle solves on its own tiny system.
+    let mut uf = UnionFind::new(injection.len());
+    for (i, e) in edges.iter().enumerate() {
+        if !resolved[i] && e[0] != e[1] {
+            uf.union(e[0], e[1]);
+        }
+    }
+    let mut by_root: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (i, e) in edges.iter().enumerate() {
+        if !resolved[i] {
+            by_root.entry(uf.find(e[0])).or_default().push(i);
+        }
+    }
+
+    for idxs in by_root.values() {
+        let mut comp_coord: HashMap<usize, usize> = HashMap::new();
+        let mut comp: Vec<usize> = Vec::new();
+        for &i in idxs {
+            for &c in &edges[i] {
+                if let std::collections::hash_map::Entry::Vacant(e) = comp_coord.entry(c) {
+                    e.insert(comp.len());
+                    comp.push(c);
+                }
+            }
+        }
+        let m = comp.len();
+        if m <= 1 {
+            // Nothing but self-loops: there is no information, report zero.
+            for &i in idxs {
+                currents[i] = 0.0;
+                resolved[i] = true;
+            }
+            continue;
+        }
+
+        // Drop one coordinate's row. The reduced incidence matrix of a
+        // connected component is full row rank, so its Gram matrix is
+        // invertible and the minimum-norm solution is exact.
+        let dropped = m - 1;
+        let nr = m - 1;
+
+        // Right-hand side: negated net injection at each coordinate, where
+        // already-resolved wires contribute through `current_into_node`.
+        let mut b = vec![0.0; m];
+        for (r, &c) in comp.iter().enumerate() {
+            let mut s = injection[c];
+            for (j, e) in edges.iter().enumerate() {
+                if !resolved[j] || e[0] == e[1] {
+                    continue;
+                }
+                if e[0] == c {
+                    s -= currents[j];
+                } else if e[1] == c {
+                    s += currents[j];
+                }
+            }
+            b[r] = -s;
+        }
+
+        // Gram matrix G = B' B'^T over the reduced coordinates. Each edge
+        // contributes its column's outer product; a self-loop's column is
+        // zero, so it neither constrains the system nor carries current.
+        let mut g = vec![0.0; nr * nr];
+        let mut col = vec![0.0; nr];
+        for &i in idxs {
+            let (r0, r1) = (comp_coord[&edges[i][0]], comp_coord[&edges[i][1]]);
+            for v in col.iter_mut() {
+                *v = 0.0;
+            }
+            if r0 != dropped {
+                col[r0] -= 1.0;
+            }
+            if r1 != dropped {
+                col[r1] += 1.0;
+            }
+            for (r, &vr) in col.iter().enumerate() {
+                if vr == 0.0 {
+                    continue;
+                }
+                for (s, &vs) in col.iter().enumerate() {
+                    if vs != 0.0 {
+                        g[r * nr + s] += vr * vs;
+                    }
+                }
+            }
+        }
+
+        let mut sys = LinearSystem::new();
+        sys.resize(nr);
+        for r in 0..nr {
+            for s in 0..nr {
+                if g[r * nr + s] != 0.0 {
+                    sys.add(r, s, g[r * nr + s]);
+                }
+            }
+            if b[r] != 0.0 {
+                sys.add_rhs(r, b[r]);
+            }
+        }
+
+        // The reduced system is nonsingular here; if a numerical solve
+        // disagrees, fall back to zero rather than leave stale values behind.
+        let ok = sys.solve().is_ok();
+        for &i in idxs {
+            if ok {
+                let (r0, r1) = (comp_coord[&edges[i][0]], comp_coord[&edges[i][1]]);
+                let mut v = 0.0;
+                if r0 != dropped {
+                    v -= sys.x[r0];
+                }
+                if r1 != dropped {
+                    v += sys.x[r1];
+                }
+                currents[i] = v;
+            } else {
+                currents[i] = 0.0;
+            }
+            resolved[i] = true;
+        }
     }
 }

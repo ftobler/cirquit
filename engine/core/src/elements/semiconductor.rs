@@ -289,6 +289,17 @@ impl Element for BipolarTransistor {
         self.base.current = self.ic;
     }
 
+    fn current_into_node(&self, post: usize) -> f64 {
+        // Posts are base, collector, emitter; ib, ic and ie are positive into
+        // the device, so the node drains each branch current.
+        match post {
+            0 => -self.ib,
+            1 => -self.ic,
+            2 => self.ic + self.ib, // -ie
+            _ => 0.0,
+        }
+    }
+
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         match name {
             "beta" if value > 0.0 => self.beta_f = value,

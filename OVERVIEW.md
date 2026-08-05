@@ -97,8 +97,11 @@ are reused.
 supply the value in `do_step` via `voltage_source_value`, which touches only the
 right-hand side. That is why an AC-driven linear circuit still factors once.
 
-**Switches change the unknown count.** Opening a switch removes its current
-unknown, so `set_state` reallocates rather than just re-stamping.
+**Switches and unknowns.** A closed switch is an ideal short like a wire, so
+the analyser merges its terminals and the matrix never sees it. Toggling one
+re-merges or un-merges terminals via `reanalyze` rather than reallocating a
+current unknown; only the SPDT switch keeps a current unknown, in both
+positions.
 
 ---
 

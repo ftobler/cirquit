@@ -35,6 +35,9 @@ pub struct Base {
     pub nodes: Vec<usize>,
     /// Solved voltage at each entry of `nodes`.
     pub volts: Vec<f64>,
+    /// Original post coordinate per terminal. Survives node merging so the
+    /// wire-current recovery can still tell which terminal was where.
+    pub posts: Vec<[i32; 2]>,
     /// Index of this element's first voltage-source unknown.
     pub vs_base: usize,
     /// Solved current through each of this element's voltage sources.
@@ -49,6 +52,7 @@ impl Base {
         Self {
             nodes: vec![0; posts],
             volts: vec![0.0; posts],
+            posts: Vec::new(),
             vs_base: 0,
             vs_currents: Vec::new(),
             current: 0.0,
@@ -127,6 +131,29 @@ pub trait Element {
     /// tie their terminals together.
     fn connects(&self, _a: usize, _b: usize) -> bool {
         true
+    }
+
+    /// True for ideal shorts that are merged out of the matrix before
+    /// stamping: wires and closed switches. Upstream calls these removable
+    /// wires. Merging them (rather than stamping a 0 V source per wire) keeps
+    /// parallel wires and wire rings from producing duplicate constraint rows.
+    fn removable_wire(&self) -> bool {
+        false
+    }
+
+    /// Current flowing into the node at `post` from this element, used by the
+    /// wire-current recovery. For a two-terminal element positive current
+    /// enters post 0, so post 0 drains `current` and post 1 injects it.
+    fn current_into_node(&self, post: usize) -> f64 {
+        if self.post_count() == 2 {
+            if post == 0 {
+                -self.base().current
+            } else {
+                self.base().current
+            }
+        } else {
+            0.0
+        }
     }
 
     /// True for ground symbols, whose terminal is pinned to the reference.
