@@ -1,0 +1,23 @@
+# upstream checkout, kept locally as a behaviour/format reference only
+/reference/
+
+# feature plans and knowledge base; has its own git repo
+/feature/
+
+# rust
+/engine/target/
+**/*.rs.bk
+
+# generated wasm bindings (built by `npm run build:wasm`)
+/web/src/wasm/
+
+# node
+node_modules/
+/web/dist/
+*.tsbuildinfo
+
+# editors / os
+.DS_Store
+.idea/
+.vscode/
+*.log

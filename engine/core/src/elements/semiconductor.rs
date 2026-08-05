@@ -1,0 +1,308 @@
+//! Nonlinear junction devices, linearised each Newton iteration.
+
+use crate::element::{Base, Element, SimCtx};
+use crate::spec::ElementSpec;
+use crate::stamp::Stamper;
+
+/// Thermal voltage at roughly room temperature, in volts.
+const VT: f64 = 0.025_865;
+/// Parallel conductance added across every junction. Keeps a reverse-biased
+/// junction from presenting an effectively infinite impedance, which is what
+/// stalls Newton on circuits like a bridge rectifier at start-up.
+const JUNCTION_GMIN: f64 = 1e-12;
+/// Largest exponent evaluated, guarding against `exp` overflowing to infinity
+/// on a wild Newton excursion.
+const MAX_EXP_ARG: f64 = 40.0;
+
+/// Voltage change per iteration beyond which the solution is not settled.
+const CONVERGENCE_V: f64 = 0.01;
+
+/// Standard junction limiting. Without it, Newton's linear extrapolation of an
+/// exponential overshoots by many decades and the iteration never recovers.
+fn limit_junction(vnew: f64, vold: f64, vt: f64, vcrit: f64) -> f64 {
+    if vnew > vcrit && (vnew - vold).abs() > 2.0 * vt {
+        if vold > 0.0 {
+            let arg = 1.0 + (vnew - vold) / vt;
+            if arg > 0.0 {
+                vold + vt * arg.ln()
+            } else {
+                vcrit
+            }
+        } else {
+            // Coming from reverse bias, step to a point on the exponential
+            // rather than straight across it.
+            vt * (vnew / vt).ln()
+        }
+    } else {
+        vnew
+    }
+}
+
+fn critical_voltage(vt: f64, leakage: f64) -> f64 {
+    vt * (vt / (std::f64::consts::SQRT_2 * leakage)).ln()
+}
+
+/// Shockley diode, optionally with a Zener breakdown branch.
+pub struct Diode {
+    base: Base,
+    /// Saturation current.
+    leakage: f64,
+    /// Emission-scaled thermal voltage, derived from the rated forward drop.
+    vscale: f64,
+    vcrit: f64,
+    /// Reverse breakdown voltage; zero disables the branch.
+    z_voltage: f64,
+    z_offset: f64,
+    last_v: f64,
+    geq: f64,
+    ieq: f64,
+}
+
+impl Diode {
+    pub fn new(spec: &ElementSpec) -> Self {
+        Self::build(spec, spec.param("breakdownVoltage", 0.0))
+    }
+
+    pub fn new_zener(spec: &ElementSpec) -> Self {
+        Self::build(spec, spec.param("breakdownVoltage", 5.6))
+    }
+
+    fn build(spec: &ElementSpec, z_voltage: f64) -> Self {
+        let leakage = spec.param("saturationCurrent", 1e-14).max(1e-20);
+        let fwdrop = spec.param("forwardVoltage", 0.805).max(0.05);
+        // Scale the exponential so the diode passes 1 A at its rated forward
+        // drop, which is how the original parameterises its models.
+        let vscale = fwdrop / (1.0 / leakage + 1.0).ln();
+        // Place the breakdown knee so ~5 mA flows at the rated Zener voltage.
+        let z_offset = if z_voltage > 0.0 {
+            z_voltage - vscale * (0.005 / leakage + 1.0).ln()
+        } else {
+            0.0
+        };
+        Self {
+            base: Base::with_posts(2),
+            leakage,
+            vscale,
+            vcrit: critical_voltage(vscale, leakage),
+            z_voltage,
+            z_offset,
+            last_v: 0.0,
+            geq: 0.0,
+            ieq: 0.0,
+        }
+    }
+
+    /// Current and its derivative at `v`.
+    fn evaluate(&self, v: f64) -> (f64, f64) {
+        let arg = (v / self.vscale).min(MAX_EXP_ARG);
+        let ev = arg.exp();
+        let mut i = self.leakage * (ev - 1.0);
+        let mut g = self.leakage * ev / self.vscale;
+        if self.z_voltage > 0.0 {
+            let zarg = (-(v + self.z_offset) / self.vscale).min(MAX_EXP_ARG);
+            let ez = zarg.exp();
+            i -= self.leakage * (ez - 1.0);
+            g += self.leakage * ez / self.vscale;
+        }
+        (i, g + JUNCTION_GMIN)
+    }
+}
+
+impl Element for Diode {
+    fn kind(&self) -> &'static str {
+        if self.z_voltage > 0.0 {
+            "zener"
+        } else {
+            "diode"
+        }
+    }
+    fn base(&self) -> &Base {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut Base {
+        &mut self.base
+    }
+    fn post_count(&self) -> usize {
+        2
+    }
+    fn nonlinear(&self) -> bool {
+        true
+    }
+
+    fn do_step(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
+        let (n0, n1) = (self.base.nodes[0], self.base.nodes[1]);
+        let mut v = self.base.voltage_diff();
+        if (v - self.last_v).abs() > CONVERGENCE_V {
+            s.not_converged();
+        }
+
+        v = limit_junction(v, self.last_v, self.vscale, self.vcrit);
+        if self.z_voltage > 0.0 {
+            // The breakdown branch is the forward branch mirrored about
+            // `-z_offset`, so limit it in the mirrored coordinate.
+            let mirrored = limit_junction(
+                -(v + self.z_offset),
+                -(self.last_v + self.z_offset),
+                self.vscale,
+                self.vcrit,
+            );
+            v = -mirrored - self.z_offset;
+        }
+        self.last_v = v;
+
+        let (i, g) = self.evaluate(v);
+        self.geq = g;
+        self.ieq = i - g * v;
+        s.conductance(n0, n1, g);
+        s.current_source(n0, n1, self.ieq);
+    }
+
+    fn calculate_current(&mut self, _ctx: &SimCtx) {
+        self.base.current = self.geq * self.base.voltage_diff() + self.ieq;
+    }
+
+    fn reset(&mut self) {
+        self.base.reset();
+        self.last_v = 0.0;
+        self.geq = 0.0;
+        self.ieq = 0.0;
+    }
+}
+
+/// Ebers-Moll bipolar transistor.
+///
+/// Posts are base, collector, emitter, in that order.
+pub struct BipolarTransistor {
+    base: Base,
+    /// `1.0` for NPN, `-1.0` for PNP. Folding the type into a sign keeps one
+    /// set of equations for both.
+    polarity: f64,
+    beta_f: f64,
+    beta_r: f64,
+    sat_current: f64,
+    vcrit: f64,
+    last_vbe: f64,
+    last_vbc: f64,
+    ic: f64,
+    ib: f64,
+}
+
+impl BipolarTransistor {
+    pub fn new(spec: &ElementSpec) -> Self {
+        let sat = spec.param("saturationCurrent", 1e-16).max(1e-22);
+        Self {
+            base: Base::with_posts(3),
+            polarity: if spec.param("pnp", 0.0) != 0.0 {
+                -1.0
+            } else {
+                1.0
+            },
+            beta_f: spec.param("beta", 100.0).max(1e-3),
+            beta_r: spec.param("betaReverse", 1.0).max(1e-3),
+            sat_current: sat,
+            vcrit: critical_voltage(VT, sat),
+            last_vbe: 0.0,
+            last_vbc: 0.0,
+            ic: 0.0,
+            ib: 0.0,
+        }
+    }
+}
+
+impl Element for BipolarTransistor {
+    fn kind(&self) -> &'static str {
+        "transistor"
+    }
+    fn base(&self) -> &Base {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut Base {
+        &mut self.base
+    }
+    fn post_count(&self) -> usize {
+        3
+    }
+    fn nonlinear(&self) -> bool {
+        true
+    }
+
+    fn do_step(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
+        let (nb, nc, ne) = (self.base.nodes[0], self.base.nodes[1], self.base.nodes[2]);
+        let p = self.polarity;
+        let mut vbe = p * (self.base.volts[0] - self.base.volts[2]);
+        let mut vbc = p * (self.base.volts[0] - self.base.volts[1]);
+
+        if (vbe - self.last_vbe).abs() > CONVERGENCE_V
+            || (vbc - self.last_vbc).abs() > CONVERGENCE_V
+        {
+            s.not_converged();
+        }
+        vbe = limit_junction(vbe, self.last_vbe, VT, self.vcrit);
+        vbc = limit_junction(vbc, self.last_vbc, VT, self.vcrit);
+        self.last_vbe = vbe;
+        self.last_vbc = vbc;
+
+        let exp_be = (vbe / VT).min(MAX_EXP_ARG).exp();
+        let exp_bc = (vbc / VT).min(MAX_EXP_ARG).exp();
+        let fwd = self.sat_current * (exp_be - 1.0);
+        let rev = self.sat_current * (exp_bc - 1.0);
+        let g_fwd = self.sat_current * exp_be / VT + JUNCTION_GMIN;
+        let g_rev = self.sat_current * exp_bc / VT + JUNCTION_GMIN;
+
+        let inv_bf = 1.0 / self.beta_f;
+        let inv_br = 1.0 / self.beta_r;
+
+        // Terminal currents in device polarity, positive flowing in.
+        let ic = fwd - rev * (1.0 + inv_br);
+        let ib = fwd * inv_bf + rev * inv_br;
+        let ie = -(ic + ib);
+        self.ic = p * ic;
+        self.ib = p * ib;
+
+        // Jacobian entries.
+        let dic_dvbe = g_fwd;
+        let dic_dvbc = -g_rev * (1.0 + inv_br);
+        let dib_dvbe = g_fwd * inv_bf;
+        let dib_dvbc = g_rev * inv_br;
+        let die_dvbe = -(dic_dvbe + dib_dvbe);
+        let die_dvbc = -(dic_dvbc + dib_dvbc);
+
+        // For terminal X:
+        //   p·i_x = d_be·(V(B) − V(E)) + d_bc·(V(B) − V(C)) + const
+        // The polarity cancels out of the conductance terms because
+        // `vbe = p·(V(B) − V(E))` and the current is scaled by `p` as well;
+        // only the constant term keeps the sign.
+        let mut terminal = |node: usize, d_be: f64, d_bc: f64, i0: f64| {
+            s.node_pair(node, nb, d_be + d_bc);
+            s.node_pair(node, ne, -d_be);
+            s.node_pair(node, nc, -d_bc);
+            let constant = p * (i0 - d_be * vbe - d_bc * vbc);
+            s.node_rhs(node, -constant);
+        };
+        terminal(nc, dic_dvbe, dic_dvbc, ic);
+        terminal(nb, dib_dvbe, dib_dvbc, ib);
+        terminal(ne, die_dvbe, die_dvbc, ie);
+    }
+
+    fn calculate_current(&mut self, _ctx: &SimCtx) {
+        // Report collector current as the element's headline figure.
+        self.base.current = self.ic;
+    }
+
+    fn set_param(&mut self, name: &str, value: f64) -> bool {
+        match name {
+            "beta" if value > 0.0 => self.beta_f = value,
+            "betaReverse" if value > 0.0 => self.beta_r = value,
+            _ => return false,
+        }
+        false
+    }
+
+    fn reset(&mut self) {
+        self.base.reset();
+        self.last_vbe = 0.0;
+        self.last_vbc = 0.0;
+        self.ic = 0.0;
+        self.ib = 0.0;
+    }
+}
