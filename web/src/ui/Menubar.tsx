@@ -130,8 +130,16 @@ export function Menubar() {
       </div>
 
       <div className="run-group">
-        <button type="button" className="primary" onClick={toggleRunning} title="Run/Pause (Space)">
-          {running ? 'Pause' : 'Run'}
+        <button
+          type="button"
+          className="primary"
+          onClick={toggleRunning}
+          title="Run/Pause (Space)"
+          aria-label={running ? 'Pause' : 'Run'}
+        >
+          <span className="material-icons" aria-hidden="true">
+            {running ? 'pause' : 'play_arrow'}
+          </span>
         </button>
         <button
           type="button"
@@ -141,8 +149,12 @@ export function Menubar() {
             const text = toNetlist();
             loadNetlist(text);
           }}
+          title="Reset"
+          aria-label="Reset"
         >
-          Reset
+          <span className="material-icons" aria-hidden="true">
+            replay
+          </span>
         </button>
       </div>
     </header>

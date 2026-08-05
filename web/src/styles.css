@@ -88,6 +88,16 @@ button.primary {
   font-weight: 600;
 }
 
+.material-icons {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  display: inline-block;
+  vertical-align: middle;
+}
+
 button.active,
 .tool.active {
   border-color: var(--accent);
