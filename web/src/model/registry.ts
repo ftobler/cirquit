@@ -624,6 +624,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: '207',
     postCount: 1,
     posts: onePost,
+    fields: [{ name: 'text', label: 'Text', type: 'text', target: 'text' }],
     parse: (t, e) => {
       e.text = t.join(' ');
     },
@@ -695,6 +696,10 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'x',
     postCount: 1,
     posts: onePost,
+    fields: [
+      { name: 'text', label: 'Text', type: 'text', target: 'text' },
+      { name: 'size', label: 'Size', unit: 'px' },
+    ],
     parse: (t, e) => {
       e.params.size = Number(t[0]) || 12;
       e.text = t.slice(1).join(' ');
@@ -702,7 +707,9 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dump: (e) => [e.params.size ?? 12, e.text ?? ''],
     draw(g, e) {
       g.ctx.fillStyle = g.selected ? g.theme.selection : g.theme.text;
-      g.ctx.font = canvasFont(e.params.size ?? 12);
+      // A zero or negative size would make an invalid font string and blank
+      // the whole frame's drawing, so clamp at one pixel.
+      g.ctx.font = canvasFont(Math.max(1, e.params.size ?? 12));
       g.ctx.textAlign = 'left';
       g.ctx.textBaseline = 'middle';
       g.ctx.fillText(e.text ?? '', e.x1, e.y1);

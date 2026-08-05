@@ -61,6 +61,8 @@ interface AppState {
   moveElements(ids: number[], dx: number, dy: number): void;
   deleteSelected(): void;
   setParam(id: number, name: string, value: number): void;
+  /** Edits the element's free text (annotations, labels). */
+  setText(id: number, text: string): void;
   /** Interactive state change (switch throw), routed through the live engine. */
   setElementState(id: number, state: number): void;
   /** Drops queued value edits; the frame loop calls this after applying them. */
@@ -189,6 +191,25 @@ export const useStore = create<AppState>((set, get) => ({
       pendingParams: new Map(s.pendingParams).set(`${id}:${name}`, { id, name, value }),
       paramRevision: s.paramRevision + 1,
     })),
+
+  setText: (id, text) =>
+    set((s) => {
+      const target = s.elements.find((e) => e.id === id);
+      if (!target) return s;
+      // The netlist format is line-based, so a raw newline would split the
+      // element in two on the next save. Strip CR and LF at the door.
+      const clean = text.replace(/[\r\n]/g, '');
+      // A labeled node's text is structural, not display-only: the engine
+      // merges nodes that share a label, so it must reload to learn the
+      // change. Every other text-bearing element is display-only and can take
+      // the fast path without restarting the simulation.
+      const reload = target.kind === 'labeledNode';
+      return {
+        elements: s.elements.map((e) => (e.id === id ? { ...e, text: clean } : e)),
+        revision: reload ? s.revision + 1 : s.revision,
+        paramRevision: reload ? s.paramRevision : s.paramRevision + 1,
+      };
+    }),
 
   setElementState: (id, state) =>
     set((s) => ({

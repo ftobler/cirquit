@@ -31,10 +31,12 @@ export interface FieldDef {
   label: string;
   /** Unit suffix, formatted with engineering prefixes. */
   unit?: string;
-  type?: 'number' | 'choice' | 'bool';
+  type?: 'number' | 'choice' | 'bool' | 'text';
   choices?: { value: number; label: string }[];
   min?: number;
   max?: number;
+  /** Reads `e.text` rather than `e.params[name]`. Only meaningful for `text`. */
+  target?: 'param' | 'text';
 }
 
 /** Everything the app needs to know about an element type. */

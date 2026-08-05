@@ -104,6 +104,83 @@ describe('value edits go through the fast path', () => {
   });
 });
 
+describe('setText edits free text through the fast path', () => {
+  const addDecoration = (text?: string) =>
+    useStore.getState().addElement({
+      kind: 'decoration',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 0,
+      flags: 0,
+      params: { size: 12 },
+      ...(text !== undefined ? { text } : {}),
+    });
+
+  it('updates only that element text and leaves params and other elements alone', () => {
+    const resistor = addResistor();
+    const deco = addDecoration('old');
+
+    useStore.getState().setText(deco, 'new text');
+
+    const after = useStore.getState();
+    const edited = after.elements.find((e) => e.id === deco);
+    const other = after.elements.find((e) => e.id === resistor);
+    expect(edited?.text).toBe('new text');
+    expect(edited?.params).toEqual({ size: 12 });
+    expect(other?.params).toEqual({ resistance: 1000 });
+    expect(other?.text).toBeUndefined();
+  });
+
+  it('bumps paramRevision and not revision', () => {
+    const id = addDecoration();
+    const before = useStore.getState();
+
+    useStore.getState().setText(id, 'hello');
+
+    const after = useStore.getState();
+    expect(after.revision).toBe(before.revision);
+    expect(after.paramRevision).toBe(before.paramRevision + 1);
+    expect(after.pendingParams.size).toBe(0);
+  });
+
+  it('bumps revision on a labeled node, whose text is structural', () => {
+    const id = useStore.getState().addElement({
+      kind: 'labeledNode',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 0,
+      flags: 0,
+      params: {},
+      text: 'A',
+    });
+    const before = useStore.getState();
+
+    useStore.getState().setText(id, 'B');
+
+    const after = useStore.getState();
+    expect(after.revision).toBe(before.revision + 1);
+    expect(after.paramRevision).toBe(before.paramRevision);
+    expect(after.elements[0].text).toBe('B');
+  });
+
+  it('strips newlines so a save never splits the element line', () => {
+    const id = addDecoration();
+    useStore.getState().setText(id, 'line1\nline2\r');
+    expect(useStore.getState().elements[0].text).toBe('line1line2');
+  });
+
+  it('is a no-op on an unknown id', () => {
+    const before = useStore.getState();
+    useStore.getState().setText(999, 'nope');
+    const after = useStore.getState();
+    expect(after.elements).toEqual(before.elements);
+    expect(after.revision).toBe(before.revision);
+    expect(after.paramRevision).toBe(before.paramRevision);
+  });
+});
+
 describe('topology mutators force a reload', () => {
   it.each([
     [

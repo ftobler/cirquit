@@ -247,6 +247,7 @@ h3 {
 }
 
 .field input[type='number'],
+.field input[type='text'],
 .field select {
   width: 100%;
   font: inherit;
