@@ -242,7 +242,6 @@ describe('updateSettings reload classification', () => {
     ['showValues', true, false],
     ['showVoltageColor', true, false],
     ['showGrid', true, false],
-    ['snapToGrid', true, false],
   ] as const)('%s reloads=%s', (key, value, reload) => {
     const before = useStore.getState().revision;
     useStore.getState().updateSettings({ [key]: value } as Partial<SimSettings>);

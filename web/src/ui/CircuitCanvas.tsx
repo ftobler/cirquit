@@ -259,8 +259,8 @@ export function CircuitCanvas({ engine }: Props) {
     }
 
     if (state.tool) {
-      const x = state.settings.snapToGrid ? snap(p.x) : Math.round(p.x);
-      const y = state.settings.snapToGrid ? snap(p.y) : Math.round(p.y);
+      const x = snap(p.x);
+      const y = snap(p.y);
       const def = defFor(state.tool);
       const len = (def?.defaultLength ?? 0) * GRID_SIZE;
       const id = state.addElement(makeElement(state.tool, x, y, x + len, y));
@@ -319,14 +319,14 @@ export function CircuitCanvas({ engine }: Props) {
         break;
       }
       case 'place': {
-        const x = state.settings.snapToGrid ? snap(p.x) : Math.round(p.x);
-        const y = state.settings.snapToGrid ? snap(p.y) : Math.round(p.y);
+        const x = snap(p.x);
+        const y = snap(p.y);
         state.updateElement(drag.id, { x2: x, y2: y });
         break;
       }
       case 'move': {
-        const gx = state.settings.snapToGrid ? snap(p.x) - snap(drag.last.x) : p.x - drag.last.x;
-        const gy = state.settings.snapToGrid ? snap(p.y) - snap(drag.last.y) : p.y - drag.last.y;
+        const gx = snap(p.x) - snap(drag.last.x);
+        const gy = snap(p.y) - snap(drag.last.y);
         if (gx !== 0 || gy !== 0) {
           state.moveElements(state.selectedIds, gx, gy);
           dragRef.current = { mode: 'move', last: p, moved: true };
@@ -337,8 +337,8 @@ export function CircuitCanvas({ engine }: Props) {
         // Snap to absolute grid coordinates, not to a delta: a group keeps
         // its internal spacing, a single post should land exactly on the grid
         // so the dragged end can connect to a wire that ends there.
-        const x = state.settings.snapToGrid ? snap(p.x) : Math.round(p.x);
-        const y = state.settings.snapToGrid ? snap(p.y) : Math.round(p.y);
+        const x = snap(p.x);
+        const y = snap(p.y);
         const e = state.elements.find((q) => q.id === drag.id);
         // A no-op update would bump `revision` and make the engine reload
         // mid-cell, so only touch the store when the endpoint actually moved.

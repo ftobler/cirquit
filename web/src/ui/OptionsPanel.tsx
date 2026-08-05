@@ -217,7 +217,6 @@ export function OptionsPanel({ engine }: Props) {
             ['showValues', 'Show values'],
             ['showVoltageColor', 'Colour by voltage'],
             ['showGrid', 'Show grid'],
-            ['snapToGrid', 'Snap to grid'],
           ] as const
         ).map(([key, label]) => (
           <label key={key} className="check">

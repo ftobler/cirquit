@@ -128,7 +128,6 @@ export interface SimSettings {
   showValues: boolean;
   showVoltageColor: boolean;
   showGrid: boolean;
-  snapToGrid: boolean;
 }
 
 export const DEFAULT_SETTINGS: SimSettings = {
@@ -140,7 +139,6 @@ export const DEFAULT_SETTINGS: SimSettings = {
   showValues: true,
   showVoltageColor: true,
   showGrid: true,
-  snapToGrid: true,
 };
 
 /** Circuit-space units per grid square, matching the original. */

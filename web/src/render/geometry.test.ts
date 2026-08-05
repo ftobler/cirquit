@@ -15,8 +15,7 @@ const element = (x1: number, y1: number, x2: number, y2: number): CircuitElement
 });
 
 /** Where a `dragpost` drag would land the pointer, per the canvas handler. */
-const landOn = (x: number, y: number, snapToGrid: boolean) =>
-  snapToGrid ? { x: snap(x), y: snap(y) } : { x: Math.round(x), y: Math.round(y) };
+const landOn = (x: number, y: number) => ({ x: snap(x), y: snap(y) });
 
 describe('nearestPost', () => {
   it('picks the near end of a horizontal element', () => {
@@ -83,18 +82,11 @@ describe('postPatch', () => {
     expect('y1' in patch).toBe(false);
   });
 
-  it('lands on a grid intersection with snap on', () => {
-    const { x, y } = landOn(3.2, 17.7, true);
+  it('lands on a grid intersection', () => {
+    const { x, y } = landOn(3.2, 17.7);
     expect(x % GRID_SIZE).toBe(0);
     expect(y % GRID_SIZE).toBe(0);
     expect(postPatch(1, x, y)).toEqual({ x1: x, y1: y });
-  });
-
-  it('lands on an integer coordinate with snap off', () => {
-    const { x, y } = landOn(3.2, 17.7, false);
-    expect(Number.isInteger(x)).toBe(true);
-    expect(Number.isInteger(y)).toBe(true);
-    expect(postPatch(2, x, y)).toEqual({ x2: x, y2: y });
   });
 
   it('leaves the other endpoint untouched across a drag sequence', () => {
@@ -106,7 +98,7 @@ describe('postPatch', () => {
       [64, 48],
       [80, 16],
     ]) {
-      const { x, y } = landOn(px, py, true);
+      const { x, y } = landOn(px, py);
       current = { ...current, ...postPatch(2, x, y) };
     }
     // The fixed post is exact even after the length and angle moved.
