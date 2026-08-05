@@ -15,6 +15,8 @@ import {
   bodyRect,
   calcLeads,
   circle,
+  COIL_LOOPS,
+  coilPoints,
   currentDots,
   drawLeads,
   elementLength,
@@ -83,16 +85,7 @@ function drawInductorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
-  // Four half-circle humps approximated with a dense polyline, which keeps
-  // the coil looking right at any rotation.
-  const pts: Point[] = [];
-  const segments = 40;
-  for (let i = 0; i <= segments; i++) {
-    const f = i / segments;
-    const hump = Math.sin(f * Math.PI * 4);
-    pts.push(interp(lead1, lead2, f, -hump * 6));
-  }
-  polyline(g, pts, color);
+  polyline(g, coilPoints(lead1, lead2, COIL_LOOPS), color);
   currentDots(g, lead1, lead2, g.current);
   label(g, e, formatValue(e.params.inductance ?? 0, 'H'));
 }

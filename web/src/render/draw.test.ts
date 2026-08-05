@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { calcLeads, currentDots, formatValue, interp, interp2, makeTheme, rectCorners } from './draw';
+import {
+  calcLeads,
+  COIL_LOOPS,
+  coilPoints,
+  currentDots,
+  formatValue,
+  interp,
+  interp2,
+  makeTheme,
+  rectCorners,
+} from './draw';
 import { TOO_FAST } from './dots';
 import { postsOf, switchLeverTip } from '../model/registry';
 import type { CircuitElement, DrawContext, Point } from '../model/types';
@@ -98,6 +108,107 @@ describe('rectangle', () => {
 
   it("returns four corners; closing the loop is the caller's job", () => {
     expect(rectCorners({ x: 0, y: 0 }, { x: 32, y: 0 }, 6)).toHaveLength(4);
+  });
+});
+
+describe('inductor coil', () => {
+  // Signed perpendicular offset of `p` from the a->b axis, positive on the
+  // side a positive interp `g` lands on: the 2D cross product of (b - a) and
+  // (p - a), normalised by |b - a|.
+  const side = (a: Point, b: Point, p: Point) =>
+    ((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)) /
+    Math.hypot(b.y - a.y, b.x - a.x);
+
+  // Along-axis position of `p`, the projection onto the unit a->b direction.
+  const along = (a: Point, b: Point, p: Point) =>
+    ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) /
+    Math.hypot(b.y - a.y, b.x - a.x);
+
+  function assertSameSide(a: Point, b: Point): void {
+    for (const p of coilPoints(a, b, COIL_LOOPS)) {
+      expect(side(a, b, p)).toBeGreaterThanOrEqual(-1e-9);
+    }
+  }
+
+  function assertPeakRadius(a: Point, b: Point): void {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const offsets = coilPoints(a, b, COIL_LOOPS).map((p) => side(a, b, p));
+    expect(Math.max(...offsets)).toBeCloseTo(len / (2 * COIL_LOOPS), 9);
+    expect(Math.min(...offsets)).toBeCloseTo(0, 9);
+  }
+
+  function assertEndpoints(a: Point, b: Point): void {
+    const pts = coilPoints(a, b, COIL_LOOPS);
+    expect(pts[0].x).toBeCloseTo(a.x, 9);
+    expect(pts[0].y).toBeCloseTo(a.y, 9);
+    expect(pts[pts.length - 1].x).toBeCloseTo(b.x, 9);
+    expect(pts[pts.length - 1].y).toBeCloseTo(b.y, 9);
+  }
+
+  function assertEvenCentres(a: Point, b: Point): void {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const r = len / (2 * COIL_LOOPS);
+    // Each loop apex sits at full radius, and there is one per loop.
+    const maxima = coilPoints(a, b, COIL_LOOPS).filter(
+      (p) => Math.abs(side(a, b, p) - r) <= 1e-9,
+    );
+    expect(maxima).toHaveLength(COIL_LOOPS);
+    for (let k = 0; k < COIL_LOOPS; k++) {
+      expect(along(a, b, maxima[k])).toBeCloseTo(len * ((2 * k + 1) / (2 * COIL_LOOPS)), 9);
+    }
+  }
+
+  it('crosses the axis exactly twice between the endpoints', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 32, y: 0 };
+    const interior = coilPoints(a, b, COIL_LOOPS).slice(1, -1);
+    const crossings = interior.filter((p) => Math.abs(side(a, b, p)) <= 1e-9);
+    expect(crossings).toHaveLength(2);
+  });
+
+  it('bulges every loop to the same side', () => {
+    assertSameSide({ x: 0, y: 0 }, { x: 32, y: 0 });
+  });
+
+  it('peaks at |b-a|/(2*loops) and returns to the axis', () => {
+    assertPeakRadius({ x: 0, y: 0 }, { x: 32, y: 0 });
+  });
+
+  it('lands the first and last points on the leads', () => {
+    assertEndpoints({ x: 0, y: 0 }, { x: 32, y: 0 });
+  });
+
+  it('spaces the loop centres evenly at 1/6, 3/6, 5/6', () => {
+    assertEvenCentres({ x: 0, y: 0 }, { x: 32, y: 0 });
+  });
+
+  it('keeps side, radius, endpoints and spacing when vertical', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 0, y: 32 };
+    assertSameSide(a, b);
+    assertPeakRadius(a, b);
+    assertEndpoints(a, b);
+    assertEvenCentres(a, b);
+  });
+
+  it('keeps side, radius, endpoints and spacing at 45 degrees', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 32, y: 32 };
+    assertSameSide(a, b);
+    assertPeakRadius(a, b);
+    assertEndpoints(a, b);
+    assertEvenCentres(a, b);
+  });
+
+  it('draws true semicircles, not sine humps', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 32, y: 0 };
+    const len = 32;
+    const r = len / (2 * COIL_LOOPS);
+    // Quarter point of the first loop: theta = PI/4, step 3 of 12.
+    const p = coilPoints(a, b, COIL_LOOPS)[3];
+    expect(side(a, b, p)).toBeCloseTo(r * Math.sin(Math.PI / 4), 9);
+    expect(along(a, b, p)).toBeCloseTo(r * (1 - Math.cos(Math.PI / 4)), 9);
   });
 });
 

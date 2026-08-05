@@ -158,6 +158,46 @@ export function bodyRect(g: DrawContext, a: Point, b: Point, halfHeight: number,
   polyline(g, [a1, b1, b2, a2, a1], color);
 }
 
+/** Loops in an inductor coil. Upstream scales this with length; a fixed three
+ *  reads better at the 32-unit body every inductor uses. */
+export const COIL_LOOPS = 3;
+
+/**
+ * Same-side semicircles along `a`-`b`: the coil symbol. Each loop is a
+ * 180-degree arc of radius `len/(2*loops)` bulging to one side, so the curve
+ * returns to the axis between loops. Alternating sides would draw a zigzag,
+ * which is the American resistor symbol, not a coil.
+ *
+ * Computed without the grid rounding `interp` applies, like `rectCorners`, so
+ * the radius and along-axis spacing stay exact at any rotation; rounding would
+ * shrink the peak by up to a pixel and break the geometric tests.
+ */
+export function coilPoints(a: Point, b: Point, loops: number, steps = 12): Point[] {
+  let px = b.y - a.y;
+  let py = a.x - b.x;
+  const len = Math.hypot(px, py);
+  if (len === 0) return [a, b];
+  px /= len;
+  py /= len;
+  const radius = len / (2 * loops);
+  const pts: Point[] = [];
+  for (let k = 0; k < loops; k++) {
+    for (let s = 0; s <= steps; s++) {
+      if (k > 0 && s === 0) continue;  // duplicates the previous loop's endpoint
+      const theta = Math.PI * (s / steps);
+      // The (1 - cos theta) / 2 mapping makes the loop a true semicircle: it
+      // is at full radius at the midpoint and meets the axis vertically.
+      const f = (k + (1 - Math.cos(theta)) / 2) / loops;
+      const offset = Math.sin(theta) * radius;
+      pts.push({
+        x: a.x + f * (b.x - a.x) + offset * px,
+        y: a.y + f * (b.y - a.y) + offset * py,
+      });
+    }
+  }
+  return pts;
+}
+
 /** Arrowhead at `tip`, pointing away from `from`. */
 export function arrowHead(g: DrawContext, from: Point, tip: Point, size: number, color: string) {
   const [l, r] = interp2(
