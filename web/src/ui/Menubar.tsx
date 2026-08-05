@@ -84,16 +84,10 @@ export function Menubar() {
       </button>
       <button
         type="button"
-        onClick={async () => {
+        onClick={() => {
           const url = circuitToUrl(toNetlist());
-          try {
-            await navigator.clipboard.writeText(url);
-            setStatus('Shareable link copied to clipboard');
-          } catch {
-            // Clipboard access is blocked in some contexts; show the link so
-            // it can still be copied by hand.
-            window.prompt('Shareable link', url);
-          }
+          window.history.pushState({}, '', url);
+          setStatus('Shareable link in the address bar');
         }}
       >
         Share link
