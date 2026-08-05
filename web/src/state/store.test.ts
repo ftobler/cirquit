@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, type SimSettings } from '../model/types';
+import { postPatch } from '../render/geometry';
 import { useStore } from './store';
 
 /** A pristine store, matching the initialiser in store.ts. */
@@ -234,5 +235,44 @@ describe('updateSettings reload classification', () => {
     const before = useStore.getState().revision;
     useStore.getState().updateSettings({ [key]: value } as Partial<SimSettings>);
     expect(useStore.getState().revision - before).toBe(reload ? 1 : 0);
+  });
+});
+
+describe('ctrl-drag post movement undo', () => {
+  it('collapses a multi-move post drag into one undo step', () => {
+    const id = addResistor();
+    const original = useStore.getState().elements[0];
+    const commitsBefore = useStore.getState().undoStack.length;
+    useStore.getState().commit();
+    // Simulate pointer-move events for the dragged post.
+    for (const [x, y] of [
+      [16, 0],
+      [32, 16],
+      [48, 0],
+    ]) {
+      useStore.getState().updateElement(id, postPatch(2, x, y));
+    }
+    const dragged = useStore.getState().elements[0];
+    expect(dragged.x2).toBe(48);
+    expect(dragged.y2).toBe(0);
+    expect(dragged.x1).toBe(original.x1);
+    expect(dragged.y1).toBe(original.y1);
+    // updateElement never pushes undo entries, so the single commit is the
+    // whole drag: one undo restores the original geometry.
+    expect(useStore.getState().undoStack.length).toBe(commitsBefore + 1);
+    useStore.getState().undo();
+    expect(useStore.getState().elements[0]).toEqual(original);
+  });
+
+  it('rolls back a drag that collapsed the element to a point', () => {
+    const id = addResistor();
+    const original = useStore.getState().elements[0];
+    useStore.getState().commit();
+    // The pointer-up handler detects the zero-length result and undoes.
+    useStore.getState().updateElement(id, postPatch(2, 0, 0));
+    expect(useStore.getState().elements[0].x2).toBe(0);
+    expect(useStore.getState().elements[0].y2).toBe(0);
+    useStore.getState().undo();
+    expect(useStore.getState().elements[0]).toEqual(original);
   });
 });

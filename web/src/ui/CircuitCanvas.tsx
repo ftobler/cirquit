@@ -9,6 +9,7 @@ import { defFor, postsOf } from '../model/registry';
 import { GRID_SIZE, type CircuitElement, type DrawContext, type Point } from '../model/types';
 import { dotPhaseStep, TOO_FAST, wrapPhase } from '../render/dots';
 import { makeTheme } from '../render/draw';
+import { distanceToElement, nearestPost, postAt, postPatch } from '../render/geometry';
 import { makeElement, snap, useStore } from '../state/store';
 
 /** How close the pointer must be to an element to hit it, in circuit units. */
@@ -22,34 +23,9 @@ type Drag =
   | { mode: 'none' }
   | { mode: 'place'; start: Point; id: number }
   | { mode: 'move'; last: Point; moved: boolean }
+  | { mode: 'dragpost'; id: number; post: 1 | 2; moved: boolean }
   | { mode: 'select'; start: Point; current: Point }
   | { mode: 'pan'; startClient: Point; startView: Point };
-
-/** Shortest distance from `p` to the segment `a`-`b`. */
-function distanceToSegment(p: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lenSq = dx * dx + dy * dy;
-  if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
-  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
-}
-
-/** Distance from a point to an element, measured against all of its limbs. */
-function distanceToElement(p: Point, e: CircuitElement): number {
-  const posts = postsOf(e);
-  if (posts.length <= 1) {
-    return Math.hypot(p.x - e.x1, p.y - e.y1);
-  }
-  const body = distanceToSegment(p, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 });
-  // Multi-terminal parts have limbs off the main axis, so also test each
-  // terminal against the body line.
-  const limbs = posts.map((q) => distanceToSegment(q, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }));
-  const nearPost = Math.min(...posts.map((q) => Math.hypot(p.x - q.x, p.y - q.y)));
-  void limbs;
-  return Math.min(body, nearPost);
-}
 
 export function CircuitCanvas({ engine }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -304,7 +280,16 @@ export function CircuitCanvas({ engine }: Props) {
         state.select(ev.ctrlKey ? [...state.selectedIds, hit.id] : [hit.id]);
       }
       state.commit();
-      dragRef.current = { mode: 'move', last: p, moved: false };
+      // Ctrl does two things depending on whether the pointer moves: without
+      // a move it is a plain additive selection, done above; with one it
+      // grabs the nearer endpoint and drags only that post, stretching or
+      // rotating the element. The additive selection from pointer-down stays
+      // either way.
+      if (ev.ctrlKey && (def?.postCount ?? 0) > 1) {
+        dragRef.current = { mode: 'dragpost', id: hit.id, post: nearestPost(p, hit), moved: false };
+      } else {
+        dragRef.current = { mode: 'move', last: p, moved: false };
+      }
       return;
     }
 
@@ -343,6 +328,22 @@ export function CircuitCanvas({ engine }: Props) {
         }
         break;
       }
+      case 'dragpost': {
+        // Snap to absolute grid coordinates, not to a delta: a group keeps
+        // its internal spacing, a single post should land exactly on the grid
+        // so the dragged end can connect to a wire that ends there.
+        const x = state.settings.snapToGrid ? snap(p.x) : Math.round(p.x);
+        const y = state.settings.snapToGrid ? snap(p.y) : Math.round(p.y);
+        const e = state.elements.find((q) => q.id === drag.id);
+        // A no-op update would bump `revision` and make the engine reload
+        // mid-cell, so only touch the store when the endpoint actually moved.
+        // If the element vanished mid-drag there is nothing to write either.
+        if (e !== undefined && !postAt(e, drag.post, x, y)) {
+          state.updateElement(drag.id, postPatch(drag.post, x, y));
+          dragRef.current = { ...drag, moved: true };
+        }
+        break;
+      }
       case 'select': {
         dragRef.current = { ...drag, current: p };
         break;
@@ -378,6 +379,19 @@ export function CircuitCanvas({ engine }: Props) {
       // Placing one element then returning to select mode matches how people
       // actually build a schematic.
       state.setTool(null);
+    }
+
+    if (drag.mode === 'dragpost') {
+      const e = state.elements.find((x) => x.id === drag.id);
+      const def = e ? defFor(e.kind) : undefined;
+      // A post dragged onto its partner leaves a zero-length element, which is
+      // almost never meant. Do not delete mid-drag: the user may be passing
+      // through on the way somewhere. On release, undo the whole drag and say
+      // why.
+      if (drag.moved && e && def && def.postCount > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
+        state.undo();
+        state.setStatus('Reverted: that drag would have collapsed the element to a point.');
+      }
     }
 
     dragRef.current = { mode: 'none' };
