@@ -12,6 +12,7 @@
 
 import {
   arrowHead,
+  bodyRect,
   calcLeads,
   circle,
   currentDots,
@@ -63,13 +64,7 @@ function drawResistorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
-  // Six-segment zigzag between the leads.
-  const pts: Point[] = [lead1];
-  for (let i = 0; i < 6; i++) {
-    pts.push(interp(lead1, lead2, (i + 0.5) / 6, i % 2 === 0 ? 6 : -6));
-  }
-  pts.push(lead2);
-  polyline(g, pts, color);
+  bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, 32 x 12 as upstream
   currentDots(g, lead1, lead2, g.current);
   label(g, e, formatValue(e.params.resistance ?? 0, 'Ω'));
 }
@@ -273,10 +268,7 @@ function drawPotBody(g: DrawContext, e: CircuitElement): void {
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
   line(g, p1, lead1, voltageColor(g, g.voltages[0]));
   line(g, lead2, p2, voltageColor(g, g.voltages[1]));
-  const pts: Point[] = [lead1];
-  for (let i = 0; i < 6; i++) pts.push(interp(lead1, lead2, (i + 0.5) / 6, i % 2 === 0 ? 6 : -6));
-  pts.push(lead2);
-  polyline(g, pts, color);
+  bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, 32 x 12 as upstream
 
   const wiper = potPosts(e)[2];
   const contact = interp(lead1, lead2, e.params.position ?? 0.5, 0);

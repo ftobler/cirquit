@@ -124,6 +124,40 @@ export function triangle(g: DrawContext, a: Point, b: Point, c: Point, color: st
   g.ctx.fill();
 }
 
+/**
+ * The four corners of the rectangle straddling the segment `a`-`b`,
+ * `halfHeight` to each side, ordered `[a1, b1, b2, a2]` for a closed loop.
+ *
+ * Same perpendicular as `interp`, but without the grid rounding, so the box is
+ * an exact rectangle at any angle: the long edges equal `|b - a|` and the
+ * short edges equal `2 * halfHeight`. Rounding the corners would skew those
+ * lengths by up to a pixel on diagonal elements.
+ */
+export function rectCorners(a: Point, b: Point, halfHeight: number): [Point, Point, Point, Point] {
+  let px = b.y - a.y;
+  let py = a.x - b.x;
+  const r = Math.hypot(px, py);
+  if (r === 0) return [a, a, a, a];
+  px /= r;
+  py /= r;
+  const a1 = { x: a.x + halfHeight * px, y: a.y + halfHeight * py };
+  const a2 = { x: a.x - halfHeight * px, y: a.y - halfHeight * py };
+  const b1 = { x: b.x + halfHeight * px, y: b.y + halfHeight * py };
+  const b2 = { x: b.x - halfHeight * px, y: b.y - halfHeight * py };
+  return [a1, b1, b2, a2];
+}
+
+/**
+ * Rectangle straddling the segment `a`-`b`, `halfHeight` to each side. Built
+ * from interpolated points rather than `strokeRect` because the context is not
+ * rotated per element; this keeps the box square to the element at any angle.
+ * The loop is closed by repeating the first corner.
+ */
+export function bodyRect(g: DrawContext, a: Point, b: Point, halfHeight: number, color: string): void {
+  const [a1, b1, b2, a2] = rectCorners(a, b, halfHeight);
+  polyline(g, [a1, b1, b2, a2, a1], color);
+}
+
 /** Arrowhead at `tip`, pointing away from `from`. */
 export function arrowHead(g: DrawContext, from: Point, tip: Point, size: number, color: string) {
   const [l, r] = interp2(

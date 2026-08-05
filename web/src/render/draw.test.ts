@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { calcLeads, currentDots, formatValue, interp, interp2, makeTheme } from './draw';
+import { calcLeads, currentDots, formatValue, interp, interp2, makeTheme, rectCorners } from './draw';
 import { TOO_FAST } from './dots';
 import { postsOf, switchLeverTip } from '../model/registry';
 import type { CircuitElement, DrawContext, Point } from '../model/types';
@@ -52,6 +52,52 @@ describe('geometry', () => {
     const [l1, l2] = calcLeads(element(0, 0, 10, 0), 32);
     expect(l1).toEqual({ x: 0, y: 0 });
     expect(l2).toEqual({ x: 10, y: 0 });
+  });
+});
+
+describe('rectangle', () => {
+  it('squares a horizontal element at halfHeight', () => {
+    const c = rectCorners({ x: 0, y: 0 }, { x: 32, y: 0 }, 6);
+    expect(c.map((p) => p.x).sort((a, b) => a - b)).toEqual([0, 0, 32, 32]);
+    expect(c.map((p) => p.y).sort((a, b) => a - b)).toEqual([-6, -6, 6, 6]);
+    // One corner at each combination of the two x and two y values.
+    expect(new Set(c.map((p) => `${p.x},${p.y}`))).toEqual(
+      new Set(['0,-6', '32,-6', '32,6', '0,6']),
+    );
+  });
+
+  it('swaps the perpendicular for a vertical element', () => {
+    // A vertical axis displaces sideways, not vertically; this catches a
+    // swapped perpendicular in the helper.
+    const c = rectCorners({ x: 0, y: 0 }, { x: 0, y: 32 }, 6);
+    expect(c.map((p) => p.x).sort((a, b) => a - b)).toEqual([-6, -6, 6, 6]);
+    expect(c.map((p) => p.y).sort((a, b) => a - b)).toEqual([0, 0, 32, 32]);
+  });
+
+  it('keeps diagonal corners halfHeight from the axis', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 32, y: 32 };
+    for (const p of rectCorners(a, b, 6)) {
+      const d =
+        Math.abs((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)) /
+        Math.hypot(b.y - a.y, b.x - a.x);
+      expect(d).toBeCloseTo(6, 9);
+    }
+  });
+
+  it('has edges |b - a| long and 2*halfHeight short', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 32, y: 32 };
+    const [a1, b1, b2, a2] = rectCorners(a, b, 6);
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const long = [Math.hypot(b1.x - a1.x, b1.y - a1.y), Math.hypot(a2.x - b2.x, a2.y - b2.y)];
+    const short = [Math.hypot(b2.x - b1.x, b2.y - b1.y), Math.hypot(a1.x - a2.x, a1.y - a2.y)];
+    for (const e of long) expect(e).toBeCloseTo(len, 9);
+    for (const e of short) expect(e).toBeCloseTo(12, 9);
+  });
+
+  it("returns four corners; closing the loop is the caller's job", () => {
+    expect(rectCorners({ x: 0, y: 0 }, { x: 32, y: 0 }, 6)).toHaveLength(4);
   });
 });
 
