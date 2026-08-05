@@ -55,8 +55,9 @@ test-web:
 
 test: test-rust test-web
 
-# Formatting and linting, matching CI.
-lint:
+# Formatting and linting, matching CI. Needs the wasm bindings: the generated
+# .d.ts is what `tsc` resolves `src/wasm/circuit_engine` against.
+lint: wasm
     cd engine && cargo fmt --all -- --check
     cd engine && cargo clippy --workspace --all-targets -- -D warnings
     cd web && npm run lint
