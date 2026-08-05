@@ -86,6 +86,27 @@ describe('netlist parsing', () => {
   });
 });
 
+describe('subset dump', () => {
+  const dropId = (e: CircuitElement) => {
+    const { id, ...rest } = e;
+    void id;
+    return rest;
+  };
+
+  it('dumps two elements out of the whole circuit and reparses them equal apart from ids', () => {
+    const parsed = parseCircuit(SAMPLE);
+    const subset = parsed.elements.slice(0, 2);
+    const text = serializeCircuit(subset, { ...DEFAULT_SETTINGS, ...parsed.settings });
+
+    const back = parseCircuit(text);
+    // Exactly the two selected, none of the other five.
+    expect(back.elements).toHaveLength(2);
+    expect(back.elements.map((e) => e.kind)).toEqual(['resistor', 'switch']);
+    expect(back.scopes).toHaveLength(0);
+    expect(back.elements.map(dropId)).toEqual(subset.map(dropId));
+  });
+});
+
 describe('token escaping', () => {
   it('round-trips text containing spaces', () => {
     const text = 'a label with spaces';
@@ -179,7 +200,7 @@ describe('url sharing', () => {
 describe('circuit library index', () => {
   it('groups entries under their headings', () => {
     const groups = parseSetupList(
-      ['### comment', '+Basics', 'ohms.txt Ohm\'s Law', '>lrc.txt LRC Circuit', '-'].join('\n'),
+      ['### comment', '+Basics', "ohms.txt Ohm's Law", '>lrc.txt LRC Circuit', '-'].join('\n'),
     );
     expect(groups).toHaveLength(1);
     expect(groups[0].title).toBe('Basics');

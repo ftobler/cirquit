@@ -6,6 +6,14 @@ import { formatValue } from '../render/draw';
 import type { FieldDef } from '../model/types';
 import { useStore } from '../state/store';
 
+/** Holds the live options panel root so the context menu's Edit can focus it. */
+let panelRef: HTMLElement | null = null;
+
+/** Moves keyboard focus to the options panel; a no-op while it is not mounted. */
+export function focusOptionsPanel(): void {
+  panelRef?.focus();
+}
+
 interface Props {
   engine: SimEngine | null;
 }
@@ -101,7 +109,13 @@ export function OptionsPanel({ engine }: Props) {
   const voltage = idx !== undefined && engine ? engine.elementVoltages()[idx] : undefined;
 
   return (
-    <div className="options">
+    <div
+      className="options"
+      tabIndex={-1}
+      ref={(el) => {
+        panelRef = el;
+      }}
+    >
       {problem && <div className="problem">{problem}</div>}
 
       {selected && def ? (

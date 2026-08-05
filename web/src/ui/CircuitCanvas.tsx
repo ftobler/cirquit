@@ -243,6 +243,11 @@ export function CircuitCanvas({ engine }: Props) {
     const state = useStore.getState();
     const p = toCircuit(ev.clientX, ev.clientY);
 
+    // Right-click belongs to the context menu, which fires its contextmenu
+    // event after this pointerdown. Entering a drag or a pan here would commit
+    // an undo step and leave a stale drag state behind the menu.
+    if (ev.button === 2) return;
+
     // Middle button, or space held, pans.
     if (ev.button === 1 || ev.shiftKey) {
       dragRef.current = {
@@ -412,6 +417,14 @@ export function CircuitCanvas({ engine }: Props) {
     });
   };
 
+  const onContextMenu = (ev: React.MouseEvent<HTMLCanvasElement>) => {
+    ev.preventDefault();
+    const hit = hitTest(toCircuit(ev.clientX, ev.clientY));
+    // The store applies the selection-on-right-click rule; only the hit test
+    // (which needs circuit coordinates) stays here.
+    useStore.getState().openContextMenu(ev.clientX, ev.clientY, hit?.id ?? null);
+  };
+
   return (
     <canvas
       ref={canvasRef}
@@ -421,7 +434,7 @@ export function CircuitCanvas({ engine }: Props) {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onWheel={onWheel}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={onContextMenu}
     />
   );
 }

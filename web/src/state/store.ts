@@ -44,6 +44,10 @@ interface AppState {
   pendingParams: Map<string, { id: number; name: string; value: number }>;
   /** Switch state edits not yet pushed to the engine, keyed by element id. */
   pendingStates: Map<number, number>;
+  /** Menu shown by a right-click, or null when closed. */
+  contextMenu: { x: number; y: number; target: number | null } | null;
+  /** Netlist text of the last copied or cut selection. */
+  clipboard: string | null;
 
   setRunning(running: boolean): void;
   toggleRunning(): void;
@@ -79,6 +83,14 @@ interface AppState {
   commit(): void;
   undo(): void;
   redo(): void;
+
+  openContextMenu(x: number, y: number, target: number | null): void;
+  closeContextMenu(): void;
+  selectAll(): void;
+  copySelection(): void;
+  cutSelection(): void;
+  pasteFromClipboard(): void;
+  duplicateSelection(): void;
 }
 
 /** Rounds a coordinate to the nearest grid intersection. */
@@ -114,6 +126,8 @@ export const useStore = create<AppState>((set, get) => ({
   paramRevision: 0,
   pendingParams: new Map(),
   pendingStates: new Map(),
+  contextMenu: null,
+  clipboard: null,
 
   setRunning: (running) => set({ running }),
   toggleRunning: () => set((s) => ({ running: !s.running })),
@@ -318,7 +332,71 @@ export const useStore = create<AppState>((set, get) => ({
         revision: s.revision + 1,
       };
     }),
+
+  openContextMenu: (x, y, target) =>
+    set((s) => {
+      // Right-clicking an element outside the selection selects it alone so
+      // the menu's copy and delete act on it; one already selected keeps the
+      // whole group. Empty canvas leaves the selection untouched.
+      const selectedIds =
+        target !== null && !s.selectedIds.includes(target) ? [target] : s.selectedIds;
+      return { contextMenu: { x, y, target }, selectedIds };
+    }),
+
+  closeContextMenu: () => set({ contextMenu: null }),
+
+  selectAll: () => set((s) => ({ selectedIds: s.elements.map((e) => e.id) })),
+
+  copySelection: () => {
+    const s = get();
+    if (s.selectedIds.length === 0) return;
+    const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
+    set({ clipboard: serializeCircuit(selected, s.settings) });
+  },
+
+  cutSelection: () => {
+    // Put the selection on the clipboard first, then let the existing delete
+    // remove it with its single commit, so cut is one undo step.
+    get().copySelection();
+    get().deleteSelected();
+  },
+
+  pasteFromClipboard: () => {
+    const text = get().clipboard;
+    if (text === null) return;
+    insertElementsFromText(text);
+  },
+
+  duplicateSelection: () => {
+    const s = get();
+    if (s.selectedIds.length === 0) return;
+    const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
+    // The same serialise-then-insert path as paste, but without touching the
+    // clipboard, so Ctrl+D cannot clobber what the user copied.
+    insertElementsFromText(serializeCircuit(selected, s.settings));
+  },
 }));
+
+/** Shared insert path for paste and duplicate: parse, re-id, offset a grid step. */
+function insertElementsFromText(text: string): void {
+  const parsed = parseCircuit(text);
+  if (parsed.elements.length === 0) return;
+  const state = useStore.getState();
+  state.commit();
+  const added = parsed.elements.map((e) => ({
+    ...e,
+    id: allocateId(),
+    x1: e.x1 + GRID_SIZE,
+    y1: e.y1 + GRID_SIZE,
+    x2: e.x2 + GRID_SIZE,
+    y2: e.y2 + GRID_SIZE,
+  }));
+  useStore.setState((s) => ({
+    elements: [...s.elements, ...added],
+    selectedIds: added.map((e) => e.id),
+    revision: s.revision + 1,
+  }));
+}
 
 /** Builds a new element of `kind` spanning the given points. */
 export function makeElement(kind: string, x1: number, y1: number, x2: number, y2: number) {

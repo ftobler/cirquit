@@ -131,7 +131,10 @@ button.active,
 }
 
 .menu-item {
-  display: block;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
   width: 100%;
   text-align: left;
   border: none;
@@ -141,6 +144,32 @@ button.active,
 
 .menu-item:hover {
   background: var(--bg);
+}
+
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.menu-item:disabled:hover {
+  background: transparent;
+}
+
+.menu-shortcut {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
+}
+
+.context-menu {
+  position: fixed;
+  width: 200px;
+  padding: 4px;
 }
 
 /* ---- layout ---- */

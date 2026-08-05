@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { SimEngine } from './engine/simulator';
 import { circuitFromUrl } from './io/urlShare';
 import { CircuitCanvas } from './ui/CircuitCanvas';
+import { ContextMenu } from './ui/ContextMenu';
 import { Menubar } from './ui/Menubar';
 import { OptionsPanel } from './ui/OptionsPanel';
 import { ScopePanel } from './ui/ScopePanel';
@@ -59,6 +60,26 @@ export default function App() {
         else s.undo();
         return;
       }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'x') {
+        ev.preventDefault();
+        s.cutSelection();
+        return;
+      }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'c') {
+        ev.preventDefault();
+        s.copySelection();
+        return;
+      }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'v') {
+        ev.preventDefault();
+        s.pasteFromClipboard();
+        return;
+      }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'd') {
+        ev.preventDefault();
+        s.duplicateSelection();
+        return;
+      }
       if (ev.key === 'Delete' || ev.key === 'Backspace') {
         ev.preventDefault();
         s.deleteSelected();
@@ -101,6 +122,7 @@ export default function App() {
         <main className="centre">
           <CircuitCanvas engine={engine} />
           <ScopePanel engine={engine} />
+          <ContextMenu />
         </main>
         <aside className="right">
           <OptionsPanel engine={engine} />
