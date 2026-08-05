@@ -279,6 +279,14 @@ Dump codes implemented so far, with their trailing field order:
 | `p`   | probe           | meter, scale, resistance                                   |
 | `x`   | text            | size, text                                                 |
 
+For the `t` row: the `pnp` token is `+1` for NPN and `-1` for PNP; the file sign
+is the type, so a non-negative token (including `0` from older saves) reads as
+NPN. The `lastVbe`/`lastVbc` tokens are restored as the initial junction state
+on load, swapped against their names: `lastVbe` seeds the collector node and
+`lastVbc` the emitter node. The trailing `modelName` token is optional (3 to 5
+tokens occur in the wild; beta then keeps its default of 100) and is preserved
+verbatim on save.
+
 Waveform codes: `0` DC, `1` sine, `2` square, `3` triangle, `4` sawtooth,
 `5` pulse, `6` noise.
 

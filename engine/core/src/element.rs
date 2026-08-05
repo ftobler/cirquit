@@ -180,6 +180,10 @@ pub trait Element {
         false
     }
 
+    /// Seed the global node-voltage vector from file state before the first
+    /// solve. Only devices whose format stores operating-point tokens use it.
+    fn seed_initial_voltages(&mut self, _v: &mut [f64]) {}
+
     fn reset(&mut self) {
         self.base_mut().reset();
     }

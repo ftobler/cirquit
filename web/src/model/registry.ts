@@ -239,7 +239,7 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
 function drawTransistorBody(g: DrawContext, e: CircuitElement): void {
   const [p1, p2] = endpoints(e);
   const posts = transistorPosts(e);
-  const pnp = (e.params.pnp ?? 0) !== 0;
+  const pnp = (e.params.pnp ?? 1) === -1;
   const baseColor = voltageColor(g, g.voltages[0]);
 
   // Base lead up to the vertical bar.
@@ -323,7 +323,7 @@ export function opAmpLabelAnchors(e: CircuitElement): [Point, Point] {
  *  pnp, the axis direction and FLAG_SWAP ("Swap E/C" upstream) exactly as the
  *  original does. */
 export function transistorSideFactor(e: CircuitElement): number {
-  const pnp = (e.params.pnp ?? 0) !== 0 ? -1 : 1;
+  const pnp = (e.params.pnp ?? 1) === -1 ? -1 : 1;
   return pnp * dsign(e) * ((e.flags & FLAG_SWAP) !== 0 ? -1 : 1);
 }
 
@@ -574,17 +574,37 @@ export const ELEMENT_DEFS: ElementDef[] = [
     postCount: 3,
     posts: transistorPosts,
     canMirror: true,
-    defaults: { pnp: 0, beta: 100 },
-    parse: (t, e) => readParams(t, e, ['pnp', 'lastVbe', 'lastVbc', 'beta']),
-    dump: writeParams(['pnp', 'lastVbe', 'lastVbc', 'beta']),
+    defaults: { pnp: 1, beta: 100 },
+    // The file sign is the type: +1 is NPN, -1 is PNP, and the optional 5th
+    // token is the model name. A non-negative pnp (including the legacy 0
+    // saved by older builds) normalises to NPN.
+    parse: (t, e) => {
+      const raw = Number(t[0]);
+      e.params.pnp = Number.isFinite(raw) ? (raw < 0 ? -1 : 1) : 1;
+      // Non-finite tokens are skipped, matching readParams, so a malformed
+      // line keeps its defaults instead of poisoning the engine with NaN.
+      if (t[1] !== undefined && Number.isFinite(Number(t[1]))) e.params.lastVbe = Number(t[1]);
+      if (t[2] !== undefined && Number.isFinite(Number(t[2]))) e.params.lastVbc = Number(t[2]);
+      if (t[3] !== undefined && Number.isFinite(Number(t[3]))) e.params.beta = Number(t[3]);
+      if (t[4] !== undefined) e.text = t[4];
+    },
+    // The model name is re-emitted only when it was present on load, so a line
+    // that arrived with 4 tokens stays 4 tokens.
+    dump: (e) => [
+      (e.params.pnp ?? 1) === -1 ? -1 : 1,
+      e.params.lastVbe ?? 0,
+      e.params.lastVbc ?? 0,
+      e.params.beta ?? 100,
+      ...(e.text !== undefined ? [e.text] : []),
+    ],
     fields: [
       {
         name: 'pnp',
         label: 'Type',
         type: 'choice',
         choices: [
-          { value: 0, label: 'NPN' },
-          { value: 1, label: 'PNP' },
+          { value: 1, label: 'NPN' },
+          { value: -1, label: 'PNP' },
         ],
       },
       { name: 'beta', label: 'Current gain (β)' },

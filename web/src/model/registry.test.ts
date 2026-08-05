@@ -93,7 +93,7 @@ describe('mirrored drawing geometry', () => {
   });
 
   it('keeps the transistor collector and emitter leads on their posts side', () => {
-    const t = element('transistor', 0, 0, 160, 0, 0, { pnp: 0 });
+    const t = element('transistor', 0, 0, 160, 0, 0, { pnp: 1 });
     const m = mirrorElement(t);
     const posts = postsOf(m);
     const [collLead, emitLead] = transistorBarContacts(m);

@@ -175,6 +175,19 @@ impl Circuit {
         self.specs = spec.elements.clone();
 
         self.assign_nodes(&spec.elements);
+        // Devices whose format stores operating-point tokens seed the global
+        // node voltages from them, and each element copies its terminals so
+        // the first do_step evaluates at the file's operating point. A warm
+        // start only: the first solve overwrites it.
+        for elm in self.elements.iter_mut() {
+            elm.seed_initial_voltages(&mut self.node_voltages);
+        }
+        for elm in self.elements.iter_mut() {
+            let base = elm.base_mut();
+            for i in 0..base.nodes.len() {
+                base.volts[i] = self.node_voltages[base.nodes[i]];
+            }
+        }
         self.allocate_and_stamp();
         self.build_scopes(spec);
 

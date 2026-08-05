@@ -67,7 +67,7 @@ describe('rotateElement', () => {
   });
 
   it('keeps the collector and emitter on the same side of a rotated transistor', () => {
-    const t = element('transistor', 0, 0, 160, 0, 0, { pnp: 0 });
+    const t = element('transistor', 0, 0, 160, 0, 0, { pnp: 1 });
     const r = rotateElement(t);
     expect(postsOf(r)[0]).toEqual({ x: 80, y: 80 });  // base end
     expect(postsOf(r)[1]).toEqual({ x: 64, y: -80 });  // collector, rigid turn
@@ -82,7 +82,7 @@ describe('rotateElement', () => {
 
 describe('mirrorElement', () => {
   it('keeps the bounding box and flips the order of posts on a transistor', () => {
-    const t = element('transistor', 0, 0, 160, 0, 0, { pnp: 0 });
+    const t = element('transistor', 0, 0, 160, 0, 0, { pnp: 1 });
     const before = postsOf(t);
     const m = mirrorElement(t);
     expect(m).toMatchObject({ x1: 160, y1: 0, x2: 0, y2: 0 });

@@ -1,8 +1,13 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { escapeToken, parseCircuit, serializeCircuit, unescapeToken } from './netlist';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
 import { parseSetupList } from './library';
 import { compressCircuit, decompressCircuit } from './urlShare';
+
+const CIRCUITS_DIR = fileURLToPath(new URL('../../public/circuits', import.meta.url));
 
 /** A circuit in the original format, exercising several element types. */
 const SAMPLE = `$ 1 0.000005 10.20027730826997 50 5 43 5e-11
@@ -112,6 +117,105 @@ describe('token escaping', () => {
     const text = 'a label with spaces';
     expect(unescapeToken(escapeToken(text))).toBe(text);
     expect(escapeToken(text)).not.toContain(' ');
+  });
+});
+
+describe('transistor file format', () => {
+  /** Parses a single element line and re-emits it, returning the `t` line. */
+  const transistorLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('t ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('transistor_pnp_token_round_trips_as_a_sign', () => {
+    const { e, elementLine } = transistorLine(
+      't 208 336 256 336 0 -1 0 -0.631032106406004 100',
+    );
+    expect(e.params.pnp).toBe(-1);
+    expect(elementLine).toBe('t 208 336 256 336 0 -1 0 -0.631032106406004 100');
+  });
+
+  it('round-trips a pnp = 1 NPN line byte-for-byte', () => {
+    const { e, elementLine } = transistorLine(
+      't 400 304 464 304 0 1 0.647542643140423 0.6813812722941772 100',
+    );
+    expect(e.params.pnp).toBe(1);
+    expect(elementLine).toBe('t 400 304 464 304 0 1 0.647542643140423 0.6813812722941772 100');
+  });
+
+  it('transistor_model_name_token_is_preserved', () => {
+    const { e, elementLine } = transistorLine(
+      't 496 256 560 256 0 1 -3.1354863883836575 0.6928898087953951 100 early',
+    );
+    expect(e.params.pnp).toBe(1);
+    expect(e.text).toBe('early');
+    expect(elementLine.endsWith(' early')).toBe(true);
+    const [again] = parseCircuit(elementLine).elements;
+    expect(again.text).toBe('early');
+    expect(again.params.pnp).toBe(1);
+  });
+
+  it('drops a non-finite token to its default instead of storing NaN', () => {
+    const { e, elementLine } = transistorLine('t 100 100 200 100 0 1 abc 0.5 100');
+    expect(e.params.lastVbe).toBeUndefined();
+    expect(e.params.lastVbc).toBe(0.5);
+    expect(e.params.beta).toBe(100);
+    expect(elementLine).toBe('t 100 100 200 100 0 1 0 0.5 100');
+  });
+
+  it('legacy_zero_pnp_normalizes_to_npn', () => {
+    const { e, elementLine } = transistorLine('t 100 100 200 100 0 0 -0.5 0.6 100');
+    expect(e.params.pnp).toBe(1);
+    expect(elementLine).toContain(' 1 -0.5 0.6 100');
+  });
+
+  it('three_token_transistor_line_keeps_default_beta', () => {
+    const { e, elementLine } = transistorLine(
+      't 240 208 336 208 0 1 -10.980847640834186 0.5689504449104646',
+    );
+    expect(e.params.beta).toBe(100);
+    expect(elementLine).toBe(
+      't 240 208 336 208 0 1 -10.980847640834186 0.5689504449104646 100',
+    );
+    const [again] = parseCircuit(elementLine).elements;
+    expect(again.params.pnp).toBe(1);
+    expect(again.params.beta).toBe(100);
+  });
+});
+
+describe('transistor corpus parity', () => {
+  it('every bundled t line parses to +1 or -1 and survives a round trip', () => {
+    const files = readdirSync(CIRCUITS_DIR).filter((f) => f.endsWith('.txt'));
+    let lines = 0;
+    let npn = 0;
+    let pnp = 0;
+    let withModel = 0;
+    const anomalies: string[] = [];
+    for (const file of files) {
+      const parsed = parseCircuit(readFileSync(join(CIRCUITS_DIR, file), 'utf8'));
+      for (const e of parsed.elements) {
+        if (e.kind !== 'transistor') continue;
+        lines += 1;
+        if (e.params.pnp === -1) pnp += 1;
+        else if (e.params.pnp === 1) npn += 1;
+        else anomalies.push(`${file}: pnp=${e.params.pnp}`);
+        if (e.text !== undefined) withModel += 1;
+        const [again] = parseCircuit(
+          serializeCircuit([e], { ...DEFAULT_SETTINGS, ...parsed.settings }),
+        ).elements;
+        if (again.params.pnp !== e.params.pnp) {
+          anomalies.push(`${file}: pnp changed on round trip`);
+        }
+        if (again.text !== e.text) {
+          anomalies.push(`${file}: model name changed on round trip`);
+        }
+      }
+    }
+    console.log(`t lines ${lines}: npn ${npn}, pnp ${pnp}, model names ${withModel}`);
+    expect(anomalies).toEqual([]);
+    expect(lines).toBeGreaterThan(0);
   });
 });
 

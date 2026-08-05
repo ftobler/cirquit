@@ -1296,9 +1296,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "dac.txt",
@@ -2286,9 +2285,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "longdist.txt",
@@ -2779,9 +2777,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "opint-invert-amp.txt",
@@ -2789,9 +2786,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "opint-slew.txt",
@@ -2799,9 +2795,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "opint.txt",
@@ -2809,9 +2804,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ota-gain.txt",
@@ -3079,9 +3073,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "pushpullxover.txt",
@@ -3089,9 +3082,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "qam-256.txt",
@@ -3939,9 +3931,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "trans-diffamp-cursrc.txt",
@@ -3949,9 +3940,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "trans-diffamp.txt",
@@ -3959,9 +3949,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "transformer.txt",

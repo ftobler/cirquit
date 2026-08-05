@@ -477,7 +477,7 @@ describe('rotate, mirror and swap terminals', () => {
       x2: 160,
       y2: 0,
       flags: 0,
-      params: { pnp: 0 },
+      params: { pnp: 1 },
     });
 
   it('rotates a selected resistor 90 degrees, swapping length and breadth', () => {

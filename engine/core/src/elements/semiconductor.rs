@@ -2,7 +2,7 @@
 
 use crate::element::{Base, Element, SimCtx};
 use crate::spec::ElementSpec;
-use crate::stamp::Stamper;
+use crate::stamp::{Stamper, GROUND};
 
 /// Thermal voltage at roughly room temperature, in volts.
 const VT: f64 = 0.025_865;
@@ -183,26 +183,46 @@ pub struct BipolarTransistor {
     vcrit: f64,
     last_vbe: f64,
     last_vbc: f64,
+    /// Initial collector node voltage, `-lastVbe` from the file. Stored
+    /// pre-signed because the seed is an absolute node voltage, not a
+    /// polarity-scaled junction voltage.
+    seed_c: f64,
+    /// Initial emitter node voltage, `-lastVbc` from the file.
+    seed_e: f64,
     ic: f64,
     ib: f64,
 }
 
 impl BipolarTransistor {
     pub fn new(spec: &ElementSpec) -> Self {
-        let sat = spec.param("saturationCurrent", 1e-16).max(1e-22);
+        // The file sign is the type: +1 is NPN, -1 is PNP. Any non-negative
+        // token (including the legacy 0) reads as NPN, matching upstream's
+        // default-model saturation current of 1e-13.
+        let sat = spec.param("saturationCurrent", 1e-13).max(1e-22);
+        let polarity = if spec.param("pnp", 1.0) < 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        // Upstream restores the lastVbe/lastVbc tokens as the initial junction
+        // state, swapped: the token named lastVbe drives the collector node
+        // and lastVbc the emitter (TransistorElm.java:63-67). With the seeded
+        // node voltages the first do_step computes vbe = p*lastVbc_token and
+        // vbc = p*lastVbe_token, so the state below matches what those
+        // voltages imply.
+        let lastvbe = spec.param("lastVbe", 0.0);
+        let lastvbc = spec.param("lastVbc", 0.0);
         Self {
             base: Base::with_posts(3),
-            polarity: if spec.param("pnp", 0.0) != 0.0 {
-                -1.0
-            } else {
-                1.0
-            },
+            polarity,
             beta_f: spec.param("beta", 100.0).max(1e-3),
             beta_r: spec.param("betaReverse", 1.0).max(1e-3),
             sat_current: sat,
             vcrit: critical_voltage(VT, sat),
-            last_vbe: 0.0,
-            last_vbc: 0.0,
+            last_vbe: polarity * lastvbc,
+            last_vbc: polarity * lastvbe,
+            seed_c: -lastvbe,
+            seed_e: -lastvbc,
             ic: 0.0,
             ib: 0.0,
         }
@@ -307,6 +327,19 @@ impl Element for BipolarTransistor {
             _ => return false,
         }
         true
+    }
+
+    fn seed_initial_voltages(&mut self, v: &mut [f64]) {
+        // Upstream TransistorElm.java:65-67: base 0, collector -lastVbe,
+        // emitter -lastVbc. Never overwrite the reference node.
+        let nc = self.base.nodes[1];
+        let ne = self.base.nodes[2];
+        if nc != GROUND {
+            v[nc] = self.seed_c;
+        }
+        if ne != GROUND {
+            v[ne] = self.seed_e;
+        }
     }
 
     fn reset(&mut self) {

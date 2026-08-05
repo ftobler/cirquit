@@ -454,6 +454,234 @@ fn common_emitter_stage_amplifies_base_current() {
 }
 
 #[test]
+fn npn_common_emitter_matches_upstream_default_model() {
+    // Ib set by a 470 k base resistor, Ic = beta * Ib through a 1 k load, with
+    // the default model (sat = 1e-13). This is the discriminating test: the
+    // old 1e-16 default sat at Vbe ~ 0.77, and the old polarity bug read the
+    // pnp = 1 sign as a PNP, off in this orientation.
+    let beta = 100.0;
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 470_000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[0, 0], [200, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            // Posts: base, collector, emitter.
+            elm(
+                4,
+                "transistor",
+                &[[100, 0], [200, 0], [200, 100]],
+                &[("pnp", 1.0), ("beta", beta)],
+            ),
+            elm(5, "ground", &[[200, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(50);
+
+    let currents = c.element_currents();
+    let ib = currents[1]; // through the base resistor
+    let ic = currents[2]; // through the collector load
+    assert!(ic > 0.0, "collector load current was {ic}");
+    let measured_beta = ic / ib;
+    assert!(
+        (90.0..110.0).contains(&measured_beta),
+        "current gain was {measured_beta}"
+    );
+    assert!(
+        currents[3] > 0.0,
+        "reported transistor current was {}",
+        currents[3]
+    );
+
+    // The transistor's three posts start at flattened index 5 (1 + 2 + 2
+    // posts precede them).
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let (nb, nc, ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+    let vbe = v[nb] - v[ne];
+    assert!((0.585..0.605).contains(&vbe), "Vbe was {vbe}");
+    let vc = v[nc];
+    assert!((4.0..4.15).contains(&vc), "collector was {vc}");
+    let ic_from_vc = (5.0 - vc) / 1000.0;
+    assert!(
+        (8.5e-4..1.0e-3).contains(&ic_from_vc),
+        "Ic from Vc was {ic_from_vc}"
+    );
+}
+
+#[test]
+fn pnp_common_emitter_mirrors_the_npn() {
+    // The PNP mirror of the NPN stage: emitter on the rail, base via 470 k to
+    // ground, collector via 1 k to ground. A PNP conducts with its base pulled
+    // a diode drop below the emitter, and its base current exits the base, so
+    // the base resistor has to sink it; tying it to the same rail as the
+    // emitter would leave the device off.
+    let beta = 100.0;
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[100, 0], [100, 200]],
+                &[("resistance", 470_000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 100], [0, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            // Posts: base, collector, emitter; emitter shares the rail node.
+            elm(
+                4,
+                "transistor",
+                &[[100, 0], [100, 100], [0, 0]],
+                &[("pnp", -1.0), ("beta", beta)],
+            ),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "ground", &[[100, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(50);
+
+    let currents = c.element_currents();
+    let ib = currents[1]; // through the base resistor
+    let ic = currents[2]; // through the collector load
+    assert!(ib > 0.0 && ic > 0.0, "PNP currents were ib={ib} ic={ic}");
+    let measured_beta = ic / ib;
+    assert!(
+        (90.0..110.0).contains(&measured_beta),
+        "current gain was {measured_beta}"
+    );
+    assert!(
+        currents[3] < 0.0,
+        "reported transistor current was {}",
+        currents[3]
+    );
+
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let (nb, nc, _ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+    assert!((4.40..4.52).contains(&v[nb]), "base was {}", v[nb]);
+    assert!((0.85..1.05).contains(&v[nc]), "collector was {}", v[nc]);
+    let ic_from_vc = v[nc] / 1000.0;
+    assert!(
+        (8.5e-4..1.05e-3).contains(&ic_from_vc),
+        "Ic from Vc was {ic_from_vc}"
+    );
+}
+
+#[test]
+fn transistor_type_flips_conduction_for_the_same_geometry() {
+    // Same common-emitter layout, pnp = 1 and pnp = -1. The file sign, not a
+    // nonzero test, decides the device: the PNP in the NPN orientation is
+    // reverse biased and off.
+    let make = |pnp: f64| {
+        build(
+            vec![
+                elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+                elm(
+                    2,
+                    "resistor",
+                    &[[0, 0], [100, 0]],
+                    &[("resistance", 470_000.0)],
+                ),
+                elm(
+                    3,
+                    "resistor",
+                    &[[0, 0], [200, 0]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(
+                    4,
+                    "transistor",
+                    &[[100, 0], [200, 0], [200, 100]],
+                    &[("pnp", pnp), ("beta", 100.0)],
+                ),
+                elm(5, "ground", &[[200, 100]], &[]),
+            ],
+            opts(1e-5, true),
+        )
+    };
+
+    let mut npn = make(1.0);
+    npn.run(50);
+    let npn_ic = npn.element_currents()[3];
+    assert!(
+        npn_ic > 8e-4 && npn_ic < 1.1e-3,
+        "NPN collector current was {npn_ic}"
+    );
+
+    let mut pnp = make(-1.0);
+    pnp.run(50);
+    let nodes = pnp.element_nodes();
+    let v = pnp.node_voltages();
+    let (nb, nc, _ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+    assert!(
+        (4.5..5.1).contains(&v[nb]) && (4.5..5.1).contains(&v[nc]),
+        "PNP base and collector were {} and {}",
+        v[nb],
+        v[nc]
+    );
+    assert!(
+        pnp.element_currents()[3].abs() < 1e-9,
+        "PNP leaked {} A",
+        pnp.element_currents()[3]
+    );
+}
+
+#[test]
+fn transistor_initial_state_is_seeded_on_load() {
+    // lastVbe/lastVbc are restored as the initial node voltages, upstream's
+    // swap: collector -lastVbe, emitter -lastVbc (TransistorElm.java:65-67).
+    // No solve runs before the assertion, so the seed is still visible.
+    let seed = |tokens: &[(&str, f64)]| {
+        build(
+            vec![
+                elm(1, "transistor", &[[0, 0], [100, 0], [200, 0]], tokens),
+                elm(2, "ground", &[[0, 0]], &[]),
+            ],
+            opts(1e-5, false),
+        )
+    };
+
+    let c = &mut seed(&[("pnp", 1.0), ("lastVbe", 0.6), ("lastVbc", -3.4)]);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let (nc, ne) = (nodes[1] as usize, nodes[2] as usize);
+    assert!(close(v[nc], -0.6, 1e-12), "collector seeded at {}", v[nc]);
+    assert!(close(v[ne], 3.4, 1e-12), "emitter seeded at {}", v[ne]);
+
+    // A control circuit without the tokens seeds both terminals to zero.
+    let c0 = &mut seed(&[("pnp", 1.0)]);
+    let nodes = c0.element_nodes();
+    let v = c0.node_voltages();
+    let (nc, ne) = (nodes[1] as usize, nodes[2] as usize);
+    assert!(
+        close(v[nc], 0.0, 1e-12) && close(v[ne], 0.0, 1e-12),
+        "control seeded at {} and {}",
+        v[nc],
+        v[ne]
+    );
+
+    // And the seeded point still converges on the first run.
+    let report = c.run(1);
+    assert!(report.converged, "seeded start did not converge");
+}
+
+#[test]
 fn open_switch_breaks_the_loop() {
     let make = |position: f64| {
         build(
