@@ -12,6 +12,7 @@ import {
   interp2,
   makeTheme,
   rectCorners,
+  strokeStyle,
 } from './draw';
 import { TOO_FAST } from './dots';
 import { postsOf, switchLeverTip } from '../model/registry';
@@ -290,6 +291,8 @@ describe('current dots', () => {
     fillStyle: string;
     strokeStyle: string;
     lineWidth: number;
+    lineCap: string;
+    lineJoin: string;
     globalAlpha: number;
     beginPath: ReturnType<typeof vi.fn>;
     moveTo: ReturnType<typeof vi.fn>;
@@ -308,6 +311,8 @@ describe('current dots', () => {
       fillStyle: '',
       strokeStyle: '',
       lineWidth: 0,
+      lineCap: '',
+      lineJoin: '',
       globalAlpha: 1,
       beginPath: record('beginPath'),
       moveTo: record('moveTo'),
@@ -348,6 +353,15 @@ describe('current dots', () => {
     currentDots(context(ctx, 2), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
     expect(calls).toContain('arc');
     expect(calls).not.toContain('stroke');
+  });
+
+  it('sets butt caps and miter joins on every stroke', () => {
+    // Pins the crisp-line regression: round caps and joins would bulge wire
+    // ends and soften polygon corners.
+    const { ctx } = mkCtx();
+    strokeStyle(context(ctx, 0), '#ffffff');
+    expect(ctx.lineCap).toBe('butt');
+    expect(ctx.lineJoin).toBe('miter');
   });
 });
 

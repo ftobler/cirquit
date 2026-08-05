@@ -85,8 +85,11 @@ export function voltageColor(g: DrawContext, v: number): string {
 export function strokeStyle(g: DrawContext, color: string, width = 2): void {
   g.ctx.strokeStyle = g.selected ? g.theme.selection : color;
   g.ctx.lineWidth = width;
-  g.ctx.lineCap = 'round';
-  g.ctx.lineJoin = 'round';
+  // Butt caps end flush at the segment endpoints and miter joins keep polygon
+  // corners crisp points, instead of the round caps and joins that bulge wire
+  // ends and soften every corner.
+  g.ctx.lineCap = 'butt';
+  g.ctx.lineJoin = 'miter';
 }
 
 export function line(g: DrawContext, a: Point, b: Point, color: string, width = 2): void {
