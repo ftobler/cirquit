@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { ELEMENT_DEFS } from './registry';
+import {
+  ELEMENT_DEFS,
+  opAmpInputAnchors,
+  opAmpLabelAnchors,
+  postsOf,
+  transistorBarContacts,
+} from './registry';
+import { mirrorElement } from './transform';
+import type { CircuitElement, Point } from './types';
+
+const element = (
+  kind: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  flags = 0,
+  params: Record<string, number> = {},
+): CircuitElement => ({ id: 1, kind, x1, y1, x2, y2, flags, params });
+
+/** Signed distance of `p` from the element's axis; the sign is the side. */
+const axisSide = (e: CircuitElement, p: Point): number =>
+  (e.x2 - e.x1) * (p.y - e.y1) - (e.y2 - e.y1) * (p.x - e.x1);
+
 
 /** Param names a parse or dump function reads or writes, whatever its shape. */
 function referencedParams(fn: unknown): Set<string> {
@@ -51,5 +74,31 @@ describe('text field metadata', () => {
         expect(bound.has(f.name), `${def.kind} field '${f.name}' is bound to nothing`).toBe(true);
       }
     }
+  });
+});
+
+describe('mirrored drawing geometry', () => {
+  // A mirror must move the drawn leads and labels onto the same side of the
+  // body as the posts they connect to; a lead that does not would cross the
+  // symbol and the minus glyph would sit on the non-inverting input.
+  it('keeps the op-amp inverting lead and its minus glyph on the inverting post side', () => {
+    const a = element('opamp', 0, 0, 160, 0);
+    const m = mirrorElement(a);
+    const [inPost] = postsOf(m);
+    const [inLead] = opAmpInputAnchors(m);
+    const [minus] = opAmpLabelAnchors(m);
+    expect(axisSide(m, inPost)).toBeGreaterThan(0);  // sanity: post off the axis
+    expect(axisSide(m, inLead) * axisSide(m, inPost)).toBeGreaterThan(0);
+    expect(axisSide(m, minus) * axisSide(m, inPost)).toBeGreaterThan(0);
+  });
+
+  it('keeps the transistor collector and emitter leads on their posts side', () => {
+    const t = element('transistor', 0, 0, 160, 0, 0, { pnp: 0 });
+    const m = mirrorElement(t);
+    const posts = postsOf(m);
+    const [collLead, emitLead] = transistorBarContacts(m);
+    expect(axisSide(m, posts[1])).toBeGreaterThan(0);  // sanity: collector off the axis
+    expect(axisSide(m, collLead) * axisSide(m, posts[1])).toBeGreaterThan(0);
+    expect(axisSide(m, emitLead) * axisSide(m, posts[2])).toBeGreaterThan(0);
   });
 });

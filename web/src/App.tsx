@@ -85,6 +85,43 @@ export default function App() {
         s.deleteSelected();
         return;
       }
+      // Rotate, mirror and swap terminals use bare letters, kept out of the
+      // way of the modifier chords above. Shift is excluded so shifted keys do
+      // not rotate. The store guards a selection that cannot take the command,
+      // so these are safe to fire unconditionally.
+      if (
+        !ev.ctrlKey &&
+        !ev.metaKey &&
+        !ev.altKey &&
+        !ev.shiftKey &&
+        ev.key.toLowerCase() === 'r'
+      ) {
+        ev.preventDefault();
+        s.rotateSelection();
+        return;
+      }
+      if (
+        !ev.ctrlKey &&
+        !ev.metaKey &&
+        !ev.altKey &&
+        !ev.shiftKey &&
+        ev.key.toLowerCase() === 'm'
+      ) {
+        ev.preventDefault();
+        s.mirrorSelection();
+        return;
+      }
+      if (
+        !ev.ctrlKey &&
+        !ev.metaKey &&
+        !ev.altKey &&
+        !ev.shiftKey &&
+        ev.key.toLowerCase() === 't'
+      ) {
+        ev.preventDefault();
+        s.swapTerminals();
+        return;
+      }
       if (ev.key === 'Escape') {
         s.setTool(null);
         s.select([]);

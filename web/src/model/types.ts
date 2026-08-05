@@ -67,6 +67,11 @@ export interface ElementDef {
   interactive?: boolean;
   /** Default length in grid units when dragged out from the toolbox. */
   defaultLength?: number;
+  /** Whether Mirror is offered. Default false: most bodies are symmetric, and
+   *  a two-post part mirrored about its own centre is just a swap, which has
+   *  its own command. Rotation needs no flag, being defined for every element
+   *  with two or more posts. */
+  canMirror?: boolean;
 }
 
 export interface Theme {

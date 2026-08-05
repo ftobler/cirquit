@@ -4,6 +4,14 @@ import { create } from 'zustand';
 import type { Scope } from '../engine/simulator';
 import { allocateId, parseCircuit, serializeCircuit, type ScopeConfig } from '../io/netlist';
 import { defFor } from '../model/registry';
+import {
+  canMirror,
+  canRotate,
+  canSwap,
+  mirrorElement,
+  rotateElement,
+  swapTerminalOrder,
+} from '../model/transform';
 import { DEFAULT_SETTINGS, GRID_SIZE, type CircuitElement, type SimSettings } from '../model/types';
 
 export interface ViewTransform {
@@ -64,6 +72,12 @@ interface AppState {
   /** Moves elements without pushing a separate undo entry per frame. */
   moveElements(ids: number[], dx: number, dy: number): void;
   deleteSelected(): void;
+  /** Rotates the selection 90 degrees about each element's midpoint. */
+  rotateSelection(): void;
+  /** Mirrors the selection across each element's vertical centre axis. */
+  mirrorSelection(): void;
+  /** Exchanges posts 0 and 1 on each selected two-terminal part. */
+  swapTerminals(): void;
   setParam(id: number, name: string, value: number): void;
   /** Edits the element's free text (annotations, labels). */
   setText(id: number, text: string): void;
@@ -192,6 +206,10 @@ export const useStore = create<AppState>((set, get) => ({
       revision: s.revision + 1,
     }));
   },
+
+  rotateSelection: () => transformSelected(canRotate, rotateElement),
+  mirrorSelection: () => transformSelected(canMirror, mirrorElement),
+  swapTerminals: () => transformSelected(canSwap, swapTerminalOrder),
 
   setParam: (id, name, value) =>
     set((s) => ({
@@ -395,6 +413,26 @@ function insertElementsFromText(text: string): void {
     elements: [...s.elements, ...added],
     selectedIds: added.map((e) => e.id),
     revision: s.revision + 1,
+  }));
+}
+
+/**
+ * One-undo-step geometry command over the selection. Refuses to touch a mixed
+ * or unsupported selection, which keeps the menu's disabled state and the
+ * keyboard path from diverging: if the menu would grey the item out, the same
+ * `guard` makes the command a no-op here.
+ */
+function transformSelected(
+  guard: (e: CircuitElement) => boolean,
+  apply: (e: CircuitElement) => CircuitElement,
+): void {
+  const s = useStore.getState();
+  const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
+  if (selected.length === 0 || !selected.every(guard)) return;
+  s.commit();
+  useStore.setState((st) => ({
+    elements: st.elements.map((e) => (st.selectedIds.includes(e.id) ? apply(e) : e)),
+    revision: st.revision + 1,
   }));
 }
 

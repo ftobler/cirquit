@@ -8,6 +8,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { parseCircuit } from '../io/netlist';
 import { defFor } from '../model/registry';
+import { canMirror, canRotate, canSwap } from '../model/transform';
 import { useStore } from '../state/store';
 import { focusOptionsPanel } from './OptionsPanel';
 
@@ -77,6 +78,12 @@ export function ContextMenu() {
   const targetElement = target !== null ? elements.find((e) => e.id === target) : undefined;
   const targetDef = targetElement ? defFor(targetElement.kind) : undefined;
   const hasSelection = selectedIds.length > 0;
+  const selected = elements.filter((e) => selectedIds.includes(e.id));
+  // A command is enabled only when every selected element can do it, matching
+  // the store actions, which refuse a mixed or unsupported selection.
+  const canRotateSelection = selected.length > 0 && selected.every(canRotate);
+  const canMirrorSelection = selected.length > 0 && selected.every(canMirror);
+  const canSwapSelection = selected.length > 0 && selected.every(canSwap);
 
   const run = (action: () => void) => {
     closeContextMenu();
@@ -147,6 +154,24 @@ export function ContextMenu() {
       shortcut: 'Delete',
       disabled: !hasSelection,
       action: () => useStore.getState().deleteSelected(),
+    },
+    {
+      label: 'Swap Terminals',
+      shortcut: 'T',
+      disabled: !canSwapSelection,
+      action: () => useStore.getState().swapTerminals(),
+    },
+    {
+      label: 'Rotate',
+      shortcut: 'R',
+      disabled: !canRotateSelection,
+      action: () => useStore.getState().rotateSelection(),
+    },
+    {
+      label: 'Mirror',
+      shortcut: 'M',
+      disabled: !canMirrorSelection,
+      action: () => useStore.getState().mirrorSelection(),
     },
   ];
 

@@ -38,6 +38,13 @@ const OPAMP_HEIGHT = 8;
 const OPAMP_WIDTH = 13;
 /** Perpendicular offset of switch throws and transistor collector/emitter. */
 const OPEN_HS = 16;
+/**
+ * File-format flag bit shared by the asymmetric parts: for the op-amp it swaps
+ * the two input leads ("Swap Inputs" upstream), for the transistor it swaps
+ * which side of the base-to-output axis the collector and emitter hang off
+ * ("Swap E/C" upstream). Same bit, meaning per type.
+ */
+export const FLAG_SWAP = 1;
 
 const twoPosts = (e: CircuitElement): Point[] => [
   { x: e.x1, y: e.y1 },
@@ -204,20 +211,19 @@ function drawSwitchBody(g: DrawContext, e: CircuitElement): void {
 }
 
 function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
-  const [p1, p2] = endpoints(e);
-  const dn = elementLength(e);
-  const ww = Math.min(OPAMP_WIDTH, dn / 2);
-  const f = (dn - ww * 2) / (2 * dn);
-  const lead1 = interp(p1, p2, f);
-  const lead2 = interp(p1, p2, 1 - f);
+  const [, p2] = endpoints(e);
+  const [lead1, lead2] = opAmpBodyLeads(e);
   const posts = opAmpPosts(e);
+  const [inAnchor, nonAnchor] = opAmpInputAnchors(e);
+  const [minusAnchor, plusAnchor] = opAmpLabelAnchors(e);
 
-  // Input leads.
-  line(g, posts[0], interp(lead1, lead2, 0, OPAMP_HEIGHT), voltageColor(g, g.voltages[0]));
-  line(g, posts[1], interp(lead1, lead2, 0, -OPAMP_HEIGHT), voltageColor(g, g.voltages[1]));
+  // Input leads run from the posts to the triangle base, so they never cross a
+  // mirrored body: the anchors carry the same flag-derived side as the posts.
+  line(g, posts[0], inAnchor, voltageColor(g, g.voltages[0]));
+  line(g, posts[1], nonAnchor, voltageColor(g, g.voltages[1]));
   line(g, lead2, p2, voltageColor(g, g.voltages[2]));
 
-  const [t1, t2] = interp2(lead1, lead2, 0, OPAMP_HEIGHT * 2);
+  const [t1, t2] = interp2(lead1, lead2, 0, opAmpInputOffset(e) * 2);
   triangle(g, t1, t2, lead2, g.theme.panel);
   polyline(g, [t1, t2, lead2, t1], g.theme.wire, 2);
 
@@ -225,10 +231,8 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
   g.ctx.font = canvasFont(10);
   g.ctx.textAlign = 'center';
   g.ctx.textBaseline = 'middle';
-  const m = interp(lead1, lead2, 0.28, OPAMP_HEIGHT);
-  const p = interp(lead1, lead2, 0.28, -OPAMP_HEIGHT);
-  g.ctx.fillText('−', m.x, m.y);
-  g.ctx.fillText('+', p.x, p.y);
+  g.ctx.fillText('−', minusAnchor.x, minusAnchor.y);
+  g.ctx.fillText('+', plusAnchor.x, plusAnchor.y);
   currentDots(g, lead2, p2, g.current);
 }
 
@@ -241,11 +245,12 @@ function drawTransistorBody(g: DrawContext, e: CircuitElement): void {
   // Base lead up to the vertical bar.
   const barCentre = interp(p1, p2, 0.72);
   line(g, p1, barCentre, baseColor);
-  const [b1, b2] = interp2(p1, p2, 0.72, OPEN_HS * 0.6);
-  line(g, b1, b2, baseColor, 3);
+  const [barTop, barBottom] = interp2(p1, p2, 0.72, OPEN_HS * 0.6);
+  line(g, barTop, barBottom, baseColor, 3);
 
-  // Collector and emitter leads from the bar out to their posts.
-  const [c1, e1] = interp2(p1, p2, 0.72, OPEN_HS * 0.6);
+  // Collector and emitter leads leave the bar on their posts' side, so a
+  // mirrored body's leads do not cross over the symbol.
+  const [c1, e1] = transistorBarContacts(e);
   line(g, c1, posts[1], voltageColor(g, g.voltages[1]));
   line(g, e1, posts[2], voltageColor(g, g.voltages[2]));
   // The arrow sits on the emitter and points the way conventional current
@@ -275,18 +280,69 @@ function drawPotBody(g: DrawContext, e: CircuitElement): void {
 // Multi-terminal geometry
 // ---------------------------------------------------------------------------
 
+/**
+ * Upstream's `dsign`: sign of the axis direction, +1 for a part drawn right or
+ * down, -1 for left or up. The hanging posts of an op-amp or transistor sit on
+ * the side this picks, which is what keeps their terminal coordinates identical
+ * to the original in every orientation, not just a right-pointing one.
+ */
+function dsign(e: CircuitElement): number {
+  return e.y1 === e.y2 ? Math.sign(e.x2 - e.x1) : Math.sign(e.y2 - e.y1);
+}
+
+/** The op-amp body's two lead stubs, base and apex of the triangle. */
+function opAmpBodyLeads(e: CircuitElement): [Point, Point] {
+  const [p1, p2] = endpoints(e);
+  const dn = elementLength(e);
+  const ww = Math.min(OPAMP_WIDTH, dn / 2);
+  const f = (dn - ww * 2) / (2 * dn);
+  return [interp(p1, p2, f), interp(p1, p2, 1 - f)];
+}
+
+/** Signed perpendicular offset of the inverting input, shared by the posts and
+ *  the drawing so leads and labels track a mirrored body. */
+function opAmpInputOffset(e: CircuitElement): number {
+  return OPAMP_HEIGHT * dsign(e) * ((e.flags & FLAG_SWAP) !== 0 ? -1 : 1);
+}
+
+/** Body points where the op-amp's input leads attach, inverting first, ordered
+ *  like `opAmpPosts`. */
+export function opAmpInputAnchors(e: CircuitElement): [Point, Point] {
+  const [lead1, lead2] = opAmpBodyLeads(e);
+  return interp2(lead1, lead2, 0, opAmpInputOffset(e));
+}
+
+/** Centres of the minus and plus glyphs, inverting and non-inverting sides. */
+export function opAmpLabelAnchors(e: CircuitElement): [Point, Point] {
+  const [lead1, lead2] = opAmpBodyLeads(e);
+  const hs = opAmpInputOffset(e);
+  return [interp(lead1, lead2, 0.28, hs), interp(lead1, lead2, 0.28, -hs)];
+}
+
+/** Signed side factor for the transistor's collector and emitter, combining
+ *  pnp, the axis direction and FLAG_SWAP ("Swap E/C" upstream) exactly as the
+ *  original does. */
+export function transistorSideFactor(e: CircuitElement): number {
+  const pnp = (e.params.pnp ?? 0) !== 0 ? -1 : 1;
+  return pnp * dsign(e) * ((e.flags & FLAG_SWAP) !== 0 ? -1 : 1);
+}
+
+/** Points on the base bar where the collector and emitter leads attach,
+ *  ordered like `transistorPosts`. */
+export function transistorBarContacts(e: CircuitElement): [Point, Point] {
+  const [p1, p2] = endpoints(e);
+  return interp2(p1, p2, 0.72, OPEN_HS * 0.6 * transistorSideFactor(e));
+}
+
 function opAmpPosts(e: CircuitElement): Point[] {
   const [p1, p2] = endpoints(e);
-  const flip = (e.flags & 1) !== 0;
-  const hs = flip ? -OPAMP_HEIGHT : OPAMP_HEIGHT;
-  const [inverting, nonInverting] = interp2(p1, p2, 0, hs);
+  const [inverting, nonInverting] = interp2(p1, p2, 0, opAmpInputOffset(e));
   return [inverting, nonInverting, p2];
 }
 
 function transistorPosts(e: CircuitElement): Point[] {
   const [p1, p2] = endpoints(e);
-  const pnp = (e.params.pnp ?? 0) !== 0 ? -1 : 1;
-  const [coll, emit] = interp2(p1, p2, 1, OPEN_HS * pnp);
+  const [coll, emit] = interp2(p1, p2, 1, OPEN_HS * transistorSideFactor(e));
   return [p1, coll, emit];
 }
 
@@ -389,6 +445,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: '174',
     postCount: 3,
     posts: potPosts,
+    canMirror: true,
     defaults: { maxResistance: 1000, position: 0.5 },
     parse: (t, e) => readParams(t, e, ['maxResistance', 'position']),
     dump: (e) => [e.params.maxResistance ?? 1000, e.params.position ?? 0.5, e.text ?? 'Resistance'],
@@ -516,6 +573,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 't',
     postCount: 3,
     posts: transistorPosts,
+    canMirror: true,
     defaults: { pnp: 0, beta: 100 },
     parse: (t, e) => readParams(t, e, ['pnp', 'lastVbe', 'lastVbc', 'beta']),
     dump: writeParams(['pnp', 'lastVbe', 'lastVbc', 'beta']),
@@ -600,6 +658,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'a',
     postCount: 3,
     posts: opAmpPosts,
+    canMirror: true,
     defaults: { maxOut: 15, minOut: -15, gain: 100000 },
     parse: (t, e) => readParams(t, e, ['maxOut', 'minOut', 'gbw', 'volts0', 'volts1', 'gain']),
     dump: (e) => [
