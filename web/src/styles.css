@@ -49,6 +49,7 @@ body {
 .menubar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap; /* at narrow widths the run controls wrap down instead of overflowing the right edge */
   gap: 6px;
   padding: 6px 10px;
   background: var(--panel);
@@ -69,8 +70,12 @@ body {
   margin: 0 4px;
 }
 
-.menubar .grow {
-  flex: 1;
+.menubar .run-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto; /* the run controls never shrink; the file buttons give way first */
+  margin-left: auto;
 }
 
 button {
