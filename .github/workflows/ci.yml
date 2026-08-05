@@ -6,9 +6,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -19,24 +16,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
+      # Tools are installed with their own installers rather than through
+      # marketplace actions. Gitea points GITHUB_API_URL at this instance, so
+      # any action that resolves a GitHub release through the API looks it up
+      # in the wrong place and fails.
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --default-toolchain stable \
+                -c rustfmt -c clippy -t wasm32-unknown-unknown
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: engine
-
-      - uses: jetli/wasm-pack-action@v0.4.0
-
-      - uses: extractions/setup-just@v2
+      - name: Install just and wasm-pack
+        run: |
+          curl -sSfL https://just.systems/install.sh \
+            | bash -s -- --to "$HOME/.cargo/bin" || cargo install just --locked
+          curl -sSfL https://rustwasm.github.io/wasm-pack/installer/init.sh \
+            | sh || cargo install wasm-pack --locked
 
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
 
       - run: npm ci
         working-directory: web
