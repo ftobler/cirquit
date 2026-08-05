@@ -84,7 +84,7 @@ export default function App() {
         <h1>The simulation engine could not start</h1>
         <p>{engineError}</p>
         <p className="hint">
-          The WebAssembly engine is built by <code>just build-wasm</code>; check that
+          The WebAssembly engine is built by <code>just wasm</code>; check that
           <code> web/src/wasm</code> exists.
         </p>
       </div>

@@ -26,19 +26,19 @@ reference:
     fi
 
 # Compile the Rust engine to WebAssembly (release).
-build-wasm:
+wasm:
     wasm-pack build engine/wasm --release --target web --out-dir ../../{{ wasm_out }} --out-name circuit_engine
 
 # Same, but with debug assertions and readable panics.
-build-wasm-dev:
+wasm-dev:
     wasm-pack build engine/wasm --dev --target web --out-dir ../../{{ wasm_out }} --out-name circuit_engine
 
-# Run the Vite dev server (builds the engine first).
-dev: build-wasm-dev
+# Run the Vite dev server (run `just wasm` yourself after an engine change).
+dev:
     cd web && npm run dev
 
 # Production build of the static site into web/dist.
-build: build-wasm
+build: wasm
     cd web && npm run build
 
 # Serve the production build locally.
@@ -62,7 +62,7 @@ lint:
     cd web && npm run lint
     cd web && npm run typecheck
 
-fmt:
+format:
     cd engine && cargo fmt --all
     cd web && npm run format
 
@@ -70,7 +70,7 @@ fmt:
 ci: lint test build
 
 # Copy the upstream example-circuit library into the static site.
-import-circuits: reference
+import-cirquits-upstream: reference
     #!/usr/bin/env bash
     set -euo pipefail
     src=reference/circuitjs1/src/com/lushprojects/circuitjs1/public

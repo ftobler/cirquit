@@ -288,11 +288,12 @@ Text tokens that may contain spaces are escaped: space becomes `\s`, newline
 
 ```sh
 just setup            # toolchains, npm install, fetch upstream reference
-just dev              # dev server (rebuilds the engine first)
+just wasm             # build the Rust engine to web/src/wasm/
+just dev              # dev server (does not build the engine)
 just test             # Rust + TypeScript tests
 just lint             # everything CI checks
 just ci               # lint + test + build, in CI order
-just import-circuits  # refresh the bundled circuit library from upstream
+just import-cirquits-upstream  # refresh the bundled circuit library from upstream
 ```
 
 `reference/circuitjs1` is a gitignored checkout of upstream, kept purely as a
