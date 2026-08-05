@@ -1,6 +1,7 @@
 /** Drawing primitives shared by every element renderer. */
 
 import type { CircuitElement, DrawContext, Point, Theme } from '../model/types';
+import { DOT_SPACING, TOO_FAST } from './dots';
 
 /**
  * Point along `a -> b` at fraction `f`, displaced `g` units perpendicular to
@@ -125,23 +126,41 @@ export function triangle(g: DrawContext, a: Point, b: Point, c: Point, color: st
 
 /** Arrowhead at `tip`, pointing away from `from`. */
 export function arrowHead(g: DrawContext, from: Point, tip: Point, size: number, color: string) {
-  const [l, r] = interp2(from, tip, 1 - size / Math.max(1, Math.hypot(tip.x - from.x, tip.y - from.y)), size / 2);
+  const [l, r] = interp2(
+    from,
+    tip,
+    1 - size / Math.max(1, Math.hypot(tip.x - from.x, tip.y - from.y)),
+    size / 2,
+  );
   triangle(g, tip, l, r, color);
 }
-
-/** Spacing between current-flow dots, in circuit units. */
-const DOT_SPACING = 8;
 
 /**
  * Animated dots showing current direction and magnitude along a segment.
  *
  * `dotPhase` accumulates `current * speed` over time, so faster current moves
- * the dots faster and reversing the current reverses them.
+ * the dots faster and reversing the current reverses them. The caller wraps it
+ * into `[0, DOT_SPACING)` each frame, except for `TOO_FAST`, which renders as
+ * a translucent flow line because aliased dots read as motion in the wrong
+ * direction.
  */
 export function currentDots(g: DrawContext, a: Point, b: Point, current: number): void {
   if (!g.showCurrent || !Number.isFinite(current) || current === 0) return;
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   if (len < 1) return;
+
+  if (g.dotPhase === TOO_FAST) {
+    g.ctx.save();
+    g.ctx.globalAlpha = 0.5;
+    g.ctx.strokeStyle = g.theme.currentDot;
+    g.ctx.lineWidth = 4;
+    g.ctx.beginPath();
+    g.ctx.moveTo(a.x, a.y);
+    g.ctx.lineTo(b.x, b.y);
+    g.ctx.stroke();
+    g.ctx.restore();
+    return;
+  }
 
   // Wrap the phase into one dot interval so the pattern is continuous.
   let offset = g.dotPhase % DOT_SPACING;

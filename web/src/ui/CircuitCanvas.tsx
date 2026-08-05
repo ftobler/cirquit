@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor, postsOf } from '../model/registry';
 import { GRID_SIZE, type CircuitElement, type DrawContext, type Point } from '../model/types';
+import { dotPhaseStep, TOO_FAST, wrapPhase } from '../render/dots';
 import { makeTheme } from '../render/draw';
 import { makeElement, snap, useStore } from '../state/store';
 
@@ -53,7 +54,7 @@ function distanceToElement(p: Point, e: CircuitElement): number {
 export function CircuitCanvas({ engine }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<Drag>({ mode: 'none' });
-  const animTimeRef = useRef(0);
+  const dotPhaseRef = useRef(new Map<number, number>());
   const lastFrameRef = useRef(performance.now());
   const loadedRevision = useRef(-1);
   const [, forceRender] = useState(0);
@@ -111,6 +112,9 @@ export function CircuitCanvas({ engine }: Props) {
       // Reload the engine whenever the netlist changed.
       if (engine && loadedRevision.current !== state.revision) {
         loadedRevision.current = state.revision;
+        // A new netlist invalidates every element's accumulated phase, and
+        // clearing the map stops it growing across circuit loads.
+        dotPhaseRef.current.clear();
         const err = engine.setCircuit(elements, settings, scopes);
         const warnings = err ? [err] : engine.warnings();
         useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
@@ -126,7 +130,6 @@ export function CircuitCanvas({ engine }: Props) {
           if (!stats.converged && stats.error) {
             useStore.getState().setProblem(stats.error);
           }
-          animTimeRef.current += elapsed;
         }
         currents = engine.elementCurrents();
         nodeVoltages = engine.nodeVoltages();
@@ -154,8 +157,6 @@ export function CircuitCanvas({ engine }: Props) {
         drawGrid(ctx, view.x, view.y, width / view.scale, height / view.scale, theme.grid);
       }
 
-      const speedFactor = Math.pow(1.08, settings.currentSpeed - 50) * 8;
-
       for (const e of elements) {
         const def = defFor(e.kind);
         if (!def) continue;
@@ -170,9 +171,13 @@ export function CircuitCanvas({ engine }: Props) {
         });
         const current = idx !== undefined && currents ? (currents[idx] ?? 0) : 0;
 
-        // Signed log keeps both microamps and amps visibly in motion.
-        const rate =
-          Math.sign(current) * Math.log1p(Math.abs(current) * 1e4) * speedFactor;
+        // Phase is integrated per element so changing the speed or the current
+        // mid-run cannot teleport the dots. Only advance while running, so a
+        // pause freezes them in place.
+        const step = dotPhaseStep(current, settings.currentSpeed, elapsed);
+        const phase =
+          step === TOO_FAST ? TOO_FAST : wrapPhase((dotPhaseRef.current.get(e.id) ?? 0) + step);
+        if (running) dotPhaseRef.current.set(e.id, phase === TOO_FAST ? 0 : phase);
 
         const g: DrawContext = {
           ctx,
@@ -180,7 +185,7 @@ export function CircuitCanvas({ engine }: Props) {
           voltages,
           current,
           voltage: voltages.length >= 2 ? voltages[0] - voltages[1] : (voltages[0] ?? 0),
-          dotPhase: animTimeRef.current * rate,
+          dotPhase: phase,
           showCurrent: settings.showCurrent,
           showValues: settings.showValues,
           showVoltageColor: settings.showVoltageColor,

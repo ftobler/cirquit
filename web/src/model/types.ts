@@ -95,7 +95,7 @@ export interface DrawContext {
   current: number;
   /** Voltage across the element. */
   voltage: number;
-  /** Advances with simulated time; drives the current-flow animation. */
+  /** Advances each animation frame; drives the current-flow animation. */
   dotPhase: number;
   showCurrent: boolean;
   showValues: boolean;

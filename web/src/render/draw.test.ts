@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { calcLeads, formatValue, interp, interp2 } from './draw';
+import { describe, expect, it, vi } from 'vitest';
+import { calcLeads, currentDots, formatValue, interp, interp2, makeTheme } from './draw';
+import { TOO_FAST } from './dots';
 import { postsOf, switchLeverTip } from '../model/registry';
-import type { CircuitElement, Point } from '../model/types';
+import type { CircuitElement, DrawContext, Point } from '../model/types';
 
 const element = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
   id: 1,
@@ -121,5 +122,71 @@ describe('value formatting', () => {
 
   it('keeps the sign', () => {
     expect(formatValue(-2.5, 'V')).toBe('-2.5 V');
+  });
+});
+
+describe('current dots', () => {
+  interface CtxStub {
+    fillStyle: string;
+    strokeStyle: string;
+    lineWidth: number;
+    globalAlpha: number;
+    beginPath: ReturnType<typeof vi.fn>;
+    moveTo: ReturnType<typeof vi.fn>;
+    lineTo: ReturnType<typeof vi.fn>;
+    stroke: ReturnType<typeof vi.fn>;
+    arc: ReturnType<typeof vi.fn>;
+    fill: ReturnType<typeof vi.fn>;
+    save: ReturnType<typeof vi.fn>;
+    restore: ReturnType<typeof vi.fn>;
+  }
+
+  const mkCtx = (): { ctx: CanvasRenderingContext2D; calls: string[] } => {
+    const calls: string[] = [];
+    const record = (name: string) => vi.fn(() => calls.push(name));
+    const stub: CtxStub = {
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      globalAlpha: 1,
+      beginPath: record('beginPath'),
+      moveTo: record('moveTo'),
+      lineTo: record('lineTo'),
+      stroke: record('stroke'),
+      arc: record('arc'),
+      fill: record('fill'),
+      save: record('save'),
+      restore: record('restore'),
+    };
+    return { ctx: stub as unknown as CanvasRenderingContext2D, calls };
+  };
+
+  const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext => ({
+    ctx,
+    theme: makeTheme(false),
+    voltages: [],
+    current: 1e-3,
+    voltage: 0,
+    dotPhase,
+    showCurrent: true,
+    showValues: false,
+    showVoltageColor: false,
+    selected: false,
+    voltageRange: 5,
+    scale: 1,
+  });
+
+  it('draws a translucent flow line instead of dots when too fast', () => {
+    const { ctx, calls } = mkCtx();
+    currentDots(context(ctx, TOO_FAST), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
+    expect(calls).toContain('stroke');
+    expect(calls).not.toContain('arc');
+  });
+
+  it('keeps drawing dots for a finite phase', () => {
+    const { ctx, calls } = mkCtx();
+    currentDots(context(ctx, 2), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
+    expect(calls).toContain('arc');
+    expect(calls).not.toContain('stroke');
   });
 });
