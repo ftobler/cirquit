@@ -1,0 +1,4401 @@
+[
+  {
+    "file": "3-cgand.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "M",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "3-cgor.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "M",
+      "L",
+      "L",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "3-f211.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "M",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "3-f220.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "M",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "3-f221.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "M",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "3-invert.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "f",
+      "M",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "3motor.txt",
+    "format": "plain",
+    "missing": [
+      "427"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "3phasewye.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "3way.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "4way.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "555dutycycle.txt",
+    "format": "plain",
+    "missing": [
+      "165"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "555int.txt",
+    "format": "plain",
+    "missing": [
+      "153",
+      "153",
+      "b",
+      "I"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "555lowduty.txt",
+    "format": "plain",
+    "missing": [
+      "165"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "555missing.txt",
+    "format": "plain",
+    "missing": [
+      "165",
+      "152",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "555monostable.txt",
+    "format": "plain",
+    "missing": [
+      "165",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "555pulsemod.txt",
+    "format": "plain",
+    "missing": [
+      "165"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "555saw.txt",
+    "format": "plain",
+    "missing": [
+      "165"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "555schmitt.txt",
+    "format": "plain",
+    "missing": [
+      "165"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "555sequencer.txt",
+    "format": "plain",
+    "missing": [
+      "165",
+      "L",
+      "165",
+      "165",
+      "M",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "555square.txt",
+    "format": "plain",
+    "missing": [
+      "165"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "7segdecoder.txt",
+    "format": "plain",
+    "missing": [
+      "157",
+      "I",
+      "I",
+      "I",
+      "I",
+      "L",
+      "L",
+      "L",
+      "L",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "150",
+      "150",
+      "150",
+      "150",
+      "150",
+      "150",
+      "150",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "actbutterband.txt",
+    "format": "plain",
+    "missing": [
+      "n",
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "actbutterhi.txt",
+    "format": "plain",
+    "missing": [
+      "211",
+      "n"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "actbutterlo.txt",
+    "format": "plain",
+    "missing": [
+      "n",
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "adder4-sc.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "allpass1.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "allpass2.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "alu74181.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "amdetect.txt",
+    "format": "plain",
+    "missing": [
+      "A"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "amp-dfdx.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "amp-diff.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "amp-follower.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "amp-fullrect.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "amp-integ.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "amp-invert.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "amp-noninvert.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "amp-rect.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "amp-schmitt.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "amp-sum.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "analogrecip.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "j"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "avr8js-analog.txt",
+    "format": "plain",
+    "missing": [
+      "418",
+      "418",
+      "418",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "418",
+      "418"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "avr8js-logic.txt",
+    "format": "plain",
+    "missing": [
+      "418",
+      "418",
+      "418",
+      "M",
+      "M",
+      "M",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "avr8js-strobe.txt",
+    "format": "plain",
+    "missing": [
+      "418",
+      "418",
+      "418",
+      "418",
+      "418",
+      "162",
+      "162",
+      "162",
+      "162",
+      "162"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "bandnoise.txt",
+    "format": "plain",
+    "missing": [
+      "n",
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "bandpass.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "besselbutter.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "blank.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "brentkung.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "butter10hi.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "butter10hiaud.txt",
+    "format": "plain",
+    "missing": [
+      "n",
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "butter10lo.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "butter10loaud.txt",
+    "format": "plain",
+    "missing": [
+      "n",
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "butterbandstop.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cap.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "capac.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "capmult.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "capmultcaps.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "capmultfreq.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "cappar.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "capseries.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "cc2.txt",
+    "format": "plain",
+    "missing": [
+      "179",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cc2imp.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cc2impn.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "172",
+      "f",
+      "f",
+      "f",
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cc2n.txt",
+    "format": "plain",
+    "missing": [
+      "179",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ccdiff.txt",
+    "format": "plain",
+    "missing": [
+      "179",
+      "179"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cciamp.txt",
+    "format": "plain",
+    "missing": [
+      "179"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ccinductor.txt",
+    "format": "plain",
+    "missing": [
+      "179",
+      "179"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ccint.txt",
+    "format": "plain",
+    "missing": [
+      "179",
+      "179"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ccitov.txt",
+    "format": "plain",
+    "missing": [
+      "179"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ccvccs.txt",
+    "format": "plain",
+    "missing": [
+      "179"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ceamp.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "chaos1.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "chaos2.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "chua.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "classd.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "clockedsrff.txt",
+    "format": "plain",
+    "missing": [
+      "151",
+      "151",
+      "M",
+      "M",
+      "151",
+      "151",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cmosff.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "f",
+      "L",
+      "f",
+      "f",
+      "f",
+      "f",
+      "L",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cmosinverter.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cmosinvertercap.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cmosinverterslow.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "M",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cmosmsff.txt",
+    "format": "plain",
+    "missing": [
+      "159",
+      "159",
+      "I",
+      "I",
+      "159",
+      "159",
+      "I",
+      "I",
+      "I",
+      "I",
+      "I",
+      "L",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cmosnand.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "M",
+      "f",
+      "f",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cmosnor.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "M",
+      "f",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cmostransgate.txt",
+    "format": "plain",
+    "missing": [
+      "I",
+      "L",
+      "f",
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "cmosxor.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "f",
+      "L",
+      "L",
+      "I",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "colpitts.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "comb.txt",
+    "format": "plain",
+    "missing": [
+      "n",
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "conv-boost.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "conv-buck.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "conv-buckboost.txt",
+    "format": "plain",
+    "missing": [
+      "f"
+    ],
+    "sliderLines": 1,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "conv-cuk.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "conv-sepic.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "counter.txt",
+    "format": "plain",
+    "missing": [
+      "156",
+      "156",
+      "156",
+      "156",
+      "M",
+      "M",
+      "M",
+      "M",
+      "419"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "counter8.txt",
+    "format": "plain",
+    "missing": [
+      "156",
+      "156",
+      "156",
+      "156",
+      "156",
+      "156",
+      "156",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "156",
+      "M",
+      "419"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "coupled1.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "coupled2.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "coupled3.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "crossover.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "crystalosc.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "crystalosc2.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-currentadder.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-diff.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-fullrectifier.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-integrator.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-multiplier.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-opamp.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-opamprail.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-ramp.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-resistor.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-varicap.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-varinduct.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cs-varyresistor.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "cube.txt",
+    "format": "plain",
+    "missing": [
+      "82"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "currentsrc.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "currentsrcelm.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "currentsrcramp.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "dac.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "L",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "darlington.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "dcrestoration.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "deccounter.txt",
+    "format": "plain",
+    "missing": [
+      "156",
+      "156",
+      "156",
+      "156",
+      "M",
+      "150",
+      "150",
+      "M",
+      "M",
+      "150",
+      "150",
+      "M",
+      "419"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "decoder.txt",
+    "format": "plain",
+    "missing": [
+      "150",
+      "150",
+      "150",
+      "150",
+      "I",
+      "L",
+      "L",
+      "I",
+      "M",
+      "M",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "delayrc.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "L",
+      "f",
+      "f",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "delta-pwm.txt",
+    "format": "plain",
+    "missing": [
+      "183"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "deltasigma.txt",
+    "format": "plain",
+    "missing": [
+      "160",
+      "82",
+      "155",
+      "82",
+      "164",
+      "82",
+      "82",
+      "168",
+      "M",
+      "M",
+      "M",
+      "M",
+      "82",
+      "82",
+      "153"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "diff.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "digcompare.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "I",
+      "L",
+      "L",
+      "L",
+      "I",
+      "154",
+      "154",
+      "151",
+      "151",
+      "151",
+      "151",
+      "152",
+      "I",
+      "M",
+      "M",
+      "153",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "digsine.txt",
+    "format": "plain",
+    "missing": [
+      "155",
+      "155",
+      "155",
+      "155",
+      "155",
+      "155",
+      "155",
+      "155"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "diodeclip.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
+  },
+  {
+    "file": "diodecurve.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "diodelimit.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "diodevar.txt",
+    "format": "plain",
+    "missing": [
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "divideby2.txt",
+    "format": "plain",
+    "missing": [
+      "155",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "divideby3.txt",
+    "format": "plain",
+    "missing": [
+      "155",
+      "155",
+      "M",
+      "153"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "dram.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "f",
+      "150",
+      "150",
+      "150",
+      "150",
+      "I",
+      "I",
+      "L",
+      "L",
+      "159",
+      "159",
+      "L",
+      "L",
+      "M",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "dtlinverter.txt",
+    "format": "plain",
+    "missing": [
+      "M",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "dtlnand.txt",
+    "format": "plain",
+    "missing": [
+      "M",
+      "L",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "dtlnor.txt",
+    "format": "plain",
+    "missing": [
+      "M",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "early.txt",
+    "format": "plain",
+    "missing": [
+      "32"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "eclnor.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "L",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "eclosc.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "edgedff.txt",
+    "format": "plain",
+    "missing": [
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "L",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "fanout.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "filt-hipass-l.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "filt-hipass.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "filt-lopass-l.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "filt-lopass.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "filt-vcvs-hipass.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "filt-vcvs-lopass.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "flashadc.txt",
+    "format": "plain",
+    "missing": [
+      "154",
+      "154",
+      "419"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "follower.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "freqdouble.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "fulladd.txt",
+    "format": "plain",
+    "missing": [
+      "154",
+      "154",
+      "M",
+      "L",
+      "L",
+      "L",
+      "M",
+      "150",
+      "150",
+      "152"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "fullrect-sc.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "fullrect.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "fullrectf.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "gilbertcell.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "graycode.txt",
+    "format": "plain",
+    "missing": [
+      "154",
+      "154",
+      "154",
+      "M",
+      "M",
+      "M",
+      "M",
+      "164"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "grid.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "grid2.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "gyrator.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "gyratorelm.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "halfadd.txt",
+    "format": "plain",
+    "missing": [
+      "154",
+      "150",
+      "L",
+      "L",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "hartley.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "hfadc.txt",
+    "format": "plain",
+    "missing": [
+      "166",
+      "167",
+      "167",
+      "419"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "howland.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "impedance.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "indmultfreq.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "indmultind.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "indpar.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "indseries.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "induct.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "inductac.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "inductkick-block.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "inductkick-snub.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "inductkick.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "inv-osc.txt",
+    "format": "plain",
+    "missing": [
+      "I",
+      "I"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "invertamp.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "itov.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "jerk.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "jfetamp.txt",
+    "format": "plain",
+    "missing": [
+      "j"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "jfetcurrentsrc.txt",
+    "format": "plain",
+    "missing": [
+      "j"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "jfetfollower-nooff.txt",
+    "format": "plain",
+    "missing": [
+      "j",
+      "j"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "jfetfollower.txt",
+    "format": "plain",
+    "missing": [
+      "j"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "jkff.txt",
+    "format": "plain",
+    "missing": [
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "I",
+      "M",
+      "M",
+      "151",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "johnsonctr.txt",
+    "format": "plain",
+    "missing": [
+      "155",
+      "155",
+      "155",
+      "155",
+      "155",
+      "150",
+      "150",
+      "150",
+      "150",
+      "150",
+      "150",
+      "150",
+      "150",
+      "150",
+      "150",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "joule-thief.txt",
+    "format": "plain",
+    "missing": [
+      "T",
+      "162"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "jsinterface.txt",
+    "format": "plain",
+    "missing": [
+      "156",
+      "156",
+      "156",
+      "156",
+      "156",
+      "156",
+      "156",
+      "156",
+      "418"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ladder.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "lambda-diode-osc.txt",
+    "format": "plain",
+    "missing": [
+      "j",
+      "172",
+      "j"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "lambda-diode.txt",
+    "format": "plain",
+    "missing": [
+      "j",
+      "j"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "latchingrelay.txt",
+    "format": "plain",
+    "missing": [
+      "425",
+      "426"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "leadingedge.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ledarray.txt",
+    "format": "plain",
+    "missing": [
+      "185",
+      "164",
+      "208",
+      "405"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ledflasher.txt",
+    "format": "plain",
+    "missing": [
+      "163",
+      "L",
+      "162",
+      "162",
+      "162",
+      "162",
+      "162",
+      "162"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "lightbulb.txt",
+    "format": "plain",
+    "missing": [
+      "181"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "lissa.txt",
+    "format": "plain",
+    "missing": [
+      "118",
+      "118",
+      "118",
+      "118",
+      "118",
+      "118"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "logconvert.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "longdist.txt",
+    "format": "plain",
+    "missing": [
+      "T",
+      "T"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "lrc-critical.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "lrc.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 3,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "majority.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "L",
+      "L",
+      "151",
+      "151",
+      "151",
+      "151",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "masterslaveff.txt",
+    "format": "plain",
+    "missing": [
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "151",
+      "I",
+      "M",
+      "M",
+      "I",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mirror.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "moscurrentramp.txt",
+    "format": "plain",
+    "missing": [
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "moscurrentsrc.txt",
+    "format": "plain",
+    "missing": [
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mosfetamp.txt",
+    "format": "plain",
+    "missing": [
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mosfollower.txt",
+    "format": "plain",
+    "missing": [
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mosmirror.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mosswitch.txt",
+    "format": "plain",
+    "missing": [
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "motorprotect.txt",
+    "format": "plain",
+    "missing": [
+      "428",
+      "426"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mr-crossbar.txt",
+    "format": "plain",
+    "missing": [
+      "m",
+      "m",
+      "m",
+      "m",
+      "m",
+      "m",
+      "m",
+      "m"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mr-sine.txt",
+    "format": "plain",
+    "missing": [
+      "m"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mr-sine2.txt",
+    "format": "plain",
+    "missing": [
+      "m"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mr-sine3.txt",
+    "format": "plain",
+    "missing": [
+      "m"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mr-square.txt",
+    "format": "plain",
+    "missing": [
+      "m"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mr-triangle.txt",
+    "format": "plain",
+    "missing": [
+      "m"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mr.txt",
+    "format": "plain",
+    "missing": [
+      "m",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "multivib-a.txt",
+    "format": "plain",
+    "missing": [
+      "403",
+      "403",
+      "403",
+      "403"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "multivib-bi.txt",
+    "format": "plain",
+    "missing": [
+      "M",
+      "M",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "multivib-mono.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "mux.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "I",
+      "L",
+      "f",
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "mux3state.txt",
+    "format": "plain",
+    "missing": [
+      "151",
+      "150",
+      "f",
+      "f",
+      "L",
+      "f",
+      "f",
+      "150",
+      "151",
+      "M",
+      "I",
+      "L",
+      "L",
+      "I",
+      "I"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "nandff.txt",
+    "format": "plain",
+    "missing": [
+      "151",
+      "151",
+      "L",
+      "L",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "nic-r.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "nmosfet.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "172",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "nmosinverter.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "M",
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "nmosinverter2.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "nmosinverter3.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "nmosnand.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "M",
+      "f",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "norton-invert.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "norton-noninvert.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "norton-saw.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "norton.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "notch.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "npn.txt",
+    "format": "plain",
+    "missing": [
+      "172",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ohms.txt",
+    "format": "plain",
+    "missing": [
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "opamp-regulator.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "opamp.txt",
+    "format": "plain",
+    "missing": [
+      "172",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "opampfeedback.txt",
+    "format": "plain",
+    "missing": [
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "opint-current.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "opint-invert-amp.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "opint-slew.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "opint.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "ota-gain.txt",
+    "format": "plain",
+    "missing": [
+      "402",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ota-ringmod.txt",
+    "format": "plain",
+    "missing": [
+      "402",
+      "400"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ota-vca.txt",
+    "format": "plain",
+    "missing": [
+      "402",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ota-vcf-single.txt",
+    "format": "plain",
+    "missing": [
+      "402",
+      "400"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "peak-detect.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "phasecomp.txt",
+    "format": "plain",
+    "missing": [
+      "161"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "phasecompint.txt",
+    "format": "plain",
+    "missing": [
+      "155",
+      "155",
+      "f",
+      "f",
+      "150"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "phaseseq.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "phaseshiftosc.txt",
+    "format": "plain",
+    "missing": [
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "phasesplit.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "piso-sr.txt",
+    "format": "plain",
+    "missing": [
+      "155",
+      "155",
+      "184",
+      "184",
+      "155",
+      "184",
+      "155",
+      "L",
+      "L",
+      "L",
+      "L",
+      "L",
+      "M",
+      "I",
+      "184"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "pll.txt",
+    "format": "plain",
+    "missing": [
+      "158",
+      "154"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "pll2.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "pll2a.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "plot2d-checker.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "plot2d-color.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "plot2d-smile.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "pmosfet.txt",
+    "format": "plain",
+    "missing": [
+      "172",
+      "f",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "pnp.txt",
+    "format": "plain",
+    "missing": [
+      "172",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "pot.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "potdivide.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "powerfactor1.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "powerfactor2.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "priencoder.txt",
+    "format": "plain",
+    "missing": [
+      "152",
+      "150",
+      "I",
+      "152",
+      "L",
+      "L",
+      "L",
+      "152",
+      "L",
+      "M",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "pushpull.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "pushpullxover.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "qam-256.txt",
+    "format": "plain",
+    "missing": [
+      "166",
+      "166",
+      "164",
+      "182",
+      "213",
+      "167",
+      "168",
+      "160",
+      "160",
+      "193",
+      "212",
+      "160",
+      "160",
+      "168",
+      "167",
+      "213",
+      "182",
+      "160",
+      "160",
+      "212",
+      "212",
+      "160",
+      "160",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "403"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "r2rladder.txt",
+    "format": "plain",
+    "missing": [
+      "160",
+      "160",
+      "160",
+      "L",
+      "L",
+      "L",
+      "160",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "rectify.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "relaxosc.txt",
+    "format": "plain",
+    "missing": [
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "relay.txt",
+    "format": "plain",
+    "missing": [
+      "178",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "relayand.txt",
+    "format": "plain",
+    "missing": [
+      "178",
+      "178",
+      "178",
+      "L",
+      "L",
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "relayctr.txt",
+    "format": "plain",
+    "missing": [
+      "178",
+      "178",
+      "162",
+      "162",
+      "178",
+      "178",
+      "162",
+      "178",
+      "178",
+      "159"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "relayff.txt",
+    "format": "plain",
+    "missing": [
+      "178",
+      "178"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "relaymux.txt",
+    "format": "plain",
+    "missing": [
+      "178",
+      "178",
+      "178",
+      "L",
+      "L",
+      "L",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "relayor.txt",
+    "format": "plain",
+    "missing": [
+      "178",
+      "178",
+      "178",
+      "L",
+      "L",
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "relayosc.txt",
+    "format": "plain",
+    "missing": [
+      "178"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "relays.txt",
+    "format": "plain",
+    "missing": [
+      "425",
+      "425",
+      "425",
+      "425",
+      "426",
+      "426",
+      "426",
+      "426",
+      "426",
+      "426",
+      "426",
+      "426",
+      "430"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "relaytff.txt",
+    "format": "plain",
+    "missing": [
+      "178",
+      "178"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "relayxor.txt",
+    "format": "plain",
+    "missing": [
+      "178",
+      "178",
+      "L",
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "res-par.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "res-series.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "resistors.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "ringcascade.txt",
+    "format": "plain",
+    "missing": [
+      "163",
+      "163",
+      "150",
+      "150",
+      "I",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ringing.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "ringmod.txt",
+    "format": "plain",
+    "missing": [
+      "169",
+      "169"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "rmsconverter.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "rossler.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "rtlinverter.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "rtlnand.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "L",
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "rtlnor.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "L",
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "samplenhold.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "I",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "satcore-comparison.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "satcore-inductor.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "satcore-transformer.txt",
+    "format": "plain",
+    "missing": [
+      "T"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "sawtooth.txt",
+    "format": "plain",
+    "missing": [
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "schmitt.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "scr.txt",
+    "format": "plain",
+    "missing": [
+      "177"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "scractrig.txt",
+    "format": "plain",
+    "missing": [
+      "177"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "sine.txt",
+    "format": "plain",
+    "missing": [
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "sinediode.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "sipo-sr.txt",
+    "format": "plain",
+    "missing": [
+      "155",
+      "155",
+      "155",
+      "155",
+      "L",
+      "M",
+      "M",
+      "M",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "spark-marx.txt",
+    "format": "plain",
+    "missing": [
+      "187",
+      "187",
+      "187",
+      "187",
+      "187"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "spark-sawtooth.txt",
+    "format": "plain",
+    "missing": [
+      "187"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "spikegen.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "sram.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "f",
+      "L",
+      "159",
+      "159",
+      "I",
+      "L",
+      "L",
+      "M",
+      "I"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "switchedcap.txt",
+    "format": "plain",
+    "missing": [
+      "159",
+      "159",
+      "I",
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "switchfilter.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "f",
+      "I",
+      "L",
+      "f",
+      "f"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "swtreedac.txt",
+    "format": "plain",
+    "missing": [
+      "160",
+      "160",
+      "160",
+      "160",
+      "160",
+      "160",
+      "160",
+      "82",
+      "L",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "synccounter.txt",
+    "format": "plain",
+    "missing": [
+      "156",
+      "156",
+      "156",
+      "156",
+      "150",
+      "150",
+      "419"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "td4-add2.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "td4-ctr-dn.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "td4-ctr-up-dn.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "td4-ctr.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "td4.txt",
+    "format": "xml",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "empty",
+    "sim": "notrun"
+  },
+  {
+    "file": "tdiode.txt",
+    "format": "plain",
+    "missing": [
+      "175"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tdosc.txt",
+    "format": "plain",
+    "missing": [
+      "175"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tdrelax.txt",
+    "format": "plain",
+    "missing": [
+      "175"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tesla.txt",
+    "format": "plain",
+    "missing": [
+      "T",
+      "T",
+      "187"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "thevenin.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "tl.txt",
+    "format": "plain",
+    "missing": [
+      "171"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tlfreq.txt",
+    "format": "plain",
+    "missing": [
+      "170",
+      "170",
+      "171",
+      "171"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tllight.txt",
+    "format": "plain",
+    "missing": [
+      "171",
+      "171"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tllopass.txt",
+    "format": "plain",
+    "missing": [
+      "170",
+      "171",
+      "171",
+      "171",
+      "171",
+      "171"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tlmatch1.txt",
+    "format": "plain",
+    "missing": [
+      "171",
+      "171",
+      "171",
+      "171"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tlmatch2.txt",
+    "format": "plain",
+    "missing": [
+      "171",
+      "171",
+      "171",
+      "171",
+      "171",
+      "171"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tlmis1.txt",
+    "format": "plain",
+    "missing": [
+      "171",
+      "171"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tlmismatch.txt",
+    "format": "plain",
+    "missing": [
+      "171",
+      "171",
+      "171"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tlstand.txt",
+    "format": "plain",
+    "missing": [
+      "171"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "tlterm.txt",
+    "format": "plain",
+    "missing": [
+      "171",
+      "171",
+      "171",
+      "171"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "traffic.txt",
+    "format": "plain",
+    "missing": [
+      "163",
+      "152",
+      "152",
+      "162",
+      "162",
+      "162",
+      "162",
+      "162",
+      "162",
+      "152",
+      "152",
+      "165"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "trans-diffamp-common.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "trans-diffamp-cursrc.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "trans-diffamp.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
+  },
+  {
+    "file": "transformer.txt",
+    "format": "plain",
+    "missing": [
+      "T"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "transformerdc.txt",
+    "format": "plain",
+    "missing": [
+      "T"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "transformerdown.txt",
+    "format": "plain",
+    "missing": [
+      "T"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "transformerup.txt",
+    "format": "plain",
+    "missing": [
+      "T"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "transrectifier.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
+  },
+  {
+    "file": "transswitch.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "triacdimmer.txt",
+    "format": "plain",
+    "missing": [
+      "206",
+      "203",
+      "181"
+    ],
+    "sliderLines": 1,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "triangle.txt",
+    "format": "plain",
+    "missing": [
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "trianglevco.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "172"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "triode.txt",
+    "format": "plain",
+    "missing": [
+      "172",
+      "172",
+      "173"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "triodeamp.txt",
+    "format": "plain",
+    "missing": [
+      "173"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ttlinverter.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ttlnand.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "L",
+      "M"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ttlnor.txt",
+    "format": "plain",
+    "missing": [
+      "L",
+      "M",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "twint.txt",
+    "format": "plain",
+    "missing": [
+      "170"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "ujtosc.txt",
+    "format": "plain",
+    "missing": [
+      "417"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "unishiftreg.txt",
+    "format": "plain",
+    "missing": [
+      "150",
+      "150",
+      "150",
+      "150",
+      "153",
+      "153",
+      "150",
+      "150",
+      "150",
+      "150",
+      "153",
+      "150",
+      "150",
+      "150",
+      "150",
+      "153",
+      "150",
+      "150",
+      "150",
+      "150",
+      "I",
+      "I",
+      "I",
+      "I",
+      "156",
+      "156",
+      "156",
+      "156",
+      "I",
+      "I",
+      "L",
+      "L",
+      "L",
+      "L",
+      "L",
+      "L",
+      "L",
+      "L",
+      "I",
+      "M",
+      "M",
+      "M",
+      "M",
+      "423",
+      "423",
+      "423"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "updownctr.txt",
+    "format": "plain",
+    "missing": [
+      "156",
+      "150",
+      "152",
+      "156",
+      "150",
+      "L",
+      "I",
+      "150",
+      "156",
+      "152",
+      "150",
+      "150",
+      "152",
+      "156",
+      "150",
+      "419"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "varactor.txt",
+    "format": "plain",
+    "missing": [
+      "176",
+      "176",
+      "176"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "varactorvco.txt",
+    "format": "plain",
+    "missing": [
+      "172",
+      "176",
+      "176"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "vco.txt",
+    "format": "plain",
+    "missing": [
+      "f",
+      "211"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "vilnius.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "voltdivide.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "voltdouble.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "voltdouble2.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "voltinvert.txt",
+    "format": "plain",
+    "missing": [
+      "159",
+      "159",
+      "159",
+      "159",
+      "I"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "voltquad.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "volttriple.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "volume.txt",
+    "format": "plain",
+    "missing": [
+      "j"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "wheatstone.txt",
+    "format": "plain",
+    "missing": [
+      "370"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "wienbridge.txt",
+    "format": "plain",
+    "missing": [
+      "181"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "xor.txt",
+    "format": "plain",
+    "missing": [
+      "151",
+      "151",
+      "151",
+      "151",
+      "M",
+      "L",
+      "L"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "xorphasedet.txt",
+    "format": "plain",
+    "missing": [
+      "154"
+    ],
+    "sliderLines": 0,
+    "load": "missing",
+    "sim": "notrun"
+  },
+  {
+    "file": "zeneriv.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "zenerref.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  },
+  {
+    "file": "zenerreffollow.txt",
+    "format": "plain",
+    "missing": [],
+    "sliderLines": 0,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
+  }
+]

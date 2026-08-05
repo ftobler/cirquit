@@ -49,9 +49,14 @@ preview: build
 test-rust:
     cd engine && cargo test --workspace
 
-# TypeScript unit tests.
-test-web:
+# TypeScript unit tests. Needs the wasm bindings, which `just wasm` builds.
+test-web: wasm
     cd web && npm run test -- --run
+
+# Regenerate the circuit-corpus report (writes web/src/io/corpus-report.json)
+# and print the load/sim summary plus the missing-kinds table.
+corpus: wasm
+    cd web && CORPUS_UPDATE=1 npm run test -- --run src/io/corpus.report.test.ts
 
 test: test-rust test-web
 
