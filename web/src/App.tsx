@@ -7,7 +7,7 @@ import { Menubar } from './ui/Menubar';
 import { OptionsPanel } from './ui/OptionsPanel';
 import { ScopePanel } from './ui/ScopePanel';
 import { Toolbox } from './ui/Toolbox';
-import { useStore } from './state/store';
+import { hasUnsavedChanges, useStore } from './state/store';
 
 /** A small RC circuit, so the app opens on something that actually runs. */
 const STARTER_CIRCUIT = `$ 1 0.000005 10.2 50 5 43 5e-11
@@ -129,6 +129,20 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Ask before the page reloads or closes with unsaved changes. The browser
+  // draws its own "leave site?" prompt; `returnValue` is what arms it.
+  useEffect(() => {
+    const onBeforeUnload = (ev: BeforeUnloadEvent) => {
+      const s = useStore.getState();
+      if (hasUnsavedChanges(s.lastSaved, s.toNetlist())) {
+        ev.preventDefault();
+        ev.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
   if (engineError) {

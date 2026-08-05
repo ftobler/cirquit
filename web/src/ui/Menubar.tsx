@@ -20,6 +20,7 @@ export function Menubar() {
   const newCircuit = useStore((s) => s.newCircuit);
   const loadNetlist = useStore((s) => s.loadNetlist);
   const toNetlist = useStore((s) => s.toNetlist);
+  const markSaved = useStore((s) => s.markSaved);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const setStatus = useStore((s) => s.setStatus);
@@ -71,7 +72,14 @@ export function Menubar() {
           e.target.value = '';
         }}
       />
-      <button type="button" onClick={() => download('circuit.txt', toNetlist())}>
+      <button
+        type="button"
+        onClick={() => {
+          const text = toNetlist();
+          markSaved(text);
+          download('circuit.txt', text);
+        }}
+      >
         Save
       </button>
       <button

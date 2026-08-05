@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, GRID_SIZE, type CircuitElement, type SimSettings } fr
 import { postsOf } from '../model/registry';
 import { parseCircuit } from '../io/netlist';
 import { postPatch } from '../render/geometry';
-import { useStore } from './store';
+import { useStore, hasUnsavedChanges } from './store';
 
 /** A pristine store, matching the initialiser in store.ts. */
 const fresh = () => ({
@@ -25,6 +25,7 @@ const fresh = () => ({
   pendingStates: new Map(),
   contextMenu: null,
   clipboard: null,
+  lastSaved: null,
 });
 
 beforeEach(() => useStore.setState(fresh()));
@@ -671,5 +672,67 @@ describe('context menu state', () => {
     addCapacitor();
     useStore.getState().selectAll();
     expect(useStore.getState().selectedIds).toHaveLength(2);
+  });
+});
+
+describe('unsaved-changes guard', () => {
+  const SAMPLE = `$ 1 0.000005 10.2 50 5 43 5e-11
+r 176 96 384 96 0 1000
+`;
+
+  const loadSample = () => useStore.getState().loadNetlist(SAMPLE);
+
+  /** True when the current circuit differs from the last export baseline. */
+  const dirty = () => {
+    const s = useStore.getState();
+    return hasUnsavedChanges(s.lastSaved, s.toNetlist());
+  };
+
+  it('a fresh load is clean', () => {
+    loadSample();
+    expect(dirty()).toBe(false);
+  });
+
+  it('save then edit dirties', () => {
+    loadSample();
+    useStore.getState().markSaved(useStore.getState().toNetlist());
+    addResistor();
+    expect(dirty()).toBe(true);
+  });
+
+  it('save after editing cleans', () => {
+    loadSample();
+    addResistor();
+    useStore.getState().markSaved(useStore.getState().toNetlist());
+    expect(dirty()).toBe(false);
+  });
+
+  it('undo to the saved state is clean', () => {
+    loadSample();
+    useStore.getState().markSaved(useStore.getState().toNetlist());
+    addResistor();
+    expect(dirty()).toBe(true);
+    useStore.getState().undo();
+    expect(dirty()).toBe(false);
+  });
+
+  it('serialised settings dirty, display-only ones do not', () => {
+    loadSample();
+    useStore.getState().markSaved(useStore.getState().toNetlist());
+    useStore.getState().updateSettings({ timeStep: 1e-5 });
+    expect(dirty()).toBe(true);
+    useStore.getState().markSaved(useStore.getState().toNetlist());
+    useStore.getState().updateSettings({ showGrid: false });
+    expect(dirty()).toBe(false);
+  });
+
+  it('newCircuit is clean', () => {
+    loadSample();
+    useStore.getState().newCircuit();
+    expect(dirty()).toBe(false);
+  });
+
+  it('null baseline never warns', () => {
+    expect(hasUnsavedChanges(null, 'anything')).toBe(false);
   });
 });

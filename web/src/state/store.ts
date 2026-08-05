@@ -55,6 +55,8 @@ interface AppState {
   contextMenu: { x: number; y: number; target: number | null } | null;
   /** Netlist text of the last copied or cut selection. */
   clipboard: string | null;
+  /** Netlist text of the last export; null means no baseline yet (clean). */
+  lastSaved: string | null;
 
   setRunning(running: boolean): void;
   toggleRunning(): void;
@@ -90,6 +92,8 @@ interface AppState {
   loadNetlist(text: string): void;
   toNetlist(): string;
   newCircuit(): void;
+  /** Records the serialised state the user last exported as the clean baseline. */
+  markSaved(text: string): void;
 
   /** Records the current state so the next change can be undone. */
   commit(): void;
@@ -108,6 +112,11 @@ interface AppState {
 /** Rounds a coordinate to the nearest grid intersection. */
 export function snap(v: number): number {
   return Math.round(v / GRID_SIZE) * GRID_SIZE;
+}
+
+/** True when reloading the page would lose edits since the last export. */
+export function hasUnsavedChanges(lastSaved: string | null, current: string): boolean {
+  return lastSaved !== null && current !== lastSaved;
 }
 
 const clone = (s: Pick<AppState, 'elements' | 'scopes'>): Snapshot => ({
@@ -136,6 +145,7 @@ export const useStore = create<AppState>((set, get) => ({
   pendingStates: new Map(),
   contextMenu: null,
   clipboard: null,
+  lastSaved: null,
 
   setRunning: (running) => set({ running }),
   toggleRunning: () => set((s) => ({ running: !s.running })),
@@ -291,6 +301,10 @@ export const useStore = create<AppState>((set, get) => ({
         : null,
       revision: s.revision + 1,
     }));
+    // The loaded content is its own baseline: opening a file, a library
+    // circuit or a share link is not "unsaved". `set` is synchronous, so this
+    // `get()` reads the just-loaded state.
+    set({ lastSaved: get().toNetlist() });
   },
 
   toNetlist: () => {
@@ -306,7 +320,7 @@ export const useStore = create<AppState>((set, get) => ({
     return serializeCircuit(s.elements, s.settings, scopeConfigs, s.passthrough);
   },
 
-  newCircuit: () =>
+  newCircuit: () => {
     set((s) => ({
       elements: [],
       scopes: [],
@@ -316,7 +330,12 @@ export const useStore = create<AppState>((set, get) => ({
       redoStack: [],
       problem: null,
       revision: s.revision + 1,
-    })),
+    }));
+    // An empty fresh circuit is clean.
+    set({ lastSaved: get().toNetlist() });
+  },
+
+  markSaved: (text) => set({ lastSaved: text }),
 
   undo: () =>
     set((s) => {
