@@ -493,6 +493,27 @@ describe('diode model name', () => {
     expect(e.params.forwardVoltage).toBe(0.9);
   });
 
+  it('editing the zener voltage drops the model name', () => {
+    const [loaded] = parseCircuit('z 100 100 100 0 2 default-zener').elements;
+    expect(loaded.modelName).toBe('default-zener');
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+
+    useStore.getState().setParam(id, 'breakdownVoltage', 6.2);
+    const e = useStore.getState().elements[0];
+    expect(e.modelName).toBeUndefined();
+    expect(e.params.breakdownVoltage).toBe(6.2);
+
+    const line =
+      serializeCircuit(useStore.getState().elements, { ...DEFAULT_SETTINGS })
+        .trim()
+        .split('\n')
+        .find((l) => l.startsWith('z ')) ?? '';
+    // The value form, not the stale name, and FLAG_MODEL is cleared so a
+    // reload reads the tokens as numbers rather than a bogus model name.
+    expect(line).toBe('z 100 100 100 0 1 0.805904783 6.2');
+  });
+
   it('keeps the model name when a non-model param is edited', () => {
     const [loaded] = parseCircuit('d 176 80 384 80 2 1N4148').elements;
     useStore.getState().addElement(loaded);

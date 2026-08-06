@@ -2749,8 +2749,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "opamp.txt",

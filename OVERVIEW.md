@@ -268,8 +268,8 @@ Dump codes implemented so far, with their trailing field order:
 | `v`   | voltage source  | waveform, frequency, maxVoltage, bias, phaseShift, duty    |
 | `R`   | rail            | same as voltage source                                     |
 | `i`   | current source  | current, maxVoltage                                        |
-| `d`   | diode           | fwdrop (FLAG_FWDROP), or modelName (FLAG_MODEL)             |
-| `z`   | zener           | fwdrop (FLAG_FWDROP), zvoltage (legacy), or modelName (FLAG_MODEL) |
+| `d`   | diode           | modelName (FLAG_MODEL), else fwdrop (FLAG_FWDROP)          |
+| `z`   | zener           | modelName (FLAG_MODEL), else [fwdrop] then zvoltage        |
 | `t`   | transistor      | pnp, lastVbe, lastVbc, beta, modelName                     |
 | `s`   | switch          | position, momentary, [label]                               |
 | `S`   | SPDT switch     | position, momentary, link, throwCount                      |
@@ -286,6 +286,15 @@ on load, swapped against their names: `lastVbe` seeds the collector node and
 `lastVbc` the emitter node. The trailing `modelName` token is optional (3 to 5
 tokens occur in the wild; beta then keeps its default of 100) and is preserved
 verbatim on save.
+
+For the `d` and `z` rows the trailing tokens depend on the flags. FLAG_MODEL
+(bit 2) means the one token is an escaped model name, kept verbatim but not
+looked up; otherwise FLAG_FWDROP (bit 1) contributes a forward drop, and a `z`
+line always carries its zener voltage after that. The port writes the model
+name when it has one and the value form otherwise, and the value form always
+sets FLAG_FWDROP and clears FLAG_MODEL. A `z` line that carries a forward drop
+with no zener voltage behind it throws on load in the original and the element
+disappears, so the zener value form is never written as a single token.
 
 Waveform codes: `0` DC, `1` sine, `2` square, `3` triangle, `4` sawtooth,
 `5` pulse, `6` noise.

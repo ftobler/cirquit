@@ -43,6 +43,32 @@ export const SIM_STEPS = 100;
  */
 export const SIM_TIMEOUT_MS = 60_000;
 
+/**
+ * Corpus files whose `sim: error` has a diagnosed cause and a named fix.
+ *
+ * The golden report records that a file fails, never why, and the stage 2
+ * no-regression guard skips anything the golden already marks failing. So a
+ * diagnosed failure would otherwise sit in the report forever with its reason
+ * only in a commit message. Entries here are asserted to be *still failing*:
+ * when the named fix lands the corpus test says so, and the line is deleted
+ * along with the excuse.
+ *
+ * This is a record of known causes, not the full failing list. Files that fail
+ * for reasons nobody has chased are deliberately absent.
+ */
+export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {
+  'opamp-regulator.txt':
+    'Newton limit cycle in the op-amp saturation branch: the output flips ' +
+    'between the rails every iteration and never enters the linear region. ' +
+    'Needs the 0.1 V convergence threshold, the output rail check and the ' +
+    'lastvd hysteresis of OpAmpElm.java:168-185. Until then no op-amp circuit ' +
+    'is covered by stage 2 at all: every other opamp*.txt fails to load on the ' +
+    'missing kind 172. It regressed when the zener file format was fixed, ' +
+    'which turned its misparsed 0.8 V reference into the 6.14 V the file asks ' +
+    'for; on the old engine the same circuit fails the moment the zener is ' +
+    'given any breakdown voltage above ~3 V, so the parse fix only exposed it.',
+};
+
 /** Non-element lines: sliders and hints are features, not missing components. */
 const FEATURE_CODES = new Set(['38', 'h']);
 

@@ -6,7 +6,14 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { SimEngine } from '../engine/simulator';
 import { DEFAULT_SETTINGS } from '../model/types';
 import { parseCircuit } from './netlist';
-import { generateReport, plainLoad, scanCorpus, simulate, type CorpusEntry } from './corpus';
+import {
+  DIAGNOSED_SIM_FAILURES,
+  generateReport,
+  plainLoad,
+  scanCorpus,
+  simulate,
+  type CorpusEntry,
+} from './corpus';
 
 const CIRCUITS_DIR = fileURLToPath(new URL('../../public/circuits', import.meta.url));
 const FIXTURES_DIR = fileURLToPath(new URL('./__fixtures__', import.meta.url));
@@ -136,5 +143,20 @@ describe('corpus stage 2: simulate, and the golden report', () => {
   it('regenerates byte-for-byte; run `just corpus` on mismatch', () => {
     const golden = loadGolden();
     expect(report).toEqual(golden);
+  });
+
+  // The mirror image of the no-regression guard. That guard cannot see a file
+  // the golden already marks failing, so a diagnosed failure would go quiet
+  // forever, including on the day it starts working again. Failing here is the
+  // good news: delete the entry and let the no-regression guard take over.
+  it('every diagnosed sim failure still fails; delete the entry once it does not', () => {
+    const byFile = new Map(report.map((e) => [e.file, e]));
+    for (const [file, reason] of Object.entries(DIAGNOSED_SIM_FAILURES)) {
+      expect(byFile.get(file), `no corpus entry for ${file}`).toBeDefined();
+      expect(
+        byFile.get(file)?.sim,
+        `${file} simulates again. Remove it from DIAGNOSED_SIM_FAILURES: ${reason}`,
+      ).toBe('error');
+    }
   });
 });

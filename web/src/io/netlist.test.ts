@@ -168,6 +168,66 @@ describe('diode file format', () => {
   });
 });
 
+describe('zener file format', () => {
+  /** Parses a single `z` line and re-emits it, returning the `z` line. */
+  const zenerLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('z ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('a library zener line loads its real voltage', () => {
+    // The bundled form (zenerref.txt:3). The misparse read the fwdrop token
+    // into breakdownVoltage and dropped the 5.6 entirely, so the UI showed a
+    // 0.806 V zener.
+    const { e } = zenerLine('z 336 288 336 160 1 0.805904783 5.6');
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    expect(e.params.breakdownVoltage).toBe(5.6);
+    expect(e.flags).toBe(1);
+  });
+
+  it('a library zener line round-trips', () => {
+    // Byte-identical, so upstream re-reads it instead of throwing on the
+    // missing zvoltage token and dropping the element.
+    const { elementLine } = zenerLine('z 336 288 336 160 1 0.805904783 5.6');
+    expect(elementLine).toBe('z 336 288 336 160 1 0.805904783 5.6');
+  });
+
+  it('a zener model name round-trips', () => {
+    const { e, elementLine } = zenerLine('z 100 100 100 0 2 default-zener');
+    expect(e.modelName).toBe('default-zener');
+    expect(e.flags).toBe(2);
+    expect(elementLine).toBe('z 100 100 100 0 2 default-zener');
+  });
+
+  it('an escaped zener model name round-trips', () => {
+    // What upstream writes for a legacy zener after one save: the generated
+    // model name carries `=` and a space.
+    const line = 'z 100 100 100 0 2 fwdrop\\q0.805904783\\szvoltage\\q5.6';
+    const { e, elementLine } = zenerLine(line);
+    expect(e.modelName).toBe('fwdrop=0.805904783 zvoltage=5.6');
+    expect(elementLine).toBe(line);
+  });
+
+  it('a legacy bare zener line saves with both tokens', () => {
+    const { e, elementLine } = zenerLine('z 100 100 100 0 0 5.6');
+    expect(e.params.breakdownVoltage).toBe(5.6);
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    // Not byte-identical but semantically the same to upstream:
+    // getModelWithParameters(0.805904783, 5.6) is the default-zener model.
+    expect(elementLine).toBe('z 100 100 100 0 1 0.805904783 5.6');
+  });
+
+  it('a fresh zener defaults to the upstream default-zener model', () => {
+    const e = makeElement('zener', 0, 0, 32, 0);
+    expect(e.params.breakdownVoltage).toBe(5.6);
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('z 0 0 32 0 1 0.805904783 5.6');
+  });
+});
+
 describe('transistor file format', () => {
   /** Parses a single element line and re-emits it, returning the `t` line. */
   const transistorLine = (line: string) => {

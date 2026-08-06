@@ -42,6 +42,24 @@ fn critical_voltage(vt: f64, leakage: f64) -> f64 {
     vt * (vt / (std::f64::consts::SQRT_2 * leakage)).ln()
 }
 
+/// Breakdown-knee offset so 5 mA flows at the rated Zener voltage
+/// (Diode.java:48-51). The breakdown branch is its own thermal exponential at
+/// n = 1, so the offset uses `VT`, not the emission-scaled `vscale`.
+fn zener_offset(z_voltage: f64, leakage: f64) -> f64 {
+    if z_voltage <= 0.0 {
+        return 0.0;
+    }
+    // Upstream takes log(0.005/leakage - 1) and gets NaN once leakage >= 5 mA,
+    // where the rated current is unreachable because the saturation current
+    // alone exceeds it. Real models are six orders of magnitude away from that,
+    // but a NaN offset would poison every stamp, so clamp the argument. 1e-9
+    // keeps the degraded knee near the rated voltage (the offset grows by
+    // `VT*ln(1e9)` = 0.54 V) instead of pushing it 18 V out, which is what a
+    // clamp at the smallest positive f64 would do.
+    let arg = (0.005 / leakage - 1.0).max(1e-9);
+    z_voltage - VT * arg.ln()
+}
+
 /// Shockley diode, optionally with a Zener breakdown branch.
 pub struct Diode {
     base: Base,
@@ -53,6 +71,9 @@ pub struct Diode {
     /// Reverse breakdown voltage; zero disables the branch.
     z_voltage: f64,
     z_offset: f64,
+    /// Limiting threshold for the breakdown exponential, a steeper curve than
+    /// the forward one (Diode.java:44).
+    vzcrit: f64,
     /// Rated forward drop, used to derive `leakage` when no saturation current
     /// is given (DiodeModel.java:149).
     fwdrop: f64,
@@ -99,17 +120,13 @@ impl Diode {
             1.0 / ((fwdrop * vdcoef).exp() - 1.0)
         };
         let series_resistance = spec.param("seriesResistance", 0.0).max(0.0);
-        // Place the breakdown knee so ~5 mA flows at the rated Zener voltage.
-        let z_offset = if z_voltage > 0.0 {
-            z_voltage - vscale * (0.005 / leakage + 1.0).ln()
-        } else {
-            0.0
-        };
+        let z_offset = zener_offset(z_voltage, leakage);
         Self {
             base: Base::with_posts(2),
             leakage,
             vscale,
             vcrit: critical_voltage(vscale, leakage),
+            vzcrit: critical_voltage(VT, leakage),
             z_voltage,
             z_offset,
             fwdrop,
@@ -130,14 +147,9 @@ impl Diode {
     }
 
     /// Keeps the breakdown knee consistent with the forward parameters that
-    /// define it. Uses the same offset formula as `build`; the zener plan
-    /// replaces both with the upstream thermal form together.
+    /// define it, using the same `vt`-based offset as `build`.
     fn recompute_z_offset(&mut self) {
-        self.z_offset = if self.z_voltage > 0.0 {
-            self.z_voltage - self.vscale * (0.005 / self.leakage + 1.0).ln()
-        } else {
-            0.0
-        };
+        self.z_offset = zener_offset(self.z_voltage, self.leakage);
     }
 
     /// Current and its derivative at `v`.
@@ -146,11 +158,19 @@ impl Diode {
         let ev = arg.exp();
         let mut i = self.leakage * (ev - 1.0);
         let mut g = self.leakage * ev / self.vscale;
-        if self.z_voltage > 0.0 {
-            let zarg = (-(v + self.z_offset) / self.vscale).min(MAX_EXP_ARG);
+        // The breakdown term belongs to the reverse side only: upstream's
+        // forward branch is the plain Shockley law, and only the reverse branch
+        // is `Is*(exp(v/vscale) - exp((-v-zoffset)/vt) - 1)`
+        // (Diode.java:158-191). Subtracting the bare `ez`, not `ez - 1`, is
+        // what that expression reduces to here. It matters twice: the two
+        // branches then meet at v = 0 instead of stepping by `leakage`, and the
+        // rated 5 mA lands exactly on `z_voltage`, which is how `z_offset` was
+        // derived in the first place.
+        if self.z_voltage > 0.0 && v < 0.0 {
+            let zarg = (-(v + self.z_offset) / VT).min(MAX_EXP_ARG);
             let ez = zarg.exp();
-            i -= self.leakage * (ez - 1.0);
-            g += self.leakage * ez / self.vscale;
+            i -= self.leakage * ez;
+            g += self.leakage * ez / VT;
         }
         (i, g + JUNCTION_GMIN)
     }
@@ -212,12 +232,14 @@ impl Element for Diode {
         v = limit_junction(v, self.last_v, self.vscale, self.vcrit);
         if self.z_voltage > 0.0 {
             // The breakdown branch is the forward branch mirrored about
-            // `-z_offset`, so limit it in the mirrored coordinate.
+            // `-z_offset`, so limit it in the mirrored coordinate, with the
+            // steeper `vt`/`vzcrit` scale of the breakdown exponential
+            // (Diode.java:107-129).
             let mirrored = limit_junction(
                 -(v + self.z_offset),
                 -(self.last_v + self.z_offset),
-                self.vscale,
-                self.vcrit,
+                VT,
+                self.vzcrit,
             );
             v = -mirrored - self.z_offset;
         }
@@ -266,6 +288,7 @@ impl Element for Diode {
             _ => return false,
         }
         self.vcrit = critical_voltage(self.vscale, self.leakage);
+        self.vzcrit = critical_voltage(VT, self.leakage);
         self.recompute_z_offset();
         true
     }

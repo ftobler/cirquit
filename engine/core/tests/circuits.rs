@@ -365,9 +365,75 @@ fn zener_clamps_in_breakdown() {
         opts(1e-5, true),
     );
     c.run(30);
-    // Cathode-to-anode voltage should sit near the rated breakdown.
+    // Cathode-to-anode voltage and the loop current are both analytic here:
+    // solving 12 = 1000*I + zoffset + vt*ln(I/Is + 1) gives 6.394 mA at
+    // 5.606 V, just above the rated knee because 6.4 mA is past the 5 mA the
+    // offset was placed for.
     let v = -c.element_voltages()[2];
-    assert!((5.3..6.2).contains(&v), "zener clamped at {v}");
+    assert!(close(v, 5.606, 0.05), "zener clamped at {v}");
+    let ma = c.element_currents()[1] * 1000.0;
+    assert!(close(ma, 6.394, 0.1), "loop current was {ma} mA");
+}
+
+#[test]
+fn zener_breaks_down_at_its_rated_current() {
+    // A current source drives the zener reverse at a known current. With the
+    // breakdown branch on `vt` (not the emission-scaled vscale), the curve is
+    // v = zoffset + vt*ln(I/Is + 1) with zoffset chosen so 5 mA sits at 5.6 V.
+    // The 100 uA point is the discriminating one: the old vscale-based branch
+    // puts it at 5.398 V, outside the 0.02 window. The 5 mA point checks the
+    // offset formula is self-consistent.
+    let reverse = |i: f64| {
+        let c = &mut build(
+            vec![
+                elm(1, "current", &[[100, 100], [100, 0]], &[("current", i)]),
+                elm(
+                    2,
+                    "zener",
+                    &[[100, 100], [100, 0]],
+                    &[("breakdownVoltage", 5.6)],
+                ),
+                elm(3, "wire", &[[100, 0], [0, 0]], &[]),
+                elm(4, "ground", &[[0, 0]], &[]),
+            ],
+            opts(1e-5, true),
+        );
+        c.run(20);
+        -c.element_voltages()[1]
+    };
+
+    let knee = reverse(1e-4);
+    assert!(close(knee, 5.499, 0.02), "at 100 uA reverse got {knee}");
+    let rated = reverse(5e-3);
+    assert!(close(rated, 5.6, 0.01), "at 5 mA reverse got {rated}");
+}
+
+#[test]
+fn zener_forward_branch_matches_the_diode() {
+    // 1 mA forward through the zener. Forward, a zener is a plain Shockley
+    // diode, so the drop is vscale*ln(I/Is + 1) = 0.4486 V, the same value the
+    // bare diode's knee test asserts at the same current. That pins the
+    // forward branch to `vscale` and the derived `leakage`: putting the
+    // breakdown branch's `vt` on the forward exponential would halve it to
+    // 0.2243 V. It does not pin the `v < 0` gate, which is unobservable here
+    // because the breakdown exponential is ~e^-206 at a positive drop.
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 0], [100, 0]], &[("current", 1e-3)]),
+            elm(
+                2,
+                "zener",
+                &[[100, 0], [100, 100]],
+                &[("breakdownVoltage", 5.6)],
+            ),
+            elm(3, "wire", &[[100, 100], [0, 0]], &[]),
+            elm(4, "ground", &[[0, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(20);
+    let drop = c.element_voltages()[1];
+    assert!(close(drop, 0.4486, 5e-3), "forward drop was {drop}");
 }
 
 #[test]
