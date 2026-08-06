@@ -1,6 +1,7 @@
 //! Nonlinear junction devices, linearised each Newton iteration.
 
 use crate::element::{Base, Element, SimCtx};
+use crate::elements::passive::DC_OPEN;
 use crate::spec::ElementSpec;
 use crate::stamp::{Stamper, GROUND};
 
@@ -60,6 +61,62 @@ fn zener_offset(z_voltage: f64, leakage: f64) -> f64 {
     z_voltage - VT * arg.ln()
 }
 
+/// The varactor's voltage-dependent junction capacitance, stamped in
+/// parallel with the diode junction it decorates (`VaractorElm extends
+/// DiodeElm`, VaractorElm.java:6). Kept as a plain data struct rather than a
+/// second `Element` impl: the two terminals, the I-V physics and the
+/// junction limiting are exactly the diode's, so `Diode` grows this one
+/// optional field instead of `Varactor` wrapping a whole separate `Diode`
+/// with its own, redundantly-allocated `Base`.
+///
+/// The companion model follows [`Capacitor`](super::passive::Capacitor)'s
+/// Norton convention (a conductance plus a current source, both stamped
+/// directly across the two device posts) rather than upstream's Thevenin
+/// form (a voltage source in series with a resistor through a dedicated
+/// internal node, VaractorElm.java:97-120). The two are the same linear
+/// two-terminal branch in different equivalent-circuit clothing, so the
+/// simulated result is identical, and the Norton form needs no internal
+/// node at all here, since nothing else in this port's capacitor stamps a
+/// series voltage source.
+struct VaractorCap {
+    /// Capacitance at 0 V, upstream's `baseCapacitance`
+    /// (VaractorElm.java:11, default 4e-12 F).
+    base_capacitance: f64,
+    /// Present capacitance, recomputed once per timestep in
+    /// `start_iteration` from `v_prev`, the diode voltage at the end of the
+    /// previous timestep — never mid-timestep, matching upstream's
+    /// `startIteration` running once before Newton begins
+    /// (VaractorElm.java:102-114).
+    capacitance: f64,
+    /// Diode terminal voltage after the last timestep converged
+    /// (`capvoltdiff`, VaractorElm.java:30/34).
+    v_prev: f64,
+    /// This branch's own current from the last solve (`capCurrent`,
+    /// VaractorElm.java:26/136), used as the trapezoidal history term.
+    i_prev: f64,
+    geq: f64,
+    ieq: f64,
+}
+
+impl VaractorCap {
+    fn new(spec: &ElementSpec) -> Self {
+        let base_capacitance = spec.param("baseCapacitance", 4e-12);
+        Self {
+            base_capacitance,
+            capacitance: base_capacitance,
+            // The persisted transient state (VaractorElm.java:16, the
+            // six-argument constructor). `capCurrent` is never dumped
+            // upstream either, so it has no matching param: a freshly built
+            // or loaded varactor always starts with zero branch current,
+            // same as a plain `Capacitor`'s `i_prev`.
+            v_prev: spec.param("capVoltDiff", 0.0),
+            i_prev: 0.0,
+            geq: 0.0,
+            ieq: 0.0,
+        }
+    }
+}
+
 /// Shockley diode, optionally with a Zener breakdown branch.
 pub struct Diode {
     base: Base,
@@ -91,6 +148,9 @@ pub struct Diode {
     last_v: f64,
     geq: f64,
     ieq: f64,
+    /// `Some` only for the varactor variant (`Diode::new_varactor`); `None`
+    /// for a plain diode or Zener.
+    varactor: Option<VaractorCap>,
 }
 
 impl Diode {
@@ -100,6 +160,14 @@ impl Diode {
 
     pub fn new_zener(spec: &ElementSpec) -> Self {
         Self::build(spec, spec.param("breakdownVoltage", 5.6))
+    }
+
+    /// `VaractorElm` always uses the plain diode model (never a Zener), and
+    /// adds a voltage-dependent capacitance in parallel (VaractorElm.java:6).
+    pub fn new_varactor(spec: &ElementSpec) -> Self {
+        let mut d = Self::build(spec, 0.0);
+        d.varactor = Some(VaractorCap::new(spec));
+        d
     }
 
     fn build(spec: &ElementSpec, z_voltage: f64) -> Self {
@@ -137,6 +205,7 @@ impl Diode {
             last_v: 0.0,
             geq: 0.0,
             ieq: 0.0,
+            varactor: None,
         }
     }
 
@@ -178,7 +247,9 @@ impl Diode {
 
 impl Element for Diode {
     fn kind(&self) -> &'static str {
-        if self.z_voltage > 0.0 {
+        if self.varactor.is_some() {
+            "varactor"
+        } else if self.z_voltage > 0.0 {
             "zener"
         } else {
             "diode"
@@ -222,6 +293,39 @@ impl Element for Diode {
         }
     }
 
+    /// Recomputes the varactor's capacitance and companion-model values once
+    /// per timestep, before Newton begins, matching upstream's
+    /// `startIteration` (VaractorElm.java:102-114). No-op for a plain diode
+    /// or Zener.
+    fn start_iteration(&mut self, ctx: &SimCtx) {
+        let Some(vc) = self.varactor.as_mut() else {
+            return;
+        };
+        // Abrupt-junction law with grading coefficient 0.5, reusing the
+        // diode's own forward drop as the junction potential: upstream has
+        // no separate field for it either (VaractorElm.java:107-111). The
+        // forward branch is pinned to the 0 V capacitance rather than
+        // following the curve through its pole at v_prev == fwdrop.
+        vc.capacitance = if vc.v_prev > 0.0 {
+            vc.base_capacitance
+        } else {
+            vc.base_capacitance / (1.0 - vc.v_prev / self.fwdrop).sqrt()
+        };
+        if ctx.dc_analysis {
+            // Steady-state treatment for the DC operating point, matching
+            // how `Capacitor::stamp` treats every other reactive element
+            // here; upstream has no such pass (see passive.rs's `DC_OPEN`).
+            vc.geq = 1.0 / DC_OPEN;
+            vc.ieq = 0.0;
+        } else {
+            // Trapezoidal Norton companion, the same shape as
+            // `Capacitor::do_step` (upstream's varactor has no
+            // backward-Euler option to mirror).
+            vc.geq = 2.0 * vc.capacitance / ctx.dt;
+            vc.ieq = vc.geq * vc.v_prev + vc.i_prev;
+        }
+    }
+
     fn do_step(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
         let (n0, nend) = (self.base.nodes[0], self.base.nodes[self.diode_end]);
         let mut v = self.base.volts[0] - self.base.volts[self.diode_end];
@@ -250,6 +354,24 @@ impl Element for Diode {
         self.ieq = i - g * v;
         s.conductance(n0, nend, g);
         s.current_source(n0, nend, self.ieq);
+
+        // The varactor's junction capacitance, stamped directly across the
+        // two device posts (nodes[0], nodes[1]) rather than through
+        // `diode_end`: upstream places it there too, across the full
+        // terminal pair rather than just the bare junction
+        // (VaractorElm.java:97-101/117-119), which only differs from the
+        // junction-only placement when a series resistance is also present.
+        if let Some(vc) = self.varactor.as_ref() {
+            let (p0, p1) = (self.base.nodes[0], self.base.nodes[1]);
+            s.conductance(p0, p1, vc.geq);
+            // Norton current source, matching `Capacitor::do_step`'s stamp:
+            // `calculate_current`/`step_finished` both use the
+            // `I(p0->p1) = geq*v - ieq` convention, so the branch's ieq term
+            // needs the swapped node order `(p1, p0)` to land on the same
+            // equation `current_source` implements as `+i` into its second
+            // argument (see `Capacitor`'s identical swap in passive.rs).
+            s.current_source(p1, p0, vc.ieq);
+        }
     }
 
     fn calculate_current(&mut self, _ctx: &SimCtx) {
@@ -257,6 +379,24 @@ impl Element for Diode {
         // current: with series resistance the two differ by the resistor.
         self.base.current =
             self.geq * (self.base.volts[0] - self.base.volts[self.diode_end]) + self.ieq;
+        // VaractorElm.calculateCurrent adds the capacitor branch's own
+        // current to the diode's (VaractorElm.java:37-40).
+        if let Some(vc) = self.varactor.as_ref() {
+            let v = self.base.volts[0] - self.base.volts[1];
+            self.base.current += vc.geq * v - vc.ieq;
+        }
+    }
+
+    /// Updates the varactor's persisted transient state once per timestep,
+    /// after Newton has converged, matching upstream's `stepFinished`
+    /// (VaractorElm.java:33-35). No-op for a plain diode or Zener, which
+    /// upstream's `DiodeElm` also leaves without an override of its own.
+    fn step_finished(&mut self, _ctx: &SimCtx) {
+        if let Some(vc) = self.varactor.as_mut() {
+            let v = self.base.volts[0] - self.base.volts[1];
+            vc.i_prev = vc.geq * v - vc.ieq;
+            vc.v_prev = v;
+        }
     }
 
     fn set_param(&mut self, name: &str, value: f64) -> bool {
@@ -281,6 +421,13 @@ impl Element for Diode {
             "breakdownVoltage" => {
                 self.z_voltage = value;
             }
+            // VaractorElm's "Capacitance @ 0V" edit (VaractorElm.java:122-126).
+            "baseCapacitance" if value > 0.0 => {
+                let Some(vc) = self.varactor.as_mut() else {
+                    return false;
+                };
+                vc.base_capacitance = value;
+            }
             // Changing between zero and non-zero series resistance changes
             // `internal_node_count`, which a live patch cannot do: the caller
             // must rebuild.
@@ -298,6 +445,15 @@ impl Element for Diode {
         self.last_v = 0.0;
         self.geq = 0.0;
         self.ieq = 0.0;
+        // Upstream's own `reset()` only clears `capvoltdiff`, leaving
+        // `capCurrent` stale from the previous run (VaractorElm.java:41-44).
+        // The Run/Reset button re-zeroes everything else on this side
+        // (`self.base.reset()` above), so a stale branch current here would
+        // be the one exception; clear it too.
+        if let Some(vc) = self.varactor.as_mut() {
+            vc.v_prev = 0.0;
+            vc.i_prev = 0.0;
+        }
     }
 }
 

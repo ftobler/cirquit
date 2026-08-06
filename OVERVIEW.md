@@ -197,13 +197,13 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **24 of ~200**.
+a test. Done so far: **25 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, fuse, lamp, thermistor, potentiometer, switch, SPDT
-switch, LDR.
+switch, LDR, varactor.
 
-- [ ] Varactor, memristor
+- [ ] Memristor
 - [ ] Transformer, tapped transformer, custom transformer
 - [ ] Transmission line, crystal, spark gap, antenna
 - [ ] Relay coil / contact / relay, DPDT, crossover and motor-protection switches
@@ -292,6 +292,7 @@ Dump codes implemented so far, with their trailing field order:
 | `i`   | current source | current, maxVoltage                                        |
 | `d`   | diode          | modelName (FLAG_MODEL), else fwdrop (FLAG_FWDROP)          |
 | `z`   | zener          | modelName (FLAG_MODEL), else [fwdrop] then zvoltage        |
+| `176` | varactor       | [modelName (FLAG_MODEL) or fwdrop (FLAG_FWDROP)], capVoltDiff, baseCapacitance |
 | `t`   | transistor     | pnp, lastVbe, lastVbc, beta, modelName                     |
 | `s`   | switch         | position, momentary, [label] (FLAG_LABEL = 4)              |
 | `S`   | SPDT switch    | position, momentary, [label], link, throwCount             |
@@ -317,6 +318,17 @@ name when it has one and the value form otherwise, and the value form always
 sets FLAG_FWDROP and clears FLAG_MODEL. A `z` line that carries a forward drop
 with no zener voltage behind it throws on load in the original and the element
 disappears, so the zener value form is never written as a single token.
+
+The `176` row is a `VaractorElm`, which extends `DiodeElm`: the same leading
+tokens as the `d` row, driven by the same flags. `VaractorElm`'s own token
+constructor then unconditionally reads two more tokens after those —
+`capvoltdiff` (the persisted junction voltage) and `baseCapacitance` — but
+its own `dump()` is inherited straight from `DiodeElm` and never writes
+either one, a real quirk like the thermistor's and LDR's: a save-then-reload
+in the original loses both. The bundled corpus (`varactor.txt`,
+`varactorvco.txt`) shows the tokens are genuinely part of the format in
+practice, so this port's writer appends both unconditionally, the same fix
+applied there.
 
 Waveform codes: `0` DC, `1` sine, `2` square, `3` triangle, `4` sawtooth,
 `5` pulse, `6` noise.

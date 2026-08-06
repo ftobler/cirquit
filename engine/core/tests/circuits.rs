@@ -960,6 +960,280 @@ fn diode_param_edits_take_the_live_path() {
 }
 
 #[test]
+fn varactor_conducts_forward_and_blocks_reverse() {
+    // VaractorElm extends DiodeElm and adds a capacitance in parallel
+    // (VaractorElm.java:6); its own I-V behaviour should read the same as
+    // the bare diode's, so this mirrors diode_conducts_forward_and_blocks_reverse
+    // exactly, just with "varactor" swapped in for "diode". The forward
+    // assertion keeps the diode test's tolerance: the 1 k resistor's
+    // conductance (1e-3 S) dwarfs both the diode's forward conductance and
+    // the varactor's own default capacitance's companion conductance
+    // (2*4e-12/1e-5 = 8e-7 S). The reverse assertion also matches the bare
+    // diode's tolerance (1e-6): the capacitance's own Norton current source
+    // settles the branch back to the diode-only reverse leakage well within
+    // the 20 steps this test runs, so it needs no extra slack over the plain
+    // diode test.
+    let forward = |source_volts: f64| {
+        let c = &mut build(
+            vec![
+                elm(
+                    1,
+                    "voltage",
+                    &[[0, 100], [0, 0]],
+                    &[("maxVoltage", source_volts)],
+                ),
+                elm(
+                    2,
+                    "resistor",
+                    &[[0, 0], [100, 0]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(3, "varactor", &[[100, 0], [100, 100]], &[]),
+                elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+                elm(5, "ground", &[[0, 100]], &[]),
+            ],
+            opts(1e-5, true),
+        );
+        c.run(20);
+        (c.element_voltages()[2], c.element_currents()[1])
+    };
+
+    let (vd, i) = forward(5.0);
+    assert!((0.5..0.9).contains(&vd), "forward drop was {vd}");
+    assert!(close(i, (5.0 - vd) / 1000.0, 1e-5), "current was {i}");
+
+    let (vd, i) = forward(-5.0);
+    assert!(vd < -4.9, "reverse voltage was {vd}");
+    assert!(i.abs() < 1e-6, "reverse leakage was {i}");
+}
+
+/// Ports VaractorElm.java:107-111's capacitance law independently, so the
+/// test below checks the engine against the same formula rather than a
+/// hand-rounded constant. `fwdrop` is the diode's own forward drop, reused
+/// as the junction potential: upstream has no separate field for it either.
+fn varactor_capacitance(base_capacitance: f64, v: f64, fwdrop: f64) -> f64 {
+    if v > 0.0 {
+        base_capacitance
+    } else {
+        base_capacitance / (1.0 - v / fwdrop).sqrt()
+    }
+}
+
+/// Ports Diode.java's forward/reverse current law independently, the same
+/// "default" model diode_knee_matches_upstream_default_model pins (Is =
+/// 1.7143528192808883e-7, n = 2, vscale = 2*vt). The varactor test below
+/// uses it to separate the diode branch's own contribution from the
+/// capacitive one it sits beside.
+fn diode_current(v: f64) -> f64 {
+    const VT: f64 = 0.025_865;
+    const FWDROP: f64 = 0.805_904_783;
+    let vscale = 2.0 * VT;
+    let leakage = 1.0 / ((FWDROP / vscale).exp() - 1.0);
+    leakage * ((v / vscale).exp() - 1.0)
+}
+
+#[test]
+fn varactor_capacitance_shrinks_with_reverse_bias() {
+    // Isolates the capacitance law from the diode branch beside it: seed the
+    // varactor's persisted state (capVoltDiff) to a known reverse bias with
+    // zero prior branch current -- exactly what a freshly loaded varactor
+    // carries, since capCurrent is never dumped upstream either -- then
+    // force the terminal voltage a further `delta` into reverse for exactly
+    // one timestep on a freshly built circuit (opts' dc_operating_point is
+    // off, so nothing runs before this step to disturb the seeded state).
+    //
+    // With no simulated history before this single step, the result is an
+    // exact closed form: i = diode_current(v_new) + cap_geq*(v_new-v_prev),
+    // where cap_geq = 2*C(v_prev)/dt is evaluated at the *previous* voltage,
+    // matching start_iteration fixing the capacitance at the top of the
+    // timestep, before Newton (and the voltage move) happens.
+    let dt = 1e-5;
+    let delta = 1e-3;
+    let base_capacitance = 4e-12; // VaractorElm.java:11 default
+
+    let probe = |v_bias: f64| {
+        let v_prev = -v_bias;
+        let c = &mut build(
+            vec![
+                elm(
+                    1,
+                    "voltage",
+                    &[[0, 100], [0, 0]],
+                    &[("maxVoltage", v_bias + delta)],
+                ),
+                elm(
+                    2,
+                    "varactor",
+                    &[[0, 100], [0, 0]],
+                    &[("capVoltDiff", v_prev)],
+                ),
+                elm(3, "ground", &[[0, 100]], &[]),
+            ],
+            opts(dt, false),
+        );
+        c.run(1);
+        c.element_currents()[1]
+    };
+
+    let expected = |v_bias: f64| {
+        let v_prev = -v_bias;
+        let v_new = -(v_bias + delta);
+        let cap_geq = 2.0 * varactor_capacitance(base_capacitance, v_prev, 0.805_904_783) / dt;
+        diode_current(v_new) + cap_geq * (v_new - v_prev)
+    };
+
+    // Sanity check on the formula itself: more reverse bias should mean less
+    // capacitance.
+    let c1 = varactor_capacitance(base_capacitance, -1.0, 0.805_904_783);
+    let c3 = varactor_capacitance(base_capacitance, -3.0, 0.805_904_783);
+    assert!(
+        c3 < c1,
+        "sanity: C(-3V)={c3} should be less than C(-1V)={c1}"
+    );
+
+    for v_bias in [1.0, 3.0] {
+        let sim = probe(v_bias);
+        let exp = expected(v_bias);
+        assert!(
+            close(sim, exp, 1e-12),
+            "v_bias={v_bias}: simulated {sim}, expected {exp}"
+        );
+    }
+
+    // Direction check on the simulated circuit itself, with the diode
+    // branch's own (bias-insensitive, at these depths) reverse leakage
+    // subtracted out: current through a capacitor is C*dV/dt, so for the
+    // same dV over the same dt, less capacitance at the deeper reverse bias
+    // means *less* current through the capacitive branch alone, not more.
+    // The raw totals cannot show this directly -- the diode's ~171 nA
+    // leakage dwarfs the sub-nanoamp capacitive difference between the two
+    // bias points -- which is exactly why the closed-form check above, not
+    // this one, is the test's real assertion.
+    let cap_only = |v_bias: f64| probe(v_bias) - diode_current(-(v_bias + delta));
+    let cap1 = cap_only(1.0);
+    let cap3 = cap_only(3.0);
+    assert!(
+        cap1.abs() > cap3.abs(),
+        "less capacitance at the deeper reverse bias should draw less current for the same \
+         delta step: cap1={cap1}, cap3={cap3}"
+    );
+}
+
+/// Regression for the varactor's Norton current-source stamp's node order
+/// (`do_step`'s `s.current_source(p0, p1, vc.ieq)` vs. the `Capacitor`
+/// pattern it should mirror, `s.current_source(p1, p0, self.ieq)`).
+///
+/// `varactor_capacitance_shrinks_with_reverse_bias` above cannot see a node
+/// order bug: it drives the varactor directly off an ideal voltage source,
+/// so the terminal voltage is dictated by the source regardless of the
+/// stamp, and `calculate_current` recomputes the reported current off that
+/// same pinned voltage using the correct `geq*v - ieq` convention,
+/// independent of how the matrix was stamped. This test instead puts a 1k
+/// resistor between the source and the varactor, so the terminal voltage is
+/// a genuine unknown the matrix has to solve for. Swapping the current
+/// source's node order flips the sign of the `ieq` history term in the KCL
+/// equation the matrix actually solves, which visibly moves the solved
+/// voltage away from the correct trapezoidal-companion answer -- especially
+/// on the second step, once `v_prev`/`i_prev` hold genuine history from a
+/// step that was itself solved (not seeded).
+#[test]
+fn varactor_terminal_voltage_matches_the_matrix_solve_through_a_resistor() {
+    // Both the source and the seeded initial state sit deep enough in
+    // reverse bias (|v|/vscale > 40, vscale = 2*VT = 0.05173) that
+    // exp(v/vscale) underflows below f64's ULP at 1.0, so `diode_current`
+    // evaluates to *exactly* -leakage in floating point there (checked
+    // below) rather than merely approximately -- turning the diode branch
+    // into a plain constant current sink for this whole run. With the
+    // capacitor's `geq`/`ieq` also fixed for the step (by `start_iteration`,
+    // before Newton runs), the per-step KCL equation at the varactor's
+    // ungrounded post is then exactly linear in the unknown terminal
+    // voltage `v`, the same "I(p0->p1) = geq*v - ieq" convention as
+    // `Capacitor::calculate_current`:
+    //
+    //   (vs - v)/r = -leakage + geq*(v - v_prev) - i_prev
+    //
+    // Solving for v:
+    //
+    //   v = (vs/r + geq*v_prev + i_prev + leakage) / (1/r + geq)
+    //
+    // (dropping the diode's own tiny JUNCTION_GMIN conductance is valid
+    // here too: at ~1e-12 S against the resistor's 1e-3 S it biases v by
+    // roughly 1 part in 1e9, ~3 nV -- utterly below both this test's
+    // tolerance and the multi-millivolt shift the node-order bug causes.)
+    let dt = 1e-5;
+    let r = 1000.0;
+    let vs = -3.0;
+    let v0 = -2.5; // seeded capVoltDiff
+    let base_capacitance = 4e-12; // VaractorElm.java:11 default
+    let fwdrop = 0.805_904_783;
+
+    let leakage = -diode_current(-100.0); // saturated reverse leakage, exact in f64 this deep
+    for v in [vs, v0] {
+        assert_eq!(
+            diode_current(v),
+            -leakage,
+            "v={v} is not deep enough in reverse for the constant-leakage closed form"
+        );
+    }
+
+    // One trapezoidal step of the closed form above. Returns the solved
+    // terminal voltage, the capacitor branch's own current (which becomes
+    // the next step's `i_prev`, mirroring `step_finished`), and the total
+    // branch current (diode + capacitor) through the device.
+    let step = |v_prev: f64, i_prev: f64| -> (f64, f64, f64) {
+        let geq = 2.0 * varactor_capacitance(base_capacitance, v_prev, fwdrop) / dt;
+        let v = (vs / r + geq * v_prev + i_prev + leakage) / (1.0 / r + geq);
+        assert_eq!(diode_current(v), -leakage, "v={v} left deep reverse bias");
+        let i_total = (vs - v) / r;
+        let i_branch_next = geq * (v - v_prev) - i_prev;
+        (v, i_branch_next, i_total)
+    };
+
+    let (v1, i_prev1, i_total1) = step(v0, 0.0);
+    let (v2, _i_prev2, i_total2) = step(v1, i_prev1);
+
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", vs)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", r)]),
+            elm(
+                3,
+                "varactor",
+                &[[100, 0], [100, 100]],
+                &[("capVoltDiff", v0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    c.run(1);
+    assert!(
+        close(c.element_voltages()[2], v1, 1e-7),
+        "step 1 voltage: simulated {}, expected {v1}",
+        c.element_voltages()[2]
+    );
+    assert!(
+        close(c.element_currents()[2], i_total1, 1e-9),
+        "step 1 current: simulated {}, expected {i_total1}",
+        c.element_currents()[2]
+    );
+
+    c.run(1);
+    assert!(
+        close(c.element_voltages()[2], v2, 1e-7),
+        "step 2 voltage: simulated {}, expected {v2}",
+        c.element_voltages()[2]
+    );
+    assert!(
+        close(c.element_currents()[2], i_total2, 1e-9),
+        "step 2 current: simulated {}, expected {i_total2}",
+        c.element_currents()[2]
+    );
+}
+
+#[test]
 fn inverting_opamp_has_the_textbook_gain() {
     // Vout = -Rf/Rin * Vin, with the non-inverting input grounded.
     let c = &mut build(

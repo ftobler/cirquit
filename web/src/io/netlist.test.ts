@@ -259,6 +259,59 @@ describe('zener file format', () => {
   });
 });
 
+describe('varactor file format', () => {
+  /** Parses a single `176` line and re-emits it, returning the `176` line. */
+  const varactorLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('176 ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('a bundled varactor line round-trips byte-for-byte', () => {
+    // varactor.txt:3. Upstream's own dump() would drop the trailing two
+    // tokens (see the registry comment), but this port's writer keeps them,
+    // so a real file from the corpus reproduces exactly.
+    const line = '176 560 256 560 352 1 0.805904783 -0.9415790148957013 4e-12';
+    const { e, elementLine } = varactorLine(line);
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    expect(e.params.capVoltDiff).toBe(-0.9415790148957013);
+    expect(e.params.baseCapacitance).toBe(4e-12);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a varactor line with a model name round-trips', () => {
+    const { e, elementLine } = varactorLine('176 1 2 3 4 2 1N4001 -1.5 4e-12');
+    expect(e.modelName).toBe('1N4001');
+    expect(e.params.capVoltDiff).toBe(-1.5);
+    expect(e.params.baseCapacitance).toBe(4e-12);
+    expect(e.flags).toBe(2);
+    expect(elementLine).toBe('176 1 2 3 4 2 1N4001 -1.5 4e-12');
+  });
+
+  it('a bare varactor line with neither flag still reads its own two tokens', () => {
+    // Matches VaractorElm's own token constructor: DiodeElm reads nothing
+    // when neither flag is set, but VaractorElm keeps reading capvoltdiff and
+    // baseCapacitance regardless (VaractorElm.java:13-18).
+    const { e, elementLine } = varactorLine('176 0 0 32 0 0 -1 4e-12');
+    // No forwardVoltage token: falls back to the default, like a bare diode
+    // line does.
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    expect(e.params.capVoltDiff).toBe(-1);
+    expect(e.params.baseCapacitance).toBe(4e-12);
+    // Saving falls back to the value form with the default forward drop.
+    expect(elementLine).toBe('176 0 0 32 0 1 0.805904783 -1 4e-12');
+  });
+
+  it('a fresh varactor defaults to the upstream model values and 4 pF', () => {
+    const e = makeElement('varactor', 0, 0, 32, 0);
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    expect(e.params.baseCapacitance).toBe(4e-12);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('176 0 0 32 0 1 0.805904783 0 4e-12');
+  });
+});
+
 describe('transistor file format', () => {
   /** Parses a single element line and re-emits it, returning the `t` line. */
   const transistorLine = (line: string) => {

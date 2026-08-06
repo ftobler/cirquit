@@ -4206,22 +4206,17 @@
   {
     "file": "varactor.txt",
     "format": "plain",
-    "missing": [
-      "176",
-      "176",
-      "176"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "varactorvco.txt",
     "format": "plain",
     "missing": [
-      "172",
-      "176",
-      "176"
+      "172"
     ],
     "sliderLines": 0,
     "load": "missing",

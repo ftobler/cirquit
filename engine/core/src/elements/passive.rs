@@ -5,8 +5,10 @@ use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
 
 /// Resistance a capacitor is modelled with while solving the DC operating
-/// point, standing in for an open circuit.
-const DC_OPEN: f64 = 1e8;
+/// point, standing in for an open circuit. `pub(crate)` so the varactor's
+/// companion capacitance (semiconductor.rs) can reuse the same steady-state
+/// treatment instead of picking its own constant.
+pub(crate) const DC_OPEN: f64 = 1e8;
 /// Resistance an inductor is modelled with while solving the DC operating
 /// point, standing in for a short.
 const DC_SHORT: f64 = 1e-6;
