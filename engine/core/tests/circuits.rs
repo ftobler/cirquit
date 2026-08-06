@@ -143,6 +143,47 @@ fn rc_network_charges_on_its_time_constant() {
 }
 
 #[test]
+fn polarized_capacitor_charges_like_the_plain_one() {
+    // PolarCapacitorElm is electrically identical to CapacitorElm; the
+    // maxNegativeVoltage rating is a UI-only warning threshold, so the same
+    // tau = 1 k * 1 uF = 1 ms step response must come out unchanged.
+    let dt = 1e-6;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "polarizedCapacitor",
+                &[[100, 0], [100, 100]],
+                &[
+                    ("capacitance", 1e-6),
+                    ("initialVoltage", 0.0),
+                    ("maxNegativeVoltage", 1.0),
+                ],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    c.run(1000); // one time constant
+    let v = c.element_voltages()[2];
+    let expected = 10.0 * (1.0 - (-1.0f64).exp());
+    assert!(close(v, expected, 0.02), "got {v}, expected {expected}");
+
+    c.run(4000); // five time constants total
+    let v = c.element_voltages()[2];
+    assert!(close(v, 10.0, 0.1), "got {v} after 5 tau");
+}
+
+#[test]
 fn param_change_preserves_sim_time() {
     // Changing a resistance takes the live set_param path, which must not
     // rewind the clock; only a full set_circuit may.

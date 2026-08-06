@@ -208,6 +208,12 @@ pub struct Capacitor {
     initial_voltage: f64,
     series_resistance: f64,
     backward_euler: bool,
+    /// True for the polarised variant (`PolarCapacitorElm`). Electrically
+    /// identical to the plain capacitor; only changes `kind()` and carries
+    /// `max_negative_voltage`, which upstream uses solely for a UI warning
+    /// when the cap is driven past it in reverse, not for the stamp.
+    polarized: bool,
+    max_negative_voltage: f64,
     geq: f64,
     ieq: f64,
     v_prev: f64,
@@ -219,6 +225,16 @@ impl Capacitor {
     const FLAG_BACK_EULER: i64 = 2;
 
     pub fn new(spec: &ElementSpec) -> Self {
+        Self::build(spec, false)
+    }
+
+    /// The polarised variant: same electrical model, plus a reverse-voltage
+    /// rating (PolarCapacitorElm.java).
+    pub fn new_polarized(spec: &ElementSpec) -> Self {
+        Self::build(spec, true)
+    }
+
+    fn build(spec: &ElementSpec, polarized: bool) -> Self {
         let iv = spec.param("initialVoltage", 0.0);
         Self {
             base: Base::with_posts(2),
@@ -226,6 +242,9 @@ impl Capacitor {
             initial_voltage: iv,
             series_resistance: spec.param("seriesResistance", 0.0),
             backward_euler: spec.flag(Self::FLAG_BACK_EULER),
+            polarized,
+            // PolarCapacitorElm's constructor default (PolarCapacitorElm.java:11).
+            max_negative_voltage: spec.param("maxNegativeVoltage", 1.0),
             geq: 0.0,
             ieq: 0.0,
             v_prev: iv,
@@ -241,7 +260,11 @@ impl Capacitor {
 
 impl Element for Capacitor {
     fn kind(&self) -> &'static str {
-        "capacitor"
+        if self.polarized {
+            "polarizedCapacitor"
+        } else {
+            "capacitor"
+        }
     }
     fn base(&self) -> &Base {
         &self.base
@@ -301,6 +324,8 @@ impl Element for Capacitor {
         match name {
             "capacitance" if value > 0.0 => self.capacitance = value,
             "initialVoltage" => self.initial_voltage = value,
+            // PolarCapacitorElm.setEditValue: rejects a negative rating (PolarCapacitorElm.java:69-73).
+            "maxNegativeVoltage" if value >= 0.0 => self.max_negative_voltage = value,
             _ => return false,
         }
         true
