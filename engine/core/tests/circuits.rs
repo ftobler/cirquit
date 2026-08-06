@@ -2834,3 +2834,170 @@ fn element_powers_use_the_scope_convention() {
         snap[0]
     );
 }
+
+#[test]
+fn voltage_limited_current_source_clips() {
+    // A 0.01 A source with 5 V compliance into a 1 M load must settle just
+    // above 5 V, where the tanh transition has rolled the current off, instead
+    // of driving the node to i*R = 1e4 V like an ideal source. The transition
+    // spans 0.95*Vmax to Vmax (CurrentElm.java:134-137), so the operating
+    // point lands just past 5 V.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "current",
+                &[[0, 100], [0, 0]],
+                &[("current", 0.01), ("maxVoltage", 5.0)],
+            ),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 1e6)]),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let v = c.element_voltages()[0];
+    assert!(
+        (4.5..=6.0).contains(&v.abs()),
+        "source terminal voltage was {v}, expected it clipped near 5 V"
+    );
+    let i = c.element_currents()[1];
+    assert!(
+        i.abs() < 1e-3,
+        "resistor current was {i}, the ideal source would push 0.01 A"
+    );
+}
+
+#[test]
+fn current_source_in_series_with_capacitor_settles() {
+    // A source with no DC path (series capacitor) used to drive its bare
+    // terminal to i/GMIN = 1e7 V through the floating-node pin. Analysis now
+    // marks the source broken: it stamps a 100 M resistor and reports zero
+    // current, so every node stays near ground.
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 0], [100, 0]], &[("current", 0.01)]),
+            elm(2, "capacitor", &[[100, 0], [100, 100]], &[]),
+            elm(3, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    for (i, v) in c.node_voltages().iter().enumerate() {
+        assert!(v.abs() < 1e3, "node {i} reached {} V", v);
+    }
+    assert!(
+        close(c.element_currents()[0], 0.0, 1e-9),
+        "broken source reported {} A",
+        c.element_currents()[0]
+    );
+}
+
+#[test]
+fn voltage_limited_source_is_never_forced_broken() {
+    // Same no-DC-path topology as the broken-source test, but with a 5 V
+    // compliance: `setBroken` excludes voltage-limited sources
+    // (CurrentElm.java:102-104), so the companion model drives the terminal
+    // voltage up near 5 V instead of the source being replaced by a 100 M
+    // resistor and sitting near 0 V.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "current",
+                &[[0, 0], [100, 0]],
+                &[("current", 0.01), ("maxVoltage", 5.0)],
+            ),
+            elm(2, "capacitor", &[[100, 0], [100, 100]], &[]),
+            elm(3, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let v = c.element_voltages()[0];
+    assert!(
+        (4.0..=6.5).contains(&v.abs()),
+        "terminal voltage was {v}, expected it clipped near 5 V rather than being forced broken"
+    );
+}
+
+#[test]
+fn broken_state_tracks_switch_toggles() {
+    // A current source driving a loop through a resistor and a switch is fine
+    // while the switch is closed and broken once it opens; the check runs from
+    // `set_state`'s restamp, so the flag tracks the toggle without a rebuild.
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 0], [100, 0]], &[("current", 0.01)]),
+            elm(
+                2,
+                "resistor",
+                &[[100, 0], [200, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "switch", &[[200, 0], [200, 100]], &[("position", 0.0)]),
+            elm(4, "wire", &[[200, 100], [0, 100]], &[]),
+            elm(5, "wire", &[[0, 100], [0, 0]], &[]),
+            elm(6, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    assert!(
+        close(c.element_currents()[0], 0.01, 1e-9),
+        "closed switch: source reported {} A",
+        c.element_currents()[0]
+    );
+
+    assert!(c.set_state(3, 1));
+    let report = c.run(5);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    for (i, v) in c.node_voltages().iter().enumerate() {
+        assert!(v.abs() < 1e3, "node {i} reached {} V", v);
+    }
+    assert!(
+        close(c.element_currents()[0], 0.0, 1e-9),
+        "open switch: source reported {} A",
+        c.element_currents()[0]
+    );
+
+    assert!(c.set_state(3, 0));
+    c.run(5);
+    assert!(
+        close(c.element_currents()[0], 0.01, 1e-9),
+        "re-closed switch: source reported {} A",
+        c.element_currents()[0]
+    );
+}
+
+#[test]
+fn zero_current_source_is_inert_at_engine_level() {
+    // A 0 A current source given directly to the engine stays 0 A: the
+    // load-time 0 -> 0.01 normalisation is the frontend's job
+    // (CurrentElm.java:43-44), and this pins that the model itself does not
+    // force it. With nothing driving the load, the divider current is 0.
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 100], [0, 0]], &[("current", 0.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    assert!(
+        close(c.element_currents()[1], 0.0, 1e-12),
+        "load current was {}",
+        c.element_currents()[1]
+    );
+}

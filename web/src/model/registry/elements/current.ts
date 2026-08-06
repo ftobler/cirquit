@@ -10,9 +10,17 @@ export const CURRENT_DEF: ElementDef = {
   postCount: 2,
   posts: twoPosts,
   defaults: { current: 0.01 },
-  parse: (t, e) => readParams(t, e, ['current', 'maxVoltage']),
+  parse: (t, e) => {
+    readParams(t, e, ['current', 'maxVoltage']);
+    // Upstream forces a zero file value to 0.01 at load (CurrentElm.java:43-44);
+    // the live edit path keeps 0, so this belongs in the parse, not the model.
+    if (e.params.current === 0) e.params.current = 0.01;
+  },
   dump: writeParams(['current', 'maxVoltage']),
-  fields: [{ name: 'current', label: 'Current', unit: 'A' }],
+  fields: [
+    { name: 'current', label: 'Current', unit: 'A' },
+    { name: 'maxVoltage', label: 'Max voltage (0=unlimited)', unit: 'V' },
+  ],
   draw(g, e) {
     const [lead1, lead2] = drawSourceCircle(g, e, 12);
     const a = interp(lead1, lead2, 0.5 - 0.28);

@@ -329,6 +329,34 @@ impl Circuit {
         pins
     }
 
+    /// Marks current sources whose terminals have no DC current path as
+    /// broken, upstream's `CurrentElm.validate()` (CurrentElm.java:203-207).
+    /// Upstream walks an INDUCT `FindPathInfo` between the source's two nodes;
+    /// a UnionFind over `dc_connects` finds the same components, with a
+    /// capacitor open and an inductor short, and a path through ground counts
+    /// because ground symbols share node 0. Runs on every restamp, so throwing
+    /// a switch re-evaluates the path.
+    fn check_broken_sources(&mut self) {
+        let mut uf = UnionFind::new(self.node_count);
+        for elm in &self.elements {
+            let nodes = &elm.base().nodes;
+            for a in 0..nodes.len() {
+                for b in (a + 1)..nodes.len() {
+                    if elm.dc_connects(a, b) {
+                        uf.union(nodes[a], nodes[b]);
+                    }
+                }
+            }
+        }
+        for elm in self.elements.iter_mut() {
+            if elm.kind() == "current" {
+                let (n0, n1) = (elm.base().nodes[0], elm.base().nodes[1]);
+                let broken = uf.find(n0) != uf.find(n1);
+                elm.set_broken(broken);
+            }
+        }
+    }
+
     /// Assigns voltage-source unknowns and sizes the matrix. Re-runs on every
     /// analysis pass; per-element unknown counts are static now that wires and
     /// closed switches merge out of the matrix and only the SPDT keeps one.
@@ -350,6 +378,15 @@ impl Circuit {
     /// Zeroes the matrix, re-runs the constant stamp pass and snapshots the
     /// result for reuse across timesteps.
     fn restamp(&mut self) {
+        // A live parameter edit can flip `nonlinear()` (a current source
+        // gaining or losing `maxVoltage`), which `allocate` only decides once.
+        // Recompute so the single-subiteration path is not taken for a source
+        // that just became voltage-limited.
+        self.nonlinear = self.elements.iter().any(|e| e.nonlinear());
+        // A switch that opens or closes changes which current sources have a
+        // DC path, so the broken flag is re-derived on every restamp rather
+        // than once at analysis time.
+        self.check_broken_sources();
         let size = (self.node_count - 1) + self.vs_count;
         // `resize` also zeroes, which is what we want before re-stamping.
         self.sys.resize(size);

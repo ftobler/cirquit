@@ -508,6 +508,42 @@ describe('voltage source file format', () => {
   });
 });
 
+describe('current source file format', () => {
+  /** Parses a single `i` line and re-emits it, returning the `i` line. */
+  const currentLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('i ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('forces a zero current token to upstream 0.01 on load', () => {
+    // CurrentElm.java:43-44: the file constructor replaces 0 with 0.01, so the
+    // line a legacy save wrote as `0` comes back as a working 0.01 A source.
+    const { e, elementLine } = currentLine('i 100 100 200 100 0 0.0 0');
+    expect(e.params.current).toBe(0.01);
+    expect(elementLine).toBe('i 100 100 200 100 0 0.01 0');
+  });
+
+  it('keeps a nonzero current and its maxVoltage token', () => {
+    const { e, elementLine } = currentLine('i 100 100 200 100 0 0.5 3.0');
+    expect(e.params.current).toBe(0.5);
+    expect(e.params.maxVoltage).toBe(3);
+    expect(elementLine).toBe('i 100 100 200 100 0 0.5 3');
+  });
+
+  it('maxVoltage survives a save/load round-trip', () => {
+    // `maxVoltage` used to be parsed but never carried, so a save wrote 0 and
+    // a reload lost the compliance. Now the registry field and engine carry it.
+    const { e, elementLine } = currentLine('i 100 100 200 100 0 0.5 3.0');
+    expect(e.params.maxVoltage).toBe(3);
+    expect(elementLine.endsWith(' 3')).toBe(true);
+    const [again] = parseCircuit(elementLine).elements;
+    expect(again.params.maxVoltage).toBe(3);
+    expect(again.params.current).toBe(0.5);
+  });
+});
+
 describe('FLAG_ESCAPE on text and labeled nodes', () => {
   const lineFor = (e: CircuitElement, code: string) =>
     serializeCircuit([e], { ...DEFAULT_SETTINGS })

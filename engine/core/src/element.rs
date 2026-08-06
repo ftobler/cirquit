@@ -133,6 +133,18 @@ pub trait Element {
         true
     }
 
+    /// Whether a DC current can flow between posts `a` and `b`, used to find
+    /// current sources with no DC path (upstream's INDUCT `FindPathInfo`).
+    /// Defaults to [`Element::connects`]; a capacitor is an open at DC and
+    /// overrides this to false, while an inductor (a short at DC) inherits.
+    fn dc_connects(&self, a: usize, b: usize) -> bool {
+        self.connects(a, b)
+    }
+
+    /// Broken flag set by analysis when the element has no DC current path.
+    /// Only current sources implement it; the default is inert.
+    fn set_broken(&mut self, _broken: bool) {}
+
     /// True for ideal shorts that are merged out of the matrix before
     /// stamping: wires and closed switches. Upstream calls these removable
     /// wires. Merging them (rather than stamping a 0 V source per wire) keeps

@@ -124,6 +124,13 @@ impl Element for Capacitor {
         }
     }
 
+    /// A capacitor is an open at DC, so it never carries the current path
+    /// `check_broken_sources` is looking for (FindPathInfo.INDUCT treats it
+    /// as blocking).
+    fn dc_connects(&self, _a: usize, _b: usize) -> bool {
+        false
+    }
+
     fn stamp(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         let (n0, n1) = (self.base.nodes[0], self.base.nodes[1]);
         let cn = self.base.nodes[self.cap_node];
