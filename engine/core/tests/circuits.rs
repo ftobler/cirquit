@@ -80,6 +80,89 @@ fn resistive_divider_splits_the_supply() {
 }
 
 #[test]
+fn fuse_below_its_rating_behaves_like_a_resistor() {
+    // Same divider as above, but the second leg is a fuse rated so far past
+    // any current this circuit can draw (I2t = 1e6) that it never blows: it
+    // must match plain Ohm's law exactly, like a resistor of the same value.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "fuse",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0), ("i2t", 1e6)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(close(volts[2], 5.0, 1e-9), "midpoint was {}", volts[2]);
+    assert!(
+        close(amps[1], 5e-3, 1e-12),
+        "resistor current was {}",
+        amps[1]
+    );
+    assert!(close(amps[2], 5e-3, 1e-12), "fuse current was {}", amps[2]);
+}
+
+#[test]
+fn fuse_blows_under_sustained_overcurrent() {
+    // A 1 ohm fuse straight across a 3 V source draws 3 A, which is well past
+    // a 1 A^2*s rating: heat accumulates as i^2*dt every timestep and only
+    // bleeds off at i2t/3 per second (FuseElm.java:153-162), so at 3 A it
+    // nets +8.667 per second and crosses the 1.0 rating in well under a
+    // second of simulated time. Once blown, the fuse is a ~1 GOhm resistor,
+    // so the current collapses toward zero.
+    let dt = 1e-3;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 3.0)]),
+            elm(
+                2,
+                "fuse",
+                &[[0, 0], [0, 100]],
+                &[("resistance", 1.0), ("i2t", 1.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    // One warm-up step: startIteration's first call sees the fuse's initial
+    // current (0), so heat cannot have moved yet and the fuse should still
+    // read as a plain 1 ohm resistor here.
+    c.run(1);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], 3.0, 1e-6),
+        "expected the intact fuse to draw 3 A, got {}",
+        amps[1]
+    );
+
+    // Comfortably past the ~116 further steps the heat integral needs to
+    // cross its 1.0 A^2*s rating at a steady 3 A.
+    c.run(300);
+    let amps = c.element_currents();
+    assert!(
+        amps[1].abs() < 1e-6,
+        "expected the blown fuse's current to have collapsed toward zero, got {}",
+        amps[1]
+    );
+}
+
+#[test]
 fn unequal_divider_matches_the_ratio() {
     let c = &mut build(
         vec![
