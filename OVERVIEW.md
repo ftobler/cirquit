@@ -188,7 +188,16 @@ fetch it).
   bundled circuits fail to converge because of it and are recorded, with what
   each one actually needs, in `web/src/io/corpus.ts`'s
   `DIAGNOSED_SIM_FAILURES`. Three of them are op-amp chaos oscillators whose
-  real defect is the op-amp's convergence test, not the restored charge.
+  real defect is the op-amp's convergence test, not the restored charge. The
+  inductor diverges the same way: `Inductor.java` has no `doDcAnalysis()`
+  branch either, so its transient companion, holding the stored `current`,
+  carries through a DC solve, while this port stamps the inductor as a hard
+  short and zeroes its voltage. The DC current the short yields, `v/DC_SHORT`,
+  is the true steady-state loop current, so only the zeroed voltage diverges.
+  The saturating-inductor model is now honoured; the inductor's DC handling is
+  already decided in `feature/dc-operating-point.md` (scope item 2 keeps the
+  1e-6 ohm short and commits that current into history), so only that DC
+  behaviour stays behind.
 - **A rebuild re-injects the file's saved charge.** The engine reads `voltDiff`
   out of the element spec on every build, and `setCircuit` re-serialises
   `e.params`, which still holds the value the file was loaded with. So any

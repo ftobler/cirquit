@@ -860,6 +860,150 @@ fn rl_network_settles_to_ohms_law() {
 }
 
 #[test]
+fn saturating_inductor_follows_the_analytic_curve() {
+    // A saturating inductor substitutes L_eff = L/(1 + (I/Isat)^2) for L
+    // (Inductor.java:54-60), so the RL step response is no longer a simple
+    // exponential. With x = I/Isat and x0 = V0/(R*Isat), the curve separates
+    // to dt' = (x0-x)(1+x^2) dx with t' = t*R/L0, which integrates to
+    // t' = 1/(1+x0^2) * [ln x0 - ln(x0-x) + (1/2)ln(1+x^2) + x0 atan x].
+    // At x = 1 (I = Isat), with x0 = 2 (20 V behind 1000 ohm, Isat = 0.01):
+    // t' = (1/5) * [ln2 + (1/2)ln2 + 2*atan(1)] = 0.522103, so
+    // t = 0.522103 * L0/R = 5.22103e-7 s, which is 522 steps at dt = 1e-9.
+    let dt = 1e-9;
+    let steps = 522;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 20.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "inductor",
+                &[[100, 0], [100, 100]],
+                &[("inductance", 1e-3), ("saturationCurrent", 0.01)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(steps);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[2], 0.01, 2e-4),
+        "saturating inductor at Isat: got {}, expected 0.01",
+        amps[2]
+    );
+}
+
+#[test]
+fn linear_inductor_still_follows_v_over_l() {
+    // The same RL network without a saturation current stays linear, so at
+    // the same time the saturating test reaches Isat it must still read the
+    // plain exponential I = (V/R)(1 - e^(-t/tau)), tau = L/R = 1e-6. The gap
+    // between the 0.01 and this 8.14e-3 is what the saturation collapse
+    // produces; on the old linear-only code the saturating assertion above
+    // would read this value instead.
+    let dt = 1e-9;
+    let steps = 522;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 20.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "inductor",
+                &[[100, 0], [100, 100]],
+                &[("inductance", 1e-3)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(steps);
+    let expected = 0.02 * (1.0 - (-0.522103f64).exp());
+    let amps = c.element_currents();
+    assert!(
+        close(amps[2], expected, 2e-4),
+        "linear inductor: got {}, expected {}",
+        amps[2],
+        expected
+    );
+}
+
+#[test]
+fn inductor_restores_saved_current_on_load() {
+    // The saved `current` token is the running state the file was saved with
+    // (InductorElm.java:42), so a loaded circuit continues from it instead of
+    // from zero. With i_prev = 0.03 the trapezoidal companion source holds
+    // the current near 0.03 on the first step (the DC target is 5/100 = 0.05,
+    // so it only climbs (dt/L)*V = 3e-4), while seeding from initialCurrent
+    // = 0 would leave it near (dt/2L)*V = 2.5e-4.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 100.0)]),
+            elm(
+                3,
+                "inductor",
+                &[[100, 0], [100, 100]],
+                &[("inductance", 1e-3), ("current", 0.03)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-7, false),
+    );
+    c.run(1);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[2], 0.03, 1e-3),
+        "saved current not restored: got {}, expected 0.03",
+        amps[2]
+    );
+}
+
+#[test]
+fn inductor_uses_initial_current_when_no_saved_state() {
+    // Old files predate the running `current` token, so the initial current
+    // has to stand in as the load-time state, exactly as upstream's `reset()`
+    // does (InductorElm.java:95-99). Same circuit and same expected value as
+    // the saved-state test, via a different param.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 100.0)]),
+            elm(
+                3,
+                "inductor",
+                &[[100, 0], [100, 100]],
+                &[("inductance", 1e-3), ("initialCurrent", 0.03)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-7, false),
+    );
+    c.run(1);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[2], 0.03, 1e-3),
+        "initial current not used: got {}, expected 0.03",
+        amps[2]
+    );
+}
+
+#[test]
 fn lc_tank_oscillates_at_its_resonant_frequency() {
     // A charged capacitor across an inductor rings at 1/(2*pi*sqrt(LC)).
     // Trapezoidal integration conserves energy well enough that the peak

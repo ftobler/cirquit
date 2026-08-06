@@ -285,6 +285,40 @@ describe('capacitor file format', () => {
   });
 });
 
+describe('inductor file format', () => {
+  /** Parses a single `l` line and re-emits it, returning that line. */
+  const inductorLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('l ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('inductor line round-trips all four tokens', () => {
+    // InductorElm.java dumps inductance, current, initialCurrent then
+    // saturationCurrent (:50-52), and its token constructor reads them in the
+    // same order (:41-46), so this is byte-identical.
+    const line = 'l 384 80 384 352 0 1 0.03 0.05 0.02';
+    const { e, elementLine } = inductorLine(line);
+    expect(e.params.inductance).toBe(1);
+    expect(e.params.current).toBe(0.03);
+    expect(e.params.initialCurrent).toBe(0.05);
+    expect(e.params.saturationCurrent).toBe(0.02);
+    expect(elementLine).toBe(line);
+  });
+
+  it('inductor tolerates a missing saturation token', () => {
+    // The SAMPLE form and older saves stop after initialCurrent; the fourth
+    // token defaults to 0 (no saturation). The save then writes all four
+    // tokens, exactly as upstream's dump() does.
+    const { e, elementLine } = inductorLine('l 384 80 384 352 0 1 0.03 0');
+    expect(e.params.current).toBe(0.03);
+    expect(e.params.initialCurrent).toBe(0);
+    expect(e.params.saturationCurrent).toBe(0);
+    expect(elementLine).toBe('l 384 80 384 352 0 1 0.03 0 0');
+  });
+});
+
 describe('zener file format', () => {
   /** Parses a single `z` line and re-emits it, returning the `z` line. */
   const zenerLine = (line: string) => {

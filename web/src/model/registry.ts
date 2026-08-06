@@ -58,6 +58,7 @@ const VOLTAGE_SHOW_VOLTAGE = 16; // VoltageElm.java:32
 const PROBE_SHOW_VOLTAGE = 1;   // ProbeElm.java:30
 const PROBE_CIRCLE = 2;         // ProbeElm.java:31
 const CAP_BACK_EULER = 2;       // CapacitorElm.java:32
+const IND_BACK_EULER = 2;       // Inductor.java:23, same bit as the capacitor's flag
 const CAP_RESISTANCE = 4;       // CapacitorElm.java:33
 /** Marks free text as one escaped token rather than the old space-joined
  *  form. Same bit and same meaning on both text-bearing types
@@ -814,11 +815,23 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'l',
     postCount: 2,
     posts: twoPosts,
-    defaults: { inductance: 1e-3 },
+    // The second token is the running state the file was saved with
+    // (InductorElm.java:42), kept so a mid-transient save reloads where it
+    // left off; a zero here is indistinguishable from no saved state.
+    defaults: { inductance: 1e-3, current: 0, initialCurrent: 0, saturationCurrent: 0 },
     parse: (t, e) =>
-      readParams(t, e, ['inductance', 'currentState', 'initialCurrent', 'saturationCurrent']),
-    dump: writeParams(['inductance', 'currentState', 'initialCurrent', 'saturationCurrent']),
-    fields: [{ name: 'inductance', label: 'Inductance', unit: 'H' }],
+      readParams(t, e, ['inductance', 'current', 'initialCurrent', 'saturationCurrent']),
+    dump: writeParams(['inductance', 'current', 'initialCurrent', 'saturationCurrent']),
+    fields: [
+      { name: 'inductance', label: 'Inductance', unit: 'H' },
+      { name: 'initialCurrent', label: 'Initial current (on reset)', unit: 'A' },
+      { name: 'saturationCurrent', label: 'Saturation current (0 = none)', unit: 'A' },
+      // Same flag and same semantics as the capacitor's checkbox; upstream
+      // labels it "Trapezoidal Approximation" and ticks it when the flag is
+      // *clear* (InductorElm.java:133-137), so naming it after the flag is the
+      // same control with the label the right way up.
+      { name: 'backEuler', label: 'Backward Euler', type: 'bool', flag: IND_BACK_EULER },
+    ],
     draw: drawInductorBody,
   },
   {
