@@ -362,6 +362,101 @@ fn thermistor_position_at_the_r50_calibration_point() {
     );
 }
 
+/// Ports `LDRElm.java`'s `LuxFromSliderPos()`/`calcResistance()`
+/// (`LDRElm.java`:219-222, :206-218) independently, so each assertion below
+/// checks the engine against the same formula rather than a hand-rounded
+/// constant.
+fn ldr_resistance(position: f64) -> f64 {
+    const MIN_LUX: f64 = 0.1;
+    const MAX_LUX: f64 = 10000.0;
+    let lux = MAX_LUX * position + MIN_LUX;
+    ((MAX_LUX - lux + 1.0) * 10.0).round()
+}
+
+#[test]
+fn ldr_at_its_default_position_is_dim_and_high_resistance() {
+    // Default slider position 0.34 (LDRElm.java:29): lux = 10000*0.34+0.1 =
+    // 3400.1, resistance = round((10000-3400.1+1)*10) = 66009 ohm. In series
+    // with a 1k resistor across 10 V, the divider current is
+    // V/(R1+R_ldr).
+    let expected_r = ldr_resistance(0.34);
+    assert!(
+        close(expected_r, 66009.0, 1e-9),
+        "sanity: default position should read 66009 ohm, got {expected_r}"
+    );
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ldr", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let expected = 10.0 / (1000.0 + expected_r);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], expected, 1e-9),
+        "expected {} A through the divider (R = {} ohm), got {}",
+        expected,
+        expected_r,
+        amps[1]
+    );
+    assert!(
+        close(amps[2], expected, 1e-9),
+        "ldr current should match the resistor's, got {}",
+        amps[2]
+    );
+}
+
+#[test]
+fn ldr_at_full_brightness_is_low_resistance() {
+    // Slider at position 1.0 (upstream's slider tops out at 0.9901, but 1.0
+    // keeps this a round number, matching the default-position test's use of
+    // 0.34): lux = 10000*1+0.1 = 10000.1, giving the lowest resistance the
+    // model produces (round((10000-10000.1+1)*10) = round(9.0) = 9 ohm).
+    // Confirms resistance moves with `position` alone, in the opposite
+    // direction from lux, and nothing here depends on current or a prior
+    // timestep, unlike Fuse/Lamp.
+    let expected_r = ldr_resistance(1.0);
+    assert!(
+        close(expected_r, 9.0, 1e-9),
+        "sanity: position 1.0 (brightest) should read 9 ohm, got {expected_r}"
+    );
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ldr", &[[100, 0], [100, 100]], &[("position", 1.0)]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let expected = 10.0 / (1000.0 + expected_r);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], expected, 1e-9),
+        "expected {} A through the divider (R = {} ohm), got {}",
+        expected,
+        expected_r,
+        amps[1]
+    );
+}
+
 #[test]
 fn unequal_divider_matches_the_ratio() {
     let c = &mut build(

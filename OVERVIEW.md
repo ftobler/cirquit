@@ -197,13 +197,13 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **23 of ~200**.
+a test. Done so far: **24 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, fuse, lamp, thermistor, potentiometer, switch, SPDT
-switch.
+switch, LDR.
 
-- [ ] Varactor, memristor, LDR
+- [ ] Varactor, memristor
 - [ ] Transformer, tapped transformer, custom transformer
 - [ ] Transmission line, crystal, spark gap, antenna
 - [ ] Relay coil / contact / relay, DPDT, crossover and motor-protection switches
@@ -286,6 +286,7 @@ Dump codes implemented so far, with their trailing field order:
 | `181` | lamp           | temp, nomPower, nomVoltage, warmTime, coolTime              |
 | `350` | thermistor     | r25, r50, minTempr, maxTempr, position, sliderText (escaped) |
 | `174` | potentiometer  | maxResistance, position, sliderText (raw, may span tokens) |
+| `374` | LDR            | position, sliderText (escaped)                              |
 | `v`   | voltage source | waveform, frequency, maxVoltage, bias, phaseShift, duty    |
 | `R`   | rail           | same as voltage source                                     |
 | `i`   | current source | current, maxVoltage                                        |
@@ -347,6 +348,15 @@ common x/y/flags fields for this type — a real upstream quirk that would
 silently drop `r25`, `r50`, the temperature range, `position` and the caption
 from a legacy text save. This port writes all six anyway, matching every
 other type here, so a save from this app never loses that state.
+
+For the `374` row the slider caption is likewise a single escaped token
+(`LDRElm.java`'s token constructor unconditionally unescapes it, just like the
+thermistor's), and `LDRElm.java` has the exact same real quirk: it never
+overrides `dump()`, so upstream's own text save would drop `position` and the
+caption too. This port writes both tokens anyway, for the same reason. `LDR`'s
+`minLux`/`maxLux` are hardcoded constants in both of upstream's constructors
+(0.1 and 10000), never read from a file or exposed via `getEditInfo`, so they
+carry no tokens at all — only `position` and the slider caption round-trip.
 
 Text tokens that may contain spaces are escaped with upstream's full set: space
 `\s`, newline `\n`, carriage return `\r`, backslash `\\`, `+` `\p`, `=` `\q`,
