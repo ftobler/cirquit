@@ -262,6 +262,106 @@ fn lamp_settles_toward_its_warm_resistance_under_sustained_voltage() {
     );
 }
 
+/// Ports ThermistorNTCElm.java's temperature-to-resistance chain
+/// (`calcB25100`/`temprFromSliderPos`/`calcResistance`,
+/// ThermistorNTCElm.java:247-262) independently, so each assertion below
+/// checks the engine against the same formula rather than a hand-rounded
+/// constant.
+fn thermistor_resistance(r25: f64, r50: f64, min_tempr: f64, max_tempr: f64, position: f64) -> f64 {
+    const T0: f64 = 273.15;
+    let b25100 = (r25.ln() - r50.ln()) / (1.0 / (T0 + 25.0) - 1.0 / (T0 + 50.0));
+    let temperature = (position * (max_tempr - min_tempr) + min_tempr).round();
+    (r25 * (b25100 * (1.0 / (temperature + T0) - 1.0 / (T0 + 25.0))).exp()).round()
+}
+
+#[test]
+fn thermistor_at_its_default_position_reads_its_r25_rating() {
+    // Default slider position (0.34 on -40..150) lands on 25 C exactly
+    // (0.34*190-40 = 24.6, rounds to 25), which is the thermistor's own
+    // calibration point, so its resistance should come back as exactly the
+    // default r25 of 10000 ohm. In series with a 1k resistor across 10 V,
+    // the divider current is V/(R1+R_thermistor).
+    let expected_r = thermistor_resistance(10000.0, 3605.0, -40.0, 150.0, 0.34);
+    assert!(
+        close(expected_r, 10000.0, 1e-9),
+        "sanity: default position should read the r25 point, got {expected_r}"
+    );
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "thermistor", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let expected = 10.0 / (1000.0 + expected_r);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], expected, 1e-9),
+        "expected {} A through the divider (R = {} ohm), got {}",
+        expected,
+        expected_r,
+        amps[1]
+    );
+    assert!(
+        close(amps[2], expected, 1e-9),
+        "thermistor current should match the resistor's, got {}",
+        amps[2]
+    );
+}
+
+#[test]
+fn thermistor_position_at_the_r50_calibration_point() {
+    // Slider position that lands exactly on 50 C ((50-(-40))/190) should
+    // read back the other calibration point, r50 = 3605 ohm, and the whole
+    // NTC curve moves with `position` alone: nothing here depends on
+    // current or a prior timestep, unlike Fuse/Lamp.
+    let position = (50.0 - -40.0) / (150.0 - -40.0);
+    let expected_r = thermistor_resistance(10000.0, 3605.0, -40.0, 150.0, position);
+    assert!(
+        close(expected_r, 3605.0, 1e-9),
+        "sanity: 50C position should read the r50 point, got {expected_r}"
+    );
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "thermistor",
+                &[[100, 0], [100, 100]],
+                &[("position", position)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let expected = 10.0 / (1000.0 + expected_r);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], expected, 1e-9),
+        "expected {} A through the divider (R = {} ohm), got {}",
+        expected,
+        expected_r,
+        amps[1]
+    );
+}
+
 #[test]
 fn unequal_divider_matches_the_ratio() {
     let c = &mut build(

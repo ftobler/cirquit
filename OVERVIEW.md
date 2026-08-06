@@ -197,12 +197,13 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **22 of ~200**.
+a test. Done so far: **23 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
-capacitor, inductor, fuse, lamp, potentiometer, switch, SPDT switch.
+capacitor, inductor, fuse, lamp, thermistor, potentiometer, switch, SPDT
+switch.
 
-- [ ] Varactor, memristor, LDR, thermistor
+- [ ] Varactor, memristor, LDR
 - [ ] Transformer, tapped transformer, custom transformer
 - [ ] Transmission line, crystal, spark gap, antenna
 - [ ] Relay coil / contact / relay, DPDT, crossover and motor-protection switches
@@ -283,6 +284,7 @@ Dump codes implemented so far, with their trailing field order:
 | `l`   | inductor       | inductance, current, initialCurrent, saturationCurrent     |
 | `404` | fuse           | resistance, i2t, heat, blown                               |
 | `181` | lamp           | temp, nomPower, nomVoltage, warmTime, coolTime              |
+| `350` | thermistor     | r25, r50, minTempr, maxTempr, position, sliderText (escaped) |
 | `174` | potentiometer  | maxResistance, position, sliderText (raw, may span tokens) |
 | `v`   | voltage source | waveform, frequency, maxVoltage, bias, phaseShift, duty    |
 | `R`   | rail           | same as voltage source                                     |
@@ -336,6 +338,15 @@ single spaces, and it is **not** escaped: those tokens go in and out raw. A
 caption containing `+` is therefore lossy, in the original too, because `+` is
 one of the format's token separators. Current upstream reads these three
 tokens but no longer writes them; its own save path is XML.
+
+For the `350` row the slider caption is, unlike the potentiometer's, a single
+escaped token (`ThermistorNTCElm.java`'s token constructor unconditionally
+unescapes it, with no raw-token fallback). Upstream's own class never
+overrides `dump()` either, so its base-class implementation writes only the
+common x/y/flags fields for this type — a real upstream quirk that would
+silently drop `r25`, `r50`, the temperature range, `position` and the caption
+from a legacy text save. This port writes all six anyway, matching every
+other type here, so a save from this app never loses that state.
 
 Text tokens that may contain spaces are escaped with upstream's full set: space
 `\s`, newline `\n`, carriage return `\r`, backslash `\\`, `+` `\p`, `=` `\q`,
