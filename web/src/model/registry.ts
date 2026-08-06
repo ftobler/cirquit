@@ -53,9 +53,14 @@ const POT_SHOW_VALUES = 1;      // PotElm.java:32
 const POT_FLIP = 2;             // PotElm.java:33
 const POT_FLIP_OFFSET = 4;      // PotElm.java:34
 const SWITCH2_CENTER_OFF = 1;   // Switch2Elm.java:30
+const SWITCH_LABEL = 4;         // SwitchElm.java:33, inherited by Switch2Elm
 const VOLTAGE_SHOW_VOLTAGE = 16; // VoltageElm.java:32
 const PROBE_SHOW_VOLTAGE = 1;   // ProbeElm.java:30
 const PROBE_CIRCLE = 2;         // ProbeElm.java:31
+/** Marks free text as one escaped token rather than the old space-joined
+ *  form. Same bit and same meaning on both text-bearing types
+ *  (TextElm.java:38, LabeledNodeElm.java:30); their writers always set it. */
+const FLAG_ESCAPE = 4;
 
 const twoPosts = (e: CircuitElement): Point[] => [
   { x: e.x1, y: e.y1 },
@@ -76,6 +81,28 @@ const writeParams =
   (names: string[]) =>
   (e: CircuitElement): (string | number)[] =>
     names.map((n) => e.params[n] ?? 0);
+
+/** The SPST tokens, which the SPDT writes first and then extends. The label
+ *  only appears when there is one, matching the flag `labelFlags` writes. */
+function switchTokens(e: CircuitElement): (string | number)[] {
+  const tokens: (string | number)[] = [
+    e.state ?? e.params.position ?? 0,
+    (e.params.momentary ?? 0) !== 0 ? 'true' : 'false',
+  ];
+  if (e.text) tokens.push(e.text);
+  return tokens;
+}
+
+/** Clearing FLAG_LABEL when the label goes empty keeps the token count and the
+ *  flag in step, as upstream's editor does (SwitchElm.java:258-265). */
+function labelFlags(e: CircuitElement): number {
+  return e.text ? e.flags | SWITCH_LABEL : e.flags & ~SWITCH_LABEL;
+}
+
+/** Text and labeled nodes always save the new-style single escaped token. */
+function escapeFlags(e: CircuitElement): number {
+  return e.flags | FLAG_ESCAPE;  // TextElm.java:83, LabeledNodeElm.java:52
+}
 
 // ---------------------------------------------------------------------------
 // Symbol drawing
@@ -505,8 +532,21 @@ export const ELEMENT_DEFS: ElementDef[] = [
     canMirror: true,
     defaultFlags: POT_SHOW_VALUES,  // PotElm.java:51
     defaults: { maxResistance: 1000, position: 0.5 },
-    parse: (t, e) => readParams(t, e, ['maxResistance', 'position']),
-    dump: (e) => [e.params.maxResistance ?? 1000, e.params.position ?? 0.5, e.text ?? 'Resistance'],
+    // Upstream joins every remaining token into the slider caption with single
+    // spaces and never escapes it (PotElm.java:58-62), so the tokens stay raw
+    // in both directions. Its own writer dropped these three tokens when the
+    // save path moved to XML; its reader still requires them.
+    rawTokens: true,
+    parse: (t, e) => {
+      readParams(t, e, ['maxResistance', 'position']);
+      if (t.length > 2) e.text = t.slice(2).join(' ');
+    },
+    dump: (e) => {
+      // An empty caption would write a trailing empty token and shift nothing
+      // into `sliderText`, so fall back to the constructor's default.
+      const text = e.text?.trim() ? e.text.trim() : 'Resistance';  // PotElm.java:50
+      return [e.params.maxResistance ?? 1000, e.params.position ?? 0.5, ...text.split(/\s+/)];
+    },
     fields: [
       { name: 'maxResistance', label: 'Max resistance', unit: 'Ω' },
       { name: 'position', label: 'Wiper position', min: 0, max: 1 },
@@ -746,13 +786,13 @@ export const ELEMENT_DEFS: ElementDef[] = [
       const p = t[0];
       e.params.position = p === 'true' ? 1 : p === 'false' ? 0 : Number(p) || 0;
       e.params.momentary = t[1] === 'true' ? 1 : 0;
+      // The label token only exists under FLAG_LABEL (SwitchElm.java:66-67).
+      if ((e.flags & SWITCH_LABEL) !== 0 && t[2] !== undefined) e.text = t[2];
       e.state = e.params.position;
     },
     // The format writes the momentary flag as a literal `true`/`false`.
-    dump: (e) => [
-      e.state ?? e.params.position ?? 0,
-      (e.params.momentary ?? 0) !== 0 ? 'true' : 'false',
-    ],
+    dump: switchTokens,
+    dumpFlags: labelFlags,
     draw: drawSwitchBody,
   },
   {
@@ -769,16 +809,16 @@ export const ELEMENT_DEFS: ElementDef[] = [
       const p = t[0];
       e.params.position = p === 'true' ? 1 : p === 'false' ? 0 : Number(p) || 0;
       e.params.momentary = t[1] === 'true' ? 1 : 0;
-      e.params.link = Number(t[2]) || 0;
-      e.params.throwCount = Number(t[3]) || 2;
+      // Upstream reads the label in `super(...)` before link and throwCount
+      // (Switch2Elm.java:44-50), so a label shifts both of them one token on.
+      let i = 2;
+      if ((e.flags & SWITCH_LABEL) !== 0 && t[i] !== undefined) e.text = t[i++];
+      e.params.link = Number(t[i++]) || 0;
+      e.params.throwCount = Number(t[i]) || 2;
       e.state = e.params.position;
     },
-    dump: (e) => [
-      e.state ?? e.params.position ?? 0,
-      (e.params.momentary ?? 0) !== 0 ? 'true' : 'false',
-      e.params.link ?? 0,
-      e.params.throwCount ?? 2,
-    ],
+    dump: (e) => [...switchTokens(e), e.params.link ?? 0, e.params.throwCount ?? 2],
+    dumpFlags: labelFlags,
     draw(g, e) {
       const posts = switch2Posts(e);
       const [p1, p2] = endpoints(e);
@@ -837,9 +877,13 @@ export const ELEMENT_DEFS: ElementDef[] = [
     posts: onePost,
     fields: [{ name: 'text', label: 'Text', type: 'text', target: 'text' }],
     parse: (t, e) => {
+      // Both upstream readers end up with the same string: the new-style one
+      // unescapes a single token (done by the netlist layer), the old-style
+      // one joins the rest with spaces (LabeledNodeElm.java:41-49).
       e.text = t.join(' ');
     },
     dump: (e) => [e.text ?? ''],
+    dumpFlags: escapeFlags,
     draw(g, e) {
       const p = { x: e.x1, y: e.y1 };
       const text = e.text ?? '';
@@ -915,9 +959,14 @@ export const ELEMENT_DEFS: ElementDef[] = [
     ],
     parse: (t, e) => {
       e.params.size = Number(t[0]) || 24;
-      e.text = t.slice(1).join(' ');
+      let text = t.slice(1).join(' ');
+      // Dumps older than the escape scheme URL-encoded the plus sign, because
+      // upstream's tokenizer treats `+` as a separator (TextElm.java:55).
+      if ((e.flags & FLAG_ESCAPE) === 0) text = text.replace(/%2[bB]/g, '+');
+      e.text = text;
     },
     dump: (e) => [e.params.size ?? 24, e.text ?? ''],
+    dumpFlags: escapeFlags,
     draw(g, e) {
       g.ctx.fillStyle = g.selected ? g.theme.selection : g.theme.text;
       // A zero or negative size would make an invalid font string and blank

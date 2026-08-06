@@ -2,8 +2,14 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { escapeToken, parseCircuit, serializeCircuit, unescapeToken } from './netlist';
-import { makeElement } from '../state/store';
+import {
+  escapeToken,
+  parseCircuit,
+  serializeCircuit,
+  unescapeToken,
+  type NetlistLine,
+} from './netlist';
+import { makeElement, useStore } from '../state/store';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
 import { parseSetupList } from './library';
 import { compressCircuit, decompressCircuit } from './urlShare';
@@ -90,6 +96,15 @@ describe('netlist parsing', () => {
     expect(parsed.elements).toHaveLength(1);
     expect(parsed.unsupported).toContain('999');
   });
+
+  it('reports the non-element line types upstream dispatches on', () => {
+    // `!` custom-logic model, `%`/`?` afilter, `.` subcircuit definition
+    // (CircuitLoader.java:163-191). None is an element, but none is
+    // interpreted either, so the load has to admit it.
+    const parsed = parseCircuit('! model stuff\n% 1 2\n? 3 4\n. sub\n');
+    expect(parsed.unsupported).toEqual(['!', '%', '?', '.']);
+    expect(parsed.passthrough).toEqual(['! model stuff', '% 1 2', '? 3 4', '. sub']);
+  });
 });
 
 describe('subset dump', () => {
@@ -118,6 +133,22 @@ describe('token escaping', () => {
     const text = 'a label with spaces';
     expect(unescapeToken(escapeToken(text))).toBe(text);
     expect(escapeToken(text)).not.toContain(' ');
+  });
+
+  it('covers the whole upstream escape set in one round trip', () => {
+    // Every character CustomLogicModel.java:259-263 rewrites: a literal
+    // backslash, a space, a newline, `+`, `=`, `#`, `&` and a carriage return.
+    const text = 'a\\b c\nd+e=f#g&h\rtail';
+    expect(escapeToken(text)).toBe('a\\\\b\\sc\\nd\\pe\\qf\\hg\\ah\\rtail');
+    expect(unescapeToken(escapeToken(text))).toBe(text);
+  });
+
+  it('maps the empty string to the whole-token \\0 and back', () => {
+    expect(escapeToken('')).toBe('\\0');
+    expect(unescapeToken('\\0')).toBe('');
+    // Only the whole token means empty; embedded, the backslash of an unknown
+    // escape is simply dropped (CustomLogicModel.java:287-288).
+    expect(unescapeToken('a\\0b')).toBe('a0b');
   });
 });
 
@@ -344,9 +375,9 @@ describe('text element', () => {
     const { e, elementLine, again } = roundTrip(LINE);
     expect(e.text).toBe('hello world here');
     expect(e.params.size).toBe(12);
-    // Spaces are escaped on save, so the re-parsed text is the source of
-    // truth, not the literal line.
-    expect(elementLine).toBe('x 100 200 0 0 0 12 hello\\sworld\\shere');
+    // Spaces are escaped on save and FLAG_ESCAPE (4) goes on to say so, so the
+    // re-parsed text is the source of truth, not the literal line.
+    expect(elementLine).toBe('x 100 200 0 0 4 12 hello\\sworld\\shere');
     expect(again.text).toBe('hello world here');
     expect(again.params.size).toBe(12);
   });
@@ -394,7 +425,344 @@ describe('text element', () => {
     expect(e.params.size).toBe(24);
     expect(e.text).toBe('hello');
     // The clamp at draw time must not change the file format.
-    expect(elementLine).toBe('x 100 200 0 0 0 24 hello');
+    expect(elementLine).toBe('x 100 200 0 0 4 24 hello');
+  });
+});
+
+describe('the $ header', () => {
+  const headerOf = (text: string, patch: Partial<typeof DEFAULT_SETTINGS> = {}) => {
+    const parsed = parseCircuit(text);
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings, ...patch },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    return { parsed, line: out.split('\n')[0] };
+  };
+
+  it('round-trips every field, including the three it does not model', () => {
+    const { parsed, line } = headerOf(SAMPLE);
+    expect(parsed.settings.iterCount).toBe(10.20027730826997);
+    expect(parsed.settings.powerRange).toBe(43);
+    expect(parsed.settings.minTimeStep).toBe(5e-11);
+    expect(parsed.settings.headerFlags).toBe(1);
+    // Byte-identical: before this, iterCount became 10, powerRange 50 and
+    // minTimeStep timeStep/100, and the flags collapsed to 0.
+    expect(line).toBe('$ 1 0.000005 10.20027730826997 50 5 43 5e-11');
+  });
+
+  it('keeps the flag bits it does not model when an edit changes the one it does', () => {
+    // Bits 1 (current dots) and 4 (volts) are nowhere decoded here, so turning
+    // value labels off must not clear them.
+    const { line } = headerOf('$ 5 1e-5 10 50 5 43 5e-11\n', { showValues: false });
+    expect(line.split(' ')[1]).toBe(String(16 | 5));
+  });
+
+  it('a circuit with no loaded header writes the long-standing defaults', () => {
+    const out = serializeCircuit([], { ...DEFAULT_SETTINGS });
+    expect(out.split('\n')[0]).toBe('$ 0 0.000005 10 50 5 50 5e-11');
+  });
+
+  it('an old header that stops early gains the missing fields, as upstream writes them', () => {
+    // CircuitLoader.java:263-266 reads powerRange and minTimeStep in a
+    // try/catch precisely because files like this exist.
+    const { parsed, line } = headerOf('$ 0 5.0E-6 1.5 50 5.0\nr 0 0 16 0 0 100\n');
+    expect(parsed.settings.powerRange).toBeUndefined();
+    expect(parsed.settings.minTimeStep).toBeUndefined();
+    expect(line).toBe('$ 0 0.000005 1.5 50 5 50 5e-11');
+  });
+});
+
+describe('line order, blank lines and comments', () => {
+  const ORDERED = [
+    '$ 0 0.000005 10 50 5 43 5e-11',
+    'r 0 0 16 0 0 100',
+    '38 3 0 0.000001 0.000101 Capacitance',
+    'r 16 0 32 0 0 220',
+    '',
+  ].join('\n');
+
+  const save = (parsed: ReturnType<typeof parseCircuit>, elements = parsed.elements) =>
+    serializeCircuit(
+      elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+
+  it('keeps blank lines and # comments where the author put them', () => {
+    const text = '$ 0 0.000005 10 50 5 43 5e-11\n\n# a comment\nr 0 0 16 0 0 100\n\n';
+    const parsed = parseCircuit(text);
+    expect(save(parsed)).toBe(text);
+  });
+
+  it('keeps an unmodelled line between the elements it was written between', () => {
+    const parsed = parseCircuit(ORDERED);
+    expect(save(parsed).split('\n')).toEqual([
+      '$ 0 0.000005 10 50 5 43 5e-11',
+      'r 0 0 16 0 0 100',
+      '38 3 0 0.000001 0.000101 Capacitance',
+      'r 16 0 32 0 0 220',
+      '',
+    ]);
+  });
+
+  it('appends an element added after the load without disturbing the rest', () => {
+    const parsed = parseCircuit(ORDERED);
+    const added = { ...makeElement('resistor', 32, 0, 48, 0), id: 9999 };
+    const lines = save(parsed, [...parsed.elements, added]).split('\n');
+    expect(lines[2]).toBe('38 3 0 0.000001 0.000101 Capacitance');
+    expect(lines[4]).toBe('r 32 0 48 0 0 1000');
+  });
+
+  it('lets a deleted element vacate its slot instead of shifting the file', () => {
+    const parsed = parseCircuit(ORDERED);
+    const lines = save(parsed, parsed.elements.slice(1)).split('\n');
+    expect(lines).toEqual([
+      '$ 0 0.000005 10 50 5 43 5e-11',
+      '38 3 0 0.000001 0.000101 Capacitance',
+      'r 16 0 32 0 0 220',
+      '',
+    ]);
+  });
+
+  it('splits on CRLF and on a bare CR, as upstream does', () => {
+    // A classic-Mac file is all CRs. Splitting on `\n` alone would make the
+    // whole circuit one unreadable line (CircuitLoader.java:133-140).
+    const cr = parseCircuit('$ 0 5e-6 10 50 5 43 5e-11\rr 0 0 16 0 0 100\rr 16 0 32 0 0 220\r');
+    const crlf = parseCircuit(
+      '$ 0 5e-6 10 50 5 43 5e-11\r\nr 0 0 16 0 0 100\r\nr 16 0 32 0 0 220\r\n',
+    );
+    for (const parsed of [cr, crlf]) {
+      expect(parsed.elements.map((e) => e.params.resistance)).toEqual([100, 220]);
+      // Both come back as LF: the one normalisation the writer cannot avoid.
+      expect(
+        serializeCircuit(
+          parsed.elements,
+          { ...DEFAULT_SETTINGS, ...parsed.settings },
+          parsed.scopes,
+          parsed.passthrough,
+          parsed.order,
+        ),
+      ).toBe('$ 0 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\nr 16 0 32 0 0 220\n');
+    }
+  });
+
+  it('falls back to the old layout for a subset dump with no order', () => {
+    const parsed = parseCircuit(ORDERED);
+    const out = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS, ...parsed.settings });
+    expect(out.split('\n').slice(1, 3)).toEqual(['r 0 0 16 0 0 100', 'r 16 0 32 0 0 220']);
+  });
+});
+
+describe('bundled circuit round trips', () => {
+  const files = readdirSync(CIRCUITS_DIR).filter(
+    (f) => f.endsWith('.txt') && f !== 'setuplist.txt',
+  );
+  const read = (file: string) => readFileSync(join(CIRCUITS_DIR, file), 'utf8');
+
+  /** Same classification as `corpus.ts`: the root can follow a BOM or a blank
+   *  line, so it is the first non-blank line that decides. */
+  const isXml = (text: string) =>
+    (text.split(/\r?\n/).find((l) => l.trim().length > 0) ?? '').trimStart().startsWith('<cir ');
+
+  /**
+   * The `$` line is rebuilt from numbers, so a Java-written `5.0E-6` comes
+   * back as `0.000005` and an old six-token header gains its seventh. What
+   * must hold is that no field changes value and none is dropped, which is
+   * what catches a field being replaced by a default.
+   */
+  const headerAnomaly = (before: string, after: string): string | null => {
+    const a = before.split(/\s+/);
+    const b = after.split(/\s+/);
+    if (b.length !== 8) return `header has ${b.length - 1} fields, expected 7`;
+    for (let i = 1; i < Math.min(a.length, 8); i++) {
+      if (Number(a[i]) !== Number(b[i])) return `field ${i}: ${a[i]} -> ${b[i]}`;
+    }
+    return null;
+  };
+
+  /**
+   * Compares a file with its own re-serialisation. Element lines re-render
+   * their numbers too, so only their count is checked. Everything else,
+   * comments, blank lines, scope lines and every line this build cannot read,
+   * must come back byte-for-byte.
+   */
+  const compare = (file: string, text: string, out: string, order: NetlistLine[]) => {
+    const anomalies: string[] = [];
+    const before = text.split('\n');
+    const after = out.split('\n');
+    if (before.length !== after.length) {
+      return [`${file}: ${before.length} lines in, ${after.length} out`];
+    }
+    order.forEach((entry, i) => {
+      if (entry.kind === 'element') return;
+      if (entry.kind === 'header') {
+        const bad = headerAnomaly(before[i], after[i]);
+        if (bad) anomalies.push(`${file}:${i + 1}: ${bad}`);
+        return;
+      }
+      if (before[i] === after[i]) return;
+      anomalies.push(
+        `${file}:${i + 1}: ${JSON.stringify(before[i])} -> ${JSON.stringify(after[i])}`,
+      );
+    });
+    return anomalies;
+  };
+
+  it('reproduces the line arrangement of every file, verbatim for the lines it cannot read', () => {
+    const anomalies: string[] = [];
+    let headers = 0;
+    for (const file of files) {
+      const text = read(file);
+      const parsed = parseCircuit(text);
+      const out = serializeCircuit(
+        parsed.elements,
+        { ...DEFAULT_SETTINGS, ...parsed.settings },
+        parsed.scopes,
+        parsed.passthrough,
+        parsed.order,
+      );
+      headers += parsed.order.filter((l) => l.kind === 'header').length;
+      anomalies.push(...compare(file, text, out, parsed.order));
+    }
+    expect(anomalies).toEqual([]);
+    // Every non-XML file has exactly one `$` line, and `compare` byte-checks
+    // each of them; without this the header claim would rest on one sample.
+    expect(headers).toBe(files.length - files.filter((f) => isXml(read(f))).length);
+  });
+
+  it('round-trips every file through the store, which is how the app saves', () => {
+    // `serializeCircuit` alone bypasses the scope mapping and the settings
+    // merge, which is exactly where a save loses data.
+    const anomalies: string[] = [];
+    for (const file of files) {
+      const text = read(file);
+      useStore.getState().loadNetlist(text);
+      const s = useStore.getState();
+      anomalies.push(...compare(file, text, s.toNetlist(), s.order));
+    }
+    expect(anomalies).toEqual([]);
+  });
+
+  it('leaves the XML-format files exactly as they were', () => {
+    // 38 of the bundled circuits are upstream's `<cir>` XML, which this build
+    // does not import. Passing them through unchanged is the whole promise
+    // until it does: a `$` line in front would stop upstream reading them.
+    const xml = files.filter((f) => isXml(read(f)));
+    expect(xml).toHaveLength(38);
+    for (const file of xml) {
+      useStore.getState().loadNetlist(read(file));
+      expect(useStore.getState().toNetlist(), file).toBe(read(file));
+    }
+  });
+});
+
+describe('potentiometer slider text', () => {
+  const potLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith('174 ')) ?? '' };
+  };
+
+  it('reads a multi-word caption and writes it back as raw tokens', () => {
+    // scractrig.txt:9. Upstream joins the remaining tokens with single spaces
+    // and never escapes them, so `Trigger\sVoltage` would be wrong.
+    const { e, elementLine } = potLine('174 320 352 384 96 1 1000.0 0.5 Trigger Voltage');
+    expect(e.text).toBe('Trigger Voltage');
+    expect(elementLine).toBe('174 320 352 384 96 1 1000 0.5 Trigger Voltage');
+  });
+
+  it('falls back to the constructor default when the file carries no caption', () => {
+    const { e, elementLine } = potLine('174 320 352 384 96 0 1000.0 0.5');
+    expect(e.text).toBeUndefined();
+    expect(elementLine).toBe('174 320 352 384 96 0 1000 0.5 Resistance');
+  });
+});
+
+describe('switch and SPDT labels', () => {
+  const switchLine = (line: string, code = 's ') => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith(code)) ?? '' };
+  };
+
+  it('round-trips a labelled switch (relays.txt:40)', () => {
+    const { e, elementLine } = switchLine('s 1120 432 1232 432 6 1 false A');
+    expect(e.flags).toBe(6);
+    expect(e.text).toBe('A');
+    expect(elementLine).toBe('s 1120 432 1232 432 6 1 false A');
+  });
+
+  it('writes no label token, and no FLAG_LABEL, without a label', () => {
+    const { e, elementLine } = switchLine('s 384 80 448 80 0 1 false');
+    expect(e.text).toBeUndefined();
+    expect(elementLine).toBe('s 384 80 448 80 0 1 false');
+  });
+
+  it('does not let an SPDT label shift link and throwCount', () => {
+    // Upstream consumes the label in super(...) before reading these two
+    // (Switch2Elm.java:44-50); reading them one token early gave link NaN.
+    const { e, elementLine } = switchLine('S 1120 432 1232 432 4 1 false A 3 4', 'S ');
+    expect(e.text).toBe('A');
+    expect(e.params.link).toBe(3);
+    expect(e.params.throwCount).toBe(4);
+    expect(elementLine).toBe('S 1120 432 1232 432 4 1 false A 3 4');
+  });
+
+  it('reads link and throwCount from an unlabelled legacy SPDT line', () => {
+    const { e, elementLine } = switchLine('S 144 144 144 64 0 false false 1', 'S ');
+    expect(e.params.link).toBe(1);
+    expect(e.params.throwCount).toBe(2);
+    // The `false` position normalises to 0, which is the same switch.
+    expect(elementLine).toBe('S 144 144 144 64 0 0 false 1 2');
+  });
+});
+
+describe('FLAG_ESCAPE on text and labeled nodes', () => {
+  const lineFor = (e: CircuitElement, code: string) =>
+    serializeCircuit([e], { ...DEFAULT_SETTINGS })
+      .trim()
+      .split('\n')
+      .find((l) => l.startsWith(code)) ?? '';
+
+  it('reads the escapes the port used to mangle (jkff.txt:51)', () => {
+    const [e] = parseCircuit('x -101 151 0 154 4 12 JK\\q00:\\sNo\\sChange').elements;
+    // `\q` is `=`; it used to come back as a bare `q`.
+    expect(e.text).toBe('JK=00: No Change');
+  });
+
+  it('round-trips empty text as the whole-token \\0', () => {
+    const [e] = parseCircuit('x 100 200 0 0 4 12 \\0').elements;
+    expect(e.text).toBe('');
+    expect(lineFor(e, 'x ')).toBe('x 100 200 0 0 4 12 \\0');
+  });
+
+  it('escapes a plus sign, which the upstream tokenizer would otherwise split on', () => {
+    // CircuitLoader.java:142 tokenises on " +\t\n\r\f".
+    const e = { ...makeElement('decoration', 0, 0, 0, 0), id: 1, text: 'a+b' };
+    expect(lineFor(e, 'x ')).toBe('x 0 0 0 0 4 24 a\\pb');
+    expect(parseCircuit(lineFor(e, 'x ')).elements[0].text).toBe('a+b');
+  });
+
+  it('recovers the plus sign an old-style dump URL-encoded (opint.txt:103)', () => {
+    const [e] = parseCircuit('x 29 167 48 173 0 24 %2b').elements;
+    expect(e.text).toBe('+');
+    expect(lineFor(e, 'x ')).toBe('x 29 167 48 173 4 24 \\p');
+  });
+
+  it('sets FLAG_ESCAPE on a text element written by this build', () => {
+    const base = makeElement('decoration', 0, 0, 0, 0);
+    const e = { ...base, id: 1, params: { size: 12 }, text: 'hello world' };
+    expect(lineFor(e, 'x ')).toBe('x 0 0 0 0 4 12 hello\\sworld');
+  });
+
+  it('sets FLAG_ESCAPE on a labeled node written by this build', () => {
+    const e = { ...makeElement('labeledNode', 0, 0, 0, 0), id: 1, text: 'bus A' };
+    expect(lineFor(e, '207 ')).toBe('207 0 0 0 0 4 bus\\sA');
   });
 });
 

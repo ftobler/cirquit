@@ -16,6 +16,11 @@ export interface Scope {
   elementId: number;
   value: 'voltage' | 'current' | 'power';
   label?: string;
+  /** The `o` line's tokens after the element index, exactly as loaded: speed,
+   *  plot flags, scale, trace label and the rest. None of it is interpreted
+   *  yet and none of it crosses the wasm boundary; it is carried so that
+   *  saving a loaded circuit does not truncate the line. */
+  raw?: string[];
 }
 
 export interface FrameStats {

@@ -164,6 +164,13 @@ fetch it).
   only; the remaining display fields are preserved verbatim but not
   interpreted. Sliders (`38`), hints (`h`) and subcircuit definitions are
   likewise preserved but inert.
+- **XML circuits.** Current upstream saves a `<cir …>` document rather than
+  the text format, and 38 of the 373 bundled circuits are in that form. They
+  load as an empty circuit here and are passed through byte-for-byte on save,
+  so nothing is lost, but nothing is drawn either. Importing them means
+  porting `XMLSerializer`/`XMLDeserializer` and the per-element
+  `dumpXml`/`undumpXml` pair for every type. The text format remains what the
+  `cct` and plain-text share links use.
 - **Ground current** is not reported (see section 2).
 
 ---
@@ -252,32 +259,41 @@ Line-oriented, whitespace-separated. Element lines are:
 ```
 
 The header is `$ flags timeStep iterCount currentSpeed voltageRange powerRange
-minTimeStep`. Unrecognised lines are preserved verbatim on load and re-emitted
-on save, so round-tripping a file never loses data.
+minTimeStep`. Only `timeStep`, `currentSpeed`, `voltageRange` and flag bit 16
+(show values) are modelled; `iterCount`, `powerRange`, `minTimeStep` and flag
+bits 1, 2, 4, 8, 32, 64 and 128 round-trip verbatim without being interpreted.
+An old header that stops after `voltageRange` gains the two missing fields on
+save, which is what upstream writes too.
+
+Unrecognised lines are preserved verbatim on load and re-emitted on save, in
+their original positions, along with blank lines and `#` comments, so
+round-tripping a file never loses data. A file with no `$` line and no element
+this build can read comes back byte-for-byte, which is how the XML circuits
+survive.
 
 Dump codes implemented so far, with their trailing field order:
 
-| Code  | Kind            | Fields after `flags`                                      |
-| ----- | --------------- | --------------------------------------------------------- |
-| `w`   | wire            | —                                                          |
-| `g`   | ground          | symbolType                                                 |
-| `r`   | resistor        | resistance                                                 |
-| `c`   | capacitor       | capacitance, voltDiff, initialVoltage, seriesResistance    |
-| `l`   | inductor        | inductance, current, initialCurrent, saturationCurrent     |
-| `174` | potentiometer   | maxResistance, position, sliderText                        |
-| `v`   | voltage source  | waveform, frequency, maxVoltage, bias, phaseShift, duty    |
-| `R`   | rail            | same as voltage source                                     |
-| `i`   | current source  | current, maxVoltage                                        |
-| `d`   | diode           | modelName (FLAG_MODEL), else fwdrop (FLAG_FWDROP)          |
-| `z`   | zener           | modelName (FLAG_MODEL), else [fwdrop] then zvoltage        |
-| `t`   | transistor      | pnp, lastVbe, lastVbc, beta, modelName                     |
-| `s`   | switch          | position, momentary, [label]                               |
-| `S`   | SPDT switch     | position, momentary, link, throwCount                      |
-| `a`   | op-amp          | maxOut, minOut, gbw, volts0, volts1, gain                  |
-| `207` | labeled node    | text                                                       |
-| `O`   | output          | scale                                                      |
-| `p`   | probe           | meter, scale, resistance                                   |
-| `x`   | text            | size, text                                                 |
+| Code  | Kind           | Fields after `flags`                                       |
+| ----- | -------------- | ---------------------------------------------------------- |
+| `w`   | wire           | —                                                          |
+| `g`   | ground         | symbolType                                                 |
+| `r`   | resistor       | resistance                                                 |
+| `c`   | capacitor      | capacitance, voltDiff, initialVoltage, seriesResistance    |
+| `l`   | inductor       | inductance, current, initialCurrent, saturationCurrent     |
+| `174` | potentiometer  | maxResistance, position, sliderText (raw, may span tokens) |
+| `v`   | voltage source | waveform, frequency, maxVoltage, bias, phaseShift, duty    |
+| `R`   | rail           | same as voltage source                                     |
+| `i`   | current source | current, maxVoltage                                        |
+| `d`   | diode          | modelName (FLAG_MODEL), else fwdrop (FLAG_FWDROP)          |
+| `z`   | zener          | modelName (FLAG_MODEL), else [fwdrop] then zvoltage        |
+| `t`   | transistor     | pnp, lastVbe, lastVbc, beta, modelName                     |
+| `s`   | switch         | position, momentary, [label] (FLAG_LABEL = 4)              |
+| `S`   | SPDT switch    | position, momentary, [label], link, throwCount             |
+| `a`   | op-amp         | maxOut, minOut, gbw, volts0, volts1, gain                  |
+| `207` | labeled node   | text (FLAG_ESCAPE = 4, always set on save)                 |
+| `O`   | output         | scale                                                      |
+| `p`   | probe          | meter, scale, resistance                                   |
+| `x`   | text           | size, text (FLAG_ESCAPE = 4, always set on save)           |
 
 For the `t` row: the `pnp` token is `+1` for NPN and `-1` for PNP; the file sign
 is the type, so a non-negative token (including `0` from older saves) reads as
@@ -299,9 +315,31 @@ disappears, so the zener value form is never written as a single token.
 Waveform codes: `0` DC, `1` sine, `2` square, `3` triangle, `4` sawtooth,
 `5` pulse, `6` noise.
 
+A scope line is `o <element> <display fields...>`. The element number counts
+element lines in the file, including the ones this build has no model for, so
+it is not an index into the elements the port loaded: a circuit with one
+unimplemented part ahead of a scope would otherwise attach the trace to its
+neighbour. A trace whose target is one of those unreadable lines has nothing
+to draw, and its line is carried through untouched. The display fields are
+preserved verbatim and none of them is interpreted yet.
+
+For the `s` and `S` rows the label token exists only when FLAG_LABEL (bit 4) is
+set, and the SPDT reads it before `link` and `throwCount`, so a label shifts
+both of them one token along. The port sets the bit when there is a label and
+clears it when there is not, which keeps the token count and the flag in step.
+
+For the `174` row the slider caption is every remaining token joined with
+single spaces, and it is **not** escaped: those tokens go in and out raw. A
+caption containing `+` is therefore lossy, in the original too, because `+` is
+one of the format's token separators. Current upstream reads these three
+tokens but no longer writes them; its own save path is XML.
+
 Text tokens that may contain spaces are escaped with upstream's full set: space
 `\s`, newline `\n`, carriage return `\r`, backslash `\\`, `+` `\p`, `=` `\q`,
-`#` `\h`, `&` `\a`, and the empty string as `\0`.
+`#` `\h`, `&` `\a`, and the empty string as `\0`. Any other `\x` loses its
+backslash and keeps the letter. The `x` and `207` rows carry FLAG_ESCAPE
+(bit 4) to say the text is one escaped token; without it the old-style reader
+joins the remaining tokens with spaces and turns `%2b` back into `+`.
 
 ---
 

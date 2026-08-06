@@ -12,14 +12,14 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseCircuit, type ParsedCircuit } from './netlist';
+import { isElementLine, parseCircuit, type ParsedCircuit } from './netlist';
 import { DEFAULT_SETTINGS } from '../model/types';
 import type { FrameStats, SimEngine } from '../engine/simulator';
 
 export interface CorpusEntry {
   file: string;
   format: 'plain' | 'xml';
-  /** Unsupported element codes, minus the feature lines `38` and `h`. */
+  /** Element kinds and device-model codes this build cannot read. */
   missing: string[];
   /** `38` slider lines, feature tracking only, never a load failure. */
   sliderLines: number;
@@ -69,8 +69,14 @@ export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {
     'given any breakdown voltage above ~3 V, so the parse fix only exposed it.',
 };
 
-/** Non-element lines: sliders and hints are features, not missing components. */
-const FEATURE_CODES = new Set(['38', 'h']);
+/**
+ * Device-model definitions: `32` transistor, `34` diode. Not elements, so they
+ * take no slot in the element list, but not harmless passthrough either: the
+ * port keeps the model name and simulates the default parameters instead, so a
+ * file carrying one is not fully loaded. Counted with the missing kinds until
+ * the model tables are parsed.
+ */
+const MODEL_CODES = new Set(['32', '34']);
 
 /** Files in the corpus directory that are not circuits. */
 const NON_CIRCUITS = new Set(['setuplist.txt', 'README.md']);
@@ -83,16 +89,15 @@ function allFinite(values: ArrayLike<number>): boolean {
   return true;
 }
 
-/** Splits the parser's unsupported list into real element codes and features. */
+/** Splits the parser's unsupported list into missing kinds and features. */
 export function plainLoad(parsed: ParsedCircuit): { missing: string[]; sliderLines: number } {
   const missing: string[] = [];
   let sliderLines = 0;
   for (const code of parsed.unsupported) {
-    if (FEATURE_CODES.has(code)) {
-      if (code === '38') sliderLines += 1;
-      continue;
-    }
-    missing.push(code);
+    // Sliders are a feature to build, not a component to port, and the pure
+    // passthrough types (`h`, `!`, `%`, `?`, `.`, `B`) change nothing at all.
+    if (code === '38') sliderLines += 1;
+    else if (isElementLine(code) || MODEL_CODES.has(code)) missing.push(code);
   }
   return { missing, sliderLines };
 }

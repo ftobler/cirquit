@@ -2,7 +2,14 @@
 
 import { create } from 'zustand';
 import type { Scope } from '../engine/simulator';
-import { allocateId, parseCircuit, serializeCircuit, type ScopeConfig } from '../io/netlist';
+import {
+  allocateId,
+  isElementLine,
+  parseCircuit,
+  serializeCircuit,
+  type NetlistLine,
+  type ScopeConfig,
+} from '../io/netlist';
 import { defFor } from '../model/registry';
 import {
   canMirror,
@@ -12,7 +19,13 @@ import {
   rotateElement,
   swapTerminalOrder,
 } from '../model/transform';
-import { DEFAULT_SETTINGS, GRID_SIZE, type CircuitElement, type SimSettings } from '../model/types';
+import {
+  DEFAULT_SETTINGS,
+  GRID_SIZE,
+  UNMODELLED_HEADER,
+  type CircuitElement,
+  type SimSettings,
+} from '../model/types';
 
 export interface ViewTransform {
   /** Circuit-space coordinate at the canvas origin. */
@@ -34,6 +47,12 @@ interface AppState {
   settings: SimSettings;
   /** Lines from the loaded file this build does not model, kept for saving. */
   passthrough: string[];
+  /** `o` lines whose element index lands on an element line this build could
+   *  not read. There is nothing to draw, but the line still has to come back. */
+  unmatchedScopes: ScopeConfig[];
+  /** The loaded file's line arrangement, replayed on save. Empty for a fresh
+   *  circuit, which then saves in the default header/elements/scopes layout. */
+  order: NetlistLine[];
   running: boolean;
   /** Element kind currently armed for placement; null means select mode. */
   tool: string | null;
@@ -126,6 +145,33 @@ const clone = (s: Pick<AppState, 'elements' | 'scopes'>): Snapshot => ({
 
 const UNDO_LIMIT = 100;
 
+/**
+ * The load warning. The two failure modes are not the same severity and must
+ * not be reported as one: a missing element code means the component is absent
+ * from both the drawing and the simulation, while a `38` slider or a `!` model
+ * definition only means the line rides through untouched. Counts are of
+ * distinct types, not lines, so seven sliders are one thing to report.
+ */
+function describeUnsupported(unsupported: string[]): string | null {
+  const types = [...new Set(unsupported)];
+  const missing = types.filter(isElementLine);
+  const inert = types.filter((t) => !isElementLine(t));
+  const parts: string[] = [];
+  if (missing.length > 0) {
+    parts.push(
+      `${missing.length} element type(s) (${missing.join(', ')}) are not implemented yet, ` +
+        'so those components are missing from the drawing and the simulation.',
+    );
+  }
+  if (inert.length > 0) {
+    parts.push(
+      `${inert.length} other line type(s) (${inert.join(', ')}) were preserved ` +
+        'but not interpreted.',
+    );
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 /** Diode/zener model parameters: editing one invalidates the stored model name. */
 const DIODE_MODEL_PARAMS = [
   'forwardVoltage',
@@ -141,6 +187,8 @@ export const useStore = create<AppState>((set, get) => ({
   scopes: [],
   settings: { ...DEFAULT_SETTINGS },
   passthrough: [],
+  unmatchedScopes: [],
+  order: [],
   running: true,
   tool: null,
   view: { x: 0, y: 0, scale: 1 },
@@ -295,26 +343,28 @@ export const useStore = create<AppState>((set, get) => ({
 
   loadNetlist: (text) => {
     const parsed = parseCircuit(text);
-    // Scope lines address elements by position in the file.
-    const scopes: Scope[] = parsed.scopes
-      .filter((c: ScopeConfig) => c.elementIndex >= 0 && c.elementIndex < parsed.elements.length)
-      .map((c) => ({
-        id: allocateId(),
-        elementId: parsed.elements[c.elementIndex].id,
-        value: c.value,
-      }));
+    // The parser has already resolved each `o` line's element index, which
+    // counts element lines this build cannot read. The parse-time id and the
+    // untouched display tokens both travel with the scope, so a save puts the
+    // line back where it was with every field it arrived with.
+    const scopes: Scope[] = [];
+    const unmatchedScopes: ScopeConfig[] = [];
+    for (const c of parsed.scopes) {
+      if (c.elementId === undefined) unmatchedScopes.push(c);
+      else scopes.push({ id: c.id, elementId: c.elementId, value: c.value, raw: c.raw });
+    }
 
     set((s) => ({
       elements: parsed.elements,
       scopes,
+      unmatchedScopes,
       passthrough: parsed.passthrough,
-      settings: { ...s.settings, ...parsed.settings },
+      order: parsed.order,
+      settings: { ...s.settings, ...UNMODELLED_HEADER, ...parsed.settings },
       selectedIds: [],
       undoStack: [],
       redoStack: [],
-      problem: parsed.unsupported.length
-        ? `${parsed.unsupported.length} element type(s) in this file are not implemented yet and were skipped.`
-        : null,
+      problem: describeUnsupported(parsed.unsupported),
       revision: s.revision + 1,
     }));
     // The loaded content is its own baseline: opening a file, a library
@@ -327,20 +377,33 @@ export const useStore = create<AppState>((set, get) => ({
     const s = get();
     const indexById = new Map(s.elements.map((e, i) => [e.id, i]));
     const scopeConfigs: ScopeConfig[] = s.scopes.map((x) => ({
+      id: x.id,
+      // Recomputed by the writer from where the element lands in the file;
+      // this is only the fallback for a scope with no element left.
       elementIndex: indexById.get(x.elementId) ?? -1,
+      elementId: x.elementId,
       value: x.value,
-      // Defaults matching the original layout: speed, flags, and the
-      // remaining display settings.
-      raw: [String(indexById.get(x.elementId) ?? -1), '64', '0', '4099'],
+      // A loaded line keeps every display field it came with. One created here
+      // gets the defaults matching the original layout: speed, flags, scale.
+      raw: x.raw ?? ['64', '0', '4099'],
     }));
-    return serializeCircuit(s.elements, s.settings, scopeConfigs, s.passthrough);
+    return serializeCircuit(
+      s.elements,
+      s.settings,
+      [...scopeConfigs, ...s.unmatchedScopes],
+      s.passthrough,
+      s.order,
+    );
   },
 
   newCircuit: () => {
     set((s) => ({
       elements: [],
       scopes: [],
+      unmatchedScopes: [],
       passthrough: [],
+      order: [],
+      settings: { ...s.settings, ...UNMODELLED_HEADER },
       selectedIds: [],
       undoStack: [],
       redoStack: [],

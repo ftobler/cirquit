@@ -64,6 +64,11 @@ export interface ElementDef {
    *  conditional on a flag bit the parse already consumed (e.g. a diode's
    *  FLAG_MODEL). Absent means the element's own flags are written. */
   dumpFlags?(e: CircuitElement): number;
+  /** This type's trailing tokens are raw on both sides: they are not run
+   *  through `unescapeToken` on load nor `escapeToken` on save. Only the
+   *  potentiometer needs it, whose slider text upstream joins from plain
+   *  tokens without escaping (PotElm.java:58-62). */
+  rawTokens?: boolean;
   draw(g: DrawContext, e: CircuitElement): void;
   fields?: FieldDef[];
   defaults?: Record<string, number>;
@@ -143,7 +148,32 @@ export interface SimSettings {
   showValues: boolean;
   showVoltageColor: boolean;
   showGrid: boolean;
+
+  // ─── Header fields carried through but not modelled ───
+  // Loading a file must not invent new values for the `$` tokens this build
+  // ignores, so they are parked here and written back unchanged. Undefined
+  // means the file had no such token and the writer falls back to a default.
+  /** Token 3, upstream's iteration/speed value (CirSim.java:445). */
+  iterCount?: number;
+  /** Token 6, the power-bar position (CirSim.java:447). */
+  powerRange?: number;
+  /** Token 7, absent in old files (CircuitLoader.java:265). */
+  minTimeStep?: number;
+  /** Token 1 as loaded. Only bit 16 (show values) is modelled; the rest are
+   *  re-emitted so a save does not silently clear the user's settings. */
+  headerFlags?: number;
 }
+
+/**
+ * Cleared on every load, so a file that stops after `voltageRange` does not
+ * inherit the previous file's power range or minimum timestep.
+ */
+export const UNMODELLED_HEADER: Partial<SimSettings> = {
+  iterCount: undefined,
+  powerRange: undefined,
+  minTimeStep: undefined,
+  headerFlags: undefined,
+};
 
 export const DEFAULT_SETTINGS: SimSettings = {
   timeStep: 5e-6,
