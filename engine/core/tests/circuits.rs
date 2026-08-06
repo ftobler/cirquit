@@ -162,6 +162,106 @@ fn fuse_blows_under_sustained_overcurrent() {
     );
 }
 
+/// Ports LampElm.java's resistance-vs-temperature curve
+/// (`startIteration`, LampElm.java:168-184) so the expected value in each
+/// assertion below comes from literally the same formula the engine runs,
+/// not a hand-rounded constant. `dt` and the applied voltage must match the
+/// circuit built alongside it exactly, since the discrete update is only
+/// reproducible if both replicas take identical steps.
+fn lamp_resistance_after(dt: f64, steps: u32, applied_v: f64, nom_pow: f64, nom_v: f64) -> f64 {
+    const ROOM_TEMP: f64 = 300.0;
+    let mut temp = ROOM_TEMP;
+    let mut prev_power = 0.0;
+    let mut resistance = 0.0;
+    let cap = 1.57e-4 * nom_pow;
+    let capw = cap; // warmTime/coolTime default to 0.4, same as the 0.4 baseline.
+    let capc = cap;
+    let cr = 2600.0 / nom_pow;
+    for _ in 0..steps {
+        let nom_r = nom_v * nom_v / nom_pow;
+        let tp = temp.min(5390.0);
+        resistance = nom_r
+            * (1.26104 - 4.90662 * (17.1839 / tp - 0.00318794).sqrt() - 7.8569 / (tp - 187.56));
+        temp += prev_power * dt / capw;
+        temp -= dt * (temp - ROOM_TEMP) / (capc * cr);
+        prev_power = applied_v * (applied_v / resistance);
+    }
+    resistance
+}
+
+#[test]
+fn lamp_reads_its_cold_resistance_on_the_first_step() {
+    // A default lamp (100 W @ 120 V) starts at room temperature, and
+    // startIteration computes each step's resistance from `temp` *before*
+    // advancing it, so the very first step must stamp exactly the
+    // room-temperature point on the curve — about 7.2 ohms, roughly 1/20th
+    // of the 144 ohm resistor a plain 100W/120V load would be. In series
+    // with a 1k resistor, the divider current is V/(R1+R_cold).
+    let dt = 1e-3;
+    let r_cold = lamp_resistance_after(dt, 1, 10.0, 100.0, 120.0);
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "lamp", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(1);
+    let expected = 10.0 / (1000.0 + r_cold);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], expected, 1e-9),
+        "expected {} A through the cold divider (R_cold = {} ohm), got {}",
+        expected,
+        r_cold,
+        amps[1]
+    );
+    assert!(
+        close(amps[2], expected, 1e-9),
+        "lamp current should match the resistor's, got {}",
+        amps[2]
+    );
+}
+
+#[test]
+fn lamp_settles_toward_its_warm_resistance_under_sustained_voltage() {
+    // Drive a default lamp (100 W @ 120 V, 0.4 s warm-up and cool-down) at
+    // its own rated voltage for 5 simulated seconds — more than ten times
+    // the thermal time constant — and its resistance should have settled
+    // close to its steady state (numerically, the discrete update above
+    // converges to ~144.09 ohms, a hair above the 144 ohm a plain resistor
+    // at the same rated power/voltage would be).
+    let dt = 1e-3;
+    let steps = 5000;
+    let expected_r = lamp_resistance_after(dt, steps, 120.0, 100.0, 120.0);
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 120.0)]),
+            elm(2, "lamp", &[[0, 0], [0, 100]], &[]),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(steps);
+    let expected_current = 120.0 / expected_r;
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], expected_current, 1e-6),
+        "expected {} A once warm (R = {} ohm), got {}",
+        expected_current,
+        expected_r,
+        amps[1]
+    );
+}
+
 #[test]
 fn unequal_divider_matches_the_ratio() {
     let c = &mut build(

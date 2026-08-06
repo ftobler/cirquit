@@ -2259,12 +2259,11 @@
   {
     "file": "lightbulb.txt",
     "format": "plain",
-    "missing": [
-      "181"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "lissa.txt",
@@ -4020,8 +4019,7 @@
     "format": "plain",
     "missing": [
       "206",
-      "203",
-      "181"
+      "203"
     ],
     "sliderLines": 1,
     "load": "missing",
@@ -4331,12 +4329,11 @@
   {
     "file": "wienbridge.txt",
     "format": "plain",
-    "missing": [
-      "181"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "xor.txt",

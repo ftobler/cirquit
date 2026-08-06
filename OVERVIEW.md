@@ -197,12 +197,12 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **21 of ~200**.
+a test. Done so far: **22 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
-capacitor, inductor, fuse, potentiometer, switch, SPDT switch.
+capacitor, inductor, fuse, lamp, potentiometer, switch, SPDT switch.
 
-- [ ] Varactor, memristor, lamp, LDR, thermistor
+- [ ] Varactor, memristor, LDR, thermistor
 - [ ] Transformer, tapped transformer, custom transformer
 - [ ] Transmission line, crystal, spark gap, antenna
 - [ ] Relay coil / contact / relay, DPDT, crossover and motor-protection switches
@@ -282,6 +282,7 @@ Dump codes implemented so far, with their trailing field order:
 | `209` | polarised capacitor | capacitance, voltDiff, initialVoltage, seriesResistance, maxNegativeVoltage |
 | `l`   | inductor       | inductance, current, initialCurrent, saturationCurrent     |
 | `404` | fuse           | resistance, i2t, heat, blown                               |
+| `181` | lamp           | temp, nomPower, nomVoltage, warmTime, coolTime              |
 | `174` | potentiometer  | maxResistance, position, sliderText (raw, may span tokens) |
 | `v`   | voltage source | waveform, frequency, maxVoltage, bias, phaseShift, duty    |
 | `R`   | rail           | same as voltage source                                     |
