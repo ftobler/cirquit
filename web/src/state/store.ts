@@ -15,6 +15,7 @@ import {
   rotateElement,
   swapTerminalOrder,
 } from '../model/transform';
+import { VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import {
   DEFAULT_SETTINGS,
   GRID_SIZE,
@@ -166,6 +167,15 @@ export const useStore = create<AppState>((set, get) => ({
         // drop it so the next save writes the value form, not the dead name.
         if ((e.kind === 'diode' || e.kind === 'zener') && DIODE_MODEL_PARAMS.includes(name)) {
           delete next.modelName;
+        }
+        // A source's stored flags record whether its pulse duty is
+        // authoritative (bit 4), so a later rebuild does not re-apply the
+        // legacy 1/(2*pi) normalisation to an edited duty. The engine reads
+        // the bit only at build time, so keeping it in step here is free: no
+        // rebuild is forced and the live set_param path stays live.
+        if (name === 'waveform' && (e.kind === 'voltage' || e.kind === 'rail')) {
+          next.flags = e.flags & ~VOLTAGE_PULSE_DUTY;
+          if (value === 5) next.flags |= VOLTAGE_PULSE_DUTY;
         }
         return next;
       }),

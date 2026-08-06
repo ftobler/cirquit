@@ -458,6 +458,56 @@ describe('switch and SPDT labels', () => {
   });
 });
 
+describe('voltage source file format', () => {
+  /** Parses a single `v` line and re-emits it, returning the `v` line. */
+  const voltageLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('v ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('a legacy FLAG_COS line loads as a cosine', () => {
+    // indmultfreq.txt's shape: flags 2, sine waveform, no phase token.
+    // Upstream clears the bit and materialises phaseShift = pi/2
+    // (VoltageElm.java:80-83).
+    const { e } = voltageLine('v 176 96 176 32 2 1 30.0 5.0 0.0');
+    expect(e.params.phaseShift).toBe(Math.PI / 2);
+    expect(e.flags & 2).toBe(0);
+  });
+
+  it('a legacy pulse line without the duty flag takes 1/(2*pi)', () => {
+    // ladder.txt's shape: flags 0, pulse waveform, no duty token. Upstream
+    // forces the legacy duty whenever FLAG_PULSE_DUTY is absent
+    // (VoltageElm.java:85-88), and the stored flags then record the duty as
+    // authoritative so a rebuild does not re-apply it to a later edit.
+    const { e } = voltageLine('v 64 128 64 48 0 5 40.0 5.0 0.0');
+    expect(e.params.dutyCycle).toBeCloseTo(1 / (2 * Math.PI), 12);
+    expect(e.flags & 4).toBe(4);
+  });
+
+  it('a pulse line carrying FLAG_PULSE_DUTY keeps its duty token', () => {
+    const { e } = voltageLine('v 1 2 3 4 4 5 40.0 5.0 0.0 0.0 0.5');
+    expect(e.params.dutyCycle).toBe(0.5);
+    expect(e.flags & 4).toBe(4);
+  });
+
+  it('clears a stray pulse-duty flag on a non-pulse line', () => {
+    // A non-pulse line must not carry bit 4: a save would otherwise claim a
+    // duty token it has nothing to do with.
+    const { e, elementLine } = voltageLine('v 1 2 3 4 4 1 40.0 5.0 0.0');
+    expect(e.flags & 4).toBe(0);
+    expect(elementLine).toBe('v 1 2 3 4 0 1 40 5 0 0 0.5');
+  });
+
+  it('round-trips a legacy FLAG_COS line to the canonical upstream form', () => {
+    // The flag is cleared and the pi/2 phase is written out in radians, the
+    // form a save from upstream's own load would produce.
+    const { elementLine } = voltageLine('v 176 96 176 32 2 1 30.0 5.0 0.0');
+    expect(elementLine).toBe('v 176 96 176 32 0 1 30 5 0 1.5707963267948966 0.5');
+  });
+});
+
 describe('FLAG_ESCAPE on text and labeled nodes', () => {
   const lineFor = (e: CircuitElement, code: string) =>
     serializeCircuit([e], { ...DEFAULT_SETTINGS })

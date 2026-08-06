@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::f64::consts::PI;
 
-use circuit_core::{Circuit, CircuitSpec, ElementSpec, SimOptions};
+use circuit_core::{Circuit, CircuitSpec, ElementSpec, ScopeSpec, ScopeValue, SimOptions};
 
 fn elm(id: u32, kind: &str, posts: &[[i32; 2]], params: &[(&str, f64)]) -> ElementSpec {
     ElementSpec {
@@ -23,11 +23,29 @@ fn elm(id: u32, kind: &str, posts: &[[i32; 2]], params: &[(&str, f64)]) -> Eleme
     }
 }
 
+/// Like [`elm`], with file-format flags set, for the load-time conversions
+/// that only exist on a raw spec.
+fn elm_flags(
+    id: u32,
+    kind: &str,
+    posts: &[[i32; 2]],
+    params: &[(&str, f64)],
+    flags: i64,
+) -> ElementSpec {
+    let mut e = elm(id, kind, posts, params);
+    e.flags = flags;
+    e
+}
+
 fn build(elements: Vec<ElementSpec>, options: SimOptions) -> Circuit {
+    build_with(elements, options, Vec::new())
+}
+
+fn build_with(elements: Vec<ElementSpec>, options: SimOptions, scopes: Vec<ScopeSpec>) -> Circuit {
     let spec = CircuitSpec {
         elements,
         options: Some(options),
-        scopes: Vec::new(),
+        scopes,
     };
     let mut c = Circuit::new();
     c.set_circuit(&spec).expect("circuit should analyse");
@@ -2330,4 +2348,489 @@ fn wire_merge_shrinks_the_matrix() {
     c.run(5);
     assert_eq!(c.node_count(), 3);
     assert_eq!(c.vs_count(), 1);
+}
+
+/// A sine source into a grounded resistor, the shape every source test below
+/// shares. Post 0 sits on a ground symbol and the resistor's far end is
+/// grounded too, so the described circuit "post 0 grounded, post 1 through a
+/// resistor to ground" is real: the source's EMF appears as
+/// `V(post1) - V(post0)`, which `element_voltages` reports with the upstream
+/// sign, and the resistor carries `EMF/1000`.
+fn source_into_resistor(id: u32, params: &[(&str, f64)], dt: f64, dc: bool, flags: i64) -> Circuit {
+    build_with(
+        vec![
+            elm_flags(id, "voltage", &[[0, 100], [0, 0]], params, flags),
+            elm(
+                id + 1,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(id + 2, "ground", &[[0, 100]], &[]),
+            elm(id + 3, "ground", &[[100, 0]], &[]),
+        ],
+        opts(dt, dc),
+        Vec::new(),
+    )
+}
+
+#[test]
+fn legacy_cos_flag_loads_as_cosine() {
+    // A file that flagged a sine source with FLAG_COS (2) means "cosine":
+    // upstream clears the bit and sets phaseShift = pi/2 on load
+    // (VoltageElm.java:80-83). The port used to ignore the flag and evaluate
+    // the line as a plain sine, a full pi/2 of phase off.
+    let c = &mut source_into_resistor(
+        1,
+        &[
+            ("waveform", 1.0),
+            ("frequency", 1000.0),
+            ("maxVoltage", 10.0),
+            ("phaseShift", 0.0),
+            ("dutyCycle", 0.5),
+        ],
+        1e-4,
+        false,
+        2,
+    );
+    c.run(1); // t = 1e-4, phase 2*pi*freq*t = 0.6283 rad
+    let v = c.element_voltages()[0];
+    let phase = 2.0 * PI * 1000.0 * 1e-4;
+    let expected = 10.0 * phase.cos();
+    assert!(close(v, expected, 0.05), "got {v}, expected {expected}");
+    assert!(
+        !close(v, 10.0 * phase.sin(), 0.05),
+        "the FLAG_COS line still evaluated as a sine ({v})"
+    );
+}
+
+#[test]
+fn legacy_pulse_without_flag_uses_legacy_duty() {
+    // Old pulse files predate a configurable duty cycle, so upstream forces
+    // the legacy 1/(2*pi) whenever FLAG_PULSE_DUTY (4) is absent
+    // (VoltageElm.java:85-88). At a quarter period (phase pi/2) the legacy
+    // 0.159 duty pulse has already fallen, while the 0.5 default would still
+    // be high.
+    let pulse = |flags: i64| {
+        let mut c = source_into_resistor(
+            1,
+            &[
+                ("waveform", 5.0),
+                ("frequency", 1000.0),
+                ("maxVoltage", 10.0),
+                ("bias", 0.0),
+                ("dutyCycle", 0.5),
+            ],
+            1e-6,
+            false,
+            flags,
+        );
+        c.run(250); // t = 2.5e-4 = a quarter period, phase pi/2
+        c.element_voltages()[0]
+    };
+
+    let legacy = pulse(0);
+    assert!(close(legacy, 0.0, 0.01), "legacy pulse read {legacy}");
+    let flagged = pulse(4);
+    assert!(
+        close(flagged, 10.0, 0.01),
+        "pulse with FLAG_PULSE_DUTY read {flagged}"
+    );
+}
+
+#[test]
+fn noise_holds_constant_across_subiterations() {
+    // Upstream samples noise once per converged step in stepFinished, so the
+    // value is constant across a step's Newton subiterations
+    // (VoltageElm.java:163-166). The port used to draw a fresh sample in
+    // do_step, so a noise source in a nonlinear circuit changed the
+    // right-hand side every subiteration and Newton could never converge.
+    let c = &mut build_with(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 100], [0, 0]],
+                &[("waveform", 6.0), ("maxVoltage", 5.0)],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "diode", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, false),
+        vec![ScopeSpec {
+            element_id: 1,
+            value: ScopeValue::Voltage,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+        }],
+    );
+    let report = c.run(50);
+    assert!(report.converged, "noise source broke Newton convergence");
+    assert!(c.error().is_none(), "error: {:?}", c.error());
+
+    let snap = c.scopes()[0].snapshot();
+    assert!(
+        snap.len() >= 50,
+        "expected one column per step, got {}",
+        snap.len()
+    );
+    for v in snap {
+        assert!(v.is_finite(), "non-finite noise sample {v}");
+        assert!((-5.0..=5.0).contains(&v), "noise sample {v} left [-5, 5]");
+    }
+}
+
+#[test]
+fn noise_is_deterministic_and_uncorrelated() {
+    // Two builds of the same circuit (same element ids, so the same per-source
+    // seeds) must reproduce the identical trace, and two noise sources with
+    // different ids in one circuit must not generate the same sequence.
+    let noise_circuit = || {
+        build_with(
+            vec![
+                elm(
+                    1,
+                    "voltage",
+                    &[[0, 100], [0, 0]],
+                    &[("waveform", 6.0), ("maxVoltage", 5.0)],
+                ),
+                elm(
+                    2,
+                    "resistor",
+                    &[[0, 0], [100, 0]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(3, "diode", &[[100, 0], [100, 100]], &[]),
+                elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+                elm(5, "ground", &[[0, 100]], &[]),
+            ],
+            opts(1e-5, false),
+            vec![ScopeSpec {
+                element_id: 1,
+                value: ScopeValue::Voltage,
+                post: 0,
+                steps_per_column: 1,
+                columns: 1024,
+            }],
+        )
+    };
+    let mut a = noise_circuit();
+    a.run(100);
+    let trace_a = a.scopes()[0].snapshot();
+    let mut b = noise_circuit();
+    b.run(100);
+    assert_eq!(
+        trace_a,
+        b.scopes()[0].snapshot(),
+        "noise drifted run to run"
+    );
+
+    // Two noise sources in one circuit. Each branch is an independent source
+    // into a grounded resistor; the wire ties both negative terminals to the
+    // shared ground node.
+    let mut two = build_with(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 100], [0, 0]],
+                &[("waveform", 6.0), ("maxVoltage", 5.0)],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "voltage",
+                &[[200, 100], [200, 0]],
+                &[("waveform", 6.0), ("maxVoltage", 5.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[200, 0], [300, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "wire", &[[300, 0], [300, 100]], &[]),
+            elm(6, "wire", &[[300, 100], [200, 100]], &[]),
+            elm(7, "wire", &[[200, 100], [0, 100]], &[]),
+            elm(8, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, false),
+        vec![
+            ScopeSpec {
+                element_id: 1,
+                value: ScopeValue::Voltage,
+                post: 0,
+                steps_per_column: 1,
+                columns: 1024,
+            },
+            ScopeSpec {
+                element_id: 3,
+                value: ScopeValue::Voltage,
+                post: 0,
+                steps_per_column: 1,
+                columns: 1024,
+            },
+        ],
+    );
+    let report = two.run(100);
+    assert!(report.converged, "two noise sources did not converge");
+    let first = two.scopes()[0].snapshot();
+    let second = two.scopes()[1].snapshot();
+    assert!(
+        first != second,
+        "two noise sources with different ids produced the same trace"
+    );
+}
+
+#[test]
+fn frequency_edit_preserves_phase() {
+    // A live frequency edit must not jump the waveform to a new phase: the
+    // phase reference rewinds so the edit instant is continuous
+    // (VoltageElm.java:497-508). Without freqTimeZero the value after the edit
+    // snaps to the phase-jumped answer, about -5.88 here.
+    let c = &mut source_into_resistor(
+        1,
+        &[
+            ("waveform", 1.0),
+            ("frequency", 1000.0),
+            ("maxVoltage", 10.0),
+            ("bias", 0.0),
+        ],
+        1e-6,
+        false,
+        0,
+    );
+    c.run(400); // t = 4e-4, phase 0.8*pi
+    let v_before = c.element_voltages()[0];
+    let expected_before = 10.0 * (0.8 * PI).sin();
+    assert!(close(v_before, expected_before, 0.05), "got {v_before}");
+
+    assert!(c.set_param(1, "frequency", 4000.0));
+    c.run(1); // t = 4.01e-4
+    let v = c.element_voltages()[0];
+    // Phase at the edit was 0.8*pi; one 1 us step at 4 kHz advances it by
+    // 2*pi*4000*1e-6 = 0.008*pi.
+    let expected = 10.0 * (0.808 * PI).sin();
+    assert!(close(v, expected, 0.05), "got {v}, expected {expected}");
+    let jumped = 10.0 * (2.0 * PI * 4000.0 * 4.01e-4).sin();
+    assert!(
+        !close(v, jumped, 0.05),
+        "frequency edit jumped the phase: {v} vs the phase-jumped {jumped}"
+    );
+}
+
+#[test]
+fn frequency_clamps_to_a_solvable_max() {
+    // The port has no confirm dialogs, so a frequency the timestep cannot
+    // resolve clamps silently to 1/(8*dt) (VoltageElm.java:500). With
+    // dt = 1e-5 the bound is 12500 Hz, and one step later the source must
+    // still read the clamped waveform rather than the requested 1e9.
+    let c = &mut source_into_resistor(
+        1,
+        &[
+            ("waveform", 1.0),
+            ("frequency", 1000.0),
+            ("maxVoltage", 10.0),
+            ("bias", 0.0),
+        ],
+        1e-5,
+        false,
+        0,
+    );
+    assert!(c.set_param(1, "frequency", 1e9));
+    c.run(1); // t = 1e-5
+    let v = c.element_voltages()[0];
+    let expected = 10.0 * (2.0 * PI * 12500.0 * 1e-5).sin();
+    assert!(close(v, expected, 0.05), "got {v}, expected {expected}");
+    let unclamped = 10.0 * (2.0 * PI * 1e9 * 1e-5).sin();
+    assert!(
+        !close(v, unclamped, 0.05),
+        "frequency was not clamped: {v} matches the 1e9 waveform"
+    );
+}
+
+#[test]
+fn square_and_pulse_honour_rise_time() {
+    // With riseTime set, the square ramps its edges instead of switching
+    // instantly (VoltageElm.java:179-203) and the pulse ramps between its low
+    // and high levels (VoltageElm.java:214-238). At t = 1e-6 the phase is
+    // 0.00628 rad, well inside the rising edge centred at phase 0: halfRise =
+    // riseTime*freq*pi = 0.314, so both waves sit a fraction t =
+    // (phase + halfRise) / (2*halfRise) up their ramp.
+    let dt = 1e-6;
+    let freq = 1000.0;
+    let rise_time = 1e-4;
+    let half_rise = rise_time * freq * PI;
+    let phase = 2.0 * PI * freq * dt;
+    let t = (phase + half_rise) / (2.0 * half_rise);
+
+    let square = &mut source_into_resistor(
+        1,
+        &[
+            ("waveform", 2.0),
+            ("frequency", freq),
+            ("maxVoltage", 5.0),
+            ("bias", 0.0),
+            ("dutyCycle", 0.5),
+            ("riseTime", rise_time),
+        ],
+        dt,
+        false,
+        0,
+    );
+    square.run(1);
+    let v = square.element_voltages()[0];
+    let expected = 5.0 * (2.0 * t - 1.0);
+    assert!(close(v, expected, 0.05), "square ramp read {v}");
+    assert!(
+        !close(v, 5.0, 0.05),
+        "square still had an instantaneous edge ({v})"
+    );
+
+    let pulse = &mut source_into_resistor(
+        1,
+        &[
+            ("waveform", 5.0),
+            ("frequency", freq),
+            ("maxVoltage", 5.0),
+            ("bias", 0.0),
+            ("dutyCycle", 0.5),
+            ("riseTime", rise_time),
+        ],
+        dt,
+        false,
+        0,
+    );
+    pulse.run(1);
+    let v = pulse.element_voltages()[0];
+    assert!(close(v, 5.0 * t, 0.05), "pulse ramp read {v}");
+    assert!(
+        !close(v, 5.0, 0.05),
+        "pulse still had an instantaneous edge ({v})"
+    );
+}
+
+#[test]
+fn source_scope_and_readout_use_upstream_sign() {
+    // Upstream's sources read out volts[1] - volts[0] (VoltageElm.java:462),
+    // so a 5 V source with its negative post grounded displays +5, not the
+    // -5 the generic V(post0) - V(post1) convention gives. The scope trace
+    // must agree with the Options-panel readout.
+    let c = &mut build_with(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, false),
+        vec![ScopeSpec {
+            element_id: 1,
+            value: ScopeValue::Voltage,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+        }],
+    );
+    c.run(1);
+    assert!(
+        close(c.element_voltages()[0], 5.0, 1e-9),
+        "source readout was {}",
+        c.element_voltages()[0]
+    );
+    let snap = c.scopes()[0].snapshot();
+    assert_eq!(snap.len(), 2, "expected one min/max column");
+    assert!(
+        close(snap[0] as f64, 5.0, 1e-9),
+        "scope min was {}",
+        snap[0]
+    );
+    assert!(
+        close(snap[1] as f64, 5.0, 1e-9),
+        "scope max was {}",
+        snap[1]
+    );
+}
+
+#[test]
+fn element_powers_use_the_scope_convention() {
+    // `element_powers` must match what a Power scope samples, so the Options
+    // panel readout and the scope agree for a source. The 5 V source delivers
+    // 5 mA into the 1 k load: (V(post0) - V(post1)) * current is -25 mW for
+    // the source (delivering) and +25 mW for the resistor (dissipating),
+    // which is upstream's own -getVoltageDiff()*current.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(1);
+    let powers = c.element_powers();
+    assert!(
+        close(powers[0], -25e-3, 1e-12),
+        "source power was {}",
+        powers[0]
+    );
+    assert!(
+        close(powers[1], 25e-3, 1e-12),
+        "resistor power was {}",
+        powers[1]
+    );
+    // And a Power scope on the source must sample the same value the readout
+    // shows, not the positive EMF*I the display sign would give.
+    let mut c = build_with(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, false),
+        vec![ScopeSpec {
+            element_id: 1,
+            value: ScopeValue::Power,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+        }],
+    );
+    c.run(1);
+    let snap = c.scopes()[0].snapshot();
+    assert!(
+        close(snap[0] as f64, -25e-3, 1e-9),
+        "power scope min was {}",
+        snap[0]
+    );
 }

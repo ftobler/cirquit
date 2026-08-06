@@ -7,9 +7,12 @@ import {
   line,
   voltageColor,
 } from '../../../render/draw';
-import { VOLTAGE_SHOW_VOLTAGE } from '../flags';
+import { VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
 import { onePost, readParams, writeParams } from '../shared';
 import type { ElementDef } from '../../types';
+
+/** The duty cycle old pulse lines are stuck with (VoltageElm.java:51). */
+const DEFAULT_PULSE_DUTY = 1 / (2 * Math.PI);
 
 export const RAIL_DEF: ElementDef = {
   kind: 'rail',
@@ -20,9 +23,26 @@ export const RAIL_DEF: ElementDef = {
   posts: onePost,
   defaultFlags: VOLTAGE_SHOW_VOLTAGE,  // RailElm.java:23-24, inherits the voltage source flag
   defaults: { waveform: 0, frequency: 40, maxVoltage: 5, bias: 0, phaseShift: 0, dutyCycle: 0.5 },
-  parse: (t, e) =>
-    readParams(t, e, ['waveform', 'frequency', 'maxVoltage', 'bias', 'phaseShift', 'dutyCycle']),
+  parse: (t, e) => {
+    readParams(t, e, ['waveform', 'frequency', 'maxVoltage', 'bias', 'phaseShift', 'dutyCycle']);
+    // The rail shares the voltage source's load-time flag conversions
+    // (VoltageElm.java:80-88), since RailElm extends VoltageElm.
+    if (e.flags & VOLTAGE_COS) {
+      e.params.phaseShift = Math.PI / 2;
+      e.flags &= ~VOLTAGE_COS;
+    }
+    if (!(e.flags & VOLTAGE_PULSE_DUTY) && e.params.waveform === 5) {
+      e.params.dutyCycle = DEFAULT_PULSE_DUTY;
+    }
+    // Same stored-flag invariant as the voltage source: bit 4 tracks the
+    // waveform so a rebuild never re-normalises an edited duty.
+    if (e.params.waveform === 5) e.flags |= VOLTAGE_PULSE_DUTY;
+    else e.flags &= ~VOLTAGE_PULSE_DUTY;
+  },
   dump: writeParams(['waveform', 'frequency', 'maxVoltage', 'bias', 'phaseShift', 'dutyCycle']),
+  // Same canonicalisation as the voltage source: a pulse line's duty token is
+  // authoritative and says so, or the next load would normalise it away.
+  dumpFlags: (e) => (e.params.waveform === 5 ? e.flags | VOLTAGE_PULSE_DUTY : e.flags),
   fields: [
     { name: 'maxVoltage', label: 'Voltage', unit: 'V' },
     { name: 'frequency', label: 'Frequency', unit: 'Hz' },

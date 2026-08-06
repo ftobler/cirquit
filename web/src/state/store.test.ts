@@ -91,6 +91,54 @@ describe('value edits go through the fast path', () => {
     expect(after.pendingParams.get(`${id}:capacitance`)?.value).toBe(2e-6);
     expect(after.pendingParams.get(`${id}:initialVoltage`)?.value).toBe(1);
   });
+
+  it('keeps a source pulse-duty flag in step with its waveform', () => {
+    // The engine reads bit 4 (VOLTAGE_PULSE_DUTY) at build time and re-applies
+    // the legacy 1/(2*pi) duty whenever it is absent, so the stored flags must
+    // carry it exactly when a voltage/rail source is pulse. The edit stays on
+    // the fast path: only a rebuild would re-read the flags.
+    const id = useStore.getState().addElement({
+      kind: 'voltage',
+      x1: 0,
+      y1: 64,
+      x2: 0,
+      y2: 0,
+      flags: 16,
+      params: { waveform: 0, dutyCycle: 0.5 },
+    });
+    const before = useStore.getState();
+
+    useStore.getState().setParam(id, 'waveform', 5);
+    let after = useStore.getState();
+    expect(after.elements[0].flags & 4).toBe(4);
+    expect(after.revision).toBe(before.revision);
+    expect(after.pendingParams.get(`${id}:waveform`)?.value).toBe(5);
+
+    useStore.getState().setParam(id, 'dutyCycle', 0.3);
+    after = useStore.getState();
+    expect(after.elements[0].params.dutyCycle).toBe(0.3);
+    // The flag stays set while the waveform is pulse, so a rebuild serialises
+    // the edited 0.3 rather than snapping it back to 1/(2*pi).
+    expect(after.elements[0].flags & 4).toBe(4);
+
+    useStore.getState().setParam(id, 'waveform', 1);
+    after = useStore.getState();
+    expect(after.elements[0].flags & 4).toBe(0);
+
+    // A rail behaves the same way.
+    const railId = useStore.getState().addElement({
+      kind: 'rail',
+      x1: 0,
+      y1: 64,
+      x2: 0,
+      y2: 0,
+      flags: 16,
+      params: { waveform: 0 },
+    });
+    useStore.getState().setParam(railId, 'waveform', 5);
+    const rail = useStore.getState().elements.find((e) => e.id === railId);
+    expect((rail?.flags ?? 0) & 4).toBe(4);
+  });
 });
 
 describe('setText edits free text through the fast path', () => {

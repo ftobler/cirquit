@@ -431,6 +431,14 @@ impl Circuit {
 
         self.ctx.dt = self.options.time_step;
         if !self.ctx.dc_analysis {
+            // Time advances before `do_step`, so sources evaluate at
+            // end-of-step time. Upstream evaluates at start-of-step
+            // (`doStep` runs before `t += timeStep` in SimulationManager),
+            // but both conventions are self-consistent: the scopes sample
+            // after the step at the same end-of-step instant, so trace time
+            // labels match the solved node voltages. Switching would re-derive
+            // every reactive element's time base for a one-step lag that is
+            // invisible at reasonable dt, so the convention stays.
             self.ctx.time += self.ctx.dt;
         }
         report.time = self.ctx.time;
@@ -623,13 +631,7 @@ impl Circuit {
             let elm = &self.elements[ei];
             let base = elm.base();
             let v = match scope.value_kind() {
-                ScopeValue::Voltage => {
-                    if base.volts.len() >= 2 {
-                        base.volts[0] - base.volts[1]
-                    } else {
-                        base.volts.first().copied().unwrap_or(0.0)
-                    }
-                }
+                ScopeValue::Voltage => elm.display_voltage_diff(),
                 ScopeValue::Current => base.current,
                 ScopeValue::Power => {
                     let vd = if base.volts.len() >= 2 {
@@ -670,7 +672,14 @@ impl Circuit {
         let Some(&ei) = self.id_index.get(&id) else {
             return false;
         };
-        if !self.elements[ei].set_param(name, value) {
+        // A frequency edit must keep the waveform phase continuous, which only
+        // a source knows how to do, so it takes the dedicated hook rather than
+        // the generic set_param.
+        if name == "frequency" {
+            if !self.elements[ei].set_frequency(&self.ctx, value) {
+                return false;
+            }
+        } else if !self.elements[ei].set_param(name, value) {
             return false;
         }
         self.restamp();
@@ -693,17 +702,31 @@ impl Circuit {
         self.elements.iter().map(|e| e.base().current).collect()
     }
 
-    /// Per-element terminal voltage difference, in element order.
+    /// Per-element terminal voltage difference, in element order. Sources
+    /// report positive EMF, everything else `V(post0) - V(post1)`.
     pub fn element_voltages(&self) -> Vec<f64> {
+        self.elements
+            .iter()
+            .map(|e| e.display_voltage_diff())
+            .collect()
+    }
+
+    /// Per-element dissipated power, in element order. Uses the same
+    /// `(V(post0) - V(post1)) * current` convention as the scope Power trace,
+    /// so a source that is delivering power reads negative and the Options
+    /// panel readout agrees with a power scope on the same element. Upstream's
+    /// `-getVoltageDiff()*current` is the same expression.
+    pub fn element_powers(&self) -> Vec<f64> {
         self.elements
             .iter()
             .map(|e| {
                 let b = e.base();
-                if b.volts.len() >= 2 {
+                let vd = if b.volts.len() >= 2 {
                     b.volts[0] - b.volts[1]
                 } else {
-                    b.volts.first().copied().unwrap_or(0.0)
-                }
+                    0.0
+                };
+                vd * b.current
             })
             .collect()
     }

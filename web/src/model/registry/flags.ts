@@ -23,6 +23,12 @@ export const POT_FLIP_OFFSET = 4;      // PotElm.java:34
 export const SWITCH2_CENTER_OFF = 1;   // Switch2Elm.java:30
 export const SWITCH_LABEL = 4;         // SwitchElm.java:33, inherited by Switch2Elm
 export const VOLTAGE_SHOW_VOLTAGE = 16; // VoltageElm.java:32
+/** Load-time only: a legacy cosine, cleared on load (VoltageElm.java:29, 80-83). */
+export const VOLTAGE_COS = 2;
+/** Whether a pulse line's duty token predates the configurable duty cycle
+ *  (VoltageElm.java:30, 85-88). The writer sets it so an edited duty survives
+ *  a reload. */
+export const VOLTAGE_PULSE_DUTY = 4;
 export const PROBE_SHOW_VOLTAGE = 1;   // ProbeElm.java:30
 export const PROBE_CIRCLE = 2;         // ProbeElm.java:31
 export const CAP_BACK_EULER = 2;       // CapacitorElm.java:32

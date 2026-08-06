@@ -42,6 +42,13 @@ impl Element for CurrentSource {
         self.base.current = self.current_value;
     }
 
+    fn display_voltage_diff(&self) -> f64 {
+        // Upstream's current source reads out volts[1] - volts[0]
+        // (CurrentElm.java:199-201), the same positive-EMF convention as the
+        // voltage source.
+        self.base.volts[1] - self.base.volts[0]
+    }
+
     /// An ideal current source does not tie its terminals together, so it
     /// cannot rescue a node from floating.
     fn connects(&self, _a: usize, _b: usize) -> bool {

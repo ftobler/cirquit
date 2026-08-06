@@ -129,6 +129,7 @@ export function OptionsPanel({ engine }: Props) {
   const idx = selected && engine ? engine.indexOf(selected.id) : undefined;
   const current = idx !== undefined && engine ? engine.elementCurrents()[idx] : undefined;
   const voltage = idx !== undefined && engine ? engine.elementVoltages()[idx] : undefined;
+  const power = idx !== undefined && engine ? engine.elementPowers()[idx] : undefined;
 
   return (
     <div
@@ -150,7 +151,12 @@ export function OptionsPanel({ engine }: Props) {
               <dt>Current</dt>
               <dd>{formatValue(current ?? 0, 'A')}</dd>
               <dt>Power</dt>
-              <dd>{formatValue((voltage ?? 0) * (current ?? 0), 'W')}</dd>
+              {/* The readout uses the engine's scope-convention power, not
+                  voltage * current: for a voltage or current source the display
+                  voltage is the positive EMF while the scope's Power trace uses
+                  V(post0) - V(post1), so multiplying here would show the wrong
+                  sign for a source. */}
+              <dd>{formatValue(power ?? 0, 'W')}</dd>
             </dl>
           )}
           {def.fields?.map((f) => (
@@ -171,7 +177,19 @@ export function OptionsPanel({ engine }: Props) {
                     flags: on ? selected.flags | f.flag : selected.flags & ~f.flag,
                   });
                 } else {
-                  setParam(selected.id, f.name, Number(v));
+                  const value = Number(v);
+                  // Switching a source to or from pulse restores the duty
+                  // cycle the other family expects, mirroring
+                  // VoltageElm.java:617-621: entering pulse takes the legacy
+                  // 1/(2*pi), leaving it returns to 0.5. The waveform
+                  // setParam below also keeps the stored pulse-duty flag (bit
+                  // 4) in step, so an edited duty survives the next rebuild.
+                  if (f.name === 'waveform' && selected.kind === 'voltage') {
+                    const old = Number(selected.params.waveform ?? 0);
+                    if (value === 5 && old !== 5) setParam(selected.id, 'dutyCycle', 1 / (2 * Math.PI));
+                    else if (old === 5 && value !== 5) setParam(selected.id, 'dutyCycle', 0.5);
+                  }
+                  setParam(selected.id, f.name, value);
                 }
               }}
             />

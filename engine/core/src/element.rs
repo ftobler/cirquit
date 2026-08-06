@@ -175,6 +175,14 @@ pub trait Element {
         false
     }
 
+    /// Live frequency edit. A source rewinds its phase reference so the
+    /// waveform stays continuous at the edit instant, which no other element
+    /// needs, so the default declines the name and the caller falls back to a
+    /// full rebuild.
+    fn set_frequency(&mut self, _ctx: &SimCtx, _new_freq: f64) -> bool {
+        false
+    }
+
     /// Interactive state change, e.g. throwing a switch.
     fn set_state(&mut self, _state: i32) -> bool {
         false
@@ -186,6 +194,20 @@ pub trait Element {
 
     fn reset(&mut self) {
         self.base_mut().reset();
+    }
+
+    /// The voltage the UI displays for this element: scope traces and the
+    /// readout. Most two-terminal parts want `V(post0) - V(post1)`, but
+    /// voltage and current sources read out with the opposite sign so their
+    /// EMF comes up positive, matching upstream's own overrides
+    /// (`VoltageElm.java:462`, `CurrentElm.java:199-201`).
+    fn display_voltage_diff(&self) -> f64 {
+        let v = &self.base().volts;
+        if v.len() >= 2 {
+            v[0] - v[1]
+        } else {
+            v.first().copied().unwrap_or(0.0)
+        }
     }
 }
 

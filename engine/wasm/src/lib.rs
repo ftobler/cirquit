@@ -121,6 +121,13 @@ impl Simulator {
         self.circuit.element_voltages()
     }
 
+    /// Dissipated power per element, in the order they were supplied, using
+    /// the same convention as a scope Power trace.
+    #[wasm_bindgen(js_name = elementPowers)]
+    pub fn element_powers(&self) -> Vec<f64> {
+        self.circuit.element_powers()
+    }
+
     /// Node index for every element terminal, flattened in element order, so
     /// the renderer can colour each terminal by node voltage.
     #[wasm_bindgen(js_name = elementNodes)]

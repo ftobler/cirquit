@@ -164,6 +164,13 @@ export class SimEngine {
     return this.sim.elementVoltages();
   }
 
+  /** Dissipated power per element, using the scope Power-trace convention
+   *  (so a delivering source reads negative), matching the readout upstream
+   *  shows. */
+  elementPowers(): Float64Array {
+    return this.sim.elementPowers();
+  }
+
   /** Engine-side index for an element id, or undefined if it was skipped. */
   indexOf(id: number): number | undefined {
     return this.indexById.get(id);
