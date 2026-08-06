@@ -1,5 +1,3 @@
-/** Application state. Everything the UI reads or mutates lives here. */
-
 import { create } from 'zustand';
 import type { Scope } from '../engine/simulator';
 import {
@@ -7,10 +5,8 @@ import {
   isElementLine,
   parseCircuit,
   serializeCircuit,
-  type NetlistLine,
   type ScopeConfig,
 } from '../io/netlist';
-import { defFor } from '../model/registry';
 import {
   canMirror,
   canRotate,
@@ -24,119 +20,9 @@ import {
   GRID_SIZE,
   UNMODELLED_HEADER,
   type CircuitElement,
-  type SimSettings,
 } from '../model/types';
-
-export interface ViewTransform {
-  /** Circuit-space coordinate at the canvas origin. */
-  x: number;
-  y: number;
-  scale: number;
-}
-
-/** A point-in-time copy of everything undo needs to restore. */
-interface Snapshot {
-  elements: CircuitElement[];
-  scopes: Scope[];
-}
-
-interface AppState {
-  elements: CircuitElement[];
-  selectedIds: number[];
-  scopes: Scope[];
-  settings: SimSettings;
-  /** Lines from the loaded file this build does not model, kept for saving. */
-  passthrough: string[];
-  /** `o` lines whose element index lands on an element line this build could
-   *  not read. There is nothing to draw, but the line still has to come back. */
-  unmatchedScopes: ScopeConfig[];
-  /** The loaded file's line arrangement, replayed on save. Empty for a fresh
-   *  circuit, which then saves in the default header/elements/scopes layout. */
-  order: NetlistLine[];
-  running: boolean;
-  /** Element kind currently armed for placement; null means select mode. */
-  tool: string | null;
-  view: ViewTransform;
-  status: string;
-  /** Set when the engine reports a problem. */
-  problem: string | null;
-  undoStack: Snapshot[];
-  redoStack: Snapshot[];
-  /** Bumped whenever the netlist changes, so the engine knows to reload. */
-  revision: number;
-  /** Bumped by value-only edits, applied to the live engine without a rebuild. */
-  paramRevision: number;
-  /** Value edits not yet pushed to the engine, keyed `${id}:${name}`. */
-  pendingParams: Map<string, { id: number; name: string; value: number }>;
-  /** Switch state edits not yet pushed to the engine, keyed by element id. */
-  pendingStates: Map<number, number>;
-  /** Menu shown by a right-click, or null when closed. */
-  contextMenu: { x: number; y: number; target: number | null } | null;
-  /** Netlist text of the last copied or cut selection. */
-  clipboard: string | null;
-  /** Netlist text of the last export; null means no baseline yet (clean). */
-  lastSaved: string | null;
-
-  setRunning(running: boolean): void;
-  toggleRunning(): void;
-  setTool(tool: string | null): void;
-  setView(view: ViewTransform): void;
-  setStatus(status: string): void;
-  setProblem(problem: string | null): void;
-  updateSettings(patch: Partial<SimSettings>): void;
-
-  select(ids: number[]): void;
-  addElement(e: Omit<CircuitElement, 'id'>): number;
-  updateElement(id: number, patch: Partial<CircuitElement>): void;
-  /** Moves elements without pushing a separate undo entry per frame. */
-  moveElements(ids: number[], dx: number, dy: number): void;
-  deleteSelected(): void;
-  /** Rotates the selection 90 degrees about each element's midpoint. */
-  rotateSelection(): void;
-  /** Mirrors the selection across each element's vertical centre axis. */
-  mirrorSelection(): void;
-  /** Exchanges posts 0 and 1 on each selected two-terminal part. */
-  swapTerminals(): void;
-  setParam(id: number, name: string, value: number): void;
-  /** Edits the element's free text (annotations, labels). */
-  setText(id: number, text: string): void;
-  /** Interactive state change (switch throw), routed through the live engine. */
-  setElementState(id: number, state: number): void;
-  /** Drops queued value edits; the frame loop calls this after applying them. */
-  clearPending(): void;
-
-  addScope(elementId: number, value: Scope['value']): void;
-  removeScope(id: number): void;
-
-  loadNetlist(text: string): void;
-  toNetlist(): string;
-  newCircuit(): void;
-  /** Records the serialised state the user last exported as the clean baseline. */
-  markSaved(text: string): void;
-
-  /** Records the current state so the next change can be undone. */
-  commit(): void;
-  undo(): void;
-  redo(): void;
-
-  openContextMenu(x: number, y: number, target: number | null): void;
-  closeContextMenu(): void;
-  selectAll(): void;
-  copySelection(): void;
-  cutSelection(): void;
-  pasteFromClipboard(): void;
-  duplicateSelection(): void;
-}
-
-/** Rounds a coordinate to the nearest grid intersection. */
-export function snap(v: number): number {
-  return Math.round(v / GRID_SIZE) * GRID_SIZE;
-}
-
-/** True when reloading the page would lose edits since the last export. */
-export function hasUnsavedChanges(lastSaved: string | null, current: string): boolean {
-  return lastSaved !== null && current !== lastSaved;
-}
+import type { AppState, Snapshot, ViewTransform } from './types';
+import { hasUnsavedChanges, makeElement, snap } from './helpers';
 
 const clone = (s: Pick<AppState, 'elements' | 'scopes'>): Snapshot => ({
   elements: s.elements.map((e) => ({ ...e, params: { ...e.params } })),
@@ -527,20 +413,5 @@ function transformSelected(
   }));
 }
 
-/** Builds a new element of `kind` spanning the given points. */
-export function makeElement(kind: string, x1: number, y1: number, x2: number, y2: number) {
-  const def = defFor(kind);
-  return {
-    kind,
-    x1,
-    y1,
-    x2,
-    y2,
-    // The per-kind default flags are part of the file format: a new voltage
-    // source must save FLAG_SHOW_VOLTAGE or upstream loads it with the value
-    // hidden, and so on. Unknown kinds default to 0.
-    flags: def?.defaultFlags ?? 0,
-    params: { ...(def?.defaults ?? {}) },
-    state: def?.interactive ? 0 : undefined,
-  };
-}
+export type { AppState, ViewTransform };
+export { hasUnsavedChanges, makeElement, snap };

@@ -1,0 +1,105 @@
+import {
+  bodyRect,
+  calcLeads,
+  currentDots,
+  drawLeads,
+  formatValue,
+  interp,
+  label,
+  polyline,
+  voltageColor,
+} from '../../../render/draw';
+import { readParams, twoPosts } from '../shared';
+import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
+
+/** Half-height of the LDR's resistor box, same as the plain resistor and
+ *  thermistor (LDRElm.java:106's `hs`). */
+const LDR_HS = 6;
+
+/** `LuxFromSliderPos()`/`calcResistance()` (LDRElm.java:219-222, :206-218),
+ *  ported so the drawn label matches the same formula the engine stamps
+ *  with rather than a hand-rounded guess. Like the thermistor, resistance
+ *  here is a pure function of the editable `position` field alone (`minLux`
+ *  and `maxLux` are upstream constants, never edited or saved), so
+ *  recomputing it in TypeScript for the label is exact, not an
+ *  approximation. */
+function ldrResistance(e: CircuitElement): number {
+  const position = e.params.position ?? 0.34;
+  const minLux = 0.1;
+  const maxLux = 10000;
+  const lux = maxLux * position + minLux;
+  return Math.round((maxLux - lux + 1) * 10);
+}
+
+/**
+ * A resistor box (this port's IEC-only convention, same as `drawResistorBody`
+ * and `drawThermistorBody`) plus the two arrow-and-arrowhead accents upstream
+ * draws to mark it light-sensitive (LDRElm.java:134-147), in the same
+ * voltage-gradient stroke and 3px width as `drawThermistorBody`'s accent.
+ * Upstream's local coordinates run from `0` at `lead1` along the axis, in
+ * pixels rather than a fraction of `len`, and a perpendicular pixel offset
+ * from the axis; `interp`'s fraction/offset pair uses that same local frame
+ * with the fraction argument as `x/len`, except its `+g` is upstream's `-y`
+ * (this port's perpendicular unit vector is the negation of upstream's, the
+ * same sign flip `drawThermistorBody` above documents) — verified against a
+ * concrete horizontal lead1=(0,0)/lead2=(100,0) example: upstream's local
+ * (8,12) is 8px right of lead1 and 12px below it (canvas y grows downward),
+ * and `interp(lead1, lead2, 8/100, -12)` lands on that same (8,12).
+ */
+function drawLdrBody(g: DrawContext, e: CircuitElement): void {
+  const [lead1, lead2] = calcLeads(e, 32);
+  drawLeads(g, e, lead1, lead2);
+  const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
+  bodyRect(g, lead1, lead2, LDR_HS, color);
+  const len = Math.hypot(lead2.x - lead1.x, lead2.y - lead1.y);
+  if (len > 0) {
+    const pt = (x: number, y: number): Point => interp(lead1, lead2, x / len, -y);
+    polyline(g, [pt(-8, 26), pt(8, 12)], color, 3);
+    polyline(g, [pt(2, 12), pt(8, 12), pt(8, 18)], color, 3);
+    polyline(g, [pt(12, 26), pt(26, 12)], color, 3);
+    polyline(g, [pt(20, 12), pt(26, 12), pt(26, 18)], color, 3);
+  }
+  currentDots(g, lead1, lead2, g.current);
+  label(g, e, formatValue(ldrResistance(e), 'Ω'));
+}
+
+export const LDR_DEF: ElementDef = {
+  kind: 'ldr',
+  label: 'LDR (photoresistor)',
+  category: 'Basics',
+  // getDumpType() returns the int 374 (LDRElm.java's "//LDR" comment).
+  dumpCode: '374',
+  postCount: 2,
+  posts: twoPosts,
+  // LDRElm.java's no-args constructor: slider position 0.34, the same
+  // default the thermistor's slider uses (LDRElm.java:30). `minLux`/
+  // `maxLux` are hardcoded there too (0.1/10000) but never read from a
+  // file or exposed via `getEditInfo`, so they aren't params here.
+  defaults: { position: 0.34 },
+  // The token constructor reads position, then sliderText as one escaped
+  // token (LDRElm.java's file constructor). Upstream itself never
+  // overrides `dump()` here either — CircuitElm's base implementation
+  // writes only the common x/y/flags fields, the same real quirk the
+  // thermistor's `350` row documents (its own save path is XML; see
+  // `dumpXml`/`undumpXml` for the fields that matter there instead). This
+  // port writes both tokens anyway, like every other type here, so
+  // round-tripping through this app never loses the LDR's own state.
+  parse: (t, e) => {
+    readParams(t, e, ['position']);
+    if (t[1] !== undefined) e.text = t[1];
+  },
+  dump: (e) => [
+    e.params.position ?? 0.34,
+    e.text?.trim() ? e.text : 'Light Brightness', // LDRElm.java's constructor default
+  ],
+  // getEditInfo's one field (LDRElm.java's `getEditInfo`); `position` isn't
+  // one of them upstream — it's only reachable through the slider widget —
+  // but sliders aren't wired up here yet (see OVERVIEW.md), so it's exposed
+  // directly, the same simplification `thermistor` and `potentiometer`
+  // already make for their own sliders/wipers.
+  fields: [
+    { name: 'position', label: 'Slider position (light level)', min: 0, max: 1 },
+    { name: 'text', label: 'Slider Text', type: 'text', target: 'text' },
+  ],
+  draw: drawLdrBody,
+};
