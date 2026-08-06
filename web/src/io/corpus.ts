@@ -44,6 +44,37 @@ export const SIM_STEPS = 100;
 export const SIM_TIMEOUT_MS = 60_000;
 
 /**
+ * All four entries below regressed on the same change: the capacitor now
+ * restores the `voltDiff` its file saved (CapacitorElm.java:44) instead of
+ * starting discharged, so each circuit begins at its recorded operating point.
+ *
+ * The shared root cause is a state this port produces and upstream never does.
+ * Upstream's `CapacitorElm.stepFinished()` has no `doDcAnalysis` guard, so on
+ * the rare occasion it solves an operating point that solve overwrites the
+ * restored charge and the transient starts self-consistent. This port keeps
+ * the guard, deliberately, because it runs a DC pass before *every* transient
+ * (`simulator.ts` hardcodes `dcOperatingPoint: true`, where upstream only
+ * solves one when the user asks, CommandManager.java:361-364). Restored charge
+ * plus DC-solved node voltages that know nothing about it is a first step no
+ * fixed timestep is guaranteed to resolve. Dropping the saved charge again
+ * would hide these four rather than fix them.
+ *
+ * What happens next differs per file, so the two texts below diverge there.
+ */
+const CHAOS_OSCILLATOR_RESTART =
+  'These files save a point on a strange attractor, so the circuit now starts ' +
+  "there rather than discharged, and the port's saturating-VCVS op-amp drops " +
+  'into the Newton limit cycle already diagnosed for opamp-regulator.txt ' +
+  'below: the output flips between the rails every iteration. It is that ' +
+  'op-amp defect, not the restored charge, that has to be fixed: the ' +
+  'convergence test is a bare 1e-4 on the node voltage (active.rs), where ' +
+  'upstream uses a 0.1 V threshold plus an output rail check and `lastvd` ' +
+  'hysteresis with a random escape (OpAmpElm.java:168-185). Turning the DC ' +
+  'pass off does not rescue them, and the comparable chaotic op-amp circuits ' +
+  'jerk.txt, rossler.txt and vilnius.txt still pass, so this is specific to ' +
+  'these three rather than general to restored charge.';
+
+/**
  * Corpus files whose `sim: error` has a diagnosed cause and a named fix.
  *
  * The golden report records that a file fails, never why, and the stage 2
@@ -67,6 +98,21 @@ export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {
     'which turned its misparsed 0.8 V reference into the 6.14 V the file asks ' +
     'for; on the old engine the same circuit fails the moment the zener is ' +
     'given any breakdown voltage above ~3 V, so the parse fix only exposed it.',
+  'chaos1.txt': CHAOS_OSCILLATOR_RESTART,
+  'chaos2.txt': CHAOS_OSCILLATOR_RESTART,
+  'chua.txt': CHAOS_OSCILLATOR_RESTART,
+  'opint-current.txt':
+    'No op-amp element here: 20 discrete transistors and one 30 pF capacitor ' +
+    'whose file records a voltDiff of 13.68 V. That charge against node ' +
+    'voltages the DC pass solved with the capacitor as a 100 M open is the ' +
+    'whole failure, and only the very first step fails. Stepping this circuit ' +
+    'by hand, one `run(1)` at a time, every step after the first converges and ' +
+    'the node voltages stay bounded at the 15 V rails. None of that is visible ' +
+    'in the report and it is not worth hunting for: `Circuit::run` breaks out ' +
+    'of its loop on the first non-converged step, so steps 2 to 100 never ran, ' +
+    'and `simulate` reports `finite: false` whenever a step errored, whatever ' +
+    'the voltages were. Needs an adaptive timestep, or the decision not to run ' +
+    'DC unless asked. Both belong to a future feature/dc-operating-point.md.',
 };
 
 /**

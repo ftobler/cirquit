@@ -3,7 +3,7 @@
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
 import { formatValue } from '../render/draw';
-import type { FieldDef } from '../model/types';
+import type { CircuitElement, FieldDef } from '../model/types';
 import { useStore } from '../state/store';
 
 /** Holds the live options panel root so the context menu's Edit can focus it. */
@@ -16,6 +16,14 @@ export function focusOptionsPanel(): void {
 
 interface Props {
   engine: SimEngine | null;
+}
+
+/** Where a field reads from: free text, a bit of `e.flags`, or a param. A flag
+ *  field is a checkbox, so it is handed to `Field` as 0 or 1. */
+function fieldValue(e: CircuitElement, f: FieldDef): number | string {
+  if (f.target === 'text') return e.text ?? '';
+  if (f.flag !== undefined) return (e.flags & f.flag) !== 0 ? 1 : 0;
+  return e.params[f.name] ?? 0;
 }
 
 function Field({
@@ -38,6 +46,19 @@ function Field({
 
   // Every remaining field type is numeric; recover the number for them.
   const v = typeof value === 'string' ? Number(value) : value;
+
+  if (field.type === 'bool') {
+    return (
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={v !== 0}
+          onChange={(e) => onChange(e.target.checked ? 1 : 0)}
+        />
+        <span>{field.label}</span>
+      </label>
+    );
+  }
 
   if (field.type === 'choice') {
     return (
@@ -97,6 +118,7 @@ export function OptionsPanel({ engine }: Props) {
   const settings = useStore((s) => s.settings);
   const setParam = useStore((s) => s.setParam);
   const setText = useStore((s) => s.setText);
+  const updateElement = useStore((s) => s.updateElement);
   const updateSettings = useStore((s) => s.updateSettings);
   const addScope = useStore((s) => s.addScope);
   const problem = useStore((s) => s.problem);
@@ -135,12 +157,23 @@ export function OptionsPanel({ engine }: Props) {
             <Field
               key={f.name}
               field={f}
-              value={f.target === 'text' ? (selected.text ?? '') : (selected.params[f.name] ?? 0)}
-              onChange={(v) =>
-                f.target === 'text'
-                  ? setText(selected.id, String(v))
-                  : setParam(selected.id, f.name, Number(v))
-              }
+              value={fieldValue(selected, f)}
+              onChange={(v) => {
+                if (f.target === 'text') {
+                  setText(selected.id, String(v));
+                } else if (f.flag !== undefined) {
+                  // A file flag is read when the engine builds the circuit and
+                  // can change the stamp or the node count, so it has to go
+                  // through `updateElement`, which bumps `revision` and forces
+                  // a full rebuild. `setParam`'s live path only re-stamps.
+                  const on = Number(v) !== 0;
+                  updateElement(selected.id, {
+                    flags: on ? selected.flags | f.flag : selected.flags & ~f.flag,
+                  });
+                } else {
+                  setParam(selected.id, f.name, Number(v));
+                }
+              }}
             />
           ))}
           <div className="row">

@@ -37,6 +37,11 @@ export interface FieldDef {
   choices?: { value: number; label: string }[];
   min?: number;
   max?: number;
+  /** Bit of `e.flags` this field toggles, rather than a `params` entry. Only
+   *  meaningful for `bool`. A flag edit goes through `updateElement`, so the
+   *  engine rebuilds: file flags are read at build time and can change the
+   *  stamp or the node count, which the live `set_param` path cannot. */
+  flag?: number;
   /** Reads `e.text` rather than `e.params[name]`. Only meaningful for `text`. */
   target?: 'param' | 'text';
 }

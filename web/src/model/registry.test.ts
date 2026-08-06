@@ -113,6 +113,17 @@ describe('text field metadata', () => {
     expect(def?.fields).toEqual([{ name: 'text', label: 'Text', type: 'text', target: 'text' }]);
   });
 
+  it('keeps every flag field a checkbox', () => {
+    // A `flag` field toggles a bit of `e.flags`; the panel only renders that
+    // as a checkbox under `type: 'bool'`, and any other type would silently
+    // write the bit as if it were a number.
+    for (const def of ELEMENT_DEFS) {
+      for (const f of def.fields ?? []) {
+        if (f.flag !== undefined) expect(f.type, `${def.kind}.${f.name}`).toBe('bool');
+      }
+    }
+  });
+
   it('keeps every target text field a text field', () => {
     for (const def of ELEMENT_DEFS) {
       for (const f of def.fields ?? []) {
@@ -130,6 +141,9 @@ describe('text field metadata', () => {
       ]);
       for (const f of def.fields ?? []) {
         if (f.target === 'text') continue;
+        // A flag field is bound to a bit of `e.flags`, not to a param, so
+        // there is nothing in parse/dump/defaults for it to match.
+        if (f.flag !== undefined) continue;
         expect(bound.has(f.name), `${def.kind} field '${f.name}' is bound to nothing`).toBe(true);
       }
     }

@@ -199,6 +199,92 @@ describe('diode file format', () => {
   });
 });
 
+describe('capacitor file format', () => {
+  /** Parses a single element line and re-emits it, returning that line. */
+  const capLine = (line: string, code = 'c') => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith(`${code} `)) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('capacitor line with FLAG_RESISTANCE round-trips', () => {
+    // The flag is what says the fourth token exists (CapacitorElm.java:59-60),
+    // and upstream's own dump always sets it (:70), so this is byte-identical.
+    const line = 'c 384 352 176 352 4 0.000015 -9.86 -10 100';
+    const { e, elementLine } = capLine(line);
+    expect(e.params.seriesResistance).toBe(100);
+    expect(e.flags).toBe(4);
+    expect(elementLine).toBe(line);
+  });
+
+  it('capacitor line without FLAG_RESISTANCE still keeps its ESR token', () => {
+    // Upstream reads the fourth token only under the flag
+    // (CapacitorElm.java:59-60), but the flag is there to keep the stream
+    // position unambiguous for PolarCapacitorElm; nothing follows on a plain
+    // `c`, so honouring it here would only throw the value away. The three
+    // four-token flagless lines in the corpus are all in cappar.txt, and one
+    // of them carries a real 0.1 ohm that upstream's `validate()` put there.
+    const { e, elementLine } = capLine('c 384 352 176 352 0 0.000015 -9.86 -10 100');
+    expect(e.params.seriesResistance).toBe(100);
+    expect(elementLine).toBe('c 384 352 176 352 4 0.000015 -9.86 -10 100');
+  });
+
+  it('keeps the ESR cappar.txt records from upstream validate()', () => {
+    // cappar.txt:22 verbatim. Two 0.2 mF and 0.1 mF caps sit directly in
+    // parallel with unequal restored charges, which is the ideal-capacitor
+    // loop `CapacitorElm.validate()` (:274-291) damps by writing a 0.1 ohm
+    // series resistance. Dropping the token made them ideal again and the
+    // next save wrote a zero over the only record of it.
+    const line = 'c 192 192 192 288 0 0.00019999999999999998 0.9251369906278213 0.001 0.1';
+    const { e, elementLine } = capLine(line);
+    expect(e.params.seriesResistance).toBe(0.1);
+    expect(elementLine).toBe(
+      'c 192 192 192 288 4 0.00019999999999999998 0.9251369906278213 0.001 0.1',
+    );
+  });
+
+  it('capacitor back-euler flag survives a save', () => {
+    // FLAG_BACK_EULER (2) is the integration rule and must not be lost when
+    // the writer adds FLAG_RESISTANCE (4) on top of it.
+    const { elementLine } = capLine('c 384 352 176 352 2 0.000015 -9.86 -10');
+    expect(elementLine).toBe('c 384 352 176 352 6 0.000015 -9.86 -10 0');
+  });
+
+  it('a capacitor line with no initial voltage takes upstream 1e-3', () => {
+    // 289 of the bundled `c` lines stop after voltDiff. Upstream's fallback is
+    // 1e-3, not 0 (CapacitorElm.java:45), so the save has to write that or a
+    // reload would quietly change the element's reset behaviour.
+    const { e, elementLine } = capLine('c 384 352 176 352 0 0.000015 -9.86');
+    expect(e.params.initialVoltage).toBe(1e-3);
+    expect(elementLine).toBe('c 384 352 176 352 4 0.000015 -9.86 0.001 0');
+  });
+
+  it('a fresh capacitor dumps the upstream constructor defaults', () => {
+    const e = makeElement('capacitor', 0, 0, 32, 0);
+    expect(e.params.initialVoltage).toBe(1e-3);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('c 0 0 32 0 4 0.00001 0 0.001 0');
+  });
+
+  it('a polarised capacitor without FLAG_RESISTANCE reads its rating one token earlier', () => {
+    // PolarCapacitorElm reads maxNegativeVoltage off the same token stream its
+    // superclass left (PolarCapacitorElm.java:16), so the conditional ESR
+    // token shifts it. Without the bit, `1` here is the rating, not an ESR.
+    const { e } = capLine('209 384 352 176 352 0 0.000015 -9.86 -10 1', '209');
+    expect(e.params.seriesResistance).toBe(0);
+    expect(e.params.maxNegativeVoltage).toBe(1);
+  });
+
+  it('a polarised capacitor with FLAG_RESISTANCE round-trips', () => {
+    const line = '209 384 352 176 352 4 0.000015 -9.86 -10 100 25';
+    const { e, elementLine } = capLine(line, '209');
+    expect(e.params.seriesResistance).toBe(100);
+    expect(e.params.maxNegativeVoltage).toBe(25);
+    expect(elementLine).toBe(line);
+  });
+});
+
 describe('zener file format', () => {
   /** Parses a single `z` line and re-emits it, returning the `z` line. */
   const zenerLine = (line: string) => {

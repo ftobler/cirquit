@@ -144,9 +144,9 @@ fetch it).
   edits, interactive switches.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
-- 22 Rust tests (including physics checks against analytic results) and 19
-  TypeScript tests. CI runs fmt, clippy, tests, typecheck, lint and build, then
-  deploys to Pages.
+- 58 Rust tests, of which 53 are the end-to-end circuit checks against analytic
+  results in `engine/core/tests/circuits.rs`, and 273 TypeScript tests. CI runs
+  fmt, clippy, tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
 
@@ -172,6 +172,39 @@ fetch it).
   `dumpXml`/`undumpXml` pair for every type. The text format remains what the
   `cct` and plain-text share links use.
 - **Ground current** is not reported (see section 2).
+- **Live state never comes back out of the engine.** A file's operating-point
+  tokens (capacitor `voltDiff`, inductor `current`, transistor `lastVbe`) are
+  read on load and seeded into the models, but the running values are not
+  copied back into `params`, so a mid-transient save writes the values the file
+  was loaded with. Matching upstream needs a state-readback path across the
+  engine boundary.
+- **The DC operating point always runs**, whereas upstream only solves one when
+  the user picks "DC Analysis" (`CommandManager.java:361-364`). Combined with
+  restored reactive state this puts the first transient step in a position
+  upstream never reaches: upstream's `CapacitorElm.stepFinished()` has no
+  `doDcAnalysis` guard, so its rare DC solve overwrites the restored `voltDiff`
+  and the transient starts self-consistent, while this port keeps the guard so
+  the file's charge survives a DC pass that knows nothing about it. Four
+  bundled circuits fail to converge because of it and are recorded, with what
+  each one actually needs, in `web/src/io/corpus.ts`'s
+  `DIAGNOSED_SIM_FAILURES`. Three of them are op-amp chaos oscillators whose
+  real defect is the op-amp's convergence test, not the restored charge.
+- **A rebuild re-injects the file's saved charge.** The engine reads `voltDiff`
+  out of the element spec on every build, and `setCircuit` re-serialises
+  `e.params`, which still holds the value the file was loaded with. So any
+  mid-run rebuild, including ticking a capacitor's Backward Euler checkbox,
+  snaps every capacitor back to its file charge rather than continuing from
+  where the run had got to. It used to snap them to zero instead; neither is
+  right, and both go away with the state-readback path above.
+- **`CapacitorElm.validate()` is not ported.** Upstream walks a path from one
+  capacitor terminal to the other after analysis and, on finding a loop of
+  ideal capacitors, gives one of them a 0.1 ohm series resistance to damp the
+  oscillation the trapezoidal companion would otherwise ring with
+  (`CapacitorElm.java:274-291`); the same walk calls `shorted()` on a capacitor
+  shorted by wires. Here a freshly drawn pair of parallel ideal capacitors
+  rings undamped. Files that already carry the guard's output keep it, because
+  the `c` reader takes the series-resistance token whether or not
+  FLAG_RESISTANCE is set (see section 6).
 
 ---
 
@@ -279,8 +312,8 @@ Dump codes implemented so far, with their trailing field order:
 | `w`   | wire           | —                                                          |
 | `g`   | ground         | symbolType                                                 |
 | `r`   | resistor       | resistance                                                 |
-| `c`   | capacitor      | capacitance, voltDiff, initialVoltage, seriesResistance    |
-| `209` | polarised capacitor | capacitance, voltDiff, initialVoltage, seriesResistance, maxNegativeVoltage |
+| `c`   | capacitor      | capacitance, voltDiff, [initialVoltage], [seriesResistance] |
+| `209` | polarised capacitor | same as `c`, then maxNegativeVoltage (ESR only under FLAG_RESISTANCE = 4) |
 | `l`   | inductor       | inductance, current, initialCurrent, saturationCurrent     |
 | `404` | fuse           | resistance, i2t, heat, blown                               |
 | `181` | lamp           | temp, nomPower, nomVoltage, warmTime, coolTime              |
@@ -318,6 +351,27 @@ name when it has one and the value form otherwise, and the value form always
 sets FLAG_FWDROP and clears FLAG_MODEL. A `z` line that carries a forward drop
 with no zener voltage behind it throws on load in the original and the element
 disappears, so the zener value form is never written as a single token.
+
+For the `c` and `209` rows only the first two tokens are guaranteed.
+`initialVoltage` is optional and defaults to 1e-3, the small charge upstream
+puts on every capacitor so a fresh LC tank self-starts. The port writes
+FLAG_RESISTANCE (bit 4) and all four tokens on every save, as upstream's
+`dump()` does.
+
+The two rows differ on reading that fourth token. Upstream takes it only when
+the flag is set (`CapacitorElm.java:59-60`), but the flag is there to keep the
+stream position unambiguous for `PolarCapacitorElm`, which reads
+`maxNegativeVoltage` off the same stream straight after. Nothing follows on a
+plain `c`, where the fourth token can only be the series resistance, so this
+port reads it either way; `cappar.txt` carries three flagless four-token lines
+and one of them holds a real 0.1 ohm that upstream's own `validate()` wrote
+there, which honouring the flag would silently discard and the next save would
+overwrite with a zero. A `209` line does honour the flag, because without it
+the rating genuinely is the fourth token rather than the fifth.
+
+The `voltDiff` token is the saved charge and it is restored into the engine on
+load; a mid-transient save still writes the load-time value, because live state
+does not yet cross back over the engine boundary.
 
 The `176` row is a `VaractorElm`, which extends `DiodeElm`: the same leading
 tokens as the `d` row, driven by the same flags. `VaractorElm`'s own token

@@ -57,6 +57,8 @@ const SWITCH_LABEL = 4;         // SwitchElm.java:33, inherited by Switch2Elm
 const VOLTAGE_SHOW_VOLTAGE = 16; // VoltageElm.java:32
 const PROBE_SHOW_VOLTAGE = 1;   // ProbeElm.java:30
 const PROBE_CIRCLE = 2;         // ProbeElm.java:31
+const CAP_BACK_EULER = 2;       // CapacitorElm.java:32
+const CAP_RESISTANCE = 4;       // CapacitorElm.java:33
 /** Marks free text as one escaped token rather than the old space-joined
  *  form. Same bit and same meaning on both text-bearing types
  *  (TextElm.java:38, LabeledNodeElm.java:30); their writers always set it. */
@@ -81,6 +83,55 @@ const writeParams =
   (names: string[]) =>
   (e: CircuitElement): (string | number)[] =>
     names.map((n) => e.params[n] ?? 0);
+
+/**
+ * The leading tokens both capacitor types share (CapacitorElm.java:43-52):
+ * `capacitance` and `voltDiff` always, then `initialVoltage`, which is
+ * optional and falls back to the 1e-3 default. Always three token slots, so
+ * the callers below know where the series resistance would start.
+ */
+function capacitorHead(tokens: string[], e: CircuitElement): number {
+  readParams(tokens, e, ['capacitance', 'voltDiff', 'initialVoltage']);
+  return 3;
+}
+
+/**
+ * A plain `c` line, whose fourth token can only ever be the series
+ * resistance, so it is read whether or not FLAG_RESISTANCE is set.
+ *
+ * Upstream reads it only under the flag (CapacitorElm.java:59-60), but the
+ * flag is there to keep the stream position unambiguous for `PolarCapacitorElm`,
+ * which reads more state after it; nothing follows on a plain `c`. Honouring
+ * the flag here would silently drop a real value: `cappar.txt` carries
+ * `c 192 192 192 288 0 2e-4 0.925 0.001 0.1` with the bit clear, and that 0.1
+ * is not noise. It is what upstream's own `validate()` wrote back
+ * (CapacitorElm.java:274-291) after finding the ideal-capacitor loop that
+ * capacitor sits in, and the next save would overwrite it with a zero.
+ */
+const capacitorParse = (tokens: string[], e: CircuitElement): void => {
+  const n = capacitorHead(tokens, e);
+  readParams(tokens.slice(n), e, ['seriesResistance']);
+};
+
+/**
+ * A `209` line, where the flag genuinely disambiguates: `PolarCapacitorElm`
+ * reads `maxNegativeVoltage` off the same token stream its superclass left
+ * (PolarCapacitorElm.java:13-17), so without FLAG_RESISTANCE the rating is the
+ * fourth token, not the fifth.
+ */
+const polarCapacitorParse = (tokens: string[], e: CircuitElement): void => {
+  let n = capacitorHead(tokens, e);
+  if ((e.flags & CAP_RESISTANCE) !== 0) {
+    readParams(tokens.slice(n), e, ['seriesResistance']);
+    n += 1;
+  }
+  readParams(tokens.slice(n), e, ['maxNegativeVoltage']);
+};
+
+/** Upstream's `dump()` sets FLAG_RESISTANCE unconditionally and always writes
+ *  the ESR token (CapacitorElm.java:69-72), which is what tells the reader the
+ *  token is there at all. Both capacitor types share the writer. */
+const capacitorFlags = (e: CircuitElement): number => e.flags | CAP_RESISTANCE;
 
 /** The SPST tokens, which the SPDT writes first and then extends. The label
  *  only appears when there is one, matching the flag `labelFlags` writes. */
@@ -705,14 +756,21 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: 'c',
     postCount: 2,
     posts: twoPosts,
-    defaults: { capacitance: 1e-5 },
+    // 1e-3, not 0: upstream's constructor puts a small charge on every fresh
+    // capacitor so an LC tank self-starts (CapacitorElm.java:38).
+    defaults: { capacitance: 1e-5, initialVoltage: 1e-3, seriesResistance: 0 },
     // The stored voltage is part of the format but is state, not a setting.
-    parse: (t, e) =>
-      readParams(t, e, ['capacitance', 'voltDiff', 'initialVoltage', 'seriesResistance']),
+    parse: capacitorParse,
     dump: writeParams(['capacitance', 'voltDiff', 'initialVoltage', 'seriesResistance']),
+    dumpFlags: capacitorFlags,
     fields: [
       { name: 'capacitance', label: 'Capacitance', unit: 'F' },
-      { name: 'initialVoltage', label: 'Initial voltage', unit: 'V' },
+      { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
+      { name: 'initialVoltage', label: 'Initial voltage (on reset)', unit: 'V' },
+      // Upstream labels this "Trapezoidal Approximation" and ticks it when the
+      // flag is *clear* (CapacitorElm.java:238-241, :253-258); naming it after
+      // the flag is the same control with the label the right way up.
+      { name: 'backEuler', label: 'Backward Euler', type: 'bool', flag: CAP_BACK_EULER },
     ],
     draw: drawCapacitorBody,
   },
@@ -723,17 +781,15 @@ export const ELEMENT_DEFS: ElementDef[] = [
     dumpCode: '209',
     postCount: 2,
     posts: twoPosts,
-    defaults: { capacitance: 1e-5, maxNegativeVoltage: 1 },
+    defaults: {
+      capacitance: 1e-5,
+      initialVoltage: 1e-3,
+      seriesResistance: 0,
+      maxNegativeVoltage: 1,
+    },
     // Same trailing tokens as the plain capacitor, plus maxNegativeVoltage
     // (PolarCapacitorElm.java: dump() appends it after CapacitorElm.dump()).
-    parse: (t, e) =>
-      readParams(t, e, [
-        'capacitance',
-        'voltDiff',
-        'initialVoltage',
-        'seriesResistance',
-        'maxNegativeVoltage',
-      ]),
+    parse: polarCapacitorParse,
     dump: writeParams([
       'capacitance',
       'voltDiff',
@@ -741,10 +797,13 @@ export const ELEMENT_DEFS: ElementDef[] = [
       'seriesResistance',
       'maxNegativeVoltage',
     ]),
+    dumpFlags: capacitorFlags,
     fields: [
       { name: 'capacitance', label: 'Capacitance', unit: 'F' },
-      { name: 'initialVoltage', label: 'Initial voltage', unit: 'V' },
+      { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
+      { name: 'initialVoltage', label: 'Initial voltage (on reset)', unit: 'V' },
       { name: 'maxNegativeVoltage', label: 'Max reverse voltage', unit: 'V', min: 0 },
+      { name: 'backEuler', label: 'Backward Euler', type: 'bool', flag: CAP_BACK_EULER },
     ],
     draw: drawPolarCapacitorBody,
   },

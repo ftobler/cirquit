@@ -520,6 +520,179 @@ fn rc_network_charges_on_its_time_constant() {
     assert!(close(v, 10.0, 0.1), "got {v} after 5 tau");
 }
 
+/// 10 V behind 900 ohm into a capacitor with a 100 ohm ESR, built either with
+/// the DC operating point on or off. Both matter: `circuits.rs` defaults to
+/// off, but the app hardcodes `dcOperatingPoint: true`
+/// (`web/src/engine/simulator.ts`), and the internal node exists for the whole
+/// run either way, so the DC pass is the only place this port has to stamp
+/// something upstream does not (upstream's `getInternalNodeCount()` returns 0
+/// under DC and the node simply is not there).
+fn esr_rc_circuit(dt: f64, series_r: f64, dc: bool) -> Circuit {
+    build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 900.0)]),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[
+                    ("capacitance", 1e-6),
+                    ("seriesResistance", series_r),
+                    ("initialVoltage", 0.0),
+                ],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, dc),
+    )
+}
+
+/// The step response `esr_rc_circuit` must produce, whichever way it was
+/// built. A capacitor's ESR is a real resistor to a real internal plate node
+/// (CapacitorElm.java:159, :173-174), so it lands in series with the rest of
+/// the loop: tau = (R + R_s)*C = 1 k * 1 uF = 1 ms, unchanged in shape from an
+/// ideal cap behind a 1 k resistor.
+///
+/// The element's *terminal* voltage is the plate voltage plus the i*R_s drop,
+/// which makes the response start at 1 V rather than 0:
+///   V(t) = V_c + i*R_s = 10(1 - e^-t/tau) + (10/1000)e^-t/tau * 100
+///        = 10 - 9*e^(-t/tau)
+/// Folding R_s into the companion conductance instead, as this port used to,
+/// gives C_eff = C/(1 + 2*C*R_s/dt) = C/201: the cap would be fully charged
+/// with zero current long before the first assertion here.
+fn assert_esr_step_response(c: &mut Circuit, series_r: f64) {
+    let tau = (900.0 + series_r) * 1e-6;
+
+    c.run(1000); // one time constant
+    let v = c.element_voltages()[2];
+    let expected_v = 10.0 - 9.0 * (-1.0f64).exp();
+    assert!(close(v, expected_v, 0.02), "got {v}, expected {expected_v}");
+
+    // The branch current is the same through the ESR and the plates.
+    let i = c.element_currents()[2];
+    let expected_i = 10.0 * 1e-6 / tau * (-1.0f64).exp();
+    assert!(
+        close(i, expected_i, 1e-4),
+        "got {i} A, expected {expected_i}"
+    );
+
+    c.run(5000); // six time constants total
+    let v = c.element_voltages()[2];
+    assert!(v > 9.9, "got {v} after 6 tau");
+}
+
+#[test]
+fn capacitor_series_resistance_controls_charging() {
+    assert_esr_step_response(&mut esr_rc_circuit(1e-6, 100.0, false), 100.0);
+}
+
+#[test]
+fn capacitor_series_resistance_survives_the_dc_operating_point() {
+    // The same circuit on the path the app actually takes: the frontend
+    // hardcodes `dcOperatingPoint: true`. Node assignment runs once, before
+    // the DC solve, so the internal plate node is allocated for the DC matrix
+    // too and its row would be all zeros without the `resistor(n1, cap_node,
+    // R_s)` this port adds, which the dense LU rejects as singular. Upstream
+    // never meets this: its `getInternalNodeCount()` returns 0 under DC, so
+    // the node is simply not there.
+    //
+    // The failure is quiet, which is why it needs its own test.
+    // `solve_operating_point` discards its step report and `simulator.ts`
+    // never reads `error()` after a build, so a singular DC solve surfaces
+    // nowhere: the transient still runs, just from an operating point that was
+    // never solved.
+    let c = &mut esr_rc_circuit(1e-6, 100.0, true);
+    assert_eq!(c.error(), None, "the DC operating point did not solve");
+    assert!(c.warnings().is_empty(), "warnings: {:?}", c.warnings());
+    assert_esr_step_response(c, 100.0);
+}
+
+/// 10 V behind 1 k into a capacitor whose file said it was charged to 5 V.
+fn restored_charge_circuit(dt: f64, dc: bool) -> Circuit {
+    build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6), ("voltDiff", 5.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, dc),
+    )
+}
+
+#[test]
+fn capacitor_restores_saved_volt_diff_on_load() {
+    // The `voltDiff` token is the charge a file was saved with
+    // (CapacitorElm.java:44), so the very first solve must already see it.
+    // With v_prev = 5 the trapezoidal companion is geq = 2C/dt = 2 S and
+    // ieq = geq*v_prev = 10 A, which holds the node at
+    // (10/1000 + 10)/(1/1000 + 2) = 5.0025 V. Starting from an uncharged cap
+    // instead would put it near (10/1000)/2 = 5 mV.
+    let c = &mut restored_charge_circuit(1e-6, false);
+    c.run(1);
+    let v = c.element_voltages()[2];
+    assert!(close(v, 5.0, 0.05), "restored charge read back as {v}");
+}
+
+#[test]
+fn capacitor_restored_charge_survives_the_dc_operating_point() {
+    // The path the app actually takes, and the reason `step_finished` skips
+    // its state update while `ctx.dc_analysis` is set. The DC pass solves the
+    // capacitor as a 100 M open, so it puts this node at nearly the full 10 V;
+    // without the guard that solve would be written straight into `v_prev` and
+    // the restored 5 V would be gone before the first transient step. Delete
+    // the guard and this is the only test that notices.
+    let c = &mut restored_charge_circuit(1e-6, true);
+    c.run(1);
+    let v = c.element_voltages()[2];
+    assert!(close(v, 5.0, 0.05), "restored charge read back as {v}");
+}
+
+#[test]
+fn capacitor_default_initial_voltage_starts_an_lc_tank() {
+    // No initialVoltage token at all: the default is upstream's 1e-3, not 0,
+    // precisely so a fresh tank oscillates instead of sitting dead
+    // (CapacitorElm.java:38, :46 and the comment in `reset()` at :60).
+    // With L = C = 1 uF, sqrt(C/L) = 1, so a quarter period in the whole
+    // 1 mV of charge is inductor current: I = V0*sqrt(C/L) = 1 mA.
+    let l: f64 = 1e-6;
+    let cap: f64 = 1e-6;
+    let period = 2.0 * PI * (l * cap).sqrt();
+    let dt = period / 2000.0;
+
+    let c = &mut build(
+        vec![
+            elm(1, "capacitor", &[[0, 0], [0, 100]], &[("capacitance", cap)]),
+            elm(2, "inductor", &[[0, 0], [100, 0]], &[("inductance", l)]),
+            elm(3, "wire", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    c.run(500); // a quarter period
+    let i = c.element_currents()[1];
+    let expected = 1e-3 * (cap / l).sqrt();
+    assert!(
+        close(i, expected, 3e-4),
+        "quarter-period inductor current {i}, expected {expected}"
+    );
+}
+
 #[test]
 fn polarized_capacitor_charges_like_the_plain_one() {
     // PolarCapacitorElm is electrically identical to CapacitorElm; the

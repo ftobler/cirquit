@@ -819,8 +819,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "chaos2.txt",
@@ -828,8 +829,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "chua.txt",
@@ -837,8 +839,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "classd.txt",
@@ -2779,8 +2782,9 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "ok",
-    "converged": true
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "opint-invert-amp.txt",
