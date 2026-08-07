@@ -43,6 +43,12 @@ export const PROBE_CIRCLE = 2;         // ProbeElm.java:31
 export const CAP_BACK_EULER = 2;       // CapacitorElm.java:32
 export const IND_BACK_EULER = 2;       // Inductor.java:23, same bit as the capacitor's flag
 export const CAP_RESISTANCE = 4;       // CapacitorElm.java:33
+export const TRANSFORMER_REVERSE = 4;  // TransformerElm.java:32 FLAG_REVERSE
+export const TRANSFORMER_VERTICAL = 8; // TransformerElm.java:33 FLAG_VERTICAL
+export const TRANSFORMER_FLIP = 16;    // TransformerElm.java:34 FLAG_FLIP
+/** The tapped and custom transformers share bit 1 for FLAG_FLIP
+ *  (TappedTransformerElm.java:27, CustomTransformerElm.java:29). */
+export const TAPPED_FLIP = 1;
 /** Marks free text as one escaped token rather than the old space-joined
  *  form. Same bit and same meaning on both text-bearing types
  *  (TextElm.java:38, LabeledNodeElm.java:30); their writers always set it. */

@@ -4307,3 +4307,382 @@ fn relay_latching_coil_keeps_its_contact_after_deenergising() {
         "latching contact should stay closed after the coil drops out, got {i_off}"
     );
 }
+
+// ─── Transformers ────────────────────────────────────────────────────────────
+
+/// One scope trace: the transformer family's tests read node voltages and
+/// current peaks back through scopes rather than the per-element readout,
+/// because a transformer's secondary voltage is `V(post1) - V(post3)`, not the
+/// default `V(post0) - V(post1)`.
+fn tr_scope(id: u32, value: ScopeValue, post: usize) -> ScopeSpec {
+    ScopeSpec {
+        element_id: id,
+        value,
+        post,
+        steps_per_column: 1,
+        columns: 4096,
+    }
+}
+
+/// Average of the newest min/max column of scope `i`.
+fn last_sample(c: &Circuit, i: usize) -> f64 {
+    let snap = c.scopes()[i].snapshot();
+    let (min, max) = (snap[snap.len() - 2], snap[snap.len() - 1]);
+    (min as f64 + max as f64) / 2.0
+}
+
+/// Peak magnitude seen by scope `i` across the whole run.
+fn peak_abs(c: &Circuit, i: usize) -> f64 {
+    let snap = c.scopes()[i].snapshot();
+    let mut peak: f32 = 0.0;
+    for k in (0..snap.len()).step_by(2) {
+        peak = peak.max(snap[k].abs()).max(snap[k + 1].abs());
+    }
+    peak as f64
+}
+
+/// A 10 V source across the primary of an open-secondary transformer with the
+/// given turns ratio, returning the secondary node voltage. `secondary` is the
+/// winding's two posts (the basic transformer's is (1,3); a custom's is (2,3)).
+/// The secondary's far post is grounded, the layout real circuits use, so the
+/// common mode is referenced and the solve is clean. The companion is exact
+/// here: an open secondary carries no current, so `V2 = (M/L1)·V1 = k·ratio·V1`
+/// holds from the very first step, which pins the winding polarity and the
+/// `M⁻¹` sign.
+fn open_secondary_v2(
+    kind: &str,
+    posts: &[[i32; 2]],
+    params: &[(&str, f64)],
+    label: Option<&str>,
+    secondary: (usize, usize),
+) -> f64 {
+    open_secondary_v2_opts(kind, posts, params, label, secondary, 0, false)
+}
+
+/// [`open_secondary_v2`] with the element flags and the DC operating point
+/// selectable. The ratio falls out of the `M⁻¹` companion alone, independent
+/// of the integrator (`ts`) and of whether the DC pass or the first transient
+/// step solves it, so the same analytic result must hold with the
+/// `FLAG_BACK_EULER` bit set and with `dc_operating_point` on.
+fn open_secondary_v2_opts(
+    kind: &str,
+    posts: &[[i32; 2]],
+    params: &[(&str, f64)],
+    label: Option<&str>,
+    secondary: (usize, usize),
+    flags: i64,
+    dc: bool,
+) -> f64 {
+    let mut spec = CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, kind, posts, params),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "ground", &[posts[secondary.1]], &[]),
+        ],
+        options: Some(opts(1e-5, dc)),
+        scopes: vec![
+            tr_scope(2, ScopeValue::NodeVoltage, secondary.0),
+            tr_scope(2, ScopeValue::NodeVoltage, secondary.1),
+        ],
+    };
+    spec.elements[1].flags = flags;
+    if let Some(l) = label {
+        spec.elements[1].label = Some(l.to_string());
+    }
+    let mut c = Circuit::new();
+    c.set_circuit(&spec).expect("circuit should analyse");
+    c.run(5);
+    last_sample(&c, 0) - last_sample(&c, 1)
+}
+
+#[test]
+fn transformer_voltage_ratio_open_secondary() {
+    // 1:1 at k = 0.999: the leakage leaves V2 = 0.999·V1 rather than V1.
+    let v2 = open_secondary_v2(
+        "transformer",
+        &[[0, 0], [100, 0], [0, 100], [100, 100]],
+        &[("inductance", 4.0), ("ratio", 1.0), ("couplingCoef", 0.999)],
+        None,
+        (1, 3),
+    );
+    assert!(
+        close(v2, 9.99, 1e-6),
+        "open secondary read {v2}, expected 9.99"
+    );
+}
+
+#[test]
+fn transformer_dc_pass_pins_ratio() {
+    // The DC operating point stamps the same companion with zero history
+    // sources, so the ratio falls out of the conductance and VCCS stamps
+    // alone: the open secondary forces its winding current to zero, and
+    // `Vs = -(M⁻¹[1][0]/M⁻¹[1][1])·Vp = k·ratio·Vp`. The app builds every
+    // circuit through this path (`dcOperatingPoint: true`), so a sign error
+    // that only bit under DC would corrupt the first transient step's initial
+    // conditions while every transient-only test stayed green.
+    let v2 = open_secondary_v2_opts(
+        "transformer",
+        &[[0, 0], [100, 0], [0, 100], [100, 100]],
+        &[("inductance", 4.0), ("ratio", 1.0), ("couplingCoef", 0.999)],
+        None,
+        (1, 3),
+        0,
+        true,
+    );
+    assert!(
+        close(v2, 9.99, 1e-6),
+        "DC operating point read {v2}, expected 9.99"
+    );
+}
+
+#[test]
+fn transformer_open_secondary_ratio_is_integrator_independent() {
+    // Backward Euler (FLAG_BACK_EULER, the inductor's bit 2) scales the
+    // companion by `ts = dt` instead of `dt/2` and drops the trapezoidal
+    // term, but the open-circuit ratio reads out of the `M⁻¹` block alone, so
+    // the same 1:1 at k = 0.999 must give 9.99 V from the very first step.
+    let v2 = open_secondary_v2_opts(
+        "transformer",
+        &[[0, 0], [100, 0], [0, 100], [100, 100]],
+        &[("inductance", 4.0), ("ratio", 1.0), ("couplingCoef", 0.999)],
+        None,
+        (1, 3),
+        2,
+        false,
+    );
+    assert!(
+        close(v2, 9.99, 1e-6),
+        "backward-Euler read {v2}, expected 9.99"
+    );
+}
+
+#[test]
+fn transformer_step_down_then_up() {
+    // ratio is stored as N2/N1 (secondary/primary), so 10 steps the voltage up
+    // and 0.1 steps it down; the two are exact mirrors of each other.
+    let up = open_secondary_v2(
+        "transformer",
+        &[[0, 0], [100, 0], [0, 100], [100, 100]],
+        &[
+            ("inductance", 1.0),
+            ("ratio", 10.0),
+            ("couplingCoef", 0.999),
+        ],
+        None,
+        (1, 3),
+    );
+    let down = open_secondary_v2(
+        "transformer",
+        &[[0, 0], [100, 0], [0, 100], [100, 100]],
+        &[
+            ("inductance", 1000.0),
+            ("ratio", 0.1),
+            ("couplingCoef", 0.999),
+        ],
+        None,
+        (1, 3),
+    );
+    assert!(
+        close(up, 99.9, 1e-4),
+        "step-up secondary read {up}, expected 99.9"
+    );
+    assert!(
+        close(down, 0.999, 1e-6),
+        "step-down secondary read {down}, expected 0.999"
+    );
+    assert!(
+        close(up / down, 100.0, 1e-4),
+        "the two ratios are not mirrors: {up} / {down} = {}",
+        up / down
+    );
+}
+
+#[test]
+fn transformer_current_ratio_loaded_secondary() {
+    // A 1 kHz sine drives a 2:1 transformer through 1 ohm into a 4 k secondary
+    // load, so the reflected load is 1 k. In steady state the magnetising
+    // current is quadrature to the load and tiny (R_eff/(omega·L) ~ 1.6%), so
+    // the peak current ratio is the ampere-turns ratio I1/I2 = ratio = 2
+    // within a couple of percent, and the source delivers exactly the primary
+    // current.
+    let dt = 5e-6;
+    let c = &mut build_with(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 100], [0, 0]],
+                &[
+                    ("maxVoltage", 10.0),
+                    ("waveform", 1.0),
+                    ("frequency", 1000.0),
+                ],
+            ),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 1.0)]),
+            elm(
+                3,
+                "transformer",
+                &[[100, 0], [200, 0], [100, 100], [200, 100]],
+                &[
+                    ("inductance", 10.0),
+                    ("ratio", 2.0),
+                    ("couplingCoef", 0.999),
+                ],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[200, 0], [200, 100]],
+                &[("resistance", 4000.0)],
+            ),
+            elm(5, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(6, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+        vec![
+            tr_scope(1, ScopeValue::Current, 0),
+            tr_scope(3, ScopeValue::Current, 0),
+            tr_scope(4, ScopeValue::Current, 0),
+        ],
+    );
+    // tau = L/(R1 + R2/ratio^2) ~ 10 ms = 10 periods at 1 kHz; 40 periods is
+    // four time constants, plenty for the ampere-turns ratio to settle.
+    c.run(40 * 200);
+
+    let i1 = peak_abs(c, 1);
+    let i2 = peak_abs(c, 2);
+    let isource = peak_abs(c, 0);
+    assert!(i1 > 1e-4, "primary current collapsed to {i1}");
+    assert!(
+        close(i1 / i2, 2.0, 0.04),
+        "ampere-turns ratio was I1/I2 = {i1}/{i2} = {}",
+        i1 / i2
+    );
+    assert!(
+        close(isource, i1, 0.01),
+        "source peak {isource} does not match primary peak {i1}"
+    );
+}
+
+#[test]
+fn tapped_transformer_center_tap() {
+    // Tapped 1:1 at k = 0.99, secondary open with the centre tap grounded: the
+    // tap splits the secondary into two halves of half the turns each, so each
+    // half reads k·(ratio/2)·V1 = 4.95 V, one up from ground and one down.
+    let spec = CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "tappedTransformer",
+                &[[0, 0], [0, 100], [100, 0], [100, 100], [100, 200]],
+                &[("inductance", 4.0), ("ratio", 1.0), ("couplingCoef", 0.99)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "ground", &[[100, 100]], &[]),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: vec![
+            tr_scope(2, ScopeValue::NodeVoltage, 2),
+            tr_scope(2, ScopeValue::NodeVoltage, 3),
+            tr_scope(2, ScopeValue::NodeVoltage, 4),
+        ],
+    };
+    let mut c = Circuit::new();
+    c.set_circuit(&spec).expect("circuit should analyse");
+    c.run(5);
+
+    let (v2, v3, v4) = (last_sample(&c, 0), last_sample(&c, 1), last_sample(&c, 2));
+    assert!(
+        close(v2 - v3, 4.95, 1e-6),
+        "upper half read {} V, expected 4.95",
+        v2 - v3
+    );
+    assert!(
+        close(v3 - v4, 4.95, 1e-6),
+        "lower half read {} V, expected 4.95",
+        v3 - v4
+    );
+    assert!(
+        close(v2 - v4, 9.9, 1e-6),
+        "full secondary read {} V, expected 9.9",
+        v2 - v4
+    );
+}
+
+#[test]
+fn custom_transformer_two_coils() {
+    // The description's number is the turns ratio to the base inductance coil.
+    // A 1:1 custom is a plain 1:1 transformer; a 2:1 steps the voltage down by
+    // the turns ratio, so the open secondary reads k·(1/2)·V1.
+    let v_11 = open_secondary_v2(
+        "customTransformer",
+        &[[0, 0], [0, 100], [100, 0], [100, 100]],
+        &[("inductance", 4.0), ("couplingCoef", 0.999)],
+        Some("1:1"),
+        (2, 3),
+    );
+    let v_21 = open_secondary_v2(
+        "customTransformer",
+        &[[0, 0], [0, 100], [100, 0], [100, 100]],
+        &[("inductance", 4.0), ("couplingCoef", 0.999)],
+        Some("2:1"),
+        (2, 3),
+    );
+    assert!(
+        close(v_11, 9.99, 1e-6),
+        "1:1 secondary read {v_11}, expected 9.99"
+    );
+    assert!(
+        close(v_21, 4.995, 1e-6),
+        "2:1 secondary read {v_21}, expected 4.995"
+    );
+}
+
+#[test]
+fn transformer_connects_all_posts() {
+    // The secondary floats entirely: nothing external touches it. Its common
+    // mode is undefined, so the floating-subcircuit detection must pin one of
+    // its nodes with a GMIN conductance, exactly as upstream's
+    // `connectUnconnectedNodes` ties unconnected nodes to ground with a 1e8
+    // resistor (SimulationManager.java). A transformer that reported all its
+    // posts as connected would keep the secondary out of that pinning and the
+    // solve would go singular. The winding still reads its full ratio: the
+    // pinning fixes the absolute potential, not the winding difference.
+    let spec = CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "transformer",
+                &[[0, 0], [100, 0], [0, 100], [100, 100]],
+                &[("inductance", 4.0), ("ratio", 1.0), ("couplingCoef", 0.999)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: vec![
+            tr_scope(2, ScopeValue::NodeVoltage, 1),
+            tr_scope(2, ScopeValue::NodeVoltage, 3),
+        ],
+    };
+    let mut c = Circuit::new();
+    c.set_circuit(&spec).expect("circuit should analyse");
+    let report = c.run(5);
+    assert!(
+        report.converged && c.error().is_none(),
+        "a floating transformer secondary must still solve: {:?}",
+        c.error()
+    );
+    assert!(
+        c.warnings().iter().any(|w| w.contains("no path to ground")),
+        "the floating secondary should have been pinned: {:?}",
+        c.warnings()
+    );
+    assert!(
+        close(last_sample(&c, 0) - last_sample(&c, 1), 9.99, 1e-6),
+        "floating secondary read {} V, expected 9.99",
+        last_sample(&c, 0) - last_sample(&c, 1)
+    );
+}

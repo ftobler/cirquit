@@ -144,8 +144,8 @@ fetch it).
   edits, interactive switches.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
-- 93 Rust tests, of which 87 are the end-to-end circuit checks against analytic
-  results in `engine/core/tests/circuits.rs`, and 302 TypeScript tests. CI runs
+- 107 Rust tests, of which 102 are the end-to-end circuit checks against analytic
+  results in `engine/core/tests/circuits.rs`, and 320 TypeScript tests. CI runs
   fmt, clippy, tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -239,14 +239,13 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **26 of ~200**.
+a test. Done so far: **29 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
-capacitor, inductor, fuse, lamp, thermistor, potentiometer, switch, SPDT
-switch, LDR, varactor.
+capacitor, inductor, transformer, tapped transformer, custom transformer, fuse,
+lamp, thermistor, potentiometer, switch, SPDT switch, LDR, varactor.
 
 - [ ] Memristor
-- [ ] Transformer, tapped transformer, custom transformer
 - [ ] Transmission line, crystal, spark gap, antenna
 - [ ] Relay coil / contact / relay, DPDT, crossover and motor-protection switches
 
@@ -324,6 +323,9 @@ Dump codes implemented so far, with their trailing field order:
 | `c`   | capacitor      | capacitance, voltDiff, [initialVoltage], [seriesResistance] |
 | `209` | polarised capacitor | same as `c`, then maxNegativeVoltage (ESR only under FLAG_RESISTANCE = 4) |
 | `l`   | inductor       | inductance, current, initialCurrent, saturationCurrent     |
+| `T`   | transformer    | inductance, ratio, current0, current1, [couplingCoef], [saturationCurrent] |
+| `169` | tapped transformer | inductance, ratio, current0, current1, [current2], [couplingCoef] |
+| `406` | custom transformer | inductance, couplingCoef, description (escaped), coilCount, coilCurrent0 … |
 | `404` | fuse           | resistance, i2t, heat, blown                               |
 | `181` | lamp           | temp, nomPower, nomVoltage, warmTime, coolTime              |
 | `350` | thermistor     | r25, r50, minTempr, maxTempr, position, sliderText (escaped) |
@@ -407,6 +409,28 @@ the rating genuinely is the fourth token rather than the fifth.
 The `voltDiff` token is the saved charge and it is restored into the engine on
 load; a mid-transient save still writes the load-time value, because live state
 does not yet cross back over the engine boundary.
+
+The three transformer rows are one electrical family: coupled inductors stamped
+as a mutual-inductance Norton companion with no voltage-source unknowns. The
+engine builds the mutual-inductance matrix `M` (diagonal `n²·L`, off-diagonal
+`k·sqrt(Li·Lj)·pi·pj`), inverts it densely and stamps the result as
+conductances and VCCSs, one current source per winding. The `ratio` token is
+stored inverted, N2/N1, so a line reading `ratio` 10 steps the voltage up ten
+times. Coupling defaults to 0.999 for the basic and custom transformers and
+0.99 for the tapped one, and the tapped secondary is split in half (each half
+`ratio/2` turns). The basic transformer's polarity lives in FLAG_REVERSE
+(bit 4), which the drawing turns into a post swap rather than a token. A basic
+`T` line may carry `saturationCurrent`; the port preserves the token but does
+not yet model core saturation. The `169` and `T` lines both omit their optional
+trailing tokens when a file stops short, and the save writes exactly the tokens
+that were present. The `406` description is one escaped token
+(`CustomLogicModel.escape`: `+→\p`, `=→\q`, `#→\h`, `&→\a`, CR, space, and
+empty as `\0`) with `:` splitting primary from secondary and `,` separating
+coils; the escape set is the same one the text rows use, so it round-trips
+through the shared netlist layer. Node wiring matches upstream's `getPost`:
+the basic primary spans posts 0-2 and the secondary posts 1-3, the tapped
+primary posts 0-1 and the secondary posts 2-3-4 (the tap is post 3), and a
+custom's coils own consecutive node pairs in description order.
 
 The `176` row is a `VaractorElm`, which extends `DiodeElm`: the same leading
 tokens as the `d` row, driven by the same flags. `VaractorElm`'s own token

@@ -28,6 +28,7 @@ pub mod relay;
 pub mod resistor;
 pub mod switch;
 pub mod thermistor;
+pub mod transformer;
 pub mod transistor;
 pub mod voltage_source;
 pub mod wire;
@@ -58,6 +59,9 @@ pub const KINDS: &[&str] = &[
     "mosfet",
     "switch",
     "switch2",
+    "transformer",
+    "tappedTransformer",
+    "customTransformer",
     "relay",
     "relayCoil",
     "relayContact",
@@ -92,6 +96,9 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "mosfet" => Box::new(mosfet::Mosfet::new(spec)),
         "switch" => Box::new(switch::Switch::new(spec)),
         "switch2" => Box::new(multi_throw_switch::MultiThrowSwitch::new(spec)),
+        "transformer" => Box::new(transformer::Transformer::new_basic(spec)),
+        "tappedTransformer" => Box::new(transformer::Transformer::new_tapped(spec)),
+        "customTransformer" => Box::new(transformer::Transformer::new_custom(spec)),
         "relay" => Box::new(relay::Relay::new(spec)),
         "relayCoil" => Box::new(relay::RelayCoil::new(spec)),
         "relayContact" => Box::new(relay::RelayContact::new(spec)),

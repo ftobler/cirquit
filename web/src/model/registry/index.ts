@@ -10,7 +10,7 @@
  * its kind there, then add a definition here in `elements/`.
  */
 
-import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP } from './flags';
+import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP } from './flags';
 import { switchLeverTip } from './shared';
 import { WIRE_DEF } from './elements/wire';
 import { GROUND_DEF } from './elements/ground';
@@ -33,6 +33,7 @@ import { TRANSISTOR_DEF } from './elements/transistor';
 import { MOSFET_DEF } from './elements/mosfet';
 import { SWITCH_DEF } from './elements/switch';
 import { SWITCH2_DEF } from './elements/switch2';
+import { TRANSFORMER_DEF, TAPPED_TRANSFORMER_DEF, CUSTOM_TRANSFORMER_DEF } from './elements/transformer';
 import { RELAY_DEF, RELAY_COIL_DEF, RELAY_CONTACT_DEF } from './elements/relay';
 import { OPAMP_DEF } from './elements/opamp';
 import { LABELED_NODE_DEF } from './elements/labeledNode';
@@ -41,7 +42,7 @@ import { PROBE_DEF } from './elements/probe';
 import { DECORATION_DEF } from './elements/decoration';
 import type { CircuitElement, ElementDef, Point } from '../types';
 
-export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP };
+export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP };
 export { switchLeverTip };
 export { opampInputSign, opAmpInputAnchors, opAmpLabelAnchors } from './elements/opamp';
 export { transistorSideFactor, transistorBarContacts } from './elements/transistor';
@@ -60,6 +61,9 @@ export const ELEMENT_DEFS: ElementDef[] = [
   LDR_DEF,
   SWITCH_DEF,
   SWITCH2_DEF,
+  TRANSFORMER_DEF,
+  TAPPED_TRANSFORMER_DEF,
+  CUSTOM_TRANSFORMER_DEF,
   RELAY_DEF,
   RELAY_COIL_DEF,
   RELAY_CONTACT_DEF,

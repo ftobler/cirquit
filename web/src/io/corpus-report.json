@@ -2051,7 +2051,6 @@
     "file": "joule-thief.txt",
     "format": "plain",
     "missing": [
-      "T",
       "162"
     ],
     "sliderLines": 0,
@@ -2193,13 +2192,11 @@
   {
     "file": "longdist.txt",
     "format": "plain",
-    "missing": [
-      "T",
-      "T"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "lrc-critical.txt",
@@ -3226,13 +3223,11 @@
   {
     "file": "ringmod.txt",
     "format": "plain",
-    "missing": [
-      "169",
-      "169"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "rmsconverter.txt",
@@ -3321,12 +3316,11 @@
   {
     "file": "satcore-transformer.txt",
     "format": "plain",
-    "missing": [
-      "T"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "sawtooth.txt",
@@ -3588,8 +3582,6 @@
     "file": "tesla.txt",
     "format": "plain",
     "missing": [
-      "T",
-      "T",
       "187"
     ],
     "sliderLines": 0,
@@ -3779,42 +3771,38 @@
   {
     "file": "transformer.txt",
     "format": "plain",
-    "missing": [
-      "T"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "transformerdc.txt",
     "format": "plain",
-    "missing": [
-      "T"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "transformerdown.txt",
     "format": "plain",
-    "missing": [
-      "T"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "transformerup.txt",
     "format": "plain",
-    "missing": [
-      "T"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "transrectifier.txt",

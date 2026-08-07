@@ -11,7 +11,7 @@
  * rotated or mirrored part's terminal coordinates match the original exactly.
  */
 
-import { FLAG_SWAP, defFor, MOSFET_FLIP } from './registry';
+import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP } from './registry';
 import type { CircuitElement } from './types';
 
 /** Whether the element can turn a quarter turn. One-post parts (ground, rails,
@@ -62,8 +62,20 @@ export function rotateElement(e: CircuitElement): CircuitElement {
  * identical to upstream's. The mosfet's flag is bit 8 (FLAG_FLIP), not the
  * shared bit 1 the other two use, so a rotate must never touch its bit 1:
  * that bit means P-channel there.
+ *
+ * The basic transformer is upstream's flipXY then flipY too
+ * (TransformerElm.java:385-400): flipXY toggles FLAG_VERTICAL, and flipY
+ * toggles FLAG_FLIP only when the part is now horizontal, i.e. when it was
+ * vertical before the turn. The tapped and custom transformers toggle
+ * FLAG_FLIP twice through the same two flips, so a rotate leaves them alone.
  */
 function rotateFlags(e: CircuitElement): number {
+  if (e.kind === 'transformer') {
+    let flags = e.flags ^ TRANSFORMER_VERTICAL;
+    if ((e.flags & TRANSFORMER_VERTICAL) !== 0) flags ^= TRANSFORMER_FLIP;
+    return flags;
+  }
+  if (e.kind === 'tappedTransformer' || e.kind === 'customTransformer') return e.flags;
   if (e.kind === 'mosfet' || e.kind === 'relay') {
     let flags = e.flags ^ MOSFET_FLIP;
     if (e.x1 === e.x2) flags ^= MOSFET_FLIP;
@@ -79,18 +91,19 @@ function rotateFlags(e: CircuitElement): number {
  * Reflect across the vertical axis through the element's midpoint. A mirror
  * reverses the axis direction, so for a horizontal part the `dsign` term alone
  * moves the hanging terminals to the true mirror side; only a vertical part
- * (whose axis direction is unchanged) needs its orientation flag flipped.
+ * (whose axis direction is unchanged) needs its orientation flag flipped. The
+ * transformers follow upstream's `flipX` (TransformerElm.java:385-389), which
+ * toggles FLAG_FLIP exactly when the part is vertical.
  */
 export function mirrorElement(e: CircuitElement): CircuitElement {
   if (!canMirror(e)) return e;
   const cx = (e.x1 + e.x2) / 2;
   const vertical = e.x1 === e.x2;
-  const flipBit =
-    e.kind === 'mosfet' || e.kind === 'relay'
-      ? MOSFET_FLIP
-      : e.kind === 'opamp' || e.kind === 'transistor'
-        ? FLAG_SWAP
-        : 0;
+  let flipBit = 0;
+  if (e.kind === 'mosfet' || e.kind === 'relay') flipBit = MOSFET_FLIP;
+  else if (e.kind === 'transformer') flipBit = TRANSFORMER_FLIP;
+  else if (e.kind === 'opamp' || e.kind === 'transistor') flipBit = FLAG_SWAP;
+  else if (e.kind === 'tappedTransformer' || e.kind === 'customTransformer') flipBit = TAPPED_FLIP;
   const flags = vertical && flipBit !== 0 ? e.flags ^ flipBit : e.flags;
   return { ...e, x1: 2 * cx - e.x1, y1: e.y1, x2: 2 * cx - e.x2, y2: e.y2, flags };
 }

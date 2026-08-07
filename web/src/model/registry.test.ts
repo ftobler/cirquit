@@ -434,3 +434,90 @@ describe('op-amp swapped inputs', () => {
     expect(axisSide(op, lineTos[0]) * axisSide(op, posts[0])).toBeGreaterThan(0);
   });
 });
+
+describe('transformer posts', () => {
+  // Terminal coordinates must match upstream's getPost exactly or wires in
+  // loaded circuits will not connect. These assert the corpus layouts.
+  const t = (x1: number, y1: number, x2: number, y2: number, flags = 0) =>
+    element('transformer', x1, y1, x2, y2, flags);
+
+  it('places the basic secondary 32 below a horizontal primary (transformer.txt:4)', () => {
+    expect(postsOf(t(272, 192, 352, 192))).toEqual([
+      { x: 272, y: 192 },
+      { x: 352, y: 192 },
+      { x: 272, y: 224 },
+      { x: 352, y: 224 },
+    ]);
+  });
+
+  it('normalizes a diagonal drag to the axis, width from the drag delta (tesla.txt:5)', () => {
+    // The file stores y2 = 304, off the axis; the secondary hangs at that
+    // offset from the normalized horizontal body.
+    expect(postsOf(t(240, 256, 320, 304, 2))).toEqual([
+      { x: 240, y: 256 },
+      { x: 320, y: 256 },
+      { x: 240, y: 304 },
+      { x: 320, y: 304 },
+    ]);
+  });
+
+  it('FLAG_REVERSE swaps the secondary posts, reversing its polarity', () => {
+    expect(postsOf(t(272, 192, 352, 192, 4))).toEqual([
+      { x: 272, y: 192 },
+      { x: 352, y: 224 },
+      { x: 272, y: 224 },
+      { x: 352, y: 192 },
+    ]);
+  });
+
+  it('tapped secondary hangs at 32 and 64 from the axis (ringmod.txt:6)', () => {
+    const el = { ...element('tappedTransformer', 144, 144, 208, 144) };
+    expect(postsOf(el)).toEqual([
+      { x: 144, y: 144 },
+      { x: 144, y: 208 },
+      { x: 208, y: 144 },
+      { x: 208, y: 176 },
+      { x: 208, y: 208 },
+    ]);
+  });
+
+  it('tapped posts mirror onto the other side for a left-pointing body (ringmod.txt:8)', () => {
+    const el = { ...element('tappedTransformer', 496, 208, 432, 208) };
+    expect(postsOf(el)).toEqual([
+      { x: 496, y: 208 },
+      { x: 496, y: 144 },
+      { x: 432, y: 208 },
+      { x: 432, y: 176 },
+      { x: 432, y: 144 },
+    ]);
+  });
+
+  it('a custom 1,1:1 description has six posts in two columns', () => {
+    const el: CircuitElement = {
+      ...element('customTransformer', 160, 128, 240, 128),
+      text: '1,1:1',
+    };
+    expect(postsOf(el)).toEqual([
+      { x: 160, y: 128 },
+      { x: 160, y: 160 },
+      { x: 160, y: 176 },
+      { x: 160, y: 208 },
+      { x: 240, y: 128 },
+      { x: 240, y: 208 },
+    ]);
+  });
+
+  it('a malformed custom description falls back to the engine default layout', () => {
+    // The engine's `new_custom` re-parses a description that fails to parse as
+    // the constructor default `1,1:1`, so its post count is always six. The
+    // frontend must mirror that fallback, or `set_circuit` sees the engine's
+    // six posts against the frontend's zero and bricks the file.
+    for (const bad of ['x:1', '0,1', '1::1', '1&1', '']) {
+      const el: CircuitElement = {
+        ...element('customTransformer', 160, 128, 240, 128),
+        text: bad,
+      };
+      expect(postsOf(el)).toHaveLength(6);
+    }
+  });
+});

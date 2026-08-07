@@ -782,3 +782,103 @@ describe('relay file formats', () => {
     expect(count).toBeGreaterThan(0);
   });
 });
+
+describe('transformer file formats', () => {
+  /** Parses a single transformer line and re-emits it, returning that line. */
+  const transformerLine = (line: string, code: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith(`${code} `)) ?? '' };
+  };
+
+  it('T line round-trips byte-for-byte (longdist.txt:4)', () => {
+    // inductance ratio current0 current1 couplingCoef, exactly as the bundled
+    // file carries it: no saturation token is invented on the way out.
+    const line = 'T 160 128 240 128 0 0.5 1000 0 0 0.999';
+    const { e, elementLine } = transformerLine(line, 'T');
+    expect(e.params.inductance).toBe(0.5);
+    expect(e.params.ratio).toBe(1000);
+    expect(e.params.couplingCoef).toBe(0.999);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a four-token T line round-trips without inventing tokens', () => {
+    // Older files stop after current1; the coupling coefficient must not be
+    // appended on save, or the line would change length.
+    const line = 'T 272 192 352 192 0 100 1 0 0';
+    const { e, elementLine } = transformerLine(line, 'T');
+    expect(e.params.ratio).toBe(1);
+    expect(e.params.couplingCoef).toBeUndefined();
+    expect(elementLine).toBe(line);
+  });
+
+  it('T line with a saturation token round-trips (satcore-transformer.txt:4)', () => {
+    // The saturation current is parsed and preserved even though the engine
+    // defers modelling it.
+    const line = 'T 272 192 352 192 0 4 1 0 0 0.999 0.5';
+    const { e, elementLine } = transformerLine(line, 'T');
+    expect(e.params.saturationCurrent).toBe(0.5);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a real 169 line round-trips its four tokens (ringmod.txt:6)', () => {
+    // Four trailing tokens: inductance ratio current0 current1. Nothing is
+    // invented on dump. The ratio's `1.0` normalises to `1` like every other
+    // numeric token this port writes, so the assertion is on structure and
+    // values rather than the exact spelling of that one token.
+    const line = '169 144 144 208 144 0 0.1 1.0 0.36188085234266 -0.10938222138187827';
+    const { e, elementLine } = transformerLine(line, '169');
+    expect(e.params.inductance).toBe(0.1);
+    expect(e.params.ratio).toBe(1);
+    expect(e.params.current0).toBe(0.36188085234266);
+    expect(e.params.current1).toBe(-0.10938222138187827);
+    const tail = elementLine.split(/\s+/).slice(6);
+    expect(tail).toHaveLength(4);
+    expect(tail[0]).toBe('0.1');
+    expect(tail[1]).toBe('1');
+    expect(tail[2]).toBe('0.36188085234266');
+    expect(tail[3]).toBe('-0.10938222138187827');
+  });
+
+  it('a fresh transformer dumps the full upstream field list', () => {
+    const e = makeElement('transformer', 0, 0, 32, 0);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    const line = out.split('\n').find((l) => l.startsWith('T ')) ?? '';
+    expect(line).toBe('T 0 0 32 0 0 4 1 0 0 0.999 0');
+  });
+
+  it('custom description escaping round-trips', () => {
+    // The description is one escaped token (CustomLogicModel.escape): `+` and
+    // spaces survive as `\p` and `\s`, and `,`/`:` need no escaping.
+    const lines = [
+      '406 160 128 240 128 0 4 0.999 1,1:1 3 0 0 0',
+      '406 160 128 240 128 0 4 0.999 1\\p1:1 3 0 0 0',
+      '406 160 128 240 128 0 4 0.999 1\\s1:1 2 0 0',
+    ];
+    for (const line of lines) {
+      const { elementLine } = transformerLine(line, '406');
+      expect(elementLine).toBe(line);
+    }
+    // The unescaped description is what the model and geometry see.
+    const [tapped] = parseCircuit(lines[1]).elements;
+    expect(tapped.text).toBe('1+1:1');
+    const [spaced] = parseCircuit(lines[2]).elements;
+    expect(spaced.text).toBe('1 1:1');
+  });
+
+  it('a malformed description round-trips byte-for-byte', () => {
+    // The description is preserved verbatim even when it does not parse: the
+    // geometry falls back to the engine's default layout, but the text must
+    // survive a save so nothing is lost.
+    const lines = [
+      '406 160 128 240 128 0 4 0.999 x:1 3 0 0 0',
+      '406 160 128 240 128 0 4 0.999 garbage 3 0 0 0',
+    ];
+    for (const line of lines) {
+      const { elementLine } = transformerLine(line, '406');
+      expect(elementLine).toBe(line);
+    }
+    const [bad] = parseCircuit(lines[1]).elements;
+    expect(bad.text).toBe('garbage');
+  });
+});
