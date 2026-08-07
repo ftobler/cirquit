@@ -1,7 +1,9 @@
 /** Properties of the selected element, plus global simulation settings. */
 
+import { useEffect, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
+import { formatUnits, parseUnits } from '../model/units';
 import { formatValue } from '../render/draw';
 import type { CircuitElement, FieldDef } from '../model/types';
 import { useStore } from '../state/store';
@@ -24,6 +26,73 @@ function fieldValue(e: CircuitElement, f: FieldDef): number | string {
   if (f.target === 'text') return e.text ?? '';
   if (f.flag !== undefined) return (e.flags & f.flag) !== 0 ? 1 : 0;
   return e.params[f.name] ?? 0;
+}
+
+/** Text input for a physical value. Accepts unit suffixes, shorthand and
+ *  scientific notation through parseUnits, keeps an invalid draft on screen
+ *  with an error instead of dropping the edit, and re-formats to the stored
+ *  value once the user blurs. */
+function UnitInput({
+  label,
+  value,
+  positive,
+  onCommit,
+  onFocus,
+}: {
+  label: string;
+  value: number;
+  /** Reject zero or negative parsed values (the timestep must stay positive). */
+  positive?: boolean;
+  onCommit: (n: number) => void;
+  onFocus?: () => void;
+}) {
+  // The box shows just the value, unit-less ("4.7k"), with the unit carried by
+  // the field label, exactly like upstream's edit dialog. parseUnits would
+  // reject a rendered "4.7k Ω" anyway (space before unit, Ω not a suffix).
+  const [draft, setDraft] = useState(() => formatUnits(value));
+  const [focused, setFocused] = useState(false);
+  const [error, setError] = useState(false);
+
+  // An outside change (undo, selection switch, file load) must refresh the
+  // box, but the value flowing back from our own commit must not fight the
+  // keystroke the user is mid-way through, so the sync only runs while blurred.
+  useEffect(() => {
+    if (!focused) setDraft(formatUnits(value));
+  }, [value, focused]);
+
+  return (
+    <>
+      <label className="field">
+        <span>{label}</span>
+        <input
+          type="text"
+          value={draft}
+          aria-invalid={error}
+          onFocus={() => {
+            setFocused(true);
+            setError(false);
+            onFocus?.();
+          }}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            const n = parseUnits(e.target.value);
+            if (Number.isFinite(n) && (!positive || n > 0)) {
+              setError(false);
+              onCommit(n);
+            } else {
+              setError(true);
+            }
+          }}
+          onBlur={() => {
+            setFocused(false);
+            setError(false);
+            setDraft(formatUnits(value));
+          }}
+        />
+      </label>
+      {error && <div className="problem">Invalid value</div>}
+    </>
+  );
 }
 
 function Field({
@@ -118,11 +187,24 @@ function Field({
     );
   }
 
+  if (field.unit) {
+    // A physical value: a free-text box that accepts "4k7", "1M", "10m",
+    // scientific notation and the rest, writing the plain parsed number into
+    // params exactly as the old number input did.
+    return (
+      <UnitInput
+        label={`${field.label} (${field.unit})`}
+        value={v}
+        onFocus={onBeginEdit}
+        onCommit={(n) => onChange(n)}
+      />
+    );
+  }
+
   return (
     <label className="field">
       <span>
         {field.label}
-        {field.unit ? ` (${field.unit})` : ''}
       </span>
       <input
         type="number"
@@ -277,18 +359,12 @@ export function OptionsPanel({ engine }: Props) {
             onChange={(e) => updateSettings({ voltageRange: Number(e.target.value) })}
           />
         </label>
-        <label className="field">
-          <span>Timestep (s)</span>
-          <input
-            type="number"
-            step="any"
-            value={settings.timeStep}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              if (v > 0) updateSettings({ timeStep: v });
-            }}
-          />
-        </label>
+        <UnitInput
+          label="Timestep (s)"
+          value={settings.timeStep}
+          positive
+          onCommit={(n) => updateSettings({ timeStep: n })}
+        />
 
         {(
           [
