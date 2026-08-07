@@ -212,6 +212,12 @@ export function useCanvasInteractions(
       if (e && def && def.postCount > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
         state.select([e.id]);
         state.deleteSelected();
+      } else if (e && e.kind === 'wire') {
+        // A wire end dropped on another wire's interior splits that wire so
+        // the two connect, matching upstream's splitWireAt on placement
+        // (MouseManager.java:597-613). The addElement commit at pointer-down
+        // is the single undo baseline for the whole drop.
+        state.placeWireEnd(e.id, e.x2, e.y2);
       }
       // Placing one element then returning to select mode matches how people
       // actually build a schematic.

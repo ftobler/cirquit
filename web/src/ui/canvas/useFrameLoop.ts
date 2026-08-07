@@ -6,6 +6,7 @@ import type { DrawContext } from '../../model/types';
 import { dotPhaseStep, TOO_FAST, wrapPhase } from '../../render/dots';
 import { makeTheme } from '../../render/draw';
 import { drawGrid } from '../../render/grid';
+import { invalidDropPoint } from '../../render/geometry';
 import { scopeWidth } from '../../scope/geometry';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { useStore } from '../../state/store';
@@ -216,8 +217,25 @@ export function useFrameLoop(
         }
       }
 
-      // Rubber-band selection rectangle.
+      // Red no-connect marker: a dragged wire end over another wire's interior
+      // will not connect there, so show it as upstream's bad-connection dot.
+      // Drawn after the elements so it stays visible through the dragged wire.
       const drag = dragRef.current;
+      if (drag.mode === 'dragpost') {
+        const dragged = elements.find((e) => e.id === drag.id);
+        if (dragged) {
+          const pos = drag.post === 1 ? { x: dragged.x1, y: dragged.y1 } : { x: dragged.x2, y: dragged.y2 };
+          const bad = invalidDropPoint(dragged, pos.x, pos.y, elements);
+          if (bad) {
+            ctx.fillStyle = theme.noConnect;
+            ctx.beginPath();
+            ctx.arc(bad.x, bad.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // Rubber-band selection rectangle.
       if (drag.mode === 'select') {
         ctx.strokeStyle = theme.selection;
         ctx.setLineDash([4, 3]);

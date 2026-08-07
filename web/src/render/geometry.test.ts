@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { GRID_SIZE, type CircuitElement } from '../model/types';
 import { snap } from '../state/store';
-import { distanceToElement, distanceToSegment, nearestPost, postAt, postPatch } from './geometry';
+import {
+  distanceToElement,
+  distanceToSegment,
+  invalidDropPoint,
+  nearestPost,
+  pointOnSegmentInterior,
+  postAt,
+  postPatch,
+  splitWire,
+} from './geometry';
 
 const element = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
   id: 1,
@@ -163,5 +172,137 @@ describe('ground free-end drag', () => {
     // and leaves the connection post in place.
     expect(nearestPost({ x: 30, y: 2 }, g)).toBe(2);
     expect(nearestPost({ x: 2, y: 2 }, g)).toBe(1);
+  });
+});
+
+describe('pointOnSegmentInterior', () => {
+  const a = { x: 0, y: 0 };
+  const b = { x: 160, y: 0 };
+
+  it('is true strictly between the endpoints, axis-aligned and diagonal', () => {
+    expect(pointOnSegmentInterior({ x: 80, y: 0 }, a, b)).toBe(true);
+    expect(pointOnSegmentInterior({ x: 80, y: 80 }, { x: 0, y: 0 }, { x: 160, y: 160 })).toBe(true);
+  });
+
+  it('is false at either endpoint, which is an ordinary connection', () => {
+    expect(pointOnSegmentInterior(a, a, b)).toBe(false);
+    expect(pointOnSegmentInterior(b, a, b)).toBe(false);
+  });
+
+  it('is false off the line and beyond the segment', () => {
+    expect(pointOnSegmentInterior({ x: 80, y: 20 }, a, b)).toBe(false);
+    expect(pointOnSegmentInterior({ x: 200, y: 0 }, a, b)).toBe(false);
+  });
+});
+
+describe('splitWire', () => {
+  const wire = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
+    id: 7,
+    kind: 'wire',
+    x1,
+    y1,
+    x2,
+    y2,
+    flags: 4,
+    params: {},
+  });
+  let next = 100;
+  const nextId = () => next++;
+
+  it('splits a horizontal wire at its interior into two, keeping kind and flags', () => {
+    const [a, b] = splitWire(wire(0, 0, 160, 0), { x: 80, y: 0 }, nextId)!;
+    expect([a.x1, a.y1, a.x2, a.y2]).toEqual([0, 0, 80, 0]);
+    expect([b.x1, b.y1, b.x2, b.y2]).toEqual([80, 0, 160, 0]);
+    expect(a.kind).toBe('wire');
+    expect(b.kind).toBe('wire');
+    expect(a.flags).toBe(4);
+    expect(b.flags).toBe(4);
+    // Fresh ids: neither half keeps the original id, and they differ from each
+    // other, so the crossed element can be replaced wholesale.
+    expect(a.id).not.toBe(7);
+    expect(b.id).not.toBe(7);
+    expect(a.id).not.toBe(b.id);
+  });
+
+  it('keeps both halves of a diagonal wire on the original line', () => {
+    const [a, b] = splitWire(wire(0, 0, 160, 160), { x: 80, y: 80 }, nextId)!;
+    expect([a.x1, a.y1, a.x2, a.y2]).toEqual([0, 0, 80, 80]);
+    expect([b.x1, b.y1, b.x2, b.y2]).toEqual([80, 80, 160, 160]);
+    // The shared end is the same point in both halves.
+    expect(a.x2).toBe(b.x1);
+    expect(a.y2).toBe(b.y1);
+  });
+
+  it('refuses to split at an endpoint', () => {
+    expect(splitWire(wire(0, 0, 160, 0), { x: 0, y: 0 }, nextId)).toBeNull();
+    expect(splitWire(wire(0, 0, 160, 0), { x: 160, y: 0 }, nextId)).toBeNull();
+  });
+
+  it('refuses to split a point off the wire', () => {
+    expect(splitWire(wire(0, 0, 160, 0), { x: 80, y: 20 }, nextId)).toBeNull();
+  });
+
+  it('splits off-centre into two halves at the snapped coordinates', () => {
+    const [a, b] = splitWire(wire(0, 0, 32, 0), { x: 8, y: 0 }, nextId)!;
+    expect([a.x1, a.y1, a.x2, a.y2]).toEqual([0, 0, 8, 0]);
+    expect([b.x1, b.y1, b.x2, b.y2]).toEqual([8, 0, 32, 0]);
+  });
+
+  it('refuses non-wire elements: they connect at posts, not interiors', () => {
+    const r = { ...wire(0, 0, 160, 0), kind: 'resistor' };
+    expect(splitWire(r, { x: 80, y: 0 }, nextId)).toBeNull();
+  });
+});
+
+describe('invalidDropPoint', () => {
+  const wire = (id: number, x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
+    id,
+    kind: 'wire',
+    x1,
+    y1,
+    x2,
+    y2,
+    flags: 0,
+    params: {},
+  });
+  const resistor = (id: number, x1: number, x2: number): CircuitElement => ({
+    id,
+    kind: 'resistor',
+    x1,
+    y1: 0,
+    x2,
+    y2: 0,
+    flags: 0,
+    params: { resistance: 1000 },
+  });
+
+  it('flags a dragged end sitting on another wire interior', () => {
+    const dragged = wire(1, 0, 32, 80, 0);
+    const other = wire(2, 0, 0, 160, 0);
+    expect(invalidDropPoint(dragged, 80, 0, [dragged, other])).toEqual({ x: 80, y: 0 });
+  });
+
+  it('is null over empty canvas', () => {
+    const dragged = wire(1, 0, 32, 80, 0);
+    expect(invalidDropPoint(dragged, 80, 0, [dragged])).toBeNull();
+  });
+
+  it('is null on another wire endpoint, a real connection', () => {
+    const dragged = wire(1, 0, 32, 0, 0);
+    const other = wire(2, 0, 0, 160, 0);
+    expect(invalidDropPoint(dragged, 0, 0, [dragged, other])).toBeNull();
+  });
+
+  it('is null where a third element post already occupies the junction', () => {
+    const dragged = wire(1, 0, 32, 80, 0);
+    const other = wire(2, 0, 0, 160, 0);
+    expect(invalidDropPoint(dragged, 80, 0, [dragged, other, resistor(3, 80, 240)])).toBeNull();
+  });
+
+  it('ignores the dragged wire itself even when its own span crosses', () => {
+    const dragged = wire(1, 0, 0, 160, 0);
+    const other = wire(2, 48, 0, 48, 160);
+    // Post 2 of the dragged wire is well clear of the other wire, so no dot.
+    expect(invalidDropPoint(dragged, 160, 0, [dragged, other])).toBeNull();
   });
 });

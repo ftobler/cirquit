@@ -77,6 +77,9 @@ export interface AppState {
   select(ids: number[]): void;
   addElement(e: Omit<CircuitElement, 'id'>): number;
   updateElement(id: number, patch: Partial<CircuitElement>): void;
+  /** Finishes a wire placement: records the snapped end and, when it lands on
+   *  another wire's interior, splits that wire so the two connect. */
+  placeWireEnd(id: number, x: number, y: number): void;
   /** Moves elements without pushing a separate undo entry per frame. */
   moveElements(ids: number[], dx: number, dy: number): void;
   deleteSelected(): void;

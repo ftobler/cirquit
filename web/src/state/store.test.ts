@@ -584,6 +584,93 @@ describe('undo parity', () => {
   });
 });
 
+describe('wire split on connect', () => {
+  const addWire = (x1: number, y1: number, x2: number, y2: number) =>
+    useStore.getState().addElement({
+      kind: 'wire',
+      x1,
+      y1,
+      x2,
+      y2,
+      flags: 0,
+      params: {},
+    });
+
+  it('dropping a wire end onto a wire interior splits it into two connected halves', () => {
+    const crossed = addWire(0, 0, 160, 0);
+    const placed = addWire(0, 32, 80, 0);
+
+    useStore.getState().placeWireEnd(placed, 80, 0);
+
+    const s = useStore.getState();
+    // The crossed wire is gone, replaced by two halves sharing (80,0).
+    expect(s.elements.some((e) => e.id === crossed)).toBe(false);
+    const spans = s.elements.filter((e) => e.kind === 'wire').map((e) => [e.x1, e.y1, e.x2, e.y2]);
+    expect(spans).toContainEqual([0, 0, 80, 0]);
+    expect(spans).toContainEqual([80, 0, 160, 0]);
+    // The placed end sits exactly on the split point, which the engine merges
+    // into one node: the three share a terminal coordinate.
+    const end = s.elements.find((e) => e.id === placed);
+    expect(end?.x2).toBe(80);
+    expect(end?.y2).toBe(0);
+  });
+
+  it('is one undo step back to the pre-drop state', () => {
+    const crossed = addWire(0, 0, 160, 0);
+    const placed = addWire(0, 32, 80, 0);
+
+    useStore.getState().placeWireEnd(placed, 80, 0);
+    expect(useStore.getState().elements).toHaveLength(3);
+
+    useStore.getState().undo();
+
+    // The original crossed wire is back, with no halves and no placed wire.
+    const s = useStore.getState();
+    expect(s.elements.some((e) => e.id === crossed)).toBe(true);
+    expect(s.elements.some((e) => e.id === placed)).toBe(false);
+    expect(s.elements).toHaveLength(1);
+  });
+
+  it('an endpoint drop does not split the crossed wire', () => {
+    const crossed = addWire(0, 0, 160, 0);
+    const placed = addWire(0, 32, 0, 0);
+
+    useStore.getState().placeWireEnd(placed, 0, 0);
+
+    const s = useStore.getState();
+    expect(s.elements.some((e) => e.id === crossed)).toBe(true);
+    expect(s.elements).toHaveLength(2);
+  });
+
+  it('leaves wires alone when the drop crosses nothing', () => {
+    const a = addWire(0, 0, 160, 0);
+    const b = addWire(0, 32, 80, 64);
+
+    useStore.getState().placeWireEnd(b, 80, 64);
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(2);
+    expect(s.elements.some((e) => e.id === a)).toBe(true);
+    expect(s.elements.find((e) => e.id === b)).toMatchObject({ x2: 80, y2: 64 });
+  });
+
+  it('round-trips the split wires through the netlist', () => {
+    const crossed = addWire(0, 0, 160, 0);
+    const placed = addWire(0, 32, 80, 0);
+    useStore.getState().placeWireEnd(placed, 80, 0);
+    expect(useStore.getState().elements.some((e) => e.id === crossed)).toBe(false);
+
+    const { elements } = parseCircuit(useStore.getState().toNetlist());
+    const wires = elements.filter((e) => e.kind === 'wire');
+    expect(wires).toHaveLength(3);
+    const spans = wires.map((e) => [e.x1, e.y1, e.x2, e.y2]);
+    // Every wire survives a save and a load at the same coordinates.
+    expect(spans).toContainEqual([0, 0, 80, 0]);
+    expect(spans).toContainEqual([80, 0, 160, 0]);
+    expect(spans).toContainEqual([0, 32, 80, 0]);
+  });
+});
+
 describe('scope o-line fidelity', () => {
   const TWO_PLOT = [
     '$ 1 0.000005 10.20027730826997 50 5 43 5e-11',

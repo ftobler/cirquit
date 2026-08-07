@@ -18,6 +18,77 @@ export function distanceToSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
+/**
+ * True when `p` lies strictly on the interior of the segment `a`-`b`: on the
+ * line and not at either endpoint. This is upstream's `pointOnSegmentInterior`
+ * (CircuitElm.java:353-363), generalised from axis-aligned to any direction so
+ * a diagonal wire can be split too. `tolerance` is the on-line fuzz; grid
+ * arithmetic is exact, so a small epsilon only guards against float drift.
+ */
+export function pointOnSegmentInterior(
+  p: Point,
+  a: Point,
+  b: Point,
+  tolerance = 1e-9,
+): boolean {
+  if ((p.x === a.x && p.y === a.y) || (p.x === b.x && p.y === b.y)) return false;
+  return distanceToSegment(p, a, b) <= tolerance;
+}
+
+/**
+ * Splits wire `[a, b]` at `p`, which lies on its interior, into two wires.
+ * Returns the two replacement wires with fresh ids, or null when `p` is not
+ * strictly between `a` and `b` (endpoints are an ordinary connection, off-line
+ * points are not a split). `p` is snapped to the grid by the caller, so the
+ * two halves stay grid-aligned and connectable. The first half is `[a, p]`,
+ * the second `[p, b]`, mirroring upstream's `WireElm.split`
+ * (WireElm.java:235-240).
+ */
+export function splitWire(
+  wire: CircuitElement,
+  p: Point,
+  nextId: () => number,
+): [CircuitElement, CircuitElement] | null {
+  if (wire.kind !== 'wire') return null;
+  if (!pointOnSegmentInterior(p, { x: wire.x1, y: wire.y1 }, { x: wire.x2, y: wire.y2 })) {
+    return null;
+  }
+  return [
+    { ...wire, id: nextId(), x2: p.x, y2: p.y },
+    { ...wire, id: nextId(), x1: p.x, y1: p.y },
+  ];
+}
+
+/**
+ * The grid point where a `dragpost` drag of `e`'s post lands, when that point
+ * sits on another wire's interior and therefore cannot connect: the position
+ * of upstream's red no-connect dot (its `badConnectionList`, drawn at
+ * UIManager.java:708-712). Returns null when the drop would connect: over an
+ * endpoint, off any wire, or on a coordinate some third element's post already
+ * occupies (a real junction). Only `wire` interiors count; other element
+ * bodies connect at posts, not interiors.
+ */
+export function invalidDropPoint(
+  e: CircuitElement,
+  x: number,
+  y: number,
+  elements: readonly CircuitElement[],
+): Point | null {
+  const p = { x, y };
+  for (const other of elements) {
+    if (other.id === e.id || other.kind !== 'wire') continue;
+    if (!pointOnSegmentInterior(p, { x: other.x1, y: other.y1 }, { x: other.x2, y: other.y2 })) {
+      continue;
+    }
+    const occupied = elements.some(
+      (q) => q.id !== e.id && q.id !== other.id && postsOf(q).some((pp) => pp.x === p.x && pp.y === p.y),
+    );
+    if (occupied) return null;
+    return p;
+  }
+  return null;
+}
+
 /** Distance from a point to an element, measured against all of its limbs. */
 export function distanceToElement(p: Point, e: CircuitElement): number {
   const posts = postsOf(e);

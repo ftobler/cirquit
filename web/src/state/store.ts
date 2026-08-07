@@ -8,6 +8,7 @@ import {
   serializeCircuit,
   type ScopeConfig,
 } from '../io/netlist';
+import { pointOnSegmentInterior, splitWire } from '../render/geometry';
 import {
   canMirror,
   canRotate,
@@ -273,6 +274,47 @@ export const useStore = create<AppState>((set, get) => ({
       }),
       revision: s.revision + 1,
     })),
+
+  placeWireEnd: (id, x, y) => {
+    // The placement's undo baseline is the commit `addElement` took at
+    // pointer-down, so the whole gesture (drop and split) is one undo step.
+    // Committing again here would split it into two.
+    const s = get();
+    const placed = s.elements.find((e) => e.id === id);
+    if (!placed || placed.kind !== 'wire') return;
+    const px = Math.round(x);
+    const py = Math.round(y);
+    const end = { x: px, y: py };
+    // The crossed wire is the one whose interior the snapped end lands on, and
+    // not the wire being placed. Endpoints are excluded by the interior check,
+    // so an end-on-end drop stays an ordinary connection.
+    const crossed = s.elements.find(
+      (e) =>
+        e.id !== id &&
+        e.kind === 'wire' &&
+        pointOnSegmentInterior(end, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }),
+    );
+    if (!crossed) {
+      // The move handler already wrote the snapped end; nothing to do.
+      if (placed.x2 === px && placed.y2 === py) return;
+      set((st) => ({
+        elements: st.elements.map((e) => (e.id === id ? { ...e, x2: px, y2: py } : e)),
+        revision: st.revision + 1,
+      }));
+      return;
+    }
+    // Splitting the crossed wire puts a terminal at the drop point, which the
+    // engine merges with the placed end into one node: the two now connect.
+    const halves = splitWire(crossed, end, allocateId);
+    if (!halves) return;
+    set((st) => ({
+      elements: st.elements
+        .filter((e) => e.id !== crossed.id)
+        .map((e) => (e.id === id ? { ...e, x2: px, y2: py } : e))
+        .concat(halves),
+      revision: st.revision + 1,
+    }));
+  },
 
   moveElements: (ids, dx, dy) => {
     // Round the delta, not each endpoint: a fractional pointer jitter must not

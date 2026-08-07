@@ -403,6 +403,8 @@ export function makeTheme(): Theme {
     selection: '#58a6ff',
     highlight: '#f0883e',
     negative: '#ff5555',
+    // Upstream's no-connect marker is plain red (UIManager.java:710).
+    noConnect: '#ff0000',
     neutral: '#6e7781',
     positive: '#3fb950',
     currentDot: '#ffd866',

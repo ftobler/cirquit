@@ -113,6 +113,8 @@ export interface Theme {
   highlight: string;
   /** Colour at the most negative displayed voltage. */
   negative: string;
+  /** A wire endpoint that would not connect (upstream's red bad-connection dot). */
+  noConnect: string;
   /** Colour at zero volts. */
   neutral: string;
   /** Colour at the most positive displayed voltage. */
