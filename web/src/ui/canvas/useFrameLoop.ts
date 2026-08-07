@@ -179,7 +179,12 @@ export function useFrameLoop(
         // Phase is integrated per element so changing the speed or the current
         // mid-run cannot teleport the dots. Only advance while running, so a
         // pause freezes them in place.
-        const step = dotPhaseStep(current, settings.currentSpeed, elapsed);
+        const step = dotPhaseStep(
+          current,
+          settings.currentSpeed,
+          elapsed,
+          settings.conventional,
+        );
         const phase =
           step === TOO_FAST ? TOO_FAST : wrapPhase((dotPhaseRef.current.get(e.id) ?? 0) + step);
         if (running) dotPhaseRef.current.set(e.id, phase === TOO_FAST ? 0 : phase);
@@ -195,6 +200,7 @@ export function useFrameLoop(
           showCurrent: settings.showCurrent,
           showValues: settings.showValues,
           showVoltageColor: settings.showVoltageColor,
+          conventional: settings.conventional,
           selected: selectedIds.includes(e.id),
           voltageRange: settings.voltageRange,
           scale: view.scale,

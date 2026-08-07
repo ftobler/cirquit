@@ -4,6 +4,7 @@ import {
   CANVAS_FONT_FAMILY,
   canvasFont,
   currentDots,
+  currentDotsPath,
   formatValue,
   makeTheme,
   strokeStyle,
@@ -47,8 +48,13 @@ describe('current dots', () => {
     restore: ReturnType<typeof vi.fn>;
   }
 
-  const mkCtx = (): { ctx: CanvasRenderingContext2D; calls: string[] } => {
+  const mkCtx = (): {
+    ctx: CanvasRenderingContext2D;
+    calls: string[];
+    arcs: { x: number; y: number }[];
+  } => {
     const calls: string[] = [];
+    const arcs: { x: number; y: number }[] = [];
     const record = (name: string) => vi.fn(() => calls.push(name));
     const stub: CtxStub = {
       fillStyle: '',
@@ -61,12 +67,15 @@ describe('current dots', () => {
       moveTo: record('moveTo'),
       lineTo: record('lineTo'),
       stroke: record('stroke'),
-      arc: record('arc'),
+      arc: vi.fn((x: number, y: number) => {
+        calls.push('arc');
+        arcs.push({ x, y });
+      }),
       fill: record('fill'),
       save: record('save'),
       restore: record('restore'),
     };
-    return { ctx: stub as unknown as CanvasRenderingContext2D, calls };
+    return { ctx: stub as unknown as CanvasRenderingContext2D, calls, arcs };
   };
 
   const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext => ({
@@ -80,16 +89,17 @@ describe('current dots', () => {
     showCurrent: true,
     showValues: false,
     showVoltageColor: false,
+    conventional: true,
     selected: false,
     voltageRange: 5,
     scale: 1,
   });
 
-  it('draws a translucent flow line instead of dots when too fast', () => {
+  it('draws a translucent flow line with shimmering dots when too fast', () => {
     const { ctx, calls } = mkCtx();
     currentDots(context(ctx, TOO_FAST), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
     expect(calls).toContain('stroke');
-    expect(calls).not.toContain('arc');
+    expect(calls).toContain('arc');
   });
 
   it('keeps drawing dots for a finite phase', () => {
@@ -97,6 +107,53 @@ describe('current dots', () => {
     currentDots(context(ctx, 2), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
     expect(calls).toContain('arc');
     expect(calls).not.toContain('stroke');
+  });
+
+  it('spaces dots 16 apart along a segment', () => {
+    // One dot every DOT_SPACING from the phase offset; with spacing 8 there
+    // would be 13 of them instead of the 7 here.
+    const { ctx, arcs } = mkCtx();
+    currentDots(context(ctx, 0), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
+    expect(arcs.map((a) => a.x)).toEqual([0, 16, 32, 48, 64, 80, 96]);
+  });
+
+  it('keeps the stream and shimmering dots on every segment of a too-fast path', () => {
+    // A path whose phase is TOO_FAST must draw the translucent flow line on
+    // each segment. Before dotPhaseAfter passed the sentinel through, the
+    // chained phase after the first segment became NaN, so only the first
+    // segment drew anything.
+    const { ctx, arcs, calls } = mkCtx();
+    currentDotsPath(
+      context(ctx, TOO_FAST),
+      [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }],
+      1e-3,
+    );
+    // One flow line per segment, not just the first.
+    expect(calls.filter((c) => c === 'stroke')).toHaveLength(2);
+    // Each segment still gets its own shimmering dots; the segments span the
+    // x-axis in order, so one dot must land in each half.
+    expect(arcs.some((a) => a.x < 100)).toBe(true);
+    expect(arcs.some((a) => a.x > 100)).toBe(true);
+  });
+
+  it('chains phase across segments so dots keep 16-unit spacing', () => {
+    // A two-segment path with no dots at the joints: the phase carries over by
+    // segment length, so arcs land at path distances 0, 16 and 32. Drawing
+    // every segment from the same raw phase would add arcs at 8 and 24.
+    const { ctx, arcs } = mkCtx();
+    currentDotsPath(context(ctx, 0), [{ x: 0, y: 0 }, { x: 8, y: 0 }, { x: 40, y: 0 }], 1e-3);
+    expect(arcs.map((a) => a.x)).toEqual([0, 16, 32]);
+  });
+
+  it('uses the electron colour when conventional motion is off', () => {
+    const { ctx } = mkCtx();
+    currentDots(
+      { ...context(ctx, 2), conventional: false },
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      1e-3,
+    );
+    expect(ctx.fillStyle).toBe(makeTheme().currentDotElectron);
   });
 
   it('sets butt caps and miter joins on every stroke', () => {

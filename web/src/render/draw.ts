@@ -1,7 +1,9 @@
 /** Drawing primitives shared by every element renderer. */
 
 import type { CircuitElement, DrawContext, Point, Theme } from '../model/types';
-import { DOT_SPACING, TOO_FAST } from './dots';
+import { DOT_SPACING, dotPhaseAfter, TOO_FAST } from './dots';
+
+export { dotPhaseAfter };
 
 /**
  * Canvas text stack. A 2D context inherits nothing from CSS, so the family has
@@ -238,38 +240,62 @@ export function arrowHead(g: DrawContext, from: Point, tip: Point, size: number,
   triangle(g, tip, l, r, color);
 }
 
+/** Colour of the current-flow dots and stream lines, flipping with the
+ *  conventional-current toggle (upstream turns them cyan in electron-flow
+ *  mode, UIManager.java:238). */
+export function dotColor(g: DrawContext): string {
+  return g.conventional ? g.theme.currentDot : g.theme.currentDotElectron;
+}
+
+/**
+ * Animated dots showing current direction and magnitude along a segment, using
+ * the element's own accumulated phase (`g.dotPhase`).
+ */
+export function currentDots(g: DrawContext, a: Point, b: Point, current: number): void {
+  currentDotsFrom(g, a, b, current, g.dotPhase);
+}
+
 /**
  * Animated dots showing current direction and magnitude along a segment.
  *
- * `dotPhase` accumulates `current * speed` over time, so faster current moves
- * the dots faster and reversing the current reverses them. The caller wraps it
- * into `[0, DOT_SPACING)` each frame, except for `TOO_FAST`, which renders as
- * a translucent flow line because aliased dots read as motion in the wrong
- * direction.
+ * `phase` is the accumulated phase for the start of this run; the caller wraps
+ * it into `[0, DOT_SPACING)` each frame, except for `TOO_FAST`, which draws a
+ * translucent flow line and then shimmering dots at a random offset, because
+ * aliased dots read as motion in the wrong direction.
  */
-export function currentDots(g: DrawContext, a: Point, b: Point, current: number): void {
+export function currentDotsFrom(
+  g: DrawContext,
+  a: Point,
+  b: Point,
+  current: number,
+  phase: number,
+): void {
   if (!g.showCurrent || !Number.isFinite(current) || current === 0) return;
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   if (len < 1) return;
 
-  if (g.dotPhase === TOO_FAST) {
+  let offset;
+  if (phase === TOO_FAST) {
+    // Too fast to follow, so underline the path with a bright translucent
+    // stream; the random phase keeps the dots shimmering instead of crawling
+    // along the line (CircuitElm.java:489-500).
     g.ctx.save();
     g.ctx.globalAlpha = 0.5;
-    g.ctx.strokeStyle = g.theme.currentDot;
+    g.ctx.strokeStyle = dotColor(g);
     g.ctx.lineWidth = 4;
     g.ctx.beginPath();
     g.ctx.moveTo(a.x, a.y);
     g.ctx.lineTo(b.x, b.y);
     g.ctx.stroke();
     g.ctx.restore();
-    return;
+    offset = Math.random() * DOT_SPACING;
+  } else {
+    // Wrap the phase into one dot interval so the pattern is continuous.
+    offset = phase % DOT_SPACING;
+    if (offset < 0) offset += DOT_SPACING;
   }
 
-  // Wrap the phase into one dot interval so the pattern is continuous.
-  let offset = g.dotPhase % DOT_SPACING;
-  if (offset < 0) offset += DOT_SPACING;
-
-  g.ctx.fillStyle = g.theme.currentDot;
+  g.ctx.fillStyle = dotColor(g);
   for (let d = offset; d < len; d += DOT_SPACING) {
     const p = interp(a, b, d / len);
     g.ctx.beginPath();
@@ -278,13 +304,27 @@ export function currentDots(g: DrawContext, a: Point, b: Point, current: number)
   }
 }
 
-/** Draws the lead wires and their current dots for a two-terminal element. */
+/** One continuous dot run across a polyline, phase offset by segment length so
+ *  dots stay exactly `DOT_SPACING` apart across segment joints (the routed
+ *  wire's `addCurCount`, CircuitElm.java:514-518). */
+export function currentDotsPath(g: DrawContext, pts: Point[], current: number): void {
+  if (pts.length < 2) return;
+  let phase = g.dotPhase;
+  for (let i = 0; i < pts.length - 1; i++) {
+    currentDotsFrom(g, pts[i], pts[i + 1], current, phase);
+    phase = dotPhaseAfter(
+      phase,
+      Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y),
+    );
+  }
+}
+
+/** Draws the two lead wires for a two-terminal element. The caller owns the
+ *  dot run, so it can place it over the body for junction continuity. */
 export function drawLeads(g: DrawContext, e: CircuitElement, lead1: Point, lead2: Point): void {
   const [p1, p2] = endpoints(e);
   line(g, p1, lead1, voltageColor(g, g.voltages[0]));
   line(g, lead2, p2, voltageColor(g, g.voltages[1]));
-  currentDots(g, p1, lead1, g.current);
-  currentDots(g, lead2, p2, g.current);
 }
 
 const PREFIXES = [
@@ -336,6 +376,9 @@ export function makeTheme(): Theme {
     neutral: '#6e7781',
     positive: '#3fb950',
     currentDot: '#ffd866',
+    // Upstream's electron-flow cyan (UIManager.java:238); the port has no
+    // light theme yet, so a dark-cyan variant is not needed.
+    currentDotElectron: '#00ffff',
     panel: '#161b22',
     border: '#30363d',
   };

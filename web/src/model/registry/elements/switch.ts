@@ -1,4 +1,12 @@
-import { calcLeads, circle, currentDots, drawLeads, line, voltageColor } from '../../../render/draw';
+import {
+  calcLeads,
+  circle,
+  currentDotsPath,
+  drawLeads,
+  endpoints,
+  line,
+  voltageColor,
+} from '../../../render/draw';
 import { SWITCH_LABEL } from '../flags';
 import { switchLeverTip, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
@@ -31,7 +39,10 @@ function drawSwitchBody(g: DrawContext, e: CircuitElement): void {
   circle(g, lead2, 2.5, voltageColor(g, g.voltages[1]), true, 1);
   const tip = switchLeverTip(lead1, lead2, closed);
   line(g, lead1, tip, color);
-  if (closed) currentDots(g, lead1, lead2, g.current);
+  if (closed) {
+    const [p1, p2] = endpoints(e);
+    currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
+  }
 }
 
 export const SWITCH_DEF: ElementDef = {

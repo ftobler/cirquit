@@ -293,6 +293,7 @@ export function OptionsPanel({ engine }: Props) {
         {(
           [
             ['showCurrent', 'Show current'],
+            ['conventional', 'Conventional current motion'],
             ['showValues', 'Show values'],
             ['showVoltageColor', 'Colour by voltage'],
             ['showGrid', 'Show grid'],

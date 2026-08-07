@@ -66,8 +66,9 @@ describe('the $ header', () => {
   });
 
   it('keeps the flag bits it does not model when an edit changes the one it does', () => {
-    // Bits 1 (current dots) and 4 (volts) are nowhere decoded here, so turning
-    // value labels off must not clear them.
+    // Bit 4 (volts) is nowhere decoded here, so turning value labels off must
+    // not clear it. Bit 1 (current dots) is modelled, but this case covers the
+    // pass-through mask, which preserves it anyway.
     const { line } = headerOf('$ 5 1e-5 10 50 5 43 5e-11\n', { showValues: false });
     expect(line.split(' ')[1]).toBe(String(16 | 5));
   });
@@ -96,10 +97,18 @@ describe('the $ header', () => {
     // adjustTimeStep, so the header carries no 16 (value labels on) and no 64.
     // Nor does it carry bit 128: a new circuit runs no DC operating point,
     // matching upstream's `autoDCOnReset` default off (CircuitLoader.java:56).
-    // The bit appears only once a file with it set is loaded, or the user
-    // ticks the option.
+    // It does carry bit 1: this port's Show Current checkbox defaults on, and
+    // the bit tracks it (upstream writes the same bit from its dots menu).
     const out = serializeCircuit([], { ...DEFAULT_SETTINGS });
-    expect(out.split('\n')[0]).toBe('$ 0 0.000005 10 50 5 50 5e-11');
+    expect(out.split('\n')[0]).toBe('$ 1 0.000005 10 50 5 50 5e-11');
+  });
+
+  it('writes showCurrent as header flag bit 1', () => {
+    // Off: the bit is cleared and every other bit with it, so the header is
+    // exactly the flag value 0.
+    const out = serializeCircuit([], { ...DEFAULT_SETTINGS, showCurrent: false });
+    expect(Number(out.split('\n')[0].split(' ')[1]) & 1).toBe(0);
+    expect(out.split('\n')[0].split(' ')[1]).toBe('0');
   });
 
   it('an old header that stops early gains the missing fields, as upstream writes them', () => {

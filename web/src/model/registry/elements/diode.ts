@@ -1,7 +1,8 @@
 import {
   calcLeads,
-  currentDots,
+  currentDotsPath,
   drawLeads,
+  endpoints,
   interp,
   interp2,
   line,
@@ -33,7 +34,8 @@ export function drawDiodeBody(g: DrawContext, e: CircuitElement, zener: boolean)
   } else {
     line(g, b1, b2, color, 2.5);
   }
-  currentDots(g, lead1, lead2, g.current);
+  const [p1, p2] = endpoints(e);
+  currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
 }
 
 export const DIODE_DEF: ElementDef = {

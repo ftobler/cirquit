@@ -1,8 +1,9 @@
 import {
   bodyRect,
   calcLeads,
-  currentDots,
+  currentDotsPath,
   drawLeads,
+  endpoints,
   formatValue,
   label,
   voltageColor,
@@ -15,7 +16,8 @@ function drawResistorBody(g: DrawContext, e: CircuitElement): void {
   drawLeads(g, e, lead1, lead2);
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
   bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, 32 x 12 as upstream
-  currentDots(g, lead1, lead2, g.current);
+  const [p1, p2] = endpoints(e);
+  currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
   label(g, e, formatValue(e.params.resistance ?? 0, 'Ω'));
 }
 

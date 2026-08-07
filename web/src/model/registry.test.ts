@@ -74,6 +74,7 @@ const context = (ctx: CtxStub): DrawContext => ({
   showCurrent: false,
   showValues: false,
   showVoltageColor: false,
+  conventional: true,
   selected: false,
   voltageRange: 5,
   scale: 1,

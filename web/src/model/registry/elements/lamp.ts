@@ -1,8 +1,9 @@
 import {
   calcLeads,
   circle,
-  currentDots,
+  currentDotsPath,
   drawLeads,
+  endpoints,
   interp,
   line,
   voltageColor,
@@ -38,9 +39,8 @@ function drawLampBody(g: DrawContext, e: CircuitElement): void {
   line(g, lead1, filament0, voltageColor(g, g.voltages[0]), 3);
   line(g, lead2, filament1, voltageColor(g, g.voltages[1]), 3);
   line(g, filament0, filament1, midColor, 3);
-  currentDots(g, lead1, filament0, g.current);
-  currentDots(g, filament0, filament1, g.current);
-  currentDots(g, filament1, lead2, g.current);
+  const [p1, p2] = endpoints(e);
+  currentDotsPath(g, [p1, lead1, filament0, filament1, lead2, p2], g.current);
 }
 
 export const LAMP_DEF: ElementDef = {

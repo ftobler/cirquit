@@ -11,12 +11,13 @@ import { isElementLine } from './parse';
  * circuit has always written when it did not.
  */
 function headerLine(settings: SimSettings): string {
-  // Bits 16 (show values), 64 (adaptive timestep) and 128 (DC operating
-  // point) are modelled, so each is recomputed from its setting; every other
-  // loaded bit is passed straight back.
+  // Bits 1 (show current), 16 (show values), 64 (adaptive timestep) and 128
+  // (DC operating point) are modelled, so each is recomputed from its setting;
+  // every other loaded bit is passed straight back.
   const flags =
+    (settings.showCurrent ? 1 : 0) |
     (settings.showValues ? 0 : 16) |
-    ((settings.headerFlags ?? 0) & ~(16 | 64 | 128)) |
+    ((settings.headerFlags ?? 0) & ~(1 | 16 | 64 | 128)) |
     (settings.adaptiveTimeStep ? 64 : 0) |
     (settings.autoDC ? 128 : 0);
   return [

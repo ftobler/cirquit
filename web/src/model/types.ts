@@ -113,6 +113,8 @@ export interface Theme {
   /** Colour at the most positive displayed voltage. */
   positive: string;
   currentDot: string;
+  /** Dot colour in electron-flow mode (conventional motion off). */
+  currentDotElectron: string;
   panel: string;
   border: string;
 }
@@ -135,6 +137,8 @@ export interface DrawContext {
   showCurrent: boolean;
   showValues: boolean;
   showVoltageColor: boolean;
+  /** Conventional-current motion; off reverses the dots and turns them cyan. */
+  conventional: boolean;
   selected: boolean;
   /** Full-scale voltage for the colour ramp. */
   voltageRange: number;
@@ -168,6 +172,8 @@ export interface SimSettings {
   showValues: boolean;
   showVoltageColor: boolean;
   showGrid: boolean;
+  /** Dot direction and colour; a per-frame render argument like `currentSpeed`. */
+  conventional: boolean;
 
   // ─── Header fields carried through but not modelled ───
   // Loading a file must not invent new values for the `$` tokens this build
@@ -175,9 +181,9 @@ export interface SimSettings {
   // means the file had no such token and the writer falls back to a default.
   /** Token 6, the power-bar position (CirSim.java:447). */
   powerRange?: number;
-  /** Token 1 as loaded. Only bits 16 (show values) and 64 (adaptive
-   *  timestep) are modelled; the rest are re-emitted so a save does not
-   *  silently clear the user's settings. */
+  /** Token 1 as loaded. Bits 1 (show current), 16 (show values), 64 (adaptive
+   *  timestep) and 128 (DC operating point) are modelled; the rest are
+   *  re-emitted so a save does not silently clear the user's settings. */
   headerFlags?: number;
 }
 
@@ -206,6 +212,7 @@ export const DEFAULT_SETTINGS: SimSettings = {
   showValues: true,
   showVoltageColor: true,
   showGrid: true,
+  conventional: true,
 };
 
 /** Circuit-space units per grid square, matching the original. */

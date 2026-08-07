@@ -1,7 +1,8 @@
 import {
   calcLeads,
-  currentDots,
+  currentDotsPath,
   drawLeads,
+  endpoints,
   interp,
   polyline,
   voltageColor,
@@ -36,7 +37,8 @@ function drawFuseBody(g: DrawContext, e: CircuitElement): void {
     }
     polyline(g, pts, color, 3);
   }
-  currentDots(g, lead1, lead2, g.current);
+  const [p1, p2] = endpoints(e);
+  currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
 }
 
 export const FUSE_DEF: ElementDef = {

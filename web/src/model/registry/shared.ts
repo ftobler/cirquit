@@ -4,7 +4,17 @@
  * writer flag and the source-symbol drawing primitives.
  */
 
-import { calcLeads, canvasFont, circle, drawLeads, interp, voltageColor } from '../../render/draw';
+import {
+  calcLeads,
+  canvasFont,
+  circle,
+  currentDotsFrom,
+  dotPhaseAfter,
+  drawLeads,
+  endpoints,
+  interp,
+  voltageColor,
+} from '../../render/draw';
 import { FLAG_ESCAPE } from './flags';
 import type { CircuitElement, DrawContext, Point } from '../types';
 
@@ -52,6 +62,13 @@ function drawSourceCircle(g: DrawContext, e: CircuitElement, radius: number): [P
   drawLeads(g, e, lead1, lead2);
   const mid = interp(lead1, lead2, 0.5);
   circle(g, mid, radius, voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2));
+  // The source circle opens a gap in the current path like the capacitor's
+  // plates, so the dots run each lead separately with the second starting at
+  // the phase the first would have reached at the gap.
+  const [p1, p2] = endpoints(e);
+  const leadLen = Math.hypot(lead1.x - p1.x, lead1.y - p1.y);
+  currentDotsFrom(g, p1, lead1, g.current, g.dotPhase);
+  currentDotsFrom(g, lead2, p2, g.current, dotPhaseAfter(g.dotPhase, leadLen));
   return [lead1, lead2];
 }
 

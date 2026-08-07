@@ -176,12 +176,14 @@ export function parseCircuit(text: string): ParsedCircuit {
       if (Number.isFinite(iterCount) && iterCount > 0) settings.iterCount = iterCount;
       if (Number.isFinite(powerRange)) settings.powerRange = powerRange;
       if (Number.isFinite(minTimeStep) && minTimeStep > 0) settings.minTimeStep = minTimeStep;
-      // Bit 16 suppresses value labels, bit 64 enables the adaptive timestep,
-      // bit 128 enables the DC operating point on reset (CirSim.java:440-444).
-      // Bits 1, 2, 4, 8 and 32 are dots, small grid, volts, power and linear
-      // scale: kept verbatim, none of them modelled here.
+      // Bit 1 shows the current dots, bit 16 suppresses value labels, bit 64
+      // enables the adaptive timestep, bit 128 enables the DC operating point
+      // on reset (CirSim.java:437-444). Bits 2, 4, 8 and 32 are small grid,
+      // volts, power and linear scale: kept verbatim, none of them modelled
+      // here.
       const flags = Number(tokens[1]) || 0;
       settings.headerFlags = flags;
+      settings.showCurrent = (flags & 1) !== 0;
       settings.showValues = (flags & 16) === 0;
       settings.adaptiveTimeStep = (flags & 64) !== 0;
       settings.autoDC = (flags & 128) !== 0;

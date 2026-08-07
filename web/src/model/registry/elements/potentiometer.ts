@@ -2,6 +2,7 @@ import {
   arrowHead,
   bodyRect,
   calcLeads,
+  currentDotsPath,
   endpoints,
   formatValue,
   interp,
@@ -26,6 +27,7 @@ function drawPotBody(g: DrawContext, e: CircuitElement): void {
   const contact = interp(lead1, lead2, e.params.position ?? 0.5, 0);
   line(g, wiper, contact, voltageColor(g, g.voltages[2]));
   arrowHead(g, wiper, contact, 8, voltageColor(g, g.voltages[2]));
+  currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
   label(g, e, formatValue(e.params.maxResistance ?? 0, 'Ω'), 20);
 }
 

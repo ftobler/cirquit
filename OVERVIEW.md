@@ -303,11 +303,11 @@ Line-oriented, whitespace-separated. Element lines are:
 ```
 
 The header is `$ flags timeStep iterCount currentSpeed voltageRange powerRange
-minTimeStep`. Only `timeStep`, `currentSpeed`, `voltageRange` and flag bit 16
-(show values) are modelled; `iterCount`, `powerRange`, `minTimeStep` and flag
-bits 1, 2, 4, 8, 32, 64 and 128 round-trip verbatim without being interpreted.
-An old header that stops after `voltageRange` gains the two missing fields on
-save, which is what upstream writes too.
+minTimeStep`. Only `timeStep`, `currentSpeed`, `voltageRange` and flag bits 1
+(show current) and 16 (show values) are modelled; `iterCount`, `powerRange`,
+`minTimeStep` and flag bits 2, 4, 8, 32, 64 and 128 round-trip verbatim without
+being interpreted. An old header that stops after `voltageRange` gains the two
+missing fields on save, which is what upstream writes too.
 
 Unrecognised lines are preserved verbatim on load and re-emitted on save, in
 their original positions, along with blank lines and `#` comments, so

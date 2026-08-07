@@ -2,8 +2,9 @@ import {
   COIL_LOOPS,
   calcLeads,
   coilPoints,
-  currentDots,
+  currentDotsPath,
   drawLeads,
+  endpoints,
   formatValue,
   label,
   polyline,
@@ -18,7 +19,8 @@ function drawInductorBody(g: DrawContext, e: CircuitElement): void {
   drawLeads(g, e, lead1, lead2);
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
   polyline(g, coilPoints(lead1, lead2, COIL_LOOPS), color);
-  currentDots(g, lead1, lead2, g.current);
+  const [p1, p2] = endpoints(e);
+  currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
   label(g, e, formatValue(e.params.inductance ?? 0, 'H'));
 }
 

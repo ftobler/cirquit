@@ -1,8 +1,9 @@
 import {
   bodyRect,
   calcLeads,
-  currentDots,
+  currentDotsPath,
   drawLeads,
+  endpoints,
   formatValue,
   interp,
   label,
@@ -59,7 +60,8 @@ function drawLdrBody(g: DrawContext, e: CircuitElement): void {
     polyline(g, [pt(12, 26), pt(26, 12)], color, 3);
     polyline(g, [pt(20, 12), pt(26, 12), pt(26, 18)], color, 3);
   }
-  currentDots(g, lead1, lead2, g.current);
+  const [p1, p2] = endpoints(e);
+  currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
   label(g, e, formatValue(ldrResistance(e), 'Ω'));
 }
 

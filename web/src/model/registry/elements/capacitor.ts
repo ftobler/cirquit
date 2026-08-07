@@ -1,6 +1,9 @@
 import {
   calcLeads,
+  currentDotsFrom,
+  dotPhaseAfter,
   drawLeads,
+  endpoints,
   formatValue,
   interp2,
   label,
@@ -18,6 +21,14 @@ export function drawCapacitorBody(g: DrawContext, e: CircuitElement): void {
   const [b1, b2] = interp2(lead1, lead2, 1, 9);
   line(g, a1, a2, voltageColor(g, g.voltages[0]), 2.5);
   line(g, b1, b2, voltageColor(g, g.voltages[1]), 2.5);
+  // The plate gap breaks the current path, so the dots cannot cross the body
+  // in one run; the second lead starts at the phase the first would have
+  // reached at the gap, keeping the two inlets aligned (CapacitorElm.java:
+  // 139-140's +curcount/-curcount split).
+  const [p1, p2] = endpoints(e);
+  const leadLen = Math.hypot(lead1.x - p1.x, lead1.y - p1.y);
+  currentDotsFrom(g, p1, lead1, g.current, g.dotPhase);
+  currentDotsFrom(g, lead2, p2, g.current, dotPhaseAfter(g.dotPhase, leadLen));
   label(g, e, formatValue(e.params.capacitance ?? 0, 'F'));
 }
 
