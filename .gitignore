@@ -22,4 +22,7 @@ node_modules/
 .vscode/
 *.log
 
+# AI Agent scratchpad & project temp space
+.tmp/
+.scratch/
 tmp/
