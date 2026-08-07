@@ -50,6 +50,10 @@ export default function App() {
   const status = useStore((s) => s.status);
   const dialog = useStore((s) => s.dialog);
   const loadNetlist = useStore((s) => s.loadNetlist);
+  const partsOpen = useStore((s) => s.partsOpen);
+  const panelOpen = useStore((s) => s.panelOpen);
+  const setPartsOpen = useStore((s) => s.setPartsOpen);
+  const setPanelOpen = useStore((s) => s.setPanelOpen);
 
   // Bring up the wasm engine once, then load whatever circuit was requested.
   useEffect(() => {
@@ -209,7 +213,7 @@ export default function App() {
       {dialog === 'exportAsImage' && <SaveAsImageDialog engine={engine} />}
       {dialog === 'about' && <AboutDialog />}
       <div className="workspace">
-        <aside className="left">
+        <aside className={partsOpen ? 'left open' : 'left'}>
           <Toolbox />
         </aside>
         <main className="centre">
@@ -217,9 +221,20 @@ export default function App() {
           <ScopePanel engine={engine} />
           <ContextMenu />
         </main>
-        <aside className="right">
+        <aside className={panelOpen ? 'right open' : 'right'}>
           <OptionsPanel engine={engine} />
         </aside>
+        {/* A full-screen tap target that dismisses whichever drawer is open.
+            Only rendered when one is, and only the mobile layout shows it. */}
+        {(partsOpen || panelOpen) && (
+          <div
+            className="drawer-scrim"
+            onClick={() => {
+              setPartsOpen(false);
+              setPanelOpen(false);
+            }}
+          />
+        )}
       </div>
       <footer className="statusbar">
         <span>{engine ? status || 'Ready' : 'Loading engine…'}</span>

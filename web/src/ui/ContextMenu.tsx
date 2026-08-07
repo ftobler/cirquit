@@ -10,7 +10,6 @@ import { parseCircuit } from '../io/netlist';
 import { defFor } from '../model/registry';
 import { canMirror, canRotate, canSwap } from '../model/transform';
 import { useStore } from '../state/store';
-import { focusOptionsPanel } from './OptionsPanel';
 
 interface MenuItem {
   label: string;
@@ -110,10 +109,10 @@ export function ContextMenu() {
     scopeItems.push({
       label: 'Edit',
       disabled: !editable || !targetDef.fields?.length,
-      action: () => {
-        useStore.getState().select([target]);
-        focusOptionsPanel();
-      },
+      // One implementation of "edit this element" shared with the canvas
+      // double-click and touch double-tap: select, open the options panel,
+      // focus its first field.
+      action: () => useStore.getState().requestEdit(target),
     });
     scopeItems.push({
       label: 'View in New Scope',

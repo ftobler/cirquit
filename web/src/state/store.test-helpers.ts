@@ -28,6 +28,8 @@ export const fresh = () => ({
   pendingParams: new Map(),
   pendingStates: new Map(),
   contextMenu: null,
+  partsOpen: false,
+  panelOpen: false,
   clipboard: null,
   lastSaved: null,
 });

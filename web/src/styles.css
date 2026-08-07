@@ -568,3 +568,106 @@ h3 {
   padding: 1px 4px;
   border-radius: 4px;
 }
+
+/* ---- mobile drawers and touch targets ---- */
+
+/* The Parts/Options buttons and the drawer scrim only exist on mobile: on
+   desktop the panels are always-visible flex siblings and the buttons would
+   be dead weight, so both are inert outside the media queries below. */
+.drawer-buttons,
+.drawer-scrim {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* The side panels stop being flex siblings and become overlays anchored to
+     their edges, so the canvas gets the full width of a phone instead of the
+     480 px of fixed chrome the desktop layout reserves. */
+  .workspace {
+    display: block;
+    position: relative;
+  }
+
+  .centre {
+    height: 100%;
+  }
+
+  .left,
+  .right {
+    position: absolute;
+    top: 0;
+    z-index: 35;
+    width: 85vw;
+    max-width: 340px;
+    max-height: 70vh;
+    display: none;
+  }
+
+  .left {
+    left: 0;
+  }
+
+  .right {
+    right: 0;
+  }
+
+  .left.open,
+  .right.open {
+    display: block;
+  }
+
+  /* A full-screen tap target: tapping anywhere outside the drawer dismisses
+     it, so the canvas is one tap away. */
+  .drawer-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgb(0 0 0 / 50%);
+  }
+
+  .drawer-buttons {
+    display: flex;
+    gap: 6px;
+  }
+
+  /* The scrim covers the viewport, so the menubar must stay above it or the
+     Parts/Options drawer toggles would be unreachable while a drawer is open
+     (tapping them would hit the scrim and dismiss instead of toggling). The
+     menubar is a flex item, so the z-index lifts it and its menus above both
+     the scrim (30) and the drawers (35) without touching the dialogs (40). */
+  .menubar {
+    position: relative;
+    z-index: 36;
+  }
+}
+
+/* Coarse pointers get the 44 px touch-target guideline, and the iOS callout
+   and focus-zoom fixes upstream applies at EditDialog.java:249-255. Range
+   sliders are already touch-friendly and keep their natural height. */
+@media (pointer: coarse) {
+  button,
+  .tool,
+  .menu-item,
+  .scope-close,
+  .field input:not([type='range']),
+  .field select {
+    min-height: 44px;
+  }
+
+  .tool {
+    min-width: 44px;
+  }
+
+  /* 16 px or iOS auto-zooms the page when the field is focused. */
+  input[type='number'],
+  input[type='text'] {
+    font-size: 16px;
+  }
+
+  button {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}

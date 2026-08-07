@@ -198,6 +198,8 @@ export const useStore = create<AppState>((set, get) => ({
   contextMenu: null,
   scopeMenu: null,
   scopeProperties: null,
+  partsOpen: false,
+  panelOpen: false,
   clipboard: null,
   lastSaved: null,
 
@@ -243,8 +245,32 @@ export const useStore = create<AppState>((set, get) => ({
   setHovered: (id) => set({ hoveredId: id }),
   setHighlightedNode: (node) => set({ highlightedNode: node }),
 
-  editElement: (id) =>
-    set((s) => ({ selectedIds: [id], panelFocusTick: s.panelFocusTick + 1 })),
+  requestEdit: (id) =>
+    set((s) => ({
+      // The edited element must lead the selection because the options panel
+      // reads selectedIds[0], while the rest of an existing selection stays
+      // selected: editing one member of a group must not deselect the others
+      // (upstream's doEdit leaves the selection alone).
+      selectedIds: s.selectedIds.includes(id)
+        ? [id, ...s.selectedIds.filter((x) => x !== id)]
+        : [id],
+      panelOpen: true,
+      partsOpen: false,
+      panelFocusTick: s.panelFocusTick + 1,
+    })),
+
+  setPartsOpen: (open) =>
+    set((s) => ({
+      partsOpen: open,
+      // One drawer at a time: opening the toolbox closes the options panel.
+      panelOpen: open ? false : s.panelOpen,
+    })),
+
+  setPanelOpen: (open) =>
+    set((s) => ({
+      panelOpen: open,
+      partsOpen: open ? false : s.partsOpen,
+    })),
 
   movePoint: (id, post, dx, dy) => {
     const s = get();

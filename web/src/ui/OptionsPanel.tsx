@@ -8,14 +8,6 @@ import { formatValue, makeTheme } from '../render/draw';
 import type { CircuitElement, FieldDef, Theme, ThemeColors } from '../model/types';
 import { useStore } from '../state/store';
 
-/** Holds the live options panel root so the context menu's Edit can focus it. */
-let panelRef: HTMLElement | null = null;
-
-/** Moves keyboard focus to the options panel; a no-op while it is not mounted. */
-export function focusOptionsPanel(): void {
-  panelRef?.focus();
-}
-
 interface Props {
   engine: SimEngine | null;
 }
@@ -283,9 +275,9 @@ export function OptionsPanel({ engine }: Props) {
   const selected = elements.find((e) => e.id === selectedIds[0]);
   const def = selected ? defFor(selected.kind) : undefined;
 
-  // Double-click edit selects and bumps panelFocusTick; focus the element's
+  // Double-tap edit selects and bumps panelFocusTick; focus the element's
   // first field so the user can type immediately (MouseManager's edit dialog
-  // opens focused on the first value). Keyed on the tick alone: editElement
+  // opens focused on the first value). Keyed on the tick alone: requestEdit
   // sets the selection and bumps the tick in one step, so the section ref
   // already tracks the freshly selected element, while a later single-click
   // selection change must not steal focus back from the canvas.
@@ -302,13 +294,7 @@ export function OptionsPanel({ engine }: Props) {
   const power = idx !== undefined && engine ? engine.elementPowers()[idx] : undefined;
 
   return (
-    <div
-      className="options"
-      tabIndex={-1}
-      ref={(el) => {
-        panelRef = el;
-      }}
-    >
+    <div className="options" tabIndex={-1}>
       {problem && <div className="problem">{problem}</div>}
 
       {selected && def ? (

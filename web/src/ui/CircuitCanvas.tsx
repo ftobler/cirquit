@@ -45,7 +45,7 @@ export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
         onPointerDown={interactions.onPointerDown}
         onPointerMove={interactions.onPointerMove}
         onPointerUp={interactions.onPointerUp}
-        onPointerCancel={interactions.onPointerUp}
+        onPointerCancel={interactions.onPointerCancel}
         onPointerLeave={interactions.onPointerLeave}
         onWheel={interactions.onWheel}
         onContextMenu={interactions.onContextMenu}

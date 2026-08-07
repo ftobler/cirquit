@@ -128,6 +128,10 @@ export function Menubar({ engine }: Props) {
   const elements = useStore((s) => s.elements);
   const selectedIds = useStore((s) => s.selectedIds);
   const clipboard = useStore((s) => s.clipboard);
+  const partsOpen = useStore((s) => s.partsOpen);
+  const panelOpen = useStore((s) => s.panelOpen);
+  const setPartsOpen = useStore((s) => s.setPartsOpen);
+  const setPanelOpen = useStore((s) => s.setPanelOpen);
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [library, setLibrary] = useState<LibraryGroup[] | null>(null);
@@ -355,6 +359,23 @@ export function Menubar({ engine }: Props) {
           </details>
         ))}
       </Dropdown>
+
+      <div className="drawer-buttons">
+        <button
+          type="button"
+          className={partsOpen ? 'active' : ''}
+          onClick={() => setPartsOpen(!partsOpen)}
+        >
+          Parts
+        </button>
+        <button
+          type="button"
+          className={panelOpen ? 'active' : ''}
+          onClick={() => setPanelOpen(!panelOpen)}
+        >
+          Options
+        </button>
+      </div>
 
       <div className="run-group">
         <button

@@ -255,29 +255,67 @@ describe('topology mutators force a reload', () => {
   });
 });
 
-describe('editElement selects alone and focuses', () => {
-  it('selects that id alone and bumps panelFocusTick', () => {
+describe('requestEdit selects and opens the panel', () => {
+  it('selects that id alone, opens the panel, and bumps panelFocusTick', () => {
     const a = addResistor();
     const b = addResistor();
-    useStore.getState().select([a, b]);
+    useStore.getState().select([a]);
     const before = useStore.getState().panelFocusTick;
 
-    useStore.getState().editElement(b);
+    useStore.getState().requestEdit(b);
 
     const s = useStore.getState();
     expect(s.selectedIds).toEqual([b]);
+    expect(s.panelOpen).toBe(true);
+    expect(s.partsOpen).toBe(false);
     expect(s.panelFocusTick).toBe(before + 1);
     // The tick is per call, so a second edit on the same element refocuses.
-    useStore.getState().editElement(b);
+    useStore.getState().requestEdit(b);
     expect(useStore.getState().panelFocusTick).toBe(before + 2);
   });
 
-  it('replaces the selection when the target was not selected', () => {
+  it('keeps the whole selection when the target is already in it', () => {
     const a = addResistor();
     const b = addResistor();
-    useStore.getState().editElement(a);
-    useStore.getState().editElement(b);
-    expect(useStore.getState().selectedIds).toEqual([b]);
+    useStore.getState().select([a, b]);
+
+    useStore.getState().requestEdit(b);
+
+    // Nothing is deselected, and the edited element leads the selection so the
+    // options panel (which reads selectedIds[0]) shows it, not its neighbour.
+    expect(useStore.getState().selectedIds).toEqual([b, a]);
+    expect(useStore.getState().panelOpen).toBe(true);
+  });
+
+  it('opens the options drawer and closes the parts drawer', () => {
+    addResistor();
+    useStore.getState().setPartsOpen(true);
+    useStore.getState().requestEdit(useStore.getState().elements[0].id);
+    const s = useStore.getState();
+    expect(s.panelOpen).toBe(true);
+    expect(s.partsOpen).toBe(false);
+  });
+});
+
+describe('drawer state', () => {
+  it('setPartsOpen opens and closes the parts drawer', () => {
+    useStore.getState().setPartsOpen(true);
+    expect(useStore.getState().partsOpen).toBe(true);
+    useStore.getState().setPartsOpen(false);
+    expect(useStore.getState().partsOpen).toBe(false);
+  });
+
+  it('only one drawer is open at a time', () => {
+    useStore.getState().setPartsOpen(true);
+    useStore.getState().setPanelOpen(true);
+    let s = useStore.getState();
+    expect(s.panelOpen).toBe(true);
+    expect(s.partsOpen).toBe(false);
+
+    useStore.getState().setPartsOpen(true);
+    s = useStore.getState();
+    expect(s.partsOpen).toBe(true);
+    expect(s.panelOpen).toBe(false);
   });
 });
 
