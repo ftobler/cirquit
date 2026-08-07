@@ -6,6 +6,7 @@ import {
   dsign,
   interp,
   interp2,
+  interpPrecise,
   rectCorners,
 } from './draw';
 import { postsOf, switchLeverTip } from '../model/registry';
@@ -79,6 +80,54 @@ describe('interp rounding', () => {
     const [l1, l2] = calcLeads(element(0, 0, 100, 0), 32);
     expect(l1).toEqual({ x: 34, y: 0 });
     expect(l2).toEqual({ x: 66, y: 0 });
+  });
+});
+
+describe('interpPrecise', () => {
+  it('returns the unrounded math along the segment', () => {
+    // interp floors to grid pixels; the precise variant keeps the exact float
+    // position, so dots glide along diagonals instead of snapping per pixel.
+    const p = interpPrecise({ x: 0, y: 0 }, { x: 100, y: 100 }, 0.333);
+    expect(p.x).toBeCloseTo(33.3, 10);
+    expect(p.y).toBeCloseTo(33.3, 10);
+    expect(p.x).not.toBe(33);
+    expect(interpPrecise({ x: 0, y: 0 }, { x: 100, y: 0 }, 0.5)).toEqual({ x: 50, y: 0 });
+  });
+
+  it('keeps every point exactly on a diagonal segment', () => {
+    // Rounded interp points bounce up to ~0.7 px off a 5:3 diagonal as the
+    // phase creeps by sub-pixel amounts, which is the wiggle; the precise
+    // variant stays at perpendicular distance 0 for the whole run.
+    const a = { x: 0, y: 0 };
+    const b = { x: 80, y: 48 };
+    const dist = (p: Point) =>
+      Math.abs((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)) /
+      Math.hypot(b.y - a.y, b.x - a.x);
+    let worst = 0;
+    for (let i = 0; i <= 2000; i++) {
+      const f = i / 2000;
+      expect(dist(interpPrecise(a, b, f))).toBeCloseTo(0, 9);
+      worst = Math.max(worst, dist(interp(a, b, f)));
+    }
+    // Sanity that this is the discriminating case: the rounded interp really
+    // does leave the line, or the precise assertion above proves nothing.
+    expect(worst).toBeGreaterThan(0.5);
+  });
+
+  it('never moves a dot backward along the segment', () => {
+    // Rounding can stall consecutive dots on the same pixel, but a projection
+    // that decreases with f would make dots reverse direction on the wire.
+    const a = { x: 0, y: 0 };
+    const b = { x: 80, y: 48 };
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    let prev = -Infinity;
+    for (let i = 0; i <= 2000; i++) {
+      const f = i / 2000;
+      const p = interpPrecise(a, b, f);
+      const along = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len;
+      expect(along).toBeGreaterThanOrEqual(prev);
+      prev = along;
+    }
   });
 });
 

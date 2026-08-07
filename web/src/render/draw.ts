@@ -49,6 +49,25 @@ export function interp(a: Point, b: Point, f: number, g = 0): Point {
   };
 }
 
+/**
+ * Point along `a -> b` at fraction `f`, displaced `g` units perpendicular to
+ * the line, at exact float coordinates. `interp` rounds so terminals land on
+ * grid pixels; animated dots must not round, or they bounce between pixel
+ * rows and wiggle on diagonal segments.
+ */
+export function interpPrecise(a: Point, b: Point, f: number, g = 0): Point {
+  let px = b.y - a.y;
+  let py = a.x - b.x;
+  const r = Math.hypot(px, py);
+  if (r === 0) return { x: a.x, y: a.y };
+  px /= r;
+  py /= r;
+  return {
+    x: a.x + f * (b.x - a.x) + g * px,
+    y: a.y + f * (b.y - a.y) + g * py,
+  };
+}
+
 /** Both perpendicular displacements at once: `+g` then `-g`. */
 export function interp2(a: Point, b: Point, f: number, g: number): [Point, Point] {
   return [interp(a, b, f, g), interp(a, b, f, -g)];
@@ -297,7 +316,7 @@ export function currentDotsFrom(
 
   g.ctx.fillStyle = dotColor(g);
   for (let d = offset; d < len; d += DOT_SPACING) {
-    const p = interp(a, b, d / len);
+    const p = interpPrecise(a, b, d / len);
     g.ctx.beginPath();
     g.ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2);
     g.ctx.fill();
