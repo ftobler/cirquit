@@ -83,6 +83,8 @@ const context = (ctx: CtxStub): DrawContext => ({
   voltageRange: 5,
   powerRange: 50,
   scale: 1,
+  valueDigits: 1,
+  valueFontSize: 12,
 });
 
 /** Signed distance of `p` from the element's axis; the sign is the side. */

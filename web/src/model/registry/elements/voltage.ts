@@ -75,6 +75,6 @@ export const VOLTAGE_DEF: ElementDef = {
   draw(g, e) {
     const [lead1, lead2] = drawSourceCircle(g, e, 12);
     drawWaveformGlyph(g, interp(lead1, lead2, 0.5), e.params.waveform ?? 0, 12);
-    label(g, e, formatValue(e.params.maxVoltage ?? 0, 'V'), 20);
+  label(g, e, formatValue(e.params.maxVoltage ?? 0, 'V', g.valueDigits), 20);
   },
 };

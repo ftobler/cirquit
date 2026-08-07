@@ -2,13 +2,14 @@ import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
 import { scopeParamsFingerprint } from '../../engine/simulator';
 import { defFor } from '../../model/registry';
-import type { DrawContext } from '../../model/types';
+import type { DrawContext, Point } from '../../model/types';
 import { dotPhaseStep, TOO_FAST, wrapPhase } from '../../render/dots';
 import { makeTheme } from '../../render/draw';
 import { drawGrid } from '../../render/grid';
 import { invalidDropPoint } from '../../render/geometry';
 import { scopeWidth } from '../../scope/geometry';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
+import { gridSize } from '../../state/helpers';
 import { useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
@@ -20,6 +21,7 @@ export function useFrameLoop(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   engine: SimEngine | null,
   dragRef: React.MutableRefObject<Drag>,
+  pointerRef: React.MutableRefObject<Point | null>,
 ): void {
   const dotPhaseRef = useRef(new Map<number, number>());
   const lastFrameRef = useRef(performance.now());
@@ -151,7 +153,7 @@ export function useFrameLoop(
         canvas.height = height * dpr;
       }
 
-      const theme = makeTheme(state.dark);
+      const theme = makeTheme(state.dark, state.settings);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = theme.background;
       ctx.fillRect(0, 0, width, height);
@@ -159,8 +161,31 @@ export function useFrameLoop(
       ctx.scale(view.scale, view.scale);
       ctx.translate(-view.x, -view.y);
 
+      const grid = gridSize(settings);
       if (settings.showGrid && view.scale > 0.4) {
-        drawGrid(ctx, view.x, view.y, width / view.scale, height / view.scale, theme.grid);
+        drawGrid(ctx, view.x, view.y, width / view.scale, height / view.scale, theme.grid, grid);
+      }
+
+      // The crosshair is a drawn alignment guide through the grid-snapped
+      // pointer, not the CSS cursor shape (UIManager.java:719-726). The theme
+      // grid colour keeps it readable in both themes. The stored pointer is in
+      // canvas-relative client pixels and is re-projected through the current
+      // view here, so a keyboard zoom or Center Circuit (which move the
+      // circuit point under a stationary cursor) keep the guides honest.
+      if (settings.showCrosshair && pointerRef.current) {
+        const p = pointerRef.current;
+        const px = view.x + p.x / view.scale;
+        const py = view.y + p.y / view.scale;
+        const sx = Math.round(px / grid) * grid;
+        const sy = Math.round(py / grid) * grid;
+        ctx.strokeStyle = theme.grid;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(view.x, sy);
+        ctx.lineTo(view.x + width / view.scale, sy);
+        ctx.moveTo(sx, view.y);
+        ctx.lineTo(sx, view.y + height / view.scale);
+        ctx.stroke();
       }
 
       for (const e of elements) {
@@ -223,6 +248,8 @@ export function useFrameLoop(
           voltageRange: settings.voltageRange,
           powerRange: settings.powerRange,
           scale: view.scale,
+          valueDigits: settings.shortDecimalDigits,
+          valueFontSize: settings.valueFontSize,
         };
         def.draw(g, e);
 
@@ -274,5 +301,5 @@ export function useFrameLoop(
     return () => cancelAnimationFrame(raf);
     // The refs are stable for the life of the component, so this runs once per
     // engine just like the inline effect it was extracted from.
-  }, [engine, canvasRef, dragRef, stateRef]);
+  }, [engine, canvasRef, dragRef, stateRef, pointerRef]);
 }

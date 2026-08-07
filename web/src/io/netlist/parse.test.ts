@@ -59,6 +59,30 @@ describe('netlist parsing', () => {
     expect(parseCircuit('$ 1 0.000005 10 50 5 43 5e-11\n').settings.showCurrent).toBe(true);
   });
 
+  it('decodes header flag bit 2 into smallGrid', () => {
+    expect(parseCircuit('$ 3 0.000005 10 50 5 43 5e-11\n').settings.smallGrid).toBe(true);
+    expect(parseCircuit('$ 1 0.000005 10 50 5 43 5e-11\n').settings.smallGrid).toBe(false);
+  });
+
+  it('round-trips small grid through the header flags', () => {
+    const parsed = parseCircuit('$ 3 0.000005 10 50 5 43 5e-11\n');
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(Number(out.split('\n')[0].split(' ')[1]) & 2).toBe(2);
+    const again = parseCircuit(out);
+    expect(again.settings.smallGrid).toBe(true);
+  });
+
+  it('a fresh circuit writes small grid clear (flag bits 0)', () => {
+    const out = serializeCircuit([], { ...DEFAULT_SETTINGS });
+    expect(Number(out.split('\n')[0].split(' ')[1]) & 2).toBe(0);
+  });
+
   it('decodes header flag bits 4 and 8 into the colour modes', () => {
     // Bit 8 is power on; bit 4 is voltage off, and it wins the volts checkbox
     // even when power is clear (readCircuitFlags, CircuitLoader.java:274-277).

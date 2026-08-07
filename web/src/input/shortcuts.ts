@@ -1,8 +1,6 @@
 /** Keyboard shortcut matching. Pure and DOM-free: it maps a plain event
  *  descriptor to an action id, and App.tsx does the dispatch. */
 
-import { GRID_SIZE } from '../model/types';
-
 export type ShortcutAction =
   | { type: 'undo' }
   | { type: 'redo' }
@@ -62,7 +60,9 @@ export const SHORTCUTS: ShortcutEntry[] = [
   { mod: true, shift: false, key: 'o', action: { type: 'open' } },
 
   // Plain keys. Delete and Backspace both delete (UIManager.java:1134) and
-  // the arrows nudge by exactly one grid step per press (UIManager.java:1153).
+  // the arrows nudge by one grid step per press (UIManager.java:1153). The
+  // delta is a unit-less step count: the matcher has no store access, so
+  // App.tsx resolves it against the small-grid setting (8 or 16) at dispatch.
   // Ctrl+Delete / Ctrl+Backspace pass through to the browser: the mod combos
   // above are exclusive, so a held ctrl unmatches these plain rows, which is
   // the deliberate consequence of the exact-match matcher.
@@ -70,10 +70,10 @@ export const SHORTCUTS: ShortcutEntry[] = [
   { mod: false, key: ' ', action: { type: 'selectMode' } },
   { mod: false, key: 'Delete', action: { type: 'delete' } },
   { mod: false, key: 'Backspace', action: { type: 'delete' } },
-  { mod: false, key: 'ArrowUp', action: { type: 'nudge', dx: 0, dy: -GRID_SIZE } },
-  { mod: false, key: 'ArrowDown', action: { type: 'nudge', dx: 0, dy: GRID_SIZE } },
-  { mod: false, key: 'ArrowLeft', action: { type: 'nudge', dx: -GRID_SIZE, dy: 0 } },
-  { mod: false, key: 'ArrowRight', action: { type: 'nudge', dx: GRID_SIZE, dy: 0 } },
+  { mod: false, key: 'ArrowUp', action: { type: 'nudge', dx: 0, dy: -1 } },
+  { mod: false, key: 'ArrowDown', action: { type: 'nudge', dx: 0, dy: 1 } },
+  { mod: false, key: 'ArrowLeft', action: { type: 'nudge', dx: -1, dy: 0 } },
+  { mod: false, key: 'ArrowRight', action: { type: 'nudge', dx: 1, dy: 0 } },
 
   // Zoom keys. '+' and '=' both zoom in and the numpad variants zoom too,
   // which is what upstream's charCode path produces for a numpad

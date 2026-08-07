@@ -15,7 +15,7 @@ import { SaveAsDialog } from './ui/SaveAsDialog';
 import { SaveAsImageDialog } from './ui/SaveAsImageDialog';
 import { ScopePanel } from './ui/ScopePanel';
 import { Toolbox } from './ui/Toolbox';
-import { hasUnsavedChanges, useStore } from './state/store';
+import { hasUnsavedChanges, gridSize, useStore } from './state/store';
 
 /** A small RC circuit, so the app opens on something that actually runs. */
 const STARTER_CIRCUIT = `$ 1 0.000005 10.2 50 5 43 5e-11
@@ -116,7 +116,10 @@ export default function App() {
           s.setTool(null);
           break;
         case 'nudge':
-          s.nudgeSelection(action.dx, action.dy);
+          // The matcher reports a unit-less step count; the grid size resolves
+          // it here so a small-grid circuit nudges by 8, like upstream's
+          // app.gridSize (UIManager.java:1153).
+          s.nudgeSelection(action.dx * gridSize(s.settings), action.dy * gridSize(s.settings));
           break;
         case 'zoomIn':
           s.zoomIn();

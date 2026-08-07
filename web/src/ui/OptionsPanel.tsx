@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
 import { formatUnits, parseUnits } from '../model/units';
-import { formatValue } from '../render/draw';
-import type { CircuitElement, FieldDef } from '../model/types';
+import { formatValue, makeTheme } from '../render/draw';
+import type { CircuitElement, FieldDef, Theme, ThemeColors } from '../model/types';
 import { useStore } from '../state/store';
 
 /** Holds the live options panel root so the context menu's Edit can focus it. */
@@ -220,10 +220,58 @@ function Field({
   );
 }
 
+/** The five mutable colour rows, and which theme key each overrides. */
+const COLOR_ROWS: { key: keyof ThemeColors; label: string; themeKey: keyof Theme }[] = [
+  { key: 'positiveColor', label: 'Positive', themeKey: 'positive' },
+  { key: 'negativeColor', label: 'Negative', themeKey: 'negative' },
+  { key: 'neutralColor', label: 'Neutral', themeKey: 'neutral' },
+  { key: 'selectionColor', label: 'Selection', themeKey: 'selection' },
+  { key: 'currentColor', label: 'Current', themeKey: 'currentDot' },
+];
+
+/** A settings number field with a clamp, e.g. the digit counts. `step` is the
+ *  input's step attribute: 1 for the integer digit/font fields so a fractional
+ *  digit count cannot be typed or spun, a fraction for wheel sensitivity. */
+function NumberSetting({
+  label,
+  value,
+  min,
+  max,
+  step = 'any',
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number | 'any';
+  onChange: (n: number) => void;
+}) {
+  return (
+    <label className="field">
+      <span>
+        {label} <em>{value}</em>
+      </span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          if (Number.isFinite(n)) onChange(Math.max(min, Math.min(max, n)));
+        }}
+      />
+    </label>
+  );
+}
+
 export function OptionsPanel({ engine }: Props) {
   const elements = useStore((s) => s.elements);
   const selectedIds = useStore((s) => s.selectedIds);
   const settings = useStore((s) => s.settings);
+  const dark = useStore((s) => s.dark);
   const setParam = useStore((s) => s.setParam);
   const setText = useStore((s) => s.setText);
   const beginEdit = useStore((s) => s.beginEdit);
@@ -269,16 +317,16 @@ export function OptionsPanel({ engine }: Props) {
           {voltage !== undefined && (
             <dl className="readout">
               <dt>Voltage</dt>
-              <dd>{formatValue(voltage, 'V')}</dd>
+              <dd>{formatValue(voltage, 'V', settings.decimalDigits)}</dd>
               <dt>Current</dt>
-              <dd>{formatValue(current ?? 0, 'A')}</dd>
+              <dd>{formatValue(current ?? 0, 'A', settings.decimalDigits)}</dd>
               <dt>Power</dt>
               {/* The readout uses the engine's scope-convention power, not
                   voltage * current: for a voltage or current source the display
                   voltage is the positive EMF while the scope's Power trace uses
                   V(post0) - V(post1), so multiplying here would show the wrong
                   sign for a source. */}
-              <dd>{formatValue(power ?? 0, 'W')}</dd>
+              <dd>{formatValue(power ?? 0, 'W', settings.decimalDigits)}</dd>
             </dl>
           )}
           {def.fields?.map((f) => (
@@ -379,25 +427,166 @@ export function OptionsPanel({ engine }: Props) {
           onCommit={(n) => updateSettings({ timeStep: n })}
         />
 
-        {(
-          [
-            ['showCurrent', 'Show current'],
-            ['conventional', 'Conventional current motion'],
-            ['showValues', 'Show values'],
-            ['showVoltageColor', 'Colour by voltage'],
-            ['showGrid', 'Show grid'],
-            ['autoDC', 'Run DC operating point'],
-          ] as const
-        ).map(([key, label]) => (
-          <label key={key} className="check">
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.showCurrent}
+            onChange={(e) => updateSettings({ showCurrent: e.target.checked })}
+          />
+          <span>Show current</span>
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.conventional}
+            onChange={(e) => updateSettings({ conventional: e.target.checked })}
+          />
+          <span>Conventional current motion</span>
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.showValues}
+            onChange={(e) => updateSettings({ showValues: e.target.checked })}
+          />
+          <span>Show values</span>
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.showVoltageColor}
+            onChange={(e) => updateSettings({ showVoltageColor: e.target.checked })}
+          />
+          <span>Colour by voltage</span>
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.showPowerColor}
+            onChange={(e) => updateSettings({ showPowerColor: e.target.checked })}
+          />
+          <span>Show power</span>
+        </label>
+        {settings.showPowerColor && (
+          <label className="field">
+            <span>
+              Power brightness <em>{settings.powerRange}</em>
+            </span>
             <input
-              type="checkbox"
-              checked={settings[key]}
-              onChange={(e) => updateSettings({ [key]: e.target.checked })}
+              type="range"
+              min={1}
+              max={100}
+              value={settings.powerRange}
+              onChange={(e) => updateSettings({ powerRange: Number(e.target.value) })}
             />
+          </label>
+        )}
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.autoDC}
+            onChange={(e) => updateSettings({ autoDC: e.target.checked })}
+          />
+          <span>Run DC operating point</span>
+        </label>
+      </section>
+
+      <section>
+        <h3>Grid and view</h3>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.showGrid}
+            onChange={(e) => updateSettings({ showGrid: e.target.checked })}
+          />
+          <span>Show grid</span>
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.smallGrid}
+            onChange={(e) => updateSettings({ smallGrid: e.target.checked })}
+          />
+          <span>Small grid</span>
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.showCrosshair}
+            onChange={(e) => updateSettings({ showCrosshair: e.target.checked })}
+          />
+          <span>Show cursor crosshair</span>
+        </label>
+      </section>
+
+      <section>
+        <h3>Colours</h3>
+        {/* The displayed swatch is the theme's own colour while the setting is
+            null, so resetting to defaults still shows what each row means. */}
+        {COLOR_ROWS.map(({ key, label, themeKey }) => (
+          <label key={key} className="field">
             <span>{label}</span>
+            <input
+              type="color"
+              value={settings[key] ?? makeTheme(dark)[themeKey]}
+              onChange={(e) => updateSettings({ [key]: e.target.value })}
+            />
           </label>
         ))}
+        <button
+          type="button"
+          onClick={() =>
+            updateSettings({
+              positiveColor: null,
+              negativeColor: null,
+              neutralColor: null,
+              selectionColor: null,
+              currentColor: null,
+            })
+          }
+        >
+          Reset colours to default
+        </button>
+      </section>
+
+      <section>
+        <h3>Format</h3>
+        <NumberSetting
+          label="Decimal digits (short format)"
+          value={settings.shortDecimalDigits}
+          min={0}
+          max={6}
+          step={1}
+          onChange={(n) => updateSettings({ shortDecimalDigits: n })}
+        />
+        <NumberSetting
+          label="Decimal digits (long format)"
+          value={settings.decimalDigits}
+          min={0}
+          max={6}
+          step={1}
+          onChange={(n) => updateSettings({ decimalDigits: n })}
+        />
+        <NumberSetting
+          label="Value label font size"
+          value={settings.valueFontSize}
+          min={8}
+          max={40}
+          step={1}
+          onChange={(n) => updateSettings({ valueFontSize: n })}
+        />
+      </section>
+
+      <section>
+        <h3>Input</h3>
+        <NumberSetting
+          label="Mouse wheel sensitivity"
+          value={settings.wheelSensitivity}
+          min={0.1}
+          max={10}
+          step={0.1}
+          onChange={(n) => updateSettings({ wheelSensitivity: n })}
+        />
       </section>
     </div>
   );

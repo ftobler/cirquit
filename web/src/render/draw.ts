@@ -1,6 +1,6 @@
 /** Drawing primitives shared by every element renderer. */
 
-import type { CircuitElement, DrawContext, Point, Theme } from '../model/types';
+import type { CircuitElement, DrawContext, Point, Theme, ThemeColors } from '../model/types';
 import { DOT_SPACING, dotPhaseAfter, TOO_FAST } from './dots';
 
 export { dotPhaseAfter };
@@ -409,15 +409,19 @@ const PREFIXES = [
   { limit: 1e-12, suffix: 'p', scale: 1e-12 },
 ];
 
-/** Formats a value with an engineering prefix, e.g. `4.7k`, `100µ`. */
+/** Formats a value with an engineering prefix, e.g. `4.7k`, `100µ`. `digits`
+ *  is the fraction-digit count, upstream's `####.#` pattern (`getUnitText`,
+ *  CircuitElm.java:157-186): round to that many digits after the prefix, then
+ *  trim trailing zeroes. `toPrecision` cannot express the pattern, which is
+ *  why 55.5 with one digit must be "55.5m" and not "6e+1m". */
 export function formatValue(v: number, unit = '', digits = 3): string {
   if (!Number.isFinite(v)) return '--';
   if (v === 0) return `0 ${unit}`.trim();
   const abs = Math.abs(v);
   const p = PREFIXES.find((x) => abs >= x.limit) ?? PREFIXES[PREFIXES.length - 1];
   const scaled = v / p.scale;
-  const text = Math.abs(scaled) >= 100 ? scaled.toFixed(0) : scaled.toPrecision(digits);
-  // Trim trailing zeroes left by toPrecision, but keep integers intact.
+  const text = scaled.toFixed(digits);
+  // Trim trailing zeroes left by toFixed, but keep integers intact.
   const trimmed = text.includes('.') ? text.replace(/\.?0+$/, '') : text;
   return `${trimmed}${p.suffix}${unit ? ` ${unit}` : ''}`.trim();
 }
@@ -429,35 +433,52 @@ export function label(g: DrawContext, e: CircuitElement, text: string, offset = 
   const p = interp(p1, p2, 0.5, offset);
   const horizontal = Math.abs(e.x2 - e.x1) >= Math.abs(e.y2 - e.y1);
   g.ctx.fillStyle = g.theme.text;
-  g.ctx.font = canvasFont(11);
+  g.ctx.font = canvasFont(g.valueFontSize);
   g.ctx.textAlign = horizontal ? 'center' : 'left';
   g.ctx.textBaseline = 'middle';
   g.ctx.fillText(text, p.x, p.y);
 }
 
-export function makeTheme(dark = true): Theme {
-  if (!dark) {
+/** Builds a theme, overlaying the five user-settable colours over the palette
+ *  for `dark`. A null entry keeps the palette's own value, so the argument
+ *  shares the shape of the settings object and a plain `makeTheme(dark)` is
+ *  still the stock palette. */
+export function makeTheme(dark = true, colors?: ThemeColors): Theme {
+  const base = dark ? darkTheme() : lightTheme();
+  return {
+    ...base,
+    selection: colors?.selectionColor ?? base.selection,
+    negative: colors?.negativeColor ?? base.negative,
+    neutral: colors?.neutralColor ?? base.neutral,
+    positive: colors?.positiveColor ?? base.positive,
+    currentDot: colors?.currentColor ?? base.currentDot,
+  };
+}
+
+function lightTheme(): Theme {
+  return {
     // White Background (upstream's printable mode): the schematic renders on
     // white with black wires and dark text, the palette of ImageExporter's
     // forced-printable export. Not byte-for-byte upstream's print palette;
     // that is a deliberate form difference.
-    return {
-      background: '#ffffff',
-      grid: '#d0d7de',
-      wire: '#000000',
-      text: '#24292f',
-      selection: '#0969da',
-      highlight: '#d0782d',
-      negative: '#cf222e',
-      noConnect: '#ff0000',
-      neutral: '#6e7781',
-      positive: '#1a7f37',
-      currentDot: '#9a6700',
-      currentDotElectron: '#0b7285',
-      panel: '#f6f8fa',
-      border: '#d0d7de',
-    };
-  }
+    background: '#ffffff',
+    grid: '#d0d7de',
+    wire: '#000000',
+    text: '#24292f',
+    selection: '#0969da',
+    highlight: '#d0782d',
+    negative: '#cf222e',
+    noConnect: '#ff0000',
+    neutral: '#6e7781',
+    positive: '#1a7f37',
+    currentDot: '#9a6700',
+    currentDotElectron: '#0b7285',
+    panel: '#f6f8fa',
+    border: '#d0d7de',
+  };
+}
+
+function darkTheme(): Theme {
   return {
     background: '#0d1117',
     grid: '#1b2230',

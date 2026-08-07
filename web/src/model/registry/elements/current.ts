@@ -27,6 +27,6 @@ export const CURRENT_DEF: ElementDef = {
     const b = interp(lead1, lead2, 0.5 + 0.28);
     line(g, a, b, g.theme.text, 1.5);
     arrowHead(g, a, b, 7, g.theme.text);
-    label(g, e, formatValue(e.params.current ?? 0, 'A'), 20);
+  label(g, e, formatValue(e.params.current ?? 0, 'A', g.valueDigits), 20);
   },
 };

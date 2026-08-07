@@ -20,7 +20,7 @@ function drawInductorBody(g: DrawContext, e: CircuitElement): void {
   polyline(g, coilPoints(lead1, lead2, COIL_LOOPS), color);
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
-  label(g, e, formatValue(e.params.inductance ?? 0, 'H'));
+  label(g, e, formatValue(e.params.inductance ?? 0, 'H', g.valueDigits));
 }
 
 export const INDUCTOR_DEF: ElementDef = {

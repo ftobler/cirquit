@@ -9,12 +9,13 @@ export function drawGrid(
   width: number,
   height: number,
   color: string,
+  grid: number = GRID_SIZE,
 ): void {
-  const startX = Math.floor(originX / GRID_SIZE) * GRID_SIZE;
-  const startY = Math.floor(originY / GRID_SIZE) * GRID_SIZE;
+  const startX = Math.floor(originX / grid) * grid;
+  const startY = Math.floor(originY / grid) * grid;
   ctx.fillStyle = color;
-  for (let x = startX; x < originX + width; x += GRID_SIZE) {
-    for (let y = startY; y < originY + height; y += GRID_SIZE) {
+  for (let x = startX; x < originX + width; x += grid) {
+    for (let y = startY; y < originY + height; y += grid) {
       ctx.fillRect(x, y, 1, 1);
     }
   }

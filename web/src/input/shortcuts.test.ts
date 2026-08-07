@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { GRID_SIZE } from '../model/types';
 import { matchShortcut, SHORTCUTS, type KeyEventLike } from './shortcuts';
 
 const ev = (partial: Partial<KeyEventLike>): KeyEventLike => ({
@@ -93,11 +92,11 @@ describe('space, P and Escape', () => {
 });
 
 describe('nudge magnitude and sign', () => {
-  it('arrows nudge by exactly one grid step, derived from the exported GRID_SIZE', () => {
-    expect(matchShortcut(ev({ key: 'ArrowUp' }))).toEqual({ type: 'nudge', dx: 0, dy: -GRID_SIZE });
-    expect(matchShortcut(ev({ key: 'ArrowDown' }))).toEqual({ type: 'nudge', dx: 0, dy: GRID_SIZE });
-    expect(matchShortcut(ev({ key: 'ArrowLeft' }))).toEqual({ type: 'nudge', dx: -GRID_SIZE, dy: 0 });
-    expect(matchShortcut(ev({ key: 'ArrowRight' }))).toEqual({ type: 'nudge', dx: GRID_SIZE, dy: 0 });
+  it('arrows nudge by one unit-less grid step, resolved by the app against the grid size', () => {
+    expect(matchShortcut(ev({ key: 'ArrowUp' }))).toEqual({ type: 'nudge', dx: 0, dy: -1 });
+    expect(matchShortcut(ev({ key: 'ArrowDown' }))).toEqual({ type: 'nudge', dx: 0, dy: 1 });
+    expect(matchShortcut(ev({ key: 'ArrowLeft' }))).toEqual({ type: 'nudge', dx: -1, dy: 0 });
+    expect(matchShortcut(ev({ key: 'ArrowRight' }))).toEqual({ type: 'nudge', dx: 1, dy: 0 });
   });
 });
 
@@ -170,7 +169,7 @@ describe('no conflicts in the SHORTCUTS table', () => {
       if (entry.action.type !== 'nudge') continue;
       const n = entry.action;
       expect([n.dx, n.dy].every(Number.isFinite)).toBe(true);
-      expect([Math.abs(n.dx), Math.abs(n.dy)]).toContain(GRID_SIZE);
+      expect([Math.abs(n.dx), Math.abs(n.dy)]).toContain(1);
     }
   });
 });
@@ -184,6 +183,6 @@ describe("repeat is the caller's concern", () => {
     const first = matchShortcut(ev({ key: 'ArrowRight' }));
     const second = matchShortcut(ev({ key: 'ArrowRight' }));
     expect(first).toEqual(second);
-    expect(first).toEqual({ type: 'nudge', dx: GRID_SIZE, dy: 0 });
+    expect(first).toEqual({ type: 'nudge', dx: 1, dy: 0 });
   });
 });

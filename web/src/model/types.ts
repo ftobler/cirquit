@@ -167,7 +167,19 @@ export interface DrawContext {
   powerRange: number;
   /** Zoom factor, for keeping line weights and text readable. */
   scale: number;
+  /** Fraction digits for element value labels (upstream's short format). */
+  valueDigits: number;
+  /** Pixel size for value labels (upstream's valueFontSize, CircuitElm.java:53). */
+  valueFontSize: number;
 }
+
+/** The five user-settable colours, the keys `makeTheme` overlays onto a theme.
+ *  `null` means the theme's own default (upstream's localStorage colours,
+ *  EditOptions.java:63-72). */
+export type ThemeColors = Pick<
+  SimSettings,
+  'positiveColor' | 'negativeColor' | 'neutralColor' | 'selectionColor' | 'currentColor'
+>;
 
 /** Simulation and display settings that live outside any single element. */
 export interface SimSettings {
@@ -207,15 +219,37 @@ export interface SimSettings {
   /** Read-only gate, upstream's `noEditing` (UIManager.java:116). UI-only:
    *  not a header token, so it never bumps the engine revision. */
   editable: boolean;
+  /** Header flag bit 2: 8-unit grid and snap instead of 16
+   *  (UIManager.java:988-992). A circuit setting, so it lives in the file. */
+  smallGrid: boolean;
+  /** Drawn grid-snapped crosshair guide lines under the pointer. An app pref,
+   *  stored like upstream's `crossHair` key (UIManager.java:219). */
+  showCrosshair: boolean;
+  /** Overrides for the five theme colours; null means the theme default. */
+  positiveColor: string | null;
+  negativeColor: string | null;
+  neutralColor: string | null;
+  selectionColor: string | null;
+  currentColor: string | null;
+  /** Pixel size for element value labels (CircuitElm.java:53). */
+  valueFontSize: number;
+  /** Fraction digits for element value labels (upstream `shortDecimalDigits`,
+   *  CircuitElm.java:138-139). */
+  shortDecimalDigits: number;
+  /** Fraction digits for readouts (upstream `decimalDigits`, CircuitElm.java:
+   *  138-139). */
+  decimalDigits: number;
+  /** Scales the per-notch wheel zoom (MouseManager.java:84); 1 is unchanged. */
+  wheelSensitivity: number;
 
   // ─── Header fields carried through but not modelled ───
   // Loading a file must not invent new values for the `$` tokens this build
   // ignores, so they are parked here and written back unchanged. Undefined
   // means the file had no such token and the writer falls back to a default.
-  /** Token 1 as loaded. Bits 1 (show current), 4 (volts off), 8 (power on),
-   *  16 (show values), 64 (adaptive timestep) and 128 (DC operating point) are
-   *  modelled; the rest are re-emitted so a save does not silently clear the
-   *  user's settings. */
+  /** Token 1 as loaded. Bits 1 (show current), 2 (small grid), 4 (volts off),
+   *  8 (power on), 16 (show values), 64 (adaptive timestep) and 128 (DC
+   *  operating point) are modelled; the rest are re-emitted so a save does not
+   *  silently clear the user's settings. */
   headerFlags?: number;
 }
 
@@ -246,6 +280,17 @@ export const DEFAULT_SETTINGS: SimSettings = {
   showGrid: true,
   conventional: true,
   editable: true,
+  smallGrid: false,
+  showCrosshair: false,
+  positiveColor: null,
+  negativeColor: null,
+  neutralColor: null,
+  selectionColor: null,
+  currentColor: null,
+  valueFontSize: 12,
+  shortDecimalDigits: 1,
+  decimalDigits: 3,
+  wheelSensitivity: 1,
 };
 
 /** Circuit-space units per grid square, matching the original. */

@@ -77,11 +77,23 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
         canvas.height = h * dpr;
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawScope(ctx, engine, scopeRef.current, w, h, cursorRef.current, engine.time, settings.timeStep, dark);
+      drawScope(
+        ctx,
+        engine,
+        scopeRef.current,
+        w,
+        h,
+        cursorRef.current,
+        engine.time,
+        settings.timeStep,
+        dark,
+        settings.decimalDigits,
+        settings,
+      );
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [engine, scope.id, settings.timeStep, dark]);
+  }, [engine, scope.id, settings, dark]);
 
   const canvasRect = () => canvasRef.current?.getBoundingClientRect();
   const size = () => {

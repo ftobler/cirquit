@@ -10,10 +10,10 @@ import {
   wheelPixels,
 } from '../../model/scrollValue';
 import type { ScrollValueSession } from '../../model/scrollValue';
-import { GRID_SIZE, type CircuitElement, type Point } from '../../model/types';
+import type { CircuitElement, Point } from '../../model/types';
 import { distanceToElement, nearestPost, postAt, postPatch } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
-import { makeToolElement, snap, useStore } from '../../state/store';
+import { gridSize, makeToolElement, snap, useStore } from '../../state/store';
 import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
 import { useStoreRef } from './useStoreRef';
 
@@ -44,6 +44,7 @@ export interface ScrollValuePopover {
 export function useCanvasInteractions(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   dragRef: React.MutableRefObject<Drag>,
+  pointerRef: React.MutableRefObject<Point | null>,
   forceRender: React.Dispatch<React.SetStateAction<number>>,
   engine: SimEngine | null,
 ) {
@@ -102,6 +103,17 @@ export function useCanvasInteractions(
     // Both refs are stable for the life of the component.
   }, [canvasRef, stateRef]);
 
+  /** The pointer in canvas-relative client pixels, the crosshair's stored
+   *  position. Kept view-independent so the frame loop can re-project it
+   *  through the current view: a keyboard zoom or Center Circuit moves the
+   *  circuit point under a stationary cursor, and the guides must follow. */
+  const toClient = useCallback((clientX: number, clientY: number): Point => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }, [canvasRef]);
+
   const hitTest = useCallback((p: Point): CircuitElement | null => {
     const { elements } = stateRef.current;
     let best: CircuitElement | null = null;
@@ -120,8 +132,9 @@ export function useCanvasInteractions(
 
   const startRowCol = (axis: 'row' | 'col', p: Point) => {
     const state = useStore.getState();
-    const x = snap(p.x);
-    const y = snap(p.y);
+    const grid = gridSize(state.settings);
+    const x = snap(p.x, grid);
+    const y = snap(p.y, grid);
     const captured: { id: number; post: 0 | 1 }[] = [];
     // Capture at pointer-down so a sweep cannot pick up elements it passes
     // over, and only the stored endpoints count, never derived posts
@@ -146,6 +159,7 @@ export function useCanvasInteractions(
     canvas?.setPointerCapture(ev.pointerId);
     const state = useStore.getState();
     const p = toCircuit(ev.clientX, ev.clientY);
+    pointerRef.current = toClient(ev.clientX, ev.clientY);
 
     // Right-click belongs to the context menu, which fires its contextmenu
     // event after this pointerdown. Entering a drag or a pan here would commit
@@ -209,10 +223,11 @@ export function useCanvasInteractions(
     }
 
     if (state.tool) {
-      const x = snap(p.x);
-      const y = snap(p.y);
+      const grid = gridSize(state.settings);
+      const x = snap(p.x, grid);
+      const y = snap(p.y, grid);
       const def = toolDef(state.tool);
-      const len = (def?.defaultLength ?? 0) * GRID_SIZE;
+      const len = (def?.defaultLength ?? 0) * grid;
       // Grounds and voltage sources drop vertically, the rest horizontally,
       // matching upstream's getDragVertical override.
       const x2 = def?.vertical ? x : x + len;
@@ -256,6 +271,8 @@ export function useCanvasInteractions(
     const drag = dragRef.current;
     const state = useStore.getState();
     const p = toCircuit(ev.clientX, ev.clientY);
+    pointerRef.current = toClient(ev.clientX, ev.clientY);
+    const grid = gridSize(state.settings);
 
     // Hover tracking only applies when nothing is being dragged.
     if (drag.mode === 'none') {
@@ -285,8 +302,8 @@ export function useCanvasInteractions(
         break;
       }
       case 'place': {
-        let x2 = snap(p.x);
-        let y2 = snap(p.y);
+        let x2 = snap(p.x, grid);
+        let y2 = snap(p.y, grid);
         const def = state.tool ? toolDef(state.tool) : undefined;
         if (def?.noDiagonal) {
           // Upstream snaps the drag to the dominant axis, so a transistor,
@@ -298,8 +315,8 @@ export function useCanvasInteractions(
         break;
       }
       case 'move': {
-        const gx = snap(p.x) - snap(drag.last.x);
-        const gy = snap(p.y) - snap(drag.last.y);
+        const gx = snap(p.x, grid) - snap(drag.last.x, grid);
+        const gy = snap(p.y, grid) - snap(drag.last.y, grid);
         if (gx !== 0 || gy !== 0) {
           state.moveElements(state.selectedIds, gx, gy);
           dragRef.current = { mode: 'move', last: p, moved: true };
@@ -310,8 +327,8 @@ export function useCanvasInteractions(
         // Snap to absolute grid coordinates, not to a delta: a group keeps
         // its internal spacing, a single post should land exactly on the grid
         // so the dragged end can connect to a wire that ends there.
-        const x = snap(p.x);
-        const y = snap(p.y);
+        const x = snap(p.x, grid);
+        const y = snap(p.y, grid);
         const e = state.elements.find((q) => q.id === drag.id);
         // A no-op update would bump `revision` and make the engine reload
         // mid-cell, so only touch the store when the endpoint actually moved.
@@ -323,8 +340,8 @@ export function useCanvasInteractions(
         break;
       }
       case 'rowcol': {
-        const x = snap(p.x);
-        const y = snap(p.y);
+        const x = snap(p.x, grid);
+        const y = snap(p.y, grid);
         // Only the along-axis delta moves anything; the other axis is locked,
         // so a row sweep cannot drift a vertical post (MouseManager.java:
         // 450-466). The captured list is frozen at pointer-down.
@@ -460,10 +477,14 @@ export function useCanvasInteractions(
     }
 
     // Zoom about the pointer so the point under the cursor stays put. Stamped
-    // here so the value stepper stays disabled for a second after. The factor
-    // and clamp are shared with the keyboard path via zoomAbout.
+    // here so the value stepper stays disabled for a second after. The clamp
+    // is shared with the keyboard path via zoomAbout; wheelSensitivity scales
+    // the per-notch exponent, and at 1 the factor is exactly today's 1.12 or
+    // 1/1.12 (MouseManager.java:1317-1331).
     zoomAtRef.current = now;
-    state.setView(zoomAbout(state.view, p.x, p.y, ev.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR));
+    const s = state.settings.wheelSensitivity;
+    const factor = Math.exp(Math.sign(ev.deltaY) * -Math.log(ZOOM_FACTOR) * s);
+    state.setView(zoomAbout(state.view, p.x, p.y, factor));
   };
 
   const onContextMenu = (ev: React.MouseEvent<HTMLCanvasElement>) => {
@@ -491,8 +512,10 @@ export function useCanvasInteractions(
   };
 
   const onPointerLeave = () => {
-    // The pointer is gone, so both transient highlights must go with it.
+    // The pointer is gone, so the transient highlights and the crosshair guide
+    // must go with it.
     const state = useStore.getState();
+    pointerRef.current = null;
     state.setHovered(null);
     state.setHighlightedNode(null);
   };

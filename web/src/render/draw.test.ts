@@ -82,6 +82,8 @@ const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext =
   voltageRange: 5,
   powerRange: 50,
   scale: 1,
+  valueDigits: 1,
+  valueFontSize: 12,
 });
 
 describe('value formatting', () => {
@@ -99,6 +101,66 @@ describe('value formatting', () => {
 
   it('keeps the sign', () => {
     expect(formatValue(-2.5, 'V')).toBe('-2.5 V');
+  });
+
+  it('honours the fraction-digit count, the upstream ####.# pattern', () => {
+    // toPrecision(1) would render 55.5 as "6e+1"; the fraction-digit pattern
+    // must give "55.5m" and "55.6m" (CircuitElm.java:163-167).
+    expect(formatValue(0.0555, 'V', 1)).toBe('55.5m V');
+    expect(formatValue(0.05556, 'V', 1)).toBe('55.6m V');
+    expect(formatValue(4700, 'Ω', 0)).toBe('5k Ω');
+    // A three-digit scaled value above 100 no longer forces integers: the
+    // pattern keeps the fraction digits (upstream renders the same).
+    expect(formatValue(123456, 'V', 3)).toBe('123.456k V');
+  });
+
+  it('keeps the default three-digit behaviour after the toFixed change', () => {
+    expect(formatValue(0.0555, 'V')).toBe('55.5m V');
+    expect(formatValue(4700, 'Ω')).toBe('4.7k Ω');
+    expect(formatValue(0.000001, 'F')).toBe('1µ F');
+  });
+});
+
+describe('theme colour overrides', () => {
+  it('makeTheme overlays exactly the five mutable keys and keeps the rest', () => {
+    const theme = makeTheme(false, {
+      positiveColor: '#ff0000',
+      negativeColor: '#00ff00',
+      neutralColor: '#0000ff',
+      selectionColor: '#ff00ff',
+      currentColor: '#00ffff',
+    });
+    expect(theme.positive).toBe('#ff0000');
+    expect(theme.negative).toBe('#00ff00');
+    expect(theme.neutral).toBe('#0000ff');
+    expect(theme.selection).toBe('#ff00ff');
+    expect(theme.currentDot).toBe('#00ffff');
+    // The other nine theme keys come from the palette, untouched.
+    expect(theme.background).toBe('#ffffff');
+    expect(theme.grid).toBe('#d0d7de');
+    expect(theme.wire).toBe('#000000');
+  });
+
+  it('makeTheme without a settings argument is the stock palette', () => {
+    const theme = makeTheme(false);
+    expect(theme.positive).toBe('#1a7f37');
+    expect(theme.negative).toBe('#cf222e');
+    expect(theme.neutral).toBe('#6e7781');
+    expect(theme.selection).toBe('#0969da');
+    expect(theme.currentDot).toBe('#9a6700');
+    expect(theme.background).toBe('#ffffff');
+  });
+
+  it('a null colour keeps the palette value', () => {
+    const theme = makeTheme(true, {
+      positiveColor: null,
+      negativeColor: null,
+      neutralColor: null,
+      selectionColor: null,
+      currentColor: '#123456',
+    });
+    expect(theme.positive).toBe('#3fb950');
+    expect(theme.currentDot).toBe('#123456');
   });
 });
 

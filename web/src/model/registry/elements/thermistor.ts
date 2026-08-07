@@ -69,7 +69,11 @@ function drawThermistorBody(g: DrawContext, e: CircuitElement): void {
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
-  label(g, e, `${thermistorTemperature(e)}°C = ${formatValue(thermistorResistance(e), 'Ω')}`);
+  label(
+    g,
+    e,
+    `${thermistorTemperature(e)}°C = ${formatValue(thermistorResistance(e), 'Ω', g.valueDigits)}`,
+  );
 }
 
 export const THERMISTOR_DEF: ElementDef = {

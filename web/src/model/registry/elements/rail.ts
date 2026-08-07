@@ -34,34 +34,36 @@ export function railLead(p1: Point, p2: Point): Point {
 /**
  * The DC rail's label, plus sign and all (RailElm.java:72-80): a plain decimal
  * with " V" below 1 volt, the short prefix form from there up, and a leading
- * plus only for positive rails.
+ * plus only for positive rails. `digits` is the short-format digit count the
+ * label sites use (g.valueDigits), so the option applies here too.
  */
-export function railText(v: number): string {
-  const s = Math.abs(v) < 1 ? `${decimal(v)} V` : compact(v, 'V');
+export function railText(v: number, digits = 3): string {
+  const s = Math.abs(v) < 1 ? `${decimal(v, digits)} V` : compact(v, 'V', digits);
   return v > 0 ? `+${s}` : s;
 }
 
-/** Plain decimal with three fraction digits, trailing zeroes stripped. */
-function decimal(v: number): string {
-  return v.toFixed(3).replace(/\.?0+$/, '');
+/** Plain decimal with `digits` fraction digits, trailing zeroes stripped. */
+function decimal(v: number, digits = 3): string {
+  return v.toFixed(digits).replace(/\.?0+$/, '');
 }
 
 /** Upstream's short unit text: no space before the unit (getUnitText, sf). */
-function compact(v: number, unit: string): string {
-  return formatValue(v, unit).replace(' ', '');
+function compact(v: number, unit: string, digits = 3): string {
+  return formatValue(v, unit, digits).replace(' ', '');
 }
 
 /**
  * Where the rail label is drawn, cloning `drawLabeledNode` (CircuitElm.java:
  * 945-968): vertical rails centre the text on the stem end and step it one
  * font height along the travel direction; horizontal rails set it 4 clear of
- * the stem end.
+ * the stem end. `fontSize` keeps the offset in step with the value-font-size
+ * setting.
  */
-export function railLabelAnchor(p1: Point, lead1: Point, textWidth: number): Point {
+export function railLabelAnchor(p1: Point, lead1: Point, textWidth: number, fontSize = VALUE_FONT): Point {
   if (p1.y !== lead1.y) {
     return {
       x: lead1.x - textWidth / 2,
-      y: lead1.y + Math.sign(lead1.y - p1.y) * VALUE_FONT,
+      y: lead1.y + Math.sign(lead1.y - p1.y) * fontSize,
     };
   }
   if (lead1.x > p1.x) return { x: lead1.x + 4, y: lead1.y };
@@ -74,25 +76,25 @@ const RMS_MULT = [1, 1 / Math.sqrt(2), 1, 1 / Math.sqrt(3), 1 / Math.sqrt(3), 0.
 /** The value label beside an AC rail's waveform circle, under
  *  FLAG_SHOW_VOLTAGE_RAIL: the voltage (RMS when that is the rounder number)
  *  and optionally the frequency (VoltageElm.java:406-418). */
-export function railValueText(e: CircuitElement, showFrequency: boolean): string {
+export function railValueText(e: CircuitElement, showFrequency: boolean, digits = 3): string {
   const maxV = e.params.maxVoltage ?? 0;
   const bias = e.params.bias ?? 0;
   const wf = e.params.waveform ?? 0;
-  const voltage = shortRailVoltage(e, maxV, bias, wf);
+  const voltage = shortRailVoltage(e, maxV, bias, wf, digits);
   if (!showFrequency) return voltage;
-  return `${voltage} ${compact(e.params.frequency ?? 0, 'Hz')}`;
+  return `${voltage} ${compact(e.params.frequency ?? 0, 'Hz', digits)}`;
 }
 
-function shortRailVoltage(e: CircuitElement, maxV: number, bias: number, wf: number): string {
-  if (bias !== 0) return compact(bias + maxV, 'V');  // VoltageElm.java:437-438
+function shortRailVoltage(e: CircuitElement, maxV: number, bias: number, wf: number, digits: number): string {
+  if (bias !== 0) return compact(bias + maxV, 'V', digits);  // VoltageElm.java:437-438
   const mult = wf === 5 ? Math.sqrt(e.params.dutyCycle ?? 0.5) : (RMS_MULT[wf] ?? 1);
   // Show RMS when that is the rounder number (VoltageElm.java:427-433).
   const rounder =
     mult !== 1 &&
     Math.abs(maxV) > 1e-4 &&
     diffFromInteger(maxV * mult * 1e4) < diffFromInteger(maxV * 1e4);
-  if (rounder) return `${compact(maxV * mult, 'V')}rms`;
-  return compact(maxV, 'V');
+  if (rounder) return `${compact(maxV * mult, 'V', digits)}rms`;
+  return compact(maxV, 'V', digits);
 }
 
 function diffFromInteger(x: number): number {
@@ -103,14 +105,16 @@ function diffFromInteger(x: number): number {
  * Where the AC rail's value label goes, cloning `drawValues` for a rail
  * (CircuitElm.java:915-942): anchored on `point2`, offset a circle radius
  * perpendicular, voltage sources always on the left (CircuitElm.java:938).
+ * `fontSize` keeps the vertical centring in step with the value-font-size
+ * setting.
  */
-export function railValueAnchor(e: CircuitElement, textWidth: number): Point {
+export function railValueAnchor(e: CircuitElement, textWidth: number, fontSize = VALUE_FONT): Point {
   const [p1, p2] = endpoints(e);
   const dn = Math.max(1, elementLength(e));
   const dpx = Math.trunc(((p2.y - p1.y) / dn) * RAIL_CIRCLE);
   const dpy = Math.trunc((-(p2.x - p1.x) / dn) * RAIL_CIRCLE);
   if (dpx === 0) return { x: p2.x - textWidth / 2, y: p2.y - Math.abs(dpy) - 2 };
-  return { x: p2.x - (textWidth + Math.abs(dpx) + 2), y: p2.y + dpy + VALUE_FONT / 2 };
+  return { x: p2.x - (textWidth + Math.abs(dpx) + 2), y: p2.y + dpy + fontSize / 2 };
 }
 
 export const RAIL_DEF: ElementDef = {
@@ -159,7 +163,7 @@ export const RAIL_DEF: ElementDef = {
       drawRailLabel(g, e, lead1, 'CLK');
     } else if (wf === 0) {
       const v = (e.params.maxVoltage ?? 0) + (e.params.bias ?? 0);  // getVoltage, WF_DC
-      drawRailLabel(g, e, lead1, railText(v));
+      drawRailLabel(g, e, lead1, railText(v, g.valueDigits));
     } else if (wf === 6) {
       drawRailLabel(g, e, lead1, 'Noise');
     } else {
@@ -167,9 +171,9 @@ export const RAIL_DEF: ElementDef = {
       drawWaveformGlyph(g, p2, wf, RAIL_CIRCLE);
       const showF = g.showValues;
       if ((e.flags & RAIL_SHOW_VOLTAGE) !== 0) {
-        drawRailValue(g, e, railValueText(e, showF));
+        drawRailValue(g, e, railValueText(e, showF, g.valueDigits));
       } else if (showF) {
-        drawRailValue(g, e, `${compact(e.params.frequency ?? 0, 'Hz')}`);
+        drawRailValue(g, e, `${compact(e.params.frequency ?? 0, 'Hz', g.valueDigits)}`);
       }
     }
     currentDots(g, p1, lead1, g.current);
@@ -178,18 +182,18 @@ export const RAIL_DEF: ElementDef = {
 
 function drawRailLabel(g: DrawContext, e: CircuitElement, lead1: Point, text: string): void {
   const [p1] = endpoints(e);
-  const anchor = railLabelAnchor(p1, lead1, g.ctx.measureText(text).width);
+  const anchor = railLabelAnchor(p1, lead1, g.ctx.measureText(text).width, g.valueFontSize);
   g.ctx.fillStyle = g.theme.text;
-  g.ctx.font = canvasFont(VALUE_FONT);
+  g.ctx.font = canvasFont(g.valueFontSize);
   g.ctx.textAlign = 'left';
   g.ctx.textBaseline = 'middle';
   g.ctx.fillText(text, anchor.x, anchor.y);
 }
 
 function drawRailValue(g: DrawContext, e: CircuitElement, text: string): void {
-  const anchor = railValueAnchor(e, g.ctx.measureText(text).width);
+  const anchor = railValueAnchor(e, g.ctx.measureText(text).width, g.valueFontSize);
   g.ctx.fillStyle = g.theme.text;
-  g.ctx.font = canvasFont(VALUE_FONT);
+  g.ctx.font = canvasFont(g.valueFontSize);
   g.ctx.textAlign = 'left';
   g.ctx.textBaseline = 'middle';
   g.ctx.fillText(text, anchor.x, anchor.y);

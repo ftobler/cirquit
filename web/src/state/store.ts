@@ -20,12 +20,12 @@ import {
 import { VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import {
   DEFAULT_SETTINGS,
-  GRID_SIZE,
   UNMODELLED_HEADER,
   type CircuitElement,
 } from '../model/types';
 import type { AppState, Snapshot, ViewTransform } from './types';
-import { hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers';
+import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
+import { gridSize, hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 
 const clone = (s: Snapshot): Snapshot => ({
@@ -170,7 +170,10 @@ export const useStore = create<AppState>((set, get) => ({
   elements: [],
   selectedIds: [],
   scopes: [],
-  settings: { ...DEFAULT_SETTINGS },
+  // App prefs (colours, digits, font size, wheel sensitivity, crosshair) are
+  // merged over the defaults at startup so they survive a page reload; the
+  // header-borne and plain settings stay at their defaults.
+  settings: { ...DEFAULT_SETTINGS, ...loadAppPrefs() },
   passthrough: [],
   unmatchedScopes: [],
   order: [],
@@ -209,8 +212,14 @@ export const useStore = create<AppState>((set, get) => ({
   openDialog: (dialog) => set({ dialog }),
   closeDialog: () => set({ dialog: null }),
 
-  updateSettings: (patch) =>
-    set((s) => {
+  updateSettings: (patch) => {
+    // A change to an app-pref key (a colour, the digit counts, the font size,
+    // wheel sensitivity, the crosshair) persists to localStorage so it
+    // survives a reload; circuit and plain settings do not.
+    if (touchesAppPrefs(patch)) {
+      saveAppPrefs({ ...get().settings, ...patch });
+    }
+    return set((s) => {
       const merged = { ...s.settings, ...patch };
       // The two colour modes are mutually exclusive, mirroring upstream's
       // menu toggles (Menus.java:190-197): turning one on turns the other off.
@@ -226,7 +235,8 @@ export const useStore = create<AppState>((set, get) => ({
         patch.adaptiveTimeStep !== undefined ||
         patch.autoDC !== undefined;
       return { settings: merged, revision: reload ? s.revision + 1 : s.revision };
-    }),
+    });
+  },
 
   select: (ids) => set({ selectedIds: ids }),
 
@@ -902,14 +912,26 @@ export const useStore = create<AppState>((set, get) => ({
       unmatchedScopes: [],
       passthrough: [],
       order: [],
+      // The header-borne settings reset to a fresh circuit's defaults, exactly
+      // as upstream clears maxTimeStep/minTimeStep on New (CircuitLoader.java:
+      // 49-50); app prefs (colours, digits, font size, wheel sensitivity,
+      // crosshair) and plain settings (stepsPerFrame, showGrid, ...) survive.
       settings: {
         ...s.settings,
         ...UNMODELLED_HEADER,
+        timeStep: DEFAULT_SETTINGS.timeStep,
+        currentSpeed: DEFAULT_SETTINGS.currentSpeed,
+        voltageRange: DEFAULT_SETTINGS.voltageRange,
+        powerRange: DEFAULT_SETTINGS.powerRange,
         minTimeStep: DEFAULT_SETTINGS.minTimeStep,
         iterCount: DEFAULT_SETTINGS.iterCount,
+        showCurrent: DEFAULT_SETTINGS.showCurrent,
+        smallGrid: DEFAULT_SETTINGS.smallGrid,
+        showVoltageColor: DEFAULT_SETTINGS.showVoltageColor,
+        showPowerColor: DEFAULT_SETTINGS.showPowerColor,
+        showValues: DEFAULT_SETTINGS.showValues,
         adaptiveTimeStep: DEFAULT_SETTINGS.adaptiveTimeStep,
         autoDC: DEFAULT_SETTINGS.autoDC,
-        powerRange: DEFAULT_SETTINGS.powerRange,
       },
       selectedIds: [],
       hoveredId: null,
@@ -1014,13 +1036,16 @@ function insertElementsFromText(text: string): void {
   if (parsed.elements.length === 0) return;
   const state = useStore.getState();
   state.commit();
+  // A paste lands one square away, so on a small grid it offsets by 8 to keep
+  // the duplicate from sitting on top of the original (UIManager.java:1001).
+  const grid = gridSize(state.settings);
   const added = parsed.elements.map((e) => ({
     ...e,
     id: allocateId(),
-    x1: e.x1 + GRID_SIZE,
-    y1: e.y1 + GRID_SIZE,
-    x2: e.x2 + GRID_SIZE,
-    y2: e.y2 + GRID_SIZE,
+    x1: e.x1 + grid,
+    y1: e.y1 + grid,
+    x2: e.x2 + grid,
+    y2: e.y2 + grid,
   }));
   useStore.setState((s) => ({
     elements: [...s.elements, ...added],
@@ -1050,4 +1075,4 @@ function transformSelected(
 }
 
 export type { AppState, ViewTransform };
-export { hasUnsavedChanges, makeElement, makeToolElement, snap };
+export { gridSize, hasUnsavedChanges, makeElement, makeToolElement, snap };

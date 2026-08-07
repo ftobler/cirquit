@@ -54,7 +54,7 @@ export function renderCircuitToCanvas(
   canvas.width = Math.max(1, Math.round(geo.width));
   canvas.height = Math.max(1, Math.round(geo.height));
 
-  const theme = makeTheme(dark);
+  const theme = makeTheme(dark, settings);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -105,6 +105,8 @@ export function renderCircuitToCanvas(
       voltageRange: settings.voltageRange,
       powerRange: settings.powerRange,
       scale: geo.scale,
+      valueDigits: settings.shortDecimalDigits,
+      valueFontSize: settings.valueFontSize,
     };
     def.draw(g, e);
   }

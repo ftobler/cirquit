@@ -9,6 +9,7 @@
 
 import type { Scope, ScopePlot, ScopeValue, SimEngine } from '../engine/simulator';
 import { canvasFont, formatValue, makeTheme } from '../render/draw';
+import type { ThemeColors } from '../model/types';
 import { scopeSpeed, timeToX } from './geometry';
 import {
   axisSamplesFit,
@@ -69,13 +70,13 @@ export const isDrawable = (plot: ScopePlot): plot is DrawablePlot =>
 
 export type DrawablePlot = ScopePlot & { elementId: number; value: ScopeValue };
 
-function colorOf(plot: ScopePlot, dark: boolean): string {
+function colorOf(plot: ScopePlot, dark: boolean, colors?: ThemeColors): string {
   // The default V/I palette mirrors upstream (ScopePlot.assignColor): voltage
   // is the theme's positive green, current the theme's current yellow. Extra
   // plots cycle. The current colour rides the theme's `currentDot`, which the
   // light palette re-tunes for a white background.
-  if (plot.value === 'voltage') return makeTheme(dark).positive;
-  if (plot.value === 'current') return makeTheme(dark).currentDot;
+  if (plot.value === 'voltage') return makeTheme(dark, colors).positive;
+  if (plot.value === 'current') return makeTheme(dark, colors).currentDot;
   return TRACE_COLORS[(plot.id % TRACE_COLORS.length)];
 }
 
@@ -337,6 +338,7 @@ function drawHeader(
   timeStep: number,
   h: number,
   dark: boolean,
+  decimalDigits: number,
 ): void {
   const lines: InfoLine[] = [];
   // The scope's own label renders as a title line above the scale, in the
@@ -347,14 +349,14 @@ function drawHeader(
     lines.push({ text: scope.label, y });
     y += 15;
   }
-  const hs = `H=${formatValue(gridStepX(speed, timeStep), 's')}/div`;
+  const hs = `H=${formatValue(gridStepX(speed, timeStep), 's', decimalDigits)}/div`;
   if (scope.manualScale) {
     // Per-plot coloured /div labels (ScopeOverlays.drawScale, manual mode).
     lines.push({ text: hs, y });
     let x = 0;
     for (const p of scope.plots.filter(isDrawable)) {
       const manScale = p.manScale ?? seedManScale(5, MAN_DIVISIONS);
-      const s = `=${formatValue(manScale, UNIT[p.value])}/div`;
+      const s = `=${formatValue(manScale, UNIT[p.value], decimalDigits)}/div`;
       ctx.font = canvasFont(10);
       const width = ctx.measureText(s).width + 20;
       if (x + width > ctx.canvas.width) break;
@@ -370,7 +372,10 @@ function drawHeader(
     // (ScopeOverlays.java:22-25).
     const hasV = scope.plots.some((p) => p.value === 'voltage');
     const hasI = scope.plots.some((p) => p.value === 'current');
-    const vs = hasV && !hasI ? ` V=${formatValue(firstTransform.stepY, UNIT[firstPlot.value])}/div` : '';
+    const vs =
+      hasV && !hasI
+        ? ` V=${formatValue(firstTransform.stepY, UNIT[firstPlot.value], decimalDigits)}/div`
+        : '';
     lines.push({ text: hs + vs, y });
   }
   drawInfo(ctx, lines, h);
@@ -383,16 +388,18 @@ function drawMeasurements(
   h: number,
   speed: number,
   timeStep: number,
+  decimalDigits: number,
 ): void {
   if (first.count === 0) return;
   const mid = (maxValue(first.min, first.max, first.count) + minValue(first.min, first.max, first.count)) / 2;
   const lines: InfoLine[] = [];
   let y = 20;
   const push = (text: string) => lines.push({ text, y: (y += 15) });
-  if (scope.showMax) push(`Max=${formatValue(maxValue(first.min, first.max, first.count), UNIT[first.plot.value])}`);
+  if (scope.showMax)
+    push(`Max=${formatValue(maxValue(first.min, first.max, first.count), UNIT[first.plot.value], decimalDigits)}`);
   if (scope.showMin)
     lines.push({
-      text: `Min=${formatValue(minValue(first.min, first.max, first.count), UNIT[first.plot.value])}`,
+      text: `Min=${formatValue(minValue(first.min, first.max, first.count), UNIT[first.plot.value], decimalDigits)}`,
       y: h - 18,
     });
   if (scope.showP2P)
@@ -400,16 +407,18 @@ function drawMeasurements(
       `P-P=${formatValue(
         maxValue(first.min, first.max, first.count) - minValue(first.min, first.max, first.count),
         UNIT[first.plot.value],
+        decimalDigits,
       )}`,
     );
-  if (scope.showRMS) push(`${formatValue(rms(first.min, first.max, first.count, mid), UNIT[first.plot.value])}rms`);
+  if (scope.showRMS)
+    push(`${formatValue(rms(first.min, first.max, first.count, mid), UNIT[first.plot.value], decimalDigits)}rms`);
   if (scope.showAverage)
-    push(`${formatValue(average(first.min, first.max, first.count, mid), UNIT[first.plot.value])} average`);
+    push(`${formatValue(average(first.min, first.max, first.count, mid), UNIT[first.plot.value], decimalDigits)} average`);
   if (scope.showDutyCycle)
     push(`Duty cycle ${Math.round(dutyCycle(first.min, first.max, first.count, mid))}%`);
   if (scope.showFreq) {
     const f = estimateFrequency(first.min, first.max, first.count, speed, timeStep);
-    if (f !== 0) push(formatValue(f, 'Hz'));
+    if (f !== 0) push(formatValue(f, 'Hz', decimalDigits));
   }
   drawInfo(ctx, lines, h);
 }
@@ -450,6 +459,7 @@ function drawCursor(
   h: number,
   triggerAnchor?: { time: number } | null,
   dark = true,
+  decimalDigits = 3,
 ): void {
   if (!cursor.hover || cursor.cursorTime < 0 || states.length === 0) return;
   const maxy = Math.floor((h - 1) / 2);
@@ -474,7 +484,10 @@ function drawCursor(
     ctx.arc(x, dotY, 2.5, 0, Math.PI * 2);
     ctx.fill();
     if (cursor.dragStartTime < 0)
-      lines.push({ text: formatValue(cursorValue, UNIT[selected.plot.value]), y: (y += 15) });
+      lines.push({
+        text: formatValue(cursorValue, UNIT[selected.plot.value], decimalDigits),
+        y: (y += 15),
+      });
   }
   // Drag-start line and delta readout.
   if (cursor.dragStartTime >= 0) {
@@ -488,17 +501,20 @@ function drawCursor(
       const dragK = Math.round(dragX);
       const startValue = dragK >= 0 && dragK < selected.count ? selected.max[dragK] : null;
       const deltaT = cursor.cursorTime - cursor.dragStartTime;
-      lines.push({ text: `Δt=${formatValue(Math.abs(deltaT), 's')}`, y: (y += 15) });
+      lines.push({ text: `Δt=${formatValue(Math.abs(deltaT), 's', decimalDigits)}`, y: (y += 15) });
       if (startValue !== null && cursorValue !== null) {
         lines.push({
-          text: `Δ=${formatValue(cursorValue - startValue, UNIT[selected.plot.value])}`,
+          text: `Δ=${formatValue(cursorValue - startValue, UNIT[selected.plot.value], decimalDigits)}`,
           y: (y += 15),
         });
-        lines.push({ text: formatValue(cursorValue, UNIT[selected.plot.value]), y: (y += 15) });
+        lines.push({
+          text: formatValue(cursorValue, UNIT[selected.plot.value], decimalDigits),
+          y: (y += 15),
+        });
       }
     }
   }
-  lines.push({ text: formatValue(cursor.cursorTime, 's'), y: (y += 15) });
+  lines.push({ text: formatValue(cursor.cursorTime, 's', decimalDigits), y: (y += 15) });
   drawInfo(ctx, lines, h);
 }
 
@@ -514,6 +530,7 @@ function drawFFT(
   speed: number,
   timeStep: number,
   cursor: ScopeCursor,
+  decimalDigits: number,
 ): void {
   const n = Math.pow(2, Math.ceil(Math.log2(columns)));
   // Blank until columns_written >= columns: a partial ring would feed the
@@ -557,7 +574,7 @@ function drawFFT(
   if (cursor.hover) {
     const cx = cursor.mouseX;
     const f = (maxFreq * divs * cx) / w;
-    const lines: InfoLine[] = [{ text: formatValue(f, 'Hz'), y: 4 }];
+    const lines: InfoLine[] = [{ text: formatValue(f, 'Hz', decimalDigits), y: 4 }];
     const fftIndex = Math.floor((cx * n) / (2 * w));
     if (fftIndex >= 0 && fftIndex < mag.length && maxM > 0) {
       lines.push({ text: `${Math.round(dbOf(mag[fftIndex], maxM))} dB`, y: 19 });
@@ -755,7 +772,8 @@ function drawTrigger(
 
 /** The per-frame entry point: draws one scope canvas. `dark` follows the White
  *  Background setting so the panel, text and trace colours stay legible on a
- *  white backdrop. */
+ *  white backdrop. `decimalDigits` is the readout digit count and `colors` the
+ *  user's colour overrides, both from the options panel settings. */
 export function drawScope(
   ctx: CanvasRenderingContext2D,
   engine: SimEngine,
@@ -766,8 +784,10 @@ export function drawScope(
   simTime: number,
   timeStep: number,
   dark: boolean,
+  decimalDigits = 3,
+  colors?: ThemeColors,
 ): void {
-  const theme = makeTheme(dark);
+  const theme = makeTheme(dark, colors);
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, w, h);
   if (w < 2 || h < 2) return;
@@ -834,18 +854,18 @@ export function drawScope(
   // (Scope.java:615-618 then 666-681).
   if (scope.fftPlot) {
     const firstData = engine.scopeData(states[0].index);
-    drawFFT(ctx, scope, firstData, firstData.length / 2, w, h, speed, timeStep, cursor);
+    drawFFT(ctx, scope, firstData, firstData.length / 2, w, h, speed, timeStep, cursor, decimalDigits);
   }
   // Traces underneath: current first, voltage on top (Scope.java:666-681).
   for (const s of [...states].reverse()) {
-    drawTrace(ctx, s.data, s.win, s.transform, maxy, colorOf(s.plot, dark));
+    drawTrace(ctx, s.data, s.win, s.transform, maxy, colorOf(s.plot, dark, colors));
   }
   // Manual scale draws a zero marker per plot (Scope.java:865-869).
   if (scope.manualScale) {
     for (const s of states) {
       const y0 = yOf(s.transform, maxy, 0);
       if (y0 < 0 || y0 >= h) continue;
-      ctx.strokeStyle = colorOf(s.plot, dark);
+      ctx.strokeStyle = colorOf(s.plot, dark, colors);
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(0, y0);
@@ -858,10 +878,10 @@ export function drawScope(
   }
 
   if (!(cursor.hover && cursor.cursorTime >= 0)) {
-    drawHeader(ctx, scope, first.transform, first.plot, speed, timeStep, h, dark);
+    drawHeader(ctx, scope, first.transform, first.plot, speed, timeStep, h, dark, decimalDigits);
   }
-  drawMeasurements(ctx, scope, states[0], h, speed, timeStep);
-  drawCursor(ctx, cursor, states, simTime, speed, timeStep, w, h, triggerAnchor, dark);
+  drawMeasurements(ctx, scope, states[0], h, speed, timeStep, decimalDigits);
+  drawCursor(ctx, cursor, states, simTime, speed, timeStep, w, h, triggerAnchor, dark, decimalDigits);
 }
 
 /** Index of the plot whose trace is nearest the pointer, for manual-mode

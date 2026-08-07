@@ -29,7 +29,7 @@ export function drawCapacitorBody(g: DrawContext, e: CircuitElement): void {
   const leadLen = Math.hypot(lead1.x - p1.x, lead1.y - p1.y);
   currentDotsFrom(g, p1, lead1, g.current, g.dotPhase);
   currentDotsFrom(g, lead2, p2, g.current, dotPhaseAfter(g.dotPhase, leadLen));
-  label(g, e, formatValue(e.params.capacitance ?? 0, 'F'));
+  label(g, e, formatValue(e.params.capacitance ?? 0, 'F', g.valueDigits));
 }
 
 /**

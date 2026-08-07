@@ -382,6 +382,13 @@ describe('updateSettings reload classification', () => {
     ['showPowerColor', true, false],
     ['showGrid', true, false],
     ['editable', false, false],
+    ['smallGrid', true, false],
+    ['showCrosshair', true, false],
+    ['valueFontSize', 14, false],
+    ['shortDecimalDigits', 2, false],
+    ['decimalDigits', 4, false],
+    ['wheelSensitivity', 2, false],
+    ['positiveColor', '#ff0000', false],
   ] as const)('%s reloads=%s', (key, value, reload) => {
     const before = useStore.getState().revision;
     useStore.getState().updateSettings({ [key]: value } as Partial<SimSettings>);
@@ -404,6 +411,47 @@ describe('updateSettings reload classification', () => {
     expect(s.settings.showVoltageColor).toBe(true);
     expect(s.settings.showPowerColor).toBe(false);
     expect(s.revision).toBe(before);
+  });
+});
+
+describe('options panel settings', () => {
+  it('DEFAULT_SETTINGS carries the new keys with upstream values', () => {
+    expect(DEFAULT_SETTINGS.smallGrid).toBe(false);
+    expect(DEFAULT_SETTINGS.showCrosshair).toBe(false);
+    expect(DEFAULT_SETTINGS.valueFontSize).toBe(12);
+    expect(DEFAULT_SETTINGS.shortDecimalDigits).toBe(1);
+    expect(DEFAULT_SETTINGS.decimalDigits).toBe(3);
+    expect(DEFAULT_SETTINGS.wheelSensitivity).toBe(1);
+    expect(DEFAULT_SETTINGS.positiveColor).toBeNull();
+    expect(DEFAULT_SETTINGS.negativeColor).toBeNull();
+    expect(DEFAULT_SETTINGS.neutralColor).toBeNull();
+    expect(DEFAULT_SETTINGS.selectionColor).toBeNull();
+    expect(DEFAULT_SETTINGS.currentColor).toBeNull();
+  });
+
+  it('keeps the settings object a flat, JSON-serializable shape', () => {
+    const s = useStore.getState().settings;
+    expect(JSON.parse(JSON.stringify(s))).toEqual(s);
+  });
+
+  it('loads header flag bit 2 into smallGrid and clears it when the bit is clear', () => {
+    useStore.getState().loadNetlist('$ 3 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n');
+    expect(useStore.getState().settings.smallGrid).toBe(true);
+    useStore.getState().loadNetlist('$ 1 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n');
+    expect(useStore.getState().settings.smallGrid).toBe(false);
+  });
+
+  it('newCircuit resets circuit settings but keeps app prefs and plain settings', () => {
+    // smallGrid is header-borne (a circuit setting), positiveColor an app
+    // pref, stepsPerFrame a plain setting: New resets only the first.
+    useStore.getState().updateSettings({ smallGrid: true, positiveColor: '#123456' });
+    useStore.getState().updateSettings({ stepsPerFrame: 320 });
+    useStore.getState().newCircuit();
+    const s = useStore.getState().settings;
+    expect(s.smallGrid).toBe(false);
+    expect(s.showCurrent).toBe(true);
+    expect(s.positiveColor).toBe('#123456');
+    expect(s.stepsPerFrame).toBe(320);
   });
 });
 
