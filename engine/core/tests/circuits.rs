@@ -2738,6 +2738,78 @@ fn ungrounded_circuit_still_solves_with_a_warning() {
 }
 
 #[test]
+fn floating_node_warning_states_the_pin_in_ohms() {
+    // One node with no path to ground: the warning must name the pin as a
+    // resistance derived from GMIN (1e-8 S == 100 MΩ), with the ohm glyph and
+    // no siemens anywhere.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "resistor", &[[0, 0], [0, 100]], &[("resistance", 500.0)]),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(
+                4,
+                "resistor",
+                &[[100, 0], [100, 0]],
+                &[("resistance", 500.0)],
+            ),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let warn = c
+        .warnings()
+        .iter()
+        .find(|w| w.contains("no path to ground"))
+        .expect("expected a floating-node warning");
+    assert!(
+        warn.contains("M\u{2126}") && !warn.contains(" S") && !warn.contains("1e-8"),
+        "warning was {warn}"
+    );
+    assert_eq!(
+        warn,
+        "1 floating node(s) have no path to ground; they were pinned with a 100 M\u{2126} resistance."
+    );
+}
+
+#[test]
+fn two_floating_subcircuits_report_their_count() {
+    // Two one-node floating components, each pinned separately, so the leading
+    // count in the warning reflects the real pin count instead of the plural
+    // path silently dropping it.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "resistor", &[[0, 0], [0, 100]], &[("resistance", 500.0)]),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(
+                4,
+                "resistor",
+                &[[100, 0], [100, 0]],
+                &[("resistance", 500.0)],
+            ),
+            elm(
+                5,
+                "resistor",
+                &[[200, 0], [200, 0]],
+                &[("resistance", 500.0)],
+            ),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let warn = c
+        .warnings()
+        .iter()
+        .find(|w| w.contains("no path to ground"))
+        .expect("expected a floating-node warning");
+    assert_eq!(
+        warn,
+        "2 floating node(s) have no path to ground; they were pinned with a 100 M\u{2126} resistance."
+    );
+}
+
+#[test]
 fn reset_returns_the_circuit_to_its_initial_state() {
     let c = &mut build(
         vec![

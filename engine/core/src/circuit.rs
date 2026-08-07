@@ -44,6 +44,19 @@ impl UnionFind {
     }
 }
 
+/// Formats a resistance with an engineering prefix and the ohm symbol,
+/// e.g. 1e9 -> "1 GΩ". Mirrors `formatValue` on the web side, using the OHM
+/// SIGN codepoint (\u{2126}) rather than Greek capital omega.
+fn format_ohms(r: f64) -> String {
+    const PREFIXES: [(f64, &str); 4] = [(1e12, ""), (1e9, "G"), (1e6, "M"), (1e3, "k")];
+    for (scale, prefix) in PREFIXES {
+        if r >= scale {
+            return format!("{} {}{}", r / scale, prefix, '\u{2126}');
+        }
+    }
+    format!("{} \u{2126}", r)
+}
+
 /// Outcome of advancing the simulation.
 #[derive(Debug, Clone, Default)]
 pub struct StepReport {
@@ -535,9 +548,9 @@ impl Circuit {
         let pins = self.floating_nodes();
         if !pins.is_empty() {
             self.warnings.push(format!(
-                "{} floating node(s) have no path to ground; they were pinned with a {:e} S conductance.",
+                "{} floating node(s) have no path to ground; they were pinned with a {} resistance.",
                 pins.len(),
-                GMIN
+                format_ohms(1.0 / GMIN)
             ));
         }
         self.restamp();
@@ -1229,5 +1242,31 @@ fn resolve_stuck_wires(
             }
             resolved[i] = true;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_ohms_uses_an_engineering_prefix() {
+        assert_eq!(format_ohms(1e9), "1 G\u{2126}");
+        assert_eq!(format_ohms(2.5e9), "2.5 G\u{2126}");
+    }
+
+    #[test]
+    fn format_ohms_walks_the_neighbouring_prefixes() {
+        assert_eq!(format_ohms(1e12), "1 \u{2126}");
+        assert_eq!(format_ohms(1e6), "1 M\u{2126}");
+        assert_eq!(format_ohms(1e3), "1 k\u{2126}");
+        assert_eq!(format_ohms(100.0), "100 \u{2126}");
+    }
+
+    #[test]
+    fn format_ohms_below_one_ohm_uses_the_bare_branch() {
+        // GMIN never produces this (the pin is always 1/GMIN >= 1e8), but the
+        // fallback must stay well-formed if the constant ever changed.
+        assert_eq!(format_ohms(0.5), "0.5 \u{2126}");
     }
 }
