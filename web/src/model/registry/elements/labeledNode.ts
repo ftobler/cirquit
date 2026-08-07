@@ -1,4 +1,4 @@
-import { canvasFont, voltageColor } from '../../../render/draw';
+import { canvasFont, limbColor, voltageColor } from '../../../render/draw';
 import { escapeFlags, onePost } from '../shared';
 import type { ElementDef } from '../../types';
 
@@ -24,7 +24,7 @@ export const LABELED_NODE_DEF: ElementDef = {
     g.ctx.font = canvasFont(11);
     const w = g.ctx.measureText(text).width + 10;
     g.ctx.fillStyle = g.theme.panel;
-    g.ctx.strokeStyle = g.selected ? g.theme.selection : voltageColor(g, g.voltages[0]);
+    g.ctx.strokeStyle = limbColor(g, voltageColor(g, g.voltages[0]));
     g.ctx.lineWidth = 1.5;
     g.ctx.beginPath();
     g.ctx.rect(p.x, p.y - 8, w, 16);

@@ -147,6 +147,12 @@ export interface DrawContext {
   /** Conventional-current motion; off reverses the dots and turns them cyan. */
   conventional: boolean;
   selected: boolean;
+  /** The element under the pointer; colours its stroke and fill with
+   *  `theme.highlight` like the shift-highlighted net below. */
+  hovered: boolean;
+  /** Any terminal sits on the shift-highlighted net (state.highlightedNode);
+   *  colours with `theme.highlight` (CircuitElm.isOnHighlightedNet). */
+  onHighlightedNet: boolean;
   /** Full-scale voltage for the colour ramp. */
   voltageRange: number;
   /** Zoom factor, for keeping line weights and text readable. */

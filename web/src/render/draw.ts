@@ -118,8 +118,19 @@ export function voltageColor(g: DrawContext, v: number): string {
     : mix(g.theme.neutral, g.theme.negative, -t);
 }
 
+/** Colour for an element's stroke and fill: selection outranks hover, hover
+ *  outranks the element's own colour. Hover and the shift-highlighted net
+ *  share `theme.highlight`, exactly as upstream's needsHighlight covers the
+ *  hovered element, the selection and the highlighted net from one flag pair
+ *  (CircuitElm.java:1305-1313). */
+export function limbColor(g: DrawContext, color: string): string {
+  if (g.selected) return g.theme.selection;
+  if (g.hovered || g.onHighlightedNet) return g.theme.highlight;
+  return color;
+}
+
 export function strokeStyle(g: DrawContext, color: string, width = 2): void {
-  g.ctx.strokeStyle = g.selected ? g.theme.selection : color;
+  g.ctx.strokeStyle = limbColor(g, color);
   g.ctx.lineWidth = width;
   // Butt caps end flush at the segment endpoints and miter joins keep polygon
   // corners crisp points, instead of the round caps and joins that bulge wire
@@ -157,7 +168,7 @@ export function circle(
   g.ctx.beginPath();
   g.ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
   if (fill) {
-    g.ctx.fillStyle = g.selected ? g.theme.selection : color;
+    g.ctx.fillStyle = limbColor(g, color);
     g.ctx.fill();
   }
   g.ctx.stroke();
@@ -165,7 +176,7 @@ export function circle(
 
 /** Filled triangle, used for diodes, op-amps and arrowheads. */
 export function triangle(g: DrawContext, a: Point, b: Point, c: Point, color: string): void {
-  g.ctx.fillStyle = g.selected ? g.theme.selection : color;
+  g.ctx.fillStyle = limbColor(g, color);
   g.ctx.beginPath();
   g.ctx.moveTo(a.x, a.y);
   g.ctx.lineTo(b.x, b.y);
@@ -177,7 +188,7 @@ export function triangle(g: DrawContext, a: Point, b: Point, c: Point, color: st
 /** Filled polygon, used for the transistor's base bar. */
 export function polygon(g: DrawContext, pts: Point[], color: string): void {
   if (pts.length < 3) return;
-  g.ctx.fillStyle = g.selected ? g.theme.selection : color;
+  g.ctx.fillStyle = limbColor(g, color);
   g.ctx.beginPath();
   g.ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) g.ctx.lineTo(pts[i].x, pts[i].y);

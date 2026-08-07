@@ -76,6 +76,8 @@ const context = (ctx: CtxStub): DrawContext => ({
   showVoltageColor: false,
   conventional: true,
   selected: false,
+  hovered: false,
+  onHighlightedNet: false,
   voltageRange: 5,
   scale: 1,
 });

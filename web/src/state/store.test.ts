@@ -236,6 +236,7 @@ describe('topology mutators force a reload', () => {
         }),
     ],
     ['moveElements', (id: number) => useStore.getState().moveElements([id], 16, 0)],
+    ['movePoint', (id: number) => useStore.getState().movePoint(id, 0, 16, 0)],
     ['updateElement', (id: number) => useStore.getState().updateElement(id, { x2: 320 })],
     [
       'deleteSelected',
@@ -249,6 +250,112 @@ describe('topology mutators force a reload', () => {
     const before = useStore.getState().revision;
     mutate(id);
     expect(useStore.getState().revision).toBe(before + 1);
+  });
+});
+
+describe('editElement selects alone and focuses', () => {
+  it('selects that id alone and bumps panelFocusTick', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().select([a, b]);
+    const before = useStore.getState().panelFocusTick;
+
+    useStore.getState().editElement(b);
+
+    const s = useStore.getState();
+    expect(s.selectedIds).toEqual([b]);
+    expect(s.panelFocusTick).toBe(before + 1);
+    // The tick is per call, so a second edit on the same element refocuses.
+    useStore.getState().editElement(b);
+    expect(useStore.getState().panelFocusTick).toBe(before + 2);
+  });
+
+  it('replaces the selection when the target was not selected', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().editElement(a);
+    useStore.getState().editElement(b);
+    expect(useStore.getState().selectedIds).toEqual([b]);
+  });
+});
+
+describe('movePoint moves a single stored endpoint', () => {
+  it('post 0 patches only x1/y1', () => {
+    const id = addResistor();
+    useStore.getState().movePoint(id, 0, 16, 0);
+    const e = useStore.getState().elements[0];
+    expect([e.x1, e.y1]).toEqual([16, 0]);
+    expect([e.x2, e.y2]).toEqual([160, 0]);
+  });
+
+  it('post 1 patches only x2/y2', () => {
+    const id = addResistor();
+    useStore.getState().movePoint(id, 1, 0, 16);
+    const e = useStore.getState().elements[0];
+    expect([e.x1, e.y1]).toEqual([0, 0]);
+    expect([e.x2, e.y2]).toEqual([160, 16]);
+  });
+
+  it('is a no-op on an unknown id', () => {
+    const before = useStore.getState().revision;
+    useStore.getState().movePoint(999, 0, 16, 0);
+    expect(useStore.getState().revision).toBe(before);
+  });
+});
+
+describe('hover and net-highlight store state', () => {
+  it('setHovered stores the element id and clears to null', () => {
+    const id = addResistor();
+    useStore.getState().setHovered(id);
+    expect(useStore.getState().hoveredId).toBe(id);
+    useStore.getState().setHovered(null);
+    expect(useStore.getState().hoveredId).toBeNull();
+  });
+
+  it('setHighlightedNode stores the engine node and clears to null', () => {
+    useStore.getState().setHighlightedNode(3);
+    expect(useStore.getState().highlightedNode).toBe(3);
+    useStore.getState().setHighlightedNode(null);
+    expect(useStore.getState().highlightedNode).toBeNull();
+  });
+
+  it('loadNetlist clears hover and the highlighted net', () => {
+    useStore.getState().setHovered(1);
+    useStore.getState().setHighlightedNode(3);
+    useStore.getState().loadNetlist('r 0 0 16 0 0 100\n');
+    expect(useStore.getState().hoveredId).toBeNull();
+    expect(useStore.getState().highlightedNode).toBeNull();
+  });
+});
+
+describe('momentary switch press-and-release', () => {
+  const addMomentary = () =>
+    useStore.getState().addElement({
+      kind: 'switch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      // The file format loads a momentary switch open (position 1).
+      params: { position: 1, momentary: 1 },
+      state: 1,
+    });
+
+  it('toggles to closed on press and back to open on release', () => {
+    const id = addMomentary();
+    useStore.getState().setElementState(id, 0);  // press: closed
+    expect(useStore.getState().elements[0].state).toBe(0);
+    useStore.getState().setElementState(id, 1);  // release: open
+    expect(useStore.getState().elements[0].state).toBe(1);
+  });
+
+  it('a press-toggle twice returns to the resting position', () => {
+    const id = addMomentary();
+    const e = () => useStore.getState().elements[0];
+    useStore.getState().setElementState(id, ((e().state ?? 0) + 1) % 2);
+    useStore.getState().setElementState(id, ((e().state ?? 0) + 1) % 2);
+    expect(e().state).toBe(1);
   });
 });
 

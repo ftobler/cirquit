@@ -1,4 +1,4 @@
-import { canvasFont } from '../../../render/draw';
+import { canvasFont, limbColor } from '../../../render/draw';
 import { FLAG_ESCAPE } from '../flags';
 import { escapeFlags, onePost } from '../shared';
 import type { ElementDef } from '../../types';
@@ -26,7 +26,7 @@ export const DECORATION_DEF: ElementDef = {
   dump: (e) => [e.params.size ?? 24, e.text ?? ''],
   dumpFlags: escapeFlags,
   draw(g, e) {
-    g.ctx.fillStyle = g.selected ? g.theme.selection : g.theme.text;
+    g.ctx.fillStyle = limbColor(g, g.theme.text);
     // A zero or negative size would make an invalid font string and blank
     // the whole frame's drawing, so clamp at one pixel.
     g.ctx.font = canvasFont(Math.max(1, e.params.size ?? 24));

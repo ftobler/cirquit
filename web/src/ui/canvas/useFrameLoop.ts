@@ -48,7 +48,8 @@ export function useFrameLoop(
       lastFrameRef.current = now;
 
       const state = stateRef.current;
-      const { elements, settings, view, selectedIds, running, scopes } = state;
+      const { elements, settings, view, selectedIds, running, scopes, hoveredId, highlightedNode } =
+        state;
 
       // Drop sticky auto-scale state for plots that no longer exist (a removed
       // scope), keeping the map bounded across a session.
@@ -177,6 +178,14 @@ export function useFrameLoop(
         const current = idx !== undefined && currents ? (currents[idx] ?? 0) : 0;
         const value = idx !== undefined && values ? (values[idx] ?? 0) : 0;
 
+        // The shift-highlighted net: any terminal on the highlighted node
+        // colours the whole element (CircuitElm.isOnHighlightedNet).
+        const onHighlightedNet =
+          highlightedNode !== null &&
+          elementNodes !== null &&
+          offset !== undefined &&
+          posts.some((_, i) => elementNodes[offset + i] === highlightedNode);
+
         // Phase is integrated per element so changing the speed or the current
         // mid-run cannot teleport the dots. Only advance while running, so a
         // pause freezes them in place.
@@ -203,6 +212,8 @@ export function useFrameLoop(
           showVoltageColor: settings.showVoltageColor,
           conventional: settings.conventional,
           selected: selectedIds.includes(e.id),
+          hovered: hoveredId === e.id,
+          onHighlightedNet,
           voltageRange: settings.voltageRange,
           scale: view.scale,
         };

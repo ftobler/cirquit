@@ -1,6 +1,6 @@
 /** Properties of the selected element, plus global simulation settings. */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
 import { formatUnits, parseUnits } from '../model/units';
@@ -235,6 +235,19 @@ export function OptionsPanel({ engine }: Props) {
   const selected = elements.find((e) => e.id === selectedIds[0]);
   const def = selected ? defFor(selected.kind) : undefined;
 
+  // Double-click edit selects and bumps panelFocusTick; focus the element's
+  // first field so the user can type immediately (MouseManager's edit dialog
+  // opens focused on the first value). Keyed on the tick alone: editElement
+  // sets the selection and bumps the tick in one step, so the section ref
+  // already tracks the freshly selected element, while a later single-click
+  // selection change must not steal focus back from the canvas.
+  const panelFocusTick = useStore((s) => s.panelFocusTick);
+  const fieldsRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (panelFocusTick === 0) return;
+    fieldsRef.current?.querySelector<HTMLElement>('.field input, .field select')?.focus();
+  }, [panelFocusTick]);
+
   const idx = selected && engine ? engine.indexOf(selected.id) : undefined;
   const current = idx !== undefined && engine ? engine.elementCurrents()[idx] : undefined;
   const voltage = idx !== undefined && engine ? engine.elementVoltages()[idx] : undefined;
@@ -251,7 +264,7 @@ export function OptionsPanel({ engine }: Props) {
       {problem && <div className="problem">{problem}</div>}
 
       {selected && def ? (
-        <section>
+        <section ref={fieldsRef}>
           <h3>{def.label}</h3>
           {voltage !== undefined && (
             <dl className="readout">

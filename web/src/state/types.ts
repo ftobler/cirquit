@@ -39,6 +39,14 @@ export interface AppState {
   tool: string | null;
   view: ViewTransform;
   status: string;
+  /** Element id under the pointer, for hover highlight; null when none. */
+  hoveredId: number | null;
+  /** Engine node of the shift-highlighted net; every element on it draws with
+   *  `theme.highlight` (MouseManager.java:689-693). Null when none. */
+  highlightedNode: number | null;
+  /** Bumped by `editElement` so the options panel knows to refocus the first
+   *  field of the newly selected element. */
+  panelFocusTick: number;
   /** Set when the engine reports a problem. */
   problem: string | null;
   undoStack: Snapshot[];
@@ -73,6 +81,8 @@ export interface AppState {
   setStatus(status: string): void;
   setProblem(problem: string | null): void;
   updateSettings(patch: Partial<SimSettings>): void;
+  setHovered(id: number | null): void;
+  setHighlightedNode(node: number | null): void;
 
   select(ids: number[]): void;
   addElement(e: Omit<CircuitElement, 'id'>): number;
@@ -82,6 +92,13 @@ export interface AppState {
   placeWireEnd(id: number, x: number, y: number): void;
   /** Moves elements without pushing a separate undo entry per frame. */
   moveElements(ids: number[], dx: number, dy: number): void;
+  /** Moves a single stored endpoint by dx/dy. post 0 is (x1,y1), 1 is (x2,y2),
+   *  the port of upstream's row/column capture which reads only stored
+   *  endpoints, never derived posts (MouseManager.java:1161-1187). */
+  movePoint(id: number, post: 0 | 1, dx: number, dy: number): void;
+  /** Selects an element alone and asks the options panel to focus its first
+   *  field. The context menu's Edit item calls this too. */
+  editElement(id: number): void;
   deleteSelected(): void;
   /** Rotates the selection 90 degrees about each element's midpoint. */
   rotateSelection(): void;

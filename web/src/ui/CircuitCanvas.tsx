@@ -17,7 +17,7 @@ export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
   const dragRef = useRef<Drag>({ mode: 'none' });
   const [, forceRender] = useState(0);
   useFrameLoop(canvasRef, engine, dragRef);
-  const interactions = useCanvasInteractions(canvasRef, dragRef, forceRender);
+  const interactions = useCanvasInteractions(canvasRef, dragRef, forceRender, engine);
   return (
     <>
       <canvas
@@ -27,8 +27,10 @@ export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
         onPointerMove={interactions.onPointerMove}
         onPointerUp={interactions.onPointerUp}
         onPointerCancel={interactions.onPointerUp}
+        onPointerLeave={interactions.onPointerLeave}
         onWheel={interactions.onWheel}
         onContextMenu={interactions.onContextMenu}
+        onDoubleClick={interactions.onDoubleClick}
       />
       {interactions.popover && (
         <ScrollValuePopup

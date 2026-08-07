@@ -178,6 +178,9 @@ export const useStore = create<AppState>((set, get) => ({
   view: { x: 0, y: 0, scale: 1 },
   status: '',
   problem: null,
+  hoveredId: null,
+  highlightedNode: null,
+  panelFocusTick: 0,
   undoStack: [],
   redoStack: [],
   revision: 0,
@@ -214,6 +217,23 @@ export const useStore = create<AppState>((set, get) => ({
     }),
 
   select: (ids) => set({ selectedIds: ids }),
+
+  setHovered: (id) => set({ hoveredId: id }),
+  setHighlightedNode: (node) => set({ highlightedNode: node }),
+
+  editElement: (id) =>
+    set((s) => ({ selectedIds: [id], panelFocusTick: s.panelFocusTick + 1 })),
+
+  movePoint: (id, post, dx, dy) => {
+    const s = get();
+    const e = s.elements.find((q) => q.id === id);
+    if (!e) return;
+    // A row or column sweep shifts only one stored endpoint; updateElement
+    // rounds the new coordinate so geometry stays integral.
+    const patch =
+      post === 0 ? { x1: e.x1 + dx, y1: e.y1 + dy } : { x2: e.x2 + dx, y2: e.y2 + dy };
+    s.updateElement(id, patch);
+  },
 
   commit: () =>
     set((s) => {
@@ -709,6 +729,8 @@ export const useStore = create<AppState>((set, get) => ({
         ...parsed.settings,
       },
       selectedIds: [],
+      hoveredId: null,
+      highlightedNode: null,
       undoStack: [],
       redoStack: [],
       problem: describeUnsupported(parsed.unsupported),
@@ -774,6 +796,8 @@ export const useStore = create<AppState>((set, get) => ({
         autoDC: DEFAULT_SETTINGS.autoDC,
       },
       selectedIds: [],
+      hoveredId: null,
+      highlightedNode: null,
       undoStack: [],
       redoStack: [],
       problem: null,
