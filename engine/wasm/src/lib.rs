@@ -81,6 +81,65 @@ impl Default for Simulator {
     }
 }
 
+/// Trigger display anchor for one scope trace (ScopeTrigger.java:66-81).
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct TriggerInfo {
+    triggered: bool,
+    /// 0 armed, 1 triggered, 2 auto-run.
+    state: u8,
+    start_index: usize,
+    valid_count: usize,
+    columns: usize,
+    snapshot_start: usize,
+    written: usize,
+    /// Sim time at the trigger, for anchored time conversions.
+    time: f64,
+}
+
+#[wasm_bindgen]
+impl TriggerInfo {
+    #[wasm_bindgen(getter)]
+    pub fn triggered(&self) -> bool {
+        self.triggered
+    }
+    #[wasm_bindgen(getter)]
+    pub fn state(&self) -> u8 {
+        self.state
+    }
+    /// Ring index where the display window starts.
+    #[wasm_bindgen(getter)]
+    pub fn start_index(&self) -> usize {
+        self.start_index
+    }
+    /// Columns of valid post-trigger data to draw.
+    #[wasm_bindgen(getter)]
+    pub fn valid_count(&self) -> usize {
+        self.valid_count
+    }
+    /// Ring capacity.
+    #[wasm_bindgen(getter)]
+    pub fn columns(&self) -> usize {
+        self.columns
+    }
+    /// Ring index of the first slot returned by `scopeData`.
+    #[wasm_bindgen(getter)]
+    pub fn snapshot_start(&self) -> usize {
+        self.snapshot_start
+    }
+    /// Columns actually written, capped at capacity.
+    #[wasm_bindgen(getter)]
+    pub fn written(&self) -> usize {
+        self.written
+    }
+    /// Sim time at the trigger, so the UI anchors time conversions at the
+    /// trigger-stabilized window centre (Scope.java:910-915).
+    #[wasm_bindgen(getter)]
+    pub fn time(&self) -> f64 {
+        self.time
+    }
+}
+
 #[wasm_bindgen]
 impl Simulator {
     #[wasm_bindgen(constructor)]
@@ -185,6 +244,49 @@ impl Simulator {
             .get(index)
             .map(|s| s.columns_written as f64)
             .unwrap_or(0.0)
+    }
+
+    /// This frame's recent raw samples for a scope (X-Y mode), oldest first.
+    #[wasm_bindgen(js_name = recentSamples)]
+    pub fn recent_samples(&self, index: usize) -> Vec<f32> {
+        self.circuit.recent_samples(index)
+    }
+
+    /// Trigger display info for a scope. `width` is the display width in
+    /// pixels; the UI passes the canvas width so the anchor counts against the
+    /// same window the drawing does.
+    #[wasm_bindgen(js_name = triggerInfo)]
+    pub fn trigger_info(&self, index: usize, width: usize) -> TriggerInfo {
+        self.circuit
+            .trigger_info(index, width)
+            .map(|t| TriggerInfo {
+                triggered: t.triggered,
+                state: t.state,
+                start_index: t.start_index,
+                valid_count: t.valid_count,
+                columns: t.columns,
+                snapshot_start: t.snapshot_start,
+                written: t.written,
+                time: t.time,
+            })
+            .unwrap_or_default()
+    }
+
+    /// Resizes a scope's capture ring without rebuilding the circuit, so a
+    /// speed or width change does not rewind the simulation. Returns false
+    /// when the index is out of range; the caller then reloads.
+    #[wasm_bindgen(js_name = setScopeParams)]
+    pub fn set_scope_params(&mut self, index: usize, steps_per_column: u32, columns: u32) -> bool {
+        self.circuit
+            .set_scope_params(index, steps_per_column, columns)
+    }
+
+    /// Toggles a scope's AC coupling without rebuilding the circuit, so the
+    /// coupling radio does not rewind the simulation. Returns false when the
+    /// index is out of range; the caller then reloads.
+    #[wasm_bindgen(js_name = setScopeAcCoupling)]
+    pub fn set_scope_ac_coupling(&mut self, index: usize, ac_coupled: bool) -> bool {
+        self.circuit.set_scope_ac_coupled(index, ac_coupled)
     }
 
     #[wasm_bindgen(js_name = scopeCount)]

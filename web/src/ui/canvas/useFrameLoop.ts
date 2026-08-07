@@ -1,13 +1,19 @@
 import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
+import { scopeParamsFingerprint } from '../../engine/simulator';
 import { defFor } from '../../model/registry';
 import type { DrawContext } from '../../model/types';
 import { dotPhaseStep, TOO_FAST, wrapPhase } from '../../render/dots';
 import { makeTheme } from '../../render/draw';
 import { drawGrid } from '../../render/grid';
+import { scopeWidth } from '../../scope/geometry';
+import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
+
+/** Resolves each scope's measured canvas width, for engine ring sizing. */
+const widthOf = (id: number): number | undefined => scopeWidth(id);
 
 export function useFrameLoop(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
@@ -18,6 +24,7 @@ export function useFrameLoop(
   const lastFrameRef = useRef(performance.now());
   const loadedRevision = useRef(-1);
   const appliedParamRevision = useRef(-1);
+  const appliedScopeFp = useRef('');
   const stateRef = useStoreRef();
 
   // ---- the frame loop -----------------------------------------------------
@@ -42,21 +49,43 @@ export function useFrameLoop(
       const state = stateRef.current;
       const { elements, settings, view, selectedIds, running, scopes } = state;
 
+      // Drop sticky auto-scale state for plots that no longer exist (a removed
+      // scope), keeping the map bounded across a session.
+      pruneScaleStates(scopes.flatMap((s) => s.plots.map((p) => p.id)));
+      pruneXYScales(scopes.map((s) => s.id));
+
       // Reload the engine whenever the netlist changed.
       if (engine && loadedRevision.current !== state.revision) {
         loadedRevision.current = state.revision;
         // A new netlist invalidates every element's accumulated phase, and
         // clearing the map stops it growing across circuit loads.
         dotPhaseRef.current.clear();
-        const err = engine.setCircuit(elements, settings, scopes);
+        const err = engine.setCircuit(elements, settings, scopes, widthOf);
         const warnings = err ? [err] : engine.warnings();
         useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
         // The reload serialised the current elements, so any queued value
         // edits are already in effect. Mark them consumed and drop the queue,
         // or they would be replayed against the fresh circuit below.
         appliedParamRevision.current = state.paramRevision;
+        appliedScopeFp.current = scopeParamsFingerprint(scopes, widthOf);
         if (state.pendingParams.size > 0 || state.pendingStates.size > 0) {
           state.clearPending();
+        }
+      }
+
+      // Scope capture params (speed zoom, window resize) change through the
+      // engine's fast path, never through a rebuild, so the clock survives.
+      // The fingerprint is compared every frame so a ResizeObserver width
+      // change is picked up without any store action.
+      if (engine) {
+        const fp = scopeParamsFingerprint(scopes, widthOf);
+        if (fp !== appliedScopeFp.current) {
+          appliedScopeFp.current = fp;
+          if (!engine.applyScopeParams(scopes, settings, widthOf)) {
+            // A trace index out of range means the last setCircuit failed;
+            // force the reload branch next frame.
+            loadedRevision.current = -1;
+          }
         }
       }
 
@@ -75,7 +104,7 @@ export function useFrameLoop(
           // A param the engine cannot patch live (unknown id or name) would
           // otherwise read as a dead slider; rebuild the whole circuit.
           dotPhaseRef.current.clear();
-          const err = engine.setCircuit(elements, settings, scopes);
+          const err = engine.setCircuit(elements, settings, scopes, widthOf);
           const warnings = err ? [err] : engine.warnings();
           useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
         }

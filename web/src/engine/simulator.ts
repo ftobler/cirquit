@@ -7,12 +7,25 @@
  * module, so per-element work never touches JavaScript.
  */
 
-import init, { Simulator as WasmSimulator, supportedKinds } from '../wasm/circuit_engine';
+import init, {
+  Simulator as WasmSimulator,
+  supportedKinds,
+  TriggerInfo,
+} from '../wasm/circuit_engine';
 import { postsOf } from '../model/registry';
 import type { CircuitElement, SimSettings } from '../model/types';
+import { scopeColumnCount, scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 
 /** The quantity a scope trace samples. */
 export type ScopeValue = 'voltage' | 'current' | 'power';
+
+/** Trigger acquisition settings, mirroring ScopeTrigger.java. Free run
+ *  disables the trigger. The strings match the engine's serde names. */
+export interface ScopeTrigger {
+  mode: 'freeRun' | 'normal' | 'auto';
+  edge: 'rising' | 'falling';
+  level: number;
+}
 
 export interface ScopePlot {
   /** Trace identity: what the UI and engine key on. */
@@ -25,6 +38,12 @@ export interface ScopePlot {
    *  for this element (a transistor's VAL_IB). A null plot is preserved via
    *  the raw line only. */
   value: ScopeValue | null;
+  /** Manual-scale units per division, or null when not user-set. */
+  manScale: number | null;
+  /** Vertical position in -100..100, 0 centred (ScopePlot.java:42-43). */
+  manVPosition: number;
+  /** DC-blocking filter on the raw sample (voltage plots only). */
+  acCoupled: boolean;
 }
 
 export interface Scope {
@@ -32,14 +51,37 @@ export interface Scope {
   id: number;
   /** The `o` line's tokens after the element index, exactly as loaded: speed,
    *  plot flags, scale, trace label and the rest. None of it is interpreted
-   *  yet and none of it crosses the wasm boundary; it is carried so that
-   *  saving a loaded circuit does not truncate the line. Null for a scope
-   *  created in the UI, where there is no file line to preserve and one is
-   *  generated at save time. */
+   *  and none of it crosses the wasm boundary; it is carried so that saving a
+   *  loaded circuit does not truncate the line. Null for a scope created in
+   *  the UI, where there is no file line to preserve and one is generated at
+   *  save time. */
   raw: string[] | null;
   /** The traces, in the order they appear on the line. Plot 0 is the line's
    *  `e` element; later plots carry their own `ne val` pairs. */
   plots: ScopePlot[];
+  /** Sim timesteps per column, the horizontal zoom (Scope.java:57). */
+  speed: number;
+  /** Stacking column; scopes sharing a position share a canvas row. */
+  position: number;
+  /** Manual scale mode, where /div comes from each plot's manScale. */
+  manualScale: boolean;
+  /** Max Scale mode: pin the auto-scale to the measured peak. */
+  maxScale: boolean;
+  /** The scope's own label, overriding the element-derived one. */
+  label: string;
+  /** Overlay and instrument-mode flags, all defaulting off except scale/max. */
+  showScale: boolean;
+  showMax: boolean;
+  showMin: boolean;
+  showP2P: boolean;
+  showFreq: boolean;
+  showRMS: boolean;
+  showAverage: boolean;
+  showDutyCycle: boolean;
+  fftPlot: boolean;
+  logSpectrum: boolean;
+  plotXY: boolean;
+  trigger: ScopeTrigger;
 }
 
 export interface FrameStats {
@@ -53,9 +95,6 @@ export interface FrameStats {
   failingElementIds: number[];
 }
 
-/** Columns retained per scope trace. */
-const SCOPE_COLUMNS = 512;
-
 /** One trace handed to the engine, in the order it will occupy in `scopeData`. */
 export interface ScopeTraceSpec {
   /** Store plot id; the engine trace order is the array order, and this is
@@ -65,7 +104,16 @@ export interface ScopeTraceSpec {
   value: ScopeValue;
   stepsPerColumn: number;
   columns: number;
+  acCoupled: boolean;
+  trigger: ScopeTrigger;
+  displayWidth: number;
 }
+
+/** A scope's capture width for engine sizing: its registered canvas width, or
+ *  a sane fallback before the panel has measured it. */
+export type WidthResolver = (scopeId: number) => number | undefined;
+
+const defaultWidth: WidthResolver = () => DEFAULT_SCOPE_WIDTH;
 
 /**
  * Flattens the store's scopes into one engine spec per trace, in store order
@@ -73,10 +121,19 @@ export interface ScopeTraceSpec {
  * without the wasm module. A plot with no element or no representable value
  * cannot be sampled, so it is skipped; its line is preserved via raw.
  */
-export function scopePlotsToSpecs(scopes: Scope[], settings: SimSettings): ScopeTraceSpec[] {
-  const stepsPerColumn = Math.max(1, Math.floor(settings.stepsPerFrame / 8));
+export function scopePlotsToSpecs(
+  scopes: Scope[],
+  _settings: SimSettings,
+  widthOf: WidthResolver = defaultWidth,
+): ScopeTraceSpec[] {
   const out: ScopeTraceSpec[] = [];
   for (const scope of scopes) {
+    const stepsPerColumn = scopeSpeed(scope.speed);
+    const widthPx = widthOf(scope.id) ?? DEFAULT_SCOPE_WIDTH;
+    // A triggered scope doubles its ring so pre-trigger history survives
+    // (Scope.java:191-193); the engine clamps at its own bound.
+    let columns = scopeColumnCount(widthPx);
+    if (scope.trigger.mode !== 'freeRun') columns = Math.min(8192, columns * 2);
     for (const plot of scope.plots) {
       if (plot.elementId === null || plot.value === null) continue;
       out.push({
@@ -84,11 +141,30 @@ export function scopePlotsToSpecs(scopes: Scope[], settings: SimSettings): Scope
         elementId: plot.elementId,
         value: plot.value,
         stepsPerColumn,
-        columns: SCOPE_COLUMNS,
+        columns,
+        acCoupled: plot.acCoupled,
+        trigger: scope.trigger,
+        displayWidth: widthPx,
       });
     }
   }
   return out;
+}
+
+/** Fingerprint of the scope capture params the engine should hold. */
+export function scopeParamsFingerprint(
+  scopes: Scope[],
+  widthOf: WidthResolver = defaultWidth,
+): string {
+  return scopes
+    .map((s) => {
+      const widthPx = widthOf(s.id) ?? DEFAULT_SCOPE_WIDTH;
+      // acCoupled flows through the same fast path as speed and ring width,
+      // so a coupling toggle must change the fingerprint too.
+      const coupling = s.plots.map((p) => (p.acCoupled ? '1' : '0')).join('');
+      return `${s.id}:${scopeSpeed(s.speed)}:${scopeColumnCount(widthPx)}:${coupling}`;
+    })
+    .join(';');
 }
 
 let wasmReady: Promise<void> | null = null;
@@ -129,7 +205,12 @@ export class SimEngine {
    * Replaces the circuit. Elements whose type the engine cannot solve are
    * skipped, so a partially supported file still runs.
    */
-  setCircuit(elements: CircuitElement[], settings: SimSettings, scopes: Scope[]): string | null {
+  setCircuit(
+    elements: CircuitElement[],
+    settings: SimSettings,
+    scopes: Scope[],
+    widthOf: WidthResolver = defaultWidth,
+  ): string | null {
     const usable = elements.filter((e) => this.supports(e.kind));
     this.order = usable.map((e) => e.id);
     this.indexById = new Map(this.order.map((id, i) => [id, i]));
@@ -142,7 +223,7 @@ export class SimEngine {
 
     // One spec per plot, in store order, so a two-plot line fills two engine
     // traces in the same order the file listed them.
-    const traceSpecs = (this.scopeOrder = scopePlotsToSpecs(scopes, settings).filter((s) =>
+    const traceSpecs = (this.scopeOrder = scopePlotsToSpecs(scopes, settings, widthOf).filter((s) =>
       this.indexById.has(s.elementId),
     ));
     const spec = {
@@ -181,6 +262,9 @@ export class SimEngine {
         post: 0,
         stepsPerColumn: s.stepsPerColumn,
         columns: s.columns,
+        acCoupled: s.acCoupled,
+        trigger: s.trigger,
+        displayWidth: s.displayWidth,
       })),
     };
 
@@ -271,6 +355,66 @@ export class SimEngine {
   scopeIndexOf(plotId: number): number | undefined {
     const i = this.scopeOrder.findIndex((s) => s.plotId === plotId);
     return i < 0 ? undefined : i;
+  }
+
+  /** Live scope capture resize (speed and ring width) without a rebuild.
+   *  False when the trace index is out of range; the caller then reloads. */
+  setScopeParams(index: number, stepsPerColumn: number, columns: number): boolean {
+    return this.sim.setScopeParams(index, stepsPerColumn, columns);
+  }
+
+  /** Live AC-coupling toggle without a rebuild. False when the trace index
+   *  is out of range; the caller then reloads. */
+  setScopeAcCoupling(index: number, acCoupled: boolean): boolean {
+    return this.sim.setScopeAcCoupling(index, acCoupled);
+  }
+
+  /**
+   * Applies every trace's capture params (speed, ring width, AC coupling)
+   * through the engine's fast path, so a zoom, window resize or coupling
+   * toggle never rewinds the clock. False when a trace is out of range (a
+   * failed circuit load), which tells the frame loop to fall back to a full
+   * reload.
+   */
+  applyScopeParams(scopes: Scope[], settings: SimSettings, widthOf: WidthResolver): boolean {
+    const specs = scopePlotsToSpecs(scopes, settings, widthOf).filter((s) =>
+      this.indexById.has(s.elementId),
+    );
+    if (specs.length !== this.scopeOrder.length) return false;
+    let ok = true;
+    for (let i = 0; i < specs.length; i++) {
+      const want = specs[i];
+      const have = this.scopeOrder[i];
+      if (have.stepsPerColumn !== want.stepsPerColumn || have.columns !== want.columns) {
+        if (!this.sim.setScopeParams(i, want.stepsPerColumn, want.columns)) {
+          ok = false;
+          continue;
+        }
+      }
+      if (have.acCoupled !== want.acCoupled) {
+        if (!this.sim.setScopeAcCoupling(i, want.acCoupled)) {
+          ok = false;
+          continue;
+        }
+      }
+      this.scopeOrder[i] = {
+        ...have,
+        stepsPerColumn: want.stepsPerColumn,
+        columns: want.columns,
+        acCoupled: want.acCoupled,
+      };
+    }
+    return ok;
+  }
+
+  /** This frame's recent raw samples for a trace (X-Y mode), oldest first. */
+  recentSamples(index: number): Float32Array {
+    return this.sim.recentSamples(index);
+  }
+
+  /** Trigger display anchor for a trace, given the display width in pixels. */
+  triggerInfo(index: number, width: number): TriggerInfo {
+    return this.sim.triggerInfo(index, width);
   }
 
   /** Live parameter edit; false means the engine cannot patch this one. */

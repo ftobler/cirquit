@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { Scope, ScopeValue } from '../engine/simulator';
+import type { Scope, ScopePlot, ScopeTrigger, ScopeValue } from '../engine/simulator';
+import { scopeSpeed } from '../scope/geometry';
 import {
   allocateId,
   isElementLine,
@@ -27,9 +28,13 @@ import { hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers
 
 const clone = (s: Snapshot): Snapshot => ({
   elements: s.elements.map((e) => ({ ...e, params: { ...e.params } })),
-  // Plots are nested objects, so a shallow spread would alias the live array
-  // into the undo snapshot.
-  scopes: s.scopes.map((x) => ({ ...x, plots: x.plots.map((p) => ({ ...p })) })),
+  // Plots and triggers are nested objects, so a shallow spread would alias the
+  // live state into the undo snapshot.
+  scopes: s.scopes.map((x) => ({
+    ...x,
+    trigger: { ...x.trigger },
+    plots: x.plots.map((p) => ({ ...p })),
+  })),
   settings: { ...s.settings },
   view: { ...s.view },
 });
@@ -80,14 +85,83 @@ const DIODE_MODEL_PARAMS = [
   'breakdownVoltage',
 ];
 
-/** The `o` line tokens for a scope created in the UI: a valid new-style line
- *  with one plot. Power plots carry a W-scale token upstream expects, so the
- *  line it produces is loadable (ScopeSerializer.java:221-223). */
-function scopeDefaultRaw(value: ScopeValue | null): string[] {
-  const token = value === 'current' ? 3 : value === 'power' ? 7 : 0;
-  const tokens = ['64', String(token), '4099', '20', '0.05', '0', '1'];
-  if (value === 'power') tokens.push('20');
+/** Element kinds a scope current companion is not created for, matching
+ *  upstream's exclusion list (Scope.addValue, Scope.java:360-367). */
+const OUTPUT_LIKE = new Set(['output', 'logicOutput', 'audioOutput', 'testPoint', 'probe']);
+
+/** The `value`/`val` token a trace quantity serializes as, the inverse of
+ *  `scopeValueFromToken`. */
+function valueTokenOf(value: ScopeValue | null): number {
+  return value === 'current' ? 3 : value === 'power' ? 7 : 0;
+}
+
+function makePlot(id: number, elementId: number | null, value: ScopeValue | null): ScopePlot {
+  return { id, elementId, value, manScale: null, manVPosition: 0, acCoupled: false };
+}
+
+function defaultTrigger(): ScopeTrigger {
+  return { mode: 'freeRun', edge: 'rising', level: 0 };
+}
+
+/** A new-style `o` line for a UI-created scope, plot list included. The first
+ *  token is the live speed; per-plot `ne val` pairs (plus any W-scale tokens)
+ *  follow the plot count, so upstream parses the line back into the same
+ *  plots. `indexOf` resolves element ids to their file ordinals.
+ *  (ScopeSerializer.java:188-289.) */
+function scopeUIRaw(
+  speed: number,
+  plots: ScopePlot[],
+  indexOf: (elementId: number) => number | undefined,
+): string[] {
+  const first = plots[0];
+  const tokens = [String(speed), String(valueTokenOf(first.value)), '4099', '20', '0.05', '0'];
+  if (plots.length === 1) {
+    tokens.push('1');
+    if (first.value === 'power') tokens.push('20');
+    return tokens;
+  }
+  tokens.push(String(plots.length));
+  for (let i = 1; i < plots.length; i++) {
+    const p = plots[i];
+    const index = p.elementId === null ? -1 : (indexOf(p.elementId) ?? -1);
+    tokens.push(String(index), String(valueTokenOf(p.value)));
+    if (p.value === 'power') tokens.push('20');
+  }
   return tokens;
+}
+
+/** A scope panel with the full field set. Position defaults to its own column,
+ *  which is what a fresh UI scope gets. */
+function makeScope(
+  id: number,
+  raw: string[] | null,
+  plots: ScopePlot[],
+  speed: number,
+  position: number,
+): Scope {
+  return {
+    id,
+    raw,
+    plots,
+    speed,
+    position,
+    manualScale: false,
+    maxScale: false,
+    label: '',
+    showScale: false,
+    // Upstream's default: showMax is on, everything else off (Scope.java:272-275).
+    showMax: true,
+    showMin: false,
+    showP2P: false,
+    showFreq: false,
+    showRMS: false,
+    showAverage: false,
+    showDutyCycle: false,
+    fftPlot: false,
+    logSpectrum: false,
+    plotXY: false,
+    trigger: defaultTrigger(),
+  };
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -106,10 +180,13 @@ export const useStore = create<AppState>((set, get) => ({
   undoStack: [],
   redoStack: [],
   revision: 0,
+  scopeRevision: 0,
   paramRevision: 0,
   pendingParams: new Map(),
   pendingStates: new Map(),
   contextMenu: null,
+  scopeMenu: null,
+  scopeProperties: null,
   clipboard: null,
   lastSaved: null,
 
@@ -303,29 +380,244 @@ export const useStore = create<AppState>((set, get) => ({
         : { pendingParams: new Map(), pendingStates: new Map() },
     ),
 
-  addScope: (elementId, value) =>
+  addScope: (elementId, value) => {
+    // One trace per element and quantity is plenty; adding the same one twice
+    // is almost always a misclick. Compare plot-by-plot so a two-plot line
+    // already showing this quantity is not duplicated, while a scope on a
+    // different quantity of the same element still is.
+    if (
+      get().scopes.some((x) => x.plots.some((p) => p.elementId === elementId && p.value === value))
+    ) {
+      return;
+    }
+    get().commit();
     set((s) => {
-      // One trace per element and quantity is plenty; adding the same one
-      // twice is almost always a misclick. Compare plot-by-plot so a two-plot
-      // line already showing this quantity is not duplicated, while a scope
-      // on a different quantity of the same element still is.
-      if (
-        s.scopes.some((x) => x.plots.some((p) => p.elementId === elementId && p.value === value))
-      ) {
-        return s;
-      }
       const id = allocateId();
+      const plots: ScopePlot[] = [makePlot(id, elementId, value)];
+      // A voltage scope gets a current companion for most elements, mirroring
+      // upstream's addValue (Scope.java:355-367); output-like elements are
+      // excluded, and the current companion follows the show-dots setting.
+      const kind = s.elements.find((e) => e.id === elementId)?.kind;
+      if (
+        value === 'voltage' &&
+        s.settings.showCurrent &&
+        kind !== undefined &&
+        !OUTPUT_LIKE.has(kind)
+      ) {
+        plots.push(makePlot(allocateId(), elementId, 'current'));
+      }
       return {
-        scopes: [...s.scopes, { id, raw: null, plots: [{ id, elementId, value }] }],
+        scopes: [...s.scopes, makeScope(id, null, plots, 64, s.scopes.length)],
+        revision: s.revision + 1,
+      };
+    });
+  },
+
+  removeScope: (id) => {
+    if (!get().scopes.some((x) => x.id === id)) return;
+    get().commit();
+    set((s) => ({
+      scopes: s.scopes.filter((x) => x.id !== id),
+      revision: s.revision + 1,
+    }));
+  },
+
+  resetScope: (id) => {
+    if (!get().scopes.some((x) => x.id === id)) return;
+    // The Reset command clears the capture buffer and the sticky scale, which
+    // a rebuild does for the buffer; the menu drops the scale state itself.
+    set((s) => ({ revision: s.revision + 1 }));
+  },
+
+  setScopeSpeed: (id, speed) =>
+    set((s) => {
+      const clamped = scopeSpeed(speed);
+      const scope = s.scopes.find((x) => x.id === id);
+      // A no-op must not touch scopeRevision, or a wheel tick with nothing to
+      // do would still patch the engine.
+      if (!scope || scope.speed === clamped) return s;
+      return {
+        scopes: s.scopes.map((x) => (x.id === id ? { ...x, speed: clamped } : x)),
+        scopeRevision: s.scopeRevision + 1,
+      };
+    }),
+
+  setScopeTrigger: (id, patch) =>
+    set((s) => {
+      const scope = s.scopes.find((x) => x.id === id);
+      if (!scope) return s;
+      const trigger = { ...scope.trigger, ...patch };
+      return {
+        scopes: s.scopes.map((x) => (x.id === id ? { ...x, trigger } : x)),
+        // The trigger is part of the engine spec, so it must reload.
         revision: s.revision + 1,
       };
     }),
 
-  removeScope: (id) =>
+  setScopeFlags: (id, patch) =>
+    set((s) => {
+      const scope = s.scopes.find((x) => x.id === id);
+      if (!scope) return s;
+      return {
+        scopes: s.scopes.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+      };
+    }),
+
+  setPlotCoupling: (scopeId, plotId, acCoupled) =>
+    set((s) => {
+      const scope = s.scopes.find((x) => x.id === scopeId);
+      if (!scope) return s;
+      return {
+        scopes: s.scopes.map((x) =>
+          x.id === scopeId
+            ? {
+                ...x,
+                plots: x.plots.map((p) =>
+                  p.id === plotId ? { ...p, acCoupled: acCoupled && p.value === 'voltage' } : p,
+                ),
+              }
+            : x,
+        ),
+        // AC coupling is a scope-capture flag, applied through the engine's
+        // scope fast path (applyScopeParams), so toggling it must not rewind
+        // the simulation. The trigger path has no fast path yet and still
+        // reloads; see setScopeTrigger.
+      };
+    }),
+
+  setPlotManScale: (plotId, manScale) =>
     set((s) => ({
-      scopes: s.scopes.filter((x) => x.id !== id),
-      revision: s.revision + 1,
+      scopes: s.scopes.map((x) => ({
+        ...x,
+        plots: x.plots.map((p) => (p.id === plotId ? { ...p, manScale } : p)),
+      })),
     })),
+
+  setPlotManPosition: (plotId, manVPosition) =>
+    set((s) => ({
+      scopes: s.scopes.map((x) => ({
+        ...x,
+        plots: x.plots.map((p) =>
+          p.id === plotId ? { ...p, manVPosition: Math.max(-100, Math.min(100, manVPosition)) } : p,
+        ),
+      })),
+    })),
+
+  togglePlot: (scopeId, value) => {
+    const scope = get().scopes.find((x) => x.id === scopeId);
+    if (!scope) return;
+    const has = scope.plots.some((p) => p.value === value && p.elementId !== null);
+    if (has && scope.plots.length <= 1) return;
+    get().commit();
+    set((s) => {
+      const target = s.scopes.find((x) => x.id === scopeId);
+      if (!target) return s;
+      if (target.plots.some((p) => p.value === value && p.elementId !== null)) {
+        // Removing must never empty the panel; the guard above already
+        // refused the single-plot scope.
+        return {
+          scopes: s.scopes.map((x) =>
+            x.id === scopeId
+              ? { ...x, plots: x.plots.filter((p) => !(p.value === value && p.elementId !== null)) }
+              : x,
+          ),
+          revision: s.revision + 1,
+        };
+      }
+      const elementId = target.plots.find((p) => p.elementId !== null)?.elementId ?? null;
+      if (elementId === null) return s;
+      return {
+        scopes: s.scopes.map((x) =>
+          x.id === scopeId ? { ...x, plots: [...x.plots, makePlot(allocateId(), elementId, value)] } : x,
+        ),
+        revision: s.revision + 1,
+      };
+    });
+  },
+
+  combineScopes: (aId, bId) => {
+    if (aId === bId) return;
+    const s = get();
+    if (!s.scopes.some((x) => x.id === aId) || !s.scopes.some((x) => x.id === bId)) return;
+    s.commit();
+    set((st) => {
+      const a = st.scopes.find((x) => x.id === aId);
+      const b = st.scopes.find((x) => x.id === bId);
+      if (!a || !b) return st;
+      return {
+        scopes: st.scopes
+          .filter((x) => x.id !== bId)
+          .map((x) => (x.id === aId ? { ...x, plots: [...x.plots, ...b.plots] } : x)),
+        revision: st.revision + 1,
+      };
+    });
+  },
+
+  separateScope: (id) => {
+    const s = get();
+    if (!s.scopes.some((x) => x.id === id)) return;
+    s.commit();
+    set((st) => {
+      const scope = st.scopes.find((x) => x.id === id);
+      if (!scope) return st;
+      const others = st.scopes.filter((x) => x.id !== id);
+      const base = others.reduce((m, x) => Math.max(m, x.position), -1) + 1;
+      const out: Scope[] = [];
+      let last: ScopePlot | null = null;
+      // A voltage plot and the current plot of the same element stay together
+      // (Scope.separate, Scope.java:453-471); anything else splits off.
+      for (const p of scope.plots) {
+        const prev = out[out.length - 1];
+        if (
+          last &&
+          last.elementId === p.elementId &&
+          last.value === 'voltage' &&
+          p.value === 'current'
+        ) {
+          out[out.length - 1] = { ...prev, plots: [...prev.plots, p] };
+          last = p;
+          continue;
+        }
+        out.push(makeScope(allocateId(), null, [p], scope.speed, base + out.length));
+        last = p;
+      }
+      return { scopes: [...others, ...out], revision: st.revision + 1 };
+    });
+  },
+
+  stackScope: (id) => {
+    const s = get();
+    const i = s.scopes.findIndex((x) => x.id === id);
+    if (i <= 0 || s.scopes[i].position === s.scopes[i - 1].position) return;
+    s.commit();
+    set((st) => {
+      const target = st.scopes[i - 1].position;
+      // Move the scope into the previous column and close the gap it left
+      // (ScopeManager.stackScope, ScopeManager.java:253-262).
+      return {
+        scopes: st.scopes.map((x, j) => {
+          if (j === i) return { ...x, position: target };
+          if (j > i) return { ...x, position: Math.max(0, x.position - 1) };
+          return x;
+        }),
+        revision: st.revision + 1,
+      };
+    });
+  },
+
+  unstackScope: (id) => {
+    const s = get();
+    let i = s.scopes.findIndex((x) => x.id === id);
+    if (i <= 0) return;
+    // Selecting the top scope of a stack still un-stacks it
+    // (ScopeManager.unstackScope, ScopeManager.java:264-274).
+    if (s.scopes[i].position !== s.scopes[i - 1].position) i += 1;
+    s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x, j) => (j >= i ? { ...x, position: x.position + 1 } : x)),
+      revision: st.revision + 1,
+    }));
+  },
 
   loadNetlist: (text) => {
     const parsed = parseCircuit(text);
@@ -335,18 +627,25 @@ export const useStore = create<AppState>((set, get) => ({
     // line back where it was with every field it arrived with.
     const scopes: Scope[] = [];
     const unmatchedScopes: ScopeConfig[] = [];
-    for (const c of parsed.scopes) {
+    for (const [index, c] of parsed.scopes.entries()) {
       if (c.elementId === undefined) unmatchedScopes.push(c);
-      else
-        scopes.push({
-          id: c.id,
-          raw: c.raw,
-          plots: c.plots.map((p) => ({
-            id: p.id,
-            elementId: p.elementId ?? null,
-            value: p.value,
-          })),
-        });
+      else {
+        // raw[0] is the speed token in both line styles (the o-line walk
+        // starts at the element index, so raw slices it off). raw[5] is the
+        // stacking position.
+        const speed = scopeSpeed(Number(c.raw[0]) || 64);
+        const posToken = Number(c.raw[5]);
+        const position = Number.isFinite(posToken) && posToken >= 0 ? posToken : index;
+        scopes.push(
+          makeScope(
+            c.id,
+            c.raw,
+            c.plots.map((p) => makePlot(p.id, p.elementId ?? null, p.value)),
+            speed,
+            position,
+          ),
+        );
+      }
     }
 
     set((s) => ({
@@ -384,16 +683,22 @@ export const useStore = create<AppState>((set, get) => ({
     const indexById = new Map(s.elements.map((e, i) => [e.id, i]));
     const scopeConfigs: ScopeConfig[] = s.scopes.map((x) => {
       const first = x.plots[0];
+      const speedToken = String(x.speed);
       return {
         id: x.id,
         // Recomputed by the writer from where the element lands in the file;
         // this is only the fallback for a plot with no element left.
         elementIndex: indexById.get(first.elementId ?? -1) ?? -1,
         elementId: first.elementId ?? undefined,
-        // A loaded line keeps every display field it came with. One created
-        // here gets a full new-style line (position 0, one plot) that upstream
-        // parses, replacing the old unloadable 4-token stub.
-        raw: x.raw ?? scopeDefaultRaw(first.value),
+        // A loaded line keeps every display field it came with, only the
+        // speed token tracks the live zoom. One created here gets a full
+        // new-style line (position 0, one or two plots) that upstream parses,
+        // replacing the old unloadable 4-token stub.
+        raw: x.raw
+          ? x.raw[0] === speedToken
+            ? x.raw
+            : [speedToken, ...x.raw.slice(1)]
+          : scopeUIRaw(x.speed, x.plots, (id) => indexById.get(id)),
         plots: x.plots.map((p) => ({
           id: p.id,
           elementIndex: indexById.get(p.elementId ?? -1) ?? -1,
@@ -475,6 +780,11 @@ export const useStore = create<AppState>((set, get) => ({
     }),
 
   closeContextMenu: () => set({ contextMenu: null }),
+
+  openScopeMenu: (x, y, scopeId, plotId) => set({ scopeMenu: { x, y, scopeId, plotId } }),
+  closeScopeMenu: () => set({ scopeMenu: null }),
+  openScopeProperties: (scopeId) => set({ scopeProperties: scopeId, scopeMenu: null }),
+  closeScopeProperties: () => set({ scopeProperties: null }),
 
   selectAll: () => set((s) => ({ selectedIds: s.elements.map((e) => e.id) })),
 

@@ -1997,6 +1997,9 @@ fn opamp_scope_plots_output_minus_non_inverting_input() {
             post: 0,
             steps_per_column: 1,
             columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
         }],
     );
     c.run(30);
@@ -2030,6 +2033,9 @@ fn current_scope_samples_the_dc_branch_current() {
             post: 0,
             steps_per_column: 1,
             columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
         }],
     );
     c.run(30);
@@ -2085,6 +2091,9 @@ fn opamp_output_current_and_power_match_upstream() {
                 post: 0,
                 steps_per_column: 1,
                 columns: 1024,
+                ac_coupled: false,
+                trigger: Default::default(),
+                display_width: 0,
             },
             ScopeSpec {
                 element_id: 3,
@@ -2092,6 +2101,9 @@ fn opamp_output_current_and_power_match_upstream() {
                 post: 0,
                 steps_per_column: 1,
                 columns: 1024,
+                ac_coupled: false,
+                trigger: Default::default(),
+                display_width: 0,
             },
         ],
     );
@@ -3081,6 +3093,9 @@ fn noise_holds_constant_across_subiterations() {
             post: 0,
             steps_per_column: 1,
             columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
         }],
     );
     let report = c.run(50);
@@ -3130,6 +3145,9 @@ fn noise_is_deterministic_and_uncorrelated() {
                 post: 0,
                 steps_per_column: 1,
                 columns: 1024,
+                ac_coupled: false,
+                trigger: Default::default(),
+                display_width: 0,
             }],
         )
     };
@@ -3186,6 +3204,9 @@ fn noise_is_deterministic_and_uncorrelated() {
                 post: 0,
                 steps_per_column: 1,
                 columns: 1024,
+                ac_coupled: false,
+                trigger: Default::default(),
+                display_width: 0,
             },
             ScopeSpec {
                 element_id: 3,
@@ -3193,6 +3214,9 @@ fn noise_is_deterministic_and_uncorrelated() {
                 post: 0,
                 steps_per_column: 1,
                 columns: 1024,
+                ac_coupled: false,
+                trigger: Default::default(),
+                display_width: 0,
             },
         ],
     );
@@ -3359,6 +3383,9 @@ fn source_scope_and_readout_use_upstream_sign() {
             post: 0,
             steps_per_column: 1,
             columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
         }],
     );
     c.run(1);
@@ -3435,6 +3462,9 @@ fn element_powers_use_the_scope_convention() {
             post: 0,
             steps_per_column: 1,
             columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
         }],
     );
     c.run(1);
@@ -4678,6 +4708,9 @@ fn tr_scope(id: u32, value: ScopeValue, post: usize) -> ScopeSpec {
         post,
         steps_per_column: 1,
         columns: 4096,
+        ac_coupled: false,
+        trigger: Default::default(),
+        display_width: 0,
     }
 }
 
@@ -5104,6 +5137,9 @@ fn adaptive_step_rescues_a_stubborn_circuit() {
             post: 0,
             steps_per_column: 1,
             columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
         }],
     );
     let report = c.run(200);

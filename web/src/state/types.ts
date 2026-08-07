@@ -1,6 +1,6 @@
 /** Application state. Everything the UI reads or mutates lives here. */
 
-import type { Scope, ScopeValue } from '../engine/simulator';
+import type { Scope, ScopeTrigger, ScopeValue } from '../engine/simulator';
 import type { NetlistLine, ScopeConfig } from '../io/netlist';
 import type { CircuitElement, SimSettings } from '../model/types';
 
@@ -45,6 +45,9 @@ export interface AppState {
   redoStack: Snapshot[];
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
   revision: number;
+  /** Bumped by scope capture-parameter edits (speed), which the frame loop
+   *  applies through the engine's fast path instead of a rebuild. */
+  scopeRevision: number;
   /** Bumped by value-only edits, applied to the live engine without a rebuild. */
   paramRevision: number;
   /** Value edits not yet pushed to the engine, keyed `${id}:${name}`. */
@@ -53,6 +56,11 @@ export interface AppState {
   pendingStates: Map<number, number>;
   /** Menu shown by a right-click, or null when closed. */
   contextMenu: { x: number; y: number; target: number | null } | null;
+  /** Scope popup menu (right-click over a scope canvas), or null when closed.
+   *  `plotId` is the plot under the cursor, for the Remove Plot command. */
+  scopeMenu: { x: number; y: number; scopeId: number; plotId: number } | null;
+  /** Scope id whose properties dialog is open, or null. */
+  scopeProperties: number | null;
   /** Netlist text of the last copied or cut selection. */
   clipboard: string | null;
   /** Netlist text of the last export; null means no baseline yet (clean). */
@@ -88,6 +96,25 @@ export interface AppState {
 
   addScope(elementId: number, value: ScopeValue): void;
   removeScope(id: number): void;
+  /** Clears a scope's capture buffer (the Reset command). */
+  resetScope(id: number): void;
+  /** Changes the horizontal zoom without rewinding the simulation. */
+  setScopeSpeed(id: number, speed: number): void;
+  setScopeTrigger(id: number, patch: Partial<ScopeTrigger>): void;
+  /** Display flags (overlays, scale mode, FFT/X-Y); never forces a reload. */
+  setScopeFlags(id: number, patch: Partial<Omit<Scope, 'id' | 'raw' | 'plots' | 'trigger'>>): void;
+  setPlotCoupling(scopeId: number, plotId: number, acCoupled: boolean): void;
+  setPlotManScale(plotId: number, manScale: number | null): void;
+  setPlotManPosition(plotId: number, manVPosition: number): void;
+  /** Adds or removes a plot of `value`, never emptying the panel. */
+  togglePlot(scopeId: number, value: ScopeValue): void;
+  /** Merges `b`'s plots into `a` and drops `b` (Scope.combine). */
+  combineScopes(aId: number, bId: number): void;
+  /** Splits a panel into one per plot, keeping a V+I pair together. */
+  separateScope(id: number): void;
+  /** Moves a scope into the previous column, closing the gap it left. */
+  stackScope(id: number): void;
+  unstackScope(id: number): void;
 
   loadNetlist(text: string): void;
   toNetlist(): string;
@@ -106,6 +133,10 @@ export interface AppState {
 
   openContextMenu(x: number, y: number, target: number | null): void;
   closeContextMenu(): void;
+  openScopeMenu(x: number, y: number, scopeId: number, plotId: number): void;
+  closeScopeMenu(): void;
+  openScopeProperties(scopeId: number): void;
+  closeScopeProperties(): void;
   selectAll(): void;
   copySelection(): void;
   cutSelection(): void;

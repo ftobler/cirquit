@@ -633,7 +633,9 @@ describe('scope o-line fidelity', () => {
       .toNetlist()
       .split('\n')
       .find((l) => l.startsWith('o '));
-    expect(line).toBe('o 0 64 0 4099 20 0.05 0 1');
+    // A voltage scope carries a current companion for most elements, so the
+    // generated line is the two-plot form upstream parses.
+    expect(line).toBe('o 0 64 0 4099 20 0.05 0 2 0 3');
   });
 
   it('addScope power emits the W-scale token the line needs', () => {
@@ -677,5 +679,183 @@ describe('scope o-line fidelity', () => {
     useStore.getState().select([target!.id]);
     useStore.getState().deleteSelected();
     expect(useStore.getState().scopes).toHaveLength(0);
+  });
+});
+
+describe('scope speed', () => {
+  it('setScopeSpeed clamps, bumps scopeRevision only on real change, and serializes', () => {
+    const id = addResistor();
+    useStore.getState().addScope(id, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    const beforeScope = useStore.getState().scopeRevision;
+    const beforeRevision = useStore.getState().revision;
+
+    useStore.getState().setScopeSpeed(scopeId, 128);
+    const s = useStore.getState();
+    expect(s.scopes[0].speed).toBe(128);
+    expect(s.scopeRevision).toBe(beforeScope + 1);
+    expect(s.revision).toBe(beforeRevision);  // scopeRevision is the fast path
+
+    // A no-op must not bump anything.
+    useStore.getState().setScopeSpeed(scopeId, 128);
+    expect(useStore.getState().scopeRevision).toBe(beforeScope + 1);
+
+    // Clamps at both ends of 1..1024.
+    useStore.getState().setScopeSpeed(scopeId, 99999);
+    expect(useStore.getState().scopes[0].speed).toBe(1024);
+    useStore.getState().setScopeSpeed(scopeId, 0);
+    expect(useStore.getState().scopes[0].speed).toBe(1);
+
+    // The live speed lands in the serialized line's speed token (raw[0]).
+    const line = useStore.getState().toNetlist().split('\n').find((l) => l.startsWith('o '));
+    expect(line).toBe('o 0 1 0 4099 20 0.05 0 2 0 3');
+  });
+
+  it('loadNetlist restores a non-default o-line speed and saves it back', () => {
+    useStore.getState().loadNetlist(
+      '$ 0 0.000005 10 50 5 43 5e-11\n' +
+        'r 0 0 16 0 0 100\nr 16 0 32 0 0 100\n' +
+        'o 0 128 0 4099 20 0.05 0 2 4 3\n',
+    );
+    const s = useStore.getState();
+    expect(s.scopes[0].speed).toBe(128);
+
+    // Editing the speed writes it back over the loaded token; the rest of the
+    // line stays verbatim.
+    useStore.getState().setScopeSpeed(s.scopes[0].id, 256);
+    const line = useStore.getState().toNetlist().split('\n').find((l) => l.startsWith('o '));
+    expect(line).toBe('o 0 256 0 4099 20 0.05 0 2 4 3');
+  });
+});
+
+describe('scope panels', () => {
+  it('addScope creates a V+I pair for a resistor and a single V plot for an output', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    expect(useStore.getState().scopes[0].plots.map((p) => p.value)).toEqual(['voltage', 'current']);
+
+    const outId = useStore.getState().addElement({
+      kind: 'output',
+      x1: 0,
+      y1: 0,
+      x2: 32,
+      y2: 0,
+      flags: 0,
+      params: {},
+    });
+    useStore.getState().addScope(outId, 'voltage');
+    const outScope = useStore
+      .getState()
+      .scopes.find((x) => x.plots.some((p) => p.elementId === outId));
+    expect(outScope?.plots.map((p) => p.value)).toEqual(['voltage']);
+  });
+
+  it('togglePlot adds and removes a plot but never empties the panel', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+
+    useStore.getState().togglePlot(scopeId, 'current');
+    expect(useStore.getState().scopes[0].plots).toHaveLength(1);
+
+    useStore.getState().togglePlot(scopeId, 'current');
+    expect(useStore.getState().scopes[0].plots).toHaveLength(2);
+
+    // Removing the only plot is refused.
+    useStore.getState().togglePlot(scopeId, 'current');
+    expect(useStore.getState().scopes[0].plots).toHaveLength(1);
+    useStore.getState().togglePlot(scopeId, 'voltage');
+    expect(useStore.getState().scopes[0].plots).toHaveLength(1);
+  });
+
+  it('combineScopes merges plot lists and drops the emptied scope', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    const [sa, sb] = useStore.getState().scopes;
+    useStore.getState().combineScopes(sa.id, sb.id);
+    const s = useStore.getState();
+    expect(s.scopes).toHaveLength(1);
+    expect(s.scopes[0].plots).toHaveLength(4);
+  });
+
+  it('separateScope keeps a V+I pair together and splits the rest', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');  // V+I of a
+    useStore.getState().addScope(b, 'current');  // lone I of b
+    const [sa, sb] = useStore.getState().scopes;
+    useStore.getState().combineScopes(sa.id, sb.id);
+
+    useStore.getState().separateScope(sa.id);
+    const s = useStore.getState();
+    expect(s.scopes).toHaveLength(2);
+    const vPanel = s.scopes.find((x) => x.plots.some((p) => p.value === 'voltage'));
+    expect(vPanel?.plots.map((p) => p.value)).toEqual(['voltage', 'current']);
+    const iPanel = s.scopes.find((x) => !x.plots.some((p) => p.value === 'voltage'));
+    expect(iPanel?.plots.map((p) => p.value)).toEqual(['current']);
+  });
+
+  it('stack and unstack update positions with one undo step per command', () => {
+    const a = addResistor();
+    const b = addResistor();
+    const c = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    useStore.getState().addScope(c, 'voltage');
+    let s = useStore.getState();
+    expect(s.scopes.map((x) => x.position)).toEqual([0, 1, 2]);
+    const baseline = s.undoStack.length;
+
+    useStore.getState().stackScope(s.scopes[2].id);
+    s = useStore.getState();
+    expect(s.scopes.map((x) => x.position)).toEqual([0, 1, 1]);
+    expect(s.undoStack.length).toBe(baseline + 1);
+
+    useStore.getState().unstackScope(s.scopes[2].id);
+    s = useStore.getState();
+    expect(s.scopes.map((x) => x.position)).toEqual([0, 1, 2]);
+    expect(s.undoStack.length).toBe(baseline + 2);
+  });
+});
+
+describe('scope coupling fast path', () => {
+  it('setPlotCoupling changes the flag without rewinding the simulation', () => {
+    const id = addResistor();
+    useStore.getState().addScope(id, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    const beforeRevision = useStore.getState().revision;
+    const beforeScopeRevision = useStore.getState().scopeRevision;
+
+    useStore.getState().setPlotCoupling(scope.id, scope.plots[0].id, true);
+    const s = useStore.getState();
+    expect(s.scopes[0].plots[0].acCoupled).toBe(true);
+    // A coupling toggle is a scope-capture flag, so it goes through the scope
+    // fast path (applyScopeParams) and must not force a full circuit reload.
+    expect(s.revision).toBe(beforeRevision);
+    expect(s.scopeRevision).toBe(beforeScopeRevision);
+
+    // Toggling back off also avoids the reload.
+    useStore.getState().setPlotCoupling(scope.id, scope.plots[0].id, false);
+    expect(useStore.getState().scopes[0].plots[0].acCoupled).toBe(false);
+    expect(useStore.getState().revision).toBe(beforeRevision);
+  });
+
+  it('AC coupling is refused for current plots, matching canAcCouple', () => {
+    const id = addResistor();
+    useStore.getState().addScope(id, 'voltage');  // V+I pair
+    const scope = useStore.getState().scopes[0];
+    const currentPlot = scope.plots.find((p) => p.value === 'current');
+    const voltagePlot = scope.plots.find((p) => p.value === 'voltage');
+    expect(currentPlot).toBeDefined();
+    expect(voltagePlot).toBeDefined();
+    if (!currentPlot || !voltagePlot) return;
+
+    useStore.getState().setPlotCoupling(scope.id, currentPlot.id, true);
+    expect(useStore.getState().scopes[0].plots.find((p) => p.value === 'current')?.acCoupled).toBe(false);
+
+    useStore.getState().setPlotCoupling(scope.id, voltagePlot.id, true);
+    expect(useStore.getState().scopes[0].plots.find((p) => p.value === 'voltage')?.acCoupled).toBe(true);
   });
 });

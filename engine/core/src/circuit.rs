@@ -171,6 +171,19 @@ impl Circuit {
         &self.scopes
     }
 
+    /// This frame's recent raw samples for one scope trace (X-Y mode).
+    pub fn recent_samples(&self, index: usize) -> Vec<f32> {
+        self.scopes
+            .get(index)
+            .map(|s| s.recent_snapshot())
+            .unwrap_or_default()
+    }
+
+    /// Trigger display anchor for one scope trace.
+    pub fn trigger_info(&self, index: usize, width: usize) -> Option<crate::scope::TriggerInfo> {
+        self.scopes.get(index).map(|s| s.trigger_info(width))
+    }
+
     /// Replaces the circuit and runs analysis. Returns an error when the
     /// netlist cannot be built at all, and when a linear circuit's matrix is
     /// singular at analysis time (upstream factors linear matrices
@@ -888,6 +901,7 @@ impl Circuit {
     }
 
     fn sample_scopes(&mut self) {
+        let sim_time = self.ctx.time;
         for scope in self.scopes.iter_mut() {
             let Some(ei) = scope.element_index else {
                 continue;
@@ -900,8 +914,31 @@ impl Circuit {
                 ScopeValue::Power => elm.power(),
                 ScopeValue::NodeVoltage => base.volts.get(scope.spec.post).copied().unwrap_or(0.0),
             };
-            scope.push(v);
+            scope.push(v, sim_time);
         }
+    }
+
+    /// Changes a scope's capture parameters (speed and ring size) without a
+    /// rebuild, so zooming the time base never rewinds the simulation.
+    /// Returns false when the index is out of range, so the caller can fall
+    /// back to a full reload.
+    pub fn set_scope_params(&mut self, index: usize, steps_per_column: u32, columns: u32) -> bool {
+        let Some(scope) = self.scopes.get_mut(index) else {
+            return false;
+        };
+        scope.set_params(steps_per_column, columns);
+        true
+    }
+
+    /// Toggles a scope's AC coupling without a rebuild, so the coupling radio
+    /// never rewinds the simulation. Returns false when the index is out of
+    /// range, so the caller can fall back to a full reload.
+    pub fn set_scope_ac_coupled(&mut self, index: usize, ac_coupled: bool) -> bool {
+        let Some(scope) = self.scopes.get_mut(index) else {
+            return false;
+        };
+        scope.set_ac_coupled(ac_coupled);
+        true
     }
 
     /// Returns the circuit to time zero.

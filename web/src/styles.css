@@ -328,6 +328,7 @@ h3 {
 /* ---- scopes ---- */
 
 .scopes {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   gap: 1px;
@@ -336,16 +337,27 @@ h3 {
   border-top: 1px solid var(--border);
 }
 
+/* One column per stacking position; stacked scopes share the column height. */
+.scope-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .scope {
   position: relative;
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 
 .scope-canvas {
   width: 100%;
   height: 100%;
   display: block;
+  cursor: crosshair;
 }
 
 .scope-close {
@@ -355,10 +367,67 @@ h3 {
   padding: 0 5px;
   line-height: 1.3;
   opacity: 0.5;
+  z-index: 2;
 }
 
 .scope-close:hover {
   opacity: 1;
+}
+
+/* The scope properties dialog, a fixed overlay like the options panel. */
+.scope-props {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 12px;
+  max-height: 85vh;
+  overflow-y: auto;
+  min-width: 320px;
+  max-width: 560px;
+}
+
+.scope-props h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.scope-props fieldset {
+  border: 1px solid var(--border);
+  margin: 8px 0;
+  padding: 8px;
+}
+
+.scope-props legend {
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.scope-props label {
+  display: block;
+  margin: 4px 0;
+  font-size: 12px;
+}
+
+.scope-props .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+}
+
+.scope-props input[type='range'] {
+  flex: 1;
+}
+
+.scope-props .scope-props-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .fatal {

@@ -118,6 +118,47 @@ pub enum ScopeValue {
     NodeVoltage,
 }
 
+/// Which edge fires the trigger.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TriggerEdge {
+    #[default]
+    Rising,
+    Falling,
+}
+
+/// Trigger acquisition mode. Free Run disables the trigger entirely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TriggerMode {
+    #[default]
+    FreeRun,
+    Normal,
+    Auto,
+}
+
+/// Trigger configuration for one scope trace (ScopeTrigger.java).
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TriggerSpec {
+    #[serde(default)]
+    pub mode: TriggerMode,
+    #[serde(default)]
+    pub edge: TriggerEdge,
+    #[serde(default)]
+    pub level: f64,
+}
+
+impl Default for TriggerSpec {
+    fn default() -> Self {
+        Self {
+            mode: TriggerMode::FreeRun,
+            edge: TriggerEdge::Rising,
+            level: 0.0,
+        }
+    }
+}
+
 /// One scope trace.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -134,6 +175,16 @@ pub struct ScopeSpec {
     /// Number of columns retained.
     #[serde(default = "default_columns")]
     pub columns: u32,
+    /// DC-blocking high-pass filter on the raw sample (voltage plots only).
+    #[serde(default)]
+    pub ac_coupled: bool,
+    /// Trigger acquisition settings.
+    #[serde(default)]
+    pub trigger: TriggerSpec,
+    /// Display width in pixels. The trigger holdoff and display anchor count
+    /// columns against it, and only the frontend knows the canvas width.
+    #[serde(default)]
+    pub display_width: u32,
 }
 
 fn default_steps_per_column() -> u32 {
