@@ -2111,13 +2111,11 @@
   {
     "file": "latchingrelay.txt",
     "format": "plain",
-    "missing": [
-      "425",
-      "426"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "leadingedge.txt",
@@ -2328,8 +2326,7 @@
     "file": "motorprotect.txt",
     "format": "plain",
     "missing": [
-      "428",
-      "426"
+      "428"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -3046,7 +3043,6 @@
     "file": "relay.txt",
     "format": "plain",
     "missing": [
-      "178",
       "172"
     ],
     "sliderLines": 0,
@@ -3057,9 +3053,6 @@
     "file": "relayand.txt",
     "format": "plain",
     "missing": [
-      "178",
-      "178",
-      "178",
       "L",
       "L",
       "L",
@@ -3073,15 +3066,9 @@
     "file": "relayctr.txt",
     "format": "plain",
     "missing": [
-      "178",
-      "178",
       "162",
       "162",
-      "178",
-      "178",
       "162",
-      "178",
-      "178",
       "159"
     ],
     "sliderLines": 0,
@@ -3091,21 +3078,16 @@
   {
     "file": "relayff.txt",
     "format": "plain",
-    "missing": [
-      "178",
-      "178"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "relaymux.txt",
     "format": "plain",
     "missing": [
-      "178",
-      "178",
-      "178",
       "L",
       "L",
       "L",
@@ -3126,9 +3108,6 @@
     "file": "relayor.txt",
     "format": "plain",
     "missing": [
-      "178",
-      "178",
-      "178",
       "L",
       "L",
       "L",
@@ -3141,29 +3120,16 @@
   {
     "file": "relayosc.txt",
     "format": "plain",
-    "missing": [
-      "178"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "relays.txt",
     "format": "plain",
     "missing": [
-      "425",
-      "425",
-      "425",
-      "425",
-      "426",
-      "426",
-      "426",
-      "426",
-      "426",
-      "426",
-      "426",
-      "426",
       "430"
     ],
     "sliderLines": 0,
@@ -3173,20 +3139,16 @@
   {
     "file": "relaytff.txt",
     "format": "plain",
-    "missing": [
-      "178",
-      "178"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "relayxor.txt",
     "format": "plain",
     "missing": [
-      "178",
-      "178",
       "L",
       "L",
       "M"

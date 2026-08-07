@@ -24,6 +24,7 @@ pub mod multi_throw_switch;
 pub mod opamp;
 pub mod potentiometer;
 pub mod probe;
+pub mod relay;
 pub mod resistor;
 pub mod switch;
 pub mod thermistor;
@@ -57,6 +58,9 @@ pub const KINDS: &[&str] = &[
     "mosfet",
     "switch",
     "switch2",
+    "relay",
+    "relayCoil",
+    "relayContact",
     "opamp",
     "labeledNode",
     "output",
@@ -88,6 +92,9 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "mosfet" => Box::new(mosfet::Mosfet::new(spec)),
         "switch" => Box::new(switch::Switch::new(spec)),
         "switch2" => Box::new(multi_throw_switch::MultiThrowSwitch::new(spec)),
+        "relay" => Box::new(relay::Relay::new(spec)),
+        "relayCoil" => Box::new(relay::RelayCoil::new(spec)),
+        "relayContact" => Box::new(relay::RelayContact::new(spec)),
         "opamp" => Box::new(opamp::OpAmp::new(spec)),
         "labeledNode" => Box::new(labeled_node::LabeledNode::new(spec)),
         "output" => Box::new(meter::Meter::new_output(spec)),

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseCircuit, serializeCircuit } from './index';
 import { makeElement, makeToolElement } from '../../state/store';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
+
+const CIRCUITS_DIR = fileURLToPath(new URL('../../../public/circuits', import.meta.url));
 
 describe('diode file format', () => {
   /** Parses a single `d` line and re-emits it, returning the `d` line. */
@@ -688,5 +693,92 @@ describe('FLAG_ESCAPE on text and labeled nodes', () => {
   it('sets FLAG_ESCAPE on a labeled node written by this build', () => {
     const e = { ...makeElement('labeledNode', 0, 0, 0, 0), id: 1, text: 'bus A' };
     expect(lineFor(e, '207 ')).toBe('207 0 0 0 0 4 bus\\sA');
+  });
+});
+
+describe('relay file formats', () => {
+  /** Parses a single relay line and re-emits it, returning that line. */
+  const relayLine = (line: string, code: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith(`${code} `)) ?? '' };
+  };
+
+  it('relay_178_round_trips byte-for-byte', () => {
+    // relay.txt:2 verbatim. The 178 format is poleCount inductance coilCurrent
+    // r_on r_off onCurrent coilR offCurrent switchingTime position.
+    const line =
+      '178 240 176 384 176 22 1 0.2 0.0416666666666663 0.05 1000000 0.02 20 0.02 0.005 1';
+    const { e, elementLine } = relayLine(line, '178');
+    expect(e.params.poleCount).toBe(1);
+    expect(e.params.inductance).toBe(0.2);
+    expect(e.params.coilCurrent).toBe(0.0416666666666663);
+    expect(e.params.r_on).toBe(0.05);
+    expect(e.params.r_off).toBe(1e6);
+    expect(e.params.onCurrent).toBe(0.02);
+    expect(e.params.coilR).toBe(20);
+    expect(e.params.offCurrent).toBe(0.02);
+    expect(e.params.switchingTime).toBe(0.005);
+    expect(e.params.position).toBe(1);
+    expect(elementLine).toBe(line);
+  });
+
+  it('relay_178_position_2_mid_throw_round_trips', () => {
+    // relayosc.txt:2 has a relay caught mid-throw; the position token must
+    // survive so the engine restores the intermediate state.
+    const line =
+      '178 624 304 752 304 22 1 0.2 -0.020210235015409483 0.05 1000000 0.02 20 0.015 0.005 2';
+    const { e, elementLine } = relayLine(line, '178');
+    expect(e.params.position).toBe(2);
+    expect(elementLine).toBe(line);
+  });
+
+  it('relay_425_426_label_link_round_trips', () => {
+    // relays.txt:2 (coil) and :15 (contact), both labelled Q1. The label is
+    // the link key, and the contact's i_position token must survive.
+    const text = readFileSync(join(CIRCUITS_DIR, 'relays.txt'), 'utf8');
+    const lines = text.split('\n');
+    const coilLine = lines[1].trim();
+    const contactLine = lines[14].trim();
+    expect(coilLine.startsWith('425 ')).toBe(true);
+    expect(contactLine.startsWith('426 ')).toBe(true);
+
+    const coil = relayLine(coilLine, '425');
+    expect(coil.e.text).toBe('Q1');
+    expect(coil.e.params.type).toBe(0);
+    expect(coil.e.params.state).toBe(0);
+    expect(coil.e.params.switchPosition).toBe(0);
+    expect(coil.elementLine).toBe(coilLine);
+
+    const contact = relayLine(contactLine, '426');
+    expect(contact.e.text).toBe('Q1');
+    expect(contact.e.params.r_on).toBe(0.05);
+    expect(contact.e.params.r_off).toBe(1e6);
+    expect(contact.e.params.i_position).toBe(1);
+    expect(contact.e.flags).toBe(4);  // FLAG_IEC
+    expect(contact.elementLine).toBe(contactLine);
+  });
+
+  it('every relay line in the bundled corpus parses and round-trips', () => {
+    let count = 0;
+    for (const file of readdirSync(CIRCUITS_DIR).filter((f) => f.endsWith('.txt'))) {
+      const text = readFileSync(join(CIRCUITS_DIR, file), 'utf8');
+      for (const raw of text.split('\n')) {
+        const head = raw.trim().split(/\s+/)[0];
+        if (head !== '178' && head !== '425' && head !== '426') continue;
+        count += 1;
+        const tail = raw.trim().split(/\s+/).length - 6;
+        if (head === '178') expect(tail, raw).toBe(10);
+        // The 425 format is label plus nine parameters (RelayCoilElm.java:
+        // 97-106), so ten trailing tokens.
+        if (head === '425') expect(tail, raw).toBe(10);
+        if (head === '426') expect(tail, raw).toBeGreaterThanOrEqual(3);
+        const [e] = parseCircuit(raw).elements;
+        const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+        const elementLine = out.split('\n').find((l) => l.startsWith(`${head} `)) ?? '';
+        expect(elementLine, raw).toBe(raw.trim());
+      }
+    }
+    expect(count).toBeGreaterThan(0);
   });
 });

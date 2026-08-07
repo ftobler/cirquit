@@ -179,6 +179,29 @@ pub trait Element {
         None
     }
 
+    /// Linking label for relay coils and contacts, which pair by name like
+    /// labeled nodes but connect no nodes. The circuit resolves the label
+    /// once in `set_circuit` so the per-step state machine never re-scans.
+    fn link_label(&self) -> Option<&str> {
+        None
+    }
+
+    /// Hands a relay coil the element indices of its label-matched contacts.
+    /// The coil also announces its resting switch position here, which is
+    /// upstream's `stamp()`-time toggle (RelayCoilElm.java:296-298).
+    fn set_relay_contacts(&mut self, _contacts: Vec<usize>) {}
+
+    /// Contact drives a relay coil queued during `start_iteration`. The
+    /// circuit drains these once per timestep so a coil can set another
+    /// element's position before its `do_step` stamps the new conductance.
+    fn relay_contact_updates(&mut self) -> Vec<(usize, i32)> {
+        Vec::new()
+    }
+
+    /// Applies a position pushed by a matching relay coil. The drive is in
+    /// the coil's energised frame; `FLAG_NORMALLY_CLOSED` inverts it.
+    fn set_relay_position(&mut self, _position: i32) {}
+
     /// Live parameter change from the UI (sliders, dialogs). Returns true if
     /// the parameter was applied; false if the name was not recognised, so the
     /// caller can fall back to a full rebuild instead of silently dropping the

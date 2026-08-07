@@ -64,7 +64,7 @@ export function rotateElement(e: CircuitElement): CircuitElement {
  * that bit means P-channel there.
  */
 function rotateFlags(e: CircuitElement): number {
-  if (e.kind === 'mosfet') {
+  if (e.kind === 'mosfet' || e.kind === 'relay') {
     let flags = e.flags ^ MOSFET_FLIP;
     if (e.x1 === e.x2) flags ^= MOSFET_FLIP;
     return flags;
@@ -86,7 +86,7 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
   const cx = (e.x1 + e.x2) / 2;
   const vertical = e.x1 === e.x2;
   const flipBit =
-    e.kind === 'mosfet'
+    e.kind === 'mosfet' || e.kind === 'relay'
       ? MOSFET_FLIP
       : e.kind === 'opamp' || e.kind === 'transistor'
         ? FLAG_SWAP

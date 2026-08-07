@@ -174,6 +174,7 @@ impl Circuit {
         }
         self.specs = spec.elements.clone();
 
+        self.link_relay_contacts();
         self.assign_nodes(&spec.elements);
         // Devices whose format stores operating-point tokens seed the global
         // node voltages from them, and each element copies its terminals so
@@ -301,6 +302,46 @@ impl Circuit {
 
         self.node_count = next_id;
         self.node_voltages = vec![0.0; self.node_count];
+    }
+
+    /// Resolves relay labels once, at build time, so a coil's per-step state
+    /// machine can drive its contacts by element index instead of scanning
+    /// the element list like upstream's `toggleSwitchPositions`
+    /// (RelayCoilElm.java:353-378). A coil with no matching contact simply
+    /// drives nobody; a contact with no coil keeps its file position.
+    fn link_relay_contacts(&mut self) {
+        let mut contacts_by_label: HashMap<String, Vec<usize>> = HashMap::new();
+        for (i, elm) in self.elements.iter().enumerate() {
+            if let Some(label) = elm.link_label() {
+                contacts_by_label
+                    .entry(label.to_string())
+                    .or_default()
+                    .push(i);
+            }
+        }
+        for elm in self.elements.iter_mut() {
+            if let Some(label) = elm.link_label() {
+                if let Some(contacts) = contacts_by_label.get(label) {
+                    elm.set_relay_contacts(contacts.clone());
+                }
+            }
+        }
+    }
+
+    /// Applies the contact drives each coil queued during `start_iteration`.
+    /// Runs once per timestep, between `start_iteration` and the Newton loop,
+    /// so a coil's new `switchPosition` reaches its contacts before their
+    /// `do_step` stamps the new conductance.
+    fn push_relay_contact_positions(&mut self) {
+        let mut updates: Vec<(usize, i32)> = Vec::new();
+        for elm in self.elements.iter_mut() {
+            updates.extend(elm.relay_contact_updates());
+        }
+        for (ci, position) in updates {
+            if ci < self.elements.len() {
+                self.elements[ci].set_relay_position(position);
+            }
+        }
     }
 
     /// Finds subcircuits with no path to ground and pins them with `GMIN`.
@@ -484,6 +525,7 @@ impl Circuit {
         for elm in self.elements.iter_mut() {
             elm.start_iteration(&ctx_snapshot);
         }
+        self.push_relay_contact_positions();
 
         let max_sub = if self.nonlinear {
             self.options.max_subiterations.max(2)

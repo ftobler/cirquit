@@ -339,6 +339,9 @@ Dump codes implemented so far, with their trailing field order:
 | `f`   | mosfet         | pnp, threshold, beta                                       |
 | `s`   | switch         | position, momentary, [label] (FLAG_LABEL = 4)              |
 | `S`   | SPDT switch    | position, momentary, [label], link, throwCount             |
+| `178` | relay          | poleCount, inductance, coilCurrent, r_on, r_off, onCurrent, coilR, [offCurrent, switchingTime, position] |
+| `425` | relay coil     | label, inductance, coilCurrent, onCurrent, coilR, offCurrent, switchingTime, type, state, switchPosition |
+| `426` | relay contact  | label, r_on, r_off, [i_position]                           |
 | `a`   | op-amp         | maxOut, minOut, gbw, volts0, volts1, gain                  |
 | `207` | labeled node   | text (FLAG_ESCAPE = 4, always set on save)                 |
 | `O`   | output         | scale                                                      |
@@ -376,6 +379,19 @@ For the `c` and `209` rows only the first two tokens are guaranteed.
 puts on every capacitor so a fresh LC tank self-starts. The port writes
 FLAG_RESISTANCE (bit 4) and all four tokens on every save, as upstream's
 `dump()` does.
+
+For the `178`, `425` and `426` rows the relays link by label, not by a
+numeric id: a `425` coil and a `426` contact with the same label are one
+device, and the engine resolves that pairing once when the circuit is built
+rather than scanning per step (`RelayCoilElm.java:353-378`). A `426` contact
+is an SPST whose `i_position` comes from the file or from its coil;
+FLAG_NORMALLY_CLOSED (bit 2) inverts the coil's drive. The third throw the
+`426` draws is cosmetic, and its posts() returns only the two circuit
+terminals. The `178` format's three trailing tokens are optional in old
+files, which the token constructor fills from the model defaults; every
+bundled circuit carries all ten. The relay coil's `type` token is the
+six-state machine: 0 normal, 1 on-delay, 2 off-delay, 3 latching, 4
+latching-set, 5 latching-reset.
 
 The two rows differ on reading that fourth token. Upstream takes it only when
 the flag is set (`CapacitorElm.java:59-60`), but the flag is there to keep the

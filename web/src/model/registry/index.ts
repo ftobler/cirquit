@@ -33,6 +33,7 @@ import { TRANSISTOR_DEF } from './elements/transistor';
 import { MOSFET_DEF } from './elements/mosfet';
 import { SWITCH_DEF } from './elements/switch';
 import { SWITCH2_DEF } from './elements/switch2';
+import { RELAY_DEF, RELAY_COIL_DEF, RELAY_CONTACT_DEF } from './elements/relay';
 import { OPAMP_DEF } from './elements/opamp';
 import { LABELED_NODE_DEF } from './elements/labeledNode';
 import { OUTPUT_DEF } from './elements/output';
@@ -59,6 +60,9 @@ export const ELEMENT_DEFS: ElementDef[] = [
   LDR_DEF,
   SWITCH_DEF,
   SWITCH2_DEF,
+  RELAY_DEF,
+  RELAY_COIL_DEF,
+  RELAY_CONTACT_DEF,
   VOLTAGE_DEF,
   RAIL_DEF,
   CURRENT_DEF,
