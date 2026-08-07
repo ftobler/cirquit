@@ -2,10 +2,12 @@ import {
   arrowHead,
   currentDots,
   dsign,
+  elementLength,
   endpoints,
   interp,
   interp2,
   line,
+  polygon,
   voltageColor,
 } from '../../../render/draw';
 import { TRANSISTOR_FLIP } from '../flags';
@@ -16,26 +18,44 @@ function drawTransistorBody(g: DrawContext, e: CircuitElement): void {
   const [p1, p2] = endpoints(e);
   const posts = transistorPosts(e);
   const pnp = (e.params.pnp ?? 1) === -1;
+  const dn = elementLength(e);
   const baseColor = voltageColor(g, g.voltages[0]);
 
-  // Base lead up to the vertical bar.
-  const barCentre = interp(p1, p2, 0.72);
-  line(g, p1, barCentre, baseColor);
-  // The bar straddles the axis; the sign only picks which endpoint is which.
-  const [barTop, barBottom] = interp2(p1, p2, 0.72, OPEN_HS * 0.6);
-  line(g, barTop, barBottom, baseColor, 3);
+  // The base bar is a 3-unit-deep rectangle straddling the axis at the
+  // 16-unit half width, from fraction 1-16/dn to 1-13/dn (TransistorElm.java:
+  // 226-235). The base lead meets its far edge on the axis.
+  const base = interp(p1, p2, backFraction(dn));
+  const [backTop, backBottom] = interp2(p1, p2, backFraction(dn), OPEN_HS);
+  const [frontTop, frontBottom] = interp2(p1, p2, frontFraction(dn), OPEN_HS);
+  polygon(g, [backTop, frontTop, frontBottom, backBottom], baseColor);
+  line(g, p1, base, baseColor);
 
-  // Collector and emitter leads leave the bar on their posts' side, so a
-  // flipped or mirrored body's leads do not cross over the symbol.
+  // The collector and emitter leads leave the bar's near edge just off the
+  // axis and fan out to their posts (TransistorElm.java:230).
   const [c1, e1] = transistorBarContacts(e);
   line(g, c1, posts[1], voltageColor(g, g.voltages[1]));
   line(g, e1, posts[2], voltageColor(g, g.voltages[2]));
-  // The arrow sits on the emitter and points the way conventional current
-  // flows, which is what distinguishes NPN from PNP.
-  if (pnp) arrowHead(g, posts[2], e1, 8, voltageColor(g, g.voltages[2]));
-  else arrowHead(g, e1, posts[2], 8, voltageColor(g, g.voltages[2]));
+
+  // The arrow sits on the emitter: NPN points out toward the terminal, PNP
+  // points in from it (TransistorElm.java:238-243).
+  if (pnp) {
+    const pt = transistorArrowTip(e);
+    if (pt) arrowHead(g, posts[2], pt, 8, voltageColor(g, g.voltages[2]));
+  } else {
+    arrowHead(g, e1, posts[2], 8, voltageColor(g, g.voltages[2]));
+  }
 
   currentDots(g, posts[1], c1, g.current);
+}
+
+/** Fraction along the axis of the base bar's back edge (TransistorElm.java:227). */
+function backFraction(dn: number): number {
+  return dn > 0 ? 1 - 16 / dn : 1;
+}
+
+/** Fraction along the axis of the base bar's front edge (TransistorElm.java:228). */
+function frontFraction(dn: number): number {
+  return dn > 0 ? 1 - 13 / dn : 1;
 }
 
 /** Signed side factor for the transistor's collector and emitter, combining
@@ -50,10 +70,20 @@ export function transistorSideFactor(e: CircuitElement): number {
 }
 
 /** Points on the base bar where the collector and emitter leads attach,
- *  ordered like `transistorPosts`. */
+ *  ordered like `transistorPosts`: the near edge at `6*dsign*pnp` either side
+ *  (TransistorElm.java:230). */
 export function transistorBarContacts(e: CircuitElement): [Point, Point] {
   const [p1, p2] = endpoints(e);
-  return interp2(p1, p2, 0.72, OPEN_HS * 0.6 * transistorSideFactor(e));
+  return interp2(p1, p2, frontFraction(elementLength(e)), 6 * transistorSideFactor(e));
+}
+
+/** Arrow tip on the emitter lead: the emitter post for NPN, a point a third
+ *  of the bar back for PNP (TransistorElm.java:241-242). */
+export function transistorArrowTip(e: CircuitElement): Point | null {
+  const [p1, p2] = endpoints(e);
+  if ((e.params.pnp ?? 1) !== -1) return null;  // NPN arrow lands on the post
+  const dn = elementLength(e);
+  return interp(p1, p2, dn > 0 ? 1 - 11 / dn : 1, -5 * transistorSideFactor(e));
 }
 
 function transistorPosts(e: CircuitElement): Point[] {

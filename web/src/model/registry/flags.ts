@@ -31,6 +31,10 @@ export const POT_FLIP = 2;             // PotElm.java:33
 export const POT_FLIP_OFFSET = 4;      // PotElm.java:34
 export const SWITCH2_CENTER_OFF = 1;   // Switch2Elm.java:30
 export const SWITCH_LABEL = 4;         // SwitchElm.java:33, inherited by Switch2Elm
+export const SWITCH_IEC = 2;           // SwitchElm.java:32 FLAG_IEC
+export const RAIL_CLOCK = 1;           // RailElm.java:37 FLAG_CLOCK
+/** Voltage text beside an AC rail, inherited from VoltageElm (VoltageElm.java:36). */
+export const RAIL_SHOW_VOLTAGE = 64;   // FLAG_SHOW_VOLTAGE_RAIL
 export const VOLTAGE_SHOW_VOLTAGE = 16; // VoltageElm.java:32
 /** Load-time only: a legacy cosine, cleared on load (VoltageElm.java:29, 80-83). */
 export const VOLTAGE_COS = 2;

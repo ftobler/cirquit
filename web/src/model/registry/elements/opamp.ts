@@ -31,14 +31,15 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
   triangle(g, t1, t2, lead2, g.theme.panel);
   polyline(g, [t1, t2, lead2, t1], g.theme.wire, 2);
 
-  // The minus glyph sits on the inverting input, the plus on the other.
-  const minus = interp(lead1, lead2, 0.28, hs);
-  const plus = interp(lead1, lead2, 0.28, -hs);
+  // The minus glyph sits on the inverting input, the plus on the other. The
+  // minus anchor is 2 above its lead, the plus exactly on it (OpAmpElm.java:
+  // 103-104).
+  const [minus, plus] = opAmpLabelAnchors(e);
   g.ctx.fillStyle = g.theme.text;
   g.ctx.font = canvasFont(opampSize(e) === 2 ? 14 : 10);  // OpAmpElm.java:139
   g.ctx.textAlign = 'center';
   g.ctx.textBaseline = 'middle';
-  g.ctx.fillText('−', minus.x, minus.y);
+  g.ctx.fillText('−', minus.x, minus.y - 2);
   g.ctx.fillText('+', plus.x, plus.y);
   currentDots(g, lead2, p2, g.current);
 }
@@ -85,12 +86,13 @@ export function opAmpInputAnchors(e: CircuitElement): [Point, Point] {
   return [interp(lead1, lead2, 0, hs), interp(lead1, lead2, 0, -hs)];
 }
 
-/** Centres of the minus and plus glyphs, inverting and non-inverting sides. */
+/** Centres of the minus and plus glyphs, inverting and non-inverting sides,
+ *  at fraction 0.2 of the base-to-apex span (OpAmpElm.java:135). */
 export function opAmpLabelAnchors(e: CircuitElement): [Point, Point] {
   const [p1, p2] = endpoints(e);
   const [lead1, lead2] = opAmpBodyLeads(e);
   const hs = opampInputSign(e, p1, p2);
-  return [interp(lead1, lead2, 0.28, hs), interp(lead1, lead2, 0.28, -hs)];
+  return [interp(lead1, lead2, 0.2, hs), interp(lead1, lead2, 0.2, -hs)];
 }
 
 function opAmpPosts(e: CircuitElement): Point[] {

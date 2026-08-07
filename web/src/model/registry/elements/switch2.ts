@@ -1,5 +1,5 @@
 import {
-  circle,
+  calcLeads,
   currentDots,
   endpoints,
   interp,
@@ -18,10 +18,34 @@ function switch2Posts(e: CircuitElement): Point[] {
   // Upstream uses Java integer division here (Switch2Elm.java:76), so the
   // spacing stays grid-aligned for every even throw count.
   for (let i = 0; i < throws; i++) {
-    const hs = i === 0 && throws === 2 ? OPEN_HS : -OPEN_HS * (i - Math.floor((throws - 1) / 2));
+    const hs = throwOffset(i, throws);
     posts.push(interp(p1, p2, 1, hs));
   }
   return posts;
+}
+
+/** Perpendicular throw offset for index `i`, the absolute `openhs` fan of the
+ *  SPDT (Switch2Elm.java:76-80): throw 0 is the only one that never matches
+ *  the centred formula. */
+function throwOffset(i: number, throws: number): number {
+  return i === 0 && throws === 2 ? OPEN_HS : -OPEN_HS * (i - Math.floor((throws - 1) / 2));
+}
+
+/**
+ * The fan points the lever and the throw leads meet at: fraction 1 of the
+ * body leads (not of the whole span), each at its throw's perpendicular offset
+ * (Switch2Elm.java:79). The throw leads then continue from here to the posts,
+ * so the lever never reaches the terminal. Center-off rests the lever on
+ * `lead2`, which is what `swpoles[i] = lead2` records (Switch2Elm.java:82).
+ */
+export function switch2Poles(e: CircuitElement): Point[] {
+  const [lead1, lead2] = calcLeads(e, 32);
+  const throws = Math.max(2, e.params.throwCount ?? 2);
+  const poles: Point[] = [];
+  for (let i = 0; i < throws; i++) {
+    poles.push(interp(lead1, lead2, 1, throwOffset(i, throws)));
+  }
+  return poles;
 }
 
 export const SWITCH2_DEF: ElementDef = {
@@ -50,23 +74,29 @@ export const SWITCH2_DEF: ElementDef = {
   dumpFlags: labelFlags,
   draw(g, e) {
     const posts = switch2Posts(e);
-    const [p1, p2] = endpoints(e);
-    const lead1 = interp(p1, p2, 0.25);
+    const throws = Math.max(2, e.params.throwCount ?? 2);
+    const [p1] = endpoints(e);
+    const [lead1, lead2] = calcLeads(e, 32);
+    const poles = switch2Poles(e);
     line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-    const sel = (e.state ?? 0) + 1;
-    posts.slice(1).forEach((p, i) => {
-      line(g, interp(p1, p2, 0.75, 0), p, voltageColor(g, g.voltages[i + 1]));
-      circle(g, interp(p1, p2, 0.75, 0), 2, g.theme.wire, true, 1);
-    });
+    // One lead per throw, from its fan point to its post (Switch2Elm.java:
+    // 96-99). The fan point sits on the body, so the pole and post share the
+    // offset but not the x.
+    for (let i = 0; i < throws; i++) {
+      line(g, poles[i], posts[i + 1], voltageColor(g, g.voltages[i + 1]));
+    }
     // Center-off is the open middle position: the lever rests on the pole
-    // where the throws fan out rather than on a throw, so `posts[sel]`
-    // would be out of range (Switch2Elm.java:82,108-109).
+    // where the throws fan out rather than on a throw, so `poles[sel]` would
+    // be out of range (Switch2Elm.java:82,108-109).
     const centerOff =
       (e.flags & SWITCH2_CENTER_OFF) !== 0 &&
-      (e.params.throwCount ?? 2) === 2 &&
+      throws === 2 &&
       (e.state ?? 0) === 2;
-    const tip = centerOff ? interp(p1, p2, 0.75) : posts[Math.min(sel, posts.length - 1)];
-    line(g, lead1, tip, voltageColor(g, g.voltages[0]));
-    if (!centerOff) currentDots(g, p1, tip, g.current);
+    const sel = Math.min(e.state ?? 0, poles.length - 1);
+    line(g, lead1, centerOff ? lead2 : poles[sel], voltageColor(g, g.voltages[0]));
+    if (!centerOff) {
+      currentDots(g, p1, lead1, g.current);
+      currentDots(g, poles[sel], posts[sel + 1], g.current);
+    }
   },
 };

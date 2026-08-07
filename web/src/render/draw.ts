@@ -174,6 +174,17 @@ export function triangle(g: DrawContext, a: Point, b: Point, c: Point, color: st
   g.ctx.fill();
 }
 
+/** Filled polygon, used for the transistor's base bar. */
+export function polygon(g: DrawContext, pts: Point[], color: string): void {
+  if (pts.length < 3) return;
+  g.ctx.fillStyle = g.selected ? g.theme.selection : color;
+  g.ctx.beginPath();
+  g.ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) g.ctx.lineTo(pts[i].x, pts[i].y);
+  g.ctx.closePath();
+  g.ctx.fill();
+}
+
 /**
  * The four corners of the rectangle straddling the segment `a`-`b`,
  * `halfHeight` to each side, ordered `[a1, b1, b2, a2]` for a closed loop.

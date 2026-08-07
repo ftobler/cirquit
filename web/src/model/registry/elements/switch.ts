@@ -1,15 +1,14 @@
 import {
   calcLeads,
-  circle,
   currentDotsPath,
   drawLeads,
   endpoints,
   line,
   voltageColor,
 } from '../../../render/draw';
-import { SWITCH_LABEL } from '../flags';
-import { switchLeverTip, twoPosts } from '../shared';
-import type { CircuitElement, DrawContext, ElementDef } from '../../types';
+import { SWITCH_IEC, SWITCH_LABEL } from '../flags';
+import { switchIecPoints, switchLever, twoPosts } from '../shared';
+import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The SPST tokens, which the SPDT writes first and then extends. The label
  *  only appears when there is one, matching the flag `labelFlags` writes. */
@@ -35,13 +34,38 @@ function drawSwitchBody(g: DrawContext, e: CircuitElement): void {
   // The lever is always at the pivot's potential; it is connected to lead1
   // whether it is closed or not.
   const color = voltageColor(g, g.voltages[0]);
-  circle(g, lead1, 2.5, color, true, 1);
-  circle(g, lead2, 2.5, voltageColor(g, g.voltages[1]), true, 1);
-  const tip = switchLeverTip(lead1, lead2, closed);
-  line(g, lead1, tip, color);
+  const [pivot, tip] = switchLever(lead1, lead2, closed);
+  line(g, pivot, tip, color);
+  if ((e.flags & SWITCH_IEC) !== 0) {
+    drawSwitchIec(g, lead1, lead2, closed, color, (e.params.momentary ?? 0) !== 0);
+  }
   if (closed) {
     const [p1, p2] = endpoints(e);
     currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
+  }
+}
+
+function drawSwitchIec(
+  g: DrawContext,
+  lead1: Point,
+  lead2: Point,
+  closed: boolean,
+  color: string,
+  momentary: boolean,
+): void {
+  const [p0, p1, p2, p3, p4, p5, p6] = switchIecPoints(lead1, lead2, closed);
+  line(g, p2, p3, color);
+  g.ctx.setLineDash([3, 3]);
+  if (momentary) {
+    line(g, p1, p0, color);
+  } else {
+    line(g, p6, p0, color);
+    line(g, p1, p4, color);
+  }
+  g.ctx.setLineDash([]);
+  if (!momentary) {
+    line(g, p4, p5, color);
+    line(g, p6, p5, color);
   }
 }
 

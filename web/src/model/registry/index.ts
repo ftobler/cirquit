@@ -11,7 +11,7 @@
  */
 
 import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP } from './flags';
-import { switchLeverTip, groundBars } from './shared';
+import { switchLever, switchLeverTip, switchIecPoints, groundBars } from './shared';
 import { WIRE_DEF } from './elements/wire';
 import { GROUND_DEF } from './elements/ground';
 import { RESISTOR_DEF } from './elements/resistor';
@@ -43,9 +43,13 @@ import { DECORATION_DEF } from './elements/decoration';
 import type { CircuitElement, ElementDef, Point } from '../types';
 
 export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP };
-export { switchLeverTip, groundBars };
+export { switchLever, switchLeverTip, switchIecPoints, groundBars };
 export { opampInputSign, opAmpInputAnchors, opAmpLabelAnchors } from './elements/opamp';
-export { transistorSideFactor, transistorBarContacts } from './elements/transistor';
+export { transistorSideFactor, transistorBarContacts, transistorArrowTip } from './elements/transistor';
+export { switch2Poles } from './elements/switch2';
+export { zenerMarks } from './elements/diode';
+export { potWiperGeometry } from './elements/potentiometer';
+export { railLead, railText, railLabelAnchor, railValueText, railValueAnchor, RAIL_CIRCLE } from './elements/rail';
 
 export const ELEMENT_DEFS: ElementDef[] = [
   WIRE_DEF,

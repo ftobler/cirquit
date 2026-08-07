@@ -1,13 +1,13 @@
 import {
-  arrowHead,
   bodyRect,
-  calcLeads,
   currentDotsPath,
   endpoints,
   formatValue,
   interp,
+  interp2,
   label,
   line,
+  triangle,
   voltageColor,
 } from '../../../render/draw';
 import { POT_FLIP, POT_FLIP_OFFSET, POT_SHOW_VALUES } from '../flags';
@@ -16,28 +16,39 @@ import { GRID_SIZE } from '../../types';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 function drawPotBody(g: DrawContext, e: CircuitElement): void {
-  const [lead1, lead2] = calcLeads(e, 32);
-  const [p1, p2] = endpoints(e);
+  const [p1] = endpoints(e);
+  const { end } = potEndpoint(e);
+  const dn = Math.hypot(end.x - p1.x, end.y - p1.y);
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
+  // The body spans the normalized span (the snapped end, not the dragged one),
+  // as upstream's setPoints snaps point2 before calcLeads (PotElm.java:184-205).
+  const f = dn >= 32 ? (dn - 32) / (2 * dn) : 0;
+  const lead1 = interp(p1, end, f);
+  const lead2 = interp(p1, end, 1 - f);
   line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-  line(g, lead2, p2, voltageColor(g, g.voltages[1]));
-  bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, 32 x 12 as upstream
+  line(g, lead2, end, voltageColor(g, g.voltages[1]));
+  bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, hs 6 (PotElm.java:226)
 
   const wiper = potPosts(e)[2];
-  const contact = interp(lead1, lead2, e.params.position ?? 0.5, 0);
-  line(g, wiper, contact, voltageColor(g, g.voltages[2]));
-  arrowHead(g, wiper, contact, 8, voltageColor(g, g.voltages[2]));
-  currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
+  const { corner, arrowPoint, arrowBase } = potWiperGeometry(e);
+  const wiperColor = voltageColor(g, g.voltages[2]);
+  line(g, wiper, corner, wiperColor);
+  line(g, corner, arrowPoint, wiperColor);
+  // The arrowhead is a squat triangle: base half-width 8 a full `clen` back
+  // (PotElm.java:213-216).
+  triangle(g, arrowPoint, arrowBase[0], arrowBase[1], wiperColor);
+  currentDotsPath(g, [p1, lead1, lead2, end], g.current);
   label(g, e, formatValue(e.params.maxResistance ?? 0, 'Ω'), 20);
 }
 
 /**
- * Replicates `PotElm.setPoints` (PotElm.java:184-209): the far post snaps to
- * the dominant axis and, on a drag, the wiper offset comes from the perpendicular
+ * The pot's snapped far post and its perpendicular wiper offset, replicating
+ * `PotElm.setPoints` (PotElm.java:184-202): the far post snaps to the
+ * dominant axis and, on a drag, the wiper offset comes from the perpendicular
  * drag delta instead of a fixed side. The file stores the dragged x2,y2 while
  * the posts use the normalized endpoint, exactly like upstream.
  */
-function potPosts(e: CircuitElement): Point[] {
+export function potEndpoint(e: CircuitElement): { end: Point; offset: number } {
   const [p1, p2] = endpoints(e);
   const dx = p2.x - p1.x;
   const dy = p2.y - p1.y;
@@ -56,7 +67,37 @@ function potPosts(e: CircuitElement): Point[] {
   }
   if (offset === 0)
     offset = (e.flags & POT_FLIP_OFFSET) !== 0 ? -GRID_SIZE : GRID_SIZE;  // PotElm.java:201-202
+  return { end, offset };
+}
+
+function potPosts(e: CircuitElement): Point[] {
+  const [p1] = endpoints(e);
+  const { end, offset } = potEndpoint(e);
   return [p1, end, interp(p1, end, 0.5, offset)];  // post3, PotElm.java:209
+}
+
+/**
+ * The wiper's drawn geometry (PotElm.java:207-216): a corner on the body at
+ * the wiper position and its perpendicular offset, an arrow tip between it and
+ * the axis, and the squat arrowhead base at the far end of the corner-to-tip
+ * segment.
+ */
+export function potWiperGeometry(e: CircuitElement): {
+  corner: Point;
+  arrowPoint: Point;
+  arrowBase: [Point, Point];
+} {
+  const [p1] = endpoints(e);
+  const { end, offset } = potEndpoint(e);
+  const dn = Math.max(1, Math.hypot(end.x - p1.x, end.y - p1.y));
+  const soff = Math.trunc(((e.params.position ?? 0.5) - 0.5) * 32);  // PotElm.java:207
+  const f = 0.5 + soff / dn;
+  const dir = Math.sign(offset) || 1;
+  const corner = interp(p1, end, f, offset);
+  const arrowPoint = interp(p1, end, f, 8 * dir);
+  const clen = Math.abs(offset) - 8;
+  const frac = clen !== 0 ? (clen - 8) / clen : 0;
+  return { corner, arrowPoint, arrowBase: interp2(corner, arrowPoint, frac, 8) };
 }
 
 export const POTENTIOMETER_DEF: ElementDef = {

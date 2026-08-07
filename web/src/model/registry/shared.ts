@@ -48,14 +48,41 @@ export function escapeFlags(e: CircuitElement): number {
 }
 
 /**
- * Free end of a switch lever: at the contact when closed, lifted when open.
- *
- * The lever pivots at lead1; open, it lifts away from the contact. Positive
- * perpendicular is up on screen (canvas y grows downward), matching upstream
- * and the SPDT throw offsets.
+ * The switch lever as a segment. Upstream draws it from `interpPoint(lead1,
+ * lead2, 0, hs1)` to `interpPoint(lead1, lead2, 1, hs2)`, where open means
+ * `hs1 = 0, hs2 = openhs` and closed means both `hs = 2` (SwitchElm.java:
+ * 118-132). So the closed lever does not lie on the axis: it rides 2 units on
+ * the lift side, and only the open tip leaves the axis. Positive perpendicular
+ * is up on screen (canvas y grows downward), matching upstream and the SPDT
+ * throw offsets.
  */
+export function switchLever(lead1: Point, lead2: Point, closed: boolean): [Point, Point] {
+  const hs1 = closed ? 2 : 0;
+  const hs2 = closed ? 2 : OPEN_HS;
+  return [interp(lead1, lead2, 0, hs1), interp(lead1, lead2, 1, hs2)];
+}
+
+/** Free end of a switch lever: at the contact when closed, lifted when open. */
 export function switchLeverTip(lead1: Point, lead2: Point, closed: boolean): Point {
-  return closed ? lead2 : interp(lead1, lead2, 1, OPEN_HS);
+  return switchLever(lead1, lead2, closed)[1];
+}
+
+/**
+ * The IEC armature drawn on top of the lever when FLAG_IEC is set
+ * (SwitchElm.java:103-112, :146-161): a top bar, a dashed toggle link and the
+ * X of the non-momentary mark. `x0` is the one point the draw recomputes, to
+ * the open half-lift when open and to the closed 2-unit offset when closed.
+ */
+export function switchIecPoints(lead1: Point, lead2: Point, closed: boolean): Point[] {
+  return [
+    interp(lead1, lead2, 0.5, closed ? 2 : OPEN_HS / 2),
+    interp(lead1, lead2, 0.5, 24),
+    interp(lead1, lead2, 0.4, 24),
+    interp(lead1, lead2, 0.6, 24),
+    interp(lead1, lead2, 0.5, 19),
+    interp(lead1, lead2, 0.4, 16),
+    interp(lead1, lead2, 0.5, 13),
+  ];
 }
 
 /**

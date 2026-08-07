@@ -9,7 +9,23 @@ import {
   interpPrecise,
   rectCorners,
 } from './draw';
-import { postsOf, switchLeverTip, groundBars } from '../model/registry';
+import {
+  postsOf,
+  switchLever,
+  switchLeverTip,
+  switchIecPoints,
+  switch2Poles,
+  zenerMarks,
+  railLead,
+  railText,
+  railLabelAnchor,
+  railValueText,
+  railValueAnchor,
+  potWiperGeometry,
+  transistorArrowTip,
+  transistorBarContacts,
+  groundBars,
+} from '../model/registry';
 import type { CircuitElement, Point } from '../model/types';
 
 const element = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
@@ -22,6 +38,16 @@ const element = (x1: number, y1: number, x2: number, y2: number): CircuitElement
   flags: 0,
   params: {},
 });
+
+const part = (
+  kind: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  flags = 0,
+  params: Record<string, number> = {},
+): CircuitElement => ({ id: 2, kind, x1, y1, x2, y2, flags, params });
 
 describe('geometry', () => {
   it('interpolates along a segment', () => {
@@ -291,13 +317,18 @@ describe('switch lever', () => {
   const lead1: Point = { x: 34, y: 0 };
   const lead2: Point = { x: 66, y: 0 };
 
-  it('lifts upward when open on a left-to-right switch', () => {
-    const tip = switchLeverTip(lead1, lead2, false);
-    expect(tip.y).toBeLessThan(lead2.y);
+  it('lifts the open tip OPEN_HS units up from the contact', () => {
+    // The whole signed offset, not just its magnitude: a sign flip would put
+    // the open lever below the axis.
+    expect(switchLeverTip(lead1, lead2, false)).toEqual({ x: 66, y: -16 });
   });
 
-  it('sits on the contact when closed', () => {
-    expect(switchLeverTip(lead1, lead2, true)).toBe(lead2);
+  it('rides the closed lever 2 units up from the axis', () => {
+    // Upstream draws the closed lever at hs1 = hs2 = 2, not on the axis
+    // (SwitchElm.java:118-120).
+    const [pivot, tip] = switchLever(lead1, lead2, true);
+    expect(pivot).toEqual({ x: 34, y: -2 });
+    expect(tip).toEqual({ x: 66, y: -2 });
   });
 
   it('lifts by OPEN_HS units', () => {
@@ -306,6 +337,13 @@ describe('switch lever', () => {
       Math.abs((tip.x - lead1.x) * (lead2.y - lead1.y) - (tip.y - lead1.y) * (lead2.x - lead1.x)) /
       Math.hypot(lead2.x - lead1.x, lead2.y - lead1.y);
     expect(d).toBeCloseTo(16, 9);
+  });
+
+  it('keeps the lift side and magnitude when vertical', () => {
+    const a: Point = { x: 0, y: 0 };
+    const b: Point = { x: 0, y: 100 };
+    expect(switchLeverTip(a, b, false)).toEqual({ x: 16, y: 100 });
+    expect(switchLeverTip(a, b, true)).toEqual({ x: 2, y: 100 });
   });
 
   it('opens to the same side as the SPDT throws', () => {
@@ -336,6 +374,35 @@ describe('switch lever', () => {
     const tip = switchLeverTip(a, b, false);
     expect(tip.x - a.x).toBe(16);
     expect(Math.hypot(tip.x - b.x, tip.y - b.y)).toBe(16);
+  });
+});
+
+describe('switch IEC armature', () => {
+  const lead1: Point = { x: 34, y: 0 };
+  const lead2: Point = { x: 66, y: 0 };
+
+  it('spreads the top bar and mark across the lift side', () => {
+    // The armature sits entirely on the +perpendicular (up) side of the axis
+    // (SwitchElm.java:105-112).
+    for (const p of switchIecPoints(lead1, lead2, true)) {
+      expect(p.y).toBeLessThan(0);
+    }
+  });
+
+  it('recomputes the toggle end from the lever position', () => {
+    const [open0] = switchIecPoints(lead1, lead2, false);
+    const [closed0] = switchIecPoints(lead1, lead2, true);
+    // Open: half the lift (openhs/2). Closed: the lever's own 2-unit offset.
+    expect(open0).toEqual({ x: 50, y: -8 });
+    expect(closed0).toEqual({ x: 50, y: -2 });
+  });
+
+  it('lays the dashed link between the centre and the top bar', () => {
+    // x6 (centre, 13 up) and x1 (top bar, 24 up) sit on the axis line.
+    const pts = switchIecPoints(lead1, lead2, true);
+    expect(pts[6].x).toBe(50);
+    expect(pts[1].x).toBe(50);
+    expect(pts[1].y).toBeLessThan(pts[6].y);
   });
 });
 
@@ -410,5 +477,134 @@ describe('ground symbol bars', () => {
       [{ x: 8, y: 8 }, { x: 8, y: 8 }],
       [{ x: 8, y: 8 }, { x: 8, y: 8 }],
     ]);
+  });
+});
+
+describe('SPDT poles', () => {
+  it('fans the poles off the body, at the throws offsets', () => {
+    // The poles sit at fraction 1 of the body leads, not of the whole span:
+    // for a 100-long element that is x 66, while the throw posts sit at x 100
+    // (Switch2Elm.java:79-80).
+    const poles = switch2Poles(part('switch2', 0, 0, 100, 0, 0, { throwCount: 2 }));
+    expect(poles).toEqual([
+      { x: 66, y: -16 },
+      { x: 66, y: 16 },
+    ]);
+  });
+
+  it('uses the same integer-division spacing as the posts', () => {
+    expect(switch2Poles(part('switch2', 0, 0, 100, 0, 0, { throwCount: 4 }))).toEqual([
+      { x: 66, y: -16 },
+      { x: 66, y: 0 },
+      { x: 66, y: 16 },
+      { x: 66, y: 32 },
+    ]);
+  });
+});
+
+describe('zener cathode marks', () => {
+  it('spreads the swept wings past both bar ends', () => {
+    // The wings start a fifth of the way back along the bar and step 8 across
+    // the perpendicular, so they exit past the bar (ZenerElm.java:58-59).
+    const { bar, wing0, wing1 } = zenerMarks({ x: 16, y: 0 }, { x: 48, y: 0 });
+    expect(bar).toEqual([
+      { x: 48, y: -8 },
+      { x: 48, y: 8 },
+    ]);
+    expect(wing0).toEqual({ x: 40, y: -11 });
+    expect(wing1).toEqual({ x: 56, y: 11 });
+    expect(wing0.x).toBeLessThan(bar[0].x);
+    expect(wing1.x).toBeGreaterThan(bar[1].x);
+  });
+});
+
+describe('voltage rail geometry', () => {
+  it('ends the stem one circle radius short of the far end', () => {
+    expect(railLead({ x: 0, y: 0 }, { x: 100, y: 0 })).toEqual({ x: 83, y: 0 });
+    expect(railLead({ x: 0, y: 0 }, { x: 100, y: 0 })).not.toEqual({ x: 60, y: 0 });
+  });
+
+  it('labels positive rails with a plus and the short form', () => {
+    expect(railText(5)).toBe('+5V');
+    expect(railText(-5)).toBe('-5V');
+    expect(railText(0.5)).toBe('+0.5 V');
+    expect(railText(-0.5)).toBe('-0.5 V');
+    expect(railText(0)).toBe('0 V');
+  });
+
+  it('places the DC label clear of the stem end', () => {
+    // Left-to-right: 4 past the end (CircuitElm.java:961-962).
+    expect(railLabelAnchor({ x: 0, y: 0 }, { x: 83, y: 0 }, 20)).toEqual({ x: 87, y: 0 });
+    // Right-to-left: 4 plus the text width before the end.
+    expect(railLabelAnchor({ x: 100, y: 0 }, { x: 17, y: 0 }, 20)).toEqual({ x: -7, y: 0 });
+    // Vertical: centred on the stem end, stepped one font height along the
+    // travel direction, which for an upward rail is above it.
+    expect(railLabelAnchor({ x: 0, y: 100 }, { x: 0, y: 17 }, 10)).toEqual({ x: -5, y: 5 });
+  });
+
+  it('labels an AC rail with voltage and frequency', () => {
+    const rail = part('rail', 0, 0, 0, -100, 0, { waveform: 1, maxVoltage: 5, frequency: 40 });
+    expect(railValueText(rail, true)).toBe('5V 40Hz');
+    expect(railValueText(rail, false)).toBe('5V');
+  });
+
+  it('anchors the AC value label beside the waveform circle', () => {
+    // Vertical rail: left of point2 by the circle radius (CircuitElm.java:938).
+    const rail = part('rail', 0, 100, 0, 0);
+    expect(railValueAnchor(rail, 20)).toEqual({ x: -39, y: 6 });
+  });
+});
+
+describe('pot wiper arrow', () => {
+  it('swings the arrow from the wiper corner toward the axis', () => {
+    const { corner, arrowPoint, arrowBase } = potWiperGeometry(
+      part('potentiometer', 0, 0, 32, 0, 0, { position: 0.5 }),
+    );
+    expect(corner).toEqual({ x: 16, y: -16 });
+    // The tip is 8 toward the axis from the corner, the base is 8 wide and a
+    // full clen back from it (PotElm.java:211-216).
+    expect(arrowPoint).toEqual({ x: 16, y: -8 });
+    expect(arrowBase).toEqual([
+      { x: 24, y: -16 },
+      { x: 8, y: -16 },
+    ]);
+  });
+
+  it('tracks the wiper position along the body', () => {
+    const { corner, arrowPoint } = potWiperGeometry(
+      part('potentiometer', 0, 0, 32, 0, 0, { position: 1 }),
+    );
+    expect(corner).toEqual({ x: 32, y: -16 });
+    expect(arrowPoint).toEqual({ x: 32, y: -8 });
+  });
+
+  it('flips the arrow below with FLAG_FLIP_OFFSET', () => {
+    const { corner, arrowPoint, arrowBase } = potWiperGeometry(
+      part('potentiometer', 0, 0, 32, 0, 4, { position: 0.5 }),
+    );
+    expect(corner).toEqual({ x: 16, y: 16 });
+    expect(arrowPoint).toEqual({ x: 16, y: 8 });
+    expect(arrowBase).toEqual([
+      { x: 8, y: 16 },
+      { x: 24, y: 16 },
+    ]);
+  });
+});
+
+describe('transistor drawing geometry', () => {
+  it('contacts the base bar near the axis, inside the posts', () => {
+    // The leads attach at 1-13/dn with a 6-unit half separation, so the bar
+    // contact sits well inside the ±16 posts (TransistorElm.java:230).
+    const [c1, e1] = transistorBarContacts(part('transistor', 0, 0, 64, 0, 0, { pnp: 1 }));
+    expect(c1).toEqual({ x: 51, y: -6 });
+    expect(e1).toEqual({ x: 51, y: 6 });
+  });
+
+  it('points the NPN arrow at the emitter post and the PNP one inward', () => {
+    expect(transistorArrowTip(part('transistor', 0, 0, 64, 0, 0, { pnp: 1 }))).toBeNull();
+    // PNP: the tip is a third of the bar back from the emitter post, between
+    // the bar and the post (TransistorElm.java:241-242).
+    const tip = transistorArrowTip(part('transistor', 0, 0, 64, 0, 0, { pnp: -1 }));
+    expect(tip).toEqual({ x: 53, y: -5 });
   });
 });

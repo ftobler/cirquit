@@ -388,10 +388,11 @@ describe('SPDT switch posts', () => {
     const ctx = mkCtx();
     const sw = { ...element('switch2', 0, 0, 100, 0, 1, { throwCount: 2 }), state: 2 };
     expect(() => defFor('switch2')?.draw(context(ctx), sw)).not.toThrow();
-    // The lever rests on the centre pole, where the throws fan out, not on an
-    // out-of-range throw post.
+    // The lever rests on the centre pole, where the throws fan out: `lead2`
+    // from calcLeads(32), at 66 for a 100-long element, not an out-of-range
+    // throw post (Switch2Elm.java:82,108-109).
     const lineTos = ctx.lineTo.mock.calls.map((a) => ({ x: a[0], y: a[1] }));
-    expect(lineTos).toContainEqual({ x: 75, y: 0 });
+    expect(lineTos).toContainEqual({ x: 66, y: 0 });
   });
 });
 

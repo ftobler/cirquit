@@ -6,36 +6,50 @@ import {
   interp,
   interp2,
   line,
-  polyline,
   triangle,
   voltageColor,
 } from '../../../render/draw';
 import { twoPosts } from '../shared';
-import type { CircuitElement, DrawContext, ElementDef } from '../../types';
+import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 export function drawDiodeBody(g: DrawContext, e: CircuitElement, zener: boolean): void {
   const [lead1, lead2] = calcLeads(e, 16);
   drawLeads(g, e, lead1, lead2);
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
-  const [t1, t2] = interp2(lead1, lead2, 0, 7);
+  // Both DiodeElm and ZenerElm use hs = 8 for the triangle base and the
+  // cathode bar (DiodeElm.java:118, ZenerElm.java:45).
+  const [t1, t2] = interp2(lead1, lead2, 0, 8);
   triangle(g, t1, t2, lead2, color);
-  const [b1, b2] = interp2(lead1, lead2, 1, 7);
   if (zener) {
-    // Cathode bar with the characteristic swept ends.
-    polyline(
-      g,
-      [interp(lead1, lead2, 1, 7), b1, b2, interp(lead1, lead2, 1.35, -7)],
-      color,
-      2,
-    );
-    const [z1, z2] = interp2(lead1, lead2, 1, 7);
-    line(g, interp(lead1, lead2, -0.35, 7), z1, color, 2);
-    void z2;
+    const { bar, wing0, wing1 } = zenerMarks(lead1, lead2);
+    line(g, bar[0], bar[1], color, 2.5);
+    line(g, wing0, bar[0], color, 2);
+    line(g, wing1, bar[1], color, 2);
   } else {
+    const [b1, b2] = interp2(lead1, lead2, 1, 8);
     line(g, b1, b2, color, 2.5);
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
+}
+
+/**
+ * The zener's distinguishing cathode marks (ZenerElm.java:56-59): a bar at the
+ * end of the triangle and two short wings swept out and back along it. Each
+ * wing starts a fifth of the way back along the bar and steps 8 across the
+ * perpendicular, so the pair spreads past both bar ends, not inward.
+ */
+export function zenerMarks(lead1: Point, lead2: Point): {
+  bar: [Point, Point];
+  wing0: Point;
+  wing1: Point;
+} {
+  const [b1, b2] = interp2(lead1, lead2, 1, 8);
+  return {
+    bar: [b1, b2],
+    wing0: interp(b1, b2, -0.2, -8),
+    wing1: interp(b2, b1, -0.2, -8),
+  };
 }
 
 export const DIODE_DEF: ElementDef = {
