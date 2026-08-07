@@ -58,6 +58,9 @@ describe('the $ header', () => {
     // Upstream's adjustTimeStep defaults off; only the header flag bit 64 (or
     // UnijunctionElm) turns it on (CircuitLoader.java:277).
     expect(DEFAULT_SETTINGS.adaptiveTimeStep).toBe(false);
+    // Upstream's autoDCOnReset defaults off for a new circuit
+    // (CircuitLoader.java:56); only the header flag bit 128 turns it on.
+    expect(DEFAULT_SETTINGS.autoDC).toBe(false);
     const out = serializeCircuit([], { ...DEFAULT_SETTINGS });
     expect(Number(out.split('\n')[0].split(' ')[7])).toBe(50e-12);
   });
@@ -69,10 +72,32 @@ describe('the $ header', () => {
     expect(line.split(' ')[1]).toBe(String(16 | 5));
   });
 
+  it('round-trips header flag bit 128 into autoDC', () => {
+    // Set: the modelled bit is recomputed from the setting and must survive.
+    const on = headerOf('$ 128 0.000005 10 50 5 43 5e-11\n');
+    expect(on.parsed.settings.autoDC).toBe(true);
+    expect(on.line.split(' ')[1]).toBe('128');
+    // Clear: a header without the bit must not gain it on save.
+    const off = headerOf('$ 1 0.000005 10 50 5 43 5e-11\n');
+    expect(off.parsed.settings.autoDC).toBe(false);
+    expect(Number(off.line.split(' ')[1]) & 128).toBe(0);
+    expect(off.line.split(' ')[1]).toBe('1');
+  });
+
+  it('honours a live autoDC toggle over the loaded bit', () => {
+    // The header carried bit 128, but the user just switched the option off;
+    // the writer must clear the bit, not echo the stale loaded flags.
+    const { line } = headerOf('$ 128 0.000005 10 50 5 43 5e-11\n', { autoDC: false });
+    expect(Number(line.split(' ')[1]) & 128).toBe(0);
+  });
+
   it('a circuit with no loaded header writes the long-standing defaults', () => {
     // A fresh circuit is fixed-step, like upstream's off-by-default
-    // adjustTimeStep, so the header carries flag 0 (16 is only set when value
-    // labels are off).
+    // adjustTimeStep, so the header carries no 16 (value labels on) and no 64.
+    // Nor does it carry bit 128: a new circuit runs no DC operating point,
+    // matching upstream's `autoDCOnReset` default off (CircuitLoader.java:56).
+    // The bit appears only once a file with it set is loaded, or the user
+    // ticks the option.
     const out = serializeCircuit([], { ...DEFAULT_SETTINGS });
     expect(out.split('\n')[0]).toBe('$ 0 0.000005 10 50 5 50 5e-11');
   });

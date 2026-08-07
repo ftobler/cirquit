@@ -133,7 +133,9 @@ impl Element for Probe {
     fn step_finished(&mut self, ctx: &SimCtx) {
         // The operating-point solve is a DC snapshot, not a transient step:
         // sampling it would pollute the accumulators with a steady-state
-        // reading, exactly like the capacitor's `v_prev` guard.
+        // reading. Unlike the capacitor and inductor, whose `step_finished`
+        // commit the operating point into their history on purpose, the probe
+        // is a meter and the DC snapshot is not a reading.
         if ctx.dc_analysis {
             return;
         }

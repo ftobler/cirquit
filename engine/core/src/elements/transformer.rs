@@ -369,9 +369,14 @@ impl Element for Transformer {
                 val += self.a[i * n + j] * v;
             }
             if !ctx.dc_analysis {
-                // The winding current is the state carried across steps, so
-                // the DC pass must not overwrite the file-seeded values, the
-                // same guard that keeps an inductor's saved current alive.
+                // The winding current is the state carried across steps, so the
+                // DC pass must not overwrite the file-seeded values: unlike the
+                // capacitor and inductor, whose `step_finished` commits the
+                // operating point into their history, the transformer keeps the
+                // file-seeded winding currents and the transient starts from
+                // them. Upstream's `calculateCurrent()` overwrites `current[]`
+                // during its DC analysis too; this is the transformer feature's
+                // own scope decision, not the DC-operating-point carry fix.
                 self.currents[i] = val;
             }
             if i == 0 {

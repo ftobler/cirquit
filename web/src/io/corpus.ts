@@ -55,21 +55,15 @@ export const SIM_TIMEOUT_MS = 60_000;
  *
  * This is a record of known causes, not the full failing list. Files that fail
  * for reasons nobody has chased are deliberately absent.
+ *
+ * `opint-current.txt` lived here until the DC operating point feature: its
+ * first step failed because a DC pass solved the 30 pF capacitor as a 100 M
+ * open against the node voltages its file records a 13.68 V charge for. The
+ * operative fix was honouring flag bit 128: the file's header `$ 1` is
+ * bit-128 clear, so under `autoDC` this build runs no DC solve at all and the
+ * transient starts from the file's own charge.
  */
-export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {
-  'opint-current.txt':
-    'No op-amp element here: 20 discrete transistors and one 30 pF capacitor ' +
-    'whose file records a voltDiff of 13.68 V. That charge against node ' +
-    'voltages the DC pass solved with the capacitor as a 100 M open is the ' +
-    'whole failure, and only the very first step fails. Stepping this circuit ' +
-    'by hand, one `run(1)` at a time, every step after the first converges and ' +
-    'the node voltages stay bounded at the 15 V rails. None of that is visible ' +
-    'in the report and it is not worth hunting for: `Circuit::run` breaks out ' +
-    'of its loop on the first non-converged step, so steps 2 to 100 never ran, ' +
-    'and `simulate` reports `finite: false` whenever a step errored, whatever ' +
-    'the voltages were. Needs an adaptive timestep, or the decision not to run ' +
-    'DC unless asked. Both belong to a future feature/dc-operating-point.md.',
-};
+export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {};
 
 /**
  * Device-model definitions: `32` transistor, `34` diode. Not elements, so they

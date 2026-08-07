@@ -8,6 +8,10 @@ use crate::stamp::Stamper;
 /// point, standing in for an open circuit. `pub(crate)` so the varactor's
 /// companion capacitance (diode.rs) can reuse the same steady-state
 /// treatment instead of picking its own constant.
+///
+/// The DC solve commits its result: `step_finished` runs for the operating
+/// point too, so a capacitor the solve charged to its steady voltage starts
+/// the transient pre-charged rather than from its initial value.
 pub(crate) const DC_OPEN: f64 = 1e8;
 
 /// Trapezoidal or backward-Euler companion model for a capacitor.
@@ -191,14 +195,14 @@ impl Element for Capacitor {
         self.base.current = self.geq * v - self.ieq;
     }
 
-    fn step_finished(&mut self, ctx: &SimCtx) {
+    fn step_finished(&mut self, _ctx: &SimCtx) {
         // The stored charge is the plate voltage (CapacitorElm.java:184).
-        // Skipping the DC pass is what lets a restored `voltDiff`, and the
-        // 1e-3 default, survive this port's always-on operating point.
-        if !ctx.dc_analysis {
-            self.v_prev = self.base.volts[0] - self.base.volts[self.cap_node];
-            self.i_prev = self.base.current;
-        }
+        // The operating-point step commits too, so a capacitor the DC solve
+        // charged carries that voltage into the first transient step instead
+        // of glitching from an uncharged state. `i_prev` is the near-zero
+        // current through the DC open (`calculate_current` above).
+        self.v_prev = self.base.volts[0] - self.base.volts[self.cap_node];
+        self.i_prev = self.base.current;
     }
 
     /// `seriesResistance` is deliberately missing: it decides whether there

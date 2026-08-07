@@ -536,9 +536,23 @@ impl Circuit {
         // No adaptation here: there is no time to shrink, and reactive stamps
         // ignore `dt` under `dc_analysis`. One attempt at the nominal step
         // with the normal budget, exactly as before.
-        let _ = self.try_step(self.options.time_step, self.options.max_subiterations);
+        let solved = self
+            .try_step(self.options.time_step, self.options.max_subiterations)
+            .is_ok();
         self.ctx.dc_analysis = false;
         self.ctx.time = 0.0;
+        if !solved {
+            // A failed DC solve must not seed reactive history from the last
+            // Newton iterate; restart from the documented initial conditions.
+            // The transient then degrades to the uncharged start rather than
+            // committing garbage. `node_voltages` is cleared with the elements
+            // so the frontend, which reads `node_voltages` after a build,
+            // does not see the last (possibly diverged) DC iterate.
+            self.node_voltages.fill(0.0);
+            for elm in self.elements.iter_mut() {
+                elm.reset();
+            }
+        }
         self.restamp();
     }
 

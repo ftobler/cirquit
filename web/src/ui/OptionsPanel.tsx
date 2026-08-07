@@ -268,6 +268,7 @@ export function OptionsPanel({ engine }: Props) {
             ['showValues', 'Show values'],
             ['showVoltageColor', 'Colour by voltage'],
             ['showGrid', 'Show grid'],
+            ['autoDC', 'Run DC operating point'],
           ] as const
         ).map(([key, label]) => (
           <label key={key} className="check">

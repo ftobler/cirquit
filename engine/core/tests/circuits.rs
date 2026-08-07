@@ -570,13 +570,138 @@ fn rc_network_charges_on_its_time_constant() {
     assert!(close(v, 10.0, 0.1), "got {v} after 5 tau");
 }
 
+#[test]
+fn dc_solve_charges_the_cap_before_the_first_transient_step() {
+    // The DC operating point charges the capacitor to the steady 10 V, and
+    // `step_finished` commits that plate voltage to the capacitor's history,
+    // so the very first transient step starts pre-charged instead of
+    // re-solving from zero (the t=0 glitch). Without the commit the cap would
+    // act as a 2 S resistor for one step and the node would collapse to about
+    // 5e-3 V with a 0.01 A charging current.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6), ("initialVoltage", 0.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-6, true),
+    );
+    let v = c.element_voltages()[2];
+    assert!(close(v, 10.0, 1e-3), "DC solve charged the cap to {v}");
+
+    c.run(1);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        close(volts[2], 10.0, 1e-3),
+        "first transient step dropped the charge to {}",
+        volts[2]
+    );
+    assert!(amps[2].abs() < 1e-6, "charged cap drew {} A", amps[2]);
+}
+
+#[test]
+fn dc_off_starts_from_initial_conditions() {
+    // With the DC operating point off, the same RC network starts uncharged:
+    // one step in, the capacitor acts as a 2 S resistor and the node has
+    // collapsed toward 5e-3 V. With the solve on, the identical step holds
+    // 10 V, so this assertion pins the whole switch.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6), ("initialVoltage", 0.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-6, false),
+    );
+    c.run(1);
+    let v = c.element_voltages()[2];
+    assert!(v.abs() < 0.01, "uncharged start read {v} V, expected ~5e-3");
+}
+
+#[test]
+fn failed_dc_solve_restarts_from_initial_conditions() {
+    // A current source pushing into a node whose only load is a reverse diode
+    // has no DC operating point: the diode cannot pass the source's current
+    // backwards, so Newton diverges and the operating-point solve fails. The
+    // reset path in `solve_operating_point` must then leave the circuit at
+    // its documented initial conditions: element voltages read zero, and
+    // `node_voltages` is cleared rather than holding the last, diverged
+    // iterate (which reads ~1e12 V on this circuit). The uncharged-start
+    // comparison is what pins "a failed solve leaves no trace": the same
+    // circuit built with the DC solve off starts identical and runs the same.
+    let current_into_reverse_diode = |dc: bool| {
+        build(
+            vec![
+                elm(1, "current", &[[0, 0], [100, 0]], &[("current", 1e-2)]),
+                elm(2, "diode", &[[200, 0], [100, 0]], &[]),
+                elm(3, "ground", &[[0, 0]], &[]),
+                elm(4, "ground", &[[200, 0]], &[]),
+            ],
+            opts(1e-5, dc),
+        )
+    };
+    let mut dc_on = current_into_reverse_diode(true);
+    let mut dc_off = current_into_reverse_diode(false);
+
+    // The failed solve left no trace: both circuits read the uncharged start.
+    assert_eq!(
+        dc_on.node_voltages(),
+        dc_off.node_voltages(),
+        "node voltages must not hold the last DC iterate"
+    );
+    assert!(
+        dc_on.node_voltages().iter().all(|&v| v == 0.0),
+        "node voltages were {:?}, expected all zero",
+        dc_on.node_voltages()
+    );
+    assert_eq!(dc_on.element_voltages(), dc_off.element_voltages());
+    assert!(
+        dc_on.element_voltages().iter().all(|&v| v == 0.0),
+        "element voltages were {:?}, expected all zero",
+        dc_on.element_voltages()
+    );
+
+    // The transient degrades to the uncharged start, not to the DC failure's
+    // last iterate: it behaves exactly like the never-solved circuit.
+    let on_report = dc_on.run(1);
+    let off_report = dc_off.run(1);
+    assert_eq!(on_report.converged, off_report.converged);
+    assert_eq!(on_report.error, off_report.error);
+}
+
 /// 10 V behind 900 ohm into a capacitor with a 100 ohm ESR, built either with
 /// the DC operating point on or off. Both matter: `circuits.rs` defaults to
-/// off, but the app hardcodes `dcOperatingPoint: true`
-/// (`web/src/engine/simulator.ts`), and the internal node exists for the whole
-/// run either way, so the DC pass is the only place this port has to stamp
-/// something upstream does not (upstream's `getInternalNodeCount()` returns 0
-/// under DC and the node simply is not there).
+/// off, but the app sends `dcOperatingPoint` from `settings.autoDC`, which a
+/// loaded file's header flag bit 128 turns on, and the internal node exists
+/// for the whole run either way, so the DC pass is the only place this port
+/// has to stamp something upstream does not (upstream's
+/// `getInternalNodeCount()` returns 0 under DC and the node simply is not
+/// there).
 fn esr_rc_circuit(dt: f64, series_r: f64, dc: bool) -> Circuit {
     build(
         vec![
@@ -640,23 +765,36 @@ fn capacitor_series_resistance_controls_charging() {
 
 #[test]
 fn capacitor_series_resistance_survives_the_dc_operating_point() {
-    // The same circuit on the path the app actually takes: the frontend
-    // hardcodes `dcOperatingPoint: true`. Node assignment runs once, before
-    // the DC solve, so the internal plate node is allocated for the DC matrix
-    // too and its row would be all zeros without the `resistor(n1, cap_node,
-    // R_s)` this port adds, which the dense LU rejects as singular. Upstream
-    // never meets this: its `getInternalNodeCount()` returns 0 under DC, so
-    // the node is simply not there.
+    // The same circuit on the path a loaded file with header bit 128 takes:
+    // the frontend sends `dcOperatingPoint` from `settings.autoDC`. Node
+    // assignment runs once, before the DC solve, so the internal plate node is
+    // allocated for the DC matrix too and its row would be all zeros without
+    // the `resistor(n1, cap_node, R_s)` this port adds, which the dense LU
+    // rejects as singular. Upstream never meets this: its
+    // `getInternalNodeCount()` returns 0 under DC, so the node is simply not
+    // there.
     //
-    // The failure is quiet, which is why it needs its own test.
-    // `solve_operating_point` discards its step report and `simulator.ts`
-    // never reads `error()` after a build, so a singular DC solve surfaces
-    // nowhere: the transient still runs, just from an operating point that was
-    // never solved.
+    // The failure is quiet, which is why it needs its own test:
+    // `solve_operating_point` does not surface a singular DC solve and
+    // `simulator.ts` never reads `error()` after a build, so a failed pass
+    // would leave the transient to run from an operating point that was never
+    // solved. Unlike the from-zero test above, the DC solve pre-charges the
+    // capacitor to the steady 10 V and holds it there with zero current, which
+    // is what the app's start state looks like.
     let c = &mut esr_rc_circuit(1e-6, 100.0, true);
     assert_eq!(c.error(), None, "the DC operating point did not solve");
     assert!(c.warnings().is_empty(), "warnings: {:?}", c.warnings());
-    assert_esr_step_response(c, 100.0);
+    let v = c.element_voltages()[2];
+    assert!(close(v, 10.0, 1e-3), "DC solve pre-charged the cap to {v}");
+    c.run(1);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        close(volts[2], 10.0, 1e-3),
+        "first transient step dropped the charge to {}",
+        volts[2]
+    );
+    assert!(amps[2].abs() < 1e-6, "charged cap drew {} A", amps[2]);
 }
 
 /// 10 V behind 1 k into a capacitor whose file said it was charged to 5 V.
@@ -698,17 +836,21 @@ fn capacitor_restores_saved_volt_diff_on_load() {
 }
 
 #[test]
-fn capacitor_restored_charge_survives_the_dc_operating_point() {
-    // The path the app actually takes, and the reason `step_finished` skips
-    // its state update while `ctx.dc_analysis` is set. The DC pass solves the
-    // capacitor as a 100 M open, so it puts this node at nearly the full 10 V;
-    // without the guard that solve would be written straight into `v_prev` and
-    // the restored 5 V would be gone before the first transient step. Delete
-    // the guard and this is the only test that notices.
+fn capacitor_restored_charge_yields_to_the_dc_operating_point() {
+    // The path the app actually takes with the DC solve on: `step_finished`
+    // commits the operating point, so the DC pass solves the capacitor as a
+    // 100 M open, puts the node at nearly the full 10 V, and writes that
+    // steady voltage into `v_prev`, replacing the file-restored 5 V exactly as
+    // upstream's unguarded `stepFinished` does when a DC analysis runs
+    // (CapacitorElm.java:183-186). A file-restored charge survives only on
+    // the no-DC path, covered by `capacitor_restores_saved_volt_diff_on_load`.
     let c = &mut restored_charge_circuit(1e-6, true);
     c.run(1);
     let v = c.element_voltages()[2];
-    assert!(close(v, 5.0, 0.05), "restored charge read back as {v}");
+    assert!(
+        close(v, 10.0, 0.05),
+        "the DC solve overwrote the restored charge with {v}, expected the steady 10 V"
+    );
 }
 
 #[test]
@@ -732,6 +874,48 @@ fn capacitor_default_initial_voltage_starts_an_lc_tank() {
             elm(5, "ground", &[[0, 100]], &[]),
         ],
         opts(dt, false),
+    );
+
+    c.run(500); // a quarter period
+    let i = c.element_currents()[1];
+    let expected = 1e-3 * (cap / l).sqrt();
+    assert!(
+        close(i, expected, 3e-4),
+        "quarter-period inductor current {i}, expected {expected}"
+    );
+}
+
+#[test]
+fn fresh_lc_tank_self_starts_under_default_options() {
+    // The engine default must stay in step with the app default
+    // (`DEFAULT_SETTINGS.autoDC = false`, matching upstream's
+    // `autoDCOnReset`, CircuitLoader.java:56): a fresh circuit runs no DC
+    // solve, so its 1e-3 capacitor seed is not zeroed by an inductor-short
+    // operating point and the tank rings. If the default ever flips back to a
+    // DC solve, that solve pins both plates at 0 V through the 1e-6 short and
+    // commits v_prev = 0, and the current never leaves zero, so this
+    // assertion fails loudly.
+    assert!(
+        !SimOptions::default().dc_operating_point,
+        "SimOptions::default() must not run a DC solve, or a fresh tank dies"
+    );
+
+    let l: f64 = 1e-6;
+    let cap: f64 = 1e-6;
+    let period = 2.0 * PI * (l * cap).sqrt();
+    let options = SimOptions {
+        time_step: period / 2000.0,
+        ..SimOptions::default()
+    };
+    let c = &mut build(
+        vec![
+            elm(1, "capacitor", &[[0, 0], [0, 100]], &[("capacitance", cap)]),
+            elm(2, "inductor", &[[0, 0], [100, 0]], &[("inductance", l)]),
+            elm(3, "wire", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        options,
     );
 
     c.run(500); // a quarter period
@@ -907,6 +1091,37 @@ fn rl_network_settles_to_ohms_law() {
     c.run(2000);
     let i = c.element_currents()[1];
     assert!(close(i, 0.05, 1e-4), "settled current was {i}");
+}
+
+#[test]
+fn dc_solve_carries_the_inductor_current() {
+    // With DC on, the inductor is solved as a 1e-6 ohm short and that
+    // steady-state current (V/R = 0.05) is committed to the inductor's
+    // history, so the very first transient step already runs at 0.05 instead
+    // of starting from zero. Without the commit the companion would model the
+    // inductor as a 2e4 ohm resistor for one step and the current would drop
+    // to about 5/(100 + 2e4) = 2.5e-4.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 100.0)]),
+            elm(
+                3,
+                "inductor",
+                &[[100, 0], [100, 100]],
+                &[("inductance", 1e-3)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-7, true),
+    );
+    c.run(1);
+    let i = c.element_currents()[2];
+    assert!(
+        close(i, 0.05, 1e-6),
+        "inductor current was {i}, expected the DC steady-state V/R"
+    );
 }
 
 #[test]
@@ -2317,6 +2532,53 @@ fn ac_source_tracks_its_waveform() {
     c.run(2000); // three-quarter point
     let i = c.element_currents()[1];
     assert!(close(i, -0.01, 1e-4), "trough current was {i}");
+}
+
+#[test]
+fn dc_solve_freezes_ac_sources_at_bias() {
+    // During the DC solve a square wave collapses to its bias, not its t=0
+    // value (VoltageElm.java:168-169). At t=0 the square sits on its high
+    // plateau, so without the freeze the operating point would sit at
+    // bias + maxVoltage = 7 V and draw 7e-3 A through the 1k; the freeze
+    // puts it at bias = 2 V and 2e-3 A. The transient is not frozen: one
+    // step in, the source is back on its high plateau.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 100], [0, 0]],
+                &[
+                    ("waveform", 2.0),
+                    ("frequency", 40.0),
+                    ("maxVoltage", 5.0),
+                    ("bias", 2.0),
+                ],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "wire", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let i = c.element_currents()[1];
+    assert!(
+        close(i, 2e-3, 1e-9),
+        "DC operating point sat at {i} A, expected bias over 1k"
+    );
+
+    c.run(1);
+    let i = c.element_currents()[1];
+    assert!(
+        close(i, 7e-3, 1e-9),
+        "first transient step read {i} A, expected the high plateau"
+    );
 }
 
 #[test]
@@ -4450,9 +4712,10 @@ fn transformer_dc_pass_pins_ratio() {
     // sources, so the ratio falls out of the conductance and VCCS stamps
     // alone: the open secondary forces its winding current to zero, and
     // `Vs = -(M⁻¹[1][0]/M⁻¹[1][1])·Vp = k·ratio·Vp`. The app builds every
-    // circuit through this path (`dcOperatingPoint: true`), so a sign error
-    // that only bit under DC would corrupt the first transient step's initial
-    // conditions while every transient-only test stayed green.
+    // circuit with a `$ 128` header through this path
+    // (`settings.autoDC`), so a sign error that only bit under DC would
+    // corrupt the first transient step's initial conditions while every
+    // transient-only test stayed green.
     let v2 = open_secondary_v2_opts(
         "transformer",
         &[[0, 0], [100, 0], [0, 100], [100, 100]],

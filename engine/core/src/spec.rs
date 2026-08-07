@@ -57,7 +57,11 @@ pub struct SimOptions {
     pub steps_per_frame: u32,
     /// Newton iterations allowed before a timestep is declared non-convergent.
     pub max_subiterations: u32,
-    /// Solve a DC operating point before the first timestep.
+    /// Solve a DC operating point before the first timestep and on every
+    /// reset, with reactive elements held at steady state (a capacitor open,
+    /// an inductor short) and every non-DC source frozen at its bias
+    /// (VoltageElm.java:168-169). The solved reactive state carries into the
+    /// transient, so the first step starts from the operating point.
     pub dc_operating_point: bool,
 }
 
@@ -73,7 +77,12 @@ impl Default for SimOptions {
             adaptive: false,
             steps_per_frame: 160,
             max_subiterations: 100,
-            dc_operating_point: true,
+            // Off by default, matching upstream's `autoDCOnReset` for a new
+            // circuit (CircuitLoader.java:56): a fresh circuit keeps its
+            // charging transients and an LC tank its self-start seed. The
+            // frontend sets it from `settings.autoDC`, which honours the
+            // loaded file's header flag bit 128.
+            dc_operating_point: false,
         }
     }
 }

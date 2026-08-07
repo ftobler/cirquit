@@ -144,8 +144,8 @@ fetch it).
   edits, interactive switches.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
-- 107 Rust tests, of which 102 are the end-to-end circuit checks against analytic
-  results in `engine/core/tests/circuits.rs`, and 320 TypeScript tests. CI runs
+- 117 Rust tests, of which 112 are the end-to-end circuit checks against analytic
+  results in `engine/core/tests/circuits.rs`, and 333 TypeScript tests. CI runs
   fmt, clippy, tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -178,26 +178,27 @@ fetch it).
   copied back into `params`, so a mid-transient save writes the values the file
   was loaded with. Matching upstream needs a state-readback path across the
   engine boundary.
-- **The DC operating point always runs**, whereas upstream only solves one when
-  the user picks "DC Analysis" (`CommandManager.java:361-364`). Combined with
-  restored reactive state this puts the first transient step in a position
-  upstream never reaches: upstream's `CapacitorElm.stepFinished()` has no
-  `doDcAnalysis` guard, so its rare DC solve overwrites the restored `voltDiff`
-  and the transient starts self-consistent, while this port keeps the guard so
-  the file's charge survives a DC pass that knows nothing about it. Four
-  bundled circuits fail to converge because of it and are recorded, with what
-  each one actually needs, in `web/src/io/corpus.ts`'s
-  `DIAGNOSED_SIM_FAILURES`. Three of them are op-amp chaos oscillators whose
-  real defect is the op-amp's convergence test, not the restored charge. The
-  inductor diverges the same way: `Inductor.java` has no `doDcAnalysis()`
-  branch either, so its transient companion, holding the stored `current`,
-  carries through a DC solve, while this port stamps the inductor as a hard
-  short and zeroes its voltage. The DC current the short yields, `v/DC_SHORT`,
-  is the true steady-state loop current, so only the zeroed voltage diverges.
-  The saturating-inductor model is now honoured; the inductor's DC handling is
-  already decided in `feature/dc-operating-point.md` (scope item 2 keeps the
-  1e-6 ohm short and commits that current into history), so only that DC
-  behaviour stays behind.
+- **The DC operating point runs per the `autoDC` setting, not always.** The
+  solve runs before the first timestep and on every reset only when `autoDC`
+  is on: the header's flag bit 128 drives it (CirSim.java:440-444), and a new
+  circuit defaults it off, matching upstream's `autoDCOnReset`
+  (CircuitLoader.java:56). A freshly drawn circuit therefore keeps its
+  charging transients and its 1e-3 capacitor self-start seed; a file with the
+  bit set gets the pre-charging solve. Under it, every non-DC source freezes
+  at its bias (VoltageElm.java:168-169), and the solve commits its reactive
+  state: the capacitor's and inductor's `step_finished` run for the operating
+  point too, so the transient starts pre-charged to the solved steady state,
+  exactly as upstream's unguarded `stepFinished` leaves it after its own DC
+  analysis. The inductor is stamped as a 1e-6 ohm short while solving: this
+  port's single-solve-per-frame architecture cannot integrate a whole frame of
+  steps the way upstream does, so the exact short finds the steady-state loop
+  current in one pass and carries it into the transient. A failed solve is
+  guarded: every element is reset and the node voltages cleared, so the
+  transient degrades to the uncharged start rather than committing the last
+  Newton iterate. `DIAGNOSED_SIM_FAILURES` is empty; the corpus report's
+  remaining `sim error` entries (diodeclip, mosfollower, transrectifier) are
+  genuine singular matrices, unrelated to the DC solve. The one-shot "Find DC
+  Operating Point" menu command is not ported; the toggle covers its use.
 - **A rebuild re-injects the file's saved charge.** The engine reads `voltDiff`
   out of the element spec on every build, and `setCircuit` re-serialises
   `e.params`, which still holds the value the file was loaded with. So any

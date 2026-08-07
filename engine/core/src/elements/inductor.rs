@@ -5,7 +5,9 @@ use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
 
 /// Resistance an inductor is modelled with while solving the DC operating
-/// point, standing in for a short.
+/// point, standing in for a short. The single-solve port cannot integrate
+/// upstream's frame of steps, so the exact short finds the steady-state
+/// current in one pass and `step_finished` carries it into the transient.
 const DC_SHORT: f64 = 1e-6;
 
 /// Companion model for an inductor: `i = (dt/2L)·v + [i_prev + (dt/2L)·v_prev]`.
@@ -150,11 +152,12 @@ impl Element for Inductor {
         };
     }
 
-    fn step_finished(&mut self, ctx: &SimCtx) {
-        if !ctx.dc_analysis {
-            self.v_prev = self.base.voltage_diff();
-            self.i_prev = self.base.current;
-        }
+    fn step_finished(&mut self, _ctx: &SimCtx) {
+        // The operating-point step commits too, so an inductor carries the
+        // DC steady-state current (`i_prev`, from `calculate_current` above)
+        // into the first transient step instead of starting from zero.
+        self.v_prev = self.base.voltage_diff();
+        self.i_prev = self.base.current;
     }
 
     /// `saturationCurrent` is deliberately missing: it flips `nonlinear()`,

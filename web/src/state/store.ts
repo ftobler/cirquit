@@ -101,14 +101,15 @@ export const useStore = create<AppState>((set, get) => ({
   updateSettings: (patch) =>
     set((s) => {
       const settings = { ...s.settings, ...patch };
-      // The timestep and the adaptive floor/budget change every companion
-      // model's conductance, so only those force a rebuild. Everything else is
-      // a per-frame argument or display-only and must not restart the
-      // simulation.
+      // The timestep, the adaptive floor/budget and the DC operating point
+      // change every companion model's conductance or the solve itself, so
+      // only those force a rebuild. Everything else is a per-frame argument
+      // or display-only and must not restart the simulation.
       const reload =
         patch.timeStep !== undefined ||
         patch.minTimeStep !== undefined ||
-        patch.adaptiveTimeStep !== undefined;
+        patch.adaptiveTimeStep !== undefined ||
+        patch.autoDC !== undefined;
       return { settings, revision: reload ? s.revision + 1 : s.revision };
     }),
 
@@ -269,6 +270,7 @@ export const useStore = create<AppState>((set, get) => ({
         minTimeStep: DEFAULT_SETTINGS.minTimeStep,
         iterCount: DEFAULT_SETTINGS.iterCount,
         adaptiveTimeStep: DEFAULT_SETTINGS.adaptiveTimeStep,
+        autoDC: DEFAULT_SETTINGS.autoDC,
         ...parsed.settings,
       },
       selectedIds: [],
@@ -319,6 +321,7 @@ export const useStore = create<AppState>((set, get) => ({
         minTimeStep: DEFAULT_SETTINGS.minTimeStep,
         iterCount: DEFAULT_SETTINGS.iterCount,
         adaptiveTimeStep: DEFAULT_SETTINGS.adaptiveTimeStep,
+        autoDC: DEFAULT_SETTINGS.autoDC,
       },
       selectedIds: [],
       undoStack: [],

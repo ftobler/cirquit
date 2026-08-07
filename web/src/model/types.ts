@@ -158,6 +158,12 @@ export interface SimSettings {
   iterCount: number;
   /** Header flag bit 64: adapt the timestep. */
   adaptiveTimeStep: boolean;
+  /** Header flag bit 128: run a DC operating point before the first timestep
+   *  and on every reset. Defaults off, matching upstream's `autoDCOnReset`
+   *  (CircuitLoader.java:56): a fresh circuit keeps its charging transients
+   *  and an LC tank its self-start seed, while a loaded file carries its own
+   *  bit and still gets the pre-charging solve when set. */
+  autoDC: boolean;
   showCurrent: boolean;
   showValues: boolean;
   showVoltageColor: boolean;
@@ -195,6 +201,7 @@ export const DEFAULT_SETTINGS: SimSettings = {
   minTimeStep: 50e-12,
   iterCount: 10,
   adaptiveTimeStep: false,
+  autoDC: false,
   showCurrent: true,
   showValues: true,
   showVoltageColor: true,

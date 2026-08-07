@@ -99,7 +99,7 @@ export class SimEngine {
         adaptive: settings.adaptiveTimeStep,
         stepsPerFrame: settings.stepsPerFrame,
         maxSubiterations: 100,
-        dcOperatingPoint: true,
+        dcOperatingPoint: settings.autoDC,
       },
       scopes: (this.scopeOrder = scopes.filter((s) => this.indexById.has(s.elementId))).map(
         (s) => ({

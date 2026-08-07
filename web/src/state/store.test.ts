@@ -257,6 +257,8 @@ describe('updateSettings reload classification', () => {
     // rebuild like timeStep does.
     ['minTimeStep', 1e-9, true],
     ['adaptiveTimeStep', false, true],
+    // The DC operating point decides the solve itself, so it must rebuild.
+    ['autoDC', false, true],
     // iterCount is a header round-trip field, never sent to the engine.
     ['iterCount', 10, false],
     ['stepsPerFrame', 160, false],
@@ -284,6 +286,15 @@ describe('load resets the header stepping fields to their defaults', () => {
     // A file with no adaptive flag loads as fixed-step, which is also the
     // default, so the header fields fall back to DEFAULT_SETTINGS.
     expect(useStore.getState().settings.adaptiveTimeStep).toBe(false);
+  });
+
+  it('a header without flag 128 loads with autoDC off, matching upstream', () => {
+    useStore.getState().loadNetlist('$ 0 0.000005 10 50 5 50 1e-9\nr 0 0 16 0 0 100\n');
+    expect(useStore.getState().settings.autoDC).toBe(false);
+
+    // And one with the bit set loads with it on.
+    useStore.getState().loadNetlist('$ 128 0.000005 10 50 5 50 1e-9\nr 0 0 16 0 0 100\n');
+    expect(useStore.getState().settings.autoDC).toBe(true);
   });
 });
 

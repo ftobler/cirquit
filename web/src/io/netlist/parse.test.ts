@@ -47,6 +47,11 @@ describe('netlist parsing', () => {
     expect(parseCircuit('$ 0 0.000005 10 50 5 50 5e-11\n').settings.adaptiveTimeStep).toBe(false);
   });
 
+  it('decodes header flag bit 128 into autoDC', () => {
+    expect(parseCircuit('$ 128 0.000005 10 50 5 43 5e-11\n').settings.autoDC).toBe(true);
+    expect(parseCircuit('$ 1 0.000005 10 50 5 43 5e-11\n').settings.autoDC).toBe(false);
+  });
+
   it('keeps scope lines and unmodelled lines instead of dropping them', () => {
     const parsed = parseCircuit(SAMPLE);
     expect(parsed.scopes).toHaveLength(1);
