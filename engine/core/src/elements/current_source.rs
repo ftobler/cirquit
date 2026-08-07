@@ -152,11 +152,16 @@ impl Element for CurrentSource {
         }
     }
 
-    fn display_voltage_diff(&self) -> f64 {
+    fn voltage_diff(&self) -> f64 {
         // Upstream's current source reads out volts[1] - volts[0]
         // (CurrentElm.java:199-201), the same positive-EMF convention as the
         // voltage source.
         self.base.volts[1] - self.base.volts[0]
+    }
+
+    fn power(&self) -> f64 {
+        // Negated so a delivering source reads negative (CurrentElm.java:202).
+        -self.voltage_diff() * self.base().current
     }
 
     /// An ideal current source does not tie its terminals together, so it

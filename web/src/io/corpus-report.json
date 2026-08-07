@@ -818,9 +818,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "chaos2.txt",
@@ -828,9 +827,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "chua.txt",
@@ -838,9 +836,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "classd.txt",
@@ -1804,9 +1801,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "graycode.txt",
@@ -2750,9 +2746,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "opamp.txt",
@@ -2862,9 +2857,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "phasecomp.txt",

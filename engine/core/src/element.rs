@@ -208,18 +208,32 @@ pub trait Element {
         self.base_mut().reset();
     }
 
-    /// The voltage the UI displays for this element: scope traces and the
-    /// readout. Most two-terminal parts want `V(post0) - V(post1)`, but
-    /// voltage and current sources read out with the opposite sign so their
-    /// EMF comes up positive, matching upstream's own overrides
-    /// (`VoltageElm.java:462`, `CurrentElm.java:199-201`).
-    fn display_voltage_diff(&self) -> f64 {
-        let v = &self.base().volts;
-        if v.len() >= 2 {
-            v[0] - v[1]
+    /// The voltage this element plots on a voltage scope and shows in the
+    /// readout. The default is `V(post0) - V(post1)`, with a guard for the
+    /// one-post elements (ground, rail, labeled node) that have no second
+    /// terminal to subtract; multi-terminal elements override it with the
+    /// quantity that means something for them: the op-amp plots
+    /// `V(out) - V(+)` (`OpAmpElm.java:206`), and voltage and current sources
+    /// their positive EMF (`VoltageElm.java:462`, `CurrentElm.java:199-201`).
+    fn voltage_diff(&self) -> f64 {
+        let b = self.base();
+        if b.volts.len() >= 2 {
+            b.volts[0] - b.volts[1]
         } else {
-            v.first().copied().unwrap_or(0.0)
+            // One-post elements read out their single node voltage
+            // (LabeledNodeElm.java:243). The guard keeps a never-assigned
+            // element from panicking; ground still reads 0 because its node is
+            // the reference.
+            b.volts.first().copied().unwrap_or(0.0)
         }
+    }
+
+    /// The power this element plots on a power scope. The default is the
+    /// voltage-diff times the element current; elements whose `voltage_diff`
+    /// is not `V(post0) - V(post1)` (sources with a positive-EMF readout, the
+    /// op-amp) override it so a delivering part still reads negative.
+    fn power(&self) -> f64 {
+        self.voltage_diff() * self.base().current
     }
 }
 

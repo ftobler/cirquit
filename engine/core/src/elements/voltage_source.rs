@@ -349,7 +349,7 @@ impl Element for VoltageSource {
         true
     }
 
-    fn display_voltage_diff(&self) -> f64 {
+    fn voltage_diff(&self) -> f64 {
         if self.rail {
             // One terminal referenced to ground (RailElm.java:92).
             self.base.volts.first().copied().unwrap_or(0.0)
@@ -358,6 +358,12 @@ impl Element for VoltageSource {
             // comes up positive (VoltageElm.java:462).
             self.base.volts[1] - self.base.volts[0]
         }
+    }
+
+    fn power(&self) -> f64 {
+        // The positive-EMF readout above would make a delivering source read
+        // positive; upstream negates it (VoltageElm.java:461).
+        -self.voltage_diff() * self.base().current
     }
 
     fn set_param(&mut self, name: &str, value: f64) -> bool {

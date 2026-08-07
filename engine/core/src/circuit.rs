@@ -668,16 +668,9 @@ impl Circuit {
             let elm = &self.elements[ei];
             let base = elm.base();
             let v = match scope.value_kind() {
-                ScopeValue::Voltage => elm.display_voltage_diff(),
+                ScopeValue::Voltage => elm.voltage_diff(),
                 ScopeValue::Current => base.current,
-                ScopeValue::Power => {
-                    let vd = if base.volts.len() >= 2 {
-                        base.volts[0] - base.volts[1]
-                    } else {
-                        0.0
-                    };
-                    vd * base.current
-                }
+                ScopeValue::Power => elm.power(),
                 ScopeValue::NodeVoltage => base.volts.get(scope.spec.post).copied().unwrap_or(0.0),
             };
             scope.push(v);
@@ -740,32 +733,20 @@ impl Circuit {
     }
 
     /// Per-element terminal voltage difference, in element order. Sources
-    /// report positive EMF, everything else `V(post0) - V(post1)`.
+    /// report positive EMF, everything else `V(post0) - V(post1)`, and the
+    /// op-amp its `V(out) - V(+)`, all through the per-element
+    /// [`Element::voltage_diff`] hook.
     pub fn element_voltages(&self) -> Vec<f64> {
-        self.elements
-            .iter()
-            .map(|e| e.display_voltage_diff())
-            .collect()
+        self.elements.iter().map(|e| e.voltage_diff()).collect()
     }
 
-    /// Per-element dissipated power, in element order. Uses the same
-    /// `(V(post0) - V(post1)) * current` convention as the scope Power trace,
-    /// so a source that is delivering power reads negative and the Options
-    /// panel readout agrees with a power scope on the same element. Upstream's
-    /// `-getVoltageDiff()*current` is the same expression.
+    /// Per-element dissipated power, in element order. Uses the same convention
+    /// as a scope Power trace, so a source that is delivering power reads
+    /// negative and the Options panel readout agrees with a power scope on the
+    /// same element. Upstream's `-getVoltageDiff()*current` is the same
+    /// expression.
     pub fn element_powers(&self) -> Vec<f64> {
-        self.elements
-            .iter()
-            .map(|e| {
-                let b = e.base();
-                let vd = if b.volts.len() >= 2 {
-                    b.volts[0] - b.volts[1]
-                } else {
-                    0.0
-                };
-                vd * b.current
-            })
-            .collect()
+        self.elements.iter().map(|e| e.power()).collect()
     }
 
     /// Node index per element terminal, flattened in element order. Lets the

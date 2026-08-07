@@ -1609,6 +1609,252 @@ fn inverting_opamp_has_the_textbook_gain() {
 }
 
 #[test]
+fn asymmetric_rails_idle_at_the_midpoint() {
+    // The linear region centres on (maxOut+minOut)/2 (OpAmpElm.java:167,
+    // :174-181), so a 5 V / 0 V op-amp with both inputs grounded idles at
+    // 2.5 V instead of the old zero-offset 0 V. The output is read through a
+    // 1k resistor to ground.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "opamp",
+                &[[100, 0], [100, 100], [300, 0]],
+                &[("gain", 1e5), ("maxOut", 5.0), ("minOut", 0.0)],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[300, 0], [300, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[100, 0]], &[]),
+            elm(4, "ground", &[[100, 100]], &[]),
+            elm(5, "ground", &[[300, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(30);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.element_voltages()[1], 2.5, 1e-3),
+        "idle output was {}",
+        c.element_voltages()[1]
+    );
+}
+
+#[test]
+fn asymmetric_opamp_amplifies_about_the_midpoint() {
+    // Same rails, non-inverting input driven by 1e-5 V. The upper knee sits at
+    // (5-2.5)/1e5 = 2.5e-5, so vd = 1e-5 is linear and the output is
+    // 2.5 + 1e5*1e-5 = 3.5 (the old zero-offset code returned 1.0).
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 100], [100, 100]],
+                &[("maxVoltage", 1e-5)],
+            ),
+            elm(
+                2,
+                "opamp",
+                &[[100, 0], [100, 100], [300, 0]],
+                &[("gain", 1e5), ("maxOut", 5.0), ("minOut", 0.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[300, 0], [300, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "ground", &[[100, 0]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "ground", &[[300, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(30);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.element_voltages()[2], 3.5, 1e-3),
+        "output was {}",
+        c.element_voltages()[2]
+    );
+}
+
+#[test]
+fn opamp_scope_plots_output_minus_non_inverting_input() {
+    // The inverting amplifier from inverting_opamp_has_the_textbook_gain:
+    // Vout = -Rf/Rin * Vin = -10 * 0.5 = -5. A voltage scope on the op-amp
+    // samples volts[2] - volts[1] = -5 - 0 (OpAmpElm.java:206), not the
+    // generic volts[0] - volts[1] = 0 - 0 the old formula returned.
+    let c = &mut build_with(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 0.5)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [300, 0]],
+                &[("resistance", 10_000.0)],
+            ),
+            elm(
+                4,
+                "opamp",
+                &[[100, 0], [100, 100], [300, 0]],
+                &[("gain", 100_000.0), ("maxOut", 15.0), ("minOut", -15.0)],
+            ),
+            elm(5, "ground", &[[100, 100]], &[]),
+            elm(6, "ground", &[[0, 200]], &[]),
+        ],
+        opts(1e-5, true),
+        vec![ScopeSpec {
+            element_id: 4,
+            value: ScopeValue::Voltage,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+        }],
+    );
+    c.run(30);
+    let snap = c.scopes()[0].snapshot();
+    let (min, max) = (snap[snap.len() - 2] as f64, snap[snap.len() - 1] as f64);
+    assert!(
+        close(min, -5.0, 1e-3) && close(max, -5.0, 1e-3),
+        "last scope column was {min}/{max}, expected -5"
+    );
+}
+
+#[test]
+fn opamp_output_current_and_power_match_upstream() {
+    // Voltage follower: 5 V into the non-inverting input, the output wired to
+    // the inverting input, a 1k load from the output node to ground. The
+    // op-amp sources ~5 mA into the load. Upstream's positive current leaves
+    // the pin (getCurrentIntoNode(2) == -current, OpAmpElm.java:227-231),
+    // while the port's voltage_source(GROUND, node2) unknown is positive into
+    // the pin, so the reported current is -5e-3 and the power
+    // volts[2]*current = 5 * -5e-3 = -0.025 (OpAmpElm.java:109). The finite
+    // open-loop gain drops the follower output to 5 - 5e-5, a deviation the
+    // tolerances below cover.
+    let c = &mut build_with(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 100], [100, 100]],
+                &[("maxVoltage", 5.0)],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[200, 0], [200, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            // The inverting input shares the output node, so the follower holds
+            // it at the non-inverting voltage.
+            elm(
+                3,
+                "opamp",
+                &[[200, 0], [100, 100], [200, 0]],
+                &[("gain", 1e5), ("maxOut", 15.0), ("minOut", -15.0)],
+            ),
+            elm(4, "ground", &[[0, 100]], &[]),
+            elm(5, "ground", &[[200, 100]], &[]),
+        ],
+        opts(1e-5, true),
+        vec![
+            ScopeSpec {
+                element_id: 3,
+                value: ScopeValue::Power,
+                post: 0,
+                steps_per_column: 1,
+                columns: 1024,
+            },
+            ScopeSpec {
+                element_id: 3,
+                value: ScopeValue::Voltage,
+                post: 0,
+                steps_per_column: 1,
+                columns: 1024,
+            },
+        ],
+    );
+    let report = c.run(30);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.element_currents()[2], -5e-3, 1e-6),
+        "op-amp current was {}",
+        c.element_currents()[2]
+    );
+    let power = c.scopes()[0].snapshot();
+    let (pmin, pmax) = (power[power.len() - 2] as f64, power[power.len() - 1] as f64);
+    assert!(
+        close(pmin, -0.025, 1e-6) && close(pmax, -0.025, 1e-6),
+        "power scope last column was {pmin}/{pmax}, expected -0.025"
+    );
+    // And the follower's voltage scope is Vout - V+ = 0, pinning the step-4
+    // semantics: the plot is output minus non-inverting input, not the input
+    // differential.
+    let volt = c.scopes()[1].snapshot();
+    let (vmin, vmax) = (volt[volt.len() - 2] as f64, volt[volt.len() - 1] as f64);
+    assert!(
+        close(vmin, 0.0, 1e-4) && close(vmax, 0.0, 1e-4),
+        "follower voltage scope last column was {vmin}/{vmax}, expected 0"
+    );
+}
+
+#[test]
+fn gain_flags_select_the_open_loop_gain() {
+    // The flags decide the gain on load (OpAmpElm.java:63-70): FLAG_GAIN (8)
+    // keeps the stored value, FLAG_LOWGAIN (4) forces 1000, and no flag forces
+    // 100000. Symmetric rails put the midpoint offset at zero, so the linear
+    // output is gain*vd, and every vd used here sits below its knee.
+    let linear_out = |flags: i64, file_gain: f64, vd: f64| {
+        let c = &mut build(
+            vec![
+                elm(1, "voltage", &[[0, 100], [100, 100]], &[("maxVoltage", vd)]),
+                elm_flags(
+                    2,
+                    "opamp",
+                    &[[100, 0], [100, 100], [300, 0]],
+                    &[("gain", file_gain), ("maxOut", 15.0), ("minOut", -15.0)],
+                    flags,
+                ),
+                elm(
+                    3,
+                    "resistor",
+                    &[[300, 0], [300, 100]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(4, "ground", &[[100, 0]], &[]),
+                elm(5, "ground", &[[0, 100]], &[]),
+                elm(6, "ground", &[[300, 100]], &[]),
+            ],
+            opts(1e-5, true),
+        );
+        let report = c.run(30);
+        assert!(report.converged, "did not converge: {:?}", report.error);
+        c.element_voltages()[2]
+    };
+
+    let flagged = linear_out(8, 12345.0, 1e-4);
+    assert!(
+        close(flagged, 1.2345, 1e-3),
+        "FLAG_GAIN did not keep the file gain: {flagged}"
+    );
+    let low = linear_out(4, 12345.0, 1e-3);
+    assert!(close(low, 1.0, 1e-3), "FLAG_LOWGAIN gain was {low}");
+    let legacy = linear_out(0, 12345.0, 1e-4);
+    assert!(close(legacy, 10.0, 1e-3), "unflagged gain was {legacy}");
+}
+
+#[test]
 fn common_emitter_stage_amplifies_base_current() {
     // Ib set by a 470 k base resistor, Ic = beta * Ib through a 1 k load.
     let beta = 100.0;
@@ -2098,6 +2344,14 @@ fn labeled_nodes_connect_by_name() {
     c.set_circuit(&spec).unwrap();
     c.run(5);
     assert!(close(c.element_currents()[3], 0.01, 1e-9));
+    // A one-post element reads out its node voltage (LabeledNodeElm.java:243),
+    // so a voltage scope or readout on a labeled node shows the rail it sits
+    // on rather than 0.
+    assert!(
+        close(c.element_voltages()[1], 6.0, 1e-9),
+        "labeled node readout was {}",
+        c.element_voltages()[1]
+    );
 }
 
 #[test]
