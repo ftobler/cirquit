@@ -1,6 +1,6 @@
 /** Pure store helpers: grid snapping, dirty tracking and element construction. */
 
-import { defFor } from '../model/registry';
+import { defFor, toolboxEntry } from '../model/registry';
 import { GRID_SIZE } from '../model/types';
 
 /** Rounds a coordinate to the nearest grid intersection. */
@@ -27,6 +27,23 @@ export function makeElement(kind: string, x1: number, y1: number, x2: number, y2
     // hidden, and so on. Unknown kinds default to 0.
     flags: def?.defaultFlags ?? 0,
     params: { ...(def?.defaults ?? {}) },
+    state: def?.interactive ? 0 : undefined,
+  };
+}
+
+/** Builds a new element from a toolbox tool id, which may carry its own
+ *  defaults on top of the kind's (the NPN/PNP and N-/P-channel splits). */
+export function makeToolElement(tool: string, x1: number, y1: number, x2: number, y2: number) {
+  const entry = toolboxEntry(tool);
+  const def = defFor(entry.kind);
+  return {
+    kind: entry.kind,
+    x1,
+    y1,
+    x2,
+    y2,
+    flags: def?.defaultFlags ?? 0,
+    params: { ...(def?.defaults ?? {}), ...(entry.defaults ?? {}) },
     state: def?.interactive ? 0 : undefined,
   };
 }

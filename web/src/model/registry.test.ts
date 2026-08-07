@@ -225,6 +225,59 @@ describe('transistor posts', () => {
   });
 });
 
+describe('mosfet posts', () => {
+  const m = (x1: number, y1: number, x2: number, y2: number, flags = 0) =>
+    element('mosfet', x1, y1, x2, y2, flags, { pnp: 1, beta: 0.02, threshold: 1.5 });
+
+  it('puts the source below a left-to-right N-channel', () => {
+    expect(postsOf(m(0, 0, 32, 0))).toEqual([
+      { x: 0, y: 0 },
+      { x: 32, y: 16 },
+      { x: 32, y: -16 },
+    ]);
+  });
+
+  it('keeps the source below when drawn right-to-left', () => {
+    // Without dsign the source would land above the line, the same bug class
+    // the transistor case pins.
+    expect(postsOf(m(0, 0, -32, 0))).toEqual([
+      { x: 0, y: 0 },
+      { x: -32, y: 16 },
+      { x: -32, y: -16 },
+    ]);
+  });
+
+  it('FLAG_FLIP swaps the source and drain sides', () => {
+    expect(postsOf(m(0, 0, 32, 0, 8))).toEqual([
+      { x: 0, y: 0 },
+      { x: 32, y: -16 },
+      { x: 32, y: 16 },
+    ]);
+  });
+
+  it('draws both channel types and the flipped body without throwing', () => {
+    const draw = (flags: number, pnp: number) => {
+      const ctx = mkCtx();
+      const mos = element('mosfet', 0, 0, 160, 0, flags, { pnp, beta: 0.02, threshold: 1.5 });
+      expect(() => defFor('mosfet')?.draw(context(ctx), mos)).not.toThrow();
+      return ctx;
+    };
+    draw(0, 1);
+    draw(8, 1);
+    draw(0, -1);
+    draw(9, -1);
+  });
+
+
+  it('dsign mirrors the source onto the -x flank of an upward element', () => {
+    expect(postsOf(m(0, 0, 0, -32))).toEqual([
+      { x: 0, y: 0 },
+      { x: -16, y: -32 },
+      { x: 16, y: -32 },
+    ]);
+  });
+});
+
 describe('op-amp posts', () => {
   const op = (x1: number, y1: number, x2: number, y2: number, flags = 0) =>
     element('opamp', x1, y1, x2, y2, flags);

@@ -144,8 +144,8 @@ fetch it).
   edits, interactive switches.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
-- 58 Rust tests, of which 53 are the end-to-end circuit checks against analytic
-  results in `engine/core/tests/circuits.rs`, and 273 TypeScript tests. CI runs
+- 93 Rust tests, of which 87 are the end-to-end circuit checks against analytic
+  results in `engine/core/tests/circuits.rs`, and 302 TypeScript tests. CI runs
   fmt, clippy, tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -239,7 +239,7 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **25 of ~200**.
+a test. Done so far: **26 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, fuse, lamp, thermistor, potentiometer, switch, SPDT
@@ -255,9 +255,9 @@ switch, LDR, varactor.
 - [ ] Variable rail, sweep, AM, FM, VCO, noise, audio input, external voltage
 - [ ] Controlled sources: VCVS, VCCS, CCVS, CCCS, CC2
 
-**Semiconductors** — done: diode, Zener, BJT.
+**Semiconductors** — done: diode, Zener, BJT, MOSFET.
 
-- [ ] MOSFET, JFET, Darlington, tunnel diode, LED, LED array
+- [ ] JFET, Darlington, tunnel diode, LED, LED array
 - [ ] SCR, triac, diac, unijunction, optocoupler, triode
 
 **Analog** — done: op-amp (saturating VCVS).
@@ -336,6 +336,7 @@ Dump codes implemented so far, with their trailing field order:
 | `z`   | zener          | modelName (FLAG_MODEL), else [fwdrop] then zvoltage        |
 | `176` | varactor       | [modelName (FLAG_MODEL) or fwdrop (FLAG_FWDROP)], capVoltDiff, baseCapacitance |
 | `t`   | transistor     | pnp, lastVbe, lastVbc, beta, modelName                     |
+| `f`   | mosfet         | pnp, threshold, beta                                       |
 | `s`   | switch         | position, momentary, [label] (FLAG_LABEL = 4)              |
 | `S`   | SPDT switch    | position, momentary, [label], link, throwCount             |
 | `a`   | op-amp         | maxOut, minOut, gbw, volts0, volts1, gain                  |
@@ -351,6 +352,15 @@ on load, swapped against their names: `lastVbe` seeds the collector node and
 `lastVbc` the emitter node. The trailing `modelName` token is optional (3 to 5
 tokens occur in the wild; beta then keeps its default of 100) and is preserved
 verbatim on save.
+
+For the `f` row the channel type is FLAG_PNP (bit 1), not a token: `+1` is an
+N-channel and `-1` a P-channel, so flags 1 means P. The two trailing tokens are
+the legacy `vt beta` pair, read defensively and omitted by modern files, which
+load the default model (`threshold = 1.5 V`, `beta = 0.02 A/V²`, `lambda = 0`,
+body diode on, no gate caps). Upstream's own text save writes neither token;
+this port writes both anyway, so a save never loses the model. The source and
+drain hang off `x2,y2` at ±16 perpendicular, flipped by FLAG_FLIP (bit 8), the
+same dsign convention as the transistor's collector and emitter.
 
 For the `d` and `z` rows the trailing tokens depend on the flags. FLAG_MODEL
 (bit 2) means the one token is an escaped model name, kept verbatim but not

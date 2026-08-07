@@ -21,7 +21,7 @@ describe('capability gates', () => {
   });
 
   it('mirrors only the asymmetric three-post bodies', () => {
-    for (const kind of ['transistor', 'opamp', 'potentiometer']) {
+    for (const kind of ['transistor', 'opamp', 'mosfet', 'potentiometer']) {
       expect(canMirror(element(kind, 0, 0, 160, 0))).toBe(true);
     }
     expect(canMirror(element('resistor', 0, 0, 160, 0))).toBe(false);
@@ -78,6 +78,37 @@ describe('rotateElement', () => {
   it('is a no-op on a one-post element', () => {
     const g = element('ground', 0, 0, 16, 0);
     expect(rotateElement(g)).toEqual(g);
+  });
+});
+
+describe('mosfet transforms', () => {
+  it('rotates the source and drain through a rigid quarter turn', () => {
+    const m = element('mosfet', 0, 0, 160, 0);
+    const r = rotateElement(m);
+    // FLAG_FLIP (bit 8) toggles once on a horizontal part, keeping the source
+    // post on the rigid-turn side.
+    expect(r.flags & 8).toBe(8);
+    expect(postsOf(r)).toEqual([
+      { x: 80, y: 80 },
+      { x: 96, y: -80 },
+      { x: 64, y: -80 },
+    ]);
+  });
+
+  it('never touches the pnp bit on rotate', () => {
+    // Bit 1 is the P-channel flag for a mosfet, not an orientation flag, so a
+    // turn must leave it alone.
+    const m = element('mosfet', 0, 0, 160, 0, 1, { pnp: -1 });
+    const r = rotateElement(m);
+    expect(r.flags & 1).toBe(1);
+    expect(r.flags & 8).toBe(8);
+  });
+
+  it('flips the flag on a vertical mirror only', () => {
+    const vertical = element('mosfet', 80, -80, 80, 80);
+    expect(mirrorElement(vertical).flags & 8).toBe(8);
+    const horizontal = element('mosfet', 0, 0, 160, 0);
+    expect(mirrorElement(horizontal).flags & 8).toBe(0);
   });
 });
 

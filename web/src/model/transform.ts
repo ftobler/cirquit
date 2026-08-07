@@ -11,7 +11,7 @@
  * rotated or mirrored part's terminal coordinates match the original exactly.
  */
 
-import { FLAG_SWAP, defFor } from './registry';
+import { FLAG_SWAP, defFor, MOSFET_FLIP } from './registry';
 import type { CircuitElement } from './types';
 
 /** Whether the element can turn a quarter turn. One-post parts (ground, rails,
@@ -54,13 +54,21 @@ export function rotateElement(e: CircuitElement): CircuitElement {
 }
 
 /**
- * The op-amp and transistor carry an orientation flag that upstream's flipXY
- * then flipY toggle in sequence. A horizontal part flips it once; a vertical
- * part flips it twice, so the two cancel. Either way the flag stays in step
- * with the `dsign` term in `opAmpPosts` and `transistorPosts`, which is what
- * keeps a rotated part's terminal coordinates identical to upstream's.
+ * The op-amp, transistor and mosfet carry an orientation flag that upstream's
+ * flipXY then flipY toggle in sequence. A horizontal part flips it once; a
+ * vertical part flips it twice, so the two cancel. Either way the flag stays
+ * in step with the `dsign` term in `opAmpPosts`, `transistorPosts` and
+ * `mosfetPosts`, which is what keeps a rotated part's terminal coordinates
+ * identical to upstream's. The mosfet's flag is bit 8 (FLAG_FLIP), not the
+ * shared bit 1 the other two use, so a rotate must never touch its bit 1:
+ * that bit means P-channel there.
  */
 function rotateFlags(e: CircuitElement): number {
+  if (e.kind === 'mosfet') {
+    let flags = e.flags ^ MOSFET_FLIP;
+    if (e.x1 === e.x2) flags ^= MOSFET_FLIP;
+    return flags;
+  }
   if (e.kind !== 'opamp' && e.kind !== 'transistor') return e.flags;
   let flags = e.flags ^ FLAG_SWAP;
   if (e.x1 === e.x2) flags ^= FLAG_SWAP;
@@ -77,8 +85,13 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
   if (!canMirror(e)) return e;
   const cx = (e.x1 + e.x2) / 2;
   const vertical = e.x1 === e.x2;
-  const flags =
-    vertical && (e.kind === 'opamp' || e.kind === 'transistor') ? e.flags ^ FLAG_SWAP : e.flags;
+  const flipBit =
+    e.kind === 'mosfet'
+      ? MOSFET_FLIP
+      : e.kind === 'opamp' || e.kind === 'transistor'
+        ? FLAG_SWAP
+        : 0;
+  const flags = vertical && flipBit !== 0 ? e.flags ^ flipBit : e.flags;
   return { ...e, x1: 2 * cx - e.x1, y1: e.y1, x2: 2 * cx - e.x2, y2: e.y2, flags };
 }
 

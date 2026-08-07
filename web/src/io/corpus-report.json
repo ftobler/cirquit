@@ -3,14 +3,6 @@
     "file": "3-cgand.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
       "M",
       "L",
       "L"
@@ -23,17 +15,9 @@
     "file": "3-cgor.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "M",
       "L",
-      "L",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f"
+      "L"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -43,8 +27,6 @@
     "file": "3-f211.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "M",
       "L"
     ],
@@ -56,8 +38,6 @@
     "file": "3-f220.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "M",
       "L"
     ],
@@ -69,8 +49,6 @@
     "file": "3-f221.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "M",
       "L"
     ],
@@ -82,10 +60,6 @@
     "file": "3-invert.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
-      "f",
       "M",
       "L"
     ],
@@ -454,12 +428,6 @@
     "file": "analogrecip.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
       "j"
     ],
     "sliderLines": 0,
@@ -697,12 +665,6 @@
     "file": "cc2imp.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
       "172"
     ],
     "sliderLines": 0,
@@ -713,17 +675,7 @@
     "file": "cc2impn.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "172",
-      "f",
-      "f",
-      "f",
-      "f"
+      "172"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -842,13 +794,11 @@
   {
     "file": "classd.txt",
     "format": "plain",
-    "missing": [
-      "f",
-      "f"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "clockedsrff.txt",
@@ -871,15 +821,7 @@
     "file": "cmosff.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
-      "f",
       "L",
-      "f",
-      "f",
-      "f",
-      "f",
       "L",
       "M",
       "M"
@@ -892,8 +834,6 @@
     "file": "cmosinverter.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "L",
       "M"
     ],
@@ -913,8 +853,6 @@
     "file": "cmosinverterslow.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "M",
       "L"
     ],
@@ -949,11 +887,7 @@
     "file": "cmosnand.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "M",
-      "f",
-      "f",
       "L",
       "L"
     ],
@@ -965,11 +899,7 @@
     "file": "cmosnor.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
       "M",
-      "f",
       "L",
       "L"
     ],
@@ -982,9 +912,7 @@
     "format": "plain",
     "missing": [
       "I",
-      "L",
-      "f",
-      "f"
+      "L"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -994,10 +922,6 @@
     "file": "cmosxor.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
-      "f",
       "L",
       "L",
       "I",
@@ -1046,12 +970,11 @@
   {
     "file": "conv-buckboost.txt",
     "format": "plain",
-    "missing": [
-      "f"
-    ],
+    "missing": [],
     "sliderLines": 1,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "conv-cuk.txt",
@@ -1377,11 +1300,7 @@
     "file": "delayrc.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "L",
-      "f",
-      "f",
       "M"
     ],
     "sliderLines": 0,
@@ -1541,10 +1460,6 @@
     "file": "dram.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
-      "f",
       "150",
       "150",
       "150",
@@ -2006,13 +1921,11 @@
   {
     "file": "invertamp.txt",
     "format": "plain",
-    "missing": [
-      "f",
-      "f"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "itov.txt",
@@ -2210,14 +2123,6 @@
     "file": "leadingedge.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
       "M"
     ],
     "sliderLines": 0,
@@ -2367,63 +2272,57 @@
   {
     "file": "moscurrentramp.txt",
     "format": "plain",
-    "missing": [
-      "f"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "moscurrentsrc.txt",
     "format": "plain",
-    "missing": [
-      "f"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mosfetamp.txt",
     "format": "plain",
-    "missing": [
-      "f"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mosfollower.txt",
     "format": "plain",
-    "missing": [
-      "f"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "mosmirror.txt",
     "format": "plain",
-    "missing": [
-      "f",
-      "f"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mosswitch.txt",
     "format": "plain",
-    "missing": [
-      "f"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "motorprotect.txt",
@@ -2553,12 +2452,8 @@
     "file": "mux.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "I",
-      "L",
-      "f",
-      "f"
+      "L"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -2570,11 +2465,7 @@
     "missing": [
       "151",
       "150",
-      "f",
-      "f",
       "L",
-      "f",
-      "f",
       "150",
       "151",
       "M",
@@ -2616,7 +2507,6 @@
     "file": "nmosfet.txt",
     "format": "plain",
     "missing": [
-      "f",
       "172",
       "172"
     ],
@@ -2629,8 +2519,7 @@
     "format": "plain",
     "missing": [
       "L",
-      "M",
-      "f"
+      "M"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -2640,8 +2529,6 @@
     "file": "nmosinverter2.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "L",
       "M"
     ],
@@ -2653,8 +2540,6 @@
     "file": "nmosinverter3.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "L",
       "M"
     ],
@@ -2666,9 +2551,7 @@
     "file": "nmosnand.txt",
     "format": "plain",
     "missing": [
-      "f",
       "M",
-      "f",
       "L",
       "L"
     ],
@@ -2876,8 +2759,6 @@
     "missing": [
       "155",
       "155",
-      "f",
-      "f",
       "150"
     ],
     "sliderLines": 0,
@@ -2992,7 +2873,6 @@
     "format": "plain",
     "missing": [
       "172",
-      "f",
       "172"
     ],
     "sliderLines": 0,
@@ -3451,8 +3331,6 @@
     "file": "samplenhold.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "I",
       "L"
     ],
@@ -3601,18 +3479,6 @@
     "file": "sram.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
-      "f",
       "L",
       "159",
       "159",
@@ -3643,12 +3509,8 @@
     "file": "switchfilter.txt",
     "format": "plain",
     "missing": [
-      "f",
-      "f",
       "I",
-      "L",
-      "f",
-      "f"
+      "L"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -4036,7 +3898,6 @@
     "file": "trianglevco.txt",
     "format": "plain",
     "missing": [
-      "f",
       "172"
     ],
     "sliderLines": 0,
@@ -4223,7 +4084,6 @@
     "file": "vco.txt",
     "format": "plain",
     "missing": [
-      "f",
       "211"
     ],
     "sliderLines": 0,

@@ -1,6 +1,6 @@
 /** Element picker, grouped by category. */
 
-import { CATEGORIES, ELEMENT_DEFS } from '../model/registry';
+import { CATEGORIES, TOOLBOX } from '../model/registry';
 import { useStore } from '../state/store';
 
 export function Toolbox() {
@@ -10,21 +10,21 @@ export function Toolbox() {
   return (
     <div className="toolbox">
       {CATEGORIES.map((category) => {
-        const defs = ELEMENT_DEFS.filter((d) => d.category === category);
-        if (defs.length === 0) return null;
+        const entries = TOOLBOX.filter((t) => t.category === category);
+        if (entries.length === 0) return null;
         return (
           <section key={category}>
             <h3>{category}</h3>
             <div className="tool-grid">
-              {defs.map((d) => (
+              {entries.map((t) => (
                 <button
-                  key={d.kind}
+                  key={t.id}
                   type="button"
-                  className={tool === d.kind ? 'tool active' : 'tool'}
-                  onClick={() => setTool(tool === d.kind ? null : d.kind)}
-                  title={`Place a ${d.label.toLowerCase()}`}
+                  className={tool === t.id ? 'tool active' : 'tool'}
+                  onClick={() => setTool(tool === t.id ? null : t.id)}
+                  title={`Place a ${t.label.toLowerCase()}`}
                 >
-                  {d.label}
+                  {t.label}
                 </button>
               ))}
             </div>

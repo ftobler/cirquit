@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseCircuit, serializeCircuit } from './index';
-import { makeElement } from '../../state/store';
+import { makeElement, makeToolElement } from '../../state/store';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
 
 describe('diode file format', () => {
@@ -345,6 +345,70 @@ describe('transistor file format', () => {
     const [again] = parseCircuit(elementLine).elements;
     expect(again.params.pnp).toBe(1);
     expect(again.params.beta).toBe(100);
+  });
+});
+
+describe('mosfet file format', () => {
+  /** Parses a single element line and re-emits it, returning the `f` line. */
+  const mosfetLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('f ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('mosfet_full_line_round_trips_byte_for_byte', () => {
+    const { e, elementLine } = mosfetLine('f 240 176 320 176 0 1.5 0.02');
+    expect(e.params.pnp).toBe(1);
+    expect(e.params.threshold).toBe(1.5);
+    expect(e.params.beta).toBe(0.02);
+    expect(elementLine).toBe('f 240 176 320 176 0 1.5 0.02');
+  });
+
+  it('mosfet_flag_pnp_reads_as_p_channel', () => {
+    // FLAG_PNP (bit 1) is the channel type; it lives in the flags, not a
+    // token, so flags 1 must load as pnp = -1 and save the bit back.
+    const { e, elementLine } = mosfetLine('f 240 176 320 176 1 1.5 0.02');
+    expect(e.params.pnp).toBe(-1);
+    expect(e.flags).toBe(1);
+    expect(elementLine).toBe('f 240 176 320 176 1 1.5 0.02');
+  });
+
+  it('mosfet_flip_flag_and_pnp_survive_a_save', () => {
+    // FLAG_FLIP (bit 8) rides alongside the pnp bit; the writer must not
+    // clear it when synthesising the pnp bit from the params.
+    const { elementLine } = mosfetLine('f 320 176 240 176 9 1.5 0.02');
+    expect(elementLine).toBe('f 320 176 240 176 9 1.5 0.02');
+  });
+
+  it('bare_mosfet_line_loads_the_default_model', () => {
+    // The two legacy tokens are optional (MosfetElm.java:96-99); a bare line
+    // takes the default model. The writer appends the defaults so a save
+    // never loses them, matching how a bare capacitor gains its ESR tokens.
+    const { e, elementLine } = mosfetLine('f 240 176 320 176 0');
+    expect(e.params.pnp).toBe(1);
+    expect(e.params.threshold).toBe(1.5);
+    expect(e.params.beta).toBe(0.02);
+    expect(elementLine).toBe('f 240 176 320 176 0 1.5 0.02');
+  });
+
+  it('a_fresh_n_mosfet_dumps_the_default_model', () => {
+    const e = makeElement('mosfet', 0, 0, 32, 0);
+    expect(e.params.pnp).toBe(1);
+    expect(e.params.threshold).toBe(1.5);
+    expect(e.params.beta).toBe(0.02);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('f 0 0 32 0 0 1.5 0.02');
+  });
+
+  it('a_fresh_p_mosfet_dumps_the_pnp_flag', () => {
+    const e = makeToolElement('pmos', 0, 0, 32, 0);
+    expect(e.kind).toBe('mosfet');
+    expect(e.params.pnp).toBe(-1);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    // The pnp bit is written from the params even though a freshly placed
+    // element carries no flags of its own.
+    expect(out).toContain('f 0 0 32 0 1 1.5 0.02');
   });
 });
 

@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
-import { defFor, postsOf } from '../../model/registry';
+import { defFor, postsOf, toolDef } from '../../model/registry';
 import { GRID_SIZE, type CircuitElement, type Point } from '../../model/types';
 import { distanceToElement, nearestPost, postAt, postPatch } from '../../render/geometry';
-import { makeElement, snap, useStore } from '../../state/store';
+import { makeToolElement, snap, useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 
 /** How close the pointer must be to an element to hit it, in circuit units. */
@@ -76,13 +76,13 @@ export function useCanvasInteractions(
     if (state.tool) {
       const x = snap(p.x);
       const y = snap(p.y);
-      const def = defFor(state.tool);
+      const def = toolDef(state.tool);
       const len = (def?.defaultLength ?? 0) * GRID_SIZE;
       // Grounds and voltage sources drop vertically, the rest horizontally,
       // matching upstream's getDragVertical override.
       const x2 = def?.vertical ? x : x + len;
       const y2 = def?.vertical ? y + len : y;
-      const id = state.addElement(makeElement(state.tool, x, y, x2, y2));
+      const id = state.addElement(makeToolElement(state.tool, x, y, x2, y2));
       dragRef.current = { mode: 'place', start: { x, y }, id };
       state.select([id]);
       return;
@@ -140,7 +140,7 @@ export function useCanvasInteractions(
       case 'place': {
         let x2 = snap(p.x);
         let y2 = snap(p.y);
-        const def = state.tool ? defFor(state.tool) : undefined;
+        const def = state.tool ? toolDef(state.tool) : undefined;
         if (def?.noDiagonal) {
           // Upstream snaps the drag to the dominant axis, so a transistor,
           // op-amp or SPDT cannot end up diagonal (CircuitElm.java:560-566).

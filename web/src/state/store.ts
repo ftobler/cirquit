@@ -23,7 +23,7 @@ import {
   type CircuitElement,
 } from '../model/types';
 import type { AppState, Snapshot, ViewTransform } from './types';
-import { hasUnsavedChanges, makeElement, snap } from './helpers';
+import { hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers';
 
 const clone = (s: Pick<AppState, 'elements' | 'scopes'>): Snapshot => ({
   elements: s.elements.map((e) => ({ ...e, params: { ...e.params } })),
@@ -424,4 +424,4 @@ function transformSelected(
 }
 
 export type { AppState, ViewTransform };
-export { hasUnsavedChanges, makeElement, snap };
+export { hasUnsavedChanges, makeElement, makeToolElement, snap };

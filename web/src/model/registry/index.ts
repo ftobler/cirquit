@@ -10,7 +10,7 @@
  * its kind there, then add a definition here in `elements/`.
  */
 
-import { FLAG_SWAP } from './flags';
+import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP } from './flags';
 import { switchLeverTip } from './shared';
 import { WIRE_DEF } from './elements/wire';
 import { GROUND_DEF } from './elements/ground';
@@ -30,6 +30,7 @@ import { DIODE_DEF } from './elements/diode';
 import { ZENER_DEF } from './elements/zener';
 import { VARACTOR_DEF } from './elements/varactor';
 import { TRANSISTOR_DEF } from './elements/transistor';
+import { MOSFET_DEF } from './elements/mosfet';
 import { SWITCH_DEF } from './elements/switch';
 import { SWITCH2_DEF } from './elements/switch2';
 import { OPAMP_DEF } from './elements/opamp';
@@ -39,7 +40,7 @@ import { PROBE_DEF } from './elements/probe';
 import { DECORATION_DEF } from './elements/decoration';
 import type { CircuitElement, ElementDef, Point } from '../types';
 
-export { FLAG_SWAP };
+export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP };
 export { switchLeverTip };
 export { opampInputSign, opAmpInputAnchors, opAmpLabelAnchors } from './elements/opamp';
 export { transistorSideFactor, transistorBarContacts } from './elements/transistor';
@@ -65,6 +66,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   ZENER_DEF,
   VARACTOR_DEF,
   TRANSISTOR_DEF,
+  MOSFET_DEF,
   OPAMP_DEF,
   LABELED_NODE_DEF,
   OUTPUT_DEF,
@@ -90,3 +92,74 @@ export function postsOf(e: CircuitElement): Point[] {
 
 /** Toolbox groupings, in display order. */
 export const CATEGORIES = ['Basics', 'Sources', 'Semiconductors', 'Active', 'Other'];
+
+/**
+ * One pickable tool. Most kinds appear once, mirroring their `ElementDef`;
+ * the transistor and mosfet each appear twice so the N and P flavours are
+ * separate menu items, as they are upstream. Repeating a kind is only legal
+ * here because `makeToolElement` merges `defaults` over the def's own, so the
+ * engine and the file format still see one kind.
+ */
+export interface ToolboxEntry {
+  /** Stored in `state.tool` while this tool is armed. Usually the kind. */
+  id: string;
+  kind: string;
+  label: string;
+  category: string;
+  /** Params merged over the def's defaults when a part is placed. */
+  defaults?: Record<string, number>;
+}
+
+const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
+  {
+    id: 'npn',
+    kind: 'transistor',
+    label: 'NPN',
+    category: 'Semiconductors',
+    defaults: { pnp: 1, beta: 100 },
+  },
+  {
+    id: 'pnp',
+    kind: 'transistor',
+    label: 'PNP',
+    category: 'Semiconductors',
+    defaults: { pnp: -1, beta: 100 },
+  },
+  {
+    id: 'nmos',
+    kind: 'mosfet',
+    label: 'N-MOSFET',
+    category: 'Semiconductors',
+    defaults: { pnp: 1, beta: 0.02, threshold: 1.5 },
+  },
+  {
+    id: 'pmos',
+    kind: 'mosfet',
+    label: 'P-MOSFET',
+    category: 'Semiconductors',
+    defaults: { pnp: -1, beta: 0.02, threshold: 1.5 },
+  },
+];
+
+/** Every pickable tool, in display order within each category. */
+export const TOOLBOX: ToolboxEntry[] = [
+  ...ELEMENT_DEFS.filter((d) => d.kind !== 'transistor' && d.kind !== 'mosfet').map((d) => ({
+    id: d.kind,
+    kind: d.kind,
+    label: d.label,
+    category: d.category,
+  })),
+  ...SPLIT_SEMICONDUCTORS,
+];
+
+const TOOLBOX_BY_ID = new Map(TOOLBOX.map((t) => [t.id, t]));
+
+/** The toolbox entry backing a tool id, falling back to the kind itself. */
+export function toolboxEntry(tool: string): ToolboxEntry {
+  return TOOLBOX_BY_ID.get(tool) ?? { id: tool, kind: tool, label: tool, category: 'Other' };
+}
+
+/** The element definition behind a tool id, for defaults and geometry. */
+export function toolDef(tool: string): ElementDef | undefined {
+  return defFor(toolboxEntry(tool).kind);
+}

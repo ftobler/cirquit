@@ -3570,3 +3570,293 @@ fn probe_series_resistance_rescues_a_floating_node() {
         tied.element_voltages()[2]
     );
 }
+
+/// An N-channel with the gate held above Vt and the drain fed through a
+/// resistor from 5 V, the shared shape of the triode and saturation cases.
+/// Posts are gate, source, drain; the source sits on a ground symbol.
+fn n_mosfet_drain(r: f64, dc: bool) -> Circuit {
+    build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", r)]),
+            elm(
+                3,
+                "mosfet",
+                &[[200, 0], [100, 100], [100, 0]],
+                &[("pnp", 1.0), ("threshold", 1.5), ("beta", 0.02)],
+            ),
+            elm(
+                4,
+                "voltage",
+                &[[200, 100], [200, 0]],
+                &[("maxVoltage", 3.0)],
+            ),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "ground", &[[100, 100]], &[]),
+            elm(7, "ground", &[[200, 100]], &[]),
+        ],
+        opts(1e-5, dc),
+    )
+}
+
+#[test]
+fn n_mosfet_triode_and_saturation() {
+    // vgs = 3 V, vt = 1.5 V, beta = 0.02, lambda = 0. With the drain fed
+    // through R from 5 V the operating point is closed form:
+    //   triode:     ids = beta*((vgs-vt)*vds - vds^2/2) = (5 - Vd)/R
+    //   saturation: ids = .5*beta*(vgs-vt)^2             = (5 - Vd)/R
+    // R = 360 lands in triode at Vd = 0.5 V (ids = 12.5 mA); R = 100 in
+    // saturation at Vd = 2.75 V (ids = 22.5 mA). The drain node is the
+    // mosfet's voltage_diff, volts[2] - volts[1] = Vd - 0.
+    let triode = &mut n_mosfet_drain(360.0, true);
+    let report = triode.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(triode.element_voltages()[2], 0.5, 1e-3),
+        "triode drain was {}",
+        triode.element_voltages()[2]
+    );
+    assert!(
+        close(triode.element_currents()[2], 0.0125, 1e-5),
+        "triode ids was {}",
+        triode.element_currents()[2]
+    );
+
+    let sat = &mut n_mosfet_drain(100.0, true);
+    let report = sat.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(sat.element_voltages()[2], 2.75, 1e-3),
+        "saturation drain was {}",
+        sat.element_voltages()[2]
+    );
+    assert!(
+        close(sat.element_currents()[2], 0.0225, 1e-5),
+        "saturation ids was {}",
+        sat.element_currents()[2]
+    );
+}
+
+#[test]
+fn p_mosfet_mirrors_the_n_channel() {
+    // The P-channel mirror of the triode case: source on the 5 V rail, gate at
+    // 2 V (so Vsg = 3, the symmetric point of the N-channel's Vgs), drain
+    // through 360 ohm to ground. Post 2 is the source post for a P-channel and
+    // post 1 the drain post, so the source goes on the rail and the resistor
+    // on the other side; the body diode (anode at post 1) then stays
+    // reverse-biased while the channel conducts in the normal direction. At
+    // the symmetric point Vsd = 0.5 V the channel current is the same 12.5 mA
+    // as the N-channel, reported positive because the engine's source lands on
+    // its nominal post here, so no fold-back flips the sign.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "wire", &[[0, 0], [100, 0]], &[]),
+            // Posts: gate, source, drain.
+            elm(
+                3,
+                "mosfet",
+                &[[200, 0], [100, 100], [100, 0]],
+                &[("pnp", -1.0), ("threshold", 1.5), ("beta", 0.02)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[100, 100], [100, 200]],
+                &[("resistance", 360.0)],
+            ),
+            elm(
+                5,
+                "voltage",
+                &[[200, 100], [200, 0]],
+                &[("maxVoltage", 2.0)],
+            ),
+            elm(6, "ground", &[[0, 100]], &[]),
+            elm(7, "ground", &[[100, 200]], &[]),
+            elm(8, "ground", &[[200, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.element_currents()[2], 0.0125, 1e-5),
+        "P-channel ids was {}",
+        c.element_currents()[2]
+    );
+    assert!(
+        close(c.element_currents()[2].abs(), 0.0125, 1e-5),
+        "P-channel magnitude was {}",
+        c.element_currents()[2].abs()
+    );
+}
+
+#[test]
+fn mosfet_off_uses_min_conductance() {
+    // Gate grounded (below Vt): the channel is a 1e-8 S resistor, so the drain
+    // follows the divider 5 V through 1 k against 1e8 ohm to the grounded
+    // source: Vd = 5/(1 + 1e-8*1000) = 4.99995 V and ids = Vd*1e-8. Without
+    // that floor the drain would be a node the matrix cannot pin.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "mosfet",
+                &[[200, 0], [100, 100], [100, 0]],
+                &[("pnp", 1.0), ("threshold", 1.5), ("beta", 0.02)],
+            ),
+            elm(4, "ground", &[[0, 100]], &[]),
+            elm(5, "ground", &[[100, 100]], &[]),
+            elm(6, "ground", &[[200, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.element_voltages()[2], 4.99995, 1e-3),
+        "off-channel drain was {}",
+        c.element_voltages()[2]
+    );
+    assert!(
+        close(c.element_currents()[2], 4.99995e-8, 1e-10),
+        "off-channel ids was {}",
+        c.element_currents()[2]
+    );
+}
+
+#[test]
+fn body_diode_conducts_when_reversed() {
+    // N-channel with the source post on the 5 V rail and the drain post fed by
+    // a 10 mA current source to ground. The gate is grounded (off), so the
+    // channel carries nothing; the body diode (anode at the source) is forward
+    // biased and must conduct the whole 10 mA, clamping the source-to-drain
+    // drop at the default diode model's knee for that current. Without the
+    // diode the current source would push through the 1e-8 off-channel and
+    // drive the drain to ~1e6 V.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "wire", &[[0, 0], [100, 0]], &[]),
+            // Posts: gate, source, drain; the source post sits on the rail.
+            elm(
+                3,
+                "mosfet",
+                &[[200, 0], [100, 0], [100, 100]],
+                &[("pnp", 1.0), ("threshold", 1.5), ("beta", 0.02)],
+            ),
+            elm(
+                7,
+                "current",
+                &[[100, 100], [100, 200]],
+                &[("current", 0.01)],
+            ),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "ground", &[[200, 0]], &[]),
+            elm(8, "ground", &[[100, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(report.error.is_none(), "error: {:?}", report.error);
+    // The mosfet's voltage_diff is volts[2] - volts[1] = Vd - 5, so the drop
+    // is -voltage_diff. The diode must sit on its own I-V curve at 10 mA.
+    let drop = -c.element_voltages()[2];
+    assert!(
+        close(diode_current(drop), 0.01, 1e-6),
+        "body diode drop {drop} does not conduct 10 mA"
+    );
+    assert!((0.4..0.8).contains(&drop), "body diode drop was {drop}");
+}
+
+#[test]
+fn p_mosfet_body_diode_conducts_when_reversed() {
+    // The P-channel mirror of the N body-diode case: source (post 2) on the
+    // 5 V rail, drain (post 1) fed by a 10 mA current source from ground, and
+    // the gate tied to the rail so Vsg = 0 and the channel is off. The body
+    // diode (anode at post 1, the drain post for a P-channel) conducts the
+    // whole 10 mA from the drain into the source rail, clamping the
+    // drain-to-source drop on the default diode model's I-V curve at 10 mA.
+    // With the diode wired the wrong way round (anode at the source) this
+    // circuit would reverse-bias it and the drain would climb against the
+    // 1e-8 off-channel instead.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "wire", &[[0, 0], [100, 0]], &[]),
+            elm(3, "wire", &[[0, 0], [200, 0]], &[]),
+            // Posts: gate, source, drain; the source (post 2) sits on the rail.
+            elm(
+                4,
+                "mosfet",
+                &[[200, 0], [100, 100], [100, 0]],
+                &[("pnp", -1.0), ("threshold", 1.5), ("beta", 0.02)],
+            ),
+            elm(
+                5,
+                "current",
+                &[[100, 200], [100, 100]],
+                &[("current", 0.01)],
+            ),
+            elm(6, "ground", &[[0, 100]], &[]),
+            elm(7, "ground", &[[100, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(report.error.is_none(), "error: {:?}", report.error);
+    // The mosfet's voltage_diff is volts[2] - volts[1] = V(source) - V(drain),
+    // so the drain-to-source drop is -voltage_diff.
+    let drop = -c.element_voltages()[3];
+    assert!(
+        close(diode_current(drop), 0.01, 1e-6),
+        "P body diode drop {drop} does not conduct 10 mA"
+    );
+    assert!((0.4..0.8).contains(&drop), "P body diode drop was {drop}");
+}
+
+#[test]
+fn gate_does_not_connect_to_channel() {
+    // A gate tied only to the mosfet: with `connects` returning false for the
+    // gate (no gate caps), the gate is its own component and the floating-node
+    // analysis flags it, so a gate-only circuit warns instead of silently
+    // pinning the gate onto the channel.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            // Posts: gate, source, drain. The gate at (200,0) connects nowhere.
+            elm(
+                3,
+                "mosfet",
+                &[[200, 0], [100, 100], [100, 0]],
+                &[("pnp", 1.0)],
+            ),
+            elm(4, "ground", &[[0, 100]], &[]),
+            elm(5, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    assert!(
+        c.warnings().iter().any(|w| w.contains("no path to ground")),
+        "the floating gate was not flagged: {:?}",
+        c.warnings()
+    );
+    // And the circuit still simulates with the gate pinned to ground.
+    let report = c.run(5);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+}

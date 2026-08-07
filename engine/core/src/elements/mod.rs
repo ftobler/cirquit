@@ -19,6 +19,7 @@ pub mod labeled_node;
 pub mod lamp;
 pub mod ldr;
 pub mod meter;
+pub mod mosfet;
 pub mod multi_throw_switch;
 pub mod opamp;
 pub mod potentiometer;
@@ -53,6 +54,7 @@ pub const KINDS: &[&str] = &[
     "zener",
     "varactor",
     "transistor",
+    "mosfet",
     "switch",
     "switch2",
     "opamp",
@@ -83,6 +85,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "zener" => Box::new(diode::Diode::new_zener(spec)),
         "varactor" => Box::new(diode::Diode::new_varactor(spec)),
         "transistor" => Box::new(transistor::BipolarTransistor::new(spec)),
+        "mosfet" => Box::new(mosfet::Mosfet::new(spec)),
         "switch" => Box::new(switch::Switch::new(spec)),
         "switch2" => Box::new(multi_throw_switch::MultiThrowSwitch::new(spec)),
         "opamp" => Box::new(opamp::OpAmp::new(spec)),
