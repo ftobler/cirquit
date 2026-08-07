@@ -76,7 +76,12 @@ impl Default for SimOptions {
             // only things that turn it on, CircuitLoader.java:277).
             adaptive: false,
             steps_per_frame: 160,
-            max_subiterations: 100,
+            // 1000, not upstream's 5000: the gmin ramps engage at subiter
+            // 100 and need room to climb (Diode.java:150 triggers at
+            // `subIterations > 100`), while a pathological frame stays
+            // bounded. Normal circuits settle in 2 to 5 iterations, so the
+            // cost is zero for well-behaved circuits.
+            max_subiterations: 1000,
             // Off by default, matching upstream's `autoDCOnReset` for a new
             // circuit (CircuitLoader.java:56): a fresh circuit keeps its
             // charging transients and an LC tank its self-start seed. The

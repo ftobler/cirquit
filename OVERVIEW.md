@@ -83,8 +83,9 @@ singular constraint rows. Consequence: current *through* a ground symbol is not
 reported. If that is wanted later, give ground a single shared 0 V source
 rather than one per symbol.
 
-**Floating subcircuits** get a 1 nS conductance to ground with a warning, rather
-than an error. Ungrounded circuits pick the first node as the reference and warn.
+**Floating subcircuits** get a 10 nS conductance to ground per node, with a
+warning, rather than an error. Ungrounded circuits pick the first node as the
+reference and warn.
 
 **When to `stamp` vs `do_step`.** `stamp` runs once and holds everything
 constant for the whole run; the result is snapshotted. `do_step` runs on every
@@ -144,8 +145,8 @@ fetch it).
   edits, interactive switches.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
-- 117 Rust tests, of which 112 are the end-to-end circuit checks against analytic
-  results in `engine/core/tests/circuits.rs`, and 333 TypeScript tests. CI runs
+- 121 Rust tests, of which 115 are the end-to-end circuit checks against analytic
+  results in `engine/core/tests/circuits.rs`, and 332 TypeScript tests. CI runs
   fmt, clippy, tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -225,7 +226,7 @@ fetch it).
 - [ ] Adaptive timestep with step rejection
 - [ ] Matrix simplification / constant-row elimination
 - [ ] Sparse matrix path for large circuits
-- [ ] Convergence diagnostics surfaced in the UI (which element failed)
+- [x] Convergence diagnostics surfaced in the UI (which element failed)
 - [ ] Benchmark harness with representative circuits, wired into CI
 
 ### Milestone B — editing parity

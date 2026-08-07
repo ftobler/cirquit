@@ -121,10 +121,21 @@ impl LinearSystem {
         // badly scaled without it.
         let mut scale = vec![0.0f64; n];
         for (i, s) in scale.iter_mut().enumerate() {
-            let largest = self.lu[i * n..(i + 1) * n]
-                .iter()
-                .fold(0.0f64, |acc, v| acc.max(v.abs()));
-            if largest == 0.0 {
+            // `f64::max` ignores a NaN operand, so track non-finite entries
+            // explicitly: any NaN or Inf anywhere in the row must poison the
+            // row maximum, and a non-finite maximum is as unsolvable as a
+            // zero row. This is the port's matrix-entry NaN/Inf scan,
+            // upstream's `SimulationManager.java:1348-1361` loop folded into
+            // the factor pass.
+            let largest = self.lu[i * n..(i + 1) * n].iter().fold(0.0f64, |acc, v| {
+                let m = acc.max(v.abs());
+                if !acc.is_finite() || !v.is_finite() {
+                    f64::NAN
+                } else {
+                    m
+                }
+            });
+            if largest == 0.0 || !largest.is_finite() {
                 return Err(SolveError::Singular);
             }
             *s = 1.0 / largest;

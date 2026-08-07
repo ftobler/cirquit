@@ -2,7 +2,8 @@
 
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::junction::{
-    critical_voltage, limit_junction, CONVERGENCE_V, JUNCTION_GMIN, MAX_EXP_ARG, VT,
+    critical_voltage, limit_junction, ramp_gmin, CONVERGENCE_V, GMIN_RAMP_DENOM_TRANSISTOR,
+    GMIN_RAMP_START, JUNCTION_GMIN, MAX_EXP_ARG, VT,
 };
 use crate::spec::ElementSpec;
 use crate::stamp::{Stamper, GROUND};
@@ -29,6 +30,15 @@ pub struct BipolarTransistor {
     seed_e: f64,
     ic: f64,
     ib: f64,
+    /// Consecutive Newton iterations this transistor has not settled within a
+    /// single timestep. When it passes the ramp start, this transistor's own
+    /// junction conductance ramps up, so one stuck transistor does not drag
+    /// the whole circuit into gmin territory (TransistorElm.java:345-349).
+    local_subiters: u32,
+    /// Consecutive timesteps this transistor ended needing the ramp. After 5
+    /// in a row the ramp is given up for this transistor, so a permanently
+    /// stuck device stops pretending to converge (TransistorElm.java:707-712).
+    bad_iters: u32,
 }
 
 impl BipolarTransistor {
@@ -63,6 +73,8 @@ impl BipolarTransistor {
             seed_e: -lastvbc,
             ic: 0.0,
             ib: 0.0,
+            local_subiters: 0,
+            bad_iters: 0,
         }
     }
 }
@@ -94,7 +106,21 @@ impl Element for BipolarTransistor {
             || (vbc - self.last_vbc).abs() > CONVERGENCE_V
         {
             s.not_converged();
+            self.local_subiters += 1;
+        } else {
+            self.local_subiters = 0;
         }
+        // Once this transistor has been stuck past the ramp start, ramp its
+        // junction conductance so it can escape its own limit cycle, up to
+        // `GMIN_MAX`, and give the ramp up entirely after 5 bad timesteps in a
+        // row (`step_finished`). The denominator is ten times smaller than the
+        // diode's, so the transistor ramp climbs faster
+        // (TransistorElm.java:352-356).
+        let gmin = if self.local_subiters > GMIN_RAMP_START && self.bad_iters < 5 {
+            ramp_gmin(self.local_subiters, GMIN_RAMP_DENOM_TRANSISTOR)
+        } else {
+            JUNCTION_GMIN
+        };
         vbe = limit_junction(vbe, self.last_vbe, VT, self.vcrit);
         vbc = limit_junction(vbc, self.last_vbc, VT, self.vcrit);
         self.last_vbe = vbe;
@@ -104,8 +130,8 @@ impl Element for BipolarTransistor {
         let exp_bc = (vbc / VT).min(MAX_EXP_ARG).exp();
         let fwd = self.sat_current * (exp_be - 1.0);
         let rev = self.sat_current * (exp_bc - 1.0);
-        let g_fwd = self.sat_current * exp_be / VT + JUNCTION_GMIN;
-        let g_rev = self.sat_current * exp_bc / VT + JUNCTION_GMIN;
+        let g_fwd = self.sat_current * exp_be / VT + gmin;
+        let g_rev = self.sat_current * exp_bc / VT + gmin;
 
         let inv_bf = 1.0 / self.beta_f;
         let inv_br = 1.0 / self.beta_r;
@@ -145,6 +171,19 @@ impl Element for BipolarTransistor {
     fn calculate_current(&mut self, _ctx: &SimCtx) {
         // Report collector current as the element's headline figure.
         self.base.current = self.ic;
+    }
+
+    /// Give-up bookkeeping for the gmin ramp, mirroring
+    /// TransistorElm.java:707-712,739: a timestep that needed ramping counts
+    /// as a bad one, and five in a row retire the ramp for this transistor.
+    /// The per-step count resets so the next timestep starts clean.
+    fn step_finished(&mut self, _ctx: &SimCtx) {
+        if self.local_subiters > GMIN_RAMP_START {
+            self.bad_iters += 1;
+        } else {
+            self.bad_iters = 0;
+        }
+        self.local_subiters = 0;
     }
 
     fn current_into_node(&self, post: usize) -> f64 {
@@ -195,5 +234,7 @@ impl Element for BipolarTransistor {
         self.last_vbc = 0.0;
         self.ic = 0.0;
         self.ib = 0.0;
+        self.local_subiters = 0;
+        self.bad_iters = 0;
     }
 }

@@ -4944,7 +4944,11 @@ fn transformer_connects_all_posts() {
     // resistor (SimulationManager.java). A transformer that reported all its
     // posts as connected would keep the secondary out of that pinning and the
     // solve would go singular. The winding still reads its full ratio: the
-    // pinning fixes the absolute potential, not the winding difference.
+    // pinning fixes the absolute potential, not the winding difference. Both
+    // secondary nodes are pinned at 1e-8 S each, and the pin current loads
+    // the winding a little (measured 9.98992 V, an 8e-5 V drop from the ideal
+    // 9.99), so the 1e-4 window covers the pin loading while still pinning the
+    // full-ratio reading.
     let spec = CircuitSpec {
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
@@ -4976,7 +4980,7 @@ fn transformer_connects_all_posts() {
         c.warnings()
     );
     assert!(
-        close(last_sample(&c, 0) - last_sample(&c, 1), 9.99, 1e-6),
+        close(last_sample(&c, 0) - last_sample(&c, 1), 9.99, 1e-4),
         "floating secondary read {} V, expected 9.99",
         last_sample(&c, 0) - last_sample(&c, 1)
     );
@@ -5190,5 +5194,180 @@ fn step_hitting_the_floor_falls_back_to_5000_and_stops_cleanly() {
         close(c.time(), 0.0, 1e-15),
         "a rejected step advanced the clock to {}",
         c.time()
+    );
+}
+
+/// Test A: the Schmitt trigger whose differential repeatedly crosses the
+/// saturation knees, the comparator case that two-cycles with a tight
+/// tolerance and no branch tie-break.
+#[test]
+fn opamp_comparator_converges_within_the_iteration_budget() {
+    // The sine drives V+ through 1k; a 10k feedback resistor feeds the railed
+    // output back into V+. With V- grounded, V+ = (10*Vin + Vout)/11 and the
+    // trip points sit at Vin = +-1.5 V (where V+ crosses 0 with Vout railed at
+    // +-15), so every period the input differential crosses both saturation
+    // knees twice. Each step must settle within the 100-iteration budget,
+    // railed outputs included.
+    let dt = 1e-6; // period (1 ms) / 1000
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 200], [0, 0]],
+                &[
+                    ("maxVoltage", 3.0),
+                    ("waveform", 1.0),
+                    ("frequency", 1000.0),
+                ],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[300, 0], [100, 0]],
+                &[("resistance", 10_000.0)],
+            ),
+            elm(
+                4,
+                "opamp",
+                &[[100, 100], [100, 0], [300, 0]],
+                &[("gain", 100_000.0), ("maxOut", 15.0), ("minOut", -15.0)],
+            ),
+            elm(5, "ground", &[[100, 100]], &[]),
+            elm(6, "ground", &[[0, 200]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    let mut worst = 0u32;
+    for _ in 0..2000 {
+        let r = c.run(1);
+        assert!(
+            r.converged,
+            "comparator step failed: {}",
+            r.error.unwrap_or_default()
+        );
+        worst = worst.max(r.iterations);
+    }
+    assert!(worst < 100, "worst comparator step took {worst} iterations");
+}
+
+/// Test B: a full-wave bridge started from all-zero voltages, whose output
+/// nodes are defined only through the junction conductances until a diode
+/// conducts.
+#[test]
+fn diode_bridge_startup_converges_only_with_gmin_ramping() {
+    // Nothing conducts initially, and once the capacitor has charged the
+    // bridge's diode switching locks into a Newton limit cycle: the junctions
+    // creep a fraction of a thermal voltage per iteration (junction limiting)
+    // and the step cannot settle within the budget. The first ~365 steps are
+    // easy (the junctions are nearly linear), so the test single-steps a
+    // window that reaches the step-366 switching stall. The same window
+    // converges once the geometric junction-gmin ramp engages (subiter > 100),
+    // and the failing-element diagnostics name the diodes that were still
+    // moving when the ramp-off run gave up.
+    let bridge = vec![
+        elm(
+            1,
+            "voltage",
+            &[[0, 160], [0, 320]],
+            &[
+                ("maxVoltage", 12.0),
+                ("waveform", 1.0),
+                ("frequency", 1000.0),
+            ],
+        ),
+        elm(2, "diode", &[[0, 160], [160, 160]], &[]),
+        elm(3, "diode", &[[0, 320], [160, 160]], &[]),
+        elm(4, "diode", &[[160, 320], [0, 160]], &[]),
+        elm(5, "diode", &[[160, 320], [0, 320]], &[]),
+        elm(
+            6,
+            "capacitor",
+            &[[160, 160], [160, 320]],
+            &[("capacitance", 100e-6)],
+        ),
+        elm(
+            7,
+            "resistor",
+            &[[160, 160], [320, 160]],
+            &[("resistance", 1000.0)],
+        ),
+        elm(8, "wire", &[[320, 160], [320, 320]], &[]),
+        elm(9, "wire", &[[320, 320], [160, 320]], &[]),
+        elm(10, "ground", &[[0, 320]], &[]),
+    ];
+    // dt = 1e-6 (period 1 ms / 1000); the switching stall lands at step 366,
+    // so a 500-step window reaches it with margin on both sides.
+    let steps = 500;
+
+    // Ramp off: a constant 1e-12 S junction conductance cannot settle the
+    // stall, and the failure report names the diodes that were still moving.
+    let mut off = build(bridge.clone(), opts_budget(1e-6, false, 80));
+    let mut r_off = None;
+    for _ in 0..steps {
+        let r = off.run(1);
+        if !r.converged {
+            r_off = Some(r);
+            break;
+        }
+    }
+    let r_off = r_off.expect("bridge converged without the ramp");
+    assert!(
+        !r_off.failing.is_empty(),
+        "no element was reported as failing"
+    );
+    assert!(
+        r_off.failing.contains(&3),
+        "failing ids were {:?}, expected the D2 diode (id 3)",
+        r_off.failing
+    );
+
+    // Ramp on: the geometric gmin ramp engages at subiter > 100, and the
+    // worst step settles just past it (measured 103 iterations), so the ramp
+    // is what gets the bridge through the stall.
+    let mut on = build(bridge, opts_budget(1e-6, false, 500));
+    let mut worst = 0u32;
+    for _ in 0..steps {
+        let r = on.run(1);
+        assert!(
+            r.converged,
+            "ramp-on bridge step failed: {}",
+            r.error.unwrap_or_default()
+        );
+        worst = worst.max(r.iterations);
+    }
+    assert!(
+        worst > 100,
+        "ramp never engaged, worst step used only {worst} iterations"
+    );
+}
+
+/// Test C: two ideal voltage sources between the same node pair, duplicate MNA
+/// constraint rows and a textbook singular matrix.
+#[test]
+fn singular_linear_circuit_is_rejected_at_set_circuit() {
+    // The circuit is linear, so with the DC operating point off it used to be
+    // accepted at set_circuit (factorisation is lazy) and only tripped on the
+    // first run. It must now be rejected at build time with an error.
+    let spec = CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 3.0)]),
+            elm(3, "ground", &[[0, 0]], &[]),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    assert!(
+        c.set_circuit(&spec).is_err(),
+        "singular circuit accepted at set_circuit"
     );
 }

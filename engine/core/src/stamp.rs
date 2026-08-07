@@ -26,6 +26,13 @@ pub struct Stamper<'a> {
     vs_offset: usize,
     /// Cleared by nonlinear elements that have not settled yet.
     pub converged: bool,
+    /// Element index of the `do_step` currently being stamped. Records which
+    /// element a `not_converged` came from, so a failed step can name the
+    /// elements that were still moving.
+    current: usize,
+    /// Element indices that called `not_converged` this iteration, so the
+    /// solver can name the non-convergent elements when the budget runs out.
+    pub failing: Vec<usize>,
 }
 
 impl<'a> Stamper<'a> {
@@ -34,7 +41,15 @@ impl<'a> Stamper<'a> {
             sys,
             vs_offset: node_count.saturating_sub(1),
             converged: true,
+            current: 0,
+            failing: Vec::new(),
         }
+    }
+
+    /// Names the element whose `do_step` is about to stamp.
+    #[inline]
+    pub fn set_current(&mut self, i: usize) {
+        self.current = i;
     }
 
     /// Matrix row/column for a node, or `None` for ground.
@@ -140,9 +155,13 @@ impl<'a> Stamper<'a> {
         self.node_pair(n2, cn2, gain);
     }
 
-    /// Marks the Newton iteration as not yet settled.
+    /// Marks the Newton iteration as not yet settled, and records which
+    /// element refused to settle.
     #[inline]
     pub fn not_converged(&mut self) {
         self.converged = false;
+        if self.failing.last() != Some(&self.current) {
+            self.failing.push(self.current);
+        }
     }
 }

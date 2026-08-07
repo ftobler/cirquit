@@ -29,6 +29,9 @@ export interface FrameStats {
   time: number;
   converged: boolean;
   error?: string;
+  /** Ids of the elements still moving when the Newton budget ran out; empty
+   *  on a converged frame. Resolved to names by the caller. */
+  failingElementIds: number[];
 }
 
 /** Columns retained per scope trace. */
@@ -98,7 +101,9 @@ export class SimEngine {
         minTimeStep: settings.minTimeStep,
         adaptive: settings.adaptiveTimeStep,
         stepsPerFrame: settings.stepsPerFrame,
-        maxSubiterations: 100,
+        // Matches the engine default; the gmin ramps engage at subiter 100
+        // and need room to climb past it.
+        maxSubiterations: 1000,
         dcOperatingPoint: settings.autoDC,
       },
       scopes: (this.scopeOrder = scopes.filter((s) => this.indexById.has(s.elementId))).map(
@@ -128,6 +133,7 @@ export class SimEngine {
       time: r.time,
       converged: r.converged,
       error: r.error ?? undefined,
+      failingElementIds: Array.from(r.failingElementIds()),
     };
     r.free();
     return stats;

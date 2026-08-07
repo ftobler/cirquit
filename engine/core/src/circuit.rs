@@ -9,10 +9,12 @@ use crate::scope::ScopeTrace;
 use crate::spec::{CircuitSpec, ElementSpec, ScopeValue, SimOptions};
 use crate::stamp::{Stamper, GROUND};
 
-/// Conductance tied from every floating subcircuit to ground so the matrix
-/// stays non-singular. One nanosiemens is far below anything a user would
-/// notice but enough to pin an otherwise undefined node.
-const GMIN: f64 = 1e-9;
+/// Conductance tied from every floating node to ground so the matrix stays
+/// non-singular. Ten nanosiemens matches upstream's 1e8 ohm pin
+/// (SimulationManager.java:796-802): far below anything a user would notice,
+/// but enough to define an otherwise floating node directly instead of
+/// through whatever tiny coupling its component happens to have.
+const GMIN: f64 = 1e-8;
 
 #[derive(Default)]
 struct UnionFind {
@@ -56,18 +58,23 @@ pub struct StepReport {
     pub time: f64,
     pub converged: bool,
     pub error: Option<String>,
+    /// Element ids that were still moving when the Newton budget ran out.
+    /// Empty on a converged frame and on a singular matrix, which is a
+    /// topology problem, not an element failure.
+    pub failing: Vec<u32>,
 }
 
 /// Why a single timestep attempt failed, with the subiterations it burned
 /// before giving up so the caller can report them.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum StepError {
     /// The matrix has no pivot: typically a shorted source or a floating
     /// subcircuit. A topology problem, so halving the step cannot fix it
     /// and the attempt must not enter the halving loop.
     Singular(u32),
-    /// The Newton budget ran out.
-    NotConverged(u32),
+    /// The Newton budget ran out, with the element indices of the elements
+    /// that were still moving on the final iteration.
+    NotConverged(u32, Vec<usize>),
 }
 
 pub struct Circuit {
@@ -164,8 +171,12 @@ impl Circuit {
         &self.scopes
     }
 
-    /// Replaces the circuit and runs analysis. Returns an error only when the
-    /// netlist cannot be built at all; solver problems surface per-step.
+    /// Replaces the circuit and runs analysis. Returns an error when the
+    /// netlist cannot be built at all, and when a linear circuit's matrix is
+    /// singular at analysis time (upstream factors linear matrices
+    /// immediately and stops on failure, SimulationManager.java:1020-1030).
+    /// Nonlinear circuits keep per-step detection: their base matrix can be
+    /// structurally fine and singular only at a specific operating point.
     pub fn set_circuit(&mut self, spec: &CircuitSpec) -> Result<(), String> {
         self.options = spec.options.clone().unwrap_or_default();
         self.warnings.clear();
@@ -223,7 +234,18 @@ impl Circuit {
         self.build_scopes(spec);
 
         if self.options.dc_operating_point {
-            self.solve_operating_point();
+            self.solve_operating_point()?;
+        }
+        // Linear matrices are factored eagerly so a singular circuit (two
+        // sources fighting over one node, a shorted source) is rejected here
+        // at build time, not on the first frame. The DC solve above, when on,
+        // already re-stamped for the transient, so this factor is of the
+        // matrix the transient steps will actually solve.
+        if !self.nonlinear {
+            self.sys.factor().map_err(|_| {
+                "The circuit has no solution: check for shorted sources or missing connections."
+                    .to_string()
+            })?;
         }
         Ok(())
     }
@@ -388,12 +410,13 @@ impl Circuit {
             }
         }
         let ground_root = uf.find(GROUND);
-        let mut seen: Vec<usize> = Vec::new();
+        // Pin every node of each floating component, not one representative:
+        // a node that only reaches its component through a huge resistance is
+        // then defined directly instead of through that ill-conditioned
+        // coupling, matching upstream's per-node connectUnconnectedNodes.
         let mut pins = Vec::new();
         for n in 1..self.node_count {
-            let r = uf.find(n);
-            if r != ground_root && !seen.contains(&r) {
-                seen.push(r);
+            if uf.find(n) != ground_root {
                 pins.push(n);
             }
         }
@@ -499,7 +522,7 @@ impl Circuit {
         let pins = self.floating_nodes();
         if !pins.is_empty() {
             self.warnings.push(format!(
-                "{} part(s) of the circuit have no path to ground; they were pinned with a {:e} S conductance.",
+                "{} floating node(s) have no path to ground; they were pinned with a {:e} S conductance.",
                 pins.len(),
                 GMIN
             ));
@@ -526,8 +549,12 @@ impl Circuit {
     }
 
     /// Solves the circuit with reactive elements held at steady state, giving
-    /// transient analysis a sensible starting point.
-    fn solve_operating_point(&mut self) {
+    /// transient analysis a sensible starting point. Errors only when a linear
+    /// circuit's DC matrix is singular: a nonlinear circuit can legitimately
+    /// have no operating point (a current source into a reverse diode), in
+    /// which case the transient degrades to the documented initial conditions
+    /// and the call still succeeds.
+    fn solve_operating_point(&mut self) -> Result<(), String> {
         // Reactive elements stamp differently under DC (a capacitor as an
         // open circuit, an inductor as a short), so the matrix has to be built
         // for DC, used, and then rebuilt for transient stepping.
@@ -552,8 +579,18 @@ impl Circuit {
             for elm in self.elements.iter_mut() {
                 elm.reset();
             }
+            if !self.nonlinear {
+                // For a linear circuit a failed DC solve means the DC matrix
+                // is singular: the circuit is genuinely unsolvable, so
+                // continuing would leave a poisoned transient behind.
+                return Err(
+                    "The circuit has no solution: check for shorted sources or missing connections."
+                        .to_string(),
+                );
+            }
         }
         self.restamp();
+        Ok(())
     }
 
     /// A single timestep attempt at `dt`, running up to `budget` Newton
@@ -581,6 +618,10 @@ impl Circuit {
         // low budget from making every nonlinear step fail on purpose.
         let max_sub = if self.nonlinear { budget.max(2) } else { 1 };
         let mut converged_at = None;
+        // Element indices of whoever was still moving on the last iteration.
+        // Only meaningful on budget exhaustion, where it lets the caller name
+        // the failing elements.
+        let mut last_failing: Vec<usize> = Vec::new();
 
         for subiter in 0..max_sub {
             self.ctx.subiter = subiter as usize;
@@ -595,9 +636,11 @@ impl Circuit {
 
             let converged = {
                 let mut s = Stamper::new(&mut self.sys, self.node_count);
-                for elm in self.elements.iter_mut() {
+                for (ei, elm) in self.elements.iter_mut().enumerate() {
+                    s.set_current(ei);
                     elm.do_step(&ctx, &mut s);
                 }
+                last_failing = std::mem::take(&mut s.failing);
                 s.converged
             };
 
@@ -615,7 +658,7 @@ impl Circuit {
 
         let Some(subiter) = converged_at else {
             self.ctx.time = committed_time;
-            return Err(StepError::NotConverged(max_sub));
+            return Err(StepError::NotConverged(max_sub, last_failing));
         };
 
         let ctx = self.ctx;
@@ -693,6 +736,8 @@ impl Circuit {
                 Err(StepError::Singular(iterations)) => {
                     report.iterations += iterations;
                     report.converged = false;
+                    // A matrix problem is a topology problem, not an element
+                    // failure, so `failing` stays empty.
                     report.error = Some(
                         "The circuit has no solution: check for shorted sources or missing connections."
                             .into(),
@@ -700,7 +745,7 @@ impl Circuit {
                     self.error = report.error.clone();
                     return report;
                 }
-                Err(StepError::NotConverged(iterations)) if can_shrink => {
+                Err(StepError::NotConverged(iterations, _)) if can_shrink => {
                     report.iterations += iterations;
                     report.rejected_steps += 1;
                     self.good_iterations = 0;
@@ -708,7 +753,7 @@ impl Circuit {
                     self.set_time_step(step / 2.0);
                     step = self.current_time_step;
                 }
-                Err(StepError::NotConverged(iterations)) => {
+                Err(StepError::NotConverged(iterations, failing)) => {
                     report.iterations += iterations;
                     report.converged = false;
                     report.error = Some(if self.options.adaptive {
@@ -716,6 +761,7 @@ impl Circuit {
                     } else {
                         "Newton iteration did not converge; try a smaller timestep.".into()
                     });
+                    report.failing = failing.iter().map(|&ei| self.ids[ei]).collect();
                     self.error = report.error.clone();
                     return report;
                 }
@@ -833,6 +879,7 @@ impl Circuit {
             if !r.converged {
                 total.converged = false;
                 total.error = r.error;
+                total.failing = r.failing;
                 break;
             }
             self.sample_scopes();
@@ -874,7 +921,9 @@ impl Circuit {
         self.node_voltages.iter_mut().for_each(|v| *v = 0.0);
         self.allocate_and_stamp();
         if self.options.dc_operating_point {
-            self.solve_operating_point();
+            if let Err(e) = self.solve_operating_point() {
+                self.error = Some(e);
+            }
         }
     }
 

@@ -4,7 +4,8 @@
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::capacitor::DC_OPEN;
 use crate::elements::junction::{
-    critical_voltage, limit_junction, CONVERGENCE_V, JUNCTION_GMIN, MAX_EXP_ARG, VT,
+    critical_voltage, limit_junction, ramp_gmin, CONVERGENCE_V, GMIN_RAMP_DENOM, GMIN_RAMP_START,
+    JUNCTION_GMIN, MAX_EXP_ARG, VT,
 };
 use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
@@ -187,8 +188,9 @@ impl Diode {
         self.z_offset = zener_offset(self.z_voltage, self.leakage);
     }
 
-    /// Current and its derivative at `v`.
-    fn evaluate(&self, v: f64) -> (f64, f64) {
+    /// Current and its derivative at `v`, with a parallel junction conductance
+    /// of `gmin` (the fixed 1e-12, or the geometric ramp once a step is stuck).
+    fn evaluate(&self, v: f64, gmin: f64) -> (f64, f64) {
         let arg = (v / self.vscale).min(MAX_EXP_ARG);
         let ev = arg.exp();
         let mut i = self.leakage * (ev - 1.0);
@@ -207,7 +209,7 @@ impl Diode {
             i -= self.leakage * ez;
             g += self.leakage * ez / VT;
         }
-        (i, g + JUNCTION_GMIN)
+        (i, g + gmin)
     }
 }
 
@@ -292,7 +294,7 @@ impl Element for Diode {
         }
     }
 
-    fn do_step(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
+    fn do_step(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         let (n0, nend) = (self.base.nodes[0], self.base.nodes[self.diode_end]);
         let mut v = self.base.volts[0] - self.base.volts[self.diode_end];
         if (v - self.last_v).abs() > CONVERGENCE_V {
@@ -315,7 +317,15 @@ impl Element for Diode {
         }
         self.last_v = v;
 
-        let (i, g) = self.evaluate(v);
+        // Once a step has been stuck past the ramp start, replace the tiny
+        // fixed junction conductance with the geometric ramp so the extra
+        // conductance can damp the limit cycle (Diode.java:149-156).
+        let gmin = if ctx.subiter as u32 > GMIN_RAMP_START {
+            ramp_gmin(ctx.subiter as u32, GMIN_RAMP_DENOM)
+        } else {
+            JUNCTION_GMIN
+        };
+        let (i, g) = self.evaluate(v, gmin);
         self.geq = g;
         self.ieq = i - g * v;
         s.conductance(n0, nend, g);

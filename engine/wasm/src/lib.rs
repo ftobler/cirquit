@@ -24,6 +24,7 @@ pub struct FrameResult {
     rejected_steps: u32,
     converged: bool,
     error: Option<String>,
+    failing_element_ids: Vec<u32>,
 }
 
 #[wasm_bindgen]
@@ -60,6 +61,12 @@ impl FrameResult {
     #[wasm_bindgen(getter)]
     pub fn error(&self) -> Option<String> {
         self.error.clone()
+    }
+    /// Ids of the elements still moving when the Newton budget ran out. Empty
+    /// on a converged frame. The UI resolves ids to element names.
+    #[wasm_bindgen(js_name = failingElementIds)]
+    pub fn failing_element_ids(&self) -> Vec<u32> {
+        self.failing_element_ids.clone()
     }
 }
 
@@ -106,6 +113,7 @@ impl Simulator {
             rejected_steps: r.rejected_steps,
             converged: r.converged,
             error: r.error,
+            failing_element_ids: r.failing,
         }
     }
 

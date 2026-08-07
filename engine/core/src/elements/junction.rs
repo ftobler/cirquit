@@ -13,6 +13,26 @@ pub(crate) const MAX_EXP_ARG: f64 = 40.0;
 /// Voltage change per iteration beyond which the solution is not settled.
 pub(crate) const CONVERGENCE_V: f64 = 0.01;
 
+/// Subiteration at which the geometric junction-conductance ramp starts,
+/// upstream's `sim.subIterations > 100` (Diode.java:150).
+pub(crate) const GMIN_RAMP_START: u32 = 100;
+/// Ramp denominator for the diode, upstream's 3000 (Diode.java:150).
+pub(crate) const GMIN_RAMP_DENOM: f64 = 3000.0;
+/// The transistor's ramp climbs ten times faster (TransistorElm.java:355).
+pub(crate) const GMIN_RAMP_DENOM_TRANSISTOR: f64 = 300.0;
+/// Upper clamp on the ramped conductance, so a stuck junction cannot be
+/// shorted out entirely (Diode.java:151-152).
+pub(crate) const GMIN_MAX: f64 = 0.1;
+
+/// The geometric junction-conductance ramp. At `subiter` just past the start
+/// it is about 2e-9, above the 1e-12 floor; it grows by a decade for every
+/// `denom/9` subiterations and caps at `GMIN_MAX`. The extra conductance
+/// damps the two-state limit cycle a hard switching junction can lock into.
+pub(crate) fn ramp_gmin(subiter: u32, denom: f64) -> f64 {
+    let ramp = (-9.0 * 10.0f64.ln() * (1.0 - subiter as f64 / denom)).exp();
+    JUNCTION_GMIN.max(ramp.min(GMIN_MAX))
+}
+
 /// Standard junction limiting. Without it, Newton's linear extrapolation of an
 /// exponential overshoots by many decades and the iteration never recovers.
 pub(crate) fn limit_junction(vnew: f64, vold: f64, vt: f64, vcrit: f64) -> f64 {

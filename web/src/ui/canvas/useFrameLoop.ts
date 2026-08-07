@@ -91,7 +91,18 @@ export function useFrameLoop(
         if (running) {
           const stats = engine.run(settings.stepsPerFrame);
           if (!stats.converged && stats.error) {
-            useStore.getState().setProblem(stats.error);
+            // Name the elements that refused to settle: the engine only
+            // crosses the typed-array boundary with ids, and the UI owns the
+            // element metadata to resolve them.
+            const names = stats.failingElementIds
+              .map((id) => {
+                const e = elements.find((el) => el.id === id);
+                return e ? `${e.kind} (${id})` : `id ${id}`;
+              })
+              .join(', ');
+            useStore.getState().setProblem(
+              names ? `${stats.error}; not settled: ${names}` : stats.error,
+            );
           }
         }
         currents = engine.elementCurrents();
