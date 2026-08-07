@@ -1,5 +1,14 @@
-import { useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { defFor, postsOf, toolDef } from '../../model/registry';
+import {
+  isZoomOnly,
+  openScrollValue,
+  scrollableParam,
+  selectionValue,
+  stepScrollValue,
+  wheelPixels,
+} from '../../model/scrollValue';
+import type { ScrollValueSession } from '../../model/scrollValue';
 import { GRID_SIZE, type CircuitElement, type Point } from '../../model/types';
 import { distanceToElement, nearestPost, postAt, postPatch } from '../../render/geometry';
 import { makeToolElement, snap, useStore } from '../../state/store';
@@ -16,12 +25,58 @@ export type Drag =
   | { mode: 'select'; start: Point; current: Point }
   | { mode: 'pan'; startClient: Point; startView: Point };
 
+/** The open mouse-wheel value popover, positioned at the cursor. */
+export interface ScrollValuePopover {
+  session: ScrollValueSession;
+  x: number;
+  y: number;
+}
+
 export function useCanvasInteractions(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   dragRef: React.MutableRefObject<Drag>,
   forceRender: React.Dispatch<React.SetStateAction<number>>,
 ) {
   const stateRef = useStoreRef();
+
+  // The value popover session. A ref mirrors the state so the wheel handler
+  // can step an open session without a stale closure, while the state drives
+  // the render.
+  const popoverRef = useRef<ScrollValuePopover | null>(null);
+  const [popover, setPopoverState] = useState<ScrollValuePopover | null>(null);
+  // When the last zoom happened; the wheel stays zoom-only for a second
+  // after, so a sweep from empty canvas onto an element cannot accidentally
+  // edit a value (MouseManager.java:1302-1304).
+  const zoomAtRef = useRef<number | null>(null);
+  const setPopover = useCallback(
+    (p: ScrollValuePopover | null) => {
+      popoverRef.current = p;
+      setPopoverState(p);
+    },
+    [],
+  );
+
+  const stepPopover = useCallback(
+    (deltaY: number) => {
+      const p = popoverRef.current;
+      if (!p) return;
+      const session = stepScrollValue(p.session, deltaY);
+      useStore.getState().setParam(session.id, session.param, selectionValue(session));
+      setPopover({ ...p, session });
+    },
+    [setPopover],
+  );
+
+  const closePopover = useCallback(() => setPopover(null), [setPopover]);
+
+  const revertPopover = useCallback(() => {
+    const p = popoverRef.current;
+    if (!p) return;
+    // Restore the opening value. The undo baseline taken on open keeps the
+    // whole session one undo step either way (ScrollValuePopup.close(false)).
+    useStore.getState().setParam(p.session.id, p.session.param, p.session.original);
+    setPopover(null);
+  }, [setPopover]);
 
   const toCircuit = useCallback((clientX: number, clientY: number): Point => {
     const canvas = canvasRef.current;
@@ -244,10 +299,49 @@ export function useCanvasInteractions(
 
   const onWheel = (ev: React.WheelEvent<HTMLCanvasElement>) => {
     const state = useStore.getState();
+    const now = performance.now();
     const p = toCircuit(ev.clientX, ev.clientY);
+    const hit = hitTest(p);
+    const param = hit ? scrollableParam(hit.kind) : undefined;
+
+    // Over a resistor/capacitor/inductor with nothing else happening, the
+    // wheel steps E12 values instead of zooming. A drag in progress keeps the
+    // wheel bound to zoom, so a mid-move scroll cannot misfire a value edit,
+    // and so does a recent zoom: once zooming starts, the wheel stays
+    // zoom-only for a second so a sweep onto an element cannot accidentally
+    // edit a value (MouseManager.java:1302-1304). The early return stops
+    // propagation, so the zoom branch below never runs.
+    if (
+      param !== undefined &&
+      hit &&
+      ev.deltaY !== 0 &&
+      dragRef.current.mode === 'none' &&
+      !isZoomOnly(zoomAtRef.current, now)
+    ) {
+      ev.stopPropagation();
+      // The pointer drifted back off the popover onto the canvas mid-session:
+      // step the open session rather than opening a second one.
+      if (popoverRef.current?.session.id === hit.id) {
+        stepPopover(wheelPixels(ev.deltaY, ev.deltaMode));
+        return;
+      }
+      // The first scroll of a session is one undo step, exactly as upstream's
+      // ScrollValuePopup constructor pushes the undo stack before applying the
+      // opening deltaY (ScrollValuePopup.java:59, :76). commit's dedup drops a
+      // session that never changes anything.
+      state.commit();
+      const session0 = openScrollValue(hit.kind, hit.id, param, hit.params[param] ?? 0);
+      const session = stepScrollValue(session0, wheelPixels(ev.deltaY, ev.deltaMode));
+      state.setParam(session.id, session.param, selectionValue(session));
+      setPopover({ session, x: ev.clientX, y: ev.clientY });
+      return;
+    }
+
     const factor = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
     const scale = Math.max(0.15, Math.min(6, state.view.scale * factor));
-    // Zoom about the pointer so the point under the cursor stays put.
+    // Zoom about the pointer so the point under the cursor stays put. Stamped
+    // here so the value stepper stays disabled for a second after.
+    zoomAtRef.current = now;
     state.setView({
       scale,
       x: p.x - (p.x - state.view.x) * (state.view.scale / scale),
@@ -263,5 +357,15 @@ export function useCanvasInteractions(
     useStore.getState().openContextMenu(ev.clientX, ev.clientY, hit?.id ?? null);
   };
 
-  return { onPointerDown, onPointerMove, onPointerUp, onWheel, onContextMenu };
+  return {
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onWheel,
+    onContextMenu,
+    popover,
+    stepPopover,
+    closePopover,
+    revertPopover,
+  };
 }

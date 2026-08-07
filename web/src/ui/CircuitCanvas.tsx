@@ -1,13 +1,16 @@
 import { useRef, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { useFrameLoop } from './canvas/useFrameLoop';
+import { ScrollValuePopup } from './canvas/ScrollValuePopup';
 import { useCanvasInteractions, type Drag } from './canvas/useCanvasInteractions';
 
 /**
  * The schematic view: renders the circuit, runs the animation loop that drives
  * the engine, and handles all mouse editing. The loop and the pointer handlers
  * live in `useFrameLoop` and `useCanvasInteractions`; this component only
- * wires their shared refs to the canvas element.
+ * wires their shared refs to the canvas element. The wheel value popover is a
+ * fixed sibling of the canvas, so wheel events over it never reach the zoom
+ * handler.
  */
 export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -16,15 +19,27 @@ export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
   useFrameLoop(canvasRef, engine, dragRef);
   const interactions = useCanvasInteractions(canvasRef, dragRef, forceRender);
   return (
-    <canvas
-      ref={canvasRef}
-      className="circuit-canvas"
-      onPointerDown={interactions.onPointerDown}
-      onPointerMove={interactions.onPointerMove}
-      onPointerUp={interactions.onPointerUp}
-      onPointerCancel={interactions.onPointerUp}
-      onWheel={interactions.onWheel}
-      onContextMenu={interactions.onContextMenu}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="circuit-canvas"
+        onPointerDown={interactions.onPointerDown}
+        onPointerMove={interactions.onPointerMove}
+        onPointerUp={interactions.onPointerUp}
+        onPointerCancel={interactions.onPointerUp}
+        onWheel={interactions.onWheel}
+        onContextMenu={interactions.onContextMenu}
+      />
+      {interactions.popover && (
+        <ScrollValuePopup
+          session={interactions.popover.session}
+          x={interactions.popover.x}
+          y={interactions.popover.y}
+          onStep={interactions.stepPopover}
+          onClose={interactions.closePopover}
+          onRevert={interactions.revertPopover}
+        />
+      )}
+    </>
   );
 }

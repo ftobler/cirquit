@@ -171,6 +171,49 @@ button.active,
   padding: 4px;
 }
 
+/* The mouse-wheel value stepper over a resistor/capacitor/inductor: a small
+   fixed popover styled like the context menu, with the selected slot
+   highlighted and the slot the session opened on underlined. */
+.scroll-value-popup {
+  position: fixed;
+  z-index: 30;
+  min-width: 96px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  text-align: center;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+}
+
+.scroll-value-name {
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.scroll-value-slot {
+  padding: 1px 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scroll-value-slot.selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.scroll-value-slot.current {
+  text-decoration: underline;
+}
+
+.scroll-value-slot.off1 {
+  opacity: 0.7;
+}
+
+.scroll-value-slot.off2 {
+  opacity: 0.45;
+}
+
 /* ---- layout ---- */
 
 .workspace {
