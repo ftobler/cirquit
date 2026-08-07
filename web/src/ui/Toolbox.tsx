@@ -6,6 +6,7 @@ import { useStore } from '../state/store';
 export function Toolbox() {
   const tool = useStore((s) => s.tool);
   const setTool = useStore((s) => s.setTool);
+  const editable = useStore((s) => s.settings.editable);
 
   return (
     <div className="toolbox">
@@ -21,8 +22,9 @@ export function Toolbox() {
                   key={t.id}
                   type="button"
                   className={tool === t.id ? 'tool active' : 'tool'}
+                  disabled={!editable}
                   onClick={() => setTool(tool === t.id ? null : t.id)}
-                  title={`Place a ${t.label.toLowerCase()}`}
+                  title={editable ? `Place a ${t.label.toLowerCase()}` : 'Editing is disabled'}
                 >
                   {t.label}
                 </button>

@@ -26,7 +26,7 @@ import {
 } from '../model/types';
 import type { AppState, Snapshot, ViewTransform } from './types';
 import { hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers';
-import { ZOOM_FACTOR, zoomAbout } from './view';
+import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 
 const clone = (s: Snapshot): Snapshot => ({
   elements: s.elements.map((e) => ({ ...e, params: { ...e.params } })),
@@ -176,8 +176,10 @@ export const useStore = create<AppState>((set, get) => ({
   order: [],
   running: true,
   tool: null,
+  dark: true,
   view: { x: 0, y: 0, scale: 1 },
   viewSize: { w: 800, h: 600 },
+  dialog: null,
   status: '',
   problem: null,
   hoveredId: null,
@@ -203,6 +205,9 @@ export const useStore = create<AppState>((set, get) => ({
   setViewSize: (w, h) => set({ viewSize: { w, h } }),
   setStatus: (status) => set({ status }),
   setProblem: (problem) => set({ problem }),
+  setDark: (dark) => set({ dark }),
+  openDialog: (dialog) => set({ dialog }),
+  closeDialog: () => set({ dialog: null }),
 
   updateSettings: (patch) =>
     set((s) => {
@@ -380,6 +385,22 @@ export const useStore = create<AppState>((set, get) => ({
       const view = zoomAroundCentre(s, 1 / s.view.scale);
       return { view: { ...view, scale: 1 } };
     }),
+
+  centerCircuit: () => {
+    const s = get();
+    const bounds = circuitBounds(s.elements);
+    if (!bounds) return;
+    // No undo push: a view fit is not a circuit edit, and upstream's push for
+    // it (CommandManager.java:129-132) would make the first undo a no-op.
+    set({ view: fitView(bounds, s.viewSize.w, s.viewSize.h) });
+  },
+
+  zoomToFit: () => {
+    const s = get();
+    const bounds = circuitBounds(s.elements);
+    if (!bounds) return;
+    set({ view: fitView(bounds, s.viewSize.w, s.viewSize.h, Infinity) });
+  },
 
   deleteSelected: () => {
     const { selectedIds } = get();
@@ -707,6 +728,71 @@ export const useStore = create<AppState>((set, get) => ({
       scopes: st.scopes.map((x, j) => (j >= i ? { ...x, position: x.position + 1 } : x)),
       revision: st.revision + 1,
     }));
+  },
+
+  stackAllScopes: () => {
+    if (get().scopes.length === 0) return;
+    // One commit for the whole batch, so the menu command is one undo step.
+    get().commit();
+    set((s) => ({
+      scopes: s.scopes.map((x) => ({ ...x, position: 0, showMax: false, showMin: false })),
+      revision: s.revision + 1,
+    }));
+  },
+
+  unstackAllScopes: () => {
+    if (get().scopes.length === 0) return;
+    get().commit();
+    set((s) => ({
+      scopes: s.scopes.map((x, i) => ({ ...x, position: i, showMax: true })),
+      revision: s.revision + 1,
+    }));
+  },
+
+  combineAllScopes: () => {
+    const s = get();
+    if (s.scopes.length < 2) return;
+    s.commit();
+    set((st) => {
+      const first = st.scopes[0];
+      // Everything folds into the first scope, plot order preserved, matching
+      // the reverse combine loop of ScopeManager.combineAll.
+      return {
+        scopes: [{ ...first, plots: st.scopes.flatMap((x) => x.plots) }],
+        revision: st.revision + 1,
+      };
+    });
+  },
+
+  separateAllScopes: () => {
+    const s = get();
+    if (s.scopes.length === 0) return;
+    s.commit();
+    set((st) => {
+      let position = 0;
+      const out: Scope[] = [];
+      for (const scope of st.scopes) {
+        // Reuses the per-scope pairing rule: a V+I pair of the same element
+        // stays together, everything else splits off (Scope.separate).
+        let last: ScopePlot | null = null;
+        for (const p of scope.plots) {
+          const prev = out[out.length - 1];
+          if (
+            last &&
+            last.elementId === p.elementId &&
+            last.value === 'voltage' &&
+            p.value === 'current'
+          ) {
+            out[out.length - 1] = { ...prev, plots: [...prev.plots, p] };
+            last = p;
+            continue;
+          }
+          out.push(makeScope(allocateId(), null, [p], scope.speed, position++));
+          last = p;
+        }
+      }
+      return { scopes: out, revision: st.revision + 1 };
+    });
   },
 
   loadNetlist: (text) => {

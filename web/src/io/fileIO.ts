@@ -1,9 +1,20 @@
 /** Browser file download and open, shared by the Menubar buttons and the
  *  Ctrl+S / Ctrl+O shortcuts so the two input paths stay one implementation. */
 
+/** The filename the Save As dialog prefills, upstream's `defaultFileName(".txt")`
+ *  with no circuit name to derive one from. */
+export function defaultSaveFilename(): string {
+  return 'circuit.txt';
+}
+
 /** Saves `text` to a local file named `filename` via a Blob download. */
 export function saveCircuit(filename: string, text: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  saveBlob(filename, new Blob([text], { type: 'text/plain' }));
+}
+
+/** Downloads any Blob (an image, a CSV) under `filename`. */
+export function saveBlob(filename: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;

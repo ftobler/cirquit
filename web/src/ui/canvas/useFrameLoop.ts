@@ -151,7 +151,7 @@ export function useFrameLoop(
         canvas.height = height * dpr;
       }
 
-      const theme = makeTheme();
+      const theme = makeTheme(state.dark);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = theme.background;
       ctx.fillRect(0, 0, width, height);

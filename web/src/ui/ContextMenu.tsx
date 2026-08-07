@@ -25,6 +25,7 @@ export function ContextMenu() {
   const closeContextMenu = useStore((s) => s.closeContextMenu);
   const selectedIds = useStore((s) => s.selectedIds);
   const elements = useStore((s) => s.elements);
+  const editable = useStore((s) => s.settings.editable);
   const ref = useRef<HTMLDivElement>(null);
 
   // The menu mounts only while contextMenu is set. Measure it before paint and
@@ -108,7 +109,7 @@ export function ContextMenu() {
   if (isElementMenu && targetDef) {
     scopeItems.push({
       label: 'Edit',
-      disabled: !targetDef.fields?.length,
+      disabled: !editable || !targetDef.fields?.length,
       action: () => {
         useStore.getState().select([target]);
         focusOptionsPanel();
@@ -116,10 +117,12 @@ export function ContextMenu() {
     });
     scopeItems.push({
       label: 'View in New Scope',
+      disabled: !editable,
       action: () => useStore.getState().addScope(target, 'voltage'),
     });
     scopeItems.push({
       label: 'Add Current Scope',
+      disabled: !editable,
       action: () => useStore.getState().addScope(target, 'current'),
     });
   }
@@ -128,49 +131,49 @@ export function ContextMenu() {
     {
       label: 'Cut',
       shortcut: 'Ctrl+X',
-      disabled: !hasSelection,
+      disabled: !editable || !hasSelection,
       action: () => useStore.getState().cutSelection(),
     },
     {
       label: 'Copy',
       shortcut: 'Ctrl+C',
-      disabled: !hasSelection,
+      disabled: !editable || !hasSelection,
       action: () => useStore.getState().copySelection(),
     },
     {
       label: 'Paste',
       shortcut: 'Ctrl+V',
-      disabled: !canPaste,
+      disabled: !editable || !canPaste,
       action: () => useStore.getState().pasteFromClipboard(),
     },
     {
       label: 'Duplicate',
       shortcut: 'Ctrl+D',
-      disabled: !hasSelection,
+      disabled: !editable || !hasSelection,
       action: () => useStore.getState().duplicateSelection(),
     },
     {
       label: 'Delete',
       shortcut: 'Delete',
-      disabled: !hasSelection,
+      disabled: !editable || !hasSelection,
       action: () => useStore.getState().deleteSelected(),
     },
     {
       label: 'Swap Terminals',
       shortcut: 'T',
-      disabled: !canSwapSelection,
+      disabled: !editable || !canSwapSelection,
       action: () => useStore.getState().swapTerminals(),
     },
     {
       label: 'Rotate',
       shortcut: 'R',
-      disabled: !canRotateSelection,
+      disabled: !editable || !canRotateSelection,
       action: () => useStore.getState().rotateSelection(),
     },
     {
       label: 'Mirror',
       shortcut: 'M',
-      disabled: !canMirrorSelection,
+      disabled: !editable || !canMirrorSelection,
       action: () => useStore.getState().mirrorSelection(),
     },
   ];
@@ -179,11 +182,12 @@ export function ContextMenu() {
     {
       label: 'Paste',
       shortcut: 'Ctrl+V',
-      disabled: !canPaste,
+      disabled: !editable || !canPaste,
       action: () => useStore.getState().pasteFromClipboard(),
     },
     {
       label: 'Select All',
+      disabled: !editable,
       action: () => useStore.getState().selectAll(),
     },
     {
@@ -193,11 +197,13 @@ export function ContextMenu() {
     {
       label: 'Undo',
       shortcut: 'Ctrl+Z',
+      disabled: !editable,
       action: () => useStore.getState().undo(),
     },
     {
       label: 'Redo',
       shortcut: 'Ctrl+Shift+Z',
+      disabled: !editable,
       action: () => useStore.getState().redo(),
     },
   ];

@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react';
 import { SimEngine } from './engine/simulator';
 import { matchShortcut } from './input/shortcuts';
-import { openCircuit, saveCircuit } from './io/fileIO';
+import { openCircuit } from './io/fileIO';
 import { circuitFromUrl } from './io/urlShare';
+import { AboutDialog } from './ui/AboutDialog';
 import { CircuitCanvas } from './ui/CircuitCanvas';
 import { ContextMenu } from './ui/ContextMenu';
+import { ExportAsLinkDialog } from './ui/ExportAsLinkDialog';
+import { ExportAsTextDialog } from './ui/ExportAsTextDialog';
+import { ImportFromTextDialog } from './ui/ImportFromTextDialog';
 import { Menubar } from './ui/Menubar';
 import { OptionsPanel } from './ui/OptionsPanel';
+import { SaveAsDialog } from './ui/SaveAsDialog';
+import { SaveAsImageDialog } from './ui/SaveAsImageDialog';
 import { ScopePanel } from './ui/ScopePanel';
 import { Toolbox } from './ui/Toolbox';
 import { hasUnsavedChanges, useStore } from './state/store';
@@ -21,10 +27,28 @@ g 176 320 176 352 0
 o 2 64 0 4099
 `;
 
+/** Shortcut actions that edit the circuit. Dropped whole when Disable Editing
+ *  is on; everything else (zoom, file, view) stays live. */
+const EDIT_ACTIONS = new Set([
+  'undo',
+  'redo',
+  'delete',
+  'nudge',
+  'copy',
+  'cut',
+  'paste',
+  'duplicate',
+  'selectAll',
+  'rotate',
+  'mirror',
+  'swap',
+]);
+
 export default function App() {
   const [engine, setEngine] = useState<SimEngine | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
   const status = useStore((s) => s.status);
+  const dialog = useStore((s) => s.dialog);
   const loadNetlist = useStore((s) => s.loadNetlist);
 
   // Bring up the wasm engine once, then load whatever circuit was requested.
@@ -58,10 +82,21 @@ export default function App() {
         altKey: ev.altKey,
       });
       if (!action) return;
+      const s = useStore.getState();
+      // While a dialog is open the dialog owns the keyboard: no shortcut may
+      // reach the app, or Ctrl+V would paste into the circuit instead of the
+      // dialog's textarea and Delete would edit the circuit behind the modal.
+      if (s.dialog !== null) return;
+      // With editing disabled the edit keys are dropped, not ignored: the
+      // status bar explains why nothing happened (CommandManager.java:22-24).
+      // View and file commands (zoom, save, open) stay live.
+      if (!s.settings.editable && EDIT_ACTIONS.has(action.type)) {
+        s.setStatus('Editing disabled. Re-enable from the Options menu.');
+        return;
+      }
       // Every matched chord is an app command, so prevent its browser default;
       // unbound keys keep theirs, notably Ctrl+= and Ctrl+- page zoom.
       ev.preventDefault();
-      const s = useStore.getState();
       switch (action.type) {
         case 'undo':
           s.undo();
@@ -92,13 +127,12 @@ export default function App() {
         case 'zoomReset':
           s.zoomReset();
           break;
-        case 'save': {
-          // Exporting counts as saved, exactly like the Menubar Save button.
-          const text = s.toNetlist();
-          s.markSaved(text);
-          saveCircuit('circuit.txt', text);
+        case 'save':
+          // Ctrl+S and the File>Save row open the Save As dialog, one behavior
+          // for both, so the name is editable and exporting counts as saved
+          // when the dialog confirms.
+          s.openDialog('saveAs');
           break;
-        }
         case 'open':
           openCircuit((text, name) => {
             s.loadNetlist(text);
@@ -164,7 +198,13 @@ export default function App() {
 
   return (
     <div className="app">
-      <Menubar />
+      <Menubar engine={engine} />
+      {dialog === 'importText' && <ImportFromTextDialog />}
+      {dialog === 'saveAs' && <SaveAsDialog />}
+      {dialog === 'exportAsLink' && <ExportAsLinkDialog />}
+      {dialog === 'exportAsText' && <ExportAsTextDialog />}
+      {dialog === 'exportAsImage' && <SaveAsImageDialog engine={engine} />}
+      {dialog === 'about' && <AboutDialog />}
       <div className="workspace">
         <aside className="left">
           <Toolbox />

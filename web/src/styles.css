@@ -165,6 +165,91 @@ button.active,
   margin: 4px 6px;
 }
 
+/* A checkbox-style menu row: the Options rows that toggle a setting. */
+.check-item {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.check-item .menu-check {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+}
+
+/* ---- dialogs ---- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgb(0 0 0 / 55%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.dialog {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  min-width: 360px;
+  max-width: 620px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+  outline: none;
+}
+
+.dialog h2 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+}
+
+.dialog textarea {
+  width: 100%;
+  min-height: 180px;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+.dialog .hint {
+  margin: 6px 0 0;
+}
+
+.dialog .problem {
+  margin: 8px 0 0;
+}
+
+.dialog .field input[type='text'] {
+  width: 100%;
+}
+
+.dialog a {
+  color: var(--accent);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.dialog-actions button {
+  min-width: 64px;
+}
+
 .context-menu {
   position: fixed;
   width: 200px;

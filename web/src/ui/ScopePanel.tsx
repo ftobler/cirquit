@@ -39,6 +39,7 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
   const settings = useStore((s) => s.settings);
+  const dark = useStore((s) => s.dark);
 
   // Measure the canvas width and keep the geometry registry in step, so the
   // frame loop can size the engine ring without reading the DOM.
@@ -76,11 +77,11 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
         canvas.height = h * dpr;
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawScope(ctx, engine, scopeRef.current, w, h, cursorRef.current, engine.time, settings.timeStep);
+      drawScope(ctx, engine, scopeRef.current, w, h, cursorRef.current, engine.time, settings.timeStep, dark);
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [engine, scope.id, settings.timeStep]);
+  }, [engine, scope.id, settings.timeStep, dark]);
 
   const canvasRect = () => canvasRef.current?.getBoundingClientRect();
   const size = () => {

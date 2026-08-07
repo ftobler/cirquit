@@ -6,7 +6,7 @@ import { CIRCUITS_DIR, SAMPLE } from './fixtures';
 import { useStore } from '../../state/store';
 import { DEFAULT_SETTINGS } from '../../model/types';
 import { parseSetupList } from '../library';
-import { compressCircuit, decompressCircuit } from '../urlShare';
+import { compressCircuit, decompressCircuit, isLongUrl } from '../urlShare';
 
 describe('transistor corpus parity', () => {
   it('every bundled t line parses to +1 or -1 and survives a round trip', () => {
@@ -153,6 +153,11 @@ describe('url sharing', () => {
   it('produces URI-safe output', () => {
     const token = compressCircuit(SAMPLE);
     expect(encodeURIComponent(token)).toBe(token);
+  });
+
+  it('warns only past 2000 characters, matching ExportAsUrlDialog.java:111-114', () => {
+    expect(isLongUrl('a'.repeat(2000))).toBe(false);
+    expect(isLongUrl('a'.repeat(2001))).toBe(true);
   });
 });
 

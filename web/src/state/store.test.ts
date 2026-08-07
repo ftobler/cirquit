@@ -3,7 +3,8 @@ import { DEFAULT_SETTINGS, GRID_SIZE, type SimSettings } from '../model/types';
 import { postsOf } from '../model/registry';
 import { scopePlotsToSpecs } from '../engine/simulator';
 import { parseCircuit, serializeCircuit } from '../io/netlist';
-import { ZOOM_FACTOR, zoomAbout } from './view';
+import { SAMPLE } from '../io/netlist/fixtures';
+import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 import { makeElement, useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 
@@ -380,6 +381,7 @@ describe('updateSettings reload classification', () => {
     ['showVoltageColor', true, false],
     ['showPowerColor', true, false],
     ['showGrid', true, false],
+    ['editable', false, false],
   ] as const)('%s reloads=%s', (key, value, reload) => {
     const before = useStore.getState().revision;
     useStore.getState().updateSettings({ [key]: value } as Partial<SimSettings>);
@@ -1033,6 +1035,50 @@ describe('scope panels', () => {
     expect(s.scopes.map((x) => x.position)).toEqual([0, 1, 2]);
     expect(s.undoStack.length).toBe(baseline + 2);
   });
+
+  it('the Scopes menu batch commands are one undo step each', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().stackAllScopes();
+    let s = useStore.getState();
+    expect(s.scopes.map((x) => x.position)).toEqual([0, 0]);
+    expect(s.undoStack.length).toBe(baseline + 1);
+
+    useStore.getState().unstackAllScopes();
+    s = useStore.getState();
+    expect(s.scopes.map((x) => x.position)).toEqual([0, 1]);
+    expect(s.undoStack.length).toBe(baseline + 2);
+
+    useStore.getState().combineAllScopes();
+    s = useStore.getState();
+    expect(s.scopes).toHaveLength(1);
+    expect(s.scopes[0].plots).toHaveLength(4);
+    expect(s.undoStack.length).toBe(baseline + 3);
+
+    useStore.getState().separateAllScopes();
+    s = useStore.getState();
+    // Each original V+I pair stays together, so two panels come back.
+    expect(s.scopes).toHaveLength(2);
+    expect(s.scopes.map((x) => x.plots.map((p) => p.value))).toEqual([
+      ['voltage', 'current'],
+      ['voltage', 'current'],
+    ]);
+    expect(s.undoStack.length).toBe(baseline + 4);
+  });
+
+  it('the batch commands are no-ops with nothing to act on', () => {
+    const baseline = useStore.getState().undoStack.length;
+    useStore.getState().stackAllScopes();
+    useStore.getState().unstackAllScopes();
+    useStore.getState().combineAllScopes();
+    useStore.getState().separateAllScopes();
+    expect(useStore.getState().scopes).toHaveLength(0);
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+  });
 });
 
 describe('scope coupling fast path', () => {
@@ -1172,5 +1218,72 @@ describe('keyboard zoom', () => {
     const cy = before.y + 600 / (2 * before.scale);
     expect((cx - s.view.x) * s.view.scale).toBeCloseTo(400);
     expect((cy - s.view.y) * s.view.scale).toBeCloseTo(300);
+  });
+
+  it('zoomOut clamps at the wheel minimum', () => {
+    useStore.getState().setView({ x: 0, y: 0, scale: 0.1 });
+    useStore.getState().setViewSize(800, 600);
+
+    useStore.getState().zoomOut();
+
+    expect(useStore.getState().view.scale).toBe(0.15);
+  });
+});
+
+describe('center circuit', () => {
+  it('matches fitView over the element bounds and pushes no undo', () => {
+    useStore.getState().loadNetlist(SAMPLE);
+    useStore.getState().setView({ x: 5, y: 9, scale: 3 });
+    useStore.getState().setViewSize(800, 600);
+    const baseline = useStore.getState().undoStack.length;
+    const bounds = circuitBounds(useStore.getState().elements);
+    expect(bounds).not.toBeNull();
+
+    useStore.getState().centerCircuit();
+
+    const s = useStore.getState();
+    expect(s.view).toEqual(fitView(bounds!, s.viewSize.w, s.viewSize.h));
+    // A view change is not a topology change, so the undo stack is untouched.
+    expect(s.undoStack.length).toBe(baseline);
+  });
+
+  it('is a no-op on an empty circuit', () => {
+    useStore.getState().setView({ x: 5, y: 9, scale: 3 });
+
+    useStore.getState().centerCircuit();
+
+    expect(useStore.getState().view).toEqual({ x: 5, y: 9, scale: 3 });
+  });
+});
+
+describe('white background and dialog state', () => {
+  it('setDark flips the flag', () => {
+    expect(useStore.getState().dark).toBe(true);
+    useStore.getState().setDark(false);
+    expect(useStore.getState().dark).toBe(false);
+    useStore.getState().setDark(true);
+    expect(useStore.getState().dark).toBe(true);
+  });
+
+  it('openDialog replaces and closeDialog clears', () => {
+    expect(useStore.getState().dialog).toBeNull();
+    useStore.getState().openDialog('importText');
+    expect(useStore.getState().dialog).toBe('importText');
+    // Opening a second dialog replaces the first; only one overlay is live.
+    useStore.getState().openDialog('about');
+    expect(useStore.getState().dialog).toBe('about');
+    useStore.getState().closeDialog();
+    expect(useStore.getState().dialog).toBeNull();
+  });
+});
+
+describe('import from text equals open', () => {
+  it('loadNetlist from the dialog path produces the pinned SAMPLE counts', () => {
+    useStore.getState().loadNetlist(SAMPLE);
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(7);
+    expect(s.scopes).toHaveLength(1);
+    // A load clears the undo stacks exactly like the Open flow.
+    expect(s.undoStack).toHaveLength(0);
   });
 });

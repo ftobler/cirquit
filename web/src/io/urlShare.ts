@@ -48,3 +48,9 @@ export function compressCircuit(netlist: string): string {
 export function decompressCircuit(token: string): string | null {
   return decompressFromEncodedURIComponent(token);
 }
+
+/** True when a share URL is too long for some services to accept. Upstream
+ *  warns above 2000 characters (ExportAsUrlDialog.java:111-114). */
+export function isLongUrl(url: string): boolean {
+  return url.length > 2000;
+}

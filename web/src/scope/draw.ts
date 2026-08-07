@@ -69,11 +69,13 @@ export const isDrawable = (plot: ScopePlot): plot is DrawablePlot =>
 
 export type DrawablePlot = ScopePlot & { elementId: number; value: ScopeValue };
 
-function colorOf(plot: ScopePlot): string {
+function colorOf(plot: ScopePlot, dark: boolean): string {
   // The default V/I palette mirrors upstream (ScopePlot.assignColor): voltage
-  // is the theme's positive green, current yellow. Extra plots cycle.
-  if (plot.value === 'voltage') return makeTheme().positive;
-  if (plot.value === 'current') return '#ffd866';
+  // is the theme's positive green, current the theme's current yellow. Extra
+  // plots cycle. The current colour rides the theme's `currentDot`, which the
+  // light palette re-tunes for a white background.
+  if (plot.value === 'voltage') return makeTheme(dark).positive;
+  if (plot.value === 'current') return makeTheme(dark).currentDot;
   return TRACE_COLORS[(plot.id % TRACE_COLORS.length)];
 }
 
@@ -334,6 +336,7 @@ function drawHeader(
   speed: number,
   timeStep: number,
   h: number,
+  dark: boolean,
 ): void {
   const lines: InfoLine[] = [];
   // The scope's own label renders as a title line above the scale, in the
@@ -355,7 +358,7 @@ function drawHeader(
       ctx.font = canvasFont(10);
       const width = ctx.measureText(s).width + 20;
       if (x + width > ctx.canvas.width) break;
-      ctx.fillStyle = colorOf(p);
+      ctx.fillStyle = colorOf(p, dark);
       ctx.beginPath();
       ctx.arc(4 + x + 8, y + 5, 4, 0, Math.PI * 2);
       ctx.fill();
@@ -446,6 +449,7 @@ function drawCursor(
   w: number,
   h: number,
   triggerAnchor?: { time: number } | null,
+  dark = true,
 ): void {
   if (!cursor.hover || cursor.cursorTime < 0 || states.length === 0) return;
   const maxy = Math.floor((h - 1) / 2);
@@ -465,7 +469,7 @@ function drawCursor(
   const cursorValue = k >= 0 && k < selected.count ? selected.max[k] : null;
   if (cursorValue !== null) {
     const dotY = yOf(selected.transform, maxy, cursorValue);
-    ctx.fillStyle = colorOf(selected.plot);
+    ctx.fillStyle = colorOf(selected.plot, dark);
     ctx.beginPath();
     ctx.arc(x, dotY, 2.5, 0, Math.PI * 2);
     ctx.fill();
@@ -749,7 +753,9 @@ function drawTrigger(
   ctx.fillText(status, w - sw - 5, h - 5);
 }
 
-/** The per-frame entry point: draws one scope canvas. */
+/** The per-frame entry point: draws one scope canvas. `dark` follows the White
+ *  Background setting so the panel, text and trace colours stay legible on a
+ *  white backdrop. */
 export function drawScope(
   ctx: CanvasRenderingContext2D,
   engine: SimEngine,
@@ -759,8 +765,9 @@ export function drawScope(
   cursor: ScopeCursor,
   simTime: number,
   timeStep: number,
+  dark: boolean,
 ): void {
-  const theme = makeTheme();
+  const theme = makeTheme(dark);
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, w, h);
   if (w < 2 || h < 2) return;
@@ -831,14 +838,14 @@ export function drawScope(
   }
   // Traces underneath: current first, voltage on top (Scope.java:666-681).
   for (const s of [...states].reverse()) {
-    drawTrace(ctx, s.data, s.win, s.transform, maxy, colorOf(s.plot));
+    drawTrace(ctx, s.data, s.win, s.transform, maxy, colorOf(s.plot, dark));
   }
   // Manual scale draws a zero marker per plot (Scope.java:865-869).
   if (scope.manualScale) {
     for (const s of states) {
       const y0 = yOf(s.transform, maxy, 0);
       if (y0 < 0 || y0 >= h) continue;
-      ctx.strokeStyle = colorOf(s.plot);
+      ctx.strokeStyle = colorOf(s.plot, dark);
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(0, y0);
@@ -851,10 +858,10 @@ export function drawScope(
   }
 
   if (!(cursor.hover && cursor.cursorTime >= 0)) {
-    drawHeader(ctx, scope, first.transform, first.plot, speed, timeStep, h);
+    drawHeader(ctx, scope, first.transform, first.plot, speed, timeStep, h, dark);
   }
   drawMeasurements(ctx, scope, states[0], h, speed, timeStep);
-  drawCursor(ctx, cursor, states, simTime, speed, timeStep, w, h, triggerAnchor);
+  drawCursor(ctx, cursor, states, simTime, speed, timeStep, w, h, triggerAnchor, dark);
 }
 
 /** Index of the plot whose trace is nearest the pointer, for manual-mode

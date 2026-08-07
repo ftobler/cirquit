@@ -174,26 +174,12 @@ export function useCanvasInteractions(
       return;
     }
 
-    if (state.tool) {
-      const x = snap(p.x);
-      const y = snap(p.y);
-      const def = toolDef(state.tool);
-      const len = (def?.defaultLength ?? 0) * GRID_SIZE;
-      // Grounds and voltage sources drop vertically, the rest horizontally,
-      // matching upstream's getDragVertical override.
-      const x2 = def?.vertical ? x : x + len;
-      const y2 = def?.vertical ? y + len : y;
-      const id = state.addElement(makeToolElement(state.tool, x, y, x2, y2));
-      dragRef.current = { mode: 'place', start: { x, y }, id };
-      state.select([id]);
-      return;
-    }
-
     const hit = hitTest(p);
+    // A switch is a run-mode control, not an edit: it must still throw when
+    // editing is disabled, exactly as upstream's doSwitch runs before its
+    // read-only forcing (MouseManager.java:1101).
     if (hit) {
       const def = defFor(hit.kind);
-      // In run mode, clicking an interactive part operates it rather than
-      // selecting it.
       if (def?.interactive && state.running && !ev.altKey) {
         const momentary = hit.kind === 'switch' && (hit.params.momentary ?? 0) !== 0;
         const throwCount = Math.max(2, hit.params.throwCount ?? 2);
@@ -212,6 +198,33 @@ export function useCanvasInteractions(
         dragRef.current = { mode: 'none' };
         return;
       }
+    }
+
+    // With editing disabled, only pan (above), wheel zoom and the interactive
+    // parts above stay live: no select, place, move, post-drag or rubber-band
+    // (UIManager.java:1101).
+    if (!state.settings.editable) {
+      state.setStatus('Editing disabled. Re-enable from the Options menu.');
+      return;
+    }
+
+    if (state.tool) {
+      const x = snap(p.x);
+      const y = snap(p.y);
+      const def = toolDef(state.tool);
+      const len = (def?.defaultLength ?? 0) * GRID_SIZE;
+      // Grounds and voltage sources drop vertically, the rest horizontally,
+      // matching upstream's getDragVertical override.
+      const x2 = def?.vertical ? x : x + len;
+      const y2 = def?.vertical ? y + len : y;
+      const id = state.addElement(makeToolElement(state.tool, x, y, x2, y2));
+      dragRef.current = { mode: 'place', start: { x, y }, id };
+      state.select([id]);
+      return;
+    }
+
+    if (hit) {
+      const def = defFor(hit.kind);
       if (!state.selectedIds.includes(hit.id)) {
         // Shift adds like ctrl, then starts a plain move of the whole group;
         // ctrl alone keeps its dragpost branch below.
@@ -416,13 +429,16 @@ export function useCanvasInteractions(
     // and so does a recent zoom: once zooming starts, the wheel stays
     // zoom-only for a second so a sweep onto an element cannot accidentally
     // edit a value (MouseManager.java:1302-1304). The early return stops
-    // propagation, so the zoom branch below never runs.
+    // propagation, so the zoom branch below never runs. Editing disabled falls
+    // through to zoom: it must not step values or push undo
+    // (MouseManager.java:1306).
     if (
       param !== undefined &&
       hit &&
       ev.deltaY !== 0 &&
       dragRef.current.mode === 'none' &&
-      !isZoomOnly(zoomAtRef.current, now)
+      !isZoomOnly(zoomAtRef.current, now) &&
+      state.settings.editable
     ) {
       ev.stopPropagation();
       // The pointer drifted back off the popover onto the canvas mid-session:
@@ -465,6 +481,12 @@ export function useCanvasInteractions(
     // Upstream skips the edit dialog for switches; an interactive part in run
     // mode is a control, not something to edit (MouseManager.java:1024-1034).
     if (defFor(hit.kind)?.interactive && state.running) return;
+    // Editing disabled drops the edit dialog, like upstream's readOnly gate
+    // (MouseManager.java:1032).
+    if (!state.settings.editable) {
+      state.setStatus('Editing disabled. Re-enable from the Options menu.');
+      return;
+    }
     state.editElement(hit.id);
   };
 

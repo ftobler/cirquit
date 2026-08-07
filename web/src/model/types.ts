@@ -204,6 +204,9 @@ export interface SimSettings {
   showGrid: boolean;
   /** Dot direction and colour; a per-frame render argument like `currentSpeed`. */
   conventional: boolean;
+  /** Read-only gate, upstream's `noEditing` (UIManager.java:116). UI-only:
+   *  not a header token, so it never bumps the engine revision. */
+  editable: boolean;
 
   // ─── Header fields carried through but not modelled ───
   // Loading a file must not invent new values for the `$` tokens this build
@@ -242,6 +245,7 @@ export const DEFAULT_SETTINGS: SimSettings = {
   showPowerColor: false,
   showGrid: true,
   conventional: true,
+  editable: true,
 };
 
 /** Circuit-space units per grid square, matching the original. */

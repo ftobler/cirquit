@@ -435,7 +435,29 @@ export function label(g: DrawContext, e: CircuitElement, text: string, offset = 
   g.ctx.fillText(text, p.x, p.y);
 }
 
-export function makeTheme(): Theme {
+export function makeTheme(dark = true): Theme {
+  if (!dark) {
+    // White Background (upstream's printable mode): the schematic renders on
+    // white with black wires and dark text, the palette of ImageExporter's
+    // forced-printable export. Not byte-for-byte upstream's print palette;
+    // that is a deliberate form difference.
+    return {
+      background: '#ffffff',
+      grid: '#d0d7de',
+      wire: '#000000',
+      text: '#24292f',
+      selection: '#0969da',
+      highlight: '#d0782d',
+      negative: '#cf222e',
+      noConnect: '#ff0000',
+      neutral: '#6e7781',
+      positive: '#1a7f37',
+      currentDot: '#9a6700',
+      currentDotElectron: '#0b7285',
+      panel: '#f6f8fa',
+      border: '#d0d7de',
+    };
+  }
   return {
     background: '#0d1117',
     grid: '#1b2230',

@@ -11,6 +11,15 @@ export interface ViewTransform {
   scale: number;
 }
 
+/** The dialogs the menubar opens, one component each in `web/src/ui`. */
+export type DialogName =
+  | 'importText'
+  | 'saveAs'
+  | 'exportAsLink'
+  | 'exportAsText'
+  | 'exportAsImage'
+  | 'about';
+
 /** A point-in-time copy of everything undo needs to restore. Settings and view
  *  travel with it like the dump header and transform do upstream, so undoing a
  *  drag, toggle or edit also brings back the voltage range and the pan/zoom. */
@@ -37,11 +46,18 @@ export interface AppState {
   running: boolean;
   /** Element kind currently armed for placement; null means select mode. */
   tool: string | null;
+  /** White-background mode, upstream's `printable`/`whiteBackground` setting.
+   *  UI-only, like `running`; the schematic and scope canvases render through
+   *  makeTheme(dark). */
+  dark: boolean;
   view: ViewTransform;
   /** Canvas size in CSS pixels, maintained by CircuitCanvas so keyboard
    *  zoom can target the exact screen centre like the wheel does
    *  (MouseManager.java:1339). */
   viewSize: { w: number; h: number };
+  /** The dialog currently open over the workspace, or null. Lives in the store
+   *  so the menubar, App's dialog host and the Ctrl+S path share one home. */
+  dialog: DialogName | null;
   status: string;
   /** Element id under the pointer, for hover highlight; null when none. */
   hoveredId: number | null;
@@ -86,6 +102,10 @@ export interface AppState {
   setStatus(status: string): void;
   setProblem(problem: string | null): void;
   updateSettings(patch: Partial<SimSettings>): void;
+  /** White-background on (false) or off (true); see `dark`. */
+  setDark(dark: boolean): void;
+  openDialog(name: DialogName): void;
+  closeDialog(): void;
   setHovered(id: number | null): void;
   setHighlightedNode(node: number | null): void;
 
@@ -105,6 +125,12 @@ export interface AppState {
   zoomIn(): void;
   zoomOut(): void;
   zoomReset(): void;
+  /** Pans so the whole circuit fits the viewport, capped at 1.5 like upstream.
+   *  A view command, so it works with editing disabled. No undo entry. */
+  centerCircuit(): void;
+  /** Fits the whole circuit with no scale cap, the context menu's "Zoom to
+   *  fit" seam (context-menu.md). */
+  zoomToFit(): void;
   /** Moves a single stored endpoint by dx/dy. post 0 is (x1,y1), 1 is (x2,y2),
    *  the port of upstream's row/column capture which reads only stored
    *  endpoints, never derived posts (MouseManager.java:1161-1187). */
@@ -148,6 +174,12 @@ export interface AppState {
   /** Moves a scope into the previous column, closing the gap it left. */
   stackScope(id: number): void;
   unstackScope(id: number): void;
+  /** Stack All / Unstack All / Combine All / Separate All, the Scopes menu's
+   *  batch commands (ScopeManager.java:296-318). One undo entry per command. */
+  stackAllScopes(): void;
+  unstackAllScopes(): void;
+  combineAllScopes(): void;
+  separateAllScopes(): void;
 
   loadNetlist(text: string): void;
   toNetlist(): string;
