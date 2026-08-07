@@ -186,3 +186,8 @@ Two files, both under `feature/`:
   `// ─── Newton iteration ───`
 - Keep files under about 1000 lines. A soft limit, not a hard one.
 - Match the style of the surrounding file.
+
+## Tmporary Directory
+
+- if something needs temporary files do not use system wide `/tmp` but the project internal `tmp/`.
+- do not access anything outside the project directory.
