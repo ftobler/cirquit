@@ -4,9 +4,46 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseCircuit, serializeCircuit } from './index';
 import { makeElement, makeToolElement } from '../../state/store';
+import { postsOf } from '../../model/registry';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
 
 const CIRCUITS_DIR = fileURLToPath(new URL('../../../public/circuits', import.meta.url));
+
+describe('ground file format', () => {
+  /** Parses a single `g` line and re-emits it, returning that line. */
+  const groundLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('g ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('keeps the two-point span and the symbol type', () => {
+    // A chassis ground with a real stem, the shape upstream draws the symbol
+    // at the far end of (GroundElm.java:63-92).
+    const { e } = groundLine('g 176 320 208 320 0 1');
+    expect([e.x1, e.y1]).toEqual([176, 320]);
+    expect([e.x2, e.y2]).toEqual([208, 320]);
+    expect(e.params.symbolType).toBe(1);
+  });
+
+  it('round-trips a chassis ground byte-for-byte', () => {
+    const { elementLine } = groundLine('g 176 320 208 320 0 1');
+    expect(elementLine).toBe('g 176 320 208 320 0 1');
+  });
+
+  it('connects only at the first endpoint, never at the free end', () => {
+    // One connectable post: wires land on (176,320), never on (208,320) where
+    // the symbol hangs.
+    const { e } = groundLine('g 176 320 208 320 0 1');
+    expect(postsOf(e)).toEqual([{ x: 176, y: 320 }]);
+  });
+
+  it('a ground without a symbol token saves as the earth symbol', () => {
+    const { elementLine } = groundLine('g 176 352 176 384 0');
+    expect(elementLine).toBe('g 176 352 176 384 0 0');
+  });
+});
 
 describe('diode file format', () => {
   /** Parses a single `d` line and re-emits it, returning the `d` line. */

@@ -5,7 +5,7 @@
  */
 
 import type { CircuitElement, Point } from '../model/types';
-import { postsOf } from '../model/registry';
+import { defFor, postsOf } from '../model/registry';
 
 /** Shortest distance from `p` to the segment `a`-`b`. */
 export function distanceToSegment(p: Point, a: Point, b: Point): number {
@@ -22,7 +22,16 @@ export function distanceToSegment(p: Point, a: Point, b: Point): number {
 export function distanceToElement(p: Point, e: CircuitElement): number {
   const posts = postsOf(e);
   if (posts.length <= 1) {
-    return Math.hypot(p.x - e.x1, p.y - e.y1);
+    const near = Math.hypot(p.x - e.x1, p.y - e.y1);
+    // A ground's free end is a draggable control point, not a post, so its
+    // stem must be hittable along the whole span or the far end could never
+    // be clicked to ctrl-drag it. Other single-post parts (text, readouts)
+    // keep their stray `x2, y2` out of hit-testing.
+    const def = defFor(e.kind);
+    if ((def?.draggablePosts ?? def?.postCount ?? 0) > 1) {
+      return Math.min(near, distanceToSegment(p, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }));
+    }
+    return near;
   }
   const body = distanceToSegment(p, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 });
   // Multi-terminal parts have limbs off the main axis, so also test each

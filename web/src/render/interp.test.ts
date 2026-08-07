@@ -9,7 +9,7 @@ import {
   interpPrecise,
   rectCorners,
 } from './draw';
-import { postsOf, switchLeverTip } from '../model/registry';
+import { postsOf, switchLeverTip, groundBars } from '../model/registry';
 import type { CircuitElement, Point } from '../model/types';
 
 const element = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
@@ -336,5 +336,79 @@ describe('switch lever', () => {
     const tip = switchLeverTip(a, b, false);
     expect(tip.x - a.x).toBe(16);
     expect(Math.hypot(tip.x - b.x, tip.y - b.y)).toBe(16);
+  });
+});
+
+describe('ground symbol bars', () => {
+  const p1: Point = { x: 0, y: 0 };
+  const p2: Point = { x: 32, y: 0 };
+
+  it('hangs the earth bars off the far end, not the post', () => {
+    // Three bars at fractions 1, 1+5/32 and 1+10/32 past the free end, with
+    // half-widths 10, 6, 2 (GroundElm.java:68-73). The first sits on the far
+    // endpoint itself, the last 10 units past it; the post end sees nothing.
+    expect(groundBars(p1, p2, 0)).toEqual([
+      [{ x: 32, y: -10 }, { x: 32, y: 10 }],
+      [{ x: 37, y: -6 }, { x: 37, y: 6 }],
+      [{ x: 42, y: -2 }, { x: 42, y: 2 }],
+    ]);
+  });
+
+  it('lays the bars across a vertical stem', () => {
+    // A vertical stem draws the bars horizontal, at the far end, not stacked
+    // below the post like the old hardcoded symbol.
+    expect(groundBars({ x: 0, y: 0 }, { x: 0, y: 32 }, 0)[0]).toEqual([
+      { x: 10, y: 32 },
+      { x: -10, y: 32 },
+    ]);
+  });
+
+  it('keeps the bars perpendicular to a diagonal stem', () => {
+    // The signed-perpendicular check the switch tests use: the bar delta
+    // dotted against the stem axis is exactly zero, surviving interp rounding.
+    const b: Point = { x: 32, y: 32 };
+    for (const [q, r] of groundBars(p1, b, 0)) {
+      const dot = (r.x - q.x) * (b.x - p1.x) + (r.y - q.y) * (b.y - p1.y);
+      expect(dot).toBe(0);
+    }
+  });
+
+  it('chassis draws three parallel stubs down the base bar', () => {
+    const bars = groundBars(p1, p2, 1);
+    expect(bars).toHaveLength(4);
+    expect(bars[0]).toEqual([{ x: 32, y: -10 }, { x: 32, y: 10 }]);
+    // Each stub runs 8 along the stem and 5 across the perpendicular, the
+    // direction upstream's dpx1/dpy1 terms produce (GroundElm.java:80).
+    for (const [q, r] of bars.slice(1)) {
+      expect(r.x - q.x).toBe(8);
+      expect(r.y - q.y).toBe(5);
+    }
+  });
+
+  it('signal draws a V from the base bar to a tip past the far end', () => {
+    expect(groundBars(p1, p2, 2)).toEqual([
+      [{ x: 32, y: -10 }, { x: 32, y: 10 }],
+      [{ x: 32, y: -10 }, { x: 42, y: 0 }],
+      [{ x: 32, y: 10 }, { x: 42, y: 0 }],
+    ]);
+  });
+
+  it('common is just the base bar', () => {
+    expect(groundBars(p1, p2, 3)).toEqual([[{ x: 32, y: -10 }, { x: 32, y: 10 }]]);
+  });
+
+  it('a zero-length stem collapses onto the point instead of going NaN', () => {
+    // A ground dragged onto itself keeps a legal degenerate symbol.
+    const collapsed = groundBars({ x: 8, y: 8 }, { x: 8, y: 8 }, 0);
+    expect(collapsed).toEqual([
+      [{ x: 8, y: 8 }, { x: 8, y: 8 }],
+      [{ x: 8, y: 8 }, { x: 8, y: 8 }],
+      [{ x: 8, y: 8 }, { x: 8, y: 8 }],
+    ]);
+    expect(groundBars({ x: 8, y: 8 }, { x: 8, y: 8 }, 2)).toEqual([
+      [{ x: 8, y: 8 }, { x: 8, y: 8 }],
+      [{ x: 8, y: 8 }, { x: 8, y: 8 }],
+      [{ x: 8, y: 8 }, { x: 8, y: 8 }],
+    ]);
   });
 });

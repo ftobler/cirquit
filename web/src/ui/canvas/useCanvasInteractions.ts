@@ -112,8 +112,10 @@ export function useCanvasInteractions(
       // a move it is a plain additive selection, done above; with one it
       // grabs the nearer endpoint and drags only that post, stretching or
       // rotating the element. The additive selection from pointer-down stays
-      // either way.
-      if (ev.ctrlKey && (def?.postCount ?? 0) > 1) {
+      // either way. The gate counts draggable endpoints, not posts: a ground
+      // has one connectable post but its symbol hangs off a second control
+      // point that must be stretchable too.
+      if (ev.ctrlKey && (def?.draggablePosts ?? def?.postCount ?? 0) > 1) {
         dragRef.current = { mode: 'dragpost', id: hit.id, post: nearestPost(p, hit), moved: false };
       } else {
         dragRef.current = { mode: 'move', last: p, moved: false };

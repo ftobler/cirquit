@@ -1,7 +1,7 @@
 /**
  * Helpers shared by several element definitions: the common posts functions,
- * the numeric-token read/write pair, the open-switch lever tip, the escaped-text
- * writer flag and the source-symbol drawing primitives.
+ * the numeric-token read/write pair, the switch lever tip, the ground symbol
+ * bars, the escaped-text writer flag and the source-symbol drawing primitives.
  */
 
 import {
@@ -13,6 +13,7 @@ import {
   drawLeads,
   endpoints,
   interp,
+  interp2,
   voltageColor,
 } from '../../render/draw';
 import { FLAG_ESCAPE } from './flags';
@@ -55,6 +56,51 @@ export function escapeFlags(e: CircuitElement): number {
  */
 export function switchLeverTip(lead1: Point, lead2: Point, closed: boolean): Point {
   return closed ? lead2 : interp(lead1, lead2, 1, OPEN_HS);
+}
+
+/**
+ * Bars of the ground symbol hanging off the free end of its stem.
+ *
+ * Upstream GroundElm.java draws the stem across the whole dragged span and
+ * hangs the symbol off `point2`, the end opposite the post (GroundElm.java:65).
+ * The earth symbol is three shrinking bars past that end; chassis, signal and
+ * common all share one base bar there, and chassis adds diagonal stubs and
+ * signal a V on top. Each bar comes back as its two endpoints, in draw order.
+ */
+export function groundBars(p1: Point, p2: Point, symbolType: number): [Point, Point][] {
+  const dn = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+  const pastEnd = (d: number): Point =>
+    dn === 0
+      ? p2
+      : { x: p2.x + (d * (p2.x - p1.x)) / dn, y: p2.y + (d * (p2.y - p1.y)) / dn };
+  if (symbolType === 0) {
+    // Three bars at fractions 1 + b/dn past the far end, with half-widths
+    // 10, 6, 2 (GroundElm.java:68-73).
+    const bars: [Point, Point][] = [];
+    for (let i = 0; i < 3; i++) bars.push(interp2(p1, p2, 1 + (i * 5) / dn, 10 - i * 4));
+    return bars;
+  }
+  const [s1, s2] = interp2(p1, p2, 1, 10);
+  if (symbolType === 1) {
+    // Three diagonal stubs down the base bar (GroundElm.java:77-81), each
+    // starting a third of the way across and running 8 along the stem and 5
+    // back across the perpendicular.
+    const bars: [Point, Point][] = [[s1, s2]];
+    for (let i = 0; i <= 2; i++) {
+      const p = interp(s1, s2, i / 2);
+      const ux = dn === 0 ? 0 : (p2.x - p1.x) / dn;
+      const uy = dn === 0 ? 0 : (p2.y - p1.y) / dn;
+      const px = dn === 0 ? 0 : (p2.y - p1.y) / dn;
+      const py = dn === 0 ? 0 : (p1.x - p2.x) / dn;
+      bars.push([p, { x: p.x + 8 * ux - 5 * px, y: p.y + 8 * uy - 5 * py }]);
+    }
+    return bars;
+  }
+  if (symbolType === 2) {
+    // Signal: a V from the bar ends to a point 10 past the far end.
+    return [[s1, s2], [s1, pastEnd(10)], [s2, pastEnd(10)]];
+  }
+  return [[s1, s2]];  // common is just the base bar
 }
 
 function drawSourceCircle(g: DrawContext, e: CircuitElement, radius: number): [Point, Point] {

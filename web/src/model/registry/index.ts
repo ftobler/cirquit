@@ -11,7 +11,7 @@
  */
 
 import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP } from './flags';
-import { switchLeverTip } from './shared';
+import { switchLeverTip, groundBars } from './shared';
 import { WIRE_DEF } from './elements/wire';
 import { GROUND_DEF } from './elements/ground';
 import { RESISTOR_DEF } from './elements/resistor';
@@ -43,7 +43,7 @@ import { DECORATION_DEF } from './elements/decoration';
 import type { CircuitElement, ElementDef, Point } from '../types';
 
 export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP };
-export { switchLeverTip };
+export { switchLeverTip, groundBars };
 export { opampInputSign, opAmpInputAnchors, opAmpLabelAnchors } from './elements/opamp';
 export { transistorSideFactor, transistorBarContacts } from './elements/transistor';
 

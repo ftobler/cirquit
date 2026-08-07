@@ -59,6 +59,11 @@ export interface ElementDef {
    */
   dumpCode: string;
   postCount: number;
+  /** How many stored endpoints (`x1,y1`, `x2,y2`) the user can drag
+   *  independently. Differs from `postCount` only for parts whose free end is
+   *  a control point rather than a terminal: a ground hangs its symbol off
+   *  `x2, y2`, which is not connectable. Defaults to `postCount`. */
+  draggablePosts?: number;
   /** Terminal coordinates, in the order the engine expects them. */
   posts(e: CircuitElement): Point[];
   /** Reads the tokens that follow `flags` on a netlist line. */

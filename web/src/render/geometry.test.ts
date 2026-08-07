@@ -133,7 +133,35 @@ describe('distanceToElement', () => {
     expect(distanceToElement({ x: 35, y: 19 }, e)).toBeCloseTo(Math.hypot(3, 3), 9);
   });
 
+  it('measures a ground along its stem, so the free end is hittable', () => {
+    const g = element(0, 0, 32, 0);
+    g.kind = 'ground';
+    // The symbol end is 32 from the post but only 5 from the stem: without
+    // the span distance the far end could never be clicked to ctrl-drag it.
+    expect(distanceToElement({ x: 32, y: 5 }, g)).toBe(5);
+    expect(distanceToElement({ x: 16, y: 3 }, g)).toBe(3);
+  });
+
+  it('ignores the stray far endpoint of other single-post elements', () => {
+    const t = element(100, 200, 0, 0);
+    t.kind = 'decoration';
+    // A text's (100,200)->(0,0) span is a legacy position, not a drawn stem,
+    // so it must not make the text hittable far from its anchor.
+    expect(distanceToElement({ x: 60, y: 100 }, t)).toBeCloseTo(Math.hypot(40, 100), 9);
+  });
+
   it('measures against the body line for two-terminal elements', () => {
     expect(distanceToElement({ x: 80, y: 5 }, element(0, 0, 160, 0))).toBe(5);
+  });
+});
+
+describe('ground free-end drag', () => {
+  it('nearestPost targets the far endpoint of a ground', () => {
+    const g = element(0, 0, 32, 0);
+    g.kind = 'ground';
+    // Clicking near the symbol picks post 2, whose dragpost patch moves x2,y2
+    // and leaves the connection post in place.
+    expect(nearestPost({ x: 30, y: 2 }, g)).toBe(2);
+    expect(nearestPost({ x: 2, y: 2 }, g)).toBe(1);
   });
 });
