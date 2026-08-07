@@ -7,10 +7,82 @@ import {
   currentDotsPath,
   formatValue,
   makeTheme,
+  powerColor,
+  powerColorT,
+  powerMult,
   strokeStyle,
 } from './draw';
 import { TOO_FAST } from './dots';
 import type { DrawContext } from '../model/types';
+
+interface CtxStub {
+  fillStyle: string;
+  strokeStyle: string;
+  lineWidth: number;
+  lineCap: string;
+  lineJoin: string;
+  globalAlpha: number;
+  beginPath: ReturnType<typeof vi.fn>;
+  moveTo: ReturnType<typeof vi.fn>;
+  lineTo: ReturnType<typeof vi.fn>;
+  stroke: ReturnType<typeof vi.fn>;
+  arc: ReturnType<typeof vi.fn>;
+  fill: ReturnType<typeof vi.fn>;
+  save: ReturnType<typeof vi.fn>;
+  restore: ReturnType<typeof vi.fn>;
+}
+
+const mkCtx = (): {
+  ctx: CanvasRenderingContext2D;
+  calls: string[];
+  arcs: { x: number; y: number }[];
+} => {
+  const calls: string[] = [];
+  const arcs: { x: number; y: number }[] = [];
+  const record = (name: string) => vi.fn(() => calls.push(name));
+  const stub: CtxStub = {
+    fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 0,
+    lineCap: '',
+    lineJoin: '',
+    globalAlpha: 1,
+    beginPath: record('beginPath'),
+    moveTo: record('moveTo'),
+    lineTo: record('lineTo'),
+    stroke: record('stroke'),
+    arc: vi.fn((x: number, y: number) => {
+      calls.push('arc');
+      arcs.push({ x, y });
+    }),
+    fill: record('fill'),
+    save: record('save'),
+    restore: record('restore'),
+  };
+  return { ctx: stub as unknown as CanvasRenderingContext2D, calls, arcs };
+};
+
+const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext => ({
+  ctx,
+  theme: makeTheme(),
+  voltages: [],
+  current: 1e-3,
+  voltage: 0,
+  power: 0,
+  value: 0,
+  dotPhase,
+  showCurrent: true,
+  showValues: false,
+  showVoltageColor: false,
+  showPowerColor: false,
+  conventional: true,
+  selected: false,
+  hovered: false,
+  onHighlightedNet: false,
+  voltageRange: 5,
+  powerRange: 50,
+  scale: 1,
+});
 
 describe('value formatting', () => {
   it('uses engineering prefixes', () => {
@@ -31,72 +103,6 @@ describe('value formatting', () => {
 });
 
 describe('current dots', () => {
-  interface CtxStub {
-    fillStyle: string;
-    strokeStyle: string;
-    lineWidth: number;
-    lineCap: string;
-    lineJoin: string;
-    globalAlpha: number;
-    beginPath: ReturnType<typeof vi.fn>;
-    moveTo: ReturnType<typeof vi.fn>;
-    lineTo: ReturnType<typeof vi.fn>;
-    stroke: ReturnType<typeof vi.fn>;
-    arc: ReturnType<typeof vi.fn>;
-    fill: ReturnType<typeof vi.fn>;
-    save: ReturnType<typeof vi.fn>;
-    restore: ReturnType<typeof vi.fn>;
-  }
-
-  const mkCtx = (): {
-    ctx: CanvasRenderingContext2D;
-    calls: string[];
-    arcs: { x: number; y: number }[];
-  } => {
-    const calls: string[] = [];
-    const arcs: { x: number; y: number }[] = [];
-    const record = (name: string) => vi.fn(() => calls.push(name));
-    const stub: CtxStub = {
-      fillStyle: '',
-      strokeStyle: '',
-      lineWidth: 0,
-      lineCap: '',
-      lineJoin: '',
-      globalAlpha: 1,
-      beginPath: record('beginPath'),
-      moveTo: record('moveTo'),
-      lineTo: record('lineTo'),
-      stroke: record('stroke'),
-      arc: vi.fn((x: number, y: number) => {
-        calls.push('arc');
-        arcs.push({ x, y });
-      }),
-      fill: record('fill'),
-      save: record('save'),
-      restore: record('restore'),
-    };
-    return { ctx: stub as unknown as CanvasRenderingContext2D, calls, arcs };
-  };
-
-  const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext => ({
-    ctx,
-    theme: makeTheme(),
-    voltages: [],
-    current: 1e-3,
-    voltage: 0,
-    value: 0,
-    dotPhase,
-    showCurrent: true,
-    showValues: false,
-    showVoltageColor: false,
-    conventional: true,
-    selected: false,
-    hovered: false,
-    onHighlightedNet: false,
-    voltageRange: 5,
-    scale: 1,
-  });
-
   it('draws a translucent flow line with shimmering dots when too fast', () => {
     const { ctx, calls } = mkCtx();
     currentDots(context(ctx, TOO_FAST), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
@@ -165,6 +171,70 @@ describe('current dots', () => {
     strokeStyle(context(ctx, 0), '#ffffff');
     expect(ctx.lineCap).toBe('butt');
     expect(ctx.lineJoin).toBe('miter');
+  });
+});
+
+describe('power colouring', () => {
+  const powerContext = (overrides: Partial<DrawContext> = {}): DrawContext => ({
+    ...context(mkCtx().ctx, 0),
+    ...overrides,
+  });
+
+  it('computes the brightness multiplier from the powerRange token', () => {
+    // The formula is the file's token 6, upstream's powerBar
+    // (UIManager.java:630). Pin against the expression itself so a future
+    // refactor that changes the scale fails loudly.
+    expect(powerMult(50)).toBeCloseTo(Math.exp(50 / 4.762 - 7), 10);
+    expect(powerMult(0)).toBeCloseTo(Math.exp(-7), 10);
+    expect(powerMult(100)).toBeCloseTo(Math.exp(100 / 4.762 - 7), 6);
+  });
+
+  it('clamps the ramp position to [-1, 1] with 0 at neutral', () => {
+    // -0 * powerMult is -0; the strict equality is what upstream's 0 index
+    // amounts to either way.
+    expect(powerColorT(0, 50) === 0).toBe(true);
+    expect(powerColorT(1e6, 50)).toBe(-1);
+    expect(powerColorT(-1e6, 50)).toBe(1);
+    expect(powerColorT(NaN, 50)).toBe(0);
+    expect(powerColorT(Infinity, 50)).toBe(0);
+    expect(powerColorT(0.02, 50)).toBeGreaterThanOrEqual(-1);
+    expect(powerColorT(-0.02, 50)).toBeLessThanOrEqual(1);
+  });
+
+  it('never doubles back as power rises', () => {
+    // The ramp must be strictly monotone decreasing: more dissipated power
+    // always reads further toward the red end.
+    const samples = [-1e-3, -1e-4, 0, 1e-4, 1e-3];
+    for (let i = 1; i < samples.length; i++) {
+      expect(powerColorT(samples[i - 1], 50)).toBeGreaterThan(powerColorT(samples[i], 50));
+    }
+  });
+
+  it('hits the exact midpoint between neutral and negative at half scale', () => {
+    const half = 0.5 / powerMult(50);
+    expect(powerColorT(half, 50)).toBeCloseTo(-0.5, 10);
+    // Dark-theme neutral #6e7781 to negative #ff5555 at t = 0.5. The light
+    // theme does not exist yet; when it lands this endpoint colour moves.
+    expect(powerColor(powerContext({ showPowerColor: true }), half)).toBe('rgb(183,102,107)');
+  });
+
+  it('colours dissipated power red and generated power green', () => {
+    const g = powerContext({ showPowerColor: true });
+    // The ramp blends the theme colours, so the endpoints come back as rgb
+    // strings: dark-theme neutral #6e7781, negative #ff5555, positive #3fb950.
+    expect(powerColor(g, 0)).toBe('rgb(110,119,129)');
+    expect(powerColor(g, 1e6)).toBe('rgb(255,85,85)');
+    expect(powerColor(g, -1e6)).toBe('rgb(63,185,80)');
+  });
+
+  it('returns the wire colour when the mode is off', () => {
+    expect(powerColor(powerContext(), 1e6)).toBe(makeTheme().wire);
+  });
+
+  it('raises the ramp slope as brightness increases', () => {
+    // For a fixed power, a higher powerRange means a larger |ramp position|;
+    // both are negative here, so the value decreases.
+    expect(powerColorT(0.02, 40)).toBeGreaterThan(powerColorT(0.02, 60));
   });
 });
 

@@ -136,6 +136,10 @@ export interface DrawContext {
   current: number;
   /** Voltage across the element. */
   voltage: number;
+  /** Power dissipated by the element this frame, in watts: the terminal
+   *  voltage times the element current, so positive reads dissipated and
+   *  negative generated, the sign upstream's `getPower()` uses. */
+  power: number;
   /** Instrument reading: a probe's selected meter mode, every other element's
    *  voltage difference, so the readout and a voltage scope agree. */
   value: number;
@@ -144,6 +148,9 @@ export interface DrawContext {
   showCurrent: boolean;
   showValues: boolean;
   showVoltageColor: boolean;
+  /** Colour element bodies by power instead of voltage; mutually exclusive
+   *  with `showVoltageColor` (Menus.java:190-197). */
+  showPowerColor: boolean;
   /** Conventional-current motion; off reverses the dots and turns them cyan. */
   conventional: boolean;
   selected: boolean;
@@ -155,6 +162,9 @@ export interface DrawContext {
   onHighlightedNet: boolean;
   /** Full-scale voltage for the colour ramp. */
   voltageRange: number;
+  /** Power brightness (the file's token 6, upstream's powerBar): scales the
+   *  power ramp via `powerMult = exp(powerRange/4.762 - 7)`. */
+  powerRange: number;
   /** Zoom factor, for keeping line weights and text readable. */
   scale: number;
 }
@@ -167,6 +177,9 @@ export interface SimSettings {
   stepsPerFrame: number;
   /** Full-scale voltage for colouring. */
   voltageRange: number;
+  /** Power brightness (header token 6, upstream's powerBar): scales the power
+   *  ramp via `powerMult = exp(powerRange/4.762 - 7)`. */
+  powerRange: number;
   /** Scales the current-dot animation speed. */
   currentSpeed: number;
   /** Floor for adaptive shrinking, seconds. */
@@ -184,6 +197,10 @@ export interface SimSettings {
   showCurrent: boolean;
   showValues: boolean;
   showVoltageColor: boolean;
+  /** Colour element bodies by dissipated power V*I instead of voltage.
+   *  Mutually exclusive with `showVoltageColor`, mirroring upstream's menus
+   *  (Menus.java:190-197). */
+  showPowerColor: boolean;
   showGrid: boolean;
   /** Dot direction and colour; a per-frame render argument like `currentSpeed`. */
   conventional: boolean;
@@ -192,23 +209,20 @@ export interface SimSettings {
   // Loading a file must not invent new values for the `$` tokens this build
   // ignores, so they are parked here and written back unchanged. Undefined
   // means the file had no such token and the writer falls back to a default.
-  /** Token 6, the power-bar position (CirSim.java:447). */
-  powerRange?: number;
-  /** Token 1 as loaded. Bits 1 (show current), 16 (show values), 64 (adaptive
-   *  timestep) and 128 (DC operating point) are modelled; the rest are
-   *  re-emitted so a save does not silently clear the user's settings. */
+  /** Token 1 as loaded. Bits 1 (show current), 4 (volts off), 8 (power on),
+   *  16 (show values), 64 (adaptive timestep) and 128 (DC operating point) are
+   *  modelled; the rest are re-emitted so a save does not silently clear the
+   *  user's settings. */
   headerFlags?: number;
 }
 
 /**
- * Cleared on every load, so a file that stops after `voltageRange` does not
- * inherit the previous file's power range. The header-modelled fields
- * (`minTimeStep`, `iterCount`, `adaptiveTimeStep`) are reset to their defaults
- * in the store instead, matching upstream's clear-on-load
- * (CircuitLoader.java:50).
+ * Cleared on every load: a `$` token this build does not model must not leak
+ * into the next file. The header-modelled fields (`minTimeStep`, `iterCount`,
+ * `adaptiveTimeStep`, `autoDC`, `powerRange`) are reset to their defaults in
+ * the store instead, matching upstream's clear-on-load (CircuitLoader.java:50).
  */
 export const UNMODELLED_HEADER: Partial<SimSettings> = {
-  powerRange: undefined,
   headerFlags: undefined,
 };
 
@@ -216,6 +230,7 @@ export const DEFAULT_SETTINGS: SimSettings = {
   timeStep: 5e-6,
   stepsPerFrame: 160,
   voltageRange: 5,
+  powerRange: 50,
   currentSpeed: 50,
   minTimeStep: 50e-12,
   iterCount: 10,
@@ -224,6 +239,7 @@ export const DEFAULT_SETTINGS: SimSettings = {
   showCurrent: true,
   showValues: true,
   showVoltageColor: true,
+  showPowerColor: false,
   showGrid: true,
   conventional: true,
 };

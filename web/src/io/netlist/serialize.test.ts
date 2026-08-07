@@ -66,9 +66,10 @@ describe('the $ header', () => {
   });
 
   it('keeps the flag bits it does not model when an edit changes the one it does', () => {
-    // Bit 4 (volts) is nowhere decoded here, so turning value labels off must
-    // not clear it. Bit 1 (current dots) is modelled, but this case covers the
-    // pass-through mask, which preserves it anyway.
+    // Bit 2 (small grid) is nowhere decoded here, so turning value labels off
+    // must not clear it. Bit 4 (volts) is modelled: this header's bit 4 means
+    // volts off, and the writer recomputes the bit from showVoltageColor, so
+    // it survives the edit too.
     const { line } = headerOf('$ 5 1e-5 10 50 5 43 5e-11\n', { showValues: false });
     expect(line.split(' ')[1]).toBe(String(16 | 5));
   });
@@ -109,6 +110,42 @@ describe('the $ header', () => {
     const out = serializeCircuit([], { ...DEFAULT_SETTINGS, showCurrent: false });
     expect(Number(out.split('\n')[0].split(' ')[1]) & 1).toBe(0);
     expect(out.split('\n')[0].split(' ')[1]).toBe('0');
+  });
+
+  it('writes the powerRange setting as header token 6', () => {
+    const out = serializeCircuit([], { ...DEFAULT_SETTINGS, powerRange: 70 });
+    expect(out.split('\n')[0].split(' ')[6]).toBe('70');
+  });
+
+  it('writes the colour modes as header flag bits 4 and 8', () => {
+    // The store keeps the modes mutually exclusive, so a power-mode save has
+    // voltage off and carries both bits, exactly as upstream's dumpOptions
+    // writes a power-mode file.
+    const powerOn = serializeCircuit([], {
+      ...DEFAULT_SETTINGS,
+      showPowerColor: true,
+      showVoltageColor: false,
+    });
+    const flags = Number(powerOn.split('\n')[0].split(' ')[1]);
+    expect(flags & 8).toBe(8);
+    expect(flags & 4).toBe(4);
+    const voltsOff = serializeCircuit([], { ...DEFAULT_SETTINGS, showVoltageColor: false });
+    expect(Number(voltsOff.split('\n')[0].split(' ')[1]) & 4).toBe(4);
+  });
+
+  it('round-trips power mode through parse and serialize', () => {
+    const parsed = parseCircuit('$ 8 0.000005 10.2 50 5 43 5e-11\n');
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    const again = parseCircuit(out);
+    expect(again.settings.powerRange).toBe(43);
+    expect(again.settings.showPowerColor).toBe(true);
+    expect(again.settings.showVoltageColor).toBe(false);
   });
 
   it('an old header that stops early gains the missing fields, as upstream writes them', () => {

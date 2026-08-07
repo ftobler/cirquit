@@ -11,7 +11,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { POT_FLIP, POT_FLIP_OFFSET, POT_SHOW_VALUES } from '../flags';
-import { readParams } from '../shared';
+import { elementColor, readParams } from '../shared';
 import { GRID_SIZE } from '../../types';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -19,7 +19,7 @@ function drawPotBody(g: DrawContext, e: CircuitElement): void {
   const [p1] = endpoints(e);
   const { end } = potEndpoint(e);
   const dn = Math.hypot(end.x - p1.x, end.y - p1.y);
-  const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
+  const color = elementColor(g, (g.voltages[0] + g.voltages[1]) / 2, g.power);
   // The body spans the normalized span (the snapped end, not the dragged one),
   // as upstream's setPoints snaps point2 before calcLeads (PotElm.java:184-205).
   const f = dn >= 32 ? (dn - 32) / (2 * dn) : 0;

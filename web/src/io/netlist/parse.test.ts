@@ -33,6 +33,8 @@ describe('netlist parsing', () => {
     expect(parsed.settings.timeStep).toBe(0.000005);
     expect(parsed.settings.currentSpeed).toBe(50);
     expect(parsed.settings.voltageRange).toBe(5);
+    // Token 6 is the power brightness, not a default.
+    expect(parsed.settings.powerRange).toBe(43);
   });
 
   it('reads iterCount and minTimeStep from the header', () => {
@@ -55,6 +57,20 @@ describe('netlist parsing', () => {
   it('decodes header flag bit 1 into showCurrent', () => {
     expect(parseCircuit('$ 0 0.000005 10 50 5 50 5e-11\n').settings.showCurrent).toBe(false);
     expect(parseCircuit('$ 1 0.000005 10 50 5 43 5e-11\n').settings.showCurrent).toBe(true);
+  });
+
+  it('decodes header flag bits 4 and 8 into the colour modes', () => {
+    // Bit 8 is power on; bit 4 is voltage off, and it wins the volts checkbox
+    // even when power is clear (readCircuitFlags, CircuitLoader.java:274-277).
+    const power = parseCircuit('$ 8 0.000005 10 50 5 43 5e-11\n').settings;
+    expect(power.showPowerColor).toBe(true);
+    expect(power.showVoltageColor).toBe(false);
+    const voltsOff = parseCircuit('$ 4 0.000005 10 50 5 43 5e-11\n').settings;
+    expect(voltsOff.showVoltageColor).toBe(false);
+    expect(voltsOff.showPowerColor).toBe(false);
+    const plain = parseCircuit('$ 1 0.000005 10 50 5 43 5e-11\n').settings;
+    expect(plain.showVoltageColor).toBe(true);
+    expect(plain.showPowerColor).toBe(false);
   });
 
   it('keeps scope lines and unmodelled lines instead of dropping them', () => {

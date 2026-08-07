@@ -8,16 +8,15 @@ import {
   formatValue,
   label,
   polyline,
-  voltageColor,
 } from '../../../render/draw';
 import { IND_BACK_EULER } from '../flags';
-import { readParams, twoPosts, writeParams } from '../shared';
+import { elementColor, readParams, twoPosts, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 function drawInductorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
-  const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
+  const color = elementColor(g, (g.voltages[0] + g.voltages[1]) / 2, g.power);
   polyline(g, coilPoints(lead1, lead2, COIL_LOOPS), color);
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);

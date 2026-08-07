@@ -14,6 +14,7 @@ import {
   endpoints,
   interp,
   interp2,
+  powerColor,
   voltageColor,
 } from '../../render/draw';
 import { FLAG_ESCAPE } from './flags';
@@ -21,6 +22,15 @@ import type { CircuitElement, DrawContext, Point } from '../types';
 
 /** Perpendicular offset of switch throws and transistor collector/emitter. */
 export const OPEN_HS = 16;
+
+/** Body colour for an element: the power colour when that mode is on, else the
+ *  midpoint voltage colour. `v` is the element's colouring voltage and `power`
+ *  the frame's per-element power, so in power mode bodies heat red as
+ *  dissipated power rises and green as the element generates, while leads and
+ *  wires keep the plain `voltageColor` (white under power mode). */
+export function elementColor(g: DrawContext, v: number, power: number): string {
+  return g.showPowerColor ? powerColor(g, power) : voltageColor(g, v);
+}
 
 export const twoPosts = (e: CircuitElement): Point[] => [
   { x: e.x1, y: e.y1 },
@@ -134,7 +144,7 @@ function drawSourceCircle(g: DrawContext, e: CircuitElement, radius: number): [P
   const [lead1, lead2] = calcLeads(e, radius * 2);
   drawLeads(g, e, lead1, lead2);
   const mid = interp(lead1, lead2, 0.5);
-  circle(g, mid, radius, voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2));
+  circle(g, mid, radius, elementColor(g, (g.voltages[0] + g.voltages[1]) / 2, g.power));
   // The source circle opens a gap in the current path like the capacitor's
   // plates, so the dots run each lead separately with the second starting at
   // the phase the first would have reached at the gap.

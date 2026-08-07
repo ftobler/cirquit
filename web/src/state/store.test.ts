@@ -372,15 +372,35 @@ describe('updateSettings reload classification', () => {
     ['iterCount', 10, false],
     ['stepsPerFrame', 160, false],
     ['voltageRange', 5, false],
+    ['powerRange', 50, false],
     ['currentSpeed', 50, false],
     ['showCurrent', true, false],
     ['showValues', true, false],
     ['showVoltageColor', true, false],
+    ['showPowerColor', true, false],
     ['showGrid', true, false],
   ] as const)('%s reloads=%s', (key, value, reload) => {
     const before = useStore.getState().revision;
     useStore.getState().updateSettings({ [key]: value } as Partial<SimSettings>);
     expect(useStore.getState().revision - before).toBe(reload ? 1 : 0);
+  });
+
+  it('keeps the two colour modes mutually exclusive without reloading', () => {
+    // Turning power on flips voltage off, and vice versa, mirroring upstream's
+    // menu toggles (Menus.java:190-197). Neither is a rebuild reason, so the
+    // simulation keeps running through the mode flip.
+    const before = useStore.getState().revision;
+    useStore.getState().updateSettings({ showPowerColor: true });
+    let s = useStore.getState();
+    expect(s.settings.showPowerColor).toBe(true);
+    expect(s.settings.showVoltageColor).toBe(false);
+    expect(s.revision).toBe(before);
+
+    useStore.getState().updateSettings({ showVoltageColor: true });
+    s = useStore.getState();
+    expect(s.settings.showVoltageColor).toBe(true);
+    expect(s.settings.showPowerColor).toBe(false);
+    expect(s.revision).toBe(before);
   });
 });
 

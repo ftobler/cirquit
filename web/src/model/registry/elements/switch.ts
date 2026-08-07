@@ -1,13 +1,6 @@
-import {
-  calcLeads,
-  currentDotsPath,
-  drawLeads,
-  endpoints,
-  line,
-  voltageColor,
-} from '../../../render/draw';
+import { calcLeads, currentDotsPath, drawLeads, endpoints, line } from '../../../render/draw';
 import { SWITCH_IEC, SWITCH_LABEL } from '../flags';
-import { switchIecPoints, switchLever, twoPosts } from '../shared';
+import { elementColor, switchIecPoints, switchLever, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The SPST tokens, which the SPDT writes first and then extends. The label
@@ -33,7 +26,7 @@ function drawSwitchBody(g: DrawContext, e: CircuitElement): void {
   const closed = (e.state ?? e.params.position ?? 0) === 0;
   // The lever is always at the pivot's potential; it is connected to lead1
   // whether it is closed or not.
-  const color = voltageColor(g, g.voltages[0]);
+  const color = elementColor(g, g.voltages[0], g.power);
   const [pivot, tip] = switchLever(lead1, lead2, closed);
   line(g, pivot, tip, color);
   if ((e.flags & SWITCH_IEC) !== 0) {

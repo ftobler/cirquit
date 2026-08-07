@@ -118,6 +118,36 @@ export function voltageColor(g: DrawContext, v: number): string {
     : mix(g.theme.neutral, g.theme.negative, -t);
 }
 
+/** Power brightness multiplier from the file-format powerRange token, the
+ *  same `exp(powerBar/4.762 - 7)` upstream recomputes every frame
+ *  (UIManager.java:630). */
+export function powerMult(powerRange: number): number {
+  return Math.exp(powerRange / 4.762 - 7);
+}
+
+/**
+ * Ramp position for a power value: -1 at the negative/red end (large
+ * dissipated power), +1 at the positive/green end (large generated power),
+ * 0 at neutral. Mirrors upstream's `i = 100 - 100*w0*powerMult` index
+ * (CircuitElm.setPowerColor, CircuitElm.java:1252-1253).
+ */
+export function powerColorT(power: number, powerRange: number): number {
+  if (!Number.isFinite(power)) return 0;
+  const t = -power * powerMult(powerRange);
+  return Math.max(-1, Math.min(1, t));
+}
+
+/** Body colour for an element dissipating `power` watts: red as dissipated
+ *  power rises, green as the element generates, on the same ramp the voltage
+ *  colours use (CircuitElm.java:1244-1258). */
+export function powerColor(g: DrawContext, power: number): string {
+  if (!g.showPowerColor || !Number.isFinite(power)) return g.theme.wire;
+  const t = powerColorT(power, g.powerRange);
+  return t >= 0
+    ? mix(g.theme.neutral, g.theme.positive, t)
+    : mix(g.theme.neutral, g.theme.negative, -t);
+}
+
 /** Colour for an element's stroke and fill: selection outranks hover, hover
  *  outranks the element's own colour. Hover and the shift-highlighted net
  *  share `theme.highlight`, exactly as upstream's needsHighlight covers the

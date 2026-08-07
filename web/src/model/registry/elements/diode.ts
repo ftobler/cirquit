@@ -7,15 +7,14 @@ import {
   interp2,
   line,
   triangle,
-  voltageColor,
 } from '../../../render/draw';
-import { twoPosts } from '../shared';
+import { elementColor, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 export function drawDiodeBody(g: DrawContext, e: CircuitElement, zener: boolean): void {
   const [lead1, lead2] = calcLeads(e, 16);
   drawLeads(g, e, lead1, lead2);
-  const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
+  const color = elementColor(g, (g.voltages[0] + g.voltages[1]) / 2, g.power);
   // Both DiodeElm and ZenerElm use hs = 8 for the triangle base and the
   // cathode bar (DiodeElm.java:118, ZenerElm.java:45).
   const [t1, t2] = interp2(lead1, lead2, 0, 8);

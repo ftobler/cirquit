@@ -176,6 +176,7 @@ export function useFrameLoop(
           return node === undefined ? 0 : (nodeVoltages[node] ?? 0);
         });
         const current = idx !== undefined && currents ? (currents[idx] ?? 0) : 0;
+        const voltage = voltages.length >= 2 ? voltages[0] - voltages[1] : (voltages[0] ?? 0);
         const value = idx !== undefined && values ? (values[idx] ?? 0) : 0;
 
         // The shift-highlighted net: any terminal on the highlighted node
@@ -204,17 +205,23 @@ export function useFrameLoop(
           theme,
           voltages,
           current,
-          voltage: voltages.length >= 2 ? voltages[0] - voltages[1] : (voltages[0] ?? 0),
+          voltage,
+          // The terminal voltage times the element current, the same V*I the
+          // power ramp colours by: positive is dissipated, negative generated
+          // (upstream's getPower(), CircuitElm.java:1273).
+          power: current * voltage,
           value,
           dotPhase: phase,
           showCurrent: settings.showCurrent,
           showValues: settings.showValues,
           showVoltageColor: settings.showVoltageColor,
+          showPowerColor: settings.showPowerColor,
           conventional: settings.conventional,
           selected: selectedIds.includes(e.id),
           hovered: hoveredId === e.id,
           onHighlightedNet,
           voltageRange: settings.voltageRange,
+          powerRange: settings.powerRange,
           scale: view.scale,
         };
         def.draw(g, e);

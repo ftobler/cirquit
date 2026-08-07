@@ -203,7 +203,11 @@ export const useStore = create<AppState>((set, get) => ({
 
   updateSettings: (patch) =>
     set((s) => {
-      const settings = { ...s.settings, ...patch };
+      const merged = { ...s.settings, ...patch };
+      // The two colour modes are mutually exclusive, mirroring upstream's
+      // menu toggles (Menus.java:190-197): turning one on turns the other off.
+      if (patch.showPowerColor !== undefined) merged.showVoltageColor = !patch.showPowerColor;
+      if (patch.showVoltageColor !== undefined) merged.showPowerColor = !patch.showVoltageColor;
       // The timestep, the adaptive floor/budget and the DC operating point
       // change every companion model's conductance or the solve itself, so
       // only those force a rebuild. Everything else is a per-frame argument
@@ -213,7 +217,7 @@ export const useStore = create<AppState>((set, get) => ({
         patch.minTimeStep !== undefined ||
         patch.adaptiveTimeStep !== undefined ||
         patch.autoDC !== undefined;
-      return { settings, revision: reload ? s.revision + 1 : s.revision };
+      return { settings: merged, revision: reload ? s.revision + 1 : s.revision };
     }),
 
   select: (ids) => set({ selectedIds: ids }),
@@ -726,6 +730,7 @@ export const useStore = create<AppState>((set, get) => ({
         iterCount: DEFAULT_SETTINGS.iterCount,
         adaptiveTimeStep: DEFAULT_SETTINGS.adaptiveTimeStep,
         autoDC: DEFAULT_SETTINGS.autoDC,
+        powerRange: DEFAULT_SETTINGS.powerRange,
         ...parsed.settings,
       },
       selectedIds: [],
@@ -794,6 +799,7 @@ export const useStore = create<AppState>((set, get) => ({
         iterCount: DEFAULT_SETTINGS.iterCount,
         adaptiveTimeStep: DEFAULT_SETTINGS.adaptiveTimeStep,
         autoDC: DEFAULT_SETTINGS.autoDC,
+        powerRange: DEFAULT_SETTINGS.powerRange,
       },
       selectedIds: [],
       hoveredId: null,

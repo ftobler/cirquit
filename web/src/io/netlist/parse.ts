@@ -174,16 +174,23 @@ export function parseCircuit(text: string): ParsedCircuit {
       // default. Old files stop after voltageRange, which upstream tolerates
       // (CircuitLoader.java:263-266).
       if (Number.isFinite(iterCount) && iterCount > 0) settings.iterCount = iterCount;
-      if (Number.isFinite(powerRange)) settings.powerRange = powerRange;
+      // The > 0 guard mirrors the powerBar's 1-100 range upstream, so a
+      // nonsense token falls back to the default instead of zeroing the ramp.
+      if (Number.isFinite(powerRange) && powerRange > 0) settings.powerRange = powerRange;
       if (Number.isFinite(minTimeStep) && minTimeStep > 0) settings.minTimeStep = minTimeStep;
-      // Bit 1 shows the current dots, bit 16 suppresses value labels, bit 64
+      // Bit 1 shows the current dots, bit 4 switches voltage colouring off,
+      // bit 8 turns power colouring on, bit 16 suppresses value labels, bit 64
       // enables the adaptive timestep, bit 128 enables the DC operating point
-      // on reset (CirSim.java:437-444). Bits 2, 4, 8 and 32 are small grid,
-      // volts, power and linear scale: kept verbatim, none of them modelled
-      // here.
+      // on reset (CirSim.java:437-444, readCircuitFlags). Bits 2 and 32 are
+      // small grid and linear scale: kept verbatim, not modelled here.
       const flags = Number(tokens[1]) || 0;
       settings.headerFlags = flags;
       settings.showCurrent = (flags & 1) !== 0;
+      // "Voltage off" is bit 4; a power-mode file sets bit 8 as well, and the
+      // power flag wins when both arrive (readCircuitFlags,
+      // CircuitLoader.java:274-277).
+      settings.showVoltageColor = (flags & 4) === 0 && (flags & 8) === 0;
+      settings.showPowerColor = (flags & 8) === 8;
       settings.showValues = (flags & 16) === 0;
       settings.adaptiveTimeStep = (flags & 64) !== 0;
       settings.autoDC = (flags & 128) !== 0;
