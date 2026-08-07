@@ -98,6 +98,36 @@ fn close(a: f64, b: f64, tol: f64) -> bool {
 }
 
 #[test]
+fn spec_requires_integer_posts() {
+    // The wire contract is `posts: Vec<[i32; 2]>`. A fractional post, which a
+    // snap-off drag used to hand over, must be rejected at deserialisation,
+    // before any node merging. This pins why the store rounds coordinates at
+    // the handoff: the alternative, widening the type to f64, would silently
+    // change node-merging semantics (nodes merge on exact coordinate equality).
+    let ok = serde_json::from_str::<CircuitSpec>(
+        r#"{"elements":[{"id":1,"kind":"resistor","posts":[[10,20],[170,20]],"params":{},"label":null,"flags":0}]}"#,
+    )
+    .expect("integer posts should deserialise");
+    assert_eq!(ok.elements[0].posts, vec![[10, 20], [170, 20]]);
+
+    let bad = serde_json::from_str::<CircuitSpec>(
+        r#"{"elements":[{"id":1,"kind":"resistor","posts":[[10.4,20],[170,20]],"params":{},"label":null,"flags":0}]}"#,
+    );
+    assert!(bad.is_err(), "fractional posts must be rejected");
+}
+
+#[test]
+fn spec_rejects_null_params() {
+    // The same failure mode as a fractional post: `JSON.stringify(NaN)` emits
+    // null, and serde rejects null for an `f64`. This is why the store and the
+    // spec builder both drop non-finite params before serialisation.
+    let bad = serde_json::from_str::<CircuitSpec>(
+        r#"{"elements":[{"id":1,"kind":"resistor","posts":[[10,20],[170,20]],"params":{"resistance":null},"label":null,"flags":0}]}"#,
+    );
+    assert!(bad.is_err(), "null params must be rejected");
+}
+
+#[test]
 fn resistive_divider_splits_the_supply() {
     // 10 V across two equal resistors: the midpoint sits at half the supply,
     // and the loop current is V/(R1+R2).

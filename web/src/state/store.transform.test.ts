@@ -49,6 +49,32 @@ describe('rotate, mirror and swap terminals', () => {
     expect(useStore.getState().elements[0]).toEqual(original);
   });
 
+  it('keeps every stored endpoint and post integral when rotating an odd-span element', () => {
+    // x1: 10 and x2: 171 share no parity, the state a hand-edited netlist line
+    // like `r 10 20 171 20` produces. A raw quarter turn about the midpoint
+    // lands on .5 values, which would break the store invariant and leak a
+    // fractional post into the saved file.
+    const id = useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 10,
+      y1: 20,
+      x2: 171,
+      y2: 20,
+      flags: 0,
+      params: {},
+    });
+    useStore.getState().select([id]);
+
+    useStore.getState().rotateSelection();
+
+    const r = useStore.getState().elements[0];
+    for (const v of [r.x1, r.y1, r.x2, r.y2]) expect(Number.isInteger(v)).toBe(true);
+    for (const p of postsOf(r)) {
+      expect(Number.isInteger(p.x)).toBe(true);
+      expect(Number.isInteger(p.y)).toBe(true);
+    }
+  });
+
   it('mirrors a selected transistor, keeping its bounding box and flipping post order', () => {
     const id = addTransistor();
     const before = postsOf(useStore.getState().elements[0]);

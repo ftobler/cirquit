@@ -82,6 +82,15 @@ describe('netlist parsing', () => {
     );
   });
 
+  it('rounds fractional coordinates from a hand-edited file', () => {
+    // Upstream files are integral, but a hand-edited line can carry fractions
+    // that would fail the engine's `[i32; 2]` post type on load.
+    const [resistor] = parseCircuit(
+      '$ 1 0.000005 10 50 5 43 5e-11\nr 10.4 20.6 170.2 20.6 0 100\n',
+    ).elements;
+    expect([resistor.x1, resistor.y1, resistor.x2, resistor.y2]).toEqual([10, 21, 170, 21]);
+  });
+
   it('ignores unknown element types without failing the load', () => {
     const parsed = parseCircuit('$ 1 0.000005 10 50 5 43 5e-11\n999 1 2 3 4 0\nr 0 0 16 0 0 100\n');
     expect(parsed.elements).toHaveLength(1);

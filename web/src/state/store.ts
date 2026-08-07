@@ -125,7 +125,20 @@ export const useStore = create<AppState>((set, get) => ({
     const id = allocateId();
     get().commit();
     set((s) => ({
-      elements: [...s.elements, { ...e, id }],
+      // Geometry must stay integral regardless of caller (see the invariant on
+      // makeElement), so a stray fractional coordinate is rounded at the door
+      // the same way updateElement does.
+      elements: [
+        ...s.elements,
+        {
+          ...e,
+          id,
+          x1: Math.round(e.x1),
+          y1: Math.round(e.y1),
+          x2: Math.round(e.x2),
+          y2: Math.round(e.y2),
+        },
+      ],
       revision: s.revision + 1,
     }));
     return id;
@@ -133,19 +146,40 @@ export const useStore = create<AppState>((set, get) => ({
 
   updateElement: (id, patch) =>
     set((s) => ({
-      elements: s.elements.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+      elements: s.elements.map((e) => {
+        if (e.id !== id) return e;
+        // Geometry must stay integral: the engine's post type is `[i32; 2]`
+        // and node merging keys on exact coordinate equality, so any
+        // coordinate the patch carries is rounded. Non-geometry patches pass
+        // through untouched.
+        return {
+          ...e,
+          ...patch,
+          ...(patch.x1 !== undefined ? { x1: Math.round(patch.x1) } : {}),
+          ...(patch.y1 !== undefined ? { y1: Math.round(patch.y1) } : {}),
+          ...(patch.x2 !== undefined ? { x2: Math.round(patch.x2) } : {}),
+          ...(patch.y2 !== undefined ? { y2: Math.round(patch.y2) } : {}),
+        };
+      }),
       revision: s.revision + 1,
     })),
 
-  moveElements: (ids, dx, dy) =>
-    set((s) => ({
+  moveElements: (ids, dx, dy) => {
+    // Round the delta, not each endpoint: a fractional pointer jitter must not
+    // corrupt integral coordinates, and one shared delta keeps the selection's
+    // internal spacing whatever the snap state. When the caller already
+    // snapped to the grid this is identity.
+    const rdx = Math.round(dx);
+    const rdy = Math.round(dy);
+    return set((s) => ({
       elements: s.elements.map((e) =>
         ids.includes(e.id)
-          ? { ...e, x1: e.x1 + dx, y1: e.y1 + dy, x2: e.x2 + dx, y2: e.y2 + dy }
+          ? { ...e, x1: e.x1 + rdx, y1: e.y1 + rdy, x2: e.x2 + rdx, y2: e.y2 + rdy }
           : e,
       ),
       revision: s.revision + 1,
-    })),
+    }));
+  },
 
   deleteSelected: () => {
     const { selectedIds } = get();
@@ -163,8 +197,14 @@ export const useStore = create<AppState>((set, get) => ({
   mirrorSelection: () => transformSelected(canMirror, mirrorElement),
   swapTerminals: () => transformSelected(canSwap, swapTerminalOrder),
 
-  setParam: (id, name, value) =>
-    set((s) => ({
+  setParam: (id, name, value) => {
+    // A non-finite value would serialize as JSON null, which serde rejects
+    // for an `f64` param and which would break the engine the same way a
+    // fractional post does. Reject it at the door: no state change, no queued
+    // edit. The property panel's number field guards first, this is the store
+    // choke point for any other input path.
+    if (!Number.isFinite(value)) return;
+    return set((s) => ({
       elements: s.elements.map((e) => {
         if (e.id !== id) return e;
         const next = { ...e, params: { ...e.params, [name]: value } };
@@ -190,7 +230,8 @@ export const useStore = create<AppState>((set, get) => ({
       // value.
       pendingParams: new Map(s.pendingParams).set(`${id}:${name}`, { id, name, value }),
       paramRevision: s.paramRevision + 1,
-    })),
+    }));
+  },
 
   setText: (id, text) =>
     set((s) => {

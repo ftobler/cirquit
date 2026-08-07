@@ -50,6 +50,16 @@ describe('rotateElement', () => {
     expect(e).toEqual(original);
   });
 
+  it('snaps an odd-span element to integers instead of emitting half coordinates', () => {
+    // x1: 10 and x2: 171 share no parity, so the quarter turn about the
+    // midpoint lands on .5 values; the store invariant demands integers.
+    const r = rotateElement(element('resistor', 10, 20, 171, 20));
+    for (const v of [r.x1, r.y1, r.x2, r.y2]) expect(Number.isInteger(v)).toBe(true);
+    // Still a clean quarter turn: vertical, midpoint 0.5 off the integer grid.
+    expect(r.x1).toBe(r.x2);
+    expect(Math.abs(r.y2 - r.y1)).toBe(161);
+  });
+
   it('keeps the midpoint fixed and the result on the grid', () => {
     const e = element('resistor', 0, 0, 160, 0);
     const r = rotateElement(e);

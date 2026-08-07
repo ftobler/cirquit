@@ -88,14 +88,25 @@ export class SimEngine {
 
     const stepsPerColumn = Math.max(1, Math.floor(settings.stepsPerFrame / 8));
     const spec = {
-      elements: usable.map((e) => ({
-        id: e.id,
-        kind: e.kind,
-        posts: postsOf(e).map((p) => [p.x, p.y]),
-        params: { ...e.params, ...(e.state !== undefined ? { position: e.state } : {}) },
-        label: e.text ?? null,
-        flags: e.flags,
-      })),
+      elements: usable.map((e) => {
+        const params = { ...e.params, ...(e.state !== undefined ? { position: e.state } : {}) };
+        return {
+          id: e.id,
+          kind: e.kind,
+          // Round at the boundary as the last line of defence: the store keeps
+          // endpoints integral, but a future writer that bypasses it must not
+          // reach serde's `[i32; 2]` with a fraction.
+          posts: postsOf(e).map((p) => [Math.round(p.x), Math.round(p.y)]),
+          // Drop non-finite params: JSON.stringify turns them into null,
+          // which serde rejects for an `f64`. The store guard makes this
+          // unreachable today; it is a second, independent wall.
+          params: Object.fromEntries(
+            Object.entries(params).filter(([, v]) => Number.isFinite(v)),
+          ),
+          label: e.text ?? null,
+          flags: e.flags,
+        };
+      }),
       options: {
         timeStep: settings.timeStep,
         minTimeStep: settings.minTimeStep,

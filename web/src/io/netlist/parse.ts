@@ -137,10 +137,13 @@ export function parseCircuit(text: string): ParsedCircuit {
     const element: CircuitElement = {
       id: allocateId(),
       kind: def.kind,
-      x1: Number(tokens[1]) || 0,
-      y1: Number(tokens[2]) || 0,
-      x2: Number(tokens[3]) || 0,
-      y2: Number(tokens[4]) || 0,
+      // Upstream files are integral, but a hand-edited file can carry
+      // fractions that would fail the engine's `[i32; 2]` post type exactly
+      // like a dragged element. Round so the store invariant survives loads.
+      x1: Math.round(Number(tokens[1]) || 0),
+      y1: Math.round(Number(tokens[2]) || 0),
+      x2: Math.round(Number(tokens[3]) || 0),
+      y2: Math.round(Number(tokens[4]) || 0),
       flags: Number(tokens[5]) || 0,
       params: { ...(def.defaults ?? {}) },
     };

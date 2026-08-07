@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, type SimSettings } from '../model/types';
+import { postsOf } from '../model/registry';
 import { parseCircuit, serializeCircuit } from '../io/netlist';
 import { makeElement, useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
@@ -365,5 +366,89 @@ describe('diode model name', () => {
     const [again] = parseCircuit(line).elements;
     expect(again.params.forwardVoltage).toBe(0.9);
     expect(again.modelName).toBeUndefined();
+  });
+});
+
+describe('the integer-coordinate invariant', () => {
+  it('a snap-off drag never produces fractional posts', () => {
+    // This is the drag that used to feed `[17.3, 8]` to serde's `[i32; 2]`.
+    const id = addResistor();
+    useStore.getState().select([id]);
+
+    for (let i = 0; i < 10; i++) {
+      useStore.getState().moveElements([id], 0.3, 1.7);
+    }
+
+    const e = useStore.getState().elements[0];
+    expect([e.x1, e.y1, e.x2, e.y2].every(Number.isInteger)).toBe(true);
+    // The engine sees postsOf, so the posts must be integral too.
+    expect(postsOf(e).every((p) => Number.isInteger(p.x) && Number.isInteger(p.y))).toBe(true);
+  });
+
+  it('a group move keeps its internal spacing', () => {
+    // Delta rounding rather than per-coordinate rounding: both resistors must
+    // land on the same rounded offset, so their relative geometry is intact.
+    const a = useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    const b = useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 176,
+      y1: 0,
+      x2: 336,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    const elements = () => useStore.getState().elements;
+    const before = Math.abs(elements().find((x) => x.id === a)!.x1 - elements().find((x) => x.id === b)!.x1);
+
+    useStore.getState().moveElements([a, b], 2.3, 0.7);
+
+    const after = Math.abs(elements().find((x) => x.id === a)!.x1 - elements().find((x) => x.id === b)!.x1);
+    expect(after).toBe(before);
+    for (const id of [a, b]) {
+      const e = elements().find((x) => x.id === id)!;
+      expect([e.x1, e.y1, e.x2, e.y2].every(Number.isInteger)).toBe(true);
+    }
+  });
+
+  it('placement rounds fractional coordinates even with snap off', () => {
+    const e = makeElement('resistor', 0.4, 1.6, 32.5, 1.5);
+    expect([e.x1, e.y1, e.x2, e.y2]).toEqual([0, 2, 33, 2]);
+    expect([e.x1, e.y1, e.x2, e.y2].every(Number.isInteger)).toBe(true);
+  });
+
+  it('updateElement rounds geometry and passes non-geometry patches through', () => {
+    const id = addResistor();
+    useStore.getState().updateElement(id, { x2: 80.5, y1: -3.4 });
+    let e = useStore.getState().elements[0];
+    expect(e.x2).toBe(81);  // Math.round(80.5)
+    expect(e.y1).toBe(-3);
+
+    useStore.getState().updateElement(id, { flags: 2 });
+    e = useStore.getState().elements[0];
+    expect(e.flags).toBe(2);
+    expect(e.x1).toBe(0);  // untouched geometry stays untouched
+  });
+
+  it('setParam rejects NaN and Infinity outright', () => {
+    const id = addResistor();
+    const before = useStore.getState();
+
+    useStore.getState().setParam(id, 'resistance', NaN);
+    useStore.getState().setParam(id, 'voltage', Infinity);
+
+    const after = useStore.getState();
+    expect(after.elements[0].params.resistance).toBe(1000);
+    expect(after.elements[0].params.voltage).toBeUndefined();
+    expect(after.pendingParams.size).toBe(0);
+    expect(after.paramRevision).toBe(before.paramRevision);
   });
 });

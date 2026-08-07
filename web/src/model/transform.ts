@@ -41,13 +41,19 @@ const centre = (e: CircuitElement) => ({
 
 /**
  * A 90 degree turn about the element's own midpoint, equivalent to upstream's
- * flipXY-then-flipY. The arithmetic is exact for grid-aligned input; it does
- * not snap coordinates, so an off-grid element keeps its fractional offsets.
+ * flipXY-then-flipY. The arithmetic is exact for grid-aligned input, but an
+ * element whose endpoints have mismatched parity (e.g. from a hand-edited
+ * netlist) would land on half coordinates, so each result is rounded to keep
+ * the store invariant "every stored endpoint is an integer" intact. For
+ * grid-aligned input the rounding is identity.
  */
 export function rotateElement(e: CircuitElement): CircuitElement {
   if (!canRotate(e)) return e;
   const { cx, cy } = centre(e);
-  const turn = (x: number, y: number): [number, number] => [y + cx - cy, cy + cx - x];
+  const turn = (x: number, y: number): [number, number] => [
+    Math.round(y + cx - cy),
+    Math.round(cy + cx - x),
+  ];
   const [x1, y1] = turn(e.x1, e.y1);
   const [x2, y2] = turn(e.x2, e.y2);
   return { ...e, x1, y1, x2, y2, flags: rotateFlags(e) };
