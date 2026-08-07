@@ -22,6 +22,7 @@ pub mod meter;
 pub mod multi_throw_switch;
 pub mod opamp;
 pub mod potentiometer;
+pub mod probe;
 pub mod resistor;
 pub mod switch;
 pub mod thermistor;
@@ -87,7 +88,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "opamp" => Box::new(opamp::OpAmp::new(spec)),
         "labeledNode" => Box::new(labeled_node::LabeledNode::new(spec)),
         "output" => Box::new(meter::Meter::new_output(spec)),
-        "probe" => Box::new(meter::Meter::new_probe(spec)),
+        "probe" => Box::new(probe::Probe::new(spec)),
         "decoration" => Box::new(decoration::Decoration::new(spec)),
         _ => return None,
     };

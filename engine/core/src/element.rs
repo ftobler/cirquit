@@ -235,6 +235,13 @@ pub trait Element {
     fn power(&self) -> f64 {
         self.voltage_diff() * self.base().current
     }
+
+    /// Instrument reading reported back to the UI each frame, the probe's
+    /// meter mode. Defaults to the two-terminal voltage difference, so every
+    /// other element reports what a voltage scope on it would plot.
+    fn value(&self) -> f64 {
+        self.voltage_diff()
+    }
 }
 
 /// Convenience for the very common two-terminal case.

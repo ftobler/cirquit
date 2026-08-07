@@ -75,6 +75,7 @@ describe('current dots', () => {
     voltages: [],
     current: 1e-3,
     voltage: 0,
+    value: 0,
     dotPhase,
     showCurrent: true,
     showValues: false,

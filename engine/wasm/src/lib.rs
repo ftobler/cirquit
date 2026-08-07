@@ -128,6 +128,14 @@ impl Simulator {
         self.circuit.element_powers()
     }
 
+    /// Instrument reading per element, in the order they were supplied.
+    /// Probes report their selected meter mode, everything else its voltage
+    /// difference.
+    #[wasm_bindgen(js_name = elementValues)]
+    pub fn element_values(&self) -> Vec<f64> {
+        self.circuit.element_values()
+    }
+
     /// Node index for every element terminal, flattened in element order, so
     /// the renderer can colour each terminal by node voltage.
     #[wasm_bindgen(js_name = elementNodes)]

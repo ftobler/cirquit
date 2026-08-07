@@ -69,6 +69,7 @@ const context = (ctx: CtxStub): DrawContext => ({
   voltages: [0, 0, 0],
   current: 1e-3,
   voltage: 0,
+  value: 0,
   dotPhase: 0,
   showCurrent: false,
   showValues: false,

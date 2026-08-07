@@ -164,6 +164,12 @@ export class SimEngine {
     return this.sim.elementVoltages();
   }
 
+  /** Instrument reading per element: a probe's selected meter value, every
+   *  other element its voltage difference, in the engine's element order. */
+  elementValues(): Float64Array {
+    return this.sim.elementValues();
+  }
+
   /** Dissipated power per element, using the scope Power-trace convention
    *  (so a delivering source reads negative), matching the readout upstream
    *  shows. */

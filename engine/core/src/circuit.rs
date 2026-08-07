@@ -749,6 +749,14 @@ impl Circuit {
         self.elements.iter().map(|e| e.power()).collect()
     }
 
+    /// Per-element instrument reading, in element order. Probes report their
+    /// selected meter value; everything else reports its voltage difference,
+    /// so this array matches `element_voltages` except where a probe has a
+    /// meter mode set.
+    pub fn element_values(&self) -> Vec<f64> {
+        self.elements.iter().map(|e| e.value()).collect()
+    }
+
     /// Node index per element terminal, flattened in element order. Lets the
     /// renderer colour each terminal by its node voltage.
     pub fn element_nodes(&self) -> Vec<u32> {

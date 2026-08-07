@@ -86,6 +86,7 @@ export function useFrameLoop(
       let currents: Float64Array | null = null;
       let nodeVoltages: Float64Array | null = null;
       let elementNodes: Uint32Array | null = null;
+      let values: Float64Array | null = null;
       if (engine) {
         if (running) {
           const stats = engine.run(settings.stepsPerFrame);
@@ -96,6 +97,7 @@ export function useFrameLoop(
         currents = engine.elementCurrents();
         nodeVoltages = engine.nodeVoltages();
         elementNodes = engine.elementNodes();
+        values = engine.elementValues();
       }
 
       // ---- render ----
@@ -132,6 +134,7 @@ export function useFrameLoop(
           return node === undefined ? 0 : (nodeVoltages[node] ?? 0);
         });
         const current = idx !== undefined && currents ? (currents[idx] ?? 0) : 0;
+        const value = idx !== undefined && values ? (values[idx] ?? 0) : 0;
 
         // Phase is integrated per element so changing the speed or the current
         // mid-run cannot teleport the dots. Only advance while running, so a
@@ -147,6 +150,7 @@ export function useFrameLoop(
           voltages,
           current,
           voltage: voltages.length >= 2 ? voltages[0] - voltages[1] : (voltages[0] ?? 0),
+          value,
           dotPhase: phase,
           showCurrent: settings.showCurrent,
           showValues: settings.showValues,

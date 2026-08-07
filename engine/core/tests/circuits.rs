@@ -3255,3 +3255,318 @@ fn zero_current_source_is_inert_at_engine_level() {
         c.element_currents()[1]
     );
 }
+
+#[test]
+fn probe_series_resistance_loads_the_divider() {
+    // A probe across the lower leg of a 10 V / 10k divider puts its series
+    // resistance in parallel with that leg (ProbeElm.java:347-350). With
+    // resistance 10k the lower leg becomes 5k and the midpoint falls to
+    // 10 * 5/(10+5) = 3.333 V, while the reported current is that voltage
+    // over the resistance, 3.333e-4 A (ProbeElm.java:343-345). An ideal probe
+    // (resistance 0) must leave the divider at 5 V and report zero current.
+    let dt = 1e-5;
+    let expected_midpoint = 10.0 * 5000.0 / 15000.0;
+    let ideal = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 10_000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 10_000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "probe", &[[100, 0], [100, 100]], &[("resistance", 0.0)]),
+        ],
+        opts(dt, true),
+    );
+    ideal.run(5);
+    assert!(
+        close(ideal.element_voltages()[2], 5.0, 1e-9),
+        "ideal probe moved the midpoint to {}",
+        ideal.element_voltages()[2]
+    );
+    assert!(
+        close(ideal.element_currents()[5], 0.0, 1e-12),
+        "ideal probe reported {} A",
+        ideal.element_currents()[5]
+    );
+
+    // The live edit path: raising the resistance makes the same probe load the
+    // divider without a rebuild, and the next steps settle on the loaded point.
+    assert!(ideal.set_param(6, "resistance", 10_000.0));
+    ideal.run(5);
+    assert!(
+        close(ideal.element_voltages()[2], expected_midpoint, 1e-3),
+        "edited probe left the midpoint at {}",
+        ideal.element_voltages()[2]
+    );
+    assert!(
+        close(
+            ideal.element_currents()[5],
+            expected_midpoint / 10_000.0,
+            1e-7
+        ),
+        "probe current was {}",
+        ideal.element_currents()[5]
+    );
+
+    // And a probe built with the resistance already set reaches the same point
+    // straight off the file.
+    let loaded = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 10_000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 10_000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(
+                6,
+                "probe",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 10_000.0)],
+            ),
+        ],
+        opts(dt, true),
+    );
+    loaded.run(5);
+    assert!(
+        close(loaded.element_voltages()[2], expected_midpoint, 1e-3),
+        "loaded probe left the midpoint at {}",
+        loaded.element_voltages()[2]
+    );
+}
+
+/// A 1 kHz, 10 V peak sine into a 1k resistor with a probe across the source
+/// terminals, the shape the three measurement tests share. `probe_index` is
+/// where the probe lands in the element list.
+fn probe_on_sine(meter: f64) -> Circuit {
+    build(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 100], [0, 0]],
+                &[
+                    ("waveform", 1.0),
+                    ("frequency", 1000.0),
+                    ("maxVoltage", 10.0),
+                ],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "probe",
+                &[[0, 100], [0, 0]],
+                &[("resistance", 0.0), ("meter", meter)],
+            ),
+            elm(4, "ground", &[[0, 100]], &[]),
+            elm(5, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-6, false),
+    )
+}
+
+#[test]
+fn probe_measures_rms_on_a_sine() {
+    // Two full periods of a 1 kHz sine at dt = 1e-6 is 2000 steps. The last
+    // direction change (the peak, half a period earlier) finalised the RMS
+    // over a complete half-cycle, so `value()` reads the sine RMS, 10/sqrt(2),
+    // within the one-sample discretisation error at the turning point.
+    let c = &mut probe_on_sine(1.0);
+    c.run(2000);
+    let values = c.element_values();
+    let expected = 10.0 / 2.0f64.sqrt();
+    assert!(
+        close(values[2], expected, 0.05),
+        "RMS read {}, expected {expected}",
+        values[2]
+    );
+}
+
+#[test]
+fn probe_zero_stall_clears_the_reading() {
+    // A signal parked at zero for more than five samples zeroes the RMS,
+    // average and the peaks (ProbeElm.java:328-340). Kill the drive after two
+    // full periods and the accumulator must not keep the stale value.
+    let c = &mut probe_on_sine(1.0);
+    c.run(2000);
+    assert!(
+        close(c.element_values()[2], 10.0 / 2.0f64.sqrt(), 0.05),
+        "RMS before the stall was {}",
+        c.element_values()[2]
+    );
+
+    assert!(c.set_param(1, "maxVoltage", 0.0));
+    c.run(10);
+    assert!(
+        close(c.element_values()[2], 0.0, 1e-12),
+        "RMS after the stall was {}",
+        c.element_values()[2]
+    );
+}
+
+#[test]
+fn each_probe_meter_mode_reads_the_right_quantity() {
+    // Seven ideal probes across the source terminals, one per selectable mode
+    // (ProbeElm.java:444-446): VOL, RMS, AVG, MAX, MIN, P2P, BIN. After two
+    // full periods the last direction changes captured a complete half-cycle
+    // of peaks and troughs, and the last sample sits at t = 2 ms.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 100], [0, 0]],
+                &[
+                    ("waveform", 1.0),
+                    ("frequency", 1000.0),
+                    ("maxVoltage", 10.0),
+                ],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "probe",
+                &[[0, 100], [0, 0]],
+                &[("resistance", 0.0), ("meter", 0.0)],
+            ),
+            elm(
+                4,
+                "probe",
+                &[[0, 100], [0, 0]],
+                &[("resistance", 0.0), ("meter", 1.0)],
+            ),
+            elm(
+                5,
+                "probe",
+                &[[0, 100], [0, 0]],
+                &[("resistance", 0.0), ("meter", 10.0)],
+            ),
+            elm(
+                6,
+                "probe",
+                &[[0, 100], [0, 0]],
+                &[("resistance", 0.0), ("meter", 2.0)],
+            ),
+            elm(
+                7,
+                "probe",
+                &[[0, 100], [0, 0]],
+                &[("resistance", 0.0), ("meter", 3.0)],
+            ),
+            elm(
+                8,
+                "probe",
+                &[[0, 100], [0, 0]],
+                &[("resistance", 0.0), ("meter", 4.0)],
+            ),
+            elm(
+                9,
+                "probe",
+                &[[0, 100], [0, 0]],
+                &[("resistance", 0.0), ("meter", 5.0)],
+            ),
+            elm(10, "ground", &[[0, 100]], &[]),
+            elm(11, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-6, false),
+    );
+    c.run(2000);
+    let values = c.element_values();
+    assert!(close(values[2], 0.0, 1e-6), "VOL read {}", values[2]);
+    assert!(
+        close(values[3], 10.0 / 2.0f64.sqrt(), 0.05),
+        "RMS read {}",
+        values[3]
+    );
+    assert!(close(values[4], 0.0, 0.1), "AVG read {}", values[4]);
+    assert!(close(values[5], 10.0, 0.05), "MAX read {}", values[5]);
+    assert!(close(values[6], -10.0, 0.05), "MIN read {}", values[6]);
+    assert!(close(values[7], 20.0, 0.1), "P2P read {}", values[7]);
+    assert!(close(values[8], 0.0, 1e-12), "BIN read {}", values[8]);
+}
+
+#[test]
+fn probe_series_resistance_rescues_a_floating_node() {
+    // The far end of a probe with a series resistor is a node whose only path
+    // to the rest of the circuit runs through that resistor, so the probe's
+    // `connects()` must tie it to the ground side for the floating-node
+    // analysis (ProbeElm.java:397). With an ideal probe (resistance 0) the
+    // same node is its own component, flagged and pinned with GMIN instead.
+    let dt = 1e-5;
+    let circuit = |resistance: f64| {
+        build(
+            vec![
+                elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+                elm(
+                    2,
+                    "resistor",
+                    &[[0, 0], [100, 0]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(
+                    3,
+                    "probe",
+                    &[[100, 0], [100, 100]],
+                    &[("resistance", resistance)],
+                ),
+                elm(4, "ground", &[[0, 100]], &[]),
+            ],
+            opts(dt, true),
+        )
+    };
+
+    let ideal = &mut circuit(0.0);
+    assert!(
+        ideal
+            .warnings()
+            .iter()
+            .any(|w| w.contains("no path to ground")),
+        "an ideal probe should leave the node floating"
+    );
+
+    let mut tied = circuit(1e6);
+    assert!(
+        tied.warnings()
+            .iter()
+            .all(|w| !w.contains("no path to ground")),
+        "warnings: {:?}",
+        tied.warnings()
+    );
+    tied.run(5);
+    // The dangling node sits at the source-side 10 V through the 1 M tie, so
+    // no current flows and the probe reads zero differential.
+    assert!(
+        close(tied.element_voltages()[2], 0.0, 1e-6),
+        "probe differential was {}",
+        tied.element_voltages()[2]
+    );
+}

@@ -19,15 +19,6 @@ impl Meter {
             posts: 1,
         }
     }
-
-    /// Two-terminal differential probe.
-    pub fn new_probe(_spec: &ElementSpec) -> Self {
-        Self {
-            base: Base::with_posts(2),
-            kind: "probe",
-            posts: 2,
-        }
-    }
 }
 
 impl Element for Meter {

@@ -544,6 +544,45 @@ describe('current source file format', () => {
   });
 });
 
+describe('probe file format', () => {
+  const probeLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith('p ')) ?? '' };
+  };
+
+  it('a fresh probe dumps the upstream constructor defaults', () => {
+    const e = makeElement('probe', 0, 0, 32, 0);
+    expect(e.flags).toBe(3);
+    expect(e.params).toEqual({ meter: 0, scale: 0, resistance: 1e7 });
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('p 0 0 32 0 3 0 0 10000000');
+  });
+
+  it('a legacy probe line without the resistance token stays ideal', () => {
+    // peak-detect.txt's exact shape. Upstream's file constructor defaults the
+    // resistance to 0 and only the third token overrides it (ProbeElm.java:61),
+    // so the 10 M `defaults` above must not leak into a tokenless line: 31
+    // corpus probes stop after 6 or 7 tokens and would all load with a 10 M
+    // load across what they measure.
+    const { e, elementLine } = probeLine('p 80 64 80 288 0');
+    expect(e.flags).toBe(0);
+    expect(e.params.resistance).toBe(0);
+    // A save writes all three tokens, exactly as upstream's dump() does.
+    expect(elementLine).toBe('p 80 64 80 288 0 0 0 0');
+  });
+
+  it('a full probe line keeps its meter and resistance tokens', () => {
+    const line = 'p 80 64 80 288 3 1 0 10000000';
+    const { e, elementLine } = probeLine(line);
+    expect(e.flags).toBe(3);
+    expect(e.params.meter).toBe(1);
+    expect(e.params.scale).toBe(0);
+    expect(e.params.resistance).toBe(1e7);
+    expect(elementLine).toBe(line);
+  });
+});
+
 describe('FLAG_ESCAPE on text and labeled nodes', () => {
   const lineFor = (e: CircuitElement, code: string) =>
     serializeCircuit([e], { ...DEFAULT_SETTINGS })

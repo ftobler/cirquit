@@ -127,6 +127,9 @@ export interface DrawContext {
   current: number;
   /** Voltage across the element. */
   voltage: number;
+  /** Instrument reading: a probe's selected meter mode, every other element's
+   *  voltage difference, so the readout and a voltage scope agree. */
+  value: number;
   /** Advances each animation frame; drives the current-flow animation. */
   dotPhase: number;
   showCurrent: boolean;
