@@ -35,6 +35,18 @@ describe('netlist parsing', () => {
     expect(parsed.settings.voltageRange).toBe(5);
   });
 
+  it('reads iterCount and minTimeStep from the header', () => {
+    const parsed = parseCircuit('$ 1 0.000005 10.20027730826997 50 5 43 5e-11\n');
+    expect(parsed.settings.iterCount).toBe(10.20027730826997);
+    expect(parsed.settings.minTimeStep).toBe(5e-11);
+    expect(parsed.settings.adaptiveTimeStep).toBe(false);
+  });
+
+  it('decodes header flag bit 64 into adaptiveTimeStep', () => {
+    expect(parseCircuit('$ 64 0.000005 10 50 5 50 5e-11\n').settings.adaptiveTimeStep).toBe(true);
+    expect(parseCircuit('$ 0 0.000005 10 50 5 50 5e-11\n').settings.adaptiveTimeStep).toBe(false);
+  });
+
   it('keeps scope lines and unmodelled lines instead of dropping them', () => {
     const parsed = parseCircuit(SAMPLE);
     expect(parsed.scopes).toHaveLength(1);

@@ -253,6 +253,12 @@ describe('topology mutators force a reload', () => {
 describe('updateSettings reload classification', () => {
   it.each([
     ['timeStep', 1e-5, true],
+    // The adaptive floor and flag are engine options too, so either forces a
+    // rebuild like timeStep does.
+    ['minTimeStep', 1e-9, true],
+    ['adaptiveTimeStep', false, true],
+    // iterCount is a header round-trip field, never sent to the engine.
+    ['iterCount', 10, false],
     ['stepsPerFrame', 160, false],
     ['voltageRange', 5, false],
     ['currentSpeed', 50, false],
@@ -264,6 +270,20 @@ describe('updateSettings reload classification', () => {
     const before = useStore.getState().revision;
     useStore.getState().updateSettings({ [key]: value } as Partial<SimSettings>);
     expect(useStore.getState().revision - before).toBe(reload ? 1 : 0);
+  });
+});
+
+describe('load resets the header stepping fields to their defaults', () => {
+  it('a file that stops before minTimeStep does not inherit the previous file', () => {
+    useStore.getState().loadNetlist('$ 0 0.000005 10 50 5 50 1e-9\nr 0 0 16 0 0 100\n');
+    expect(useStore.getState().settings.minTimeStep).toBe(1e-9);
+
+    useStore.getState().loadNetlist('$ 0 5e-6 10 50 5\nr 0 0 16 0 0 100\n');
+    expect(useStore.getState().settings.minTimeStep).toBe(DEFAULT_SETTINGS.minTimeStep);
+    expect(useStore.getState().settings.iterCount).toBe(DEFAULT_SETTINGS.iterCount);
+    // A file with no adaptive flag loads as fixed-step, which is also the
+    // default, so the header fields fall back to DEFAULT_SETTINGS.
+    expect(useStore.getState().settings.adaptiveTimeStep).toBe(false);
   });
 });
 

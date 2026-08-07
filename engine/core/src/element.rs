@@ -123,6 +123,12 @@ pub trait Element {
     /// Called once after the timestep converges.
     fn step_finished(&mut self, _ctx: &SimCtx) {}
 
+    /// Re-anchors Newton iteration state from `base.volts` after a rejected
+    /// timestep, so the retry at a smaller `dt` starts exactly where the last
+    /// committed step left off. Default is a no-op: only elements whose
+    /// `do_step` mutates persistent state need it.
+    fn restore_iteration(&mut self) {}
+
     /// Derives `base.current` from the solved voltages.
     fn calculate_current(&mut self, _ctx: &SimCtx) {}
 

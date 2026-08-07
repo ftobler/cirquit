@@ -486,12 +486,23 @@ impl Element for RelayCoil {
         let a = (-ctx.dt * 1e3).exp();
         self.avg_current = a * self.avg_current + (1.0 - a) * abs_current;
         let old_switch_position = self.switch_position;
+        // `start_iteration` sees the end-of-step time (`ctx.time`), but the
+        // transition belongs to the committed time the step started from,
+        // which is `ctx.time - ctx.dt`; the DC operating point does not
+        // advance the clock, so there `ctx.time` already is that time
+        // (RelayCoilElm.java:309,333). Recording the committed time keeps a
+        // rejected (halved) step from delaying a fire by up to a rejected dt.
+        let transition_time = if ctx.dc_analysis {
+            ctx.time
+        } else {
+            ctx.time - ctx.dt
+        };
 
         // The pick-up state machine, ported from RelayCoilElm.java:300-348.
         match self.state {
             0 => {
                 if self.avg_current > self.on_current {
-                    self.last_transition = ctx.time;
+                    self.last_transition = transition_time;
                     self.state = 1;
                 }
             }
@@ -516,7 +527,7 @@ impl Element for RelayCoil {
             }
             2 => {
                 if self.avg_current < self.off_current {
-                    self.last_transition = ctx.time;
+                    self.last_transition = transition_time;
                     self.state = 3;
                 }
             }

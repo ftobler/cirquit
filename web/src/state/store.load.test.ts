@@ -21,8 +21,9 @@ describe('load and save keep the file arrangement', () => {
   it('replays the header, the comment, the blank lines and the unmodelled line in place', () => {
     useStore.getState().loadNetlist(FILE);
     const out = useStore.getState().toNetlist().split('\n');
-    // Byte-identical header, including the three fields the port does not
-    // model and the flag bits it does not decode.
+    // Byte-identical header, including the power range and the flag bits this
+    // build does not decode (bit 64 is cleared here, so the adaptive flag
+    // stays off and the flags re-emit unchanged).
     expect(out[0]).toBe('$ 1 0.000005 10.20027730826997 50 5 43 5e-11');
     expect(out[1]).toBe('');
     expect(out[2]).toBe('# a note from the author');

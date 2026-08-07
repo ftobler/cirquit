@@ -101,10 +101,14 @@ export const useStore = create<AppState>((set, get) => ({
   updateSettings: (patch) =>
     set((s) => {
       const settings = { ...s.settings, ...patch };
-      // Only the timestep changes every companion model's conductance, so
-      // only it forces a rebuild. Everything else is a per-frame argument or
-      // display-only and must not restart the simulation.
-      const reload = patch.timeStep !== undefined;
+      // The timestep and the adaptive floor/budget change every companion
+      // model's conductance, so only those force a rebuild. Everything else is
+      // a per-frame argument or display-only and must not restart the
+      // simulation.
+      const reload =
+        patch.timeStep !== undefined ||
+        patch.minTimeStep !== undefined ||
+        patch.adaptiveTimeStep !== undefined;
       return { settings, revision: reload ? s.revision + 1 : s.revision };
     }),
 
@@ -256,7 +260,17 @@ export const useStore = create<AppState>((set, get) => ({
       unmatchedScopes,
       passthrough: parsed.passthrough,
       order: parsed.order,
-      settings: { ...s.settings, ...UNMODELLED_HEADER, ...parsed.settings },
+      settings: {
+        ...s.settings,
+        ...UNMODELLED_HEADER,
+        // A file that stops before these tokens (or has no `$` line at all)
+        // must fall back to the upstream new-circuit values, not inherit the
+        // previous file's stepping behaviour.
+        minTimeStep: DEFAULT_SETTINGS.minTimeStep,
+        iterCount: DEFAULT_SETTINGS.iterCount,
+        adaptiveTimeStep: DEFAULT_SETTINGS.adaptiveTimeStep,
+        ...parsed.settings,
+      },
       selectedIds: [],
       undoStack: [],
       redoStack: [],
@@ -299,7 +313,13 @@ export const useStore = create<AppState>((set, get) => ({
       unmatchedScopes: [],
       passthrough: [],
       order: [],
-      settings: { ...s.settings, ...UNMODELLED_HEADER },
+      settings: {
+        ...s.settings,
+        ...UNMODELLED_HEADER,
+        minTimeStep: DEFAULT_SETTINGS.minTimeStep,
+        iterCount: DEFAULT_SETTINGS.iterCount,
+        adaptiveTimeStep: DEFAULT_SETTINGS.adaptiveTimeStep,
+      },
       selectedIds: [],
       undoStack: [],
       redoStack: [],

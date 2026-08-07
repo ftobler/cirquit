@@ -365,6 +365,15 @@ impl Element for Diode {
         }
     }
 
+    /// Re-anchors the linearisation from the restored node voltages. Upstream
+    /// leaves `lastvoltdiff` holding whatever the failed attempt last wrote
+    /// (Diode.java:140-145); re-deriving it from `base.volts` makes the retry
+    /// deterministic. The same expression `do_step` uses, so with a series
+    /// resistance it anchors at the junction rather than the terminals.
+    fn restore_iteration(&mut self) {
+        self.last_v = self.base.volts[0] - self.base.volts[self.diode_end];
+    }
+
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         match name {
             "forwardVoltage" => {

@@ -87,18 +87,20 @@ export function parseCircuit(text: string): ParsedCircuit {
       if (Number.isFinite(timeStep) && timeStep > 0) settings.timeStep = timeStep;
       if (Number.isFinite(currentSpeed)) settings.currentSpeed = currentSpeed;
       if (Number.isFinite(voltageRange) && voltageRange > 0) settings.voltageRange = voltageRange;
-      // Nothing here reads these three, but a save must write back what the
-      // file said rather than a made-up default. Old files stop after
-      // voltageRange, which upstream tolerates (CircuitLoader.java:263-266).
-      if (Number.isFinite(iterCount)) settings.iterCount = iterCount;
+      // A save must write back what the file said rather than a made-up
+      // default. Old files stop after voltageRange, which upstream tolerates
+      // (CircuitLoader.java:263-266).
+      if (Number.isFinite(iterCount) && iterCount > 0) settings.iterCount = iterCount;
       if (Number.isFinite(powerRange)) settings.powerRange = powerRange;
-      if (Number.isFinite(minTimeStep)) settings.minTimeStep = minTimeStep;
-      // Bit 16 suppresses value labels (CirSim.java:440). Bits 1, 2, 4, 8, 32,
-      // 64 and 128 are dots, small grid, volts, power, linear scale,
-      // adjustTimeStep and autoDC: kept verbatim, none of them modelled here.
+      if (Number.isFinite(minTimeStep) && minTimeStep > 0) settings.minTimeStep = minTimeStep;
+      // Bit 16 suppresses value labels, bit 64 enables the adaptive timestep
+      // (CirSim.java:440-443). Bits 1, 2, 4, 8, 32 and 128 are dots, small
+      // grid, volts, power, linear scale and autoDC: kept verbatim, none of
+      // them modelled here.
       const flags = Number(tokens[1]) || 0;
       settings.headerFlags = flags;
       settings.showValues = (flags & 16) === 0;
+      settings.adaptiveTimeStep = (flags & 64) !== 0;
       order.push({ kind: 'header' });
       continue;
     }

@@ -300,4 +300,13 @@ impl Element for Mosfet {
         self.ids = 0.0;
         self.diode.reset();
     }
+
+    /// Re-anchors the clamped source/drain move from the restored node
+    /// voltages, so a rejected step cannot leave `last_v1`/`last_v2` stuck
+    /// mid-iteration on the retry.
+    fn restore_iteration(&mut self) {
+        self.last_v0 = self.base.volts[0];
+        self.last_v1 = self.base.volts[1];
+        self.last_v2 = self.base.volts[2];
+    }
 }

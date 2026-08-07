@@ -190,4 +190,12 @@ impl Element for CurrentSource {
         self.base.reset();
         self.last_volt_diff = 0.0;
     }
+
+    /// Re-anchors the tanh step-size limiter from the restored terminal
+    /// voltage. `do_step` writes `last_volt_diff` on every subiteration, so a
+    /// rejected step would otherwise leave the retry creeping from a stale
+    /// anchor instead of the committed operating point.
+    fn restore_iteration(&mut self) {
+        self.last_volt_diff = self.base.volts[1] - self.base.volts[0];
+    }
 }

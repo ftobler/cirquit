@@ -95,6 +95,8 @@ export class SimEngine {
       })),
       options: {
         timeStep: settings.timeStep,
+        minTimeStep: settings.minTimeStep,
+        adaptive: settings.adaptiveTimeStep,
         stepsPerFrame: settings.stepsPerFrame,
         maxSubiterations: 100,
         dcOperatingPoint: true,

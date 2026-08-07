@@ -152,6 +152,12 @@ export interface SimSettings {
   voltageRange: number;
   /** Scales the current-dot animation speed. */
   currentSpeed: number;
+  /** Floor for adaptive shrinking, seconds. */
+  minTimeStep: number;
+  /** Header speed token; preserved verbatim for round-trip fidelity. */
+  iterCount: number;
+  /** Header flag bit 64: adapt the timestep. */
+  adaptiveTimeStep: boolean;
   showCurrent: boolean;
   showValues: boolean;
   showVoltageColor: boolean;
@@ -161,25 +167,23 @@ export interface SimSettings {
   // Loading a file must not invent new values for the `$` tokens this build
   // ignores, so they are parked here and written back unchanged. Undefined
   // means the file had no such token and the writer falls back to a default.
-  /** Token 3, upstream's iteration/speed value (CirSim.java:445). */
-  iterCount?: number;
   /** Token 6, the power-bar position (CirSim.java:447). */
   powerRange?: number;
-  /** Token 7, absent in old files (CircuitLoader.java:265). */
-  minTimeStep?: number;
-  /** Token 1 as loaded. Only bit 16 (show values) is modelled; the rest are
-   *  re-emitted so a save does not silently clear the user's settings. */
+  /** Token 1 as loaded. Only bits 16 (show values) and 64 (adaptive
+   *  timestep) are modelled; the rest are re-emitted so a save does not
+   *  silently clear the user's settings. */
   headerFlags?: number;
 }
 
 /**
  * Cleared on every load, so a file that stops after `voltageRange` does not
- * inherit the previous file's power range or minimum timestep.
+ * inherit the previous file's power range. The header-modelled fields
+ * (`minTimeStep`, `iterCount`, `adaptiveTimeStep`) are reset to their defaults
+ * in the store instead, matching upstream's clear-on-load
+ * (CircuitLoader.java:50).
  */
 export const UNMODELLED_HEADER: Partial<SimSettings> = {
-  iterCount: undefined,
   powerRange: undefined,
-  minTimeStep: undefined,
   headerFlags: undefined,
 };
 
@@ -188,6 +192,9 @@ export const DEFAULT_SETTINGS: SimSettings = {
   stepsPerFrame: 160,
   voltageRange: 5,
   currentSpeed: 50,
+  minTimeStep: 50e-12,
+  iterCount: 10,
+  adaptiveTimeStep: false,
   showCurrent: true,
   showValues: true,
   showVoltageColor: true,

@@ -55,8 +55,40 @@ fn build_with(elements: Vec<ElementSpec>, options: SimOptions, scopes: Vec<Scope
 fn opts(time_step: f64, dc: bool) -> SimOptions {
     SimOptions {
         time_step,
+        min_time_step: 50e-12,
+        adaptive: false,
         steps_per_frame: 1,
         max_subiterations: 100,
+        dc_operating_point: dc,
+    }
+}
+
+/// The fixed `opts` helper keeps `adaptive: false` so the 120-odd existing
+/// tests stay on the fixed-step path. The adaptive-timestep tests use this
+/// instead, selecting the min step and the Newton budget the plan's scenarios
+/// need.
+fn adaptive_opts(max_step: f64, min_step: f64, subiters: u32) -> SimOptions {
+    SimOptions {
+        time_step: max_step,
+        min_time_step: min_step,
+        adaptive: true,
+        steps_per_frame: 1,
+        max_subiterations: subiters,
+        dc_operating_point: false,
+    }
+}
+
+/// Non-adaptive options at a chosen Newton budget, for the tests that pin the
+/// fixed-step path at a small budget. The plan's tuning lever: a circuit that
+/// genuinely stalls at the full step must be able to do so within the budget
+/// the fixed run hands it.
+fn opts_budget(time_step: f64, dc: bool, max_sub: u32) -> SimOptions {
+    SimOptions {
+        time_step,
+        min_time_step: 50e-12,
+        adaptive: false,
+        steps_per_frame: 1,
+        max_subiterations: max_sub,
         dc_operating_point: dc,
     }
 }
@@ -4684,5 +4716,216 @@ fn transformer_connects_all_posts() {
         close(last_sample(&c, 0) - last_sample(&c, 1), 9.99, 1e-6),
         "floating secondary read {} V, expected 9.99",
         last_sample(&c, 0) - last_sample(&c, 1)
+    );
+}
+
+// ─── Adaptive timestep with step rejection ──────────────────────────────────
+
+/// A 20 kHz, 10 V sine drives a node through 200 ohm that also carries a
+/// voltage-limited current source (0.01 A, 5 V compliance), post 0 on ground.
+/// When the source pushes the node through the compliance transition, the
+/// tanh companion's step-size limiter refuses to settle in a handful of
+/// iterations (CurrentElm.java:139-158): at dt = 5e-6 the transition needs
+/// 8, more than the budget of 5, so a fixed-step run stalls there. The exact
+/// iteration counts were tuned by probing: 8 at 5e-6, 5 at 2.5e-6, 4 at
+/// 1.25e-6, which is what makes the halve-and-retry tests below robust.
+fn compliance_circuit(phase_shift: f64) -> Vec<ElementSpec> {
+    vec![
+        elm(
+            1,
+            "voltage",
+            &[[0, 100], [0, 0]],
+            &[
+                ("waveform", 1.0),
+                ("frequency", 20000.0),
+                ("maxVoltage", 10.0),
+                ("phaseShift", phase_shift),
+            ],
+        ),
+        elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 200.0)]),
+        elm(
+            3,
+            "current",
+            &[[100, 100], [100, 0]],
+            &[("current", 0.01), ("maxVoltage", 5.0)],
+        ),
+        elm(4, "ground", &[[0, 100]], &[]),
+        elm(5, "ground", &[[100, 100]], &[]),
+    ]
+}
+
+#[test]
+fn adaptive_step_rescues_a_stubborn_circuit() {
+    // The fixed-step run has no way forward once a step needs more Newton
+    // iterations than its budget, so it stops on the first compliance
+    // crossing. The adaptive run gives the same budget the chance to retry at
+    // a halved step, and that smaller step settles, so the whole run
+    // completes and the clock advances past where the fixed run froze.
+    let mut fixed = build(compliance_circuit(0.0), opts_budget(5e-6, false, 5));
+    let report = fixed.run(200);
+    assert!(!report.converged, "the fixed-step run should stall");
+
+    let mut c = build_with(
+        compliance_circuit(0.0),
+        adaptive_opts(5e-6, 50e-12, 5),
+        vec![ScopeSpec {
+            element_id: 3,
+            value: ScopeValue::Current,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+        }],
+    );
+    let report = c.run(200);
+    assert!(report.converged, "adaptive run failed: {:?}", report.error);
+    assert!(report.rejected_steps >= 1, "nothing was ever rejected");
+    assert!(
+        report.time > 5e-4,
+        "the sim advanced only to {} s",
+        report.time
+    );
+    assert!(
+        close(report.time_step, 5e-6, 1e-15),
+        "the step should have recovered to the maximum, got {}",
+        report.time_step
+    );
+    // The compliance holds the delivered current to its rating: at a
+    // conducting phase the source pushes its full 10 mA, never more, which is
+    // the tanh roll-off doing its job. This is the fixed run's frozen
+    // alternative: it dies before ever producing a settled state.
+    let cur = c.scopes()[0].snapshot();
+    let mut cur_max: f32 = 0.0;
+    for k in (0..cur.len()).step_by(2) {
+        cur_max = cur_max.max(cur[k]).max(cur[k + 1]);
+    }
+    assert!(
+        (0.009..=0.0105).contains(&(cur_max as f64)),
+        "delivered current peaked at {cur_max}, expected it capped at the 10 mA rating"
+    );
+}
+
+#[test]
+fn rejected_step_commits_no_state_and_no_time() {
+    // Phase-shifting the sine by 7.5 degrees puts the first step's endpoint
+    // (t = 5e-6) inside the compliance transition, so the first attempt
+    // exhausts its budget of 5 and must halve to 2.5e-6, where the endpoint
+    // sits below the transition and settles. Exactly one halving, which makes
+    // the committed trajectory easy to pin: two committed steps at 2.5e-6.
+    let phase = 7.5f64 * PI / 180.0;
+    let mut c = build(compliance_circuit(phase), adaptive_opts(5e-6, 50e-12, 5));
+    let r1 = c.run(1);
+    assert_eq!(r1.rejected_steps, 1, "expected exactly one rejection");
+    assert!(
+        close(r1.time_step, 2.5e-6, 1e-15),
+        "working step after the halve was {}",
+        r1.time_step
+    );
+    // With the pre-adaptive bug the rejected attempt advanced the clock to
+    // 5e-6 and committed garbage to reactive history; the clock must only
+    // ever move by committed steps.
+    assert!(close(c.time(), 2.5e-6, 1e-15), "clock was {}", c.time());
+
+    c.run(1);
+    assert!(close(c.time(), 5e-6, 1e-15), "clock was {}", c.time());
+
+    // Reference: a non-adaptive circuit stepping the whole way at 2.5e-6. The
+    // adaptive run's rejected first step must leave no trace, so after two
+    // committed steps both circuits sit at the same time with the same node
+    // voltages, down to floating-point noise. The current source's terminal
+    // voltage is the observable: it would differ if the rejected attempt had
+    // corrupted `last_volt_diff`.
+    let mut reference = build(compliance_circuit(phase), opts_budget(2.5e-6, false, 5));
+    let rr = reference.run(2);
+    assert!(rr.converged, "reference did not converge: {:?}", rr.error);
+    assert!(close(reference.time(), 5e-6, 1e-15));
+    assert!(
+        close(
+            c.element_voltages()[2],
+            reference.element_voltages()[2],
+            1e-9
+        ),
+        "adaptive state {} differs from the reference {}",
+        c.element_voltages()[2],
+        reference.element_voltages()[2]
+    );
+}
+
+#[test]
+fn easy_steps_double_the_timestep_back_to_max() {
+    // The compliance crossing at the cold start rejects at the full step and
+    // halves, then the long stretches of the sine well away from the
+    // transition settle in two subiterations, so after three easy steps the
+    // step doubles back toward 5e-6. By the end of 200 steps (twenty periods)
+    // the working step must have recovered to the maximum.
+    let mut c = build(compliance_circuit(0.0), adaptive_opts(5e-6, 50e-12, 5));
+    let report = c.run(200);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(report.rejected_steps >= 1, "nothing was ever rejected");
+    assert!(
+        close(report.time_step, 5e-6, 1e-15),
+        "step did not double back to the maximum, it is {}",
+        report.time_step
+    );
+}
+
+#[test]
+fn step_hitting_the_floor_falls_back_to_5000_and_stops_cleanly() {
+    // A BJT with its base forced to a 100 V square wave. The cold start's vbe
+    // is deep in exponential saturation and even the relaxed 5000-iteration
+    // floor budget cannot settle the first step at dt = 2.5e-6 (probing
+    // measured >5000 iterations needed), so the run must stop with the error
+    // set and the clock still at zero. min_time_step = 1.25e-6 lands the
+    // first halving exactly on the floor: 5e-6/2 = 2.5e-6 can no longer be
+    // halved, which is what forces the 5000 budget.
+    let els = vec![
+        elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+        elm(
+            2,
+            "resistor",
+            &[[0, 0], [100, 0]],
+            &[("resistance", 47000.0)],
+        ),
+        elm(
+            3,
+            "resistor",
+            &[[0, 0], [200, 0]],
+            &[("resistance", 1000.0)],
+        ),
+        elm(
+            4,
+            "transistor",
+            &[[100, 0], [200, 0], [200, 100]],
+            &[("pnp", 1.0), ("beta", 100.0)],
+        ),
+        elm(5, "ground", &[[200, 100]], &[]),
+        elm(
+            6,
+            "voltage",
+            &[[100, 100], [100, 0]],
+            &[
+                ("waveform", 2.0),
+                ("frequency", 100000.0),
+                ("maxVoltage", 100.0),
+            ],
+        ),
+        elm(7, "ground", &[[100, 100]], &[]),
+    ];
+    let mut c = build(els, adaptive_opts(5e-6, 1.25e-6, 5));
+    let report = c.run(10);
+    assert!(
+        report.rejected_steps >= 1,
+        "the full step should be rejected"
+    );
+    assert!(
+        report.iterations > 1000,
+        "the 5000 fallback did not engage, iterations was {}",
+        report.iterations
+    );
+    assert!(!report.converged, "the run should stop as non-convergent");
+    assert!(c.error().is_some(), "no error was recorded");
+    assert!(
+        close(c.time(), 0.0, 1e-15),
+        "a rejected step advanced the clock to {}",
+        c.time()
     );
 }

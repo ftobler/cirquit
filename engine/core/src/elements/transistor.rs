@@ -180,6 +180,15 @@ impl Element for BipolarTransistor {
         }
     }
 
+    /// Re-anchors the two junction voltages from the restored node voltages,
+    /// with the same polarity scaling `do_step` applies, so a rejected step
+    /// cannot leave the Ebers-Moll model chasing a stale anchor.
+    fn restore_iteration(&mut self) {
+        let p = self.polarity;
+        self.last_vbe = p * (self.base.volts[0] - self.base.volts[2]);
+        self.last_vbc = p * (self.base.volts[0] - self.base.volts[1]);
+    }
+
     fn reset(&mut self) {
         self.base.reset();
         self.last_vbe = 0.0;

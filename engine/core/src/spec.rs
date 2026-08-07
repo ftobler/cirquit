@@ -43,8 +43,16 @@ impl ElementSpec {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SimOptions {
-    /// Nominal timestep in seconds.
+    /// Nominal (maximum) timestep in seconds.
     pub time_step: f64,
+    /// Floor for adaptive step shrinking, in seconds. The working step can
+    /// halve down to `2 * min_time_step` before the at-the-floor fallback
+    /// budget applies; below that a shrink is impossible and a non-convergent
+    /// step stops the run.
+    pub min_time_step: f64,
+    /// Enable step doubling after easy steps and halve-and-retry on a
+    /// non-convergent step.
+    pub adaptive: bool,
     /// Timesteps to advance per requested frame.
     pub steps_per_frame: u32,
     /// Newton iterations allowed before a timestep is declared non-convergent.
@@ -57,6 +65,12 @@ impl Default for SimOptions {
     fn default() -> Self {
         Self {
             time_step: 5e-6,
+            // Upstream's new-circuit default (CircuitLoader.java:50).
+            min_time_step: 50e-12,
+            // Off by default, matching upstream's `adjustTimeStep` (a plain
+            // boolean; the header's flag bit 64 and UnijunctionElm are the
+            // only things that turn it on, CircuitLoader.java:277).
+            adaptive: false,
             steps_per_frame: 160,
             max_subiterations: 100,
             dc_operating_point: true,

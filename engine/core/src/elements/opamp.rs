@@ -156,6 +156,14 @@ impl Element for OpAmp {
         self.last_vd = vd;
     }
 
+    /// Re-anchors the differential from the restored node voltages, with the
+    /// same polarity `do_step` computes the anchor from, so a rejected step
+    /// cannot leave `last_vd` stuck on the failed attempt's last iterate and
+    /// send the retry down the wrong saturation branch.
+    fn restore_iteration(&mut self) {
+        self.last_vd = self.base.volts[1] - self.base.volts[0];
+    }
+
     fn calculate_current(&mut self, _ctx: &SimCtx) {
         // Upstream's positive current leaves the output pin
         // (getCurrentIntoNode(2) == -current, OpAmpElm.java:227-231). The

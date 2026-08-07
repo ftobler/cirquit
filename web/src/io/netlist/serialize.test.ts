@@ -32,15 +32,34 @@ describe('the $ header', () => {
     return { parsed, line: out.split('\n')[0] };
   };
 
-  it('round-trips every field, including the three it does not model', () => {
+  it('round-trips every field, including the one it does not model', () => {
     const { parsed, line } = headerOf(SAMPLE);
     expect(parsed.settings.iterCount).toBe(10.20027730826997);
     expect(parsed.settings.powerRange).toBe(43);
     expect(parsed.settings.minTimeStep).toBe(5e-11);
     expect(parsed.settings.headerFlags).toBe(1);
+    expect(parsed.settings.adaptiveTimeStep).toBe(false);
     // Byte-identical: before this, iterCount became 10, powerRange 50 and
     // minTimeStep timeStep/100, and the flags collapsed to 0.
     expect(line).toBe('$ 1 0.000005 10.20027730826997 50 5 43 5e-11');
+  });
+
+  it('minTimeStep and iterCount survive a round trip', () => {
+    // Regression for the writer that used to fabricate minTimeStep as
+    // timeStep/100 and iterCount as a hardcoded 10.
+    const { line } = headerOf('$ 0 0.000005 7 50 5 50 1e-9\n');
+    expect(line.split(' ')[3]).toBe('7');
+    expect(line.split(' ')[7]).toBe('1e-9');
+  });
+
+  it('defaults match upstream', () => {
+    expect(DEFAULT_SETTINGS.minTimeStep).toBe(50e-12);
+    expect(DEFAULT_SETTINGS.iterCount).toBe(10);
+    // Upstream's adjustTimeStep defaults off; only the header flag bit 64 (or
+    // UnijunctionElm) turns it on (CircuitLoader.java:277).
+    expect(DEFAULT_SETTINGS.adaptiveTimeStep).toBe(false);
+    const out = serializeCircuit([], { ...DEFAULT_SETTINGS });
+    expect(Number(out.split('\n')[0].split(' ')[7])).toBe(50e-12);
   });
 
   it('keeps the flag bits it does not model when an edit changes the one it does', () => {
@@ -51,6 +70,9 @@ describe('the $ header', () => {
   });
 
   it('a circuit with no loaded header writes the long-standing defaults', () => {
+    // A fresh circuit is fixed-step, like upstream's off-by-default
+    // adjustTimeStep, so the header carries flag 0 (16 is only set when value
+    // labels are off).
     const out = serializeCircuit([], { ...DEFAULT_SETTINGS });
     expect(out.split('\n')[0]).toBe('$ 0 0.000005 10 50 5 50 5e-11');
   });

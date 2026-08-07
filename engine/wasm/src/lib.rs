@@ -20,6 +20,8 @@ pub struct FrameResult {
     steps: u32,
     iterations: u32,
     time: f64,
+    time_step: f64,
+    rejected_steps: u32,
     converged: bool,
     error: Option<String>,
 }
@@ -39,6 +41,17 @@ impl FrameResult {
     #[wasm_bindgen(getter)]
     pub fn time(&self) -> f64 {
         self.time
+    }
+    /// Timestep the last committed step used, and what the next step will
+    /// attempt. The convergence-diagnostics roadmap item surfaces this.
+    #[wasm_bindgen(getter)]
+    pub fn time_step(&self) -> f64 {
+        self.time_step
+    }
+    /// Timestep attempts rejected by the halve-and-retry path this frame.
+    #[wasm_bindgen(getter)]
+    pub fn rejected_steps(&self) -> u32 {
+        self.rejected_steps
     }
     #[wasm_bindgen(getter)]
     pub fn converged(&self) -> bool {
@@ -89,6 +102,8 @@ impl Simulator {
             steps: r.steps,
             iterations: r.iterations,
             time: r.time,
+            time_step: r.time_step,
+            rejected_steps: r.rejected_steps,
             converged: r.converged,
             error: r.error,
         }

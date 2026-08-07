@@ -48,9 +48,26 @@ pub struct StepReport {
     pub steps: u32,
     /// Total Newton iterations across the frame, useful for a perf readout.
     pub iterations: u32,
+    /// Timestep the last committed step used, and what the next step will
+    /// attempt.
+    pub time_step: f64,
+    /// Timestep attempts rejected by the halve-and-retry path this frame.
+    pub rejected_steps: u32,
     pub time: f64,
     pub converged: bool,
     pub error: Option<String>,
+}
+
+/// Why a single timestep attempt failed, with the subiterations it burned
+/// before giving up so the caller can report them.
+#[derive(Debug, Clone, Copy)]
+enum StepError {
+    /// The matrix has no pivot: typically a shorted source or a floating
+    /// subcircuit. A topology problem, so halving the step cannot fix it
+    /// and the attempt must not enter the halving loop.
+    Singular(u32),
+    /// The Newton budget ran out.
+    NotConverged(u32),
 }
 
 pub struct Circuit {
@@ -68,6 +85,14 @@ pub struct Circuit {
     node_voltages: Vec<f64>,
     options: SimOptions,
     ctx: SimCtx,
+    /// Timestep the next step will attempt; starts at `options.time_step` and
+    /// moves between it and `min_time_step` under adaptation.
+    current_time_step: f64,
+    /// Consecutive easy steps, drives doubling once it reaches 3.
+    good_iterations: u32,
+    /// Full solution vector (node voltages plus source currents) of the last
+    /// committed step, so a rejected attempt can restore it.
+    last_solution: Vec<f64>,
     nonlinear: bool,
     scopes: Vec<ScopeTrace>,
     warnings: Vec<String>,
@@ -93,6 +118,9 @@ impl Circuit {
             node_voltages: vec![0.0],
             options: SimOptions::default(),
             ctx: SimCtx::default(),
+            current_time_step: SimOptions::default().time_step,
+            good_iterations: 0,
+            last_solution: Vec::new(),
             nonlinear: false,
             scopes: Vec::new(),
             warnings: Vec::new(),
@@ -142,6 +170,8 @@ impl Circuit {
         self.options = spec.options.clone().unwrap_or_default();
         self.warnings.clear();
         self.error = None;
+        self.current_time_step = self.options.time_step;
+        self.good_iterations = 0;
         // Rebuilding is the topology path: adding, deleting or moving an
         // element renumbers nodes, so the state vector's meaning changes.
         // Restarting from zero is deliberate, not an oversight; carrying old
@@ -414,6 +444,20 @@ impl Circuit {
             }
         }
         self.sys.resize((self.node_count - 1) + self.vs_count);
+        // A rejection before any success must restore the t=0 state, which is
+        // all zeroes. `sys.x` is the only vector whose length changes with the
+        // system size, so re-seeding here covers every reallocation.
+        self.last_solution = vec![0.0; self.sys.x.len()];
+    }
+
+    /// Sets the working timestep and rebuilds the constant stamp pass, which
+    /// holds the reactive companion conductances that depend on `dt`. Called
+    /// on every halve and every double, matching upstream's re-stamp on a
+    /// step change (SimulationManager.java:1318,1405).
+    fn set_time_step(&mut self, dt: f64) {
+        self.current_time_step = dt;
+        self.ctx.dt = dt;
+        self.restamp();
     }
 
     /// Zeroes the matrix, re-runs the constant stamp pass and snapshots the
@@ -489,37 +533,28 @@ impl Circuit {
         // for DC, used, and then rebuilt for transient stepping.
         self.ctx.dc_analysis = true;
         self.restamp();
-        let _ = self.step_once();
+        // No adaptation here: there is no time to shrink, and reactive stamps
+        // ignore `dt` under `dc_analysis`. One attempt at the nominal step
+        // with the normal budget, exactly as before.
+        let _ = self.try_step(self.options.time_step, self.options.max_subiterations);
         self.ctx.dc_analysis = false;
         self.ctx.time = 0.0;
         self.restamp();
     }
 
-    /// Advances one timestep, running Newton to convergence.
-    fn step_once(&mut self) -> StepReport {
-        let mut report = StepReport {
-            steps: 1,
-            time: self.ctx.time,
-            converged: true,
-            ..Default::default()
-        };
-        if self.sys.size() == 0 {
-            return report;
-        }
-
-        self.ctx.dt = self.options.time_step;
+    /// A single timestep attempt at `dt`, running up to `budget` Newton
+    /// subiterations. The clock is committed only on success: `ctx.time` is
+    /// advanced to `committed + dt` while the attempt runs (so time-varying
+    /// sources see the end-of-step time) and restored on every failure path.
+    /// Reactive history (`v_prev`/`i_prev` and the source phase) moves only
+    /// in the converged branch below, in that order (`step_finished` reads
+    /// `base.current`, which `calculate_current` set).
+    fn try_step(&mut self, dt: f64, budget: u32) -> Result<usize, StepError> {
+        let committed_time = self.ctx.time;
+        self.ctx.dt = dt;
         if !self.ctx.dc_analysis {
-            // Time advances before `do_step`, so sources evaluate at
-            // end-of-step time. Upstream evaluates at start-of-step
-            // (`doStep` runs before `t += timeStep` in SimulationManager),
-            // but both conventions are self-consistent: the scopes sample
-            // after the step at the same end-of-step instant, so trace time
-            // labels match the solved node voltages. Switching would re-derive
-            // every reactive element's time base for a one-step lag that is
-            // invisible at reasonable dt, so the convention stays.
-            self.ctx.time += self.ctx.dt;
+            self.ctx.time = committed_time + dt;
         }
-        report.time = self.ctx.time;
 
         let ctx_snapshot = self.ctx;
         for elm in self.elements.iter_mut() {
@@ -527,17 +562,15 @@ impl Circuit {
         }
         self.push_relay_contact_positions();
 
-        let max_sub = if self.nonlinear {
-            self.options.max_subiterations.max(2)
-        } else {
-            1
-        };
+        // Linear circuits settle in a single pass; the caller's budget is for
+        // the nonlinear Newton loop. The `max(2)` guard keeps a pathologically
+        // low budget from making every nonlinear step fail on purpose.
+        let max_sub = if self.nonlinear { budget.max(2) } else { 1 };
         let mut converged_at = None;
 
         for subiter in 0..max_sub {
             self.ctx.subiter = subiter as usize;
             let ctx = self.ctx;
-            report.iterations += 1;
 
             if self.nonlinear {
                 self.sys.restore();
@@ -555,13 +588,8 @@ impl Circuit {
             };
 
             if let Err(SolveError::Singular) = self.sys.solve() {
-                report.converged = false;
-                report.error = Some(
-                    "The circuit has no solution: check for shorted sources or missing connections."
-                        .into(),
-                );
-                self.error = report.error.clone();
-                return report;
+                self.ctx.time = committed_time;
+                return Err(StepError::Singular(subiter + 1));
             }
             self.write_back();
 
@@ -571,11 +599,10 @@ impl Circuit {
             }
         }
 
-        if converged_at.is_none() {
-            report.converged = false;
-            report.error =
-                Some("Newton iteration did not converge; try a smaller timestep.".into());
-        }
+        let Some(subiter) = converged_at else {
+            self.ctx.time = committed_time;
+            return Err(StepError::NotConverged(max_sub));
+        };
 
         let ctx = self.ctx;
         for elm in self.elements.iter_mut() {
@@ -584,6 +611,101 @@ impl Circuit {
         self.recover_wire_currents();
         for elm in self.elements.iter_mut() {
             elm.step_finished(&ctx);
+        }
+        Ok(subiter as usize)
+    }
+
+    /// Puts the circuit back on the last committed step so a retry at a
+    /// smaller `dt` starts from the same state the failed attempt found.
+    /// `try_step` has already restored the clock; what remains is the
+    /// solution vector, the derived voltages and the per-element Newton
+    /// anchors, which a failed attempt mutated.
+    fn restore_committed(&mut self) {
+        self.sys.x.copy_from_slice(&self.last_solution);
+        self.write_back();
+        for elm in self.elements.iter_mut() {
+            elm.restore_iteration();
+        }
+    }
+
+    /// Advances one committed timestep, shrinking the step and retrying when
+    /// Newton cannot settle, and doubling back up after easy steps.
+    fn step_once(&mut self) -> StepReport {
+        let mut report = StepReport {
+            steps: 1,
+            time: self.ctx.time,
+            converged: true,
+            time_step: self.current_time_step,
+            ..Default::default()
+        };
+        if self.sys.size() == 0 {
+            return report;
+        }
+
+        let mut step = self.current_time_step;
+        loop {
+            // The 100-budget applies only while the step can still be halved;
+            // at the floor (or with adaptation off) the budget relaxes so the
+            // solver gets every chance before failing, matching upstream's
+            // subiterCount rule (SimulationManager.java:1328).
+            let can_shrink = self.options.adaptive && step / 2.0 > self.options.min_time_step;
+            let budget = if self.options.adaptive && !can_shrink {
+                5000
+            } else {
+                self.options.max_subiterations
+            };
+
+            match self.try_step(step, budget) {
+                Ok(subiter) => {
+                    report.iterations += subiter as u32 + 1;
+                    self.last_solution.copy_from_slice(&self.sys.x);
+                    if subiter < 3 {
+                        self.good_iterations += 1;
+                        if self.good_iterations >= 3
+                            && self.current_time_step < self.options.time_step
+                        {
+                            let doubled =
+                                (self.current_time_step * 2.0).min(self.options.time_step);
+                            self.set_time_step(doubled);
+                            self.good_iterations = 0;
+                        }
+                    } else {
+                        self.good_iterations = 0;
+                    }
+                    report.time = self.ctx.time;
+                    report.time_step = self.current_time_step;
+                    break;
+                }
+                Err(StepError::Singular(iterations)) => {
+                    report.iterations += iterations;
+                    report.converged = false;
+                    report.error = Some(
+                        "The circuit has no solution: check for shorted sources or missing connections."
+                            .into(),
+                    );
+                    self.error = report.error.clone();
+                    return report;
+                }
+                Err(StepError::NotConverged(iterations)) if can_shrink => {
+                    report.iterations += iterations;
+                    report.rejected_steps += 1;
+                    self.good_iterations = 0;
+                    self.restore_committed();
+                    self.set_time_step(step / 2.0);
+                    step = self.current_time_step;
+                }
+                Err(StepError::NotConverged(iterations)) => {
+                    report.iterations += iterations;
+                    report.converged = false;
+                    report.error = Some(if self.options.adaptive {
+                        "Convergence failed at the minimum timestep.".into()
+                    } else {
+                        "Newton iteration did not converge; try a smaller timestep.".into()
+                    });
+                    self.error = report.error.clone();
+                    return report;
+                }
+            }
         }
         report
     }
@@ -689,8 +811,10 @@ impl Circuit {
         };
         for _ in 0..steps {
             let r = self.step_once();
-            total.steps += 1;
+            total.steps += r.steps;
             total.iterations += r.iterations;
+            total.rejected_steps += r.rejected_steps;
+            total.time_step = r.time_step;
             total.time = r.time;
             if !r.converged {
                 total.converged = false;
@@ -722,8 +846,11 @@ impl Circuit {
     /// Returns the circuit to time zero.
     pub fn reset(&mut self) {
         self.ctx.time = 0.0;
+        self.ctx.dt = self.options.time_step;
         self.ctx.subiter = 0;
         self.error = None;
+        self.current_time_step = self.options.time_step;
+        self.good_iterations = 0;
         for elm in self.elements.iter_mut() {
             elm.reset();
         }
