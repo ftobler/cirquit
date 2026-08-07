@@ -13,6 +13,7 @@ export const fresh = () => ({
   running: true,
   tool: null,
   view: { x: 0, y: 0, scale: 1 },
+  viewSize: { w: 800, h: 600 },
   status: '',
   problem: null,
   hoveredId: null,

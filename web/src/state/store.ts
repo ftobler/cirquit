@@ -26,6 +26,7 @@ import {
 } from '../model/types';
 import type { AppState, Snapshot, ViewTransform } from './types';
 import { hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers';
+import { ZOOM_FACTOR, zoomAbout } from './view';
 
 const clone = (s: Snapshot): Snapshot => ({
   elements: s.elements.map((e) => ({ ...e, params: { ...e.params } })),
@@ -176,6 +177,7 @@ export const useStore = create<AppState>((set, get) => ({
   running: true,
   tool: null,
   view: { x: 0, y: 0, scale: 1 },
+  viewSize: { w: 800, h: 600 },
   status: '',
   problem: null,
   hoveredId: null,
@@ -198,6 +200,7 @@ export const useStore = create<AppState>((set, get) => ({
   toggleRunning: () => set((s) => ({ running: !s.running })),
   setTool: (tool) => set({ tool }),
   setView: (view) => set({ view }),
+  setViewSize: (w, h) => set({ viewSize: { w, h } }),
   setStatus: (status) => set({ status }),
   setProblem: (problem) => set({ problem }),
 
@@ -356,6 +359,27 @@ export const useStore = create<AppState>((set, get) => ({
       revision: s.revision + 1,
     }));
   },
+
+  nudgeSelection: (dx, dy) => {
+    const { selectedIds } = get();
+    if (selectedIds.length === 0) return;
+    // Commit before the move so one arrow press is exactly one undo step,
+    // matching upstream's nudge (UIManager.java:1163); the move itself never
+    // pushes.
+    get().commit();
+    get().moveElements(selectedIds, dx, dy);
+  },
+
+  zoomIn: () => set((s) => ({ view: zoomAroundCentre(s, ZOOM_FACTOR) })),
+  zoomOut: () => set((s) => ({ view: zoomAroundCentre(s, 1 / ZOOM_FACTOR) })),
+  zoomReset: () =>
+    set((s) => {
+      // The 1/scale factor lands on 0.9999999999999999 for 1.12-power scales,
+      // but zoom100 must report exactly 100% (MouseManager.java:1338-1349), so
+      // the final scale is pinned outright.
+      const view = zoomAroundCentre(s, 1 / s.view.scale);
+      return { view: { ...view, scale: 1 } };
+    }),
 
   deleteSelected: () => {
     const { selectedIds } = get();
@@ -889,6 +913,14 @@ export const useStore = create<AppState>((set, get) => ({
     insertElementsFromText(serializeCircuit(selected, s.settings));
   },
 }));
+
+/** The view zoomed by `factor` about the current screen centre, which is the
+ *  target upstream's keyboard zoom uses (zoomCircuit, MouseManager.java:1339). */
+function zoomAroundCentre(s: AppState, factor: number): ViewTransform {
+  const cx = s.view.x + s.viewSize.w / (2 * s.view.scale);
+  const cy = s.view.y + s.viewSize.h / (2 * s.view.scale);
+  return zoomAbout(s.view, cx, cy, factor);
+}
 
 /** Shared insert path for paste and duplicate: parse, re-id, offset a grid step. */
 function insertElementsFromText(text: string): void {

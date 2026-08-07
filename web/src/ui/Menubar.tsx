@@ -1,18 +1,10 @@
 /** Top bar: run controls, file actions and the example-circuit library. */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { openCircuit, saveCircuit } from '../io/fileIO';
 import { loadLibraryCircuit, loadLibraryIndex, type LibraryGroup } from '../io/library';
 import { circuitToUrl } from '../io/urlShare';
 import { useStore } from '../state/store';
-
-function download(filename: string, text: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 export function Menubar() {
   const running = useStore((s) => s.running);
@@ -28,7 +20,6 @@ export function Menubar() {
   const [library, setLibrary] = useState<LibraryGroup[] | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!libraryOpen || library) return;
@@ -56,28 +47,23 @@ export function Menubar() {
       <button type="button" onClick={newCircuit}>
         New
       </button>
-      <button type="button" onClick={() => fileInput.current?.click()}>
+      <button
+        type="button"
+        onClick={() =>
+          openCircuit((text, name) => {
+            loadNetlist(text);
+            setStatus(name);
+          })
+        }
+      >
         Open…
       </button>
-      <input
-        ref={fileInput}
-        type="file"
-        accept=".txt,.circuitjs,text/plain"
-        hidden
-        onChange={async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          loadNetlist(await file.text());
-          setStatus(file.name);
-          e.target.value = '';
-        }}
-      />
       <button
         type="button"
         onClick={() => {
           const text = toNetlist();
           markSaved(text);
-          download('circuit.txt', text);
+          saveCircuit('circuit.txt', text);
         }}
       >
         Save
@@ -98,7 +84,7 @@ export function Menubar() {
       <button type="button" onClick={undo} title="Undo (Ctrl+Z)">
         Undo
       </button>
-      <button type="button" onClick={redo} title="Redo (Ctrl+Shift+Z)">
+      <button type="button" onClick={redo} title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
         Redo
       </button>
 
@@ -136,7 +122,7 @@ export function Menubar() {
           type="button"
           className="primary"
           onClick={toggleRunning}
-          title="Run/Pause (Space)"
+          title="Run/Pause"
           aria-label={running ? 'Pause' : 'Run'}
         >
           <span className="material-icons" aria-hidden="true">

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, type SimSettings } from '../model/types';
+import { DEFAULT_SETTINGS, GRID_SIZE, type SimSettings } from '../model/types';
 import { postsOf } from '../model/registry';
 import { scopePlotsToSpecs } from '../engine/simulator';
 import { parseCircuit, serializeCircuit } from '../io/netlist';
+import { ZOOM_FACTOR, zoomAbout } from './view';
 import { makeElement, useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 
@@ -1071,5 +1072,105 @@ describe('scope coupling fast path', () => {
 
     useStore.getState().setPlotCoupling(scope.id, voltagePlot.id, true);
     expect(useStore.getState().scopes[0].plots.find((p) => p.value === 'voltage')?.acCoupled).toBe(true);
+  });
+});
+
+describe('arrow-nudge selection', () => {
+  it('moves the whole selection by the delta and is exactly one undo step', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().select([a, b]);
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().nudgeSelection(GRID_SIZE, 0);
+
+    const after = useStore.getState();
+    // commit before the move makes the whole press one entry.
+    expect(after.undoStack.length).toBe(baseline + 1);
+    for (const id of [a, b]) {
+      const e = after.elements.find((x) => x.id === id)!;
+      expect([e.x1, e.y1, e.x2, e.y2]).toEqual([GRID_SIZE, 0, 160 + GRID_SIZE, 0]);
+    }
+
+    useStore.getState().undo();
+    const s = useStore.getState();
+    expect(s.undoStack.length).toBe(baseline);
+    for (const id of [a, b]) {
+      const e = s.elements.find((x) => x.id === id)!;
+      expect([e.x1, e.y1, e.x2, e.y2]).toEqual([0, 0, 160, 0]);
+    }
+  });
+
+  it('with no selection changes nothing and pushes no undo entry', () => {
+    const baseline = useStore.getState().undoStack.length;
+    useStore.getState().nudgeSelection(GRID_SIZE, 0);
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(0);
+    expect(s.undoStack.length).toBe(baseline);
+  });
+});
+
+describe('keyboard zoom', () => {
+  it('zoomAbout keeps the focal circuit point fixed and clamps to the wheel range', () => {
+    const view = { x: 10, y: 20, scale: 2 };
+    const cx = 100;
+    const cy = 50;
+
+    const out = zoomAbout(view, cx, cy, ZOOM_FACTOR);
+    // The screen position of the focal point is unchanged by the zoom: the
+    // point under the cursor stays put, the same law the wheel uses.
+    expect((cx - out.x) * out.scale).toBeCloseTo((cx - view.x) * view.scale);
+    expect((cy - out.y) * out.scale).toBeCloseTo((cy - view.y) * view.scale);
+    expect(out.scale).toBeCloseTo(2 * ZOOM_FACTOR);
+
+    // The wheel's clamp, pinned so the keyboard cannot leave its range.
+    expect(zoomAbout(view, cx, cy, 100).scale).toBe(6);
+    expect(zoomAbout(view, cx, cy, 1e-6).scale).toBe(0.15);
+  });
+
+  it('zoomReset sets scale to exactly 1 about the same centre', () => {
+    useStore.getState().setView({ x: 40, y: -20, scale: 2.5 });
+    useStore.getState().setViewSize(800, 600);
+    const before = useStore.getState().view;
+    const cx = before.x + 800 / (2 * before.scale);
+    const cy = before.y + 600 / (2 * before.scale);
+
+    useStore.getState().zoomReset();
+
+    const s = useStore.getState();
+    expect(s.view.scale).toBe(1);
+    // The screen-centre circuit point stays at the screen centre.
+    expect((cx - s.view.x) * s.view.scale).toBeCloseTo((cx - before.x) * before.scale);
+    expect((cy - s.view.y) * s.view.scale).toBeCloseTo((cy - before.y) * before.scale);
+  });
+
+  it('zoomReset pins scale to exactly 1 even at a 1.12-power scale', () => {
+    // 1.973822685184001 is 1.12^6; dividing by it produces 0.9999999999999999,
+    // which a naive 1/scale factor would leave behind. zoom100 must report an
+    // exact 100% whatever the current zoom (MouseManager.java:1338).
+    useStore.getState().setView({ x: 10, y: 20, scale: 1.973822685184001 });
+    useStore.getState().setViewSize(800, 600);
+
+    useStore.getState().zoomReset();
+
+    expect(useStore.getState().view.scale).toBe(1);
+  });
+
+  it('zoomIn zooms about the screen centre, keeping the centred point centred', () => {
+    useStore.getState().setView({ x: 0, y: 0, scale: 1 });
+    useStore.getState().setViewSize(800, 600);
+    const before = useStore.getState().view;
+
+    useStore.getState().zoomIn();
+
+    const s = useStore.getState();
+    expect(s.view.scale).toBeCloseTo(ZOOM_FACTOR);
+    // The circuit point that was at the old centre (400, 300) is at the new
+    // centre too, so the zoom looks like it happens around the middle of the
+    // screen, the way upstream's zoomCircuit does.
+    const cx = before.x + 800 / (2 * before.scale);
+    const cy = before.y + 600 / (2 * before.scale);
+    expect((cx - s.view.x) * s.view.scale).toBeCloseTo(400);
+    expect((cy - s.view.y) * s.view.scale).toBeCloseTo(300);
   });
 });

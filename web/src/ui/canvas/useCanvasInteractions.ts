@@ -14,6 +14,7 @@ import { GRID_SIZE, type CircuitElement, type Point } from '../../model/types';
 import { distanceToElement, nearestPost, postAt, postPatch } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
 import { makeToolElement, snap, useStore } from '../../state/store';
+import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
 import { useStoreRef } from './useStoreRef';
 
 /** How close the pointer must be to an element to hit it, in circuit units. */
@@ -442,16 +443,11 @@ export function useCanvasInteractions(
       return;
     }
 
-    const factor = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
-    const scale = Math.max(0.15, Math.min(6, state.view.scale * factor));
     // Zoom about the pointer so the point under the cursor stays put. Stamped
-    // here so the value stepper stays disabled for a second after.
+    // here so the value stepper stays disabled for a second after. The factor
+    // and clamp are shared with the keyboard path via zoomAbout.
     zoomAtRef.current = now;
-    state.setView({
-      scale,
-      x: p.x - (p.x - state.view.x) * (state.view.scale / scale),
-      y: p.y - (p.y - state.view.y) * (state.view.scale / scale),
-    });
+    state.setView(zoomAbout(state.view, p.x, p.y, ev.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR));
   };
 
   const onContextMenu = (ev: React.MouseEvent<HTMLCanvasElement>) => {

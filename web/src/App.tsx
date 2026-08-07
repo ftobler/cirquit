@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { SimEngine } from './engine/simulator';
+import { matchShortcut } from './input/shortcuts';
+import { openCircuit, saveCircuit } from './io/fileIO';
 import { circuitFromUrl } from './io/urlShare';
 import { CircuitCanvas } from './ui/CircuitCanvas';
 import { ContextMenu } from './ui/ContextMenu';
@@ -42,89 +44,91 @@ export default function App() {
     };
   }, [loadNetlist]);
 
-  // Keyboard shortcuts.
+  // Keyboard shortcuts. All key matching lives in matchShortcut; this effect
+  // only guards the input focus and dispatches one-line store calls.
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       const target = ev.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
+      const action = matchShortcut({
+        key: ev.key,
+        ctrlKey: ev.ctrlKey,
+        metaKey: ev.metaKey,
+        shiftKey: ev.shiftKey,
+        altKey: ev.altKey,
+      });
+      if (!action) return;
+      // Every matched chord is an app command, so prevent its browser default;
+      // unbound keys keep theirs, notably Ctrl+= and Ctrl+- page zoom.
+      ev.preventDefault();
       const s = useStore.getState();
-
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') {
-        ev.preventDefault();
-        if (ev.shiftKey) s.redo();
-        else s.undo();
-        return;
-      }
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'x') {
-        ev.preventDefault();
-        s.cutSelection();
-        return;
-      }
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'c') {
-        ev.preventDefault();
-        s.copySelection();
-        return;
-      }
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'v') {
-        ev.preventDefault();
-        s.pasteFromClipboard();
-        return;
-      }
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'd') {
-        ev.preventDefault();
-        s.duplicateSelection();
-        return;
-      }
-      if (ev.key === 'Delete' || ev.key === 'Backspace') {
-        ev.preventDefault();
-        s.deleteSelected();
-        return;
-      }
-      // Rotate, mirror and swap terminals use bare letters, kept out of the
-      // way of the modifier chords above. Shift is excluded so shifted keys do
-      // not rotate. The store guards a selection that cannot take the command,
-      // so these are safe to fire unconditionally.
-      if (
-        !ev.ctrlKey &&
-        !ev.metaKey &&
-        !ev.altKey &&
-        !ev.shiftKey &&
-        ev.key.toLowerCase() === 'r'
-      ) {
-        ev.preventDefault();
-        s.rotateSelection();
-        return;
-      }
-      if (
-        !ev.ctrlKey &&
-        !ev.metaKey &&
-        !ev.altKey &&
-        !ev.shiftKey &&
-        ev.key.toLowerCase() === 'm'
-      ) {
-        ev.preventDefault();
-        s.mirrorSelection();
-        return;
-      }
-      if (
-        !ev.ctrlKey &&
-        !ev.metaKey &&
-        !ev.altKey &&
-        !ev.shiftKey &&
-        ev.key.toLowerCase() === 't'
-      ) {
-        ev.preventDefault();
-        s.swapTerminals();
-        return;
-      }
-      if (ev.key === 'Escape') {
-        s.setTool(null);
-        s.select([]);
-        return;
-      }
-      if (ev.key === ' ') {
-        ev.preventDefault();
-        s.toggleRunning();
+      switch (action.type) {
+        case 'undo':
+          s.undo();
+          break;
+        case 'redo':
+          s.redo();
+          break;
+        case 'delete':
+          s.deleteSelected();
+          break;
+        case 'escape':
+          // Upstream's Escape returns to select mode and leaves the selection
+          // alone (UIManager.java:1145-1151); do not deselect here.
+          s.setTool(null);
+          break;
+        case 'selectMode':
+          s.setTool(null);
+          break;
+        case 'nudge':
+          s.nudgeSelection(action.dx, action.dy);
+          break;
+        case 'zoomIn':
+          s.zoomIn();
+          break;
+        case 'zoomOut':
+          s.zoomOut();
+          break;
+        case 'zoomReset':
+          s.zoomReset();
+          break;
+        case 'save': {
+          // Exporting counts as saved, exactly like the Menubar Save button.
+          const text = s.toNetlist();
+          s.markSaved(text);
+          saveCircuit('circuit.txt', text);
+          break;
+        }
+        case 'open':
+          openCircuit((text, name) => {
+            s.loadNetlist(text);
+            s.setStatus(name);
+          });
+          break;
+        case 'copy':
+          s.copySelection();
+          break;
+        case 'cut':
+          s.cutSelection();
+          break;
+        case 'paste':
+          s.pasteFromClipboard();
+          break;
+        case 'duplicate':
+          s.duplicateSelection();
+          break;
+        case 'selectAll':
+          s.selectAll();
+          break;
+        case 'rotate':
+          s.rotateSelection();
+          break;
+        case 'mirror':
+          s.mirrorSelection();
+          break;
+        case 'swap':
+          s.swapTerminals();
+          break;
       }
     };
     window.addEventListener('keydown', onKey);

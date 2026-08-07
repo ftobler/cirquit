@@ -38,6 +38,10 @@ export interface AppState {
   /** Element kind currently armed for placement; null means select mode. */
   tool: string | null;
   view: ViewTransform;
+  /** Canvas size in CSS pixels, maintained by CircuitCanvas so keyboard
+   *  zoom can target the exact screen centre like the wheel does
+   *  (MouseManager.java:1339). */
+  viewSize: { w: number; h: number };
   status: string;
   /** Element id under the pointer, for hover highlight; null when none. */
   hoveredId: number | null;
@@ -78,6 +82,7 @@ export interface AppState {
   toggleRunning(): void;
   setTool(tool: string | null): void;
   setView(view: ViewTransform): void;
+  setViewSize(w: number, h: number): void;
   setStatus(status: string): void;
   setProblem(problem: string | null): void;
   updateSettings(patch: Partial<SimSettings>): void;
@@ -92,6 +97,14 @@ export interface AppState {
   placeWireEnd(id: number, x: number, y: number): void;
   /** Moves elements without pushing a separate undo entry per frame. */
   moveElements(ids: number[], dx: number, dy: number): void;
+  /** Moves the selection by dx/dy with exactly one undo entry per call: the
+   *  arrow-nudge path (UIManager.java:1153-1163). */
+  nudgeSelection(dx: number, dy: number): void;
+  /** Zooms about the current screen centre, sharing the wheel's factor and
+   *  clamp; zoomReset returns to exactly scale 1. */
+  zoomIn(): void;
+  zoomOut(): void;
+  zoomReset(): void;
   /** Moves a single stored endpoint by dx/dy. post 0 is (x1,y1), 1 is (x2,y2),
    *  the port of upstream's row/column capture which reads only stored
    *  endpoints, never derived posts (MouseManager.java:1161-1187). */

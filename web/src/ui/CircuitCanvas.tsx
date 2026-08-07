@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
+import { useStore } from '../state/store';
 import { useFrameLoop } from './canvas/useFrameLoop';
 import { ScrollValuePopup } from './canvas/ScrollValuePopup';
 import { useCanvasInteractions, type Drag } from './canvas/useCanvasInteractions';
@@ -16,8 +17,22 @@ export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<Drag>({ mode: 'none' });
   const [, forceRender] = useState(0);
+  const setViewSize = useStore((s) => s.setViewSize);
   useFrameLoop(canvasRef, engine, dragRef);
   const interactions = useCanvasInteractions(canvasRef, dragRef, forceRender, engine);
+
+  // Keep the store's canvas size in step with the element so keyboard zoom can
+  // target the exact screen centre (MouseManager.java:1339).
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const report = () => setViewSize(canvas.clientWidth, canvas.clientHeight);
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [setViewSize]);
+
   return (
     <>
       <canvas
