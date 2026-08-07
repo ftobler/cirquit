@@ -11,16 +11,35 @@ import init, { Simulator as WasmSimulator, supportedKinds } from '../wasm/circui
 import { postsOf } from '../model/registry';
 import type { CircuitElement, SimSettings } from '../model/types';
 
-export interface Scope {
+/** The quantity a scope trace samples. */
+export type ScopeValue = 'voltage' | 'current' | 'power';
+
+export interface ScopePlot {
+  /** Trace identity: what the UI and engine key on. */
   id: number;
-  elementId: number;
-  value: 'voltage' | 'current' | 'power';
-  label?: string;
+  /** Store element id, resolved at load. Null when the file index pointed at
+   *  an element line this build could not read; such a plot is preserved via
+   *  the raw line only and is never registered as a trace. */
+  elementId: number | null;
+  /** The sampled quantity, or null when the value token has no engine meaning
+   *  for this element (a transistor's VAL_IB). A null plot is preserved via
+   *  the raw line only. */
+  value: ScopeValue | null;
+}
+
+export interface Scope {
+  /** The `o` line's identity, for undo/redo and serialization. */
+  id: number;
   /** The `o` line's tokens after the element index, exactly as loaded: speed,
    *  plot flags, scale, trace label and the rest. None of it is interpreted
    *  yet and none of it crosses the wasm boundary; it is carried so that
-   *  saving a loaded circuit does not truncate the line. */
-  raw?: string[];
+   *  saving a loaded circuit does not truncate the line. Null for a scope
+   *  created in the UI, where there is no file line to preserve and one is
+   *  generated at save time. */
+  raw: string[] | null;
+  /** The traces, in the order they appear on the line. Plot 0 is the line's
+   *  `e` element; later plots carry their own `ne val` pairs. */
+  plots: ScopePlot[];
 }
 
 export interface FrameStats {
@@ -36,6 +55,41 @@ export interface FrameStats {
 
 /** Columns retained per scope trace. */
 const SCOPE_COLUMNS = 512;
+
+/** One trace handed to the engine, in the order it will occupy in `scopeData`. */
+export interface ScopeTraceSpec {
+  /** Store plot id; the engine trace order is the array order, and this is
+   *  what `scopeIndexOf` looks up. */
+  plotId: number;
+  elementId: number;
+  value: ScopeValue;
+  stepsPerColumn: number;
+  columns: number;
+}
+
+/**
+ * Flattens the store's scopes into one engine spec per trace, in store order
+ * (plot 0 then plot 1 of each scope). Pure, so the ordering is testable
+ * without the wasm module. A plot with no element or no representable value
+ * cannot be sampled, so it is skipped; its line is preserved via raw.
+ */
+export function scopePlotsToSpecs(scopes: Scope[], settings: SimSettings): ScopeTraceSpec[] {
+  const stepsPerColumn = Math.max(1, Math.floor(settings.stepsPerFrame / 8));
+  const out: ScopeTraceSpec[] = [];
+  for (const scope of scopes) {
+    for (const plot of scope.plots) {
+      if (plot.elementId === null || plot.value === null) continue;
+      out.push({
+        plotId: plot.id,
+        elementId: plot.elementId,
+        value: plot.value,
+        stepsPerColumn,
+        columns: SCOPE_COLUMNS,
+      });
+    }
+  }
+  return out;
+}
 
 let wasmReady: Promise<void> | null = null;
 
@@ -53,8 +107,8 @@ export class SimEngine {
   private indexById = new Map<number, number>();
   /** Offset of each element's first terminal within the flattened node list. */
   private postOffsetById = new Map<number, number>();
-  /** Scopes actually handed to the engine, in engine index order. */
-  private scopeOrder: Scope[] = [];
+  /** Traces actually handed to the engine, in engine index order. */
+  private scopeOrder: ScopeTraceSpec[] = [];
 
   private constructor(sim: WasmSimulator, kinds: Set<string>) {
     this.sim = sim;
@@ -86,7 +140,11 @@ export class SimEngine {
       offset += postsOf(e).length;
     }
 
-    const stepsPerColumn = Math.max(1, Math.floor(settings.stepsPerFrame / 8));
+    // One spec per plot, in store order, so a two-plot line fills two engine
+    // traces in the same order the file listed them.
+    const traceSpecs = (this.scopeOrder = scopePlotsToSpecs(scopes, settings).filter((s) =>
+      this.indexById.has(s.elementId),
+    ));
     const spec = {
       elements: usable.map((e) => {
         const params = { ...e.params, ...(e.state !== undefined ? { position: e.state } : {}) };
@@ -117,15 +175,13 @@ export class SimEngine {
         maxSubiterations: 1000,
         dcOperatingPoint: settings.autoDC,
       },
-      scopes: (this.scopeOrder = scopes.filter((s) => this.indexById.has(s.elementId))).map(
-        (s) => ({
-          elementId: s.elementId,
-          value: s.value,
-          post: 0,
-          stepsPerColumn,
-          columns: SCOPE_COLUMNS,
-        }),
-      ),
+      scopes: traceSpecs.map((s) => ({
+        elementId: s.elementId,
+        value: s.value,
+        post: 0,
+        stepsPerColumn: s.stepsPerColumn,
+        columns: s.columns,
+      })),
     };
 
     try {
@@ -210,9 +266,10 @@ export class SimEngine {
     return this.sim.scopeData(index);
   }
 
-  /** Engine-side index of a scope, or undefined if it was not registered. */
-  scopeIndexOf(scopeId: number): number | undefined {
-    const i = this.scopeOrder.findIndex((s) => s.id === scopeId);
+  /** Engine-side index of a scope trace, or undefined if it was not
+   *  registered. Keyed on the store plot id, which is what ScopePanel draws. */
+  scopeIndexOf(plotId: number): number | undefined {
+    const i = this.scopeOrder.findIndex((s) => s.plotId === plotId);
     return i < 0 ? undefined : i;
   }
 

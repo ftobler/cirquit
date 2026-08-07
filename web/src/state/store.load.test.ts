@@ -90,7 +90,7 @@ describe('scope lines index the file, not the elements this build can read', () 
     const s = useStore.getState();
     // Two traces on the two resistors; the one on the sweep has no element to
     // attach to and is not silently invented onto the wrong one.
-    expect(s.scopes.map((x) => x.elementId)).toEqual([s.elements[0].id, s.elements[1].id]);
+    expect(s.scopes.map((x) => x.plots[0].elementId)).toEqual([s.elements[0].id, s.elements[1].id]);
     expect(s.unmatchedScopes).toHaveLength(1);
     expect(s.unmatchedScopes[0].elementIndex).toBe(1);
   });
@@ -120,7 +120,7 @@ describe('scope lines index the file, not the elements this build can read', () 
     useStore.getState().loadNetlist(text);
     const s = useStore.getState();
     expect(s.scopes).toHaveLength(1);
-    expect(s.elements.find((e) => e.id === s.scopes[0].elementId)?.kind).toBe('output');
+    expect(s.elements.find((e) => e.id === s.scopes[0].plots[0].elementId)?.kind).toBe('output');
     expect(s.unmatchedScopes.map((c) => c.elementIndex)).toEqual([9]);
     // Both `o` lines come back, last and with every display field, and the
     // `170` keeps its place among the elements. The header and the element

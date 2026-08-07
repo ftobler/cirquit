@@ -55,7 +55,7 @@ describe('netlist parsing', () => {
   it('keeps scope lines and unmodelled lines instead of dropping them', () => {
     const parsed = parseCircuit(SAMPLE);
     expect(parsed.scopes).toHaveLength(1);
-    expect(parsed.scopes[0].elementIndex).toBe(4);
+    expect(parsed.scopes[0].plots[0].elementIndex).toBe(4);
     // The `38` slider line is not modelled but must survive a save.
     expect(parsed.passthrough.some((l) => l.startsWith('38 '))).toBe(true);
   });
@@ -104,5 +104,190 @@ describe('netlist parsing', () => {
     const parsed = parseCircuit('! model stuff\n% 1 2\n? 3 4\n. sub\n');
     expect(parsed.unsupported).toEqual(['!', '%', '?', '.']);
     expect(parsed.passthrough).toEqual(['! model stuff', '% 1 2', '? 3 4', '. sub']);
+  });
+});
+
+describe('scope o-line fidelity', () => {
+  const HEADER = '$ 1 0.000005 10 50 5 43 5e-11\n';
+  const resistors = (n: number) =>
+    Array.from({ length: n }, (_, i) => `r ${i * 16} 0 ${(i + 1) * 16} 0 0 ${100 + i}\n`).join('');
+
+  it('round-trips an o-line verbatim, plot list included', () => {
+    const parsed = parseCircuit(SAMPLE);
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+    );
+    expect(out).toContain('o 4 64 0 4099 20 0.05 0 2 4 3');
+  });
+
+  it('interprets the value token into voltage, current, power and legacy power', () => {
+    const text =
+      HEADER + resistors(3) + ['0', '3', '7', '1'].map((v, i) => `o ${i} 64 ${v} 4099 20 0.05 0 1`).join('\n') + '\n';
+    const parsed = parseCircuit(text);
+    expect(parsed.scopes.map((s) => s.plots[0].value)).toEqual([
+      'voltage',
+      'current',
+      'power',
+      'power',
+    ]);
+  });
+
+  it('maps value token 1 on a transistor to a null plot', () => {
+    const parsed = parseCircuit(
+      HEADER + 't 0 0 16 0 0 1 0 0 0 0 0\n' + 'o 0 64 1 4099 20 0.05 0 1\n',
+    );
+    expect(parsed.scopes[0].plots).toEqual([expect.objectContaining({ elementIndex: 0, value: null })]);
+  });
+
+  it('does not register the transistor VCE plot as a voltage trace', () => {
+    // early.txt and multivib-a.txt carry VAL_VCE (6) plots; the transistor's
+    // getScopeValue is element-specific and the engine cannot sample it, so
+    // the plot is preserved but unregistered instead of drawing a wrong
+    // voltage waveform.
+    const parsed = parseCircuit(
+      HEADER + 't 0 0 16 0 0 1 0 0 0 0 0\n' + 'o 0 64 6 4162 4e-7 1e-9 0 2 0 2\n',
+    );
+    expect(parsed.scopes[0].plots.map((p) => p.value)).toEqual([null, null]);
+    expect(parsed.scopes[0].raw).toEqual(['64', '6', '4162', '4e-7', '1e-9', '0', '2', '0', '2']);
+  });
+
+  it('does not register a lamp resistance or capacitor charge plot', () => {
+    // lightbulb.txt's VAL_R (2) plot on a lamp and a capacitor's VAL_CHARGE
+    // (8) have no engine meaning: both stay preserved, not plotted as voltage.
+    const parsed = parseCircuit(
+      HEADER +
+        '181 0 0 16 0 0 293 100 120 0.4 0.4\n' +
+        'c 16 0 32 0 0 1e-6 0.001\n' +
+        'o 0 64 2 4099 160 1.6 0 1 160\n' +
+        'o 1 64 8 4099 20 0.05 0 1\n',
+    );
+    expect(parsed.scopes.map((s) => s.plots[0].value)).toEqual([null, null]);
+    expect(parsed.scopes.map((s) => s.plots[0].elementIndex)).toEqual([0, 1]);
+  });
+
+  it('consumes the scale token a charge plot carries before the next plot', () => {
+    // VAL_CHARGE plots in coulombs, a unit above A, so the walk must skip its
+    // scale token before reading the second plot's `ne`, or it would read the
+    // scale as an element index and invent a phantom plot.
+    const text =
+      HEADER + 'c 0 0 16 0 0 1e-6 0.001\n' + 'o 0 64 8 4099 20 0.05 0 2 0.001 0 3\n';
+    const plots = parseCircuit(text).scopes[0].plots;
+    expect(plots).toHaveLength(2);
+    expect(plots[0]).toMatchObject({ elementIndex: 0, value: null });
+    expect(plots[1]).toMatchObject({ elementIndex: 0, value: 'current' });
+  });
+
+  it('reads the W-scale token a power plot carries', () => {
+    // A real power line has one more token than voltage or current: the scale
+    // for the W units, right after the plot count (ScopeSerializer.java:221-223).
+    const parsed = parseCircuit(HEADER + resistors(1) + 'o 0 64 7 4099 20 0.05 0 1 160\n');
+    expect(parsed.scopes[0].plots[0].value).toBe('power');
+  });
+
+  it('walks past manDivisions before a power plot scale', () => {
+    // FLAG_DIVISIONS (1 << 21) inserts a manDivisions token between the plot
+    // count and the W-scale token. Both must be skipped to find plot 0.
+    const flags = 4096 | (1 << 21);
+    const parsed = parseCircuit(HEADER + resistors(3) + `o 2 64 1 ${flags} 20 0.05 0 1 8 10\n`);
+    expect(parsed.scopes[0].plots).toHaveLength(1);
+    expect(parsed.scopes[0].plots[0]).toMatchObject({ elementIndex: 2, value: 'power' });
+  });
+
+  it('walks past per-plot flags and man-scale pairs', () => {
+    // FLAG_PERPLOTFLAGS (1 << 18) inserts a per-plot flags token before each
+    // plot and FLAG_PERPLOT_MAN_SCALE (1 << 19) a manScale/manVPosition pair
+    // after each. Both plots must still come out, in order.
+    const flags = 4096 | (1 << 18) | (1 << 19);
+    const text =
+      HEADER +
+      resistors(3) +
+      `o 2 64 0 ${flags} 20 0.05 0 2 1 2 3 4 2 3 5 6\n`;
+    const plots = parseCircuit(text).scopes[0].plots;
+    expect(plots).toHaveLength(2);
+    expect(plots[0]).toMatchObject({ elementIndex: 2, value: 'voltage' });
+    expect(plots[1]).toMatchObject({ elementIndex: 2, value: 'current' });
+  });
+
+  it('resolves scope indices through file position, past an unmodelled element', () => {
+    // `170` (SweepElm) is a code upstream creates but this build does not
+    // model, so it still takes the element-list slot and the scope's index 2
+    // is the second resistor, not the first.
+    const parsed = parseCircuit(
+      HEADER + 'r 0 0 16 0 0 100\n' + 'o 2 64 0 4099 20 0.05 0 1\n' + '170 1 2 3 4 0\n' + 'r 16 0 32 0 0 220\n',
+    );
+    expect(parsed.scopes[0].plots[0].elementIndex).toBe(2);
+    expect(parsed.scopes[0].plots[0].elementId).toBe(parsed.elements[1].id);
+  });
+
+  it('an unrecognized code does not consume a scope index', () => {
+    // `999` is not a code upstream's createCe accepts either, so it is skipped
+    // without a slot (CircuitLoader.java:201-204) and the scope's index 1 is
+    // still the second resistor.
+    const parsed = parseCircuit(
+      HEADER + 'r 0 0 16 0 0 100\n' + 'o 1 64 0 4099 20 0.05 0 1\n' + '999 1 2 3 4 0\n' + 'r 16 0 32 0 0 220\n',
+    );
+    expect(parsed.scopes[0].plots[0].elementIndex).toBe(1);
+    expect(parsed.scopes[0].plots[0].elementId).toBe(parsed.elements[1].id);
+  });
+
+  it('non-element lines do not consume a scope index', () => {
+    const parsed = parseCircuit(
+      HEADER + resistors(2) + '38 3 0 0.000001 0.000101 Capacitance\n' + 'h a hint\n' + 'o 1 64 0 4099 20 0.05 0 1\n',
+    );
+    // The slider and hint lines do not advance the element list, so index 1 is
+    // the second resistor.
+    expect(parsed.scopes[0].plots[0].elementIndex).toBe(1);
+    expect(parsed.scopes[0].plots[0].elementId).toBe(parsed.elements[1].id);
+  });
+
+  it('resolves a scope that appears above its element', () => {
+    const parsed = parseCircuit(HEADER + 'o 0 64 0 4099 20 0.05 0 1\n' + resistors(1));
+    expect(parsed.scopes[0].plots[0].elementId).toBe(parsed.elements[0].id);
+  });
+
+  it('a two-plot line yields a voltage plot and a current plot', () => {
+    const parsed = parseCircuit(HEADER + resistors(5) + 'o 4 64 0 4099 20 0.05 0 2 4 3\n');
+    const plots = parsed.scopes[0].plots;
+    expect(plots).toHaveLength(2);
+    expect(plots[0]).toMatchObject({ elementIndex: 4, value: 'voltage' });
+    expect(plots[1]).toMatchObject({ elementIndex: 4, value: 'current' });
+  });
+
+  it('a scope pointing at an unmodelled element stays preserved', () => {
+    const text = HEADER + resistors(3) + 'o 9 64 0 4099 20 0.05 0 1\n';
+    const parsed = parseCircuit(text);
+    expect(parsed.scopes[0].plots[0].elementIndex).toBe(9);
+    expect(parsed.scopes[0].plots[0].elementId).toBeUndefined();
+    // The line still comes back on save, verbatim.
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toContain('o 9 64 0 4099 20 0.05 0 1');
+  });
+
+  it('an old-style line keeps raw handling and a plot 0 value', () => {
+    // tlmatch2.txt:38, old-style (no FLAG_PLOTS): the trailing text is scope
+    // text and the value token 1 is legacy power.
+    const parsed = parseCircuit(
+      HEADER + resistors(6) + 'o 5 64 1 51 0.15625 1.220703125E-5 0 -1 matched\n',
+    );
+    expect(parsed.scopes[0].plots).toHaveLength(1);
+    expect(parsed.scopes[0].plots[0]).toMatchObject({ elementIndex: 5, value: 'power' });
+    expect(parsed.scopes[0].raw).toEqual([
+      '64',
+      '1',
+      '51',
+      '0.15625',
+      '1.220703125E-5',
+      '0',
+      '-1',
+      'matched',
+    ]);
   });
 });

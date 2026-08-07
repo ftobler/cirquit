@@ -1,22 +1,46 @@
+import type { ScopeValue } from '../../engine/simulator';
 import type { CircuitElement, SimSettings } from '../../model/types';
+
+/** One trace on a scope `o` line, exactly as the file wrote it. */
+export interface ScopePlotConfig {
+  /** Session-unique handle; the store Scope plot carries the same id, so the
+   *  UI and engine key on it. */
+  id: number;
+  /**
+   * The element index token exactly as the file wrote it: `e` for the first
+   * plot, `ne` for every plot after it. A position in upstream's element list,
+   * which counts the element lines this build cannot read. It is not an index
+   * into `ParsedCircuit.elements`.
+   */
+  elementIndex: number;
+  /** The store element id that index resolves to, or undefined when it lands
+   *  on an element line this build could not read. */
+  elementId?: number;
+  /** The interpreted quantity, or null when the value token has no engine
+   *  meaning for this element (a transistor's VAL_IB). A null plot is
+   *  preserved through the raw line only and is never registered as a trace. */
+  value: ScopeValue | null;
+}
 
 /** A scope trace as stored in the file. */
 export interface ScopeConfig {
   /** Session-unique handle, so a save can put the line back where it was. */
   id: number;
   /**
-   * The index token exactly as the file wrote it: a position in upstream's
-   * element list, which counts the element lines this build cannot read. It is
-   * not an index into `ParsedCircuit.elements`.
+   * The first plot's element index token, exactly as the file wrote it: a
+   * position in upstream's element list, which counts the element lines this
+   * build cannot read. It is not an index into `ParsedCircuit.elements`.
    */
   elementIndex: number;
   /** The element that index resolves to, or undefined when it lands on an
    *  element line this build could not read. */
   elementId?: number;
-  value: 'voltage' | 'current' | 'power';
-  /** Every token after the index, kept so the line round-trips exactly. The
-   *  display fields in here are not interpreted yet. */
+  /** Every token after the element index, kept so the line round-trips
+   *  exactly. The display fields in here are not interpreted yet. */
   raw: string[];
+  /** The traces the line carries: one for a plain scope, two for a
+   *  voltage-plus-current line. Plot 0 is the line's `e` element. */
+  plots: ScopePlotConfig[];
 }
 
 /**

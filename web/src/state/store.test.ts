@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, type SimSettings } from '../model/types';
 import { postsOf } from '../model/registry';
+import { scopePlotsToSpecs } from '../engine/simulator';
 import { parseCircuit, serializeCircuit } from '../io/netlist';
 import { makeElement, useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
@@ -580,5 +581,101 @@ describe('undo parity', () => {
     expect(useStore.getState().elements).toHaveLength(1);
     useStore.getState().undo();
     expect(useStore.getState().elements).toHaveLength(0);
+  });
+});
+
+describe('scope o-line fidelity', () => {
+  const TWO_PLOT = [
+    '$ 1 0.000005 10.20027730826997 50 5 43 5e-11',
+    'r 0 0 16 0 0 100',
+    'r 16 0 32 0 0 100',
+    'r 32 0 48 0 0 100',
+    'r 48 0 64 0 0 100',
+    'r 64 0 80 0 0 100',
+    'o 4 64 0 4099 20 0.05 0 2 4 3',
+    '',
+  ].join('\n');
+
+  it('toNetlist emits the loaded o-line verbatim, not a 4-token stub', () => {
+    useStore.getState().loadNetlist(TWO_PLOT);
+    const lines = useStore.getState().toNetlist().split('\n');
+    expect(lines).toContain('o 4 64 0 4099 20 0.05 0 2 4 3');
+    expect(lines.some((l) => /^o \d+ 64 0 4099$/.test(l))).toBe(false);
+  });
+
+  it('a two-plot line produces two ordered engine specs', () => {
+    useStore.getState().loadNetlist(TWO_PLOT);
+    const s = useStore.getState();
+    const specs = scopePlotsToSpecs(s.scopes, { ...DEFAULT_SETTINGS, ...s.settings });
+    expect(specs).toHaveLength(2);
+    expect(specs[0]).toMatchObject({
+      value: 'voltage',
+      elementId: s.scopes[0].plots[0].elementId,
+    });
+    expect(specs[1]).toMatchObject({
+      value: 'current',
+      elementId: s.scopes[0].plots[0].elementId,
+    });
+    // Engine trace indices are array positions, pinning column ordering:
+    // plot 0 is trace 0 and plot 1 is trace 1.
+    expect(specs.map((x) => x.plotId)).toEqual(s.scopes[0].plots.map((p) => p.id));
+    expect(specs.findIndex((x) => x.plotId === s.scopes[0].plots[0].id)).toBe(0);
+    expect(specs.findIndex((x) => x.plotId === s.scopes[0].plots[1].id)).toBe(1);
+  });
+
+  it('addScope dedupes and generates a loadable default line', () => {
+    const id = addResistor();
+    useStore.getState().addScope(id, 'voltage');
+    useStore.getState().addScope(id, 'voltage');
+    expect(useStore.getState().scopes).toHaveLength(1);
+    const line = useStore
+      .getState()
+      .toNetlist()
+      .split('\n')
+      .find((l) => l.startsWith('o '));
+    expect(line).toBe('o 0 64 0 4099 20 0.05 0 1');
+  });
+
+  it('addScope power emits the W-scale token the line needs', () => {
+    const id = addResistor();
+    useStore.getState().addScope(id, 'power');
+    const line = useStore
+      .getState()
+      .toNetlist()
+      .split('\n')
+      .find((l) => l.startsWith('o '));
+    expect(line).toBe('o 0 64 7 4099 20 0.05 0 1 20');
+  });
+
+  it('addScope dedupes against a plot on a loaded two-plot line', () => {
+    useStore.getState().loadNetlist(TWO_PLOT);
+    const s = useStore.getState();
+    const elementId = s.scopes[0].plots[0].elementId as number;
+    useStore.getState().addScope(elementId, 'voltage');
+    // The loaded line already shows voltage on that element, so the duplicate
+    // is a no-op while the two plots stay.
+    expect(useStore.getState().scopes).toHaveLength(1);
+    expect(useStore.getState().scopes[0].plots).toHaveLength(2);
+  });
+
+  it('deleteSelected removes a scope whose any plot element is deleted', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'current');
+    useStore.getState().select([a]);
+    useStore.getState().deleteSelected();
+    expect(useStore.getState().scopes).toHaveLength(1);
+    expect(useStore.getState().scopes[0].plots[0].elementId).toBe(b);
+  });
+
+  it('deleteSelected removes a two-plot scope when its element goes', () => {
+    useStore.getState().loadNetlist(TWO_PLOT);
+    const s = useStore.getState();
+    const target = s.elements.find((e) => s.scopes[0].plots.some((p) => p.elementId === e.id));
+    expect(target).toBeDefined();
+    useStore.getState().select([target!.id]);
+    useStore.getState().deleteSelected();
+    expect(useStore.getState().scopes).toHaveLength(0);
   });
 });

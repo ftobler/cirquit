@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import type { SimEngine } from '../engine/simulator';
+import type { ScopePlot, ScopeValue, SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
 import { canvasFont, formatValue, makeTheme } from '../render/draw';
 import { useStore } from '../state/store';
@@ -16,9 +16,9 @@ interface Props {
   engine: SimEngine | null;
 }
 
-const UNIT: Record<string, string> = { voltage: 'V', current: 'A', power: 'W' };
+const UNIT: Record<ScopeValue, string> = { voltage: 'V', current: 'A', power: 'W' };
 
-function ScopeTrace({ engine, scopeId, title }: { engine: SimEngine | null; scopeId: number; title: string }) {
+function ScopeTrace({ engine, plotId, title }: { engine: SimEngine | null; plotId: number; title: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -35,7 +35,7 @@ function ScopeTrace({ engine, scopeId, title }: { engine: SimEngine | null; scop
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      const index = engine.scopeIndexOf(scopeId);
+      const index = engine.scopeIndexOf(plotId);
       const theme = makeTheme();
       const dpr = window.devicePixelRatio || 1;
       const w = canvas.clientWidth;
@@ -89,10 +89,14 @@ function ScopeTrace({ engine, scopeId, title }: { engine: SimEngine | null; scop
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [engine, scopeId, title]);
+  }, [engine, plotId, title]);
 
   return <canvas ref={canvasRef} className="scope-canvas" />;
 }
+
+/** A plot the panel can draw: it has an element and a representable value. */
+const isDrawable = (plot: ScopePlot): plot is ScopePlot & { elementId: number; value: ScopeValue } =>
+  plot.elementId !== null && plot.value !== null;
 
 export function ScopePanel({ engine }: Props) {
   const scopes = useStore((s) => s.scopes);
@@ -103,24 +107,26 @@ export function ScopePanel({ engine }: Props) {
 
   return (
     <div className="scopes">
-      {scopes.map((scope) => {
-        const element = elements.find((e) => e.id === scope.elementId);
-        const label = element ? (defFor(element.kind)?.label ?? element.kind) : 'missing';
-        const title = `${label} ${scope.value} (${UNIT[scope.value] ?? ''})`;
-        return (
-          <div key={scope.id} className="scope">
-            <ScopeTrace engine={engine} scopeId={scope.id} title={title} />
-            <button
-              type="button"
-              className="scope-close"
-              onClick={() => removeScope(scope.id)}
-              title="Remove scope"
-            >
-              ×
-            </button>
-          </div>
-        );
-      })}
+      {scopes.flatMap((scope) =>
+        scope.plots.filter(isDrawable).map((plot) => {
+          const element = elements.find((e) => e.id === plot.elementId);
+          const label = element ? (defFor(element.kind)?.label ?? element.kind) : 'missing';
+          const title = `${label} ${plot.value} (${UNIT[plot.value]})`;
+          return (
+            <div key={plot.id} className="scope">
+              <ScopeTrace engine={engine} plotId={plot.id} title={title} />
+              <button
+                type="button"
+                className="scope-close"
+                onClick={() => removeScope(scope.id)}
+                title="Remove scope"
+              >
+                ×
+              </button>
+            </div>
+          );
+        }),
+      )}
     </div>
   );
 }

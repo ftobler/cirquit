@@ -79,17 +79,17 @@ describe('corpus fixtures', () => {
     expect(result.finite).toBe(true);
   });
 
-  it('reports an unknown dump code as missing but keeps the slider out of missing', () => {
+  it('reports an upstream dump code as missing but keeps the slider out of missing', () => {
     const entries = scanCorpus(FIXTURES_DIR);
     const slider = entries.find((e) => e.file === 'slider-unknown.txt');
     expect(slider?.load).toBe('missing');
-    expect(slider?.missing).toEqual(['999']);
+    expect(slider?.missing).toEqual(['170']);
     expect(slider?.sliderLines).toBe(1);
 
     const parsed = parseCircuit(readFileSync(join(FIXTURES_DIR, 'slider-unknown.txt'), 'utf8'));
     expect(parsed.unsupported).toContain('38');
     const { missing, sliderLines } = plainLoad(parsed);
-    expect(missing).toEqual(['999']);
+    expect(missing).toEqual(['170']);
     expect(sliderLines).toBe(1);
   });
 

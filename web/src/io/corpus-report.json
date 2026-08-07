@@ -1188,12 +1188,11 @@
   {
     "file": "cube.txt",
     "format": "plain",
-    "missing": [
-      "82"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "currentsrc.txt",
@@ -1322,19 +1321,13 @@
     "format": "plain",
     "missing": [
       "160",
-      "82",
       "155",
-      "82",
       "164",
-      "82",
-      "82",
       "168",
       "M",
       "M",
       "M",
       "M",
-      "82",
-      "82",
       "153"
     ],
     "sliderLines": 0,
@@ -2168,17 +2161,11 @@
   {
     "file": "lissa.txt",
     "format": "plain",
-    "missing": [
-      "118",
-      "118",
-      "118",
-      "118",
-      "118",
-      "118"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "logconvert.txt",
@@ -3482,7 +3469,6 @@
       "160",
       "160",
       "160",
-      "82",
       "L",
       "L",
       "L"

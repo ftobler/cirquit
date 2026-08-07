@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Scope } from '../engine/simulator';
+import type { Scope, ScopeValue } from '../engine/simulator';
 import {
   allocateId,
   isElementLine,
@@ -27,7 +27,9 @@ import { hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers
 
 const clone = (s: Snapshot): Snapshot => ({
   elements: s.elements.map((e) => ({ ...e, params: { ...e.params } })),
-  scopes: s.scopes.map((x) => ({ ...x })),
+  // Plots are nested objects, so a shallow spread would alias the live array
+  // into the undo snapshot.
+  scopes: s.scopes.map((x) => ({ ...x, plots: x.plots.map((p) => ({ ...p })) })),
   settings: { ...s.settings },
   view: { ...s.view },
 });
@@ -77,6 +79,16 @@ const DIODE_MODEL_PARAMS = [
   'saturationCurrent',
   'breakdownVoltage',
 ];
+
+/** The `o` line tokens for a scope created in the UI: a valid new-style line
+ *  with one plot. Power plots carry a W-scale token upstream expects, so the
+ *  line it produces is loadable (ScopeSerializer.java:221-223). */
+function scopeDefaultRaw(value: ScopeValue | null): string[] {
+  const token = value === 'current' ? 3 : value === 'power' ? 7 : 0;
+  const tokens = ['64', String(token), '4099', '20', '0.05', '0', '1'];
+  if (value === 'power') tokens.push('20');
+  return tokens;
+}
 
 export const useStore = create<AppState>((set, get) => ({
   elements: [],
@@ -208,7 +220,11 @@ export const useStore = create<AppState>((set, get) => ({
     get().commit();
     set((s) => ({
       elements: s.elements.filter((e) => !selectedIds.includes(e.id)),
-      scopes: s.scopes.filter((x) => !selectedIds.includes(x.elementId)),
+      // A scope goes when any of its plots names a deleted element, matching
+      // upstream's cleanup of scopes whose element is gone.
+      scopes: s.scopes.filter(
+        (x) => !x.plots.some((p) => p.elementId !== null && selectedIds.includes(p.elementId)),
+      ),
       selectedIds: [],
       revision: s.revision + 1,
     }));
@@ -290,10 +306,17 @@ export const useStore = create<AppState>((set, get) => ({
   addScope: (elementId, value) =>
     set((s) => {
       // One trace per element and quantity is plenty; adding the same one
-      // twice is almost always a misclick.
-      if (s.scopes.some((x) => x.elementId === elementId && x.value === value)) return s;
+      // twice is almost always a misclick. Compare plot-by-plot so a two-plot
+      // line already showing this quantity is not duplicated, while a scope
+      // on a different quantity of the same element still is.
+      if (
+        s.scopes.some((x) => x.plots.some((p) => p.elementId === elementId && p.value === value))
+      ) {
+        return s;
+      }
+      const id = allocateId();
       return {
-        scopes: [...s.scopes, { id: allocateId(), elementId, value }],
+        scopes: [...s.scopes, { id, raw: null, plots: [{ id, elementId, value }] }],
         revision: s.revision + 1,
       };
     }),
@@ -306,15 +329,24 @@ export const useStore = create<AppState>((set, get) => ({
 
   loadNetlist: (text) => {
     const parsed = parseCircuit(text);
-    // The parser has already resolved each `o` line's element index, which
-    // counts element lines this build cannot read. The parse-time id and the
-    // untouched display tokens both travel with the scope, so a save puts the
+    // The parser has already resolved each plot's element index, which counts
+    // element lines this build cannot read. The parse-time ids and the
+    // untouched display tokens all travel with the scope, so a save puts the
     // line back where it was with every field it arrived with.
     const scopes: Scope[] = [];
     const unmatchedScopes: ScopeConfig[] = [];
     for (const c of parsed.scopes) {
       if (c.elementId === undefined) unmatchedScopes.push(c);
-      else scopes.push({ id: c.id, elementId: c.elementId, value: c.value, raw: c.raw });
+      else
+        scopes.push({
+          id: c.id,
+          raw: c.raw,
+          plots: c.plots.map((p) => ({
+            id: p.id,
+            elementId: p.elementId ?? null,
+            value: p.value,
+          })),
+        });
     }
 
     set((s) => ({
@@ -350,17 +382,26 @@ export const useStore = create<AppState>((set, get) => ({
   toNetlist: () => {
     const s = get();
     const indexById = new Map(s.elements.map((e, i) => [e.id, i]));
-    const scopeConfigs: ScopeConfig[] = s.scopes.map((x) => ({
-      id: x.id,
-      // Recomputed by the writer from where the element lands in the file;
-      // this is only the fallback for a scope with no element left.
-      elementIndex: indexById.get(x.elementId) ?? -1,
-      elementId: x.elementId,
-      value: x.value,
-      // A loaded line keeps every display field it came with. One created here
-      // gets the defaults matching the original layout: speed, flags, scale.
-      raw: x.raw ?? ['64', '0', '4099'],
-    }));
+    const scopeConfigs: ScopeConfig[] = s.scopes.map((x) => {
+      const first = x.plots[0];
+      return {
+        id: x.id,
+        // Recomputed by the writer from where the element lands in the file;
+        // this is only the fallback for a plot with no element left.
+        elementIndex: indexById.get(first.elementId ?? -1) ?? -1,
+        elementId: first.elementId ?? undefined,
+        // A loaded line keeps every display field it came with. One created
+        // here gets a full new-style line (position 0, one plot) that upstream
+        // parses, replacing the old unloadable 4-token stub.
+        raw: x.raw ?? scopeDefaultRaw(first.value),
+        plots: x.plots.map((p) => ({
+          id: p.id,
+          elementIndex: indexById.get(p.elementId ?? -1) ?? -1,
+          elementId: p.elementId ?? undefined,
+          value: p.value,
+        })),
+      };
+    });
     return serializeCircuit(
       s.elements,
       s.settings,

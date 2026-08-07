@@ -1,6 +1,6 @@
 /** Application state. Everything the UI reads or mutates lives here. */
 
-import type { Scope } from '../engine/simulator';
+import type { Scope, ScopeValue } from '../engine/simulator';
 import type { NetlistLine, ScopeConfig } from '../io/netlist';
 import type { CircuitElement, SimSettings } from '../model/types';
 
@@ -86,7 +86,7 @@ export interface AppState {
   /** Drops queued value edits; the frame loop calls this after applying them. */
   clearPending(): void;
 
-  addScope(elementId: number, value: Scope['value']): void;
+  addScope(elementId: number, value: ScopeValue): void;
   removeScope(id: number): void;
 
   loadNetlist(text: string): void;

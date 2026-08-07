@@ -2009,6 +2009,39 @@ fn opamp_scope_plots_output_minus_non_inverting_input() {
 }
 
 #[test]
+fn current_scope_samples_the_dc_branch_current() {
+    // A Current scope on a resistor must sample the branch current, not the
+    // voltage: 5 V across 100 ohm is 0.05 A. The scope o-line value token 3
+    // maps to a Current spec in the frontend, and this pins the engine side
+    // of that contract: the sample has to be a real current, or a saved file
+    // would reload a current trace as a flat voltage one.
+    let c = &mut build_with(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 100.0)]),
+            elm(3, "wire", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+        vec![ScopeSpec {
+            element_id: 2,
+            value: ScopeValue::Current,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+        }],
+    );
+    c.run(30);
+    let snap = c.scopes()[0].snapshot();
+    let (min, max) = (snap[snap.len() - 2] as f64, snap[snap.len() - 1] as f64);
+    assert!(
+        close(min, 0.05, 1e-6) && close(max, 0.05, 1e-6),
+        "current scope sampled {min}/{max}, expected 0.05 A"
+    );
+}
+
+#[test]
 fn opamp_output_current_and_power_match_upstream() {
     // Voltage follower: 5 V into the non-inverting input, the output wired to
     // the inverting input, a 1k load from the output node to ground. The
