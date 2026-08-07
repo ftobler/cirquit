@@ -30,16 +30,25 @@ function Field({
   field,
   value,
   onChange,
+  onBeginEdit,
 }: {
   field: FieldDef;
   value: number | string;
   onChange: (v: number | string) => void;
+  onBeginEdit: () => void;
 }) {
   if (field.type === 'text') {
     return (
       <label className="field">
         <span>{field.label}</span>
-        <input type="text" value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} />
+        <input
+          type="text"
+          value={String(value ?? '')}
+          // Focus opens the edit session, so the whole typing session is one
+          // undo entry; commit's dedup drops a focus that changed nothing.
+          onFocus={onBeginEdit}
+          onChange={(e) => onChange(e.target.value)}
+        />
       </label>
     );
   }
@@ -53,6 +62,10 @@ function Field({
         <input
           type="checkbox"
           checked={v !== 0}
+          // Focus opens the edit session so a flag flip is one undo entry,
+          // same as the number and text fields; dedup drops a focus that
+          // changed nothing.
+          onFocus={onBeginEdit}
           onChange={(e) => onChange(e.target.checked ? 1 : 0)}
         />
         <span>{field.label}</span>
@@ -64,7 +77,13 @@ function Field({
     return (
       <label className="field">
         <span>{field.label}</span>
-        <select value={v} onChange={(e) => onChange(Number(e.target.value))}>
+        <select
+          value={v}
+          // Focus opens the edit session so a waveform or type change is one
+          // undo entry, same as the number and text fields.
+          onFocus={onBeginEdit}
+          onChange={(e) => onChange(Number(e.target.value))}
+        >
           {field.choices?.map((c) => (
             <option key={c.value} value={c.value}>
               {c.label}
@@ -87,6 +106,12 @@ function Field({
           max={field.max}
           step={(field.max - field.min) / 100}
           value={v}
+          // Pointer-down lands before the first change event, so a slider
+          // drag opens one edit session and is one undo step. Focus covers
+          // tab-to + arrow-key edits with the same bracketing; the dedup makes
+          // the two calls a harmless no-op when both fire.
+          onPointerDown={onBeginEdit}
+          onFocus={onBeginEdit}
           onChange={(e) => onChange(Number(e.target.value))}
         />
       </label>
@@ -103,6 +128,7 @@ function Field({
         type="number"
         value={v}
         step="any"
+        onFocus={onBeginEdit}
         onChange={(e) => {
           const n = Number(e.target.value);
           if (Number.isFinite(n)) onChange(n);
@@ -118,6 +144,7 @@ export function OptionsPanel({ engine }: Props) {
   const settings = useStore((s) => s.settings);
   const setParam = useStore((s) => s.setParam);
   const setText = useStore((s) => s.setText);
+  const beginEdit = useStore((s) => s.beginEdit);
   const updateElement = useStore((s) => s.updateElement);
   const updateSettings = useStore((s) => s.updateSettings);
   const addScope = useStore((s) => s.addScope);
@@ -164,6 +191,7 @@ export function OptionsPanel({ engine }: Props) {
               key={f.name}
               field={f}
               value={fieldValue(selected, f)}
+              onBeginEdit={beginEdit}
               onChange={(v) => {
                 if (f.target === 'text') {
                   setText(selected.id, String(v));

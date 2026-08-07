@@ -11,10 +11,14 @@ export interface ViewTransform {
   scale: number;
 }
 
-/** A point-in-time copy of everything undo needs to restore. */
+/** A point-in-time copy of everything undo needs to restore. Settings and view
+ *  travel with it like the dump header and transform do upstream, so undoing a
+ *  drag, toggle or edit also brings back the voltage range and the pan/zoom. */
 export interface Snapshot {
   elements: CircuitElement[];
   scopes: Scope[];
+  settings: SimSettings;
+  view: ViewTransform;
 }
 
 export interface AppState {
@@ -93,6 +97,10 @@ export interface AppState {
 
   /** Records the current state so the next change can be undone. */
   commit(): void;
+  /** Marks the start of an edit session (a field focus or a pointer-down on a
+   *  slider). One undo entry per session; a session that changes nothing is
+   *  deduped away by commit. */
+  beginEdit(): void;
   undo(): void;
   redo(): void;
 

@@ -25,10 +25,20 @@ import {
 import type { AppState, Snapshot, ViewTransform } from './types';
 import { hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers';
 
-const clone = (s: Pick<AppState, 'elements' | 'scopes'>): Snapshot => ({
+const clone = (s: Snapshot): Snapshot => ({
   elements: s.elements.map((e) => ({ ...e, params: { ...e.params } })),
   scopes: s.scopes.map((x) => ({ ...x })),
+  settings: { ...s.settings },
+  view: { ...s.view },
 });
+
+/** Canonical fingerprint of the snapshot state, mirroring upstream's dump
+ *  comparison (UndoManager.java:50-53). The top-level object is built in a
+ *  fixed property order so equal content always stringifies equally; the inner
+ *  objects carry the insertion order they were constructed with, which is
+ *  stable because every mutator spreads rather than reordering. */
+const snapshotKey = (s: Snapshot): string =>
+  JSON.stringify({ elements: s.elements, scopes: s.scopes, settings: s.settings, view: s.view });
 
 const UNDO_LIMIT = 100;
 
@@ -116,10 +126,21 @@ export const useStore = create<AppState>((set, get) => ({
   select: (ids) => set({ selectedIds: ids }),
 
   commit: () =>
-    set((s) => ({
-      undoStack: [...s.undoStack, clone(s)].slice(-UNDO_LIMIT),
-      redoStack: [],
-    })),
+    set((s) => {
+      // A commit whose serialised state matches the top of the stack is a no-op
+      // (a repeat click, or a field focus that changed nothing) and must not
+      // grow the stack. The redo stack is still cleared, exactly as upstream's
+      // pushUndo clears it before its own dedup check.
+      const key = snapshotKey(s);
+      const top = s.undoStack[s.undoStack.length - 1];
+      if (top && key === snapshotKey(top)) return { redoStack: [] };
+      return {
+        undoStack: [...s.undoStack, clone(s)].slice(-UNDO_LIMIT),
+        redoStack: [],
+      };
+    }),
+
+  beginEdit: () => get().commit(),
 
   addElement: (e) => {
     const id = allocateId();

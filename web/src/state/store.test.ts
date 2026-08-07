@@ -452,3 +452,133 @@ describe('the integer-coordinate invariant', () => {
     expect(after.paramRevision).toBe(before.paramRevision);
   });
 });
+
+describe('undo parity', () => {
+  const addSwitch = () =>
+    useStore.getState().addElement({
+      kind: 'switch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0 },
+      state: 0,
+    });
+
+  it('restores a value edit in one step', () => {
+    const id = addResistor();
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().beginEdit();
+    useStore.getState().setParam(id, 'resistance', 2000);
+
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    useStore.getState().undo();
+    expect(useStore.getState().elements[0].params.resistance).toBe(1000);
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+  });
+
+  it('coalesces a slider drag to one undo entry', () => {
+    const id = addResistor();
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().beginEdit();
+    // The drag ends at 900, not the pre-edit 1000, so the restore assertion
+    // below actually exercises the undo rather than passing on an unchanged
+    // value.
+    for (let i = 1; i <= 10; i++) {
+      useStore.getState().setParam(id, 'resistance', i * 90);
+    }
+
+    // The whole drag is one session, so exactly one entry lands.
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(useStore.getState().elements[0].params.resistance).toBe(900);
+    useStore.getState().undo();
+    expect(useStore.getState().elements[0].params.resistance).toBe(1000);
+  });
+
+  it('restores a run-mode switch toggle', () => {
+    const id = addSwitch();
+
+    useStore.getState().commit();
+    useStore.getState().setElementState(id, 1);
+    // The frame loop applies the queued state and drops it each frame.
+    useStore.getState().clearPending();
+
+    useStore.getState().undo();
+
+    const s = useStore.getState();
+    expect(s.elements[0].state).toBe(0);
+    expect(s.pendingStates.size).toBe(0);
+  });
+
+  it('dedups consecutive identical commits', () => {
+    // A plain pointer-down over an element that changed nothing since the last
+    // commit must not grow the stack.
+    useStore.getState().commit();
+    useStore.getState().commit();
+    expect(useStore.getState().undoStack).toHaveLength(1);
+  });
+
+  it('restores settings and view with the undo', () => {
+    useStore.getState().updateSettings({ voltageRange: 10 });
+    useStore.getState().setView({ x: 100, y: 50, scale: 2 });
+    useStore.getState().commit();
+
+    // A setting changed before a real action is captured at that action's
+    // commit: addElement's own commit dedups against the one above, so undoing
+    // brings back the committed settings and view, not the post-commit ones.
+    useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    useStore.getState().updateSettings({ voltageRange: 20 });
+    useStore.getState().setView({ x: 0, y: 0, scale: 1 });
+    useStore.getState().undo();
+
+    const s = useStore.getState();
+    expect(s.settings.voltageRange).toBe(10);
+    expect(s.view).toEqual({ x: 100, y: 50, scale: 2 });
+    expect(s.elements).toHaveLength(0);
+  });
+
+  it('does not alias the live state into the undo snapshot', () => {
+    const id = addResistor();
+    useStore.getState().commit();
+
+    useStore.getState().moveElements([id], 3.3, 0);
+    useStore.getState().setParam(id, 'resistance', 999);
+
+    // The snapshot taken before the drag must still hold the originals; a
+    // future in-place mutator would silently corrupt history here.
+    const top = useStore.getState().undoStack[useStore.getState().undoStack.length - 1];
+    expect(top.elements[0]).toMatchObject({
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      params: { resistance: 1000 },
+    });
+    const live = useStore.getState().elements[0];
+    expect(live.params.resistance).toBe(999);
+    expect(live.x1).not.toBe(top.elements[0].x1);
+  });
+
+  it('keeps a real change after a no-op commit undoable', () => {
+    useStore.getState().commit();
+    addResistor();
+    // The click that changed nothing is one entry whose state still holds the
+    // element: the first undo is a no-op, the second removes it.
+    useStore.getState().commit();
+    useStore.getState().undo();
+    expect(useStore.getState().elements).toHaveLength(1);
+    useStore.getState().undo();
+    expect(useStore.getState().elements).toHaveLength(0);
+  });
+});

@@ -96,6 +96,10 @@ export function useCanvasInteractions(
       if (def?.interactive && state.running && !ev.altKey) {
         const throwCount = Math.max(2, hit.params.throwCount ?? 2);
         const next = ((hit.state ?? 0) + 1) % (hit.kind === 'switch' ? 2 : throwCount);
+        // One click is one undo entry. Upstream does not push here (doSwitch
+        // returns before the mouse-down pushUndo), this is a deliberate
+        // divergence; the dedup in commit keeps repeat clicks from stacking.
+        state.commit();
         state.setElementState(hit.id, next);
         dragRef.current = { mode: 'none' };
         return;
