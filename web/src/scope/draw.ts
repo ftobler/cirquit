@@ -27,6 +27,7 @@ import {
 import { average, dutyCycle, estimateFrequency, maxValue, minValue, rms } from './measure';
 import { dbOf, spectrumMagnitudes } from './fft';
 import { buildCsv } from './csv';
+import { tracePolyline } from './trace';
 
 export const UNIT: Record<ScopeValue, string> = { voltage: 'V', current: 'A', power: 'W' };
 
@@ -185,7 +186,8 @@ function yOf(t: PlotTransform, maxy: number, v: number): number {
   return maxy - t.gridMult * (v - t.gridMid + t.positionOffset);
 }
 
-/** Draws one plot's min/max column spans across its window. */
+/** Draws one plot's min/max column spans across its window, plus the
+ *  continuous midline polyline that joins them. */
 function drawTrace(
   ctx: CanvasRenderingContext2D,
   data: Float32Array,
@@ -196,6 +198,24 @@ function drawTrace(
 ): void {
   ctx.strokeStyle = color;
   ctx.lineWidth = 1;
+  // The midline polyline first: it is what makes a sparse trace read as a
+  // continuous line instead of isolated dots. The min/max spans stroke on top
+  // so a fast spike keeps its envelope.
+  const points = tracePolyline(data, win, t, maxy);
+  ctx.beginPath();
+  let started = false;
+  for (const p of points) {
+    if (p === null) {
+      started = false;
+      continue;
+    }
+    if (started) ctx.lineTo(p.x, p.y);
+    else {
+      ctx.moveTo(p.x, p.y);
+      started = true;
+    }
+  }
+  ctx.stroke();
   ctx.beginPath();
   for (let k = 0; k < win.count; k++) {
     const pos = win.posOf(k);
