@@ -1440,6 +1440,45 @@ fn zener_breaks_down_at_its_rated_current() {
 }
 
 #[test]
+fn zener_model_params_hold_the_rated_voltage() {
+    // The engine spec the `34`-line resolution produces for an upstream-saved
+    // 6.2 V legacy zener: an explicit saturationCurrent plus the emission
+    // coefficient and breakdown voltage of the model. The offset shifts by the
+    // +0.6 V of the rated voltage, so the 100 uA knee is 6.099 and the 5 mA
+    // point is 6.2, not the 5.6 default. This already passes today; it exists
+    // to fail loudly if the engine's zener parameters drift off the `34`-line
+    // contract the load-time resolution feeds them.
+    let reverse = |i: f64| {
+        let c = &mut build(
+            vec![
+                elm(1, "current", &[[100, 100], [100, 0]], &[("current", i)]),
+                elm(
+                    2,
+                    "zener",
+                    &[[100, 100], [100, 0]],
+                    &[
+                        ("saturationCurrent", 1.714_352_819_280_888_3e-7),
+                        ("emissionCoefficient", 2.0),
+                        ("breakdownVoltage", 6.2),
+                        ("seriesResistance", 0.0),
+                    ],
+                ),
+                elm(3, "wire", &[[100, 0], [0, 0]], &[]),
+                elm(4, "ground", &[[0, 0]], &[]),
+            ],
+            opts(1e-5, true),
+        );
+        c.run(20);
+        -c.element_voltages()[1]
+    };
+
+    let knee = reverse(1e-4);
+    assert!(close(knee, 6.099, 0.02), "at 100 uA reverse got {knee}");
+    let rated = reverse(5e-3);
+    assert!(close(rated, 6.2, 0.01), "at 5 mA reverse got {rated}");
+}
+
+#[test]
 fn zener_forward_branch_matches_the_diode() {
     // 1 mA forward through the zener. Forward, a zener is a plain Shockley
     // diode, so the drop is vscale*ln(I/Is + 1) = 0.4486 V, the same value the

@@ -272,6 +272,133 @@ describe('zener file format', () => {
   });
 });
 
+describe('diode model line parsing', () => {
+  it('an upstream-saved 6.2 V legacy zener resolves its model parameters', () => {
+    // The generated-name form upstream writes after one save: the `z` line
+    // carries FLAG_MODEL plus the escaped name, and the `34` line carries the
+    // model parameters (DiodeModel.dump, DiodeModel.java:338-341). Today the
+    // name is preserved but the parameters are ignored, so breakdownVoltage
+    // stays on the 5.6 default-zener value.
+    const text = [
+      'z 100 100 100 0 2 fwdrop\\q0.805904783\\szvoltage\\q6.2',
+      '34 fwdrop\\q0.805904783\\szvoltage\\q6.2 0 1.7143528192808883e-7 0 2 6.2 0',
+    ].join('\n');
+    const [e] = parseCircuit(text).elements;
+    expect(e.params.breakdownVoltage).toBe(6.2);
+    expect(e.params.saturationCurrent).toBe(1.7143528192808883e-7);
+    expect(e.params.emissionCoefficient).toBe(2);
+    expect(e.params.seriesResistance).toBe(0);
+    // Derived from Is and n (DiodeModel.java:332-336); the default model's
+    // own 0.805904783 comes out of this exact line.
+    expect(e.params.forwardVoltage).toBeCloseTo(0.805904783, 10);
+  });
+
+  it('a legacy diode with a non-default forward drop resolves it', () => {
+    // 1.328e-6 is 1/(exp(0.7/(2*0.025865))-1), the getModelWithParameters
+    // value for a 0.7 V drop (DiodeModel.java:149).
+    const text = ['d 1 2 3 4 2 fwdrop\\q0.7', '34 fwdrop\\q0.7 0 1.328e-6 0 2 0 0'].join('\n');
+    const [e] = parseCircuit(text).elements;
+    // Re-derived from Is and n, not the 0.805904783 default, so a later
+    // value-form save writes the real drop.
+    expect(e.params.forwardVoltage).toBeCloseTo(0.7, 5);
+  });
+
+  it('round-trips the 34 line byte-for-byte in its original position', () => {
+    // The `$` line is rebuilt from numbers, so include the header to make the
+    // whole file a true byte-for-byte round trip.
+    const text = [
+      '$ 1 0.000005 10 50 5 50 5e-11',
+      'z 100 100 100 0 2 fwdrop\\q0.805904783\\szvoltage\\q6.2',
+      'r 0 0 16 0 0 100',
+      '34 fwdrop\\q0.805904783\\szvoltage\\q6.2 0 1.7143528192808883e-7 0 2 6.2 0',
+      'w 16 0 32 0 0',
+    ].join('\n');
+    const parsed = parseCircuit(text);
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toBe(text + '\n');
+  });
+
+  it('a model name without a 34 line falls back to the element defaults', () => {
+    // Upstream never dumps a `34` line for a built-in model, and an unknown
+    // name falls back via getModelWithNameOrCopy (DiodeModel.java:62-76).
+    const [e] = parseCircuit('z 100 100 100 0 2 default-zener').elements;
+    expect(e.modelName).toBe('default-zener');
+    expect(e.params.breakdownVoltage).toBe(5.6);
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    const [d] = parseCircuit('d 1 2 3 4 2 1N4148').elements;
+    expect(d.modelName).toBe('1N4148');
+    expect(d.params.forwardVoltage).toBe(0.805904783);
+  });
+
+  it('series resistance and emission coefficient resolve from a 34 line', () => {
+    // The 1N4148 values from DiodeModel.java:108.
+    const text = ['d 1 2 3 4 2 x', '34 x 0 4.352e-9 0.6458 1.906 75 0'].join('\n');
+    const [e] = parseCircuit(text).elements;
+    expect(e.params.seriesResistance).toBe(0.6458);
+    expect(e.params.emissionCoefficient).toBe(1.906);
+    // Dropping the name writes the value form, whose single token is the
+    // forward drop derived from the model, not the 0.805904783 default.
+    expect(e.params.forwardVoltage).toBeCloseTo(0.9491294544092825, 10);
+    delete e.modelName;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const line = out.split('\n').find((l) => l.startsWith('d ')) ?? '';
+    expect(line).toBe('d 1 2 3 4 1 0.9491294544092825');
+  });
+
+  it('a 34 line does not consume a scope index', () => {
+    const text = [
+      'r 0 0 16 0 0 100',
+      '34 someModel 0 1.7143528192808883e-7 0 2 0 0',
+      'r 16 0 32 0 0 220',
+      'o 1 64 0 4099 20 0.05 0 1',
+    ].join('\n');
+    const parsed = parseCircuit(text);
+    expect(parsed.scopes[0].plots[0].elementIndex).toBe(1);
+    expect(parsed.scopes[0].plots[0].elementId).toBe(parsed.elements[1].id);
+    expect(parsed.unsupported).not.toContain('34');
+  });
+
+  it('a bare 34 line loads, round-trips and resolves nothing', () => {
+    // A hand-edited file can stop right after the head. It must not throw out
+    // of parseCircuit: it degrades to preserved-but-unresolvable, like a line
+    // missing any of the numeric fields.
+    const text = ['z 100 100 100 0 2 someModel', '34'].join('\n');
+    const parsed = parseCircuit(text);
+    const [e] = parsed.elements;
+    expect(e.params.breakdownVoltage).toBe(5.6);
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toContain('\n34\n');
+    expect(parsed.unsupported).not.toContain('34');
+  });
+
+  it('a non-positive saturation current is not a resolvable model', () => {
+    // A zero or negative Is would make ln(1/Is + 1) Infinity in the derived
+    // forward drop, which a value-form save would then write as an Infinity
+    // token. Such a line is preserved but does not resolve, so the element
+    // stays on its defaults.
+    const zero = ['z 100 100 100 0 2 bad', '34 bad 0 0 0 2 6.2 0'].join('\n');
+    const [ez] = parseCircuit(zero).elements;
+    expect(ez.params.breakdownVoltage).toBe(5.6);
+    expect(Number.isFinite(ez.params.forwardVoltage)).toBe(true);
+    const negative = ['z 100 100 100 0 2 bad', '34 bad 0 -1e-7 0 2 6.2 0'].join('\n');
+    const [en] = parseCircuit(negative).elements;
+    expect(en.params.breakdownVoltage).toBe(5.6);
+    expect(Number.isFinite(en.params.forwardVoltage)).toBe(true);
+  });
+});
+
 describe('varactor file format', () => {
   /** Parses a single `176` line and re-emits it, returning the `176` line. */
   const varactorLine = (line: string) => {

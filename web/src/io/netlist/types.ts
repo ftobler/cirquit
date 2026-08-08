@@ -44,6 +44,24 @@ export interface ScopeConfig {
 }
 
 /**
+ * A diode model loaded from a `34` line (`34 <escaped name> <flags>
+ * <saturationCurrent> <seriesResistance> <emissionCoefficient>
+ * <breakdownVoltage> [<forwardCurrent>]`, DiodeModel.dump,
+ * DiodeModel.java:338-341). Keyed by the unescaped name; a repeated name
+ * overwrites, matching upstream's single modelMap entry
+ * (DiodeModel.java:53-59). Built-in models have no `34` line, so only
+ * non-built-in names appear here.
+ */
+export interface DiodeModel {
+  saturationCurrent: number;
+  seriesResistance: number;
+  emissionCoefficient: number;
+  breakdownVoltage: number;
+  /** Optional, read under a try upstream (DiodeModel.java:243-245). */
+  forwardCurrent?: number;
+}
+
+/**
  * One line of the file, in the order it appeared. Replaying this on save is
  * what keeps blank lines, comments and unmodelled lines where the author put
  * them instead of sweeping them to the end.

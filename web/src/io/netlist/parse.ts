@@ -1,8 +1,17 @@
 import { defForDumpCode } from '../../model/registry';
 import type { CircuitElement, SimSettings } from '../../model/types';
 import type { ScopeValue } from '../../engine/simulator';
-import type { NetlistLine, ParsedCircuit, ScopeConfig, ScopePlotConfig } from './types';
+import type { DiodeModel, NetlistLine, ParsedCircuit, ScopeConfig, ScopePlotConfig } from './types';
 import { unescapeToken } from './tokens';
+
+/** Thermal voltage the diode model's forward-drop derivation uses
+ *  (DiodeModel.java:32). */
+const VT = 0.025865;
+
+/** Kinds that resolve a `modelName` against the `34` model library. All three
+ *  share the diode model machinery upstream (VaractorElm and ZenerElm extend
+ *  DiodeElm), so one lookup serves them all. */
+const MODEL_KINDS = new Set(['diode', 'zener', 'varactor']);
 
 let nextId = 1;
 /** Ids only need to be unique within a session; the file format has none. */
@@ -125,6 +134,7 @@ export function parseCircuit(text: string): ParsedCircuit {
   const passthrough: string[] = [];
   const unsupported: string[] = [];
   const order: NetlistLine[] = [];
+  const diodeModels = new Map<string, DiodeModel>();
 
   /**
    * Upstream's reader breaks a line on `\n` or `\r`, so a classic-Mac file of
@@ -211,10 +221,60 @@ export function parseCircuit(text: string): ParsedCircuit {
       continue;
     }
 
+    if (head === '34') {
+      // Diode-model library line (DiodeModel.dump, DiodeModel.java:338-341):
+      // `34 <escaped name> <flags> <saturationCurrent> <seriesResistance>
+      // <emissionCoefficient> <breakdownVoltage> [<forwardCurrent>]`. The line
+      // itself rides through in passthrough so a save re-emits it in place;
+      // only its parameters are interpreted, into the library the model-name
+      // resolution below reads. It is not an element line upstream either, so
+      // it takes no scope index and is not reported unsupported.
+      // A bare `34` with no name token must not throw: it degrades to
+      // preserved-but-unresolvable like any other partial line.
+      const name = tokens[1] === undefined ? '' : unescapeToken(tokens[1]);
+      const num = (i: number): number | undefined => {
+        const v = Number(tokens[i]);
+        return tokens[i] !== undefined && Number.isFinite(v) ? v : undefined;
+      };
+      const saturationCurrent = num(3);
+      const seriesResistance = num(4);
+      const emissionCoefficient = num(5);
+      const breakdownVoltage = num(6);
+      // The same skip-non-finite guard readParams uses
+      // (registry/shared.ts:43-48), so a truncated or hand-edited line
+      // degrades field by field instead of stamping NaN. Only a line that
+      // carries all four core parameters becomes a resolvable model; a
+      // partial line is still preserved. The saturation current and emission
+      // coefficient must be positive too: the derived forward drop is
+      // ln(1/Is + 1), which a non-positive Is would make Infinity.
+      if (
+        name !== '' &&
+        saturationCurrent !== undefined &&
+        saturationCurrent > 0 &&
+        seriesResistance !== undefined &&
+        emissionCoefficient !== undefined &&
+        emissionCoefficient > 0 &&
+        breakdownVoltage !== undefined
+      ) {
+        const model: DiodeModel = {
+          saturationCurrent,
+          seriesResistance,
+          emissionCoefficient,
+          breakdownVoltage,
+        };
+        const forwardCurrent = num(7);
+        if (forwardCurrent !== undefined) model.forwardCurrent = forwardCurrent;
+        diodeModels.set(name, model);
+      }
+      passthrough.push(lineText);
+      order.push({ kind: 'other', line: rawLine });
+      continue;
+    }
+
     const def = defForDumpCode(head);
     if (!def) {
-      // Sliders (`38`), hints (`h`), models and anything newer than this
-      // build. Keep the line so a save round-trips.
+      // Sliders (`38`), hints (`h`), transistor models (`32`) and anything
+      // newer than this build. Keep the line so a save round-trips.
       passthrough.push(lineText);
       order.push({ kind: 'other', line: rawLine });
       if (/^[0-9]+$/.test(head) || /^[a-zA-Z]$/.test(head)) unsupported.push(head);
@@ -250,6 +310,27 @@ export function parseCircuit(text: string): ParsedCircuit {
   // element kind, which decides whether a scale token follows its value.
   for (const { id, tokens } of pendingScopes) {
     scopes.push(parseScopeLine(id, tokens, idByFileIndex, elements));
+  }
+
+  // Model names resolve after the whole file is read too, for the same
+  // reason: a `34` line can sit below the element that names it. The library
+  // entry wins over the element defaults, matching upstream's
+  // `getModelWithNameOrCopy` (DiodeModel.java:62-76); an unknown name leaves
+  // the element on its defaults.
+  for (const e of elements) {
+    if (!MODEL_KINDS.has(e.kind) || e.modelName === undefined) continue;
+    const model = diodeModels.get(e.modelName);
+    if (model === undefined) continue;
+    e.params.saturationCurrent = model.saturationCurrent;
+    e.params.seriesResistance = model.seriesResistance;
+    e.params.emissionCoefficient = model.emissionCoefficient;
+    e.params.breakdownVoltage = model.breakdownVoltage;
+    // The forward drop is derived from the saturation current, upstream's
+    // `updateModel` (DiodeModel.java:332-336). Deriving it matters: if the
+    // name is later dropped by an edit, the value-form dump writes the real
+    // drop instead of the 0.805904783 default.
+    e.params.forwardVoltage =
+      model.emissionCoefficient * VT * Math.log(1 / model.saturationCurrent + 1);
   }
 
   return { elements, settings, scopes, passthrough, unsupported, order };
