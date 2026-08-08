@@ -8522,3 +8522,365 @@ fn seven_seg_reads_its_segment_input_bits() {
     c.run(3);
     assert_eq!(value(c), 0b000_0110, "digit 1 did not read as 6");
 }
+
+// The VCO mirrors the currents through its external R1 and R2 resistors into
+// the capacitor across the C pins. With Vi = 5 V and R1 = R2 = 10k both to
+// ground, the mirror current is Vi/R1 + 5/R2 = 1 mA, and the cap voltage
+// integrates it, so a half-cycle swings the 4 V between the 0.5 V and 4.5 V
+// comparator levels at 1 mA / 1e-7 F = 1e4 V/s: 0.4 ms, which is 40 steps at
+// dt = 1e-5. Each crossing adds one or two steps of comparator dead time (the
+// threshold check reads the previous step's cap voltage) and the internal 1 M
+// bleeder slows the charge a couple of percent, so consecutive 2.5 V
+// crossings of the output land about 41 to 43 steps apart. The output itself
+// is a 0 V / 5 V source, so the sampled node swings between the two rails.
+//
+// The load resistor at the Vo pin is only there so the scope has a two-pin
+// element to plot: its voltage diff is the Vo node voltage itself.
+#[test]
+fn vco_output_oscillates_at_the_control_frequency() {
+    let dt = 1e-5;
+    let c = &mut build_with(
+        vec![
+            elm(
+                1,
+                "vco",
+                &[[0, 0], [0, 96], [48, 0], [48, 32], [48, 64], [48, 96]],
+                &[],
+            ),
+            elm(2, "voltage", &[[0, 64], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(3, "ground", &[[0, 64]], &[]),
+            elm(
+                4,
+                "resistor",
+                &[[48, 64], [48, 128]],
+                &[("resistance", 10000.0)],
+            ),
+            elm(5, "ground", &[[48, 128]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[48, 96], [48, 160]],
+                &[("resistance", 10000.0)],
+            ),
+            elm(7, "ground", &[[48, 160]], &[]),
+            elm(
+                8,
+                "capacitor",
+                &[[48, 0], [48, 32]],
+                &[("capacitance", 1e-7), ("voltDiff", 0.0)],
+            ),
+            elm(
+                9,
+                "resistor",
+                &[[0, 96], [0, 160]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(10, "ground", &[[0, 160]], &[]),
+        ],
+        opts(dt, false),
+        vec![ScopeSpec {
+            element_id: 9,
+            value: ScopeValue::Voltage,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
+        }],
+    );
+    let report = c.run(800);
+    assert!(
+        report.converged,
+        "VCO broke Newton convergence: {:?}",
+        report.failing
+    );
+    let snap = c.scopes()[0].snapshot();
+    assert!(
+        snap.len() >= 1600,
+        "expected a min/max column per step, got {}",
+        snap.len()
+    );
+    // The output source drives 0 V and 5 V exactly, so the swing must reach
+    // both rails and cross 2.5 V about once per half-cycle.
+    let max = snap.iter().copied().fold(f32::MIN, f32::max);
+    let min = snap.iter().copied().fold(f32::MAX, f32::min);
+    assert!(max > 4.9, "output never reached the high rail, max {max}");
+    assert!(min < 0.1, "output never reached the low rail, min {min}");
+    let crossings = vco_crossing_steps(&snap);
+    assert!(
+        crossings.len() >= 10,
+        "output did not oscillate, {} crossings in 800 steps",
+        crossings.len()
+    );
+    // The mean gap between crossings is the half-period. The first gap spans
+    // the startup ramp (the cap starts at 0 V, not at the 0.5 V comparator
+    // level), so it is dropped.
+    let gaps: Vec<usize> = crossings.windows(2).map(|w| w[1] - w[0]).skip(1).collect();
+    let mean_gap = gaps.iter().sum::<usize>() as f64 / gaps.len() as f64;
+    assert!(
+        (40.0..=44.0).contains(&mean_gap),
+        "mean output half-period was {mean_gap} steps, expected ~40 at 1250 Hz"
+    );
+}
+
+/// The step indices where the output crosses the 2.5 V mid level, a rising or
+/// falling edge. The snapshot interleaves a min/max column per step, so a
+/// crossing is detected at the boundary between two steps' samples and its
+/// index halves to the step number.
+fn vco_crossing_steps(snap: &[f32]) -> Vec<usize> {
+    let mut out = Vec::new();
+    for i in 1..snap.len() {
+        if (snap[i - 1] < 2.5) != (snap[i] < 2.5) {
+            out.push(i / 2);
+        }
+    }
+    out
+}
+
+// A scope element has zero posts and no electrical presence, so adding one to
+// a circuit must leave every node voltage exactly as it was. The divider below
+// is built twice, once with a scope and once without, and both must land on
+// the hand-computed midpoint of half the supply. The scope is appended last so
+// the divider's element indices stay the same in both circuits.
+#[test]
+fn scope_changes_no_node_voltage() {
+    let build_divider = |with_scope: bool| {
+        let mut elements = vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ];
+        if with_scope {
+            elements.push(elm(6, "scope", &[], &[]));
+        }
+        elements
+    };
+
+    let plain = &mut build(build_divider(false), opts(1e-5, true));
+    plain.run(5);
+    let with_scope = &mut build(build_divider(true), opts(1e-5, true));
+    with_scope.run(5);
+
+    let plain_mid = plain.element_voltages()[2];
+    let scope_mid = with_scope.element_voltages()[2];
+    assert!(
+        (plain_mid - 5.0).abs() <= 1e-9,
+        "plain divider midpoint was {}",
+        plain_mid
+    );
+    assert!(
+        (scope_mid - 5.0).abs() <= 1e-9,
+        "divider midpoint with scope was {}",
+        scope_mid
+    );
+    // The scope itself reads and draws no current, and it sits at element
+    // index 5 in the with-scope circuit.
+    let with_scope_volts = with_scope.element_voltages();
+    let with_scope_amps = with_scope.element_currents();
+    assert!(
+        with_scope_volts[5] == 0.0 && with_scope_amps[5] == 0.0,
+        "scope element reported volts {} amps {}",
+        with_scope_volts[5],
+        with_scope_amps[5]
+    );
+}
+
+#[test]
+fn ammeter_reads_the_series_current_without_loading() {
+    // The ammeter is a zero-volt source in series (AmmeterElm.java:211-213),
+    // so it must not disturb the loop it measures: a 10 V source through a
+    // 2 k resistor reads exactly 5 mA through the meter, positive entering
+    // its post 0, and the resistor agrees.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 2000.0)],
+            ),
+            elm(3, "ammeter", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(5);
+    assert!(
+        close(c.element_currents()[1], 5e-3, 1e-12),
+        "resistor current was {}",
+        c.element_currents()[1]
+    );
+    assert!(
+        close(c.element_currents()[2], 5e-3, 1e-12),
+        "ammeter current was {}",
+        c.element_currents()[2]
+    );
+    assert!(
+        close(c.element_values()[2], 5e-3, 1e-12),
+        "ammeter reading was {}",
+        c.element_values()[2]
+    );
+}
+
+#[test]
+fn line_decoration_leaves_the_circuit_unchanged() {
+    // A line is pure decoration (LineElm.java): upstream declares no posts
+    // (GraphicElm.java:35), so adding one must not shift the divider by so
+    // much as a volt.
+    let divider = |with_line: bool| {
+        let mut elements = vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ];
+        if with_line {
+            // A line carries no posts, so its endpoints merge nothing and it
+            // stamps nothing: the divider's matrix is unchanged.
+            elements.push(elm(6, "line", &[], &[]));
+        }
+        elements
+    };
+
+    let plain = &mut build(divider(false), opts(1e-5, true));
+    let decorated = &mut build(divider(true), opts(1e-5, true));
+    plain.run(5);
+    decorated.run(5);
+
+    let plain_v = plain.element_voltages();
+    let decorated_v = decorated.element_voltages();
+    assert!(
+        close(plain_v[2], 5.0, 1e-9),
+        "plain midpoint was {}",
+        plain_v[2]
+    );
+    assert!(
+        close(decorated_v[2], 5.0, 1e-9),
+        "decorated midpoint was {}",
+        decorated_v[2]
+    );
+    assert!(
+        close(decorated_v[2], plain_v[2], 1e-12),
+        "the line moved the midpoint by {}",
+        decorated_v[2] - plain_v[2]
+    );
+}
+
+#[test]
+fn box_does_not_perturb_the_divider() {
+    // The box is a pure decoration: zero posts, no current path, nothing
+    // stamped into the matrix. A circuit must solve identically with one
+    // drawn on top, which pins the model to a true shell rather than a
+    // device that quietly couples or loads its corners.
+    let divider = || {
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ]
+    };
+    let plain = &mut build(divider(), opts(1e-5, true));
+    plain.run(5);
+    let v_plain = plain.element_voltages()[2];
+
+    let mut with_box = divider();
+    with_box.push(elm(6, "box", &[], &[]));
+    let decorated = &mut build(with_box, opts(1e-5, true));
+    decorated.run(5);
+    let v_decorated = decorated.element_voltages()[2];
+
+    assert!(close(v_plain, 5.0, 1e-9), "midpoint was {}", v_plain);
+    assert!(
+        close(v_decorated, v_plain, 1e-9),
+        "the box moved the midpoint from {} to {}",
+        v_plain,
+        v_decorated,
+    );
+}
+
+#[test]
+fn antenna_across_a_resistor_is_bounded_and_finite() {
+    let c = &mut build_with(
+        vec![
+            elm(1, "antenna", &[[0, 0]], &[]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "wire", &[[100, 0], [100, 100]], &[]),
+            elm(4, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, false),
+        vec![ScopeSpec {
+            element_id: 1,
+            value: ScopeValue::Voltage,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
+        }],
+    );
+    let report = c.run(2000);
+    assert!(report.converged, "antenna broke Newton convergence");
+    assert!(c.error().is_none(), "error: {:?}", c.error());
+    let snap = c.scopes()[0].snapshot();
+    assert!(
+        snap.len() >= 1024,
+        "expected a full scope ring, got {}",
+        snap.len()
+    );
+    // The antenna is an ideal source to ground across a plain resistor, so the
+    // node reads the injected value exactly. Each AM carrier is bounded by
+    // 3*(1.3+1)*3 = 6.9 V and the FM term by 3 V, so the value never leaves
+    // [-23.7, 23.7]; 30 keeps a comfortable headroom while still catching a
+    // 2x amplitude or a stamping sign error.
+    for v in snap {
+        assert!(v.is_finite(), "non-finite antenna sample {v}");
+        assert!(
+            (-30.0..=30.0).contains(&(v as f64)),
+            "antenna sample {v} left [-30, 30]"
+        );
+    }
+}

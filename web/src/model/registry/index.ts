@@ -30,6 +30,12 @@ import { VAR_RAIL_DEF } from './elements/varRail';
 import { EXT_VOLTAGE_DEF } from './elements/extVoltage';
 import { SWEEP_DEF } from './elements/sweep';
 import { AUDIO_OUTPUT_DEF } from './elements/audioOutput';
+import { AMMETER_DEF } from './elements/ammeter';
+import { ANTENNA_DEF } from './elements/antenna';
+import { BOX_DEF } from './elements/box';
+import { LINE_DEF } from './elements/line';
+import { SCOPE_DEF } from './elements/scope';
+import { VCO_DEF } from './elements/vco';
 import { CURRENT_DEF } from './elements/current';
 import { DIODE_DEF } from './elements/diode';
 import { ZENER_DEF } from './elements/zener';
@@ -108,10 +114,12 @@ export const ELEMENT_DEFS: ElementDef[] = [
   VOLTAGE_DEF,
   RAIL_DEF,
   NOISE_DEF,
+  ANTENNA_DEF,
   VAR_RAIL_DEF,
   EXT_VOLTAGE_DEF,
   SWEEP_DEF,
   AUDIO_OUTPUT_DEF,
+  VCO_DEF,
   CURRENT_DEF,
   DIODE_DEF,
   ZENER_DEF,
@@ -146,7 +154,11 @@ export const ELEMENT_DEFS: ElementDef[] = [
   OUTPUT_DEF,
   LOGIC_OUTPUT_DEF,
   PROBE_DEF,
+  AMMETER_DEF,
   DECORATION_DEF,
+  BOX_DEF,
+  LINE_DEF,
+  SCOPE_DEF,
 ];
 
 const BY_KIND = new Map(ELEMENT_DEFS.map((d) => [d.kind, d]));

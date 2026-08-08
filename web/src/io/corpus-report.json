@@ -104,12 +104,11 @@
   {
     "file": "555int.txt",
     "format": "plain",
-    "missing": [
-      "b"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "555lowduty.txt",
@@ -257,12 +256,11 @@
   {
     "file": "amdetect.txt",
     "format": "plain",
-    "missing": [
-      "A"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "amp-dfdx.txt",
@@ -1976,15 +1974,11 @@
   {
     "file": "multivib-a.txt",
     "format": "plain",
-    "missing": [
-      "403",
-      "403",
-      "403",
-      "403"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "multivib-bi.txt",
@@ -2323,12 +2317,11 @@
   {
     "file": "pll.txt",
     "format": "plain",
-    "missing": [
-      "158"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "pll2.txt",
@@ -2466,8 +2459,7 @@
       "167",
       "213",
       "212",
-      "212",
-      "403"
+      "212"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -3232,14 +3224,12 @@
   {
     "file": "unishiftreg.txt",
     "format": "plain",
-    "missing": [
-      "423",
-      "423",
-      "423"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "updownctr.txt",
@@ -3353,12 +3343,11 @@
   {
     "file": "wheatstone.txt",
     "format": "plain",
-    "missing": [
-      "370"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "wienbridge.txt",

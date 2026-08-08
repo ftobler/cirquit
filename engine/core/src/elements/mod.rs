@@ -7,9 +7,12 @@
 //! One module per element type. `junction.rs` is the exception: it holds the
 //! Newton machinery shared by the diode and transistor families.
 
+pub mod ammeter;
 pub mod analog_switch;
 pub mod analog_switch2;
+pub mod antenna;
 pub mod audio_output;
+pub mod r#box;
 pub mod capacitor;
 pub mod chip;
 pub mod counter;
@@ -31,6 +34,7 @@ pub mod lamp;
 pub mod latch;
 pub mod ldr;
 pub mod led;
+pub mod line;
 pub mod logic;
 pub mod logic_input;
 pub mod logic_output;
@@ -47,6 +51,7 @@ pub mod relay;
 pub mod resistor;
 pub mod ring_counter;
 pub mod schmitt;
+pub mod scope;
 pub mod seven_seg;
 pub mod spark_gap;
 pub mod sweep;
@@ -59,6 +64,7 @@ pub mod transistor;
 pub mod transmission_line;
 pub mod tri_state;
 pub mod var_rail;
+pub mod vco;
 pub mod voltage_source;
 pub mod wire;
 
@@ -83,8 +89,10 @@ pub const KINDS: &[&str] = &[
     "voltage",
     "rail",
     "noise",
+    "antenna",
     "varRail",
     "extVoltage",
+    "vco",
     "current",
     "diode",
     "zener",
@@ -132,7 +140,11 @@ pub const KINDS: &[&str] = &[
     "output",
     "logicOutput",
     "probe",
+    "ammeter",
     "decoration",
+    "box",
+    "line",
+    "scope",
 ];
 
 /// Builds the model for a spec, or `None` if the type is not implemented yet.
@@ -154,8 +166,10 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "voltage" => Box::new(voltage_source::VoltageSource::new(spec)),
         "rail" => Box::new(voltage_source::VoltageSource::new_rail(spec)),
         "noise" => Box::new(noise::Noise::new(spec)),
+        "antenna" => Box::new(antenna::Antenna::new(spec)),
         "varRail" => Box::new(var_rail::VarRail::new(spec)),
         "extVoltage" => Box::new(ext_voltage::ExtVoltage::new(spec)),
+        "vco" => Box::new(vco::Vco::new(spec)),
         "current" => Box::new(current_source::CurrentSource::new(spec)),
         "diode" => Box::new(diode::Diode::new(spec)),
         "zener" => Box::new(diode::Diode::new_zener(spec)),
@@ -203,7 +217,11 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "output" => Box::new(meter::Meter::new_output(spec)),
         "logicOutput" => Box::new(logic_output::LogicOutput::new(spec)),
         "probe" => Box::new(probe::Probe::new(spec)),
+        "ammeter" => Box::new(ammeter::Ammeter::new(spec)),
         "decoration" => Box::new(decoration::Decoration::new(spec)),
+        "box" => Box::new(r#box::Box::new(spec)),
+        "line" => Box::new(line::Line::new(spec)),
+        "scope" => Box::new(scope::Scope::new(spec)),
         _ => return None,
     };
     Some(e)
