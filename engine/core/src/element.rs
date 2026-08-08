@@ -106,6 +106,17 @@ pub trait Element {
         0
     }
 
+    /// The two terminal node indices a voltage-source element stamps for its
+    /// `k`-th source. The closure builder assigns the source's unknown to the
+    /// closure of the terminal it actually stamps, so an element whose stamped
+    /// terminals differ from its `nodes[0], nodes[1]` default must override
+    /// this: the SPDT stamps `(common, selected throw)`, which only the
+    /// element knows (upstream's `setVoltageSource`).
+    fn voltage_source_nodes(&self, _k: usize) -> (usize, usize) {
+        let n = self.base();
+        (n.nodes[0], n.nodes[1])
+    }
+
     /// True if the element must be re-linearised on every Newton iteration.
     fn nonlinear(&self) -> bool {
         false
@@ -137,6 +148,16 @@ pub trait Element {
     /// tie their terminals together.
     fn connects(&self, _a: usize, _b: usize) -> bool {
         true
+    }
+
+    /// Whether posts `a` and `b` land in the same matrix closure. Defaults to
+    /// [`Element::connects`]; overridden to true (every post pair) on elements
+    /// whose stamps couple rows that `connects` leaves apart. Upstream's
+    /// `getMatrixConnection` (CircuitElm.java:1286-1289): same matrix = same
+    /// closure, which may differ from `getConnection` for devices whose gates
+    /// or controls affect other rows.
+    fn matrix_connects(&self, a: usize, b: usize) -> bool {
+        self.connects(a, b)
     }
 
     /// Whether a DC current can flow between posts `a` and `b`, used to find

@@ -283,6 +283,13 @@ impl Element for VoltageSource {
     fn voltage_source_count(&self) -> usize {
         1
     }
+    fn voltage_source_nodes(&self, _k: usize) -> (usize, usize) {
+        // The rail is a one-post source to ground, so its stamped terminals
+        // are `(GROUND, nodes[0])` and the default two-node pair does not
+        // exist; the two-terminal source stamps `nodes[0], nodes[1]` (upstream
+        // VoltageElm.java's `setVoltageSource`).
+        self.terminals()
+    }
 
     /// A voltage source pins a capacitor loop, which is what makes an ideal
     /// cap alongside it ring, so the CAP_V walk must be able to cross one.

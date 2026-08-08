@@ -306,6 +306,13 @@ impl Element for Transformer {
             || (self.kind == "tappedTransformer" && ((a == 2 && b == 4) || (a == 4 && b == 2)))
     }
 
+    /// The mutual-inductance VCCS couples every winding pair, so all windings
+    /// share one closure (TransformerElm.java:326, TappedTransformerElm.java:
+    /// 289, CustomTransformerElm.java:458).
+    fn matrix_connects(&self, _a: usize, _b: usize) -> bool {
+        true
+    }
+
     fn stamp(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         self.compute_coefficients(ctx.dt);
         let n = self.windings.len();

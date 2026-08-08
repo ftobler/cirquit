@@ -279,6 +279,12 @@ impl Element for Mosfet {
         a != 0 && b != 0
     }
 
+    /// The gate column stamps into the channel rows, so the gate must share
+    /// the channel's closure (MosfetElm.java:716).
+    fn matrix_connects(&self, _a: usize, _b: usize) -> bool {
+        true
+    }
+
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         match name {
             "beta" if value > 0.0 => self.beta = value,

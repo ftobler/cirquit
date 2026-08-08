@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use crate::closure::{build_closures, Closure};
 use crate::element::{Element, SimCtx};
 use crate::elements::build_element;
 use crate::matrix::{LinearSystem, SolveError};
@@ -17,18 +18,18 @@ use crate::stamp::{Stamper, GROUND};
 const GMIN: f64 = 1e-8;
 
 #[derive(Default)]
-struct UnionFind {
+pub(crate) struct UnionFind {
     parent: Vec<usize>,
 }
 
 impl UnionFind {
-    fn new(n: usize) -> Self {
+    pub(crate) fn new(n: usize) -> Self {
         Self {
             parent: (0..n).collect(),
         }
     }
 
-    fn find(&mut self, mut i: usize) -> usize {
+    pub(crate) fn find(&mut self, mut i: usize) -> usize {
         while self.parent[i] != i {
             self.parent[i] = self.parent[self.parent[i]];
             i = self.parent[i];
@@ -36,7 +37,7 @@ impl UnionFind {
         i
     }
 
-    fn union(&mut self, a: usize, b: usize) {
+    pub(crate) fn union(&mut self, a: usize, b: usize) {
         let (ra, rb) = (self.find(a), self.find(b));
         if ra != rb {
             self.parent[ra] = rb;
@@ -99,7 +100,15 @@ pub struct Circuit {
     /// UI-assigned id per element, parallel to `elements`.
     ids: Vec<u32>,
     id_index: HashMap<u32, usize>,
-    sys: LinearSystem,
+    /// Connected components of the matrix graph, each with its own system.
+    /// Two networks that only touch ground are separate closures, so they
+    /// solve independently and each linear closure factors once at build.
+    closures: Vec<Closure>,
+    node_closure: Vec<usize>,
+    node_row: Vec<usize>,
+    vs_closure: Vec<usize>,
+    vs_row: Vec<usize>,
+    element_closure: Vec<usize>,
     node_count: usize,
     vs_count: usize,
     node_voltages: Vec<f64>,
@@ -110,9 +119,9 @@ pub struct Circuit {
     current_time_step: f64,
     /// Consecutive easy steps, drives doubling once it reaches 3.
     good_iterations: u32,
-    /// Full solution vector (node voltages plus source currents) of the last
-    /// committed step, so a rejected attempt can restore it.
-    last_solution: Vec<f64>,
+    /// Solved closure vectors of the last committed step, one per closure, so
+    /// a rejected attempt can restore it.
+    last_x: Vec<Vec<f64>>,
     nonlinear: bool,
     scopes: Vec<ScopeTrace>,
     warnings: Vec<String>,
@@ -132,7 +141,12 @@ impl Circuit {
             specs: Vec::new(),
             ids: Vec::new(),
             id_index: HashMap::new(),
-            sys: LinearSystem::new(),
+            closures: Vec::new(),
+            node_closure: Vec::new(),
+            node_row: Vec::new(),
+            vs_closure: Vec::new(),
+            vs_row: Vec::new(),
+            element_closure: Vec::new(),
             node_count: 1,
             vs_count: 0,
             node_voltages: vec![0.0],
@@ -140,7 +154,7 @@ impl Circuit {
             ctx: SimCtx::default(),
             current_time_step: SimOptions::default().time_step,
             good_iterations: 0,
-            last_solution: Vec::new(),
+            last_x: Vec::new(),
             nonlinear: false,
             scopes: Vec::new(),
             warnings: Vec::new(),
@@ -170,6 +184,13 @@ impl Circuit {
 
     pub fn vs_count(&self) -> usize {
         self.vs_count
+    }
+
+    /// Multiply-adds accumulated by the factor passes across all closures,
+    /// for the closure-decomposition speedup test. Deterministic, unlike a
+    /// wall clock.
+    pub fn factor_flops(&self) -> u64 {
+        self.closures.iter().map(|c| c.sys.flops()).sum()
     }
 
     pub fn element_count(&self) -> usize {
@@ -289,12 +310,14 @@ impl Circuit {
         // sources fighting over one node, a shorted source) is rejected here
         // at build time, not on the first frame. The DC solve above, when on,
         // already re-stamped for the transient, so this factor is of the
-        // matrix the transient steps will actually solve.
+        // matrices the transient steps will actually solve.
         if !self.nonlinear {
-            self.sys.factor().map_err(|_| {
-                "The circuit has no solution: check for shorted sources or missing connections."
-                    .to_string()
-            })?;
+            for c in self.closures.iter_mut() {
+                c.sys.factor().map_err(|_| {
+                    "The circuit has no solution: check for shorted sources or missing connections."
+                        .to_string()
+                })?;
+            }
         }
         Ok(())
     }
@@ -599,11 +622,10 @@ impl Circuit {
                 self.nonlinear = true;
             }
         }
-        self.sys.resize((self.node_count - 1) + self.vs_count);
-        // A rejection before any success must restore the t=0 state, which is
-        // all zeroes. `sys.x` is the only vector whose length changes with the
-        // system size, so re-seeding here covers every reallocation.
-        self.last_solution = vec![0.0; self.sys.x.len()];
+        // A reallocation renumbers nodes, so the committed solution no longer
+        // means anything; `restamp` re-seeds `last_x` to all zeroes on the
+        // next pass because the empty vector never matches the closure sizes.
+        self.last_x = Vec::new();
     }
 
     /// Sets the working timestep and rebuilds the constant stamp pass, which
@@ -628,25 +650,66 @@ impl Circuit {
         // DC path, so the broken flag is re-derived on every restamp rather
         // than once at analysis time.
         self.check_broken_sources();
-        let size = (self.node_count - 1) + self.vs_count;
-        // `resize` also zeroes, which is what we want before re-stamping.
-        self.sys.resize(size);
-        if size == 0 {
-            self.sys.snapshot();
+        // Rebuild the closures: a throw that merges or unmerges terminals
+        // changes membership, and every restamp re-solves which system each
+        // element stamps into.
+        let map = build_closures(
+            &self.elements,
+            self.node_count,
+            self.vs_count,
+            self.nonlinear,
+        );
+        self.closures = map.closures;
+        self.node_closure = map.node_closure;
+        self.node_row = map.node_row;
+        self.vs_closure = map.vs_closure;
+        self.vs_row = map.vs_row;
+        self.element_closure = map.element_closure;
+        if self.closures.is_empty() {
+            self.last_x = Vec::new();
             return;
         }
         let ctx = self.ctx;
         let pins = self.floating_nodes();
         {
-            let mut s = Stamper::new(&mut self.sys, self.node_count);
+            let mut s = Stamper::new(
+                &mut self.closures,
+                &self.node_closure,
+                &self.node_row,
+                &self.vs_closure,
+                &self.vs_row,
+                &self.element_closure,
+            );
             for n in pins {
                 s.conductance(n, GROUND, GMIN);
             }
-            for elm in self.elements.iter_mut() {
+            for (ei, elm) in self.elements.iter_mut().enumerate() {
+                s.set_current(ei);
                 elm.stamp(&ctx, &mut s);
             }
         }
-        self.sys.snapshot();
+        for c in self.closures.iter_mut() {
+            c.sys.snapshot();
+        }
+        // `last_x` is the committed solution a rejected step restores. A
+        // reallocation (`allocate` emptied it) or any change in closure sizes
+        // re-seeds it to all zeroes, the t=0 state; a restamp that preserves
+        // the sizes (a `set_time_step` halve, a `set_param` edit) keeps the
+        // committed values, so a halved retry can restore where the last
+        // committed step left off, exactly as the flat `last_solution` did.
+        let sizes_changed = self.last_x.len() != self.closures.len()
+            || self
+                .last_x
+                .iter()
+                .zip(&self.closures)
+                .any(|(l, c)| l.len() != c.sys.size());
+        if sizes_changed {
+            self.last_x = self
+                .closures
+                .iter()
+                .map(|c| vec![0.0; c.sys.size()])
+                .collect();
+        }
     }
 
     /// Allocation plus stamping, with the one-off floating-node diagnostic.
@@ -774,15 +837,27 @@ impl Circuit {
             self.ctx.subiter = subiter as usize;
             let ctx = self.ctx;
 
-            if self.nonlinear {
-                self.sys.restore();
-                self.sys.invalidate();
-            } else {
-                self.sys.restore_rhs();
+            // Per closure, per iteration: the right-hand side is always
+            // restored, and the matrix only for nonlinear closures. A linear
+            // closure keeps its cached LU factors across the whole run.
+            for c in self.closures.iter_mut() {
+                if c.nonlinear {
+                    c.sys.restore();
+                    c.sys.invalidate();
+                } else {
+                    c.sys.restore_rhs();
+                }
             }
 
             let converged = {
-                let mut s = Stamper::new(&mut self.sys, self.node_count);
+                let mut s = Stamper::new(
+                    &mut self.closures,
+                    &self.node_closure,
+                    &self.node_row,
+                    &self.vs_closure,
+                    &self.vs_row,
+                    &self.element_closure,
+                );
                 for (ei, elm) in self.elements.iter_mut().enumerate() {
                     s.set_current(ei);
                     elm.do_step(&ctx, &mut s);
@@ -791,9 +866,11 @@ impl Circuit {
                 s.converged
             };
 
-            if let Err(SolveError::Singular) = self.sys.solve() {
-                self.ctx.time = committed_time;
-                return Err(StepError::Singular(subiter + 1));
+            for c in self.closures.iter_mut() {
+                if let Err(SolveError::Singular) = c.sys.solve() {
+                    self.ctx.time = committed_time;
+                    return Err(StepError::Singular(subiter + 1));
+                }
             }
             self.write_back();
 
@@ -825,7 +902,11 @@ impl Circuit {
     /// solution vector, the derived voltages and the per-element Newton
     /// anchors, which a failed attempt mutated.
     fn restore_committed(&mut self) {
-        self.sys.x.copy_from_slice(&self.last_solution);
+        debug_assert_eq!(self.closures.len(), self.last_x.len());
+        for (c, last) in self.closures.iter_mut().zip(self.last_x.iter()) {
+            debug_assert_eq!(c.sys.x.len(), last.len());
+            c.sys.x.copy_from_slice(last);
+        }
         self.write_back();
         for elm in self.elements.iter_mut() {
             elm.restore_iteration();
@@ -842,7 +923,7 @@ impl Circuit {
             time_step: self.current_time_step,
             ..Default::default()
         };
-        if self.sys.size() == 0 {
+        if self.closures.is_empty() {
             return report;
         }
 
@@ -862,7 +943,11 @@ impl Circuit {
             match self.try_step(step, budget) {
                 Ok(subiter) => {
                     report.iterations += subiter as u32 + 1;
-                    self.last_solution.copy_from_slice(&self.sys.x);
+                    debug_assert_eq!(self.closures.len(), self.last_x.len());
+                    for (c, last) in self.closures.iter_mut().zip(self.last_x.iter_mut()) {
+                        debug_assert_eq!(c.sys.x.len(), last.len());
+                        last.copy_from_slice(&c.sys.x);
+                    }
                     if subiter < 3 {
                         self.good_iterations += 1;
                         if self.good_iterations >= 3
@@ -992,19 +1077,25 @@ impl Circuit {
         }
     }
 
-    /// Copies the solution vector into node voltages and per-element state.
+    /// Copies each closure's solved vector into node voltages and per-element
+    /// state.
     fn write_back(&mut self) {
-        let x = &self.sys.x;
         self.node_voltages[0] = 0.0;
-        self.node_voltages[1..self.node_count].copy_from_slice(&x[..self.node_count - 1]);
-        let vs_offset = self.node_count - 1;
+        for c in self.closures.iter() {
+            let x = &c.sys.x;
+            for (k, &node) in c.node_rows.iter().enumerate() {
+                self.node_voltages[node] = x[k];
+            }
+        }
         for elm in self.elements.iter_mut() {
             let base = elm.base_mut();
             for i in 0..base.nodes.len() {
                 base.volts[i] = self.node_voltages[base.nodes[i]];
             }
             for k in 0..base.vs_currents.len() {
-                base.vs_currents[k] = x[vs_offset + base.vs_base + k];
+                let gvs = base.vs_base + k;
+                let c = self.vs_closure[gvs];
+                base.vs_currents[k] = self.closures[c].sys.x[self.vs_row[gvs]];
             }
         }
     }

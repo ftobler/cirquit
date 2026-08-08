@@ -5883,3 +5883,621 @@ fn singular_linear_circuit_is_rejected_at_set_circuit() {
         "singular circuit accepted at set_circuit"
     );
 }
+
+// ─── Matrix simplification (per-closure dense systems) ───
+
+/// 20 chains of 20 equal resistors fanning out from one driven node to
+/// ground: a literal 20x20 grid of 400 nodes, all in a single closure (the
+/// chains share the driven node) plus the feeding source. The fan's first
+/// resistor in each chain shares post 0 with the driven node, so no wires are
+/// needed.
+fn twenty_by_twenty_grid() -> Vec<ElementSpec> {
+    let mut v = vec![
+        elm(1, "voltage", &[[0, 400], [0, 0]], &[("maxVoltage", 20.0)]),
+        elm(2, "ground", &[[0, 400]], &[]),
+    ];
+    let mut id = 3;
+    for c in 0..20 {
+        // The first resistor fans out from the shared driven node (0,0).
+        v.push(elm(
+            id,
+            "resistor",
+            &[[0, 0], [c * 16, 16]],
+            &[("resistance", 1.0)],
+        ));
+        id += 1;
+        for k in 1..20 {
+            v.push(elm(
+                id,
+                "resistor",
+                &[[c * 16, 16 * k], [c * 16, 16 * (k + 1)]],
+                &[("resistance", 1.0)],
+            ));
+            id += 1;
+        }
+        v.push(elm(id, "ground", &[[c * 16, 320]], &[]));
+        id += 1;
+    }
+    v
+}
+
+/// A chain of `n` equal resistors in series from a driven node to ground,
+/// placed at x offset `off`. `base_id` gives unique element ids so several
+/// chains can share one circuit.
+fn resistor_chain(n: usize, off: i32, base_id: u32) -> Vec<ElementSpec> {
+    let mut v = Vec::new();
+    let mut id = base_id;
+    v.push(elm(
+        id,
+        "voltage",
+        &[[off, 100], [off, 0]],
+        &[("maxVoltage", 10.0)],
+    ));
+    id += 1;
+    v.push(elm(id, "ground", &[[off, 100]], &[]));
+    id += 1;
+    for k in 0..n {
+        v.push(elm(
+            id,
+            "resistor",
+            &[[off + 16 * k as i32, 0], [off + 16 * (k + 1) as i32, 0]],
+            &[("resistance", 1000.0)],
+        ));
+        id += 1;
+    }
+    v.push(elm(id, "ground", &[[off + 16 * n as i32, 0]], &[]));
+    v
+}
+
+#[test]
+fn large_resistor_grid_keeps_the_analytic_far_corner() {
+    // 400 nodes in one closure, driven at 20 V. Each chain of 20 equal 1 ohm
+    // resistors drops 1 V per resistor, so every far corner sits at exactly
+    // 1 V. This is the "big linear circuit stays exact" guard: the closure
+    // split must not change any solved value.
+    let c = &mut build(twenty_by_twenty_grid(), opts(1e-5, false));
+    let report = c.run(5);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.node_voltages()[1], 20.0, 1e-9),
+        "driven node was {}",
+        c.node_voltages()[1]
+    );
+    // Chain c's far corner (junction after its 19th resistor) is node 20+19c
+    // in id order, and carries 1 V.
+    for c_idx in 0..20 {
+        let v = c.node_voltages()[20 + 19 * c_idx];
+        assert!(close(v, 1.0, 1e-9), "far corner of chain {c_idx} was {v}");
+    }
+}
+
+#[test]
+fn two_independent_dividers_stay_independent() {
+    // Two disjoint ground-referenced dividers are separate closures, so each
+    // solves to the analytic divider value 10 * 2/3 = 6.6667, and neither
+    // feels the other. The closure solve is bit-identical to the lone
+    // divider's because the matrices are the same, which no global solve can
+    // guarantee.
+    let divider = |base: i32| {
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[base, 200], [base, 0]],
+                &[("maxVoltage", 10.0)],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[base, 0], [base + 100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[base + 100, 0], [base + 100, 100]],
+                &[("resistance", 2000.0)],
+            ),
+            elm(4, "ground", &[[base, 200]], &[]),
+            elm(5, "ground", &[[base + 100, 100]], &[]),
+        ]
+    };
+    let mut full = build([divider(0), divider(400)].concat(), opts(1e-5, false));
+    full.run(5);
+    // element_voltages: [VS, R1, R2, VS, R1, R2]; R2 reads the junction.
+    assert!(
+        close(full.element_voltages()[2], 6.6666666667, 1e-9),
+        "divider 1 junction was {}",
+        full.element_voltages()[2]
+    );
+    assert!(
+        close(full.element_voltages()[7], 6.6666666667, 1e-9),
+        "divider 2 junction was {}",
+        full.element_voltages()[7]
+    );
+
+    // Deleting one network leaves the other's solve unchanged, exactly.
+    let mut single = build(divider(0), opts(1e-5, false));
+    single.run(5);
+    assert_eq!(
+        single.element_voltages()[2],
+        full.element_voltages()[2],
+        "closure coupling through ground changed the divider"
+    );
+}
+
+#[test]
+fn split_closures_factor_fewer_flops_than_one_global_matrix() {
+    // Two 60-node chains are two closures; the same 120 nodes as one chain is
+    // a single closure. LU flops scale like n^3 per system, so the split must
+    // be strictly cheaper, measured by the deterministic multiply-add counter
+    // rather than a wall clock.
+    let two = build(
+        [resistor_chain(60, 0, 1), resistor_chain(60, 4000, 200)].concat(),
+        opts(1e-5, false),
+    );
+    let one = build(resistor_chain(120, 0, 1), opts(1e-5, false));
+    assert_eq!(two.node_count(), one.node_count(), "node counts must match");
+    let f_two = two.factor_flops();
+    let f_one = one.factor_flops();
+    assert!(
+        f_two < f_one,
+        "two closures factored {f_two} flops, a single {f_one}-row system only {f_one}"
+    );
+}
+
+#[test]
+fn opamp_matrix_connects_keeps_inputs_and_output_in_one_closure() {
+    // The op-amp's do_step stamps the input columns into the output VS row.
+    // With no feedback the input and output are separate closures unless
+    // matrix_connects forces them together, and a torn stamp lands in the
+    // wrong system. The inverting input held at +1 V with the non-inverting
+    // grounded saturates the output to minOut = -15 V.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 1.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "opamp",
+                &[[100, 0], [100, 100], [300, 0]],
+                &[("gain", 100_000.0), ("maxOut", 15.0), ("minOut", -15.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[300, 0], [300, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[100, 100]], &[]),
+            elm(6, "ground", &[[0, 200]], &[]),
+            elm(7, "ground", &[[300, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(30);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let out = c.element_voltages()[2];
+    assert!(close(out, -15.0, 0.1), "op-amp output was {out}");
+}
+
+#[test]
+fn mosfet_matrix_connects_keeps_the_gate_in_the_channel_closure() {
+    // Source follower: the gm column stamps the gate into the source/drain
+    // rows, so a gate torn into another closure starves the channel of gm*vgs.
+    // In saturation Vs = Rs * 0.5 * beta * (Vg - Vs - Vt)^2, closed form
+    // Vs = 1.5 - (-1 + sqrt(61))/20 = 1.15949 V.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "mosfet",
+                &[[200, 0], [100, 100], [0, 0]],
+                &[("pnp", 1.0), ("threshold", 1.5), ("beta", 0.02)],
+            ),
+            elm(
+                3,
+                "voltage",
+                &[[200, 100], [200, 0]],
+                &[("maxVoltage", 3.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[100, 100], [100, 200]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "ground", &[[200, 100]], &[]),
+            elm(7, "ground", &[[100, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let vs = c.element_voltages()[3];
+    assert!(close(vs, 1.15949, 1e-3), "follower source voltage was {vs}");
+}
+
+#[test]
+fn spdt_voltage_source_closure_follows_the_selected_throw() {
+    // A 2-throw SPDT whose common post is grounded: its voltage source runs
+    // from ground to the *selected* throw, so the unknown must join the
+    // selected throw's closure even though the element's first non-ground post
+    // is the other throw. Position 1 selects throw 2, which hangs off a 10 V
+    // source through a load resistor; throw 1 hangs off a 5 V source through
+    // an idle resistor. The grounded common pins the selected throw to 0 V, so
+    // the load carries 10 mA and the idle throw's network stays at rest.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "switch2",
+                &[[0, 100], [100, 100], [200, 100]],
+                &[("throwCount", 2.0), ("position", 1.0)],
+            ),
+            elm(2, "ground", &[[0, 100]], &[]),
+            // Independent network on throw 1: no current can flow, so the idle
+            // resistor holds both its ends at the source potential.
+            elm(
+                3,
+                "voltage",
+                &[[100, 300], [100, 200]],
+                &[("maxVoltage", 5.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[100, 300], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[100, 200]], &[]),
+            // Loaded network on throw 2.
+            elm(
+                6,
+                "voltage",
+                &[[300, 300], [300, 200]],
+                &[("maxVoltage", 10.0)],
+            ),
+            elm(
+                7,
+                "resistor",
+                &[[300, 300], [200, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(8, "ground", &[[300, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(5);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    // The selected throw is pinned to the grounded common (0 V), so the load
+    // resistor carries the full 10 mA of the 10 V source.
+    assert!(
+        close(c.element_currents()[6], -0.01, 1e-9),
+        "load current was {}, expected -10 mA",
+        c.element_currents()[6]
+    );
+    assert!(
+        close(c.element_voltages()[6], -10.0, 1e-9),
+        "load voltage was {}, expected -10 V",
+        c.element_voltages()[6]
+    );
+    // The idle throw's network is untouched: the resistor carries no current.
+    assert!(
+        close(c.element_currents()[3], 0.0, 1e-12),
+        "idle resistor carried {}, expected none",
+        c.element_currents()[3]
+    );
+}
+
+#[test]
+fn transformer_matrix_connects_couples_a_loaded_secondary_at_dc() {
+    // The DC operating point is where the transformer's `matrix_connects`
+    // override earns its keep. The companion's current injection is silent
+    // under dc_analysis, so a loaded secondary reads
+    // `V2 = k * ratio * V1 * a11/(a11 + 1/Rload)` purely from the
+    // mutual-inductance VCCS in the matrix; drop the override and the VCCS
+    // cross-terms are lost, leaving the secondary uncoupled at V2 = 0. An
+    // open-secondary sine is no guard here because the RHS current injection
+    // couples that through one step late, reproducing the same peak.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "transformer",
+                &[[0, 0], [100, 0], [0, 100], [100, 100]],
+                &[("inductance", 4.0), ("ratio", 0.1), ("couplingCoef", 0.999)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "ground", &[[100, 100]], &[]),
+            elm(
+                5,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1.0)],
+            ),
+        ],
+        opts(1e-5, true),
+    );
+    // The transformer reads V(post0) - V(post1) = V1 - V2, so V2 = 10 - that.
+    let v2 = 10.0 - c.element_voltages()[1];
+    assert!(
+        close(v2, 0.0588, 2e-4),
+        "loaded secondary operating point was {v2}, expected 0.0588"
+    );
+}
+
+#[test]
+fn current_source_matrix_connects_keeps_the_companion_in_one_closure() {
+    // The Norton companion of a voltage-limited source stamps a resistance
+    // between its terminals, so two terminals living in separate networks must
+    // still land in one closure. A 0.01 A source with 5 V compliance driving a
+    // node through a capacitor (no DC path, so never forced broken) clips its
+    // terminal voltage near maxVoltage.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "current",
+                &[[0, 0], [100, 0]],
+                &[("current", 0.01), ("maxVoltage", 5.0)],
+            ),
+            elm(2, "capacitor", &[[100, 0], [100, 100]], &[]),
+            elm(3, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let v = c.element_voltages()[0];
+    assert!(
+        (4.0..=6.5).contains(&v.abs()),
+        "terminal voltage was {v}, expected it clipped near 5 V"
+    );
+}
+
+#[test]
+fn singular_closure_is_rejected_at_set_circuit_inside_a_healthy_circuit() {
+    // The eager per-closure factor must still reject a singular closure (two
+    // sources fighting over one node) at set_circuit even when a healthy
+    // divider shares the circuit as a second closure.
+    let spec = CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, 300], [0, 200]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 200], [100, 200]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 200], [100, 300]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "ground", &[[0, 300]], &[]),
+            elm(5, "ground", &[[100, 300]], &[]),
+            elm(
+                6,
+                "voltage",
+                &[[200, 100], [200, 0]],
+                &[("maxVoltage", 5.0)],
+            ),
+            elm(
+                7,
+                "voltage",
+                &[[200, 100], [200, 0]],
+                &[("maxVoltage", 3.0)],
+            ),
+            elm(8, "ground", &[[200, 0]], &[]),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    assert!(
+        c.set_circuit(&spec).is_err(),
+        "singular closure accepted at set_circuit"
+    );
+}
+
+#[test]
+fn mixed_nonlinear_circuit_stays_finite_and_converges() {
+    // One op-amp amp, one diode, one mosfet follower, one transformer and one
+    // voltage-limited current source, each its own closure. A missed
+    // matrix_connects override tears one of these across closures; the run
+    // would diverge or produce garbage. Assert the whole solve stays finite
+    // and converged, plus one analytic anchor (the op-amp gain).
+    let c = &mut build(
+        vec![
+            // Op-amp inverting amp.
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 0.5)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [300, 0]],
+                &[("resistance", 10_000.0)],
+            ),
+            elm(
+                4,
+                "opamp",
+                &[[100, 0], [100, 100], [300, 0]],
+                &[("gain", 100_000.0), ("maxOut", 15.0), ("minOut", -15.0)],
+            ),
+            elm(5, "ground", &[[100, 100]], &[]),
+            elm(6, "ground", &[[0, 200]], &[]),
+            // Diode forward drop.
+            elm(
+                7,
+                "voltage",
+                &[[400, 300], [400, 200]],
+                &[("maxVoltage", 2.0)],
+            ),
+            elm(
+                8,
+                "resistor",
+                &[[400, 200], [500, 200]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "diode", &[[500, 200], [500, 300]], &[]),
+            elm(10, "ground", &[[400, 300]], &[]),
+            elm(11, "ground", &[[500, 300]], &[]),
+            // Mosfet source follower.
+            elm(
+                12,
+                "voltage",
+                &[[700, 500], [700, 400]],
+                &[("maxVoltage", 5.0)],
+            ),
+            elm(
+                13,
+                "mosfet",
+                &[[900, 400], [800, 500], [700, 400]],
+                &[("pnp", 1.0), ("threshold", 1.5), ("beta", 0.02)],
+            ),
+            elm(
+                14,
+                "voltage",
+                &[[900, 500], [900, 400]],
+                &[("maxVoltage", 3.0)],
+            ),
+            elm(
+                15,
+                "resistor",
+                &[[800, 500], [800, 600]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(16, "ground", &[[700, 500]], &[]),
+            elm(17, "ground", &[[900, 500]], &[]),
+            elm(18, "ground", &[[800, 600]], &[]),
+            // Transformer with a loaded secondary.
+            elm(
+                19,
+                "voltage",
+                &[[1000, 800], [1000, 700]],
+                &[
+                    ("maxVoltage", 10.0),
+                    ("waveform", 1.0),
+                    ("frequency", 1000.0),
+                ],
+            ),
+            elm(
+                20,
+                "transformer",
+                &[[1000, 700], [1100, 700], [1000, 800], [1100, 800]],
+                &[("inductance", 4.0), ("ratio", 2.0), ("couplingCoef", 0.999)],
+            ),
+            elm(
+                21,
+                "resistor",
+                &[[1100, 700], [1100, 800]],
+                &[("resistance", 4000.0)],
+            ),
+            elm(22, "ground", &[[1000, 800]], &[]),
+            elm(23, "ground", &[[1100, 800]], &[]),
+            // Voltage-limited current source into a resistor.
+            elm(
+                24,
+                "current",
+                &[[1300, 1000], [1300, 900]],
+                &[("current", 0.01), ("maxVoltage", 5.0)],
+            ),
+            elm(
+                25,
+                "resistor",
+                &[[1300, 900], [1400, 900]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(26, "ground", &[[1300, 1000]], &[]),
+            elm(27, "ground", &[[1400, 900]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(10);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        report.iterations < 100,
+        "mixed circuit used {} subiterations",
+        report.iterations
+    );
+    for (i, v) in c.node_voltages().iter().enumerate() {
+        assert!(v.is_finite(), "node {i} reached a non-finite voltage {v}");
+    }
+    for (i, v) in c.element_voltages().iter().enumerate() {
+        assert!(
+            v.is_finite(),
+            "element {i} reached a non-finite voltage {v}"
+        );
+    }
+    for (i, v) in c.element_currents().iter().enumerate() {
+        assert!(
+            v.is_finite(),
+            "element {i} reached a non-finite current {v}"
+        );
+    }
+    assert!(
+        close(c.element_voltages()[3], -5.0, 0.01),
+        "op-amp output was {}",
+        c.element_voltages()[3]
+    );
+    assert!(
+        c.element_currents()[8] > 0.0,
+        "diode current was {}",
+        c.element_currents()[8]
+    );
+}
+
+#[test]
+fn double_halve_restores_the_committed_state() {
+    // Budget 4 is one below the 5 subiterations the 2.5e-6 step needs, so each
+    // compliance crossing rejects twice (5e-6 then 2.5e-6) and settles at
+    // 1.25e-6, while the current-source terminal voltage stays capped at the
+    // rating. Every rejection restamps the closures and restores the
+    // committed state; the run must stay converged and sane across the whole
+    // halving sequence, with the delivered current capped at the rating.
+    let mut c = build_with(
+        compliance_circuit(0.0),
+        adaptive_opts(5e-6, 50e-12, 4),
+        vec![ScopeSpec {
+            element_id: 3,
+            value: ScopeValue::Current,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
+        }],
+    );
+    let report = c.run(200);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        report.rejected_steps >= 2,
+        "the double halve never engaged, rejected {} times",
+        report.rejected_steps
+    );
+    let cur = c.scopes()[0].snapshot();
+    let mut cur_max: f32 = 0.0;
+    for k in (0..cur.len()).step_by(2) {
+        cur_max = cur_max.max(cur[k]).max(cur[k + 1]);
+    }
+    assert!(
+        (0.009..=0.0105).contains(&(cur_max as f64)),
+        "delivered current peaked at {cur_max}, expected it capped at the 10 mA rating"
+    );
+}

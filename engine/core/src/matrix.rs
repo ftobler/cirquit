@@ -27,6 +27,9 @@ pub struct LinearSystem {
     perm: Vec<usize>,
     pub x: Vec<f64>,
     factored: bool,
+    /// Multiply-adds performed by the last factor pass, for the closure-
+    /// decomposition speedup test. Deterministic, unlike a wall clock.
+    flops: u64,
 }
 
 impl LinearSystem {
@@ -45,6 +48,7 @@ impl LinearSystem {
         self.perm = (0..n).collect();
         self.x = vec![0.0; n];
         self.factored = false;
+        self.flops = 0;
     }
 
     #[inline]
@@ -98,6 +102,11 @@ impl LinearSystem {
     #[inline]
     pub fn is_factored(&self) -> bool {
         self.factored
+    }
+
+    /// Multiply-adds accumulated by factor passes since the last `resize`.
+    pub fn flops(&self) -> u64 {
+        self.flops
     }
 
     /// LU-factors `a` in place with partial pivoting. Cheap no-op if the cached
@@ -174,6 +183,7 @@ impl LinearSystem {
                 if mult != 0.0 {
                     for k in (j + 1)..n {
                         self.lu[i * n + k] -= mult * self.lu[j * n + k];
+                        self.flops += 1;
                     }
                 }
             }

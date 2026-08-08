@@ -29,6 +29,7 @@
 //! ```
 
 pub mod circuit;
+pub mod closure;
 pub mod element;
 pub mod elements;
 pub mod matrix;

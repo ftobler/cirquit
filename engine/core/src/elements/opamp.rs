@@ -101,6 +101,11 @@ impl Element for OpAmp {
     fn connects(&self, _a: usize, _b: usize) -> bool {
         false
     }
+    /// `do_step` stamps the input columns into the output VS row, so the whole
+    /// part must share the output's closure (OpAmpElm.java:202).
+    fn matrix_connects(&self, _a: usize, _b: usize) -> bool {
+        true
+    }
 
     fn stamp(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
         // Topology only: the output is a source to ground whose value and

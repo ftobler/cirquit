@@ -42,6 +42,13 @@ impl Element for MultiThrowSwitch {
     fn voltage_source_count(&self) -> usize {
         1
     }
+    fn voltage_source_nodes(&self, _k: usize) -> (usize, usize) {
+        // `stamp` drives the source between the common post and the selected
+        // throw, so the unknown must join the selected throw's closure, not
+        // the first non-ground post's. Upstream's `setVoltageSource` records
+        // exactly this pairing.
+        (self.base.nodes[0], self.base.nodes[self.selected_post()])
+    }
     fn connects(&self, a: usize, b: usize) -> bool {
         let sel = self.selected_post();
         (a == 0 && b == sel) || (b == 0 && a == sel)

@@ -169,6 +169,13 @@ impl Element for CurrentSource {
     fn connects(&self, _a: usize, _b: usize) -> bool {
         false
     }
+    /// The Norton companion (and the broken-source resistor) always stamps a
+    /// conductance between the terminals, so they must share one closure even
+    /// though `connects` is false. Upstream's CurrentElm inherits the default
+    /// `getConnection = true` (CircuitElm.java:1283).
+    fn matrix_connects(&self, _a: usize, _b: usize) -> bool {
+        true
+    }
 
     /// Only a source without voltage compliance can be forced broken: a
     /// voltage-limited one carries its own path through the companion
