@@ -44,8 +44,10 @@ export const CENTER_MARGIN_H = 100;
 /** Bounding box of the circuit from the stored endpoints, the port's analogue
  *  of UIManager.getCircuitBounds (UIManager.java:479-503). Stored endpoints are
  *  used, not `posts()`, because upstream reads the element fields and the port
- *  has no parts whose symbol is wider than their terminals. An empty circuit
- *  has no bounds and returns null. */
+ *  has no parts whose symbol is wider than their terminals; a routed wire's
+ *  route corners are included too, since its polyline can detour outside the
+ *  two-post span (RoutedWireElm.setBbox). An empty circuit has no bounds and
+ *  returns null. */
 export function circuitBounds(elements: CircuitElement[]): Rect | null {
   if (elements.length === 0) return null;
   let minX = Infinity;
@@ -57,6 +59,14 @@ export function circuitBounds(elements: CircuitElement[]): Rect | null {
     minY = Math.min(minY, e.y1, e.y2);
     maxX = Math.max(maxX, e.x1, e.x2);
     maxY = Math.max(maxY, e.y1, e.y2);
+    if (e.route) {
+      for (const [x, y] of e.route) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
   }
   return { minX, minY, width: maxX - minX, height: maxY - minY };
 }

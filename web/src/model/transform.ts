@@ -39,6 +39,15 @@ const centre = (e: CircuitElement) => ({
   cy: (e.y1 + e.y2) / 2,
 });
 
+/** A routed wire's polyline is valid only for its exact endpoints; once a
+ *  transform moves those, the route is dropped. Upstream re-routes in
+ *  setPoints instead (RoutedWireElm.java:86-123); the port clears, the same
+ *  choice endpoint drags make, and the next Convert re-routes from the shape. */
+const withoutRoute = (e: CircuitElement): CircuitElement => {
+  const { route: _route, ...rest } = e;
+  return rest;
+};
+
 /**
  * A 90 degree turn about the element's own midpoint, equivalent to upstream's
  * flipXY-then-flipY. The arithmetic is exact for grid-aligned input, but an
@@ -56,7 +65,7 @@ export function rotateElement(e: CircuitElement): CircuitElement {
   ];
   const [x1, y1] = turn(e.x1, e.y1);
   const [x2, y2] = turn(e.x2, e.y2);
-  return { ...e, x1, y1, x2, y2, flags: rotateFlags(e) };
+  return { ...withoutRoute(e), x1, y1, x2, y2, flags: rotateFlags(e) };
 }
 
 /**
@@ -111,11 +120,11 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
   else if (e.kind === 'opamp' || e.kind === 'transistor') flipBit = FLAG_SWAP;
   else if (e.kind === 'tappedTransformer' || e.kind === 'customTransformer') flipBit = TAPPED_FLIP;
   const flags = vertical && flipBit !== 0 ? e.flags ^ flipBit : e.flags;
-  return { ...e, x1: 2 * cx - e.x1, y1: e.y1, x2: 2 * cx - e.x2, y2: e.y2, flags };
+  return { ...withoutRoute(e), x1: 2 * cx - e.x1, y1: e.y1, x2: 2 * cx - e.x2, y2: e.y2, flags };
 }
 
 /** Exchange the two ends of a two-terminal part. */
 export function swapTerminalOrder(e: CircuitElement): CircuitElement {
   if (!canSwap(e)) return e;
-  return { ...e, x1: e.x2, y1: e.y2, x2: e.x1, y2: e.y1 };
+  return { ...withoutRoute(e), x1: e.x2, y1: e.y2, x2: e.x1, y2: e.y1 };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseCircuit, serializeCircuit } from './index';
 import { dropId, SAMPLE } from './fixtures';
 import { makeElement } from '../../state/store';
+import { convertWires } from '../../render/wireConverter';
 import { DEFAULT_SETTINGS } from '../../model/types';
 
 describe('subset dump', () => {
@@ -265,5 +266,71 @@ describe('potentiometer slider text', () => {
     const { e, elementLine } = potLine('174 320 352 384 96 0 1000.0 0.5');
     expect(e.text).toBeUndefined();
     expect(elementLine).toBe('174 320 352 384 96 0 1000 0.5 Resistance');
+  });
+});
+
+describe('routed wires serialize as plain w lines', () => {
+  const ROUTED = [
+    '$ 0 0.000005 10 50 5 43 5e-11',
+    'r 0 0 32 0 0 100',
+    'w 0 16 64 16 0',
+    'w 64 16 128 16 0',
+    'w 128 16 128 64 0',
+    'g 128 64 128 80 0 0',
+    '',
+  ].join('\n');
+
+  const parsed = parseCircuit(ROUTED);
+  const save = (elements: Parameters<typeof serializeCircuit>[0]) =>
+    serializeCircuit(
+      elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+
+  it('converting a chain and saving changes only the merged wire count', () => {
+    const converted = convertWires(parsed.elements);
+    const lines = save(converted).trim().split('\n');
+
+    // Three wire lines merge into one, written as a plain two-endpoint w line
+    // from the chain endpoints; the route itself never leaks into the file.
+    expect(lines.filter((l) => l.startsWith('w '))).toEqual(['w 0 16 128 64 0']);
+    // Every other line is byte-identical to the loaded fixture.
+    expect(lines).toContain('$ 0 0.000005 10 50 5 43 5e-11');
+    expect(lines).toContain('r 0 0 32 0 0 100');
+    expect(lines).toContain('g 128 64 128 80 0 0');
+
+    // A reload sees plain wires with no routes: routed wires degrade to
+    // straight wires on a text save/reload, upstream's own text-format
+    // behavior, and the round trip stays text-stable.
+    const back = parseCircuit(save(converted));
+    expect(back.elements.filter((e) => e.kind === 'wire')).toHaveLength(1);
+    expect(back.elements.every((e) => !e.route)).toBe(true);
+  });
+
+  it('a routed wire keeps only its two posts in the element dump', () => {
+    const [w] = parsed.elements.filter((e) => e.kind === 'wire');
+    // A routed wire's stored endpoints are its route endpoints by invariant.
+    const routed = {
+      ...w,
+      x2: 128,
+      y2: 64,
+      route: [
+        [0, 16],
+        [64, 16],
+        [64, 64],
+        [128, 64],
+      ] as [number, number][],
+    };
+    const line = save([routed]).trim().split('\n').find((l) => l.startsWith('w '));
+    expect(line).toBe('w 0 16 128 64 0');
+  });
+
+  it('a plain-wire circuit with no conversion round-trips byte-for-byte', () => {
+    // A fixture that already round-trips must stay untouched: convertWires was
+    // never called, so nothing in the byte stream can regress.
+    expect(save(parsed.elements)).toBe(ROUTED);
   });
 });

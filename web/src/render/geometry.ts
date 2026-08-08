@@ -35,6 +35,39 @@ export function pointOnSegmentInterior(
   return distanceToSegment(p, a, b) <= tolerance;
 }
 
+/** The corner polyline of a wire: its route when routed, else the straight
+ *  span between the two stored endpoints. */
+export function wirePoints(wire: CircuitElement): Point[] {
+  if (wire.route && wire.route.length >= 2) {
+    return wire.route.map(([x, y]) => ({ x, y }));
+  }
+  return [
+    { x: wire.x1, y: wire.y1 },
+    { x: wire.x2, y: wire.y2 },
+  ];
+}
+
+/**
+ * True when `p` lies on the interior of `wire`'s path: on a segment strictly
+ * between its endpoints, or exactly on an interior bend vertex. Route-aware:
+ * a routed wire hit-tests every segment and its bend vertices, the port of
+ * `pointOnWireInteriorForPoints` (WireElm.java:213-226); a plain wire reduces
+ * to the straight-span check.
+ */
+export function pointOnWireInterior(p: Point, wire: CircuitElement, tolerance = 1e-9): boolean {
+  const pts = wirePoints(wire);
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (pointOnSegmentInterior(p, pts[i], pts[i + 1], tolerance)) return true;
+  }
+  // An interior bend vertex is a valid connection and split point even though
+  // it is not "interior" to either adjacent segment (WireElm.java:219-224).
+  for (let i = 1; i < pts.length - 1; i++) {
+    const q = pts[i];
+    if (p.x === q.x && p.y === q.y) return true;
+  }
+  return false;
+}
+
 /**
  * Splits wire `[a, b]` at `p`, which lies on its interior, into two wires.
  * Returns the two replacement wires with fresh ids, or null when `p` is not
@@ -50,12 +83,94 @@ export function splitWire(
   nextId: () => number,
 ): [CircuitElement, CircuitElement] | null {
   if (wire.kind !== 'wire') return null;
+  if (wire.route && wire.route.length >= 2) {
+    return splitRoutedWire(wire, p, nextId);
+  }
   if (!pointOnSegmentInterior(p, { x: wire.x1, y: wire.y1 }, { x: wire.x2, y: wire.y2 })) {
     return null;
   }
   return [
     { ...wire, id: nextId(), x2: p.x, y2: p.y },
     { ...wire, id: nextId(), x1: p.x, y1: p.y },
+  ];
+}
+
+/** Snaps `v` to a circuit grid for split points on a routed segment. The unit
+ *  is the small grid, 8, which divides the 16-unit grid: every grid-aligned
+ *  coordinate is a multiple of 8, so a point the caller already snapped to the
+ *  active grid never moves, whichever of the two grids is active. */
+const SNAP_GRID = 8;
+
+function snapGrid(v: number): number {
+  return Math.round(v / SNAP_GRID) * SNAP_GRID;
+}
+
+/**
+ * Splits a routed wire at the nearest point of `p` onto its polyline, into two
+ * routed halves sharing the split point. The port of `RoutedWireElm.split`
+ * (RoutedWireElm.java:136-197): the split point is snapped to the grid and
+ * clamped onto the nearest segment, and a split that lands exactly on an
+ * existing bend vertex adds no duplicate point to either half.
+ */
+function splitRoutedWire(
+  wire: CircuitElement,
+  p: Point,
+  nextId: () => number,
+): [CircuitElement, CircuitElement] | null {
+  const pts = wire.route!;
+  if (pts.length < 2) return null;
+
+  let bestSeg = -1;
+  let bestDist = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const d = distanceToSegment(p, { x: pts[i][0], y: pts[i][1] }, { x: pts[i + 1][0], y: pts[i + 1][1] });
+    if (d < bestDist) {
+      bestDist = d;
+      bestSeg = i;
+    }
+  }
+  if (bestSeg < 0) return null;
+
+  const [ax, ay] = pts[bestSeg];
+  const [bx, by] = pts[bestSeg + 1];
+  let sx: number;
+  let sy: number;
+  if (ax === bx) {
+    sx = ax;
+    sy = Math.min(Math.max(ay, by), Math.min(snapGrid(p.y), Math.max(ay, by)));
+  } else if (ay === by) {
+    sy = ay;
+    sx = Math.min(Math.max(ax, bx), Math.min(snapGrid(p.x), Math.max(ax, bx)));
+  } else {
+    // A diagonal segment (a converted diagonal wire): project onto it, snap
+    // both coordinates, and clamp back onto the segment.
+    const dx = bx - ax;
+    const dy = by - ay;
+    const t = ((p.x - ax) * dx + (p.y - ay) * dy) / (dx * dx + dy * dy);
+    sx = Math.min(Math.max(ax, bx), Math.min(snapGrid(ax + t * dx), Math.max(ax, bx)));
+    sy = Math.min(Math.max(ay, by), Math.min(snapGrid(ay + t * dy), Math.max(ay, by)));
+  }
+
+  // Refuse to split at one of the wire's own endpoints, which is an ordinary
+  // connection rather than a split (RoutedWireElm.java:169-170).
+  if ((sx === wire.x1 && sy === wire.y1) || (sx === wire.x2 && sy === wire.y2)) return null;
+
+  const atA = sx === ax && sy === ay;
+  const atB = sx === bx && sy === by;
+
+  const rp1: [number, number][] = [];
+  for (let i = 0; i <= bestSeg; i++) rp1.push(pts[i]);
+  if (!atA) rp1.push([sx, sy]);
+
+  const rp2: [number, number][] = [[sx, sy]];
+  for (let i = bestSeg + 1; i < pts.length; i++) {
+    if (i === bestSeg + 1 && atB) continue;
+    rp2.push(pts[i]);
+  }
+
+  return [
+    { ...wire, id: nextId(), route: rp1, x2: sx, y2: sy },
+    { ...wire, id: nextId(), route: rp2, x1: sx, y1: sy },
   ];
 }
 
@@ -77,9 +192,10 @@ export function invalidDropPoint(
   const p = { x, y };
   for (const other of elements) {
     if (other.id === e.id || other.kind !== 'wire') continue;
-    if (!pointOnSegmentInterior(p, { x: other.x1, y: other.y1 }, { x: other.x2, y: other.y2 })) {
-      continue;
-    }
+    // A routed wire tests every segment and its bend vertices: none of them is
+    // a post, so a wire end dropped on any of them shows the red marker like a
+    // drop on a plain wire's interior. placeWireEnd still splits there.
+    if (!pointOnWireInterior(p, other)) continue;
     const occupied = elements.some(
       (q) => q.id !== e.id && q.id !== other.id && postsOf(q).some((pp) => pp.x === p.x && pp.y === p.y),
     );
@@ -92,6 +208,16 @@ export function invalidDropPoint(
 /** Distance from a point to an element, measured against all of its limbs. */
 export function distanceToElement(p: Point, e: CircuitElement): number {
   const posts = postsOf(e);
+  if (e.kind === 'wire' && e.route && e.route.length >= 2) {
+    // A routed wire hit-tests every segment: the stored span between the two
+    // posts would miss a polyline that detours far off the straight line.
+    let best = Infinity;
+    const pts = wirePoints(e);
+    for (let i = 0; i < pts.length - 1; i++) {
+      best = Math.min(best, distanceToSegment(p, pts[i], pts[i + 1]));
+    }
+    return best;
+  }
   if (posts.length <= 1) {
     const near = Math.hypot(p.x - e.x1, p.y - e.y1);
     // A ground's free end is a draggable control point, not a post, so its

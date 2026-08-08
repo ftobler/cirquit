@@ -25,6 +25,12 @@ export interface CircuitElement {
   modelName?: string;
   /** Interactive state, such as a switch position. */
   state?: number;
+  /** Routed-wire polyline (Convert Wires to Routed Wires): the drawn corners
+   *  of a wire, `[x, y]` pairs. Pure drawing state: cloned by the store,
+   *  dropped on save and never sent to the engine, whose model sees only the
+   *  two posts. A route is valid only for its exact endpoints, so any
+   *  geometry edit clears it. */
+  route?: [number, number][];
 }
 
 /** An editable property, surfaced in the options panel. */

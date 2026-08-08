@@ -176,3 +176,38 @@ describe('swapTerminalOrder', () => {
     expect(swapTerminalOrder(t)).toEqual(t);
   });
 });
+
+describe('routed wire transforms drop the route', () => {
+  const routedWire = () => {
+    const w = element('wire', 0, 0, 160, 0);
+    w.route = [
+      [0, 0],
+      [0, 80],
+      [160, 0],
+    ];
+    return w;
+  };
+
+  it('rotate clears the route, whose geometry no longer matches the endpoints', () => {
+    const r = rotateElement(routedWire());
+    expect(r.x1).toBe(r.x2);
+    expect(r.route).toBeUndefined();
+  });
+
+  it('swap clears the route', () => {
+    const s = swapTerminalOrder(routedWire());
+    expect([s.x1, s.y1, s.x2, s.y2]).toEqual([160, 0, 0, 0]);
+    expect(s.route).toBeUndefined();
+  });
+
+  it('mirror cannot apply to a wire, so its route survives as a no-op', () => {
+    // canMirror is false for a two-post part, so mirrorElement returns the wire
+    // untouched: there is no mirror path that could leave a stale route.
+    const m = mirrorElement(routedWire());
+    expect(m.route).toEqual([
+      [0, 0],
+      [0, 80],
+      [160, 0],
+    ]);
+  });
+});

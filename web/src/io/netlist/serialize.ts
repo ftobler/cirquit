@@ -41,7 +41,12 @@ function headerLine(settings: SimSettings): string {
   ].join(' ');
 }
 
-/** One element line, or null for a kind this build cannot write. */
+/** One element line, or null for a kind this build cannot write. A routed
+ *  wire's `route` is session drawing state and deliberately absent here: the
+ *  text format has no place for it (upstream's RoutedWireElm has no text dump
+ *  type), so a save degrades routed wires to plain two-endpoint `w` lines.
+ *  Copy, paste, duplicate and Save As all go through this writer, so the route
+ *  never survives any of them; that is the policy, not a bug to "fix". */
 function elementLine(e: CircuitElement): string | null {
   const def = defFor(e.kind);
   if (!def) return null;

@@ -7,6 +7,7 @@ import { dotPhaseStep, TOO_FAST, wrapPhase } from '../../render/dots';
 import { makeTheme } from '../../render/draw';
 import { drawGrid } from '../../render/grid';
 import { invalidDropPoint } from '../../render/geometry';
+import { postDotPoints, shouldDrawDot } from '../../render/junction';
 import { scopeWidth } from '../../scope/geometry';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { gridSize } from '../../state/helpers';
@@ -252,14 +253,20 @@ export function useFrameLoop(
           valueFontSize: settings.valueFontSize,
         };
         def.draw(g, e);
+      }
 
-        // Terminal dots make it obvious where things connect.
-        ctx.fillStyle = theme.wire;
-        for (const p of posts) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
-          ctx.fill();
-        }
+      // Junction dots: a dot only where the post count at a coordinate is not
+      // exactly 2, so a plain two-element pass-through connection hides while
+      // dead ends and real junctions keep theirs, matching makePostDrawList
+      // (SimulationManager.java:1056-1108). Drawn after all elements, like the
+      // upstream postDrawList pass.
+      ctx.fillStyle = theme.wire;
+      for (const [key, count] of postDotPoints(elements)) {
+        if (!shouldDrawDot(count)) continue;
+        const [x, y] = key.split(',').map(Number);
+        ctx.beginPath();
+        ctx.arc(x, y, 1.8, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       // Red no-connect marker: a dragged wire end over another wire's interior

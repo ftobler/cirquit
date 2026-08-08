@@ -27,6 +27,23 @@ describe('circuitBounds', () => {
   it('returns null for an empty circuit', () => {
     expect(circuitBounds([])).toBeNull();
   });
+
+  it('includes a routed wire route corners beyond its two posts', () => {
+    const routed = el(0, 0, 160, 0);
+    routed.route = [
+      [0, 0],
+      [0, -48],
+      [208, -48],
+      [160, 0],
+    ];
+    // The detour reaches up to y=-48 and x=208, well outside the stored span.
+    expect(circuitBounds([routed])).toEqual({
+      minX: 0,
+      minY: -48,
+      width: 208,
+      height: 48,
+    });
+  });
 });
 
 describe('fitView', () => {

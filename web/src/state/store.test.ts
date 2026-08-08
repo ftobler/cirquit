@@ -1614,3 +1614,264 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
     expect(useStore.getState().toNetlist()).not.toContain('38');
   });
 });
+
+describe('convert wires to routed', () => {
+  const addWire = (x1: number, y1: number, x2: number, y2: number) =>
+    useStore.getState().addElement({
+      kind: 'wire',
+      x1,
+      y1,
+      x2,
+      y2,
+      flags: 0,
+      params: {},
+    });
+
+  it('merges a chain into one routed wire: one undo entry, one revision bump', () => {
+    const a = addWire(0, 0, 80, 0);
+    const b = addWire(80, 0, 160, 0);
+    const c = addWire(160, 0, 160, 80);
+    const baseline = useStore.getState().undoStack.length;
+    const rev = useStore.getState().revision;
+
+    useStore.getState().convertWiresToRouted();
+
+    const s = useStore.getState();
+    const wires = s.elements.filter((e) => e.kind === 'wire');
+    expect(wires).toHaveLength(1);
+    // The merged wire keeps the first chain wire's id, so scopes and the
+    // file-order slot attached to it survive.
+    expect(wires[0].id).toBe(a);
+    expect(wires[0].route).toEqual([
+      [0, 0],
+      [80, 0],
+      [160, 0],
+      [160, 80],
+    ]);
+    // One commit for the whole command, exactly as upstream pushes once
+    // (CommandManager.java:141-145).
+    expect(s.undoStack.length).toBe(baseline + 1);
+    // The engine reload sees one wire where it saw three, electrically
+    // identical because wires merge into nodes by coordinate.
+    expect(s.revision).toBe(rev + 1);
+
+    s.undo();
+    const u = useStore.getState();
+    expect(u.elements.some((e) => e.id === a)).toBe(true);
+    expect(u.elements.some((e) => e.id === b)).toBe(true);
+    expect(u.elements.some((e) => e.id === c)).toBe(true);
+    expect(u.elements.every((e) => e.kind !== 'wire' || !e.route)).toBe(true);
+  });
+
+  it('converts only the selected wires, and the next command takes the rest', () => {
+    const a = addWire(0, 0, 80, 0);
+    const b = addWire(80, 0, 160, 0);
+    const c = addWire(0, 80, 80, 80);
+    useStore.getState().select([a, c]);
+
+    useStore.getState().convertWiresToRouted();
+
+    // a and c are separate single wires, so each converts to a two-point route;
+    // b, not selected, stays plain (WireConverter.java:15-21).
+    const routed = useStore.getState().elements.filter((w) => w.route);
+    expect(routed).toHaveLength(2);
+    expect(useStore.getState().elements.find((w) => w.id === b)?.route).toBeUndefined();
+
+    // With the routed pair selected, no plain wire is selected any more, so the
+    // next command converts every remaining plain wire, b included.
+    useStore.getState().convertWiresToRouted();
+    expect(useStore.getState().elements.find((w) => w.id === b)?.route).toEqual([
+      [80, 0],
+      [160, 0],
+    ]);
+  });
+
+  it('is a no-op when every wire is already routed: no undo entry, no bump', () => {
+    addWire(0, 0, 80, 0);
+    addWire(80, 0, 160, 0);
+    useStore.getState().convertWiresToRouted();
+    const baseline = useStore.getState().undoStack.length;
+    const rev = useStore.getState().revision;
+
+    useStore.getState().convertWiresToRouted();
+
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(useStore.getState().revision).toBe(rev);
+  });
+
+  it('placeWireEnd still splits a routed wire, into two routed halves', () => {
+    const crossed = useStore.getState().addElement({
+      kind: 'wire',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: {},
+      route: [
+        [0, 0],
+        [80, 80],
+        [160, 0],
+      ],
+    });
+    const placed = addWire(0, 96, 80, 80);
+
+    useStore.getState().placeWireEnd(placed, 80, 80);
+
+    const s = useStore.getState();
+    expect(s.elements.some((e) => e.id === crossed)).toBe(false);
+    const wires = s.elements.filter((e) => e.kind === 'wire');
+    expect(wires).toHaveLength(3);
+    // The routed wire splits at the bend vertex into two routed halves sharing
+    // (80,80), the split point the placed end now sits on.
+    const halves = wires.filter((w) => w.id !== placed).sort((p, q) => p.x1 - q.x1);
+    expect(halves[0].route).toEqual([
+      [0, 0],
+      [80, 80],
+    ]);
+    expect(halves[1].route).toEqual([
+      [80, 80],
+      [160, 0],
+    ]);
+    expect(halves[0].x2).toBe(80);
+    expect(halves[0].y2).toBe(80);
+    expect(halves[1].x1).toBe(80);
+    expect(halves[1].y1).toBe(80);
+    expect(s.elements.find((e) => e.id === placed)).toMatchObject({ x2: 80, y2: 80 });
+  });
+
+  it('a routed wire post drag re-routes the polyline to the new endpoint', () => {
+    const id = useStore.getState().addElement({
+      kind: 'wire',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: {},
+      route: [
+        [0, 0],
+        [0, 80],
+        [160, 0],
+      ],
+    });
+
+    // A post drag (ctrl-drag or row/col sweep) moves one endpoint: the route
+    // recomputes from the new endpoints instead of going stale, so the
+    // polyline follows the dragged post.
+    useStore.getState().updateElement(id, { x2: 160, y2: 80 });
+
+    const e = useStore.getState().elements[0];
+    expect(e.route).toEqual([
+      [0, 0],
+      [160, 0],
+      [160, 80],
+    ]);
+    expect([e.x1, e.y1, e.x2, e.y2]).toEqual([0, 0, 160, 80]);
+  });
+
+  it('a routed wire post drag re-routes around other element bodies', () => {
+    const id = useStore.getState().addElement({
+      kind: 'wire',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: {},
+      route: [
+        [0, 0],
+        [80, 0],
+        [160, 0],
+      ],
+    });
+    // A resistor body sits on the direct y=0 run; dragging the far end up to
+    // (160,-64) must route around it, not straight through its cells.
+    useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 64,
+      y1: 0,
+      x2: 96,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+
+    useStore.getState().updateElement(id, { x2: 160, y2: -64 });
+
+    const e = useStore.getState().elements.find((q) => q.id === id);
+    expect(e?.route).toEqual([
+      [0, 0],
+      [0, -64],
+      [160, -64],
+    ]);
+  });
+
+  it('a group move translates the polyline instead of re-routing it', () => {
+    const id = useStore.getState().addElement({
+      kind: 'wire',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: {},
+      route: [
+        [0, 0],
+        [0, 80],
+        [160, 0],
+      ],
+    });
+
+    // Moving the selection is not an endpoint edit, so the route travels with
+    // the wire (RoutedWireElm.move, RoutedWireElm.java:76-82) rather than
+    // re-routing from scratch.
+    useStore.getState().moveElements([id], 16, 0);
+
+    expect(useStore.getState().elements[0]).toMatchObject({
+      x1: 16,
+      y1: 0,
+      x2: 176,
+      y2: 0,
+      route: [
+        [16, 0],
+        [16, 80],
+        [176, 0],
+      ],
+    });
+  });
+
+  it('serializes routed wires as plain w lines, with no route in text or engine spec', () => {
+    addWire(0, 0, 80, 0);
+    addWire(80, 0, 160, 0);
+    useStore.getState().convertWiresToRouted();
+
+    const s = useStore.getState();
+    const wLine = s.toNetlist().split('\n').find((l) => l.startsWith('w '));
+    // The route never enters the file: a plain two-endpoint w line, exactly
+    // what upstream's text format would write (RoutedWireElm has no text dump).
+    expect(wLine).toBe('w 0 0 160 0 0');
+
+    // A reload has no routes: save/reload degrades routed wires to straight
+    // wires, upstream's own text-format behavior.
+    const parsed = parseCircuit(s.toNetlist());
+    expect(parsed.elements.every((e) => !e.route)).toBe(true);
+
+    // And the engine spec (the object setCircuit hands to serde) is built from
+    // explicit fields, so a route on the store element never crosses. Mirrors
+    // the spec construction in simulator.ts like store.handoff.test.ts does.
+    const spec = s.elements.map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      posts: postsOf(e).map((p) => [Math.round(p.x), Math.round(p.y)]),
+      params: e.params,
+      label: e.text ?? null,
+      flags: e.flags,
+    }));
+    expect(JSON.stringify(spec)).not.toContain('route');
+    expect(spec[0].posts).toEqual([
+      [0, 0],
+      [160, 0],
+    ]);
+  });
+});

@@ -7,9 +7,11 @@ import {
   invalidDropPoint,
   nearestPost,
   pointOnSegmentInterior,
+  pointOnWireInterior,
   postAt,
   postPatch,
   splitWire,
+  wirePoints,
 } from './geometry';
 
 const element = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
@@ -304,5 +306,144 @@ describe('invalidDropPoint', () => {
     const other = wire(2, 48, 0, 48, 160);
     // Post 2 of the dragged wire is well clear of the other wire, so no dot.
     expect(invalidDropPoint(dragged, 160, 0, [dragged, other])).toBeNull();
+  });
+});
+
+describe('routed wires', () => {
+  const wire = (id: number, x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
+    id,
+    kind: 'wire',
+    x1,
+    y1,
+    x2,
+    y2,
+    flags: 0,
+    params: {},
+  });
+  const routedWire = (x1: number, y1: number, x2: number, y2: number, route: [number, number][]) => ({
+    id: 9,
+    kind: 'wire' as const,
+    x1,
+    y1,
+    x2,
+    y2,
+    flags: 0,
+    params: {},
+    route,
+  });
+
+  it('wirePoints returns the route for a routed wire and the span for a plain one', () => {
+    const routed = routedWire(0, 0, 160, 0, [
+      [0, 0],
+      [80, 80],
+      [160, 0],
+    ]);
+    expect(wirePoints(routed)).toEqual([
+      { x: 0, y: 0 },
+      { x: 80, y: 80 },
+      { x: 160, y: 0 },
+    ]);
+    expect(wirePoints({ ...routed, route: undefined })).toEqual([
+      { x: 0, y: 0 },
+      { x: 160, y: 0 },
+    ]);
+  });
+
+  it('pointOnWireInterior hits every segment and an interior bend vertex', () => {
+    const routed = routedWire(0, 0, 160, 0, [
+      [0, 0],
+      [80, 80],
+      [160, 0],
+    ]);
+    expect(pointOnWireInterior({ x: 40, y: 40 }, routed)).toBe(true);
+    expect(pointOnWireInterior({ x: 120, y: 40 }, routed)).toBe(true);
+    // A bend vertex is a valid connection point even though it is not interior
+    // to either adjacent segment (WireElm.java:219-224).
+    expect(pointOnWireInterior({ x: 80, y: 80 }, routed)).toBe(true);
+    // The wire's overall endpoints are ordinary connections, not interiors.
+    expect(pointOnWireInterior({ x: 0, y: 0 }, routed)).toBe(false);
+    expect(pointOnWireInterior({ x: 160, y: 0 }, routed)).toBe(false);
+    // Off the polyline is a miss.
+    expect(pointOnWireInterior({ x: 80, y: 0 }, routed)).toBe(false);
+  });
+
+  it('distanceToElement measures the nearest routed segment, not the straight span', () => {
+    const routed = routedWire(0, 0, 160, 0, [
+      [0, 0],
+      [80, 80],
+      [160, 0],
+    ]);
+    // A point over the detour vertex is 0 from the polyline but 80 from the
+    // straight stored span.
+    expect(distanceToElement({ x: 80, y: 80 }, routed)).toBe(0);
+    // (80,60) projects onto the diagonal at (70,70), 10 away in each axis,
+    // whereas the straight span would put it 60 away.
+    expect(distanceToElement({ x: 80, y: 60 }, routed)).toBeCloseTo(Math.hypot(10, 10), 9);
+  });
+
+  it('splitWire splits a routed wire at a grid point into two routed halves', () => {
+    const routed = routedWire(0, 0, 160, 0, [
+      [0, 0],
+      [80, 80],
+      [160, 0],
+    ]);
+    let next = 100;
+    const nextId = () => next++;
+
+    // (64,64) is a grid point on the first (diagonal) segment; its projection
+    // snaps to itself, so the split lands exactly there.
+    const [a, b] = splitWire(routed, { x: 64, y: 64 }, nextId)!;
+    expect(a.route).toEqual([
+      [0, 0],
+      [64, 64],
+    ]);
+    expect(a.x2).toBe(64);
+    expect(a.y2).toBe(64);
+    expect(b.route).toEqual([
+      [64, 64],
+      [80, 80],
+      [160, 0],
+    ]);
+    expect(b.x1).toBe(64);
+    expect(b.y1).toBe(64);
+    // Fresh ids on both halves.
+    expect(a.id).not.toBe(9);
+    expect(b.id).not.toBe(9);
+    expect(a.id).not.toBe(b.id);
+  });
+
+  it('splitWire refuses to split a routed wire at one of its own endpoints', () => {
+    const routed = routedWire(0, 0, 160, 0, [
+      [0, 0],
+      [80, 80],
+      [160, 0],
+    ]);
+    let next = 100;
+    const nextId = () => next++;
+    expect(splitWire(routed, { x: 0, y: 0 }, nextId)).toBeNull();
+    expect(splitWire(routed, { x: 160, y: 0 }, nextId)).toBeNull();
+  });
+
+  it('invalidDropPoint flags a drag landing on a routed wire segment', () => {
+    const dragged = wire(1, 0, 32, 80, 0);
+    const other = routedWire(0, 0, 160, 0, [
+      [0, 0],
+      [80, 80],
+      [160, 0],
+    ]);
+    expect(invalidDropPoint(dragged, 40, 40, [dragged, other])).toEqual({ x: 40, y: 40 });
+  });
+
+  it('invalidDropPoint flags a drop on a routed bend vertex like any interior point', () => {
+    // A bend vertex is not a post of the wire, so a wire end dropped there
+    // shows the red no-connect marker exactly like a drop on a segment
+    // interior; placeWireEnd still splits there on release.
+    const dragged = wire(1, 0, 32, 80, 0);
+    const other = routedWire(0, 0, 160, 0, [
+      [0, 0],
+      [80, 80],
+      [160, 0],
+    ]);
+    expect(invalidDropPoint(dragged, 80, 80, [dragged, other])).toEqual({ x: 80, y: 80 });
   });
 });

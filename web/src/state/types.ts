@@ -183,6 +183,9 @@ export interface AppState {
   mirrorSelection(): void;
   /** Exchanges posts 0 and 1 on each selected two-terminal part. */
   swapTerminals(): void;
+  /** Merges plain-wire chains into routed wires, one undo entry, engine
+   *  reload via the revision bump (the Convert Wires to Routed Wires command). */
+  convertWiresToRouted(): void;
   setParam(id: number, name: string, value: number): void;
   /** Writes a slider's position-converted value into its bound element's
    *  parameter through the live `set_param` fast path. A slider that cannot be

@@ -8,7 +8,9 @@ import {
   serializeCircuit,
   type ScopeConfig,
 } from '../io/netlist';
-import { pointOnSegmentInterior, splitWire } from '../render/geometry';
+import { pointOnWireInterior, splitWire } from '../render/geometry';
+import { convertWires } from '../render/wireConverter';
+import { lShapeRoute, routeWire, routingObstacles } from '../render/wireRouter';
 import {
   canMirror,
   canRotate,
@@ -30,7 +32,13 @@ import { gridSize, hasUnsavedChanges, makeElement, makeToolElement, snap } from 
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 
 const clone = (s: Snapshot): Snapshot => ({
-  elements: s.elements.map((e) => ({ ...e, params: { ...e.params } })),
+  elements: s.elements.map((e) => {
+    const copy = { ...e, params: { ...e.params } };
+    // A route is a nested array; without this a future in-place route mutator
+    // would silently corrupt the undo snapshot.
+    if (e.route) copy.route = e.route.map((r) => [...r]);
+    return copy;
+  }),
   // Plots and triggers are nested objects, so a shallow spread would alias the
   // live state into the undo snapshot.
   scopes: s.scopes.map((x) => ({
@@ -332,24 +340,58 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   updateElement: (id, patch) =>
-    set((s) => ({
-      elements: s.elements.map((e) => {
-        if (e.id !== id) return e;
-        // Geometry must stay integral: the engine's post type is `[i32; 2]`
-        // and node merging keys on exact coordinate equality, so any
-        // coordinate the patch carries is rounded. Non-geometry patches pass
-        // through untouched.
-        return {
-          ...e,
-          ...patch,
-          ...(patch.x1 !== undefined ? { x1: Math.round(patch.x1) } : {}),
-          ...(patch.y1 !== undefined ? { y1: Math.round(patch.y1) } : {}),
-          ...(patch.x2 !== undefined ? { x2: Math.round(patch.x2) } : {}),
-          ...(patch.y2 !== undefined ? { y2: Math.round(patch.y2) } : {}),
-        };
-      }),
-      revision: s.revision + 1,
-    })),
+    set((s) => {
+      const geometry =
+        patch.x1 !== undefined ||
+        patch.y1 !== undefined ||
+        patch.x2 !== undefined ||
+        patch.y2 !== undefined;
+      const target = s.elements.find((e) => e.id === id);
+      // A routed wire's polyline is valid only for its exact endpoints. When a
+      // post moves, re-run the router against the current obstacle set so the
+      // polyline follows the post and keeps avoiding the other elements'
+      // bodies, upstream's setPoints re-route (RoutedWireElm.java:86-123). A
+      // fully blocked re-route falls back to the L-shape upstream uses.
+      let reroute: [number, number][] | null = null;
+      if (geometry && target && target.route && target.route.length >= 2) {
+        const grid = gridSize(s.settings);
+        const routed = routeWire(
+          { x: Math.round(patch.x1 ?? target.x1), y: Math.round(patch.y1 ?? target.y1) },
+          { x: Math.round(patch.x2 ?? target.x2), y: Math.round(patch.y2 ?? target.y2) },
+          routingObstacles(s.elements, id),
+          grid,
+        );
+        reroute =
+          routed.length >= 2
+            ? routed.map((p) => [p.x, p.y])
+            : lShapeRoute(
+                Math.round(patch.x1 ?? target.x1),
+                Math.round(patch.y1 ?? target.y1),
+                Math.round(patch.x2 ?? target.x2),
+                Math.round(patch.y2 ?? target.y2),
+              );
+      }
+      return {
+        elements: s.elements.map((e) => {
+          if (e.id !== id) return e;
+          // Geometry must stay integral: the engine's post type is `[i32; 2]`
+          // and node merging keys on exact coordinate equality, so any
+          // coordinate the patch carries is rounded. Non-geometry patches pass
+          // through untouched.
+          const next = {
+            ...e,
+            ...patch,
+            ...(patch.x1 !== undefined ? { x1: Math.round(patch.x1) } : {}),
+            ...(patch.y1 !== undefined ? { y1: Math.round(patch.y1) } : {}),
+            ...(patch.x2 !== undefined ? { x2: Math.round(patch.x2) } : {}),
+            ...(patch.y2 !== undefined ? { y2: Math.round(patch.y2) } : {}),
+          };
+          if (reroute !== null) next.route = reroute;
+          return next;
+        }),
+        revision: s.revision + 1,
+      };
+    }),
 
   placeWireEnd: (id, x, y) => {
     // The placement's undo baseline is the commit `addElement` took at
@@ -365,10 +407,7 @@ export const useStore = create<AppState>((set, get) => ({
     // not the wire being placed. Endpoints are excluded by the interior check,
     // so an end-on-end drop stays an ordinary connection.
     const crossed = s.elements.find(
-      (e) =>
-        e.id !== id &&
-        e.kind === 'wire' &&
-        pointOnSegmentInterior(end, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }),
+      (e) => e.id !== id && e.kind === 'wire' && pointOnWireInterior(end, e),
     );
     if (!crossed) {
       // The move handler already wrote the snapped end; nothing to do.
@@ -400,11 +439,15 @@ export const useStore = create<AppState>((set, get) => ({
     const rdx = Math.round(dx);
     const rdy = Math.round(dy);
     return set((s) => ({
-      elements: s.elements.map((e) =>
-        ids.includes(e.id)
-          ? { ...e, x1: e.x1 + rdx, y1: e.y1 + rdy, x2: e.x2 + rdx, y2: e.y2 + rdy }
-          : e,
-      ),
+      elements: s.elements.map((e) => {
+        if (!ids.includes(e.id)) return e;
+        // A routed wire's polyline moves with it, so the route stays valid
+        // under a group move (RoutedWireElm.move, RoutedWireElm.java:76-82).
+        const route = e.route
+          ? e.route.map(([x, y]): [number, number] => [x + rdx, y + rdy])
+          : undefined;
+        return { ...e, x1: e.x1 + rdx, y1: e.y1 + rdy, x2: e.x2 + rdx, y2: e.y2 + rdy, ...(route ? { route } : {}) };
+      }),
       revision: s.revision + 1,
     }));
   },
@@ -473,6 +516,24 @@ export const useStore = create<AppState>((set, get) => ({
   rotateSelection: () => transformSelected(canRotate, rotateElement),
   mirrorSelection: () => transformSelected(canMirror, mirrorElement),
   swapTerminals: () => transformSelected(canSwap, swapTerminalOrder),
+
+  convertWiresToRouted: () => {
+    const s = get();
+    const converted = convertWires(s.elements, s.selectedIds);
+    // Nothing to convert: the returned list is the same elements, so no undo
+    // entry and no revision bump (a repeated click on a converted circuit is
+    // a no-op, matching the menu's disabled state).
+    if (converted.length === s.elements.length && converted.every((e, i) => e === s.elements[i])) {
+      return;
+    }
+    // One commit for the whole command, so the merge is one undo step, exactly
+    // as upstream pushes once before WireConverter.convertWires
+    // (CommandManager.java:141-145). The merged wires are electrically
+    // identical to the chain they replace: the engine merges wires into nodes
+    // by coordinate, so a reload sees the same node voltages.
+    s.commit();
+    set({ elements: converted, revision: s.revision + 1 });
+  },
 
   setParam: (id, name, value) => {
     // A non-finite value would serialize as JSON null, which serde rejects

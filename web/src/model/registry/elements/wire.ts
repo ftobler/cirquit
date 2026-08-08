@@ -1,4 +1,10 @@
-import { currentDots, endpoints, line, voltageColor } from '../../../render/draw';
+import {
+  currentDots,
+  currentDotsPath,
+  endpoints,
+  line,
+  voltageColor,
+} from '../../../render/draw';
 import { twoPosts } from '../shared';
 import type { ElementDef } from '../../types';
 
@@ -11,6 +17,19 @@ export const WIRE_DEF: ElementDef = {
   posts: twoPosts,
   defaultLength: 4,  // 64 px, upstream's default getDragLength()
   draw(g, e) {
+    if (e.route && e.route.length >= 2) {
+      // A routed wire draws each segment of the polyline and chains the
+      // current dots across them, so dots stay exactly DOT_SPACING apart
+      // across the bends (RoutedWireElm.draw and doDots, RoutedWireElm.java:
+      // 279-288, 349-364).
+      const pts = e.route.map(([x, y]) => ({ x, y }));
+      const color = voltageColor(g, g.voltages[0]);
+      for (let i = 0; i < pts.length - 1; i++) {
+        line(g, pts[i], pts[i + 1], color);
+      }
+      currentDotsPath(g, pts, g.current);
+      return;
+    }
     const [p1, p2] = endpoints(e);
     line(g, p1, p2, voltageColor(g, g.voltages[0]));
     currentDots(g, p1, p2, g.current);

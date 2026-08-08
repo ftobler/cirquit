@@ -209,6 +209,11 @@ export function Menubar({ engine }: Props) {
 
   const selected = elements.filter((e) => selectedIds.includes(e.id));
   const hasSelection = selectedIds.length > 0;
+  // A plain wire is one with no route; a routed one is already converted.
+  const plainWires = elements.filter((e) => e.kind === 'wire' && !e.route);
+  const canConvertWires = hasSelection
+    ? plainWires.some((e) => selectedIds.includes(e.id))
+    : plainWires.length > 0;
   const canRotateSelection = selected.length > 0 && selected.every(canRotate);
   const canMirrorSelection = selected.length > 0 && selected.every(canMirror);
   // The clipboard only ever holds text this app serialised, but guard anyway:
@@ -290,7 +295,14 @@ export function Menubar({ engine }: Props) {
   ];
 
   const toolsItems: MenuItemDef[] = [
-    deferred('Convert Wires to Routed Wires', 'Routed wires are not implemented yet'),
+    // Enabled only when a plain wire is selected or present: a circuit that is
+    // already fully routed has nothing to merge (upstream greys nothing, the
+    // port ties the row to what the command can actually do).
+    {
+      label: 'Convert Wires to Routed Wires',
+      disabled: !editable || !canConvertWires,
+      onClick: fire(() => useStore.getState().convertWiresToRouted()),
+    },
     deferred('Subcircuit Manager', 'Subcircuits are not implemented yet'),
     deferred('Create Test', 'Test creation is not implemented yet'),
   ];
