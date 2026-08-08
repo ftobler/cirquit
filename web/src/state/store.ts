@@ -28,8 +28,9 @@ import {
 } from '../model/types';
 import type { AppState, Slider, Snapshot, ViewTransform } from './types';
 import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
+import { readRecovery } from './recovery';
 import { loadShortcutOverlay, normalizeKey, saveShortcutOverlay } from '../input/shortcuts';
-import { gridSize, hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers';
+import { gridSize, hasUnsavedChanges, makeElement, makeToolElement, RECOVERED_UNSAVED, snap } from './helpers';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 
 const clone = (s: Snapshot): Snapshot => ({
@@ -195,6 +196,10 @@ export const useStore = create<AppState>((set, get) => ({
   // Shortcuts dialog.
   settings: { ...DEFAULT_SETTINGS, ...loadAppPrefs() },
   shortcuts: loadShortcutOverlay(),
+  // The recovery flag mirrors readRecovery() at startup, so the Recover
+  // Auto-Save row is enabled exactly when a previous session left a dump
+  // behind (UIManager.java:170). Read once, like the shortcut overlay.
+  hasRecovery: readRecovery() !== null,
   passthrough: [],
   unmatchedScopes: [],
   order: [],
@@ -1149,6 +1154,31 @@ export const useStore = create<AppState>((set, get) => ({
 
   markSaved: (text) => set({ lastSaved: text }),
 
+  recoverAutoSave: () => {
+    // Nothing stored: the row is greyed, and a stale click must not clear the
+    // session state.
+    const recovery = readRecovery();
+    if (recovery === null) return;
+    const before = get();
+    // The undo entry is the pre-recovery circuit, and it must be pushed after
+    // the load: loadNetlist wipes both stacks, so committing before it would
+    // lose the entry upstream's doRecover takes (UndoManager.java:83-88).
+    const pre = clone(before);
+    before.loadNetlist(recovery);
+    set((s) => ({
+      // The row stays disabled for the session; later autosave writes do not
+      // re-enable it, exactly as upstream never re-enables recoverItem.
+      hasRecovery: false,
+      // A recovered circuit has never been exported, so it counts as unsaved:
+      // upstream's doRecover calls allowSave(false). loadNetlist baselines
+      // lastSaved to the recovered netlist, which would read as clean; the
+      // RECOVERED_UNSAVED sentinel can never equal a serialised dump.
+      lastSaved: RECOVERED_UNSAVED,
+      undoStack: [...s.undoStack, pre].slice(-UNDO_LIMIT),
+      redoStack: [],
+    }));
+  },
+
   undo: () =>
     set((s) => {
       const prev = s.undoStack[s.undoStack.length - 1];
@@ -1285,4 +1315,4 @@ function transformSelected(
 }
 
 export type { AppState, ViewTransform };
-export { gridSize, hasUnsavedChanges, makeElement, makeToolElement, snap };
+export { gridSize, hasUnsavedChanges, makeElement, makeToolElement, RECOVERED_UNSAVED, snap };

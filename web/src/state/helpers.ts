@@ -20,6 +20,13 @@ export function hasUnsavedChanges(lastSaved: string | null, current: string): bo
   return lastSaved !== null && current !== lastSaved;
 }
 
+/** A `lastSaved` value that can never equal a serialised netlist, which always
+ *  opens with the `$` header line, so `hasUnsavedChanges` always reports dirty.
+ *  `recoverAutoSave` stores it: a recovered circuit has never been exported,
+ *  matching upstream's allowSave(false) after a recover (UndoManager.java:87),
+ *  and `loadNetlist` would otherwise baseline it as clean. */
+export const RECOVERED_UNSAVED = '\u0000';
+
 /** Builds a new element of `kind` spanning the given points. Coordinates are
  *  rounded so the store invariant "every stored endpoint is an integer" holds
  *  regardless of caller. */

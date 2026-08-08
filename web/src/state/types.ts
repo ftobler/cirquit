@@ -129,6 +129,11 @@ export interface AppState {
   clipboard: string | null;
   /** Netlist text of the last export; null means no baseline yet (clean). */
   lastSaved: string | null;
+  /** Whether a recovery exists in storage, so File>Recover Auto-Save is
+   *  enabled (UIManager.java:170). App state, not circuit state: read once at
+   *  store init and cleared by `recoverAutoSave`, so it never enters the undo
+   *  Snapshot, and later autosave writes do not re-enable the row. */
+  hasRecovery: boolean;
   /** User-assigned shortcut overlay: assignable action -> chord signature,
    *  loaded from localStorage at init and edited by the Shortcuts dialog. A
    *  runtime overlay on the SHORTCUTS table, so matchShortcut consults it
@@ -255,6 +260,10 @@ export interface AppState {
   newCircuit(): void;
   /** Records the serialised state the user last exported as the clean baseline. */
   markSaved(text: string): void;
+  /** Loads the stored auto-save recovery, if any, as one undo entry, and marks
+   *  the circuit unsaved (upstream's doRecover, UndoManager.java:83-88). A
+   *  no-op when no recovery exists. */
+  recoverAutoSave(): void;
 
   /** Records the current state so the next change can be undone. */
   commit(): void;

@@ -131,6 +131,7 @@ export function Menubar({ engine }: Props) {
   const elements = useStore((s) => s.elements);
   const selectedIds = useStore((s) => s.selectedIds);
   const clipboard = useStore((s) => s.clipboard);
+  const hasRecovery = useStore((s) => s.hasRecovery);
   const partsOpen = useStore((s) => s.partsOpen);
   const panelOpen = useStore((s) => s.panelOpen);
   const setPartsOpen = useStore((s) => s.setPartsOpen);
@@ -265,7 +266,10 @@ export function Menubar({ engine }: Props) {
     deferred('Save As SVG…', 'SVG export is not implemented yet'),
     deferred('Create Subcircuit…', 'Subcircuits are not implemented yet'),
     deferred('Find DC Operating Point', 'The DC operating point runs on reset; the one-shot command is not ported'),
-    deferred('Recover Auto-Save', 'Auto-save is not implemented yet'),
+    // Enabled only while a recovery exists (UIManager.java:170); the flag is
+    // set once at store init and cleared by the recover, so the row stays
+    // disabled for the session even though autosave keeps writing.
+    { label: 'Recover Auto-Save', disabled: !hasRecovery, onClick: fire(() => useStore.getState().recoverAutoSave()) },
     { label: 'Print…', shortcut: 'Ctrl+P', onClick: fire(doPrint) },
     {
       label: 'Toggle Full Screen',

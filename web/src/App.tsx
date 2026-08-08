@@ -20,6 +20,7 @@ import { ShortcutsDialog } from './ui/ShortcutsDialog';
 import { SliderPanel } from './ui/SliderPanel';
 import { Toolbox } from './ui/Toolbox';
 import { hasUnsavedChanges, gridSize, useStore } from './state/store';
+import { startAutoSave } from './state/recovery';
 
 /** A small RC circuit, so the app opens on something that actually runs. */
 const STARTER_CIRCUIT = `$ 1 0.000005 10.2 50 5 43 5e-11
@@ -232,6 +233,15 @@ export default function App() {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKeyUp);
     };
+  }, []);
+
+  // Autosave: after edits, dump the netlist into the recovery slot so the
+  // File>Recover Auto-Save row has something to restore on the next load. One
+  // subscription per app session, not per render; the cleanup unsubscribes and
+  // cancels any pending write, so a strict-mode remount re-subscribes cleanly.
+  useEffect(() => {
+    const stop = startAutoSave(() => useStore, () => useStore.getState().toNetlist());
+    return stop;
   }, []);
 
   // Ask before the page reloads or closes with unsaved changes. The browser

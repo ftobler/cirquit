@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, GRID_SIZE, type SimSettings } from '../model/types';
 import { postsOf } from '../model/registry';
 import { scopePlotsToSpecs } from '../engine/simulator';
@@ -6,7 +6,8 @@ import { parseCircuit, serializeCircuit } from '../io/netlist';
 import { SAMPLE } from '../io/netlist/fixtures';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 import { APP_PREF_STORAGE_KEY, loadAppPrefs, type StorageLike } from './appPrefs';
-import { makeElement, useStore } from './store';
+import { RECOVERY_STORAGE_KEY, readRecovery, startAutoSave, type RecoveryStorage } from './recovery';
+import { hasUnsavedChanges, makeElement, useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
@@ -670,6 +671,109 @@ describe('euroResistors persistence', () => {
       expect(useStore.getState().settings.euroResistors).toBe(false);
     } finally {
       delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+  });
+});
+
+describe('recover auto-save', () => {
+  const RECOVERY = `$ 1 0.000005 10.2 50 5 43 5e-11
+r 0 0 16 0 0 100
+`;
+
+  /** Puts a recovery into the (absent, under node) browser storage. */
+  const withRecovery = (text: string) => {
+    const map = new Map<string, string>([[RECOVERY_STORAGE_KEY, text]]);
+    (globalThis as { localStorage?: StorageLike }).localStorage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    };
+  };
+
+  it('hasRecovery initialises true when a recovery is stored and false otherwise', () => {
+    try {
+      withRecovery(RECOVERY);
+      // The store initialiser computes hasRecovery from readRecovery() once at
+      // module load; re-running that expression against the injected storage
+      // is what a page reload of the store would read.
+      useStore.setState({ ...fresh(), hasRecovery: readRecovery() !== null });
+      expect(useStore.getState().hasRecovery).toBe(true);
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+    useStore.setState(fresh());
+    expect(useStore.getState().hasRecovery).toBe(false);
+  });
+
+  it('recoverAutoSave loads the recovery, pushes exactly one undo entry and disables the row', () => {
+    try {
+      withRecovery(RECOVERY);
+      addResistor();  // a pre-recovery circuit to undo back to
+      useStore.setState({ hasRecovery: true });
+      useStore.getState().recoverAutoSave();
+      const s = useStore.getState();
+      expect(s.elements).toHaveLength(1);
+      expect(s.elements[0].params.resistance).toBe(100);
+      expect(s.hasRecovery).toBe(false);
+      expect(s.undoStack).toHaveLength(1);
+      // Undo restores the pre-recovery circuit, not the empty baseline.
+      s.undo();
+      expect(useStore.getState().elements[0].params.resistance).toBe(1000);
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+  });
+
+  it('a recovered circuit counts as unsaved until the user exports', () => {
+    try {
+      withRecovery(RECOVERY);
+      useStore.getState().recoverAutoSave();
+      const s = useStore.getState();
+      expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(true);
+      s.markSaved(s.toNetlist());
+      expect(hasUnsavedChanges(useStore.getState().lastSaved, s.toNetlist())).toBe(false);
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+  });
+
+  it('without a recovery recoverAutoSave is a no-op', () => {
+    addResistor();
+    const before = useStore.getState();
+    useStore.getState().recoverAutoSave();
+    const s = useStore.getState();
+    expect(s.undoStack).toHaveLength(before.undoStack.length);
+    expect(s.revision).toBe(before.revision);
+    expect(s.hasRecovery).toBe(false);
+    expect(s.elements[0].params.resistance).toBe(1000);
+  });
+
+  it('a clean load keeps the previous session recovery, a real edit overwrites it', () => {
+    vi.useFakeTimers();
+    const map = new Map<string, string>([[RECOVERY_STORAGE_KEY, 'stale recovery']]);
+    const storage: RecoveryStorage = {
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => void map.set(k, v),
+      removeItem: (k) => void map.delete(k),
+    };
+    let stop: (() => void) | null = null;
+    try {
+      stop = startAutoSave(
+        () => useStore,
+        () => useStore.getState().toNetlist(),
+        { storage, delayMs: 1000, now: () => 0 },
+      );
+      // The startup path: loadNetlist bumps revision, so the watcher fires,
+      // but a clean circuit must not clobber the stale slot.
+      useStore.getState().loadNetlist('$ 1 0.000005 10.2 50 5 43 5e-11\nr 0 0 16 0 0 100\n');
+      vi.advanceTimersByTime(5000);
+      expect(map.get(RECOVERY_STORAGE_KEY)).toBe('stale recovery');
+      // A real edit dirties the circuit and must land in the slot.
+      addResistor();
+      vi.advanceTimersByTime(5000);
+      expect(map.get(RECOVERY_STORAGE_KEY)).toContain('r 0 0 160 0 0 1000');
+    } finally {
+      stop?.();
+      vi.useRealTimers();
     }
   });
 });
