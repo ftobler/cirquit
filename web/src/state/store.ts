@@ -469,9 +469,15 @@ export const useStore = create<AppState>((set, get) => ({
       elements: s.elements.map((e) => {
         if (e.id !== id) return e;
         const next = { ...e, params: { ...e.params, [name]: value } };
-        // Editing a diode/zener model value makes the stored model name stale;
-        // drop it so the next save writes the value form, not the dead name.
-        if ((e.kind === 'diode' || e.kind === 'zener') && DIODE_MODEL_PARAMS.includes(name)) {
+        // Editing a diode/zener/varactor model value makes the stored model
+        // name stale; drop it so the next save writes the value form, not the
+        // dead name. The varactor shares the diode machinery upstream, so a
+        // stale name there re-applies the model on the next reload and
+        // silently discards the edit.
+        if (
+          (e.kind === 'diode' || e.kind === 'zener' || e.kind === 'varactor') &&
+          DIODE_MODEL_PARAMS.includes(name)
+        ) {
           delete next.modelName;
         }
         // A source's stored flags record whether its pulse duty is

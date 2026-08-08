@@ -45,6 +45,15 @@ export const ZENER_DEF: ElementDef = {
   // left over from a loaded name, a reload would read the fwdrop token as a
   // bogus model name and silently lose the zener voltage.
   dumpFlags: (e) => (e.modelName != null ? e.flags | 2 : (e.flags & ~2) | 1),
-  fields: [{ name: 'breakdownVoltage', label: 'Zener voltage', unit: 'V' }],
+  // ZenerElm inherits DiodeElm's editing surface upstream (ZenerElm extends
+  // DiodeElm), so the zener exposes the diode's three model fields plus its
+  // own breakdown voltage. The FieldDefs are copied from the diode so both
+  // elements read and write identically.
+  fields: [
+    { name: 'forwardVoltage', label: 'Forward drop', unit: 'V' },
+    { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
+    { name: 'emissionCoefficient', label: 'Emission coefficient' },
+    { name: 'breakdownVoltage', label: 'Zener voltage', unit: 'V' },
+  ],
   draw: (g, e) => drawDiodeBody(g, e, true),
 };

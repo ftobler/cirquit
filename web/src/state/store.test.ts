@@ -584,6 +584,89 @@ describe('diode model name', () => {
     expect(again.params.forwardVoltage).toBe(0.9);
     expect(again.modelName).toBeUndefined();
   });
+
+  it('editing the zener forward drop drops the model name', () => {
+    // The generated-name form upstream writes for a 0.7 V 6.2 V zener, plus
+    // the `34` model line it depends on. After resolution the element carries
+    // the model's params, including the 6.2 V breakdown; without the line the
+    // baked breakdown stays 5.6, so the `34` line is part of the fixture.
+    const text = [
+      'z 100 100 100 0 2 fwdrop\\q0.7\\szvoltage\\q6.2',
+      '34 fwdrop\\q0.7\\szvoltage\\q6.2 0 1.328e-6 0 2 6.2 0',
+    ].join('\n');
+    const [loaded] = parseCircuit(text).elements;
+    expect(loaded.modelName).toBe('fwdrop=0.7 zvoltage=6.2');
+    expect(loaded.params.breakdownVoltage).toBe(6.2);
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+
+    useStore.getState().setParam(id, 'forwardVoltage', 0.65);
+
+    const e = useStore.getState().elements[0];
+    expect(e.modelName).toBeUndefined();
+    expect(e.params.forwardVoltage).toBe(0.65);
+
+    const line =
+      serializeCircuit(useStore.getState().elements, { ...DEFAULT_SETTINGS })
+        .trim()
+        .split('\n')
+        .find((l) => l.startsWith('z ')) ?? '';
+    expect(line).toBe('z 100 100 100 0 1 0.65 6.2');
+  });
+
+  it('editing the zener series resistance drops the model name and saves the value form', () => {
+    // Series resistance is a new zener field whose live edit the engine
+    // declines (diode.rs:419), so the frame loop falls back to a full
+    // rebuild. The store contract is the same as the diode's: the params
+    // update, the stale model name goes, and the save writes the value form
+    // carrying the model's real derived forward drop.
+    const text = [
+      'z 100 100 100 0 2 fwdrop\\q0.7\\szvoltage\\q6.2',
+      '34 fwdrop\\q0.7\\szvoltage\\q6.2 0 1.328e-6 0 2 6.2 0',
+    ].join('\n');
+    const [loaded] = parseCircuit(text).elements;
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+
+    useStore.getState().setParam(id, 'seriesResistance', 0.2);
+
+    const s = useStore.getState();
+    const e = s.elements[0];
+    expect(e.modelName).toBeUndefined();
+    expect(e.params.seriesResistance).toBe(0.2);
+    expect(s.pendingParams.get(`${id}:seriesResistance`)).toEqual({
+      id,
+      name: 'seriesResistance',
+      value: 0.2,
+    });
+
+    const line =
+      serializeCircuit(s.elements, { ...DEFAULT_SETTINGS })
+        .trim()
+        .split('\n')
+        .find((l) => l.startsWith('z ')) ?? '';
+    expect(line).toBe('z 100 100 100 0 1 0.7000019711998504 6.2');
+  });
+
+  it('editing a varactor model value drops the model name', () => {
+    // The varactor shares the diode machinery upstream, so a stale name
+    // re-applies the model on the next reload and silently discards the
+    // edit. This pins the lifecycle fix in store.setParam.
+    const text = [
+      '176 100 100 100 0 2 myvar 0 4e-12',
+      '34 myvar 0 1.328e-6 0 2 0 0',
+    ].join('\n');
+    const [loaded] = parseCircuit(text).elements;
+    expect(loaded.modelName).toBe('myvar');
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+
+    useStore.getState().setParam(id, 'forwardVoltage', 0.65);
+
+    const e = useStore.getState().elements[0];
+    expect(e.modelName).toBeUndefined();
+    expect(e.params.forwardVoltage).toBe(0.65);
+  });
 });
 
 describe('the integer-coordinate invariant', () => {

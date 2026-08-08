@@ -231,6 +231,16 @@ describe('zener file format', () => {
     expect(e.flags).toBe(1);
   });
 
+  it('a legacy non-default forward drop loads and round-trips byte-for-byte', () => {
+    // The value form with a real 0.7 V drop. The zener field now exposes
+    // forwardVoltage, and this is the data the field reads.
+    const line = 'z 336 288 336 160 1 0.7 6.2';
+    const { e, elementLine } = zenerLine(line);
+    expect(e.params.forwardVoltage).toBe(0.7);
+    expect(e.params.breakdownVoltage).toBe(6.2);
+    expect(elementLine).toBe(line);
+  });
+
   it('a library zener line round-trips', () => {
     // Byte-identical, so upstream re-reads it instead of throwing on the
     // missing zvoltage token and dropping the element.

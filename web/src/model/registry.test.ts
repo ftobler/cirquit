@@ -10,6 +10,8 @@ import {
   transistorBarContacts,
 } from './registry';
 import { mirrorElement } from './transform';
+import { DIODE_DEF } from './registry/elements/diode';
+import { ZENER_DEF } from './registry/elements/zener';
 import type { CircuitElement, DrawContext, Point } from './types';
 
 const element = (
@@ -107,6 +109,25 @@ function referencedParams(fn: unknown): Set<string> {
   }
   return names;
 }
+
+describe('zener fields', () => {
+  it('exposes the diode model fields plus its own breakdown voltage', () => {
+    const names = (ZENER_DEF.fields ?? []).map((f) => f.name);
+    expect(names).toEqual([
+      'forwardVoltage',
+      'seriesResistance',
+      'emissionCoefficient',
+      'breakdownVoltage',
+    ]);
+  });
+
+  it('copies the diode field definitions exactly, in the diode order', () => {
+    expect(ZENER_DEF.fields).toHaveLength((DIODE_DEF.fields ?? []).length + 1);
+    for (let i = 0; i < (DIODE_DEF.fields ?? []).length; i++) {
+      expect(ZENER_DEF.fields?.[i]).toEqual(DIODE_DEF.fields?.[i]);
+    }
+  });
+});
 
 describe('text field metadata', () => {
   it('declares both fields on the text element, the text one targeting e.text', () => {
