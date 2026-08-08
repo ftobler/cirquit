@@ -242,7 +242,30 @@ impl Circuit {
         self.specs = spec.elements.clone();
 
         self.link_relay_contacts();
-        self.assign_nodes(&spec.elements);
+        // Capacitor validation can grow a capacitor's internal node count
+        // (the 0.1 ohm damping), which renumbers nodes, so the whole pass
+        // retries, upstream's 10-attempt pre-stamp loop
+        // (SimulationManager.java:944-947). Upstream stops with "failed to
+        // stamp circuit" after the tenth attempt; here the loop always breaks
+        // on a clean pass in one or two iterations, because damping only
+        // removes CAP_V paths, never adds them, and a residual undamped
+        // ideal-cap loop is left as-is rather than reported. Each pass ends
+        // on a fresh `assign_nodes`, so the damped capacitor's new internal
+        // node is always allocated before anything stamps.
+        let mut attempts = 0;
+        loop {
+            self.assign_nodes(&spec.elements);
+            if !self.validate_capacitors() {
+                break;
+            }
+            attempts += 1;
+            if attempts >= 10 {
+                // Defensive only: monotone damping cannot reach this, but a
+                // fresh node pass keeps the final state consistent regardless.
+                self.assign_nodes(&spec.elements);
+                break;
+            }
+        }
         // Devices whose format stores operating-point tokens seed the global
         // node voltages from them, and each element copies its terminals so
         // the first do_step evaluates at the file's operating point. A warm
@@ -477,6 +500,90 @@ impl Circuit {
         }
     }
 
+    /// Depth-first CAP_V search, ported from `FindPathInfo.findPath`
+    /// (FindPathInfo.java:26-104). Starting from a capacitor's post 0, does
+    /// the merged node graph reach its post 1 by crossing only ideal
+    /// capacitors and voltage sources? Wires and closed switches are absent by
+    /// construction: `assign_nodes` merges them into self-loops, so a wire can
+    /// never bridge two distinct nodes and the SHORT filter (upstream's
+    /// `isWireEquivalent`) collapses to the trivial post-equality check in
+    /// [`Circuit::validate_capacitors`]. Ground needs no branch because every
+    /// ground symbol is merged onto node 0, exactly what upstream's
+    /// `CircuitNode.ground` case (FindPathInfo.java:42-46, :71-83) provides.
+    /// `skip` is the element being validated, never traversed.
+    fn cap_v_path(&self, start: usize, dest: usize, skip: usize) -> bool {
+        let mut visited = vec![false; self.node_count];
+        self.cap_v_visit(start, dest, skip, &mut visited)
+    }
+
+    fn cap_v_visit(&self, n: usize, dest: usize, skip: usize, visited: &mut [bool]) -> bool {
+        if n == dest {
+            return true;
+        }
+        if visited[n] {
+            return false;
+        }
+        visited[n] = true;
+        for (ei, elm) in self.elements.iter().enumerate() {
+            if ei == skip {
+                continue;
+            }
+            if !(elm.is_ideal_capacitor() || elm.is_voltage_source()) {
+                continue;
+            }
+            let nodes = &elm.base().nodes;
+            if elm.post_count() >= 2 {
+                if nodes[0] == n && self.cap_v_visit(nodes[1], dest, skip, visited) {
+                    return true;
+                }
+                if nodes[1] == n && self.cap_v_visit(nodes[0], dest, skip, visited) {
+                    return true;
+                }
+            } else {
+                // A rail's single post spans to the reference node, which is
+                // the port's node 0 in the merged graph, so it crosses either
+                // way: terminal to ground, and ground to terminal.
+                if nodes[0] == n && self.cap_v_visit(GROUND, dest, skip, visited) {
+                    return true;
+                }
+                if n == GROUND && self.cap_v_visit(nodes[0], dest, skip, visited) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Ports `CapacitorElm.validate()` (CapacitorElm.java:274-291). For every
+    /// ideal capacitor in element order: if its two posts merged into one node
+    /// (the SHORT condition), `shorted()` zeroes the stored charge; otherwise
+    /// the CAP_V walk decides whether it sits in a loop of ideal capacitors
+    /// and voltage sources, and a hit forces the 0.1 ohm series resistance
+    /// that damps the trapezoidal companion. Damping in element order keeps
+    /// upstream's semantics: the later member of a parallel pair no longer
+    /// sees the damped one as ideal, so exactly one of the two carries the
+    /// 0.1. Returns true when at least one capacitor was damped, which needs
+    /// a retry because the new internal node changes the node count.
+    fn validate_capacitors(&mut self) -> bool {
+        let mut changed = false;
+        for ei in 0..self.elements.len() {
+            if !self.elements[ei].is_ideal_capacitor() {
+                continue;
+            }
+            let (n0, n1) = {
+                let nodes = &self.elements[ei].base().nodes;
+                (nodes[0], nodes[1])
+            };
+            if n0 == n1 {
+                self.elements[ei].shorted();
+            } else if self.cap_v_path(n0, n1, ei) {
+                self.elements[ei].set_series_resistance(0.1);
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Assigns voltage-source unknowns and sizes the matrix. Re-runs on every
     /// analysis pass; per-element unknown counts are static now that wires and
     /// closed switches merge out of the matrix and only the SPDT keeps one.
@@ -562,7 +669,21 @@ impl Circuit {
     fn reanalyze(&mut self) {
         // `assign_nodes` borrows the specs while `&mut self` is in play, so
         // hand it a clone rather than borrowing `self.specs` through `self`.
-        self.assign_nodes(&self.specs.clone());
+        // Closing a switch can short a capacitor or complete a capacitor loop,
+        // so the same validate-and-retry as `set_circuit` runs here, matching
+        // upstream's per-analysis validateCircuit.
+        let mut attempts = 0;
+        loop {
+            self.assign_nodes(&self.specs.clone());
+            if !self.validate_capacitors() {
+                break;
+            }
+            attempts += 1;
+            if attempts >= 10 {
+                self.assign_nodes(&self.specs.clone());
+                break;
+            }
+        }
         self.allocate_and_stamp();
     }
 

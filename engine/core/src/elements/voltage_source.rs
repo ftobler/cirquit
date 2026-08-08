@@ -284,6 +284,13 @@ impl Element for VoltageSource {
         1
     }
 
+    /// A voltage source pins a capacitor loop, which is what makes an ideal
+    /// cap alongside it ring, so the CAP_V walk must be able to cross one.
+    /// Covers the rail variant too; `logicInput` does not exist in this port.
+    fn is_voltage_source(&self) -> bool {
+        true
+    }
+
     fn stamp(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         // Stamp the topology now with a zero value; `do_step` supplies the
         // value each timestep. That keeps the matrix constant, so a circuit

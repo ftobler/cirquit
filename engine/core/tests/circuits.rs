@@ -788,6 +788,308 @@ fn assert_esr_step_response(c: &mut Circuit, series_r: f64) {
     assert!(v > 9.9, "got {v} after 6 tau");
 }
 
+/// A freshly drawn parallel pair of ideal capacitors with unequal stored
+/// charges (1 V and 0 V). This is the loop `CapacitorElm.validate()`
+/// (CapacitorElm.java:274-291) dampens: the trapezoidal companion on an
+/// ideal-cap loop rings at the Nyquist rate, the per-cap currents alternating
+/// sign every step at full amplitude and never decaying (CapacitorElm.java:
+/// 163-165). The validate pass gives one member a 0.1 ohm series resistance
+/// and the ring dies within a few dozen steps, leaving the charge-weighted
+/// average on the common node.
+fn parallel_ideal_pair(dt: f64) -> Circuit {
+    build(
+        vec![
+            elm(
+                1,
+                "capacitor",
+                &[[0, 0], [0, 100]],
+                &[("capacitance", 1e-6), ("voltDiff", 1.0)],
+            ),
+            elm(
+                2,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6), ("voltDiff", 0.0)],
+            ),
+            elm(3, "wire", &[[0, 0], [100, 0]], &[]),
+            elm(4, "wire", &[[0, 100], [100, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    )
+}
+
+#[test]
+fn ideal_capacitor_loop_settles_instead_of_ringing() {
+    let dt = 1e-6;
+    let c = &mut parallel_ideal_pair(dt);
+    c.run(200);
+
+    // The common node holds the charge-weighted average whether or not the
+    // ring is damped, so the ring shows up in the currents, not the voltage.
+    let v = c.element_voltages()[0];
+    assert!(
+        close(v, 0.5, 1e-3),
+        "common node at {v}, expected the charge-weighted 0.5 V"
+    );
+
+    // Second half of the run: an undamped ring keeps swapping ±1 A through
+    // each cap forever. Damped, the currents decay to nothing.
+    let mut peak: f64 = 0.0;
+    for _ in 0..100 {
+        c.run(1);
+        for i in c.element_currents() {
+            peak = peak.max(i.abs());
+        }
+    }
+    assert!(peak < 1e-3, "cap loop still ringing, peak current {peak} A");
+}
+
+#[test]
+fn cappar_recorded_pair_is_left_alone() {
+    // The cappar.txt shape: one member already carries the 0.1 ohm upstream's
+    // validate() wrote there. The walk must find no CAP_V path through it (it
+    // is no longer ideal), so the pair keeps exactly the recorded ESR: the
+    // ideal member gains no internal node and the pair settles as before.
+    let dt = 1e-6;
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "capacitor",
+                &[[0, 0], [0, 100]],
+                &[
+                    ("capacitance", 1e-6),
+                    ("voltDiff", 1.0),
+                    ("seriesResistance", 0.1),
+                ],
+            ),
+            elm(
+                2,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6), ("voltDiff", 0.0)],
+            ),
+            elm(3, "wire", &[[0, 0], [100, 0]], &[]),
+            elm(4, "wire", &[[0, 100], [100, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    // Two caps share two posts: one node pair plus the recorded ESR's single
+    // internal node. The node count is the real guard against over-damping: a
+    // wrongly-damped ideal member would add a second internal node and grow
+    // the count. The settle check below is redundant by construction once the
+    // count holds, because an undamped pair rings and this one cannot.
+    assert_eq!(
+        c.node_count(),
+        3,
+        "walk double-damped the ideal member, node count changed"
+    );
+    c.run(200);
+    let mut peak: f64 = 0.0;
+    for _ in 0..100 {
+        c.run(1);
+        for i in c.element_currents() {
+            peak = peak.max(i.abs());
+        }
+    }
+    assert!(
+        peak < 1e-3,
+        "recorded pair not settling, peak current {peak} A"
+    );
+}
+
+#[test]
+fn shorted_capacitor_is_inert() {
+    // A capacitor with a wire directly across its posts: both posts merge to
+    // one node, `validate()`'s SHORT condition fires and `shorted()` zeroes
+    // the stored charge. The self-node stamp cancels in the Stamper, so the
+    // matrix is not singular and the cap reports no current.
+    let dt = 1e-6;
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "capacitor",
+                &[[0, 0], [0, 100]],
+                &[("capacitance", 1e-6), ("voltDiff", 5.0)],
+            ),
+            elm(2, "wire", &[[0, 0], [0, 100]], &[]),
+            elm(
+                3,
+                "resistor",
+                &[[0, 100], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "ground", &[[100, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    assert_eq!(
+        c.error(),
+        None,
+        "shorted cap must not make the matrix singular"
+    );
+    let report = c.run(10);
+    assert!(
+        report.converged,
+        "shorted cap run failed: {}",
+        report.error.as_deref().unwrap_or("no error text")
+    );
+    assert!(
+        c.element_currents()[0].abs() < 1e-9,
+        "shorted cap carries current"
+    );
+    assert!(
+        c.element_voltages()[0].abs() < 1e-9,
+        "shorted cap shows a voltage drop"
+    );
+}
+
+#[test]
+fn cap_across_a_rail_is_damped_by_the_cap_v_walk() {
+    // A rail is a one-post voltage source: the walk must cross it as an edge
+    // from its terminal to ground, so an ideal cap in parallel with a rail is
+    // caught and damped. The undamped case rings at the source voltage; the
+    // damped one settles to the rail and stops moving current.
+    let dt = 1e-6;
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6), ("voltDiff", 0.0)],
+            ),
+            elm(3, "wire", &[[0, 0], [100, 0]], &[]),
+            elm(4, "ground", &[[100, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(200);
+    // The cap sits at the rail voltage and carries no current once settled.
+    assert!(
+        close(c.element_voltages()[1], 5.0, 1e-3),
+        "cap at {} V, expected the rail's 5 V",
+        c.element_voltages()[1]
+    );
+    let mut peak: f64 = 0.0;
+    for _ in 0..100 {
+        c.run(1);
+        peak = peak.max(c.element_currents()[1].abs());
+    }
+    assert!(
+        peak < 1e-3,
+        "cap across a rail still ringing, peak {peak} A"
+    );
+}
+
+#[test]
+fn closing_a_switch_reruns_the_capacitor_walk() {
+    // A switch in parallel with a capacitor. Closing it (position 0) shorts
+    // the cap, and the reanalyze path must run the walk so `shorted()` zeroes
+    // whatever charge the cap built up while open. Toggling stays clean: no
+    // singular matrix, no spurious current through the shorted cap.
+    let dt = 1e-5;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6)],
+            ),
+            elm(4, "switch", &[[100, 0], [100, 100]], &[("position", 0.0)]),
+            elm(5, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(6, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    // Open the switch and let the cap charge toward the 5 V rail.
+    assert!(c.set_state(4, 1));
+    c.run(200);
+    let charged = c.element_voltages()[2];
+    assert!(charged > 4.0, "cap only reached {charged} V after charging");
+
+    // Close it again: the cap shorts and its charge must be zeroed, not left
+    // to circulate. The resistor still carries the steady 5 mA.
+    assert!(c.set_state(4, 0));
+    let report = c.run(50);
+    assert!(
+        report.converged,
+        "reanalyze after closing failed: {}",
+        report.error.unwrap_or_default()
+    );
+    assert!(
+        c.element_currents()[2].abs() < 1e-9,
+        "shorted cap still carrying charge"
+    );
+    assert!(
+        close(c.element_currents()[1], 0.005, 1e-6),
+        "resistor current {} A, expected the steady 5 mA",
+        c.element_currents()[1]
+    );
+}
+
+#[test]
+fn closing_a_switch_completes_a_cap_v_loop_and_damps_it() {
+    // A voltage source from A to B, an ideal cap from B to C, and a switch
+    // from C to A. Open, the cap is not in a CAP_V loop: its far post C is
+    // unreachable from A. Closing the switch merges C into A, so the cap now
+    // sits directly across the source, and the reanalyze `set_state` triggers
+    // must run the walk and damp it, or the cap rings at the source voltage.
+    let dt = 1e-6;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 0], [100, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "capacitor",
+                &[[100, 0], [200, 0]],
+                &[("capacitance", 1e-6), ("voltDiff", 0.0)],
+            ),
+            elm(3, "switch", &[[200, 0], [0, 0]], &[("position", 1.0)]),
+            elm(4, "ground", &[[0, 0]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    // Open, three nodes: ground(A), B, C, and the cap stays ideal. Closing
+    // the switch merges C into A; without the walk the cap would keep no
+    // internal node and node_count would drop to 2, so the walk's damping is
+    // the only way the count stays at 3.
+    assert_eq!(c.node_count(), 3, "open cap loop was damped early");
+    assert!(c.set_state(3, 0), "switch close refused");
+    assert_eq!(
+        c.node_count(),
+        3,
+        "closing the switch did not damp the cap via reanalyze"
+    );
+
+    // The damped cap charges through its 0.1 ohm ESR to the rail and stops
+    // moving current; undamped it would ring at the 10 A the source demands.
+    c.run(200);
+    let mut peak: f64 = 0.0;
+    for _ in 0..100 {
+        c.run(1);
+        peak = peak.max(c.element_currents()[1].abs());
+    }
+    assert!(
+        peak < 1e-3,
+        "cap loop completed by a switch still ringing, peak {peak} A"
+    );
+}
+
 #[test]
 fn capacitor_series_resistance_controls_charging() {
     assert_esr_step_response(&mut esr_rc_circuit(1e-6, 100.0, false), 100.0);

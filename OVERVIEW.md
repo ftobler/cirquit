@@ -207,15 +207,15 @@ fetch it).
   snaps every capacitor back to its file charge rather than continuing from
   where the run had got to. It used to snap them to zero instead; neither is
   right, and both go away with the state-readback path above.
-- **`CapacitorElm.validate()` is not ported.** Upstream walks a path from one
-  capacitor terminal to the other after analysis and, on finding a loop of
-  ideal capacitors, gives one of them a 0.1 ohm series resistance to damp the
-  oscillation the trapezoidal companion would otherwise ring with
-  (`CapacitorElm.java:274-291`); the same walk calls `shorted()` on a capacitor
-  shorted by wires. Here a freshly drawn pair of parallel ideal capacitors
-  rings undamped. Files that already carry the guard's output keep it, because
-  the `c` reader takes the series-resistance token whether or not
-  FLAG_RESISTANCE is set (see section 6).
+- **The capacitor validate walk is ported, but the write-back divergence
+  stays.** Analysis re-runs `CapacitorElm.validate()`: a CAP_V/SHORT DFS over
+  the merged nodes gives one member of a fresh ideal-cap loop a 0.1 ohm series
+  resistance and zeroes a wire-shorted cap (`circuit.rs:501-572`), so a freshly
+  drawn parallel pair settles instead of ringing. A damped cap holds the 0.1
+  in engine state only; a save still writes the params value (0), part of the
+  live-state write-back gap above. Files that already carry the guard's output
+  keep it, because the `c` reader takes the series-resistance token whether or
+  not FLAG_RESISTANCE is set (see section 6).
 
 ---
 

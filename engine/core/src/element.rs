@@ -179,6 +179,32 @@ pub trait Element {
         false
     }
 
+    /// True for a capacitor with no series resistance, upstream's
+    /// `isIdealCapacitor()` (CapacitorElm.java:271). The capacitor
+    /// validation walk traverses these, and only these get the 0.1 ohm
+    /// damping when they sit in a CAP_V loop.
+    fn is_ideal_capacitor(&self) -> bool {
+        false
+    }
+
+    /// True for voltage sources, upstream's `VoltageElm` family. A capacitor
+    /// loop containing one is the CAP_V loop the validation walk looks for,
+    /// because a voltage source pins the loop and lets the ideal-capacitor
+    /// companion ring.
+    fn is_voltage_source(&self) -> bool {
+        false
+    }
+
+    /// Zeroes an element whose two posts turned out to be one merged node, so
+    /// it contributes nothing. The capacitor override drops the stored charge
+    /// (CapacitorElm.java:63-66).
+    fn shorted(&mut self) {}
+
+    /// Forces a series resistance at analysis time. The capacitor override
+    /// stores the value and recomputes `cap_node` so the next node pass sees
+    /// the new internal node (`getInternalNodeCount`, CapacitorElm.java:213).
+    fn set_series_resistance(&mut self, _r: f64) {}
+
     /// Named-node label, for elements that connect by name rather than by
     /// position.
     fn node_label(&self) -> Option<&str> {

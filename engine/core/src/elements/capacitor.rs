@@ -135,6 +135,30 @@ impl Element for Capacitor {
         false
     }
 
+    /// Ideal means no series resistance (CapacitorElm.java:271). A damped
+    /// capacitor is therefore no longer traversable in the CAP_V walk, which
+    /// is what stops a parallel pair from damping both members.
+    fn is_ideal_capacitor(&self) -> bool {
+        self.series_resistance == 0.0
+    }
+
+    /// A capacitor whose posts merged into one node is shorted: its stored
+    /// charge and current are meaningless, so the walk zeroes them
+    /// (CapacitorElm.java:63-66). The companion's self-node stamp already
+    /// cancels, this just stops a stale voltDiff from feeding the readback.
+    fn shorted(&mut self) {
+        self.v_prev = 0.0;
+        self.i_prev = 0.0;
+    }
+
+    /// The 0.1 ohm damping for ideal-capacitor loops (CapacitorElm.java:285).
+    /// The internal node does not exist until the retry pass re-runs
+    /// `assign_nodes`, which is why the validate pass reports the change.
+    fn set_series_resistance(&mut self, r: f64) {
+        self.series_resistance = r;
+        self.cap_node = if r > 0.0 { 2 } else { 1 };
+    }
+
     fn stamp(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         let (n0, n1) = (self.base.nodes[0], self.base.nodes[1]);
         let cn = self.base.nodes[self.cap_node];
