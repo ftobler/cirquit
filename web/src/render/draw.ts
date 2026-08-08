@@ -260,6 +260,53 @@ export function bodyRect(g: DrawContext, a: Point, b: Point, halfHeight: number,
   polyline(g, [a1, b1, b2, a2, a1], color);
 }
 
+/** Half-height of the American zigzag peaks for the plain resistor and the
+ *  potentiometer, upstream's `hs` when `showEuroResistors()` is false
+ *  (ResistorElm.java:80-83, PotElm.java:226): the zigzag is taller than the
+ *  6-unit IEC box so the two symbols read apart. The thermistor and LDR do
+ *  NOT use this: upstream gives them one `hs = 6` shared by the euro box and
+ *  the zigzag (ThermistorNTCElm.java:134, LDRElm.java:106), so those two pass
+ *  their own box half-height to `zigzagPoints`. */
+export const ZIGZAG_HS = 8;
+
+/**
+ * Points of the American zigzag resistor body between `a` and `b`, peaking
+ * `halfHeight` to each side: four full cycles, alternating up and down at
+ * every odd 1/16 of the length, then back to the axis at `b`. The exact
+ * polyline upstream strokes when `showEuroResistors()` is false (ResistorElm.
+ * java:84-96), and the same shape the pot's per-segment walk produces
+ * (PotElm.java:234-248). Only the body changes with the toggle; the lead
+ * lines and terminal posts are identical either way.
+ *
+ * Computed without the grid rounding `interp` applies, like `rectCorners`, so
+ * the peak positions stay exact at any rotation; rounding would shrink the
+ * peaks by up to a pixel.
+ */
+export function zigzagPoints(a: Point, b: Point, halfHeight: number): Point[] {
+  let px = b.y - a.y;
+  let py = a.x - b.x;
+  const len = Math.hypot(px, py);
+  if (len === 0) return [a, b];
+  px /= len;
+  py /= len;
+  const pts: Point[] = [{ x: a.x, y: a.y }];
+  for (let i = 0; i < 4; i++) {
+    // Each cycle is an up peak at its 1/16 then a down peak at its 3/16.
+    const fUp = (1 + 4 * i) / 16;
+    pts.push({
+      x: a.x + fUp * (b.x - a.x) + halfHeight * px,
+      y: a.y + fUp * (b.y - a.y) + halfHeight * py,
+    });
+    const fDown = (3 + 4 * i) / 16;
+    pts.push({
+      x: a.x + fDown * (b.x - a.x) - halfHeight * px,
+      y: a.y + fDown * (b.y - a.y) - halfHeight * py,
+    });
+  }
+  pts.push({ x: b.x, y: b.y });
+  return pts;
+}
+
 /** Loops in an inductor coil. Upstream scales this with length; a fixed three
  *  reads better at the 32-unit body every inductor uses. */
 export const COIL_LOOPS = 3;

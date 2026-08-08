@@ -127,6 +127,7 @@ export function Menubar({ engine }: Props) {
   const dark = useStore((s) => s.dark);
   const editable = useStore((s) => s.settings.editable);
   const conventional = useStore((s) => s.settings.conventional);
+  const euroResistors = useStore((s) => s.settings.euroResistors);
   const elements = useStore((s) => s.elements);
   const selectedIds = useStore((s) => s.selectedIds);
   const clipboard = useStore((s) => s.clipboard);
@@ -350,11 +351,11 @@ export function Menubar({ engine }: Props) {
 
       <Dropdown label="Options" open={openMenu === 'options'} onToggle={() => toggleMenu('options')} onClose={closeMenus}>
         <CheckItem label="White Background" checked={!dark} onClick={fire(() => setDark(!dark))} />
+        <CheckItem label="European Resistors" checked={euroResistors} onClick={fire(() => updateSettings({ euroResistors: !euroResistors }))} />
         <CheckItem label="Conventional Current Motion" checked={conventional} onClick={fire(() => updateSettings({ conventional: !conventional }))} />
         <CheckItem label="Disable Editing" checked={!editable} onClick={fire(() => updateSettings({ editable: !editable }))} />
         <div className="menu-sep" />
         {menu([
-          deferred('European Resistors', 'This app always draws IEC rectangles'),
           deferred('IEC Gates', 'Logic gates are not implemented yet'),
           { label: 'Shortcuts…', onClick: fire(() => openDialog('shortcuts')) },
         ])}

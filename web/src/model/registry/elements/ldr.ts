@@ -9,12 +9,14 @@ import {
   label,
   polyline,
   voltageColor,
+  zigzagPoints,
 } from '../../../render/draw';
 import { readParams, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
-/** Half-height of the LDR's resistor box, same as the plain resistor and
- *  thermistor (LDRElm.java:106's `hs`). */
+/** Half-height of the LDR's resistor body, both the euro box and the
+ *  American zigzag peaks: upstream uses the single `hs = 6` for both
+ *  (LDRElm.java:106). */
 const LDR_HS = 6;
 
 /** `LuxFromSliderPos()`/`calcResistance()` (LDRElm.java:219-222, :206-218),
@@ -51,7 +53,13 @@ function drawLdrBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
-  bodyRect(g, lead1, lead2, LDR_HS, color);
+  if (g.euroResistors) {
+    bodyRect(g, lead1, lead2, LDR_HS, color);
+  } else {
+    // The zigzag uses the same `hs` as the box, upstream's single hs=6
+    // (LDRElm.java:106).
+    polyline(g, zigzagPoints(lead1, lead2, LDR_HS), color);
+  }
   const len = Math.hypot(lead2.x - lead1.x, lead2.y - lead1.y);
   if (len > 0) {
     const pt = (x: number, y: number): Point => interp(lead1, lead2, x / len, -y);

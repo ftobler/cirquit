@@ -7,8 +7,11 @@ import {
   interp2,
   label,
   line,
+  polyline,
   triangle,
   voltageColor,
+  ZIGZAG_HS,
+  zigzagPoints,
 } from '../../../render/draw';
 import { POT_FLIP, POT_FLIP_OFFSET, POT_SHOW_VALUES } from '../flags';
 import { elementColor, readParams } from '../shared';
@@ -27,7 +30,11 @@ function drawPotBody(g: DrawContext, e: CircuitElement): void {
   const lead2 = interp(p1, end, 1 - f);
   line(g, p1, lead1, voltageColor(g, g.voltages[0]));
   line(g, lead2, end, voltageColor(g, g.voltages[1]));
-  bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, hs 6 (PotElm.java:226)
+  if (g.euroResistors) {
+    bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, hs 6 (PotElm.java:226)
+  } else {
+    polyline(g, zigzagPoints(lead1, lead2, ZIGZAG_HS), color);
+  }
 
   const wiper = potPosts(e)[2];
   const { corner, arrowPoint, arrowBase } = potWiperGeometry(e);

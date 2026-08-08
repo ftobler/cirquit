@@ -47,6 +47,7 @@ describe('app prefs', () => {
     const back = loadAppPrefs(storage);
     expect(back).toEqual({
       showCrosshair: false,
+      euroResistors: true,
       positiveColor: '#123456',
       negativeColor: null,
       neutralColor: null,
@@ -59,6 +60,15 @@ describe('app prefs', () => {
     });
     // Every key that comes back is one the plan declared an app pref.
     expect(Object.keys(back).sort()).toEqual([...APP_PREF_KEYS].sort());
+  });
+
+  it('round-trips the euroResistors symbol toggle as a boolean', () => {
+    const { storage } = fakeStorage();
+    saveAppPrefs({ ...DEFAULT_SETTINGS, euroResistors: false }, storage);
+    expect(loadAppPrefs(storage).euroResistors).toBe(false);
+    // A wrong-typed stored value is dropped like any other invalid pref.
+    storage.setItem(APP_PREF_STORAGE_KEY, JSON.stringify({ euroResistors: 'yes' }));
+    expect(loadAppPrefs(storage).euroResistors).toBeUndefined();
   });
 
   it('a corrupt blob is a fallback, not a crash', () => {

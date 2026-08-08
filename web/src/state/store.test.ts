@@ -5,6 +5,7 @@ import { scopePlotsToSpecs } from '../engine/simulator';
 import { parseCircuit, serializeCircuit } from '../io/netlist';
 import { SAMPLE } from '../io/netlist/fixtures';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
+import { APP_PREF_STORAGE_KEY, loadAppPrefs, type StorageLike } from './appPrefs';
 import { makeElement, useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 
@@ -614,6 +615,9 @@ describe('updateSettings reload classification', () => {
     // Dot direction is a per-frame render argument like showCurrent; flipping
     // it must not restart the simulation.
     ['conventional', false, false],
+    // The resistor symbol is pure draw-mode like conventional; the choice must
+    // not restart the simulation.
+    ['euroResistors', false, false],
     ['smallGrid', true, false],
     ['showCrosshair', true, false],
     ['valueFontSize', 14, false],
@@ -646,10 +650,36 @@ describe('updateSettings reload classification', () => {
   });
 });
 
+describe('euroResistors persistence', () => {
+  it('survives a simulated reload: updateSettings stores it, re-init reads it', () => {
+    // Node has no localStorage, so inject one for the duration, exactly the
+    // injected-storage pattern appPrefs.test.ts uses.
+    const map = new Map<string, string>();
+    (globalThis as { localStorage?: StorageLike }).localStorage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    };
+    try {
+      useStore.getState().updateSettings({ euroResistors: false });
+      const blob = JSON.parse(map.get(APP_PREF_STORAGE_KEY) ?? '{}') as Record<string, unknown>;
+      expect(blob.euroResistors).toBe(false);
+      // The store initialiser merges stored prefs over DEFAULT_SETTINGS; a
+      // reload must therefore come back American.
+      expect({ ...DEFAULT_SETTINGS, ...loadAppPrefs() }).toMatchObject({ euroResistors: false });
+      // A default-ON fresh store stays European.
+      expect(useStore.getState().settings.euroResistors).toBe(false);
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+  });
+});
+
 describe('options panel settings', () => {
   it('DEFAULT_SETTINGS carries the new keys with upstream values', () => {
     expect(DEFAULT_SETTINGS.smallGrid).toBe(false);
     expect(DEFAULT_SETTINGS.showCrosshair).toBe(false);
+    // European symbols are the port's default (upstream's non-US default).
+    expect(DEFAULT_SETTINGS.euroResistors).toBe(true);
     expect(DEFAULT_SETTINGS.valueFontSize).toBe(12);
     expect(DEFAULT_SETTINGS.shortDecimalDigits).toBe(1);
     expect(DEFAULT_SETTINGS.decimalDigits).toBe(3);

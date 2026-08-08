@@ -165,6 +165,10 @@ export interface DrawContext {
   showPowerColor: boolean;
   /** Conventional-current motion; off reverses the dots and turns them cyan. */
   conventional: boolean;
+  /** Draw the IEC rectangle body; off draws the American zigzag. A per-frame
+   *  render argument like `conventional`, read at draw time (upstream's global
+   *  `euroResistors` app option, CircuitElm.showEuroResistors). */
+  euroResistors: boolean;
   selected: boolean;
   /** The element under the pointer; colours its stroke and fill with
    *  `theme.highlight` like the shift-highlighted net below. */
@@ -228,6 +232,9 @@ export interface SimSettings {
   showGrid: boolean;
   /** Dot direction and colour; a per-frame render argument like `currentSpeed`. */
   conventional: boolean;
+  /** Draw the IEC resistor box instead of the American zigzag. An app pref
+   *  like `conventional`: pure draw-mode, never part of the file or header. */
+  euroResistors: boolean;
   /** Read-only gate, upstream's `noEditing` (UIManager.java:116). UI-only:
    *  not a header token, so it never bumps the engine revision. */
   editable: boolean;
@@ -291,6 +298,9 @@ export const DEFAULT_SETTINGS: SimSettings = {
   showPowerColor: false,
   showGrid: true,
   conventional: true,
+  // European symbols are the port's default, matching the upstream default
+  // outside the US and this app's IEC-only history.
+  euroResistors: true,
   editable: true,
   smallGrid: false,
   showCrosshair: false,

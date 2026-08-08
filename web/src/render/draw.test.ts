@@ -11,6 +11,8 @@ import {
   powerColorT,
   powerMult,
   strokeStyle,
+  ZIGZAG_HS,
+  zigzagPoints,
 } from './draw';
 import { TOO_FAST } from './dots';
 import type { DrawContext } from '../model/types';
@@ -76,6 +78,7 @@ const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext =
   showVoltageColor: false,
   showPowerColor: false,
   conventional: true,
+  euroResistors: true,
   selected: false,
   hovered: false,
   onHighlightedNet: false,
@@ -297,6 +300,55 @@ describe('power colouring', () => {
     // For a fixed power, a higher powerRange means a larger |ramp position|;
     // both are negative here, so the value decreases.
     expect(powerColorT(0.02, 40)).toBeGreaterThan(powerColorT(0.02, 60));
+  });
+});
+
+describe('zigzag resistor body', () => {
+  /** Signed perpendicular distance of `p` from the `a`-`b` axis. */
+  const signedDistance = (a: { x: number; y: number }, b: { x: number; y: number }, p: { x: number; y: number }): number =>
+    ((b.y - a.y) * (p.x - a.x) - (b.x - a.x) * (p.y - a.y)) /
+    Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
+
+  it('alternates eight +hs/-hs peaks between the two leads', () => {
+    const pts = zigzagPoints({ x: 0, y: 0 }, { x: 32, y: 0 }, ZIGZAG_HS);
+    // Start on one lead, eight excursions, end on the other.
+    expect(pts).toHaveLength(10);
+    expect(pts[0]).toEqual({ x: 0, y: 0 });
+    expect(pts[pts.length - 1]).toEqual({ x: 32, y: 0 });
+    expect(pts.slice(1, -1).map((p) => p.y)).toEqual([
+      // The port's perpendicular unit vector is the negation of upstream's
+      // (see the thermistor/LDR comments), so the first peak lands on the
+      // -hs side; the alternating zigzag is symmetric, so the orientation
+      // reads identically.
+      -ZIGZAG_HS, ZIGZAG_HS, -ZIGZAG_HS, ZIGZAG_HS, -ZIGZAG_HS, ZIGZAG_HS, -ZIGZAG_HS, ZIGZAG_HS,
+    ]);
+    // The peaks land on the odd 1/16 fractions upstream strokes (ResistorElm.
+    // java:85-91): 2, 6, 10, ..., 30 for a 32-unit body.
+    expect(pts.slice(1, -1).map((p) => p.x)).toEqual([2, 6, 10, 14, 18, 22, 26, 30]);
+  });
+
+  it('keeps the peaks perpendicular to a diagonal axis', () => {
+    const pts = zigzagPoints({ x: 0, y: 0 }, { x: 16, y: 16 }, ZIGZAG_HS);
+    const dists = pts.slice(1, -1).map((p) => signedDistance({ x: 0, y: 0 }, { x: 16, y: 16 }, p));
+    // Exact float math: each excursion sits 8 off the axis, alternating sides.
+    expect(dists.map((d) => Math.round(d))).toEqual([
+      8, -8, 8, -8, 8, -8, 8, -8,
+    ]);
+  });
+
+  it('degenerates to the endpoints when the leads coincide', () => {
+    const a = { x: 10, y: 10 };
+    expect(zigzagPoints(a, { x: 10, y: 10 }, ZIGZAG_HS)).toEqual([a, { x: 10, y: 10 }]);
+  });
+
+  it('scales the peaks with the caller-supplied half-height', () => {
+    // The thermistor and LDR reuse their 6-unit box height for the zigzag,
+    // while the resistor and pot pass ZIGZAG_HS (8): the half-height is the
+    // caller's choice, so the helper must honour it exactly.
+    expect(zigzagPoints({ x: 0, y: 0 }, { x: 32, y: 0 }, 6).slice(1, -1).map((p) => p.y)).toEqual([
+      -6, 6, -6, 6, -6, 6, -6, 6,
+    ]);
+    expect(zigzagPoints({ x: 0, y: 0 }, { x: 32, y: 0 }, 6).slice(1, -1).map((p) => p.y)).not.toContain(8);
   });
 });
 

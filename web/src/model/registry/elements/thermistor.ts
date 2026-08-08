@@ -9,12 +9,14 @@ import {
   label,
   polyline,
   voltageColor,
+  zigzagPoints,
 } from '../../../render/draw';
 import { readParams, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
-/** Half-height of the thermistor's resistor box, same as the plain resistor
- *  (ThermistorNTCElm.java:134's `hs`). */
+/** Half-height of the thermistor's resistor body, both the euro box and the
+ *  American zigzag peaks: upstream uses the single `hs = 6` for both
+ *  (ThermistorNTCElm.java:134). */
 const THERMISTOR_HS = 6;
 
 /** `calcB25100`/`temprFromSliderPos`/`calcResistance`
@@ -56,7 +58,13 @@ function drawThermistorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
   const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
-  bodyRect(g, lead1, lead2, THERMISTOR_HS, color);
+  if (g.euroResistors) {
+    bodyRect(g, lead1, lead2, THERMISTOR_HS, color);
+  } else {
+    // The zigzag uses the same `hs` as the box, upstream's single hs=6
+    // (ThermistorNTCElm.java:134).
+    polyline(g, zigzagPoints(lead1, lead2, THERMISTOR_HS), color);
+  }
   const len = Math.hypot(lead2.x - lead1.x, lead2.y - lead1.y);
   if (len > 0) {
     const hs = THERMISTOR_HS;

@@ -188,10 +188,11 @@ export const useStore = create<AppState>((set, get) => ({
   selectedIds: [],
   scopes: [],
   sliders: [],
-  // App prefs (colours, digits, font size, wheel sensitivity, crosshair) are
-  // merged over the defaults at startup so they survive a page reload; the
-  // header-borne and plain settings stay at their defaults. The user-assigned
-  // shortcut overlay loads the same way, via the Shortcuts dialog.
+  // App prefs (colours, digits, font size, wheel sensitivity, crosshair, the
+  // European-resistor symbol) are merged over the defaults at startup so they
+  // survive a page reload; the header-borne and plain settings stay at their
+  // defaults. The user-assigned shortcut overlay loads the same way, via the
+  // Shortcuts dialog.
   settings: { ...DEFAULT_SETTINGS, ...loadAppPrefs() },
   shortcuts: loadShortcutOverlay(),
   passthrough: [],
@@ -244,8 +245,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   updateSettings: (patch) => {
     // A change to an app-pref key (a colour, the digit counts, the font size,
-    // wheel sensitivity, the crosshair) persists to localStorage so it
-    // survives a reload; circuit and plain settings do not.
+    // wheel sensitivity, the crosshair, the European-resistor symbol)
+    // persists to localStorage so it survives a reload; circuit and plain
+    // settings do not.
     if (touchesAppPrefs(patch)) {
       saveAppPrefs({ ...get().settings, ...patch });
     }
@@ -1114,7 +1116,8 @@ export const useStore = create<AppState>((set, get) => ({
       // The header-borne settings reset to a fresh circuit's defaults, exactly
       // as upstream clears maxTimeStep/minTimeStep on New (CircuitLoader.java:
       // 49-50); app prefs (colours, digits, font size, wheel sensitivity,
-      // crosshair) and plain settings (stepsPerFrame, showGrid, ...) survive.
+      // crosshair, the European-resistor symbol) and plain settings
+      // (stepsPerFrame, showGrid, ...) survive.
       settings: {
         ...s.settings,
         ...UNMODELLED_HEADER,

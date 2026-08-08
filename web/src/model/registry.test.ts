@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { calcLeads, makeTheme } from '../render/draw';
+import { calcLeads, makeTheme, rectCorners, ZIGZAG_HS, zigzagPoints } from '../render/draw';
 import {
   ELEMENT_DEFS,
   defFor,
@@ -65,7 +65,7 @@ const mkCtx = (): CtxStub => {
   };
 };
 
-const context = (ctx: CtxStub): DrawContext => ({
+const context = (ctx: CtxStub, overrides: Partial<DrawContext> = {}): DrawContext => ({
   ctx: ctx as unknown as CanvasRenderingContext2D,
   theme: makeTheme(),
   voltages: [0, 0, 0],
@@ -79,6 +79,7 @@ const context = (ctx: CtxStub): DrawContext => ({
   showVoltageColor: false,
   showPowerColor: false,
   conventional: true,
+  euroResistors: true,
   selected: false,
   hovered: false,
   onHighlightedNet: false,
@@ -87,6 +88,7 @@ const context = (ctx: CtxStub): DrawContext => ({
   scale: 1,
   valueDigits: 1,
   valueFontSize: 12,
+  ...overrides,
 });
 
 /** Signed distance of `p` from the element's axis; the sign is the side. */
@@ -426,6 +428,66 @@ describe('SPDT switch posts', () => {
     // throw post (Switch2Elm.java:82,108-109).
     const lineTos = ctx.lineTo.mock.calls.map((a) => ({ x: a[0], y: a[1] }));
     expect(lineTos).toContainEqual({ x: 66, y: 0 });
+  });
+});
+
+describe('European resistor symbol draw paths', () => {
+  const draw = (kind: string, euro: boolean, params: Record<string, number> = {}) => {
+    const ctx = mkCtx();
+    const e = element(kind, 0, 0, 160, 0, 0, params);
+    defFor(kind)?.draw(context(ctx, { euroResistors: euro }), e);
+    return ctx;
+  };
+  const lineTos = (ctx: CtxStub) => ctx.lineTo.mock.calls.map((a) => ({ x: a[0], y: a[1] }));
+
+  // The resistor and pot scale their zigzag to the taller 8-unit ZIGZAG_HS;
+  // the thermistor and LDR reuse their box half-height (6) for both symbols
+  // (ThermistorNTCElm.java:134, LDRElm.java:106).
+  const zigzagHeight = (kind: string): number =>
+    kind === 'resistor' || kind === 'potentiometer' ? ZIGZAG_HS : 6;
+
+  it.each(['resistor', 'potentiometer', 'thermistor', 'ldr'])(
+    '%s draws the zigzag body when euroResistors is off',
+    (kind) => {
+      const ctx = draw(kind, false);
+      const e = element(kind, 0, 0, 160, 0);
+      const [lead1, lead2] = calcLeads(e, 32);
+      // polyline moves to the first point, so every peak and the far lead
+      // land as a lineTo call; each must be painted.
+      const peaks = zigzagPoints(lead1, lead2, zigzagHeight(kind)).slice(1);
+      const drawn = lineTos(ctx);
+      for (const p of peaks) expect(drawn).toContainEqual(p);
+    },
+  );
+
+  it.each(['resistor', 'potentiometer', 'thermistor', 'ldr'])(
+    '%s draws the box body when euroResistors is on',
+    (kind) => {
+      const ctx = draw(kind, true);
+      const e = element(kind, 0, 0, 160, 0);
+      const [lead1, lead2] = calcLeads(e, 32);
+      // bodyRect closes its loop by repeating the first corner, so the four
+      // distinct corners of rectCorners must all be painted. The euro box
+      // half-height is 6 for all four elements.
+      const corners = rectCorners(lead1, lead2, 6);
+      const drawn = lineTos(ctx);
+      for (const p of corners) expect(drawn).toContainEqual(p);
+    },
+  );
+
+  it('the resistor and pot zigzag is taller than the thermistor and ldr one', () => {
+    // Pins the height split outright: the American resistor/pot peaks reach
+    // ZIGZAG_HS (8) while the thermistor/ldr peaks stay at their box height
+    // (6), the regression the review caught.
+    const maxPeakY = (kind: string): number => {
+      const e = element(kind, 0, 0, 160, 0);
+      const [lead1, lead2] = calcLeads(e, 32);
+      return Math.max(...zigzagPoints(lead1, lead2, zigzagHeight(kind)).map((p) => Math.abs(p.y)));
+    };
+    expect(maxPeakY('resistor')).toBe(ZIGZAG_HS);
+    expect(maxPeakY('potentiometer')).toBe(ZIGZAG_HS);
+    expect(maxPeakY('thermistor')).toBe(6);
+    expect(maxPeakY('ldr')).toBe(6);
   });
 });
 

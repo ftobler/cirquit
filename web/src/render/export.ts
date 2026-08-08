@@ -99,6 +99,7 @@ export function renderCircuitToCanvas(
       showVoltageColor: settings.showVoltageColor,
       showPowerColor: settings.showPowerColor,
       conventional: settings.conventional,
+      euroResistors: settings.euroResistors,
       selected: false,
       hovered: false,
       onHighlightedNet: false,
