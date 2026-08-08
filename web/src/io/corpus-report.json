@@ -1476,14 +1476,11 @@
   {
     "file": "hfadc.txt",
     "format": "plain",
-    "missing": [
-      "166",
-      "167",
-      "167"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "howland.txt",
@@ -1743,7 +1740,6 @@
     "file": "ledarray.txt",
     "format": "plain",
     "missing": [
-      "185",
       "208",
       "405"
     ],
@@ -2304,15 +2300,12 @@
   {
     "file": "piso-sr.txt",
     "format": "plain",
-    "missing": [
-      "184",
-      "184",
-      "184",
-      "184"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "pll.txt",
@@ -2451,12 +2444,8 @@
     "file": "qam-256.txt",
     "format": "plain",
     "missing": [
-      "166",
-      "166",
       "213",
-      "167",
       "212",
-      "167",
       "213",
       "212",
       "212"
@@ -2739,22 +2728,20 @@
   {
     "file": "scr.txt",
     "format": "plain",
-    "missing": [
-      "177"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "scractrig.txt",
     "format": "plain",
-    "missing": [
-      "177"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "sine.txt",
@@ -2900,32 +2887,29 @@
   {
     "file": "tdiode.txt",
     "format": "plain",
-    "missing": [
-      "175"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tdosc.txt",
     "format": "plain",
-    "missing": [
-      "175"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tdrelax.txt",
     "format": "plain",
-    "missing": [
-      "175"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tesla.txt",

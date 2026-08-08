@@ -13,6 +13,7 @@
 import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRI_STATE_FLIP } from './flags';
 import { switchLever, switchLeverTip, switchIecPoints, groundBars } from './shared';
 import { WIRE_DEF } from './elements/wire';
+import { ADC_DEF } from './elements/adc';
 import { GROUND_DEF } from './elements/ground';
 import { RESISTOR_DEF } from './elements/resistor';
 import { CAPACITOR_DEF } from './elements/capacitor';
@@ -42,8 +43,10 @@ import { ZENER_DEF } from './elements/zener';
 import { VARACTOR_DEF } from './elements/varactor';
 import { LED_DEF } from './elements/led';
 import { TRANSISTOR_DEF } from './elements/transistor';
+import { TUNNEL_DIODE_DEF } from './elements/tunnelDiode';
 import { JFET_DEF } from './elements/jfet';
 import { MOSFET_DEF } from './elements/mosfet';
+import { MULTIPLEXER_DEF } from './elements/multiplexer';
 import { NOISE_DEF } from './elements/noise';
 import { SWITCH_DEF } from './elements/switch';
 import { SWITCH2_DEF } from './elements/switch2';
@@ -57,7 +60,9 @@ import { OPAMP_DEF } from './elements/opamp';
 import { PHASE_COMP_DEF } from './elements/phaseComp';
 import { AND_GATE_DEF, NAND_GATE_DEF, OR_GATE_DEF, NOR_GATE_DEF, XOR_GATE_DEF, XNOR_GATE_DEF } from './elements/gate';
 import { DFLIPFLOP_DEF } from './elements/dFlipFlop';
+import { DAC_DEF } from './elements/dac';
 import { DECIMAL_DISPLAY_DEF } from './elements/decimalDisplay';
+import { DEMULTIPLEXER_DEF } from './elements/deMultiplexer';
 import { JKFLIPFLOP_DEF } from './elements/jkFlipFlop';
 import { TFLIPFLOP_DEF } from './elements/tFlipFlop';
 import { LATCH_DEF } from './elements/latch';
@@ -67,6 +72,7 @@ import { INVERTER_DEF } from './elements/inverter';
 import { LOGIC_INPUT_DEF } from './elements/logicInput';
 import { SCHMITT_DEF, INVERTING_SCHMITT_DEF } from './elements/schmitt';
 import { SEVEN_SEG_DEF } from './elements/sevenSeg';
+import { SCR_DEF } from './elements/scr';
 import { SPARK_GAP_DEF } from './elements/sparkGap';
 import { TRI_STATE_DEF } from './elements/triState';
 import { LABELED_NODE_DEF } from './elements/labeledNode';
@@ -120,14 +126,18 @@ export const ELEMENT_DEFS: ElementDef[] = [
   SWEEP_DEF,
   AUDIO_OUTPUT_DEF,
   VCO_DEF,
+  DAC_DEF,
+  ADC_DEF,
   CURRENT_DEF,
   DIODE_DEF,
   ZENER_DEF,
   VARACTOR_DEF,
   LED_DEF,
+  TUNNEL_DIODE_DEF,
   TRANSISTOR_DEF,
   JFET_DEF,
   MOSFET_DEF,
+  MULTIPLEXER_DEF,
   OPAMP_DEF,
   PHASE_COMP_DEF,
   AND_GATE_DEF,
@@ -138,6 +148,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   XNOR_GATE_DEF,
   DFLIPFLOP_DEF,
   DECIMAL_DISPLAY_DEF,
+  DEMULTIPLEXER_DEF,
   JKFLIPFLOP_DEF,
   TFLIPFLOP_DEF,
   LATCH_DEF,
@@ -148,6 +159,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   SCHMITT_DEF,
   INVERTING_SCHMITT_DEF,
   SEVEN_SEG_DEF,
+  SCR_DEF,
   SPARK_GAP_DEF,
   TRI_STATE_DEF,
   LABELED_NODE_DEF,

@@ -42,9 +42,9 @@ describe('slider parameter resolution', () => {
     // Wires and grounds expose no numeric fields.
     expect(resolveParam('wire', 0, '')).toBeNull();
     expect(resolveParam('ground', 0, '')).toBeNull();
-    // A kind this build cannot draw (the SCR, dump 177) has no definition at
+    // A kind this build cannot draw (the diac, dump 203) has no definition at
     // all. The sweep now does, so it is no longer the canonical absent kind.
-    expect(resolveParam('scr', 0, '')).toBeNull();
+    expect(resolveParam('diac', 0, '')).toBeNull();
   });
 
   it('excludes text fields from the numeric-index fallback', () => {

@@ -260,11 +260,11 @@ describe('scope o-line fidelity', () => {
   });
 
   it('resolves scope indices through file position, past an unmodelled element', () => {
-    // `177` (SCR) is a code upstream creates but this build does not model, so
+    // `203` (diac) is a code upstream creates but this build does not model, so
     // it still takes the element-list slot and the scope's index 2 is the
     // second resistor, not the first.
     const parsed = parseCircuit(
-      HEADER + 'r 0 0 16 0 0 100\n' + 'o 2 64 0 4099 20 0.05 0 1\n' + '177 1 2 3 4 0\n' + 'r 16 0 32 0 0 220\n',
+      HEADER + 'r 0 0 16 0 0 100\n' + 'o 2 64 0 4099 20 0.05 0 1\n' + '203 1 2 3 4 0\n' + 'r 16 0 32 0 0 220\n',
     );
     expect(parsed.scopes[0].plots[0].elementIndex).toBe(2);
     expect(parsed.scopes[0].plots[0].elementId).toBe(parsed.elements[1].id);

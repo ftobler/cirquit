@@ -2187,6 +2187,89 @@ fn varactor_terminal_voltage_matches_the_matrix_solve_through_a_resistor() {
 }
 
 #[test]
+fn tunnel_diode_operating_points_land_on_its_curve() {
+    // The diode sits directly across the supply, so its terminal voltage is
+    // the bias exactly, and the current it draws is the curve value with no
+    // load line to bisect. The expected values below are hand-rounded from
+    // upstream's law (TunnelDiodeElm.java:93-98, :107-110): a tunnelling
+    // peak `pip` = 4.7 mA at `pvp` = 0.1 V, a valley exponential `piv` at
+    // `pvv` = 0.37 V, and a steep forward exponential at `pvt` = 0.026 V.
+    let current_at = |v: f64| {
+        let c = &mut build(
+            vec![
+                elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", v)]),
+                elm(2, "tunnelDiode", &[[0, 0], [0, 100]], &[]),
+                elm(3, "ground", &[[0, 100]], &[]),
+            ],
+            opts_budget(1e-5, true, 200),
+        );
+        let report = c.run(20);
+        assert!(
+            report.converged,
+            "tunnel diode stalled: {:?}",
+            report.failing
+        );
+        c.element_currents()[1]
+    };
+
+    // Hand-rounded points: the tunnelling peak, the negative-resistance
+    // region, the valley, the steep second exponential, and a small reverse
+    // bias. The reverse point pins upstream's unclamped tunnelling tail,
+    // which conducts tens of milliamps where a real junction would not.
+    for (v, want) in [
+        (0.1, 4.726_879_08e-3),
+        (0.25, 2.694_488_07e-3),
+        (0.45, 1.046_537_66e-3),
+        (0.6, 8.451_453_02e-2),
+        (-0.05, -1.054_443_37e-2),
+    ] {
+        assert!(
+            close(current_at(v), want, 1e-5),
+            "at {v} V the tunnel diode drew {}, expected {want}",
+            current_at(v)
+        );
+    }
+
+    // End-to-end stamp check: 5 V through 52 ohm onto a tunnel diode to
+    // ground. The load line crosses the curve exactly once, in the steep
+    // forward region, at 0.600031 V and 84.6 mA. A sign error in the stamped
+    // conductance or Norton source throws the solve onto a different branch
+    // (or a non-positive matrix diagonal) and misses this window entirely.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 52.0)]),
+            elm(3, "tunnelDiode", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts_budget(1e-5, true, 200),
+    );
+    let report = c.run(20);
+    assert!(
+        report.converged,
+        "series tunnel diode stalled: {:?}",
+        report.failing
+    );
+    let v = c.element_voltages()[2];
+    assert!(
+        close(v, 0.600, 0.02),
+        "series operating point was {v} V, expected ~0.600"
+    );
+    let i = c.element_currents()[2];
+    assert!(
+        close(i, 0.0846, 3e-3),
+        "diode current was {i} A, expected ~84.6 mA"
+    );
+    // KCL: both devices carry the load-line current for the settled voltage.
+    assert!(
+        close(c.element_currents()[1], (5.0 - v) / 52.0, 2e-3),
+        "resistor current {} did not match the load line",
+        c.element_currents()[1]
+    );
+}
+
+#[test]
 fn inverting_opamp_has_the_textbook_gain() {
     // Vout = -Rf/Rin * Vin, with the non-inverting input grounded.
     let c = &mut build(
@@ -8340,6 +8423,90 @@ fn spark_gap_clears_when_current_drops_below_holdcurrent() {
 }
 
 #[test]
+fn scr_blocks_until_gate_pulse_then_latches() {
+    // The SCR's off state is not an open circuit: the anode path is a 10e5
+    // (upstream's literal `10e5`) ohm resistor in series with the internal
+    // forward-biased diode, so a 2 V supply leaks about 17.6 uA through it,
+    // far below the 8.2 mA holding current, and the anode-cathode voltage
+    // holds near the full supply. Driving the gate to 3 V pushes 60 mA
+    // through the 50 ohm internal gate resistor, past the 10 mA trigger, and
+    // the next step latches the resistor to 0.0105 ohm: the loop then draws
+    // (2 - v_on)/50 with v_on ~ 0.62 V, about 27.6 mA. That anode current is
+    // well above holdingI, so the latch survives the gate returning to 0 V.
+    let dt = 1e-5;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 2.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 50.0)]),
+            elm(3, "scr", &[[100, 0], [100, 200], [128, 128]], &[]),
+            elm(4, "wire", &[[100, 200], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(
+                6,
+                "voltage",
+                &[[128, 48], [128, 128]],
+                &[("maxVoltage", 0.0)],
+            ),
+            elm(7, "ground", &[[128, 48]], &[]),
+        ],
+        opts_budget(dt, false, 100),
+    );
+    c.run(20);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        amps[2] < 1e-4,
+        "blocked SCR drew {} A, expected only the ~17.6 uA off-state leakage",
+        amps[2]
+    );
+    assert!(
+        close(volts[2], 2.0, 0.05),
+        "blocked SCR held {} V, expected nearly the full 2 V supply",
+        volts[2]
+    );
+
+    // Gate pulse: 3 V on the gate drives 60 mA through the internal 50 ohm
+    // gate resistor, over the 10 mA trigger, so the latch fires and the
+    // anode-cathode voltage drops to the diode's on-state drop.
+    assert!(c.set_param(6, "maxVoltage", 3.0), "gate pulse refused");
+    c.run(5);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], 0.0276, 5e-4),
+        "fired SCR drew {} A through the load, expected ~27.6 mA",
+        amps[1]
+    );
+    assert!(
+        close(amps[2], 0.0276, 5e-4),
+        "fired SCR anode current was {} A, expected ~27.6 mA",
+        amps[2]
+    );
+    assert!(
+        close(volts[2], 0.62, 0.05),
+        "fired SCR held {} V anode-cathode, expected the ~0.62 V on drop",
+        volts[2]
+    );
+
+    // Gate back to 0 V: the 27.6 mA anode current stays far above the 8.2 mA
+    // holding current, so the latch must hold even with the gate current gone.
+    assert!(c.set_param(6, "maxVoltage", 0.0), "gate return refused");
+    c.run(5);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], 0.0276, 5e-4),
+        "SCR unlatched after the gate went low, drew {} A",
+        amps[1]
+    );
+    let volts = c.element_voltages();
+    assert!(
+        close(volts[2], 0.62, 0.05),
+        "latched SCR drifted to {} V anode-cathode",
+        volts[2]
+    );
+}
+
+#[test]
 fn decimal_display_reads_its_input_bits_as_a_binary_number() {
     let c = &mut build(
         vec![
@@ -8390,6 +8557,81 @@ fn decimal_display_reads_its_input_bits_as_a_binary_number() {
         "display read was {}",
         c.element_values()[4]
     );
+}
+
+// The DAC output source drives `ival * Vplus / (2^bits - 1)`, where `ival` is
+// the binary value of the thresholded bit inputs (DACElm.java:42-51). Element
+// 7 is the load resistor from the O post to ground, so its voltage diff is the
+// output. The source's do_step reads the previous solve's node voltages, so the
+// output lags the inputs by one step; running a few steps settles it.
+#[test]
+fn dac_scales_the_bit_pattern_against_the_vplus_pin() {
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "dac",
+                &[[0, 0], [0, 32], [0, 64], [0, 96], [96, 0], [96, 96]],
+                &[("bits", 4.0), ("highVoltage", 5.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                3,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                4,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                5,
+                "logicInput",
+                &[[0, 96]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(6, "rail", &[[96, 96]], &[("maxVoltage", 5.0)]),
+            elm(
+                7,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(8, "ground", &[[96, 100]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let output = |c: &Circuit| c.element_voltages()[6];
+    // D3..D0 = 0101 gives ival 5, so 5 * 5 / 15 = 1.6667 V.
+    c.run(3);
+    let got = output(c);
+    assert!(
+        close(got, 5.0 * 5.0 / 15.0, 1e-9),
+        "0101 drove {got}, expected {}",
+        5.0 * 5.0 / 15.0
+    );
+    // All bits high drives the full scale, exactly the V+ pin voltage.
+    for id in 2..=5 {
+        c.set_state(id, 1);
+    }
+    c.run(3);
+    let got = output(c);
+    assert!(close(got, 5.0, 1e-9), "1111 drove {got}, expected 5.0");
+    // All bits low drives zero.
+    for id in 2..=5 {
+        c.set_state(id, 0);
+    }
+    c.run(3);
+    let got = output(c);
+    assert!(close(got, 0.0, 1e-9), "0000 drove {got}, expected 0.0");
 }
 
 #[test]
@@ -8521,6 +8763,340 @@ fn seven_seg_reads_its_segment_input_bits() {
     c.set_state(3, 1);
     c.run(3);
     assert_eq!(value(c), 0b000_0110, "digit 1 did not read as 6");
+}
+
+#[test]
+fn adc_converts_its_analog_input_into_digital_bits() {
+    // A 4-bit ADC with a 5 V reference converts `trunc(15 * V(in) / V(+))`
+    // clamped to [0, 15] (ADCElm.java:42-46). Truncation is deliberate:
+    // rounding would break the half-flash architecture, so 2.5 V reads 7, not
+    // 8. Post order is D0..D3, In, V+ (ADCElm.java:36-39); value() reports
+    // the output bits as the code, bit 0 = D0.
+    let code = |c: &Circuit| c.element_values()[0] as i64;
+    let adc = |vin: f64| {
+        build(
+            vec![
+                elm(
+                    1,
+                    "adc",
+                    &[[0, 0], [0, 32], [0, 64], [0, 96], [0, 128], [0, 160]],
+                    &[("bits", 4.0), ("highVoltage", 5.0)],
+                ),
+                elm(2, "voltage", &[[0, 200], [0, 128]], &[("maxVoltage", vin)]),
+                elm(3, "ground", &[[0, 200]], &[]),
+                elm(4, "voltage", &[[0, 200], [0, 160]], &[("maxVoltage", 5.0)]),
+                elm(5, "ground", &[[0, 200]], &[]),
+            ],
+            opts(1e-5, false),
+        )
+    };
+    for (vin, expected) in [
+        (0.0, 0),  // 15 * 0.0 / 5 = 0
+        (0.5, 1),  // 15 * 0.1 = 1.5, truncated to 1
+        (2.5, 7),  // 15 * 0.5 = 7.5, truncated to 7, not rounded to 8
+        (3.3, 9),  // 15 * 0.66 = 9.9, truncated to 9
+        (5.0, 15), // 15 * 1.0 = 15
+        (8.0, 15), // over-range input clamps at 15
+    ] {
+        let mut c = adc(vin);
+        c.run(5);
+        assert_eq!(
+            code(&c),
+            expected,
+            "V(in) = {vin} V against a 5 V reference"
+        );
+    }
+}
+
+#[test]
+fn multiplexer_routes_the_selected_data_input_to_the_output() {
+    // A 4-to-1 multiplexer (bits 2): I0 driven high, I1..I3 low. With both
+    // select bits low the output mirrors I0; raising S0 picks I1, S1 alone
+    // picks I2 and both pick I3, so the output tracks the level of whichever
+    // input the little-endian select address names. The mux is combinational,
+    // so three steps after each change settle it onto the new input.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                4,
+                "logicInput",
+                &[[0, 96]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                5,
+                "logicInput",
+                &[[64, 160]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                6,
+                "logicInput",
+                &[[96, 160]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                7,
+                "multiplexer",
+                &[
+                    [0, 0],
+                    [0, 32],
+                    [0, 64],
+                    [0, 96],
+                    [64, 160],
+                    [96, 160],
+                    [128, 0],
+                ],
+                &[("bits", 2.0), ("highVoltage", 5.0)],
+            ),
+            elm(
+                8,
+                "resistor",
+                &[[128, 0], [128, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[128, 100]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    // The mux readout reports the Q level as 0 V or 5 V.
+    let out = |c: &Circuit| -> f64 { c.element_values()[6] };
+    c.run(3);
+    assert!(
+        close(out(c), 5.0, 1e-9),
+        "select 00 did not route I0, read {}",
+        out(c)
+    );
+    c.set_state(5, 1); // select 01: I1, still low
+    c.run(3);
+    assert!(
+        close(out(c), 0.0, 1e-9),
+        "select 01 did not route I1, read {}",
+        out(c)
+    );
+    c.set_state(2, 1); // I1 goes high
+    c.run(3);
+    assert!(
+        close(out(c), 5.0, 1e-9),
+        "I1 rising did not reach the output, read {}",
+        out(c)
+    );
+    c.set_state(5, 0);
+    c.set_state(6, 1); // select 10: I2, still low
+    c.run(3);
+    assert!(
+        close(out(c), 0.0, 1e-9),
+        "select 10 did not route I2, read {}",
+        out(c)
+    );
+    c.set_state(3, 1); // I2 goes high
+    c.run(3);
+    assert!(
+        close(out(c), 5.0, 1e-9),
+        "I2 rising did not reach the output, read {}",
+        out(c)
+    );
+    c.set_state(5, 1); // S0 rises on top of the high S1: select 11 picks I3, still low
+    c.run(3);
+    assert!(
+        close(out(c), 0.0, 1e-9),
+        "select 11 did not route I3, read {}",
+        out(c)
+    );
+    c.set_state(4, 1); // I3 goes high
+    c.run(3);
+    assert!(
+        close(out(c), 5.0, 1e-9),
+        "I3 rising did not reach the output, read {}",
+        out(c)
+    );
+}
+
+#[test]
+fn demultiplexer_routes_the_data_bit_to_the_selected_output() {
+    // 2 select bits and a 5 V data input: exactly the selected output reads
+    // high, the idle outputs stay low, and re-selecting moves the high output.
+    // Post order of the demux: Q0..Q3 on the east, S0 and S1 on the south,
+    // the data input on the west, so the resistor voltages at element indices
+    // 4, 6, 8, 10 are the Q0..Q3 node levels.
+    let o = |c: &Circuit| -> i64 {
+        let v = c.element_voltages();
+        let bit = |i: usize| if v[i] > 2.5 { 1i64 } else { 0 };
+        bit(4) | (bit(6) << 1) | (bit(8) << 2) | (bit(10) << 3)
+    };
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[32, 160]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "logicInput",
+                &[[64, 160]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                4,
+                "deMultiplexer",
+                &[
+                    [128, 0],
+                    [128, 32],
+                    [128, 64],
+                    [128, 96],
+                    [32, 160],
+                    [64, 160],
+                    [0, 0],
+                ],
+                &[("selectBits", 2.0), ("highVoltage", 5.0)],
+            ),
+            elm(
+                5,
+                "resistor",
+                &[[128, 0], [128, 80]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "ground", &[[128, 80]], &[]),
+            elm(
+                7,
+                "resistor",
+                &[[128, 32], [128, 112]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(8, "ground", &[[128, 112]], &[]),
+            elm(
+                9,
+                "resistor",
+                &[[128, 64], [128, 144]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(10, "ground", &[[128, 144]], &[]),
+            elm(
+                11,
+                "resistor",
+                &[[128, 96], [128, 176]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(12, "ground", &[[128, 176]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    assert_eq!(o(c), 1, "select 0 did not route the data to Q0");
+    c.set_state(2, 1); // S0 high -> select 1
+    c.run(3);
+    assert_eq!(o(c), 2, "select 1 did not route the data to Q1");
+    c.set_state(3, 1); // S1 high -> select 3
+    c.run(3);
+    assert_eq!(o(c), 8, "select 3 did not route the data to Q3");
+    c.set_state(2, 0); // S0 low -> select 2
+    c.run(3);
+    assert_eq!(o(c), 4, "select 2 did not route the data to Q2");
+
+    // FLAG_INVERT_OUTPUTS (16) idles the inactive outputs high, the 74139
+    // rule. With the data input low and select 0 only Q0 reads low; moving
+    // the select drops exactly the new output and the old one idles high.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[32, 160]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "logicInput",
+                &[[64, 160]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm_flags(
+                4,
+                "deMultiplexer",
+                &[
+                    [128, 0],
+                    [128, 32],
+                    [128, 64],
+                    [128, 96],
+                    [32, 160],
+                    [64, 160],
+                    [0, 0],
+                ],
+                &[("selectBits", 2.0), ("highVoltage", 5.0)],
+                16,
+            ),
+            elm(
+                5,
+                "resistor",
+                &[[128, 0], [128, 80]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "ground", &[[128, 80]], &[]),
+            elm(
+                7,
+                "resistor",
+                &[[128, 32], [128, 112]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(8, "ground", &[[128, 112]], &[]),
+            elm(
+                9,
+                "resistor",
+                &[[128, 64], [128, 144]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(10, "ground", &[[128, 144]], &[]),
+            elm(
+                11,
+                "resistor",
+                &[[128, 96], [128, 176]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(12, "ground", &[[128, 176]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    assert_eq!(o(c), 0b1110, "inverted select 0 did not idle Q1..Q3 high");
+    c.set_state(2, 1); // S0 high -> select 1
+    c.run(3);
+    assert_eq!(
+        o(c),
+        0b1101,
+        "inverted select 1 did not move the low output"
+    );
 }
 
 // The VCO mirrors the currents through its external R1 and R2 resistors into

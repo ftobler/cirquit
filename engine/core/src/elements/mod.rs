@@ -7,6 +7,7 @@
 //! One module per element type. `junction.rs` is the exception: it holds the
 //! Newton machinery shared by the diode and transistor families.
 
+pub mod adc;
 pub mod ammeter;
 pub mod analog_switch;
 pub mod analog_switch2;
@@ -18,6 +19,8 @@ pub mod chip;
 pub mod counter;
 pub mod current_source;
 pub mod d_flip_flop;
+pub mod dac;
+pub mod de_multiplexer;
 pub mod decimal_display;
 pub mod decoration;
 pub mod diode;
@@ -42,6 +45,7 @@ pub mod memristor;
 pub mod meter;
 pub mod mosfet;
 pub mod multi_throw_switch;
+pub mod multiplexer;
 pub mod noise;
 pub mod opamp;
 pub mod phase_comp;
@@ -52,6 +56,7 @@ pub mod resistor;
 pub mod ring_counter;
 pub mod schmitt;
 pub mod scope;
+pub mod scr;
 pub mod seven_seg;
 pub mod spark_gap;
 pub mod sweep;
@@ -63,6 +68,7 @@ pub mod transformer;
 pub mod transistor;
 pub mod transmission_line;
 pub mod tri_state;
+pub mod tunnel_diode;
 pub mod var_rail;
 pub mod vco;
 pub mod voltage_source;
@@ -93,11 +99,13 @@ pub const KINDS: &[&str] = &[
     "varRail",
     "extVoltage",
     "vco",
+    "dac",
     "current",
     "diode",
     "zener",
     "varactor",
     "led",
+    "tunnelDiode",
     "transistor",
     "jfet",
     "mosfet",
@@ -126,15 +134,19 @@ pub const KINDS: &[&str] = &[
     "xnorGate",
     "dFlipFlop",
     "decimalDisplay",
+    "deMultiplexer",
     "jkFlipFlop",
     "tFlipFlop",
     "latch",
     "ringCounter",
     "counter",
+    "adc",
+    "multiplexer",
     "triState",
     "schmitt",
     "invertingSchmitt",
     "sparkGap",
+    "scr",
     "sevenSeg",
     "labeledNode",
     "output",
@@ -170,11 +182,13 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "varRail" => Box::new(var_rail::VarRail::new(spec)),
         "extVoltage" => Box::new(ext_voltage::ExtVoltage::new(spec)),
         "vco" => Box::new(vco::Vco::new(spec)),
+        "dac" => Box::new(dac::Dac::new(spec)),
         "current" => Box::new(current_source::CurrentSource::new(spec)),
         "diode" => Box::new(diode::Diode::new(spec)),
         "zener" => Box::new(diode::Diode::new_zener(spec)),
         "varactor" => Box::new(diode::Diode::new_varactor(spec)),
         "led" => Box::new(led::Led::new(spec)),
+        "tunnelDiode" => Box::new(tunnel_diode::TunnelDiode::new(spec)),
         "transistor" => Box::new(transistor::BipolarTransistor::new(spec)),
         "jfet" => Box::new(jfet::Jfet::new(spec)),
         "mosfet" => Box::new(mosfet::Mosfet::new(spec)),
@@ -203,15 +217,19 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "xnorGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Xnor)),
         "dFlipFlop" => Box::new(d_flip_flop::DFlipFlop::new(spec)),
         "decimalDisplay" => Box::new(decimal_display::DecimalDisplay::new(spec)),
+        "deMultiplexer" => Box::new(de_multiplexer::DeMultiplexer::new(spec)),
         "jkFlipFlop" => Box::new(jk_flip_flop::JKFlipFlop::new(spec)),
         "tFlipFlop" => Box::new(t_flip_flop::TFlipFlop::new(spec)),
         "latch" => Box::new(latch::Latch::new(spec)),
         "ringCounter" => Box::new(ring_counter::RingCounter::new(spec)),
         "counter" => Box::new(counter::Counter::new(spec)),
+        "adc" => Box::new(adc::Adc::new(spec)),
+        "multiplexer" => Box::new(multiplexer::Multiplexer::new(spec)),
         "triState" => Box::new(tri_state::TriState::new(spec)),
         "schmitt" => Box::new(schmitt::Schmitt::new(spec, false)),
         "invertingSchmitt" => Box::new(schmitt::Schmitt::new(spec, true)),
         "sparkGap" => Box::new(spark_gap::SparkGap::new(spec)),
+        "scr" => Box::new(scr::Scr::new(spec)),
         "sevenSeg" => Box::new(seven_seg::SevenSeg::new(spec)),
         "labeledNode" => Box::new(labeled_node::LabeledNode::new(spec)),
         "output" => Box::new(meter::Meter::new_output(spec)),
