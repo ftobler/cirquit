@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { matchShortcut, SHORTCUTS, type KeyEventLike } from './shortcuts';
+import type { StorageLike } from '../state/appPrefs';
+import {
+  chordOf,
+  hasDuplicateChords,
+  loadShortcutOverlay,
+  matchShortcut,
+  overlayFromRows,
+  rowsFromOverlay,
+  saveShortcutOverlay,
+  SHORTCUTS,
+  type KeyEventLike,
+  type ShortcutOverlay,
+} from './shortcuts';
 
 const ev = (partial: Partial<KeyEventLike>): KeyEventLike => ({
   key: '',
@@ -184,5 +196,173 @@ describe("repeat is the caller's concern", () => {
     const second = matchShortcut(ev({ key: 'ArrowRight' }));
     expect(first).toEqual(second);
     expect(first).toEqual({ type: 'nudge', dx: 1, dy: 0 });
+  });
+});
+
+describe('the user-assigned overlay', () => {
+  it('a user-assigned chord overrides the hardcoded combo', () => {
+    const overlay: ShortcutOverlay = { copy: 'Ctrl+z' };
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), overlay)).toEqual({ type: 'copy' });
+    // Meta counts as ctrl, exactly like the hardcoded rows.
+    expect(matchShortcut(ev({ key: 'z', metaKey: true }), overlay)).toEqual({ type: 'copy' });
+  });
+
+  it('a user-assigned plain key fires where nothing hardcoded was bound', () => {
+    const overlay: ShortcutOverlay = { undo: 'g' };
+    expect(matchShortcut(ev({ key: 'g' }), overlay)).toEqual({ type: 'undo' });
+    // Shift is its own chord dimension for a letter, like the hardcoded rows:
+    // a user-assigned 'g' does not swallow Shift+G.
+    expect(matchShortcut(ev({ key: 'G', shiftKey: true }), overlay)).toBeNull();
+  });
+
+  it('an assignment does not leak into other rows', () => {
+    const overlay: ShortcutOverlay = { copy: 'x' };
+    // Plain x is the assignment; Ctrl+x is untouched and still hardcoded cut,
+    // and an unrelated key stays unbound.
+    expect(matchShortcut(ev({ key: 'x' }), overlay)).toEqual({ type: 'copy' });
+    expect(matchShortcut(ev({ key: 'x', ctrlKey: true }), overlay)).toEqual({ type: 'cut' });
+    expect(matchShortcut(ev({ key: 'z' }), overlay)).toBeNull();
+  });
+
+  it('clearing a binding restores the hardcoded one', () => {
+    const overlay: ShortcutOverlay = { copy: 'Ctrl+z' };
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), overlay)).toEqual({ type: 'copy' });
+    const cleared: ShortcutOverlay = { ...overlay, copy: '' };
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), cleared)).toEqual({ type: 'undo' });
+  });
+
+  it('the overlay is pure data: an empty one changes nothing', () => {
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), {})).toEqual({ type: 'undo' });
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }))).toEqual({ type: 'undo' });
+  });
+
+  it('a user-assigned Ctrl+z does not swallow Ctrl+Shift+Z', () => {
+    const overlay: ShortcutOverlay = { copy: 'Ctrl+z' };
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true, shiftKey: true }), overlay)).toEqual({
+      type: 'redo',
+    });
+  });
+
+  it('a user-assigned toggleRunning is the only way run/pause binds a key', () => {
+    const overlay: ShortcutOverlay = { toggleRunning: 'p' };
+    expect(matchShortcut(ev({ key: 'p' }), overlay)).toEqual({ type: 'toggleRunning' });
+    expect(matchShortcut(ev({ key: 'p' }))).toBeNull();
+  });
+});
+
+describe('chord signatures', () => {
+  it('chordOf normalizes letters and reserves shift for letters only', () => {
+    expect(chordOf(ev({ key: 'z' }))).toBe('z');
+    expect(chordOf(ev({ key: 'Z', shiftKey: true }))).toBe('Shift+z');
+    expect(chordOf(ev({ key: 'z', ctrlKey: true }))).toBe('Ctrl+z');
+    expect(chordOf(ev({ key: 'z', ctrlKey: true, shiftKey: true }))).toBe('Ctrl+Shift+z');
+    expect(chordOf(ev({ key: 'z', metaKey: true }))).toBe('Ctrl+z');
+  });
+
+  it('chordOf folds a shifted punctuation key into the key, not a Shift prefix', () => {
+    expect(chordOf(ev({ key: '+', shiftKey: true }))).toBe('+');
+    expect(chordOf(ev({ key: '=' }))).toBe('=');
+    expect(chordOf(ev({ key: ' ' }))).toBe('Space');
+  });
+
+  it('rowsFromOverlay shows the table default when nothing is assigned', () => {
+    const rows = rowsFromOverlay({});
+    expect(rows.find((r) => r.action === 'undo')?.chord).toBe('Ctrl+z');
+    expect(rows.find((r) => r.action === 'selectMode')?.chord).toBe('Space');
+    expect(rows.find((r) => r.action === 'toggleRunning')?.chord).toBe('');
+  });
+
+  it('overlayFromRows skips unassigned rows and hasDuplicateChords flags clashes', () => {
+    const rows = [
+      { action: 'undo' as const, chord: 'g' },
+      { action: 'copy' as const, chord: 'g' },
+      { action: 'redo' as const, chord: '' },
+    ];
+    expect(hasDuplicateChords(rows)).toBe(true);
+    const deduped = [
+      { action: 'undo' as const, chord: 'g' },
+      { action: 'copy' as const, chord: '' },
+    ];
+    expect(hasDuplicateChords(deduped)).toBe(false);
+    expect(overlayFromRows(deduped)).toEqual({ undo: 'g' });
+  });
+
+  it('overlayFromRows keeps only genuine overrides, never a default row', () => {
+    // A no-op OK must not write delete:'Delete', zoomIn:'+', zoomOut:'-',
+    // zoomReset:'0' etc into the overlay: those would trip the App.tsx repeat
+    // guard (ev.repeat && hasChord) on keys that must repeat. A row showing
+    // its table default is an override of nothing and is omitted.
+    const rows = [
+      { action: 'delete' as const, chord: 'Delete' },  // the default
+      { action: 'zoomIn' as const, chord: '+' },  // the default
+      { action: 'undo' as const, chord: 'Ctrl+y' },  // a real override
+      { action: 'toggleRunning' as const, chord: 'p' },
+      { action: 'redo' as const, chord: '' },
+    ];
+    expect(overlayFromRows(rows)).toEqual({ undo: 'Ctrl+y', toggleRunning: 'p' });
+  });
+});
+
+describe('shortcut overlay persistence', () => {
+  /** A plain-object storage, injected so the module never touches the real
+   *  DOM localStorage under the node test environment. */
+  const fakeStorage = () => {
+    const map = new Map<string, string>();
+    return {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    } as StorageLike;
+  };
+
+  it('round-trips through injected storage', () => {
+    const storage = fakeStorage();
+    saveShortcutOverlay({ copy: 'Ctrl+z', toggleRunning: 'p' }, storage);
+    expect(loadShortcutOverlay(storage)).toEqual({ copy: 'Ctrl+z', toggleRunning: 'p' });
+  });
+
+  it('a corrupt blob is a fallback, not a crash', () => {
+    const storage = fakeStorage();
+    storage.setItem('shortcuts.v1', '{not json');
+    expect(loadShortcutOverlay(storage)).toEqual({});
+  });
+
+  it('drops unknown actions and malformed chords on load', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      'shortcuts.v1',
+      JSON.stringify({ copy: 'Ctrl+z', bogus: 'x', undo: 'not a chord!!', redo: '' }),
+    );
+    expect(loadShortcutOverlay(storage)).toEqual({ copy: 'Ctrl+z' });
+  });
+
+  it('drops host-reserved named keys so a hand-edited blob cannot persist them', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      'shortcuts.v1',
+      JSON.stringify({
+        undo: 'Enter',
+        copy: 'ArrowUp',
+        redo: 'Ctrl+Enter',
+        paste: 'Escape',
+        selectAll: 'Shift+Tab',
+      }),
+    );
+    expect(loadShortcutOverlay(storage)).toEqual({});
+  });
+
+  it('a missing blob and a missing storage both yield the defaults', () => {
+    expect(loadShortcutOverlay(fakeStorage())).toEqual({});
+    expect(loadShortcutOverlay(undefined)).toEqual({});
+  });
+
+  it('save is quiet when the storage throws', () => {
+    const throwing = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('quota');
+      },
+    } as StorageLike;
+    expect(() => saveShortcutOverlay({ undo: 'g' }, throwing)).not.toThrow();
+    expect(() => saveShortcutOverlay({ undo: 'g' }, undefined)).not.toThrow();
   });
 });

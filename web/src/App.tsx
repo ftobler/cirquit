@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { SimEngine } from './engine/simulator';
-import { matchShortcut } from './input/shortcuts';
+import { chordOf, hasChord, isPrintableKey, matchShortcut } from './input/shortcuts';
 import { openCircuit } from './io/fileIO';
 import { circuitFromUrl } from './io/urlShare';
 import { AboutDialog } from './ui/AboutDialog';
@@ -14,6 +14,7 @@ import { OptionsPanel } from './ui/OptionsPanel';
 import { SaveAsDialog } from './ui/SaveAsDialog';
 import { SaveAsImageDialog } from './ui/SaveAsImageDialog';
 import { ScopePanel } from './ui/ScopePanel';
+import { ShortcutsDialog } from './ui/ShortcutsDialog';
 import { SliderPanel } from './ui/SliderPanel';
 import { Toolbox } from './ui/Toolbox';
 import { hasUnsavedChanges, gridSize, useStore } from './state/store';
@@ -74,24 +75,44 @@ export default function App() {
   }, [loadNetlist]);
 
   // Keyboard shortcuts. All key matching lives in matchShortcut; this effect
-  // only guards the input focus and dispatches one-line store calls.
+  // only guards the input focus, resolves the switch keyShortcut path against
+  // the store, and dispatches one-line store calls.
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       const target = ev.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
-      const action = matchShortcut({
-        key: ev.key,
-        ctrlKey: ev.ctrlKey,
-        metaKey: ev.metaKey,
-        shiftKey: ev.shiftKey,
-        altKey: ev.altKey,
-      });
-      if (!action) return;
       const s = useStore.getState();
       // While a dialog is open the dialog owns the keyboard: no shortcut may
       // reach the app, or Ctrl+V would paste into the circuit instead of the
       // dialog's textarea and Delete would edit the circuit behind the modal.
       if (s.dialog !== null) return;
+      const evLike = {
+        key: ev.key,
+        ctrlKey: ev.ctrlKey,
+        metaKey: ev.metaKey,
+        shiftKey: ev.shiftKey,
+        altKey: ev.altKey,
+      };
+      // A plain printable key checks the switch keyShortcut map first: a
+      // switch assigned this key beats every command binding, and a held key
+      // must not re-toggle (UIManager.java:1248-1268). A switch is a run-mode
+      // control like the pointer throw, so it stays live with editing disabled.
+      if (!ev.repeat && !ev.ctrlKey && !ev.metaKey && !ev.altKey && isPrintableKey(ev.key)) {
+        if (s.toggleSwitchByKey(ev.key)) {
+          ev.preventDefault();
+          return;
+        }
+      }
+      // A held key must not re-fire a user-assigned shortcut
+      // (UIManager.java:1181); the hardcoded nudge, delete and zoom keys
+      // still repeat by design. The browser default is still suppressed, or a
+      // held Space assigned to a command would scroll the page on every repeat.
+      if (ev.repeat && hasChord(s.shortcuts, chordOf(evLike))) {
+        ev.preventDefault();
+        return;
+      }
+      const action = matchShortcut(evLike, s.shortcuts);
+      if (!action) return;
       // With editing disabled the edit keys are dropped, not ignored: the
       // status bar explains why nothing happened (CommandManager.java:22-24).
       // View and file commands (zoom, save, open) stay live.
@@ -171,10 +192,31 @@ export default function App() {
         case 'swap':
           s.swapTerminals();
           break;
+        case 'toggleRunning':
+          // Only reachable through a user-assigned shortcut: run/pause has no
+          // default key upstream (CommandManager.java:100-101).
+          s.toggleRunning();
+          break;
       }
     };
+    // A momentary switch returns to rest when its shortcut key is let go
+    // (UIManager.java:1113-1131). Modifiers suppress the keypress path
+    // upstream, so a modified key never releases one.
+    const onKeyUp = (ev: KeyboardEvent) => {
+      const target = ev.target as HTMLElement | null;
+      if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
+      const s = useStore.getState();
+      if (s.dialog !== null) return;
+      if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (!isPrintableKey(ev.key)) return;
+      s.releaseMomentaryByKey(ev.key);
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   }, []);
 
   // Ask before the page reloads or closes with unsaved changes. The browser
@@ -213,6 +255,7 @@ export default function App() {
       {dialog === 'exportAsText' && <ExportAsTextDialog />}
       {dialog === 'exportAsImage' && <SaveAsImageDialog engine={engine} />}
       {dialog === 'about' && <AboutDialog />}
+      {dialog === 'shortcuts' && <ShortcutsDialog />}
       <div className="workspace">
         <aside className={partsOpen ? 'left open' : 'left'}>
           <Toolbox />

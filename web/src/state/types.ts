@@ -2,6 +2,7 @@
 
 import type { Scope, ScopeTrigger, ScopeValue } from '../engine/simulator';
 import type { NetlistLine, ScopeConfig } from '../io/netlist';
+import type { ShortcutOverlay } from '../input/shortcuts';
 import type { CircuitElement, SimSettings } from '../model/types';
 
 export interface ViewTransform {
@@ -18,7 +19,8 @@ export type DialogName =
   | 'exportAsLink'
   | 'exportAsText'
   | 'exportAsImage'
-  | 'about';
+  | 'about'
+  | 'shortcuts';
 
 /** A point-in-time copy of everything undo needs to restore. Settings and view
  *  travel with it like the dump header and transform do upstream, so undoing a
@@ -126,6 +128,12 @@ export interface AppState {
   clipboard: string | null;
   /** Netlist text of the last export; null means no baseline yet (clean). */
   lastSaved: string | null;
+  /** User-assigned shortcut overlay: assignable action -> chord signature,
+   *  loaded from localStorage at init and edited by the Shortcuts dialog. A
+   *  runtime overlay on the SHORTCUTS table, so matchShortcut consults it
+   *  before the hardcoded combos. Not part of the undo Snapshot: it is an
+   *  app setting, and undoing a circuit edit must not rewrite a shortcut. */
+  shortcuts: ShortcutOverlay;
 
   setRunning(running: boolean): void;
   toggleRunning(): void;
@@ -195,6 +203,19 @@ export interface AppState {
   setSliderValue(id: number, value: number): void;
   /** Edits the element's free text (annotations, labels). */
   setText(id: number, text: string): void;
+  /** Edits a switch's keyboard shortcut, session-only (never serialized).
+   *  Sanitizes like upstream: the first character, lowercased; empty clears
+   *  (SwitchElm.java:277-283). */
+  setKeyShortcut(id: number, key: string): void;
+  /** Toggles the switch whose keyShortcut equals `key`, returning whether one
+   *  was found. The keyboard switch-toggle path (UIManager.java:1248-1268). */
+  toggleSwitchByKey(key: string): boolean;
+  /** Key-up release for momentary switches whose keyShortcut equals `key`
+   *  (UIManager.java:1113-1131). */
+  releaseMomentaryByKey(key: string): void;
+  /** Replaces the user-assigned shortcut overlay and persists it; the
+   *  Shortcuts dialog's OK path. */
+  setShortcuts(overlay: ShortcutOverlay): void;
   /** Interactive state change (switch throw), routed through the live engine. */
   setElementState(id: number, state: number): void;
   /** Drops queued value edits; the frame loop calls this after applying them. */

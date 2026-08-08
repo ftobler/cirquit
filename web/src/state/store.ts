@@ -28,6 +28,7 @@ import {
 } from '../model/types';
 import type { AppState, Slider, Snapshot, ViewTransform } from './types';
 import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
+import { loadShortcutOverlay, normalizeKey, saveShortcutOverlay } from '../input/shortcuts';
 import { gridSize, hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 
@@ -189,8 +190,10 @@ export const useStore = create<AppState>((set, get) => ({
   sliders: [],
   // App prefs (colours, digits, font size, wheel sensitivity, crosshair) are
   // merged over the defaults at startup so they survive a page reload; the
-  // header-borne and plain settings stay at their defaults.
+  // header-borne and plain settings stay at their defaults. The user-assigned
+  // shortcut overlay loads the same way, via the Shortcuts dialog.
   settings: { ...DEFAULT_SETTINGS, ...loadAppPrefs() },
+  shortcuts: loadShortcutOverlay(),
   passthrough: [],
   unmatchedScopes: [],
   order: [],
@@ -230,6 +233,14 @@ export const useStore = create<AppState>((set, get) => ({
   setDark: (dark) => set({ dark }),
   openDialog: (dialog) => set({ dialog }),
   closeDialog: () => set({ dialog: null }),
+
+  setShortcuts: (overlay) => {
+    // The overlay is an app setting, not a circuit edit: persist it (with the
+    // same injected-storage/quiet-failure pattern as the app prefs) and update
+    // state, no undo entry and no engine revision.
+    saveShortcutOverlay(overlay);
+    return set({ shortcuts: overlay });
+  },
 
   updateSettings: (patch) => {
     // A change to an app-pref key (a colour, the digit counts, the font size,
@@ -620,6 +631,62 @@ export const useStore = create<AppState>((set, get) => ({
       pendingStates: new Map(s.pendingStates).set(id, state),
       paramRevision: s.paramRevision + 1,
     })),
+
+  setKeyShortcut: (id, key) =>
+    set((s) => ({
+      elements: s.elements.map((e) => {
+        if (e.id !== id) return e;
+        // Upstream takes only the first character, lowercased, and clears on
+        // empty (SwitchElm.java:277-283). Session-only: it never enters the
+        // netlist (SwitchElm.java:79-90 stores it in XML only), so nothing
+        // here forces an engine reload or a redraw.
+        const k = key.trim();
+        const next = { ...e };
+        if (k.length === 0) delete next.keyShortcut;
+        else next.keyShortcut = k.charAt(0).toLowerCase();
+        return next;
+      }),
+    })),
+
+  toggleSwitchByKey: (key) => {
+    const s = get();
+    // A switch assigned this key beats every command binding, upstream's
+    // keypress branch that runs before the shortcut map (UIManager.java:
+    // 1248-1268). Every matching switch throws, exactly as upstream loops the
+    // whole element list (UIManager.java:1256-1268); a single find() would
+    // leave a second shared-key switch untoggled, so a keyup releasing all
+    // momentary ones would close a momentary that the keydown never opened.
+    // No undo entry: a keyboard toggle is a run-mode action, and upstream's
+    // toggle pushes none (doSwitch returns before pushUndo). The pressed key
+    // folds to lowercase like the stored assignment, so Shift+k and k both
+    // throw it.
+    const k = normalizeKey(key);
+    let toggled = false;
+    for (const e of s.elements) {
+      if ((e.kind === 'switch' || e.kind === 'switch2') && e.keyShortcut === k) {
+        s.setElementState(e.id, nextSwitchState(e));
+        toggled = true;
+      }
+    }
+    return toggled;
+  },
+
+  releaseMomentaryByKey: (key) => {
+    const s = get();
+    // A momentary switch returns to rest when its shortcut key is let go
+    // (UIManager.java:1113-1131), the keyboard mirror of the pointer-up
+    // releaseHeldMomentary path.
+    const k = normalizeKey(key);
+    for (const e of s.elements) {
+      if (
+        (e.kind === 'switch' || e.kind === 'switch2') &&
+        (e.params.momentary ?? 0) !== 0 &&
+        e.keyShortcut === k
+      ) {
+        s.setElementState(e.id, nextSwitchState(e));
+      }
+    }
+  },
 
   clearPending: () =>
     set((s) =>
@@ -1160,6 +1227,14 @@ function zoomAroundCentre(s: AppState, factor: number): ViewTransform {
   const cx = s.view.x + s.viewSize.w / (2 * s.view.scale);
   const cy = s.view.y + s.viewSize.h / (2 * s.view.scale);
   return zoomAbout(s.view, cx, cy, factor);
+}
+
+/** The next throw after a toggle, matching the canvas pointer path: an SPST
+ *  flips between its two positions, an SPDT cycles its throws
+ *  (SwitchElm.simpleToggle, SwitchElm.java:185-189). */
+function nextSwitchState(e: CircuitElement): number {
+  const throwCount = Math.max(2, e.params.throwCount ?? 2);
+  return ((e.state ?? 0) + 1) % (e.kind === 'switch' ? 2 : throwCount);
 }
 
 /** Shared insert path for paste and duplicate: parse, re-id, offset a grid step. */

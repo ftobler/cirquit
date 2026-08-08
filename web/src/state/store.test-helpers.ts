@@ -8,6 +8,7 @@ export const fresh = () => ({
   scopes: [],
   sliders: [],
   settings: { ...DEFAULT_SETTINGS },
+  shortcuts: {},
   passthrough: [],
   unmatchedScopes: [],
   order: [],

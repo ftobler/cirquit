@@ -344,7 +344,7 @@ export function Menubar({ engine }: Props) {
           deferred('European Resistors', 'This app always draws IEC rectangles'),
           deferred('IEC Gates', 'Logic gates are not implemented yet'),
           deferred('Conventional Current Motion', 'Current-flow direction is set in the Options panel'),
-          deferred('Shortcuts…', 'Custom shortcuts are not implemented yet'),
+          { label: 'Shortcuts…', onClick: fire(() => openDialog('shortcuts')) },
         ])}
       </Dropdown>
 

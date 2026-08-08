@@ -83,5 +83,8 @@ export const SWITCH_DEF: ElementDef = {
   // The format writes the momentary flag as a literal `true`/`false`.
   dump: switchTokens,
   dumpFlags: labelFlags,
+  // The keyboard shortcut is session-only: it never appears in the netlist,
+  // only in the Options panel and the keydown matcher.
+  fields: [{ name: 'keyShortcut', label: 'Keyboard Shortcut', type: 'text', target: 'keyShortcut' }],
   draw: drawSwitchBody,
 };

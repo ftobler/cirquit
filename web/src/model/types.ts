@@ -23,6 +23,11 @@ export interface CircuitElement {
   text?: string;
   /** Named device-model reference, carried through from the file format. */
   modelName?: string;
+  /** Keyboard shortcut that toggles this element (the switch keyShortcut).
+   *  Session-only: upstream serializes it only in the XML format
+   *  (SwitchElm.java:79-90), never the .txt netlist, so it is deliberately
+   *  absent from every dump/parse pair and survives only the session. */
+  keyShortcut?: string;
   /** Interactive state, such as a switch position. */
   state?: number;
   /** Routed-wire polyline (Convert Wires to Routed Wires): the drawn corners
@@ -48,8 +53,9 @@ export interface FieldDef {
    *  engine rebuilds: file flags are read at build time and can change the
    *  stamp or the node count, which the live `set_param` path cannot. */
   flag?: number;
-  /** Reads `e.text` rather than `e.params[name]`. Only meaningful for `text`. */
-  target?: 'param' | 'text';
+  /** Reads `e.text` (the label), `e.keyShortcut` (a switch's keyboard
+   *  shortcut) or `e.params[name]`. Only meaningful for `text`. */
+  target?: 'param' | 'text' | 'keyShortcut';
 }
 
 /** Everything the app needs to know about an element type. */

@@ -250,6 +250,41 @@ button.active,
   min-width: 64px;
 }
 
+/* The Shortcuts dialog: a command-per-row table. A duplicated chord turns the
+   row red, mirroring upstream's checkForDuplicates (ShortcutsDialog.java:
+   188-214). */
+.shortcuts-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.shortcuts-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--muted);
+  padding: 2px 6px;
+}
+
+.shortcuts-table td {
+  padding: 3px 6px;
+}
+
+.shortcuts-table input[type='text'] {
+  width: 110px;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+.shortcuts-table tr.duplicate input[type='text'] {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 .context-menu {
   position: fixed;
   width: 200px;

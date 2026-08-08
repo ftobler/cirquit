@@ -399,6 +399,197 @@ describe('momentary switch press-and-release', () => {
   });
 });
 
+describe('switch keyboard shortcuts', () => {
+  const addSwitch = (params: { momentary?: number; position?: number } = {}, keyShortcut?: string) =>
+    useStore.getState().addElement({
+      kind: 'switch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, ...params },
+      state: params.position ?? 0,
+      ...(keyShortcut !== undefined ? { keyShortcut } : {}),
+    });
+
+  it('setKeyShortcut stores a single lowercase char and clears on empty', () => {
+    const id = addSwitch();
+    useStore.getState().setKeyShortcut(id, 'A');
+    expect(useStore.getState().elements[0].keyShortcut).toBe('a');
+    // Upstream trims and clears an empty string (SwitchElm.java:278-282).
+    useStore.getState().setKeyShortcut(id, '  ');
+    expect(useStore.getState().elements[0].keyShortcut).toBeUndefined();
+  });
+
+  it('the keyShortcut never enters the netlist: session-only', () => {
+    const id = addSwitch();
+    useStore.getState().setKeyShortcut(id, 'k');
+    const line = useStore.getState().toNetlist().split('\n')[1];
+    expect(line).toBe('s 0 0 160 0 0 0 false');
+  });
+
+  it('toggleSwitchByKey finds a switch by keyShortcut and toggles it', () => {
+    addSwitch({}, 'k');
+    expect(useStore.getState().toggleSwitchByKey('k')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().toggleSwitchByKey('k')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(0);
+  });
+
+  it('a shifted press still matches the lowercase assignment', () => {
+    addSwitch({}, 'k');
+    expect(useStore.getState().toggleSwitchByKey('K')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(1);
+  });
+
+  it('toggleSwitchByKey no-ops with no match', () => {
+    addSwitch({}, 'k');
+    expect(useStore.getState().toggleSwitchByKey('x')).toBe(false);
+    expect(useStore.getState().elements[0].state).toBe(0);
+    // A switch without an assignment is never toggled by any key.
+    const other = useStore.getState().addElement({
+      kind: 'switch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0 },
+      state: 0,
+    });
+    expect(useStore.getState().toggleSwitchByKey('k')).toBe(true);
+    expect(useStore.getState().elements.find((e) => e.id === other)?.state).toBe(0);
+  });
+
+  it('toggles every switch sharing the key, like the upstream loop', () => {
+    const first = addSwitch({}, 'k');
+    const second = addSwitch({}, 'k');
+    // Both must throw on one keydown, or a second momentary switch sharing
+    // the key would be closed by the matching keyup but never opened by the
+    // keydown (UIManager.java:1256-1268 loops the whole list).
+    expect(useStore.getState().toggleSwitchByKey('k')).toBe(true);
+    expect(useStore.getState().elements.find((e) => e.id === first)?.state).toBe(1);
+    expect(useStore.getState().elements.find((e) => e.id === second)?.state).toBe(1);
+  });
+
+  it('releases every momentary switch sharing the key on keyup', () => {
+    const first = useStore.getState().addElement({
+      kind: 'switch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 1, momentary: 1 },
+      state: 1,
+      keyShortcut: 'k',
+    });
+    const second = useStore.getState().addElement({
+      kind: 'switch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 1, momentary: 1 },
+      state: 1,
+      keyShortcut: 'k',
+    });
+    useStore.getState().toggleSwitchByKey('k');  // keydown closes both
+    expect(useStore.getState().elements.find((e) => e.id === first)?.state).toBe(0);
+    expect(useStore.getState().elements.find((e) => e.id === second)?.state).toBe(0);
+    useStore.getState().releaseMomentaryByKey('k');  // keyup reopens both
+    expect(useStore.getState().elements.find((e) => e.id === first)?.state).toBe(1);
+    expect(useStore.getState().elements.find((e) => e.id === second)?.state).toBe(1);
+  });
+
+  it('a space-assigned switch wins over the Space select-mode fallback', () => {
+    // Upstream's keypress branch toggles a switch whose keyShortcut is the
+    // space key before its cc==32 select-mode fallback (UIManager.java:
+    // 1250-1291). The sanitizer trims, so this reaches the element only
+    // directly, but the match must still throw it.
+    const id = useStore.getState().addElement({
+      kind: 'switch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0 },
+      state: 0,
+      keyShortcut: ' ',
+    });
+    expect(useStore.getState().toggleSwitchByKey(' ')).toBe(true);
+    expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(1);
+  });
+
+  it('a switch assignment wins over a user-assigned command on the same key', () => {
+    addSwitch({}, 'k');
+    // The precedence is App.tsx order (switch keyShortcut before matchShortcut),
+    // but the store half of it is that the switch path fires regardless of what
+    // the overlay binds to the same key (UIManager.java:1178 vs 1248).
+    useStore.getState().setShortcuts({ copy: 'k' });
+    expect(useStore.getState().toggleSwitchByKey('k')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(1);
+  });
+
+  it('a keyboard toggle pushes no undo entry, unlike the pointer throw', () => {
+    addSwitch({}, 'k');
+    useStore.getState().commit();
+    const before = useStore.getState().undoStack.length;
+    useStore.getState().toggleSwitchByKey('k');
+    // The pointer path commits per click (a deliberate port divergence); the
+    // keyboard path matches upstream's no-push toggle, so undo does not grow.
+    expect(useStore.getState().undoStack.length).toBe(before);
+    expect(useStore.getState().elements[0].state).toBe(1);
+  });
+
+  it('an SPDT cycles its throws like the pointer toggle', () => {
+    useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, throwCount: 3 },
+      state: 0,
+      keyShortcut: 's',
+    });
+    useStore.getState().toggleSwitchByKey('s');
+    expect(useStore.getState().elements[0].state).toBe(1);
+    useStore.getState().toggleSwitchByKey('s');
+    expect(useStore.getState().elements[0].state).toBe(2);
+    useStore.getState().toggleSwitchByKey('s');
+    expect(useStore.getState().elements[0].state).toBe(0);
+  });
+
+  it('releaseMomentaryByKey lets a momentary switch back up on keyup', () => {
+    addSwitch({ momentary: 1, position: 1 }, 'k');  // rest open
+    useStore.getState().toggleSwitchByKey('k');  // keydown closes it
+    expect(useStore.getState().elements[0].state).toBe(0);
+    useStore.getState().releaseMomentaryByKey('k');
+    expect(useStore.getState().elements[0].state).toBe(1);
+  });
+
+  it('releaseMomentaryByKey leaves a latched switch alone', () => {
+    addSwitch({ momentary: 0, position: 0 }, 'k');
+    useStore.getState().toggleSwitchByKey('k');
+    expect(useStore.getState().elements[0].state).toBe(1);
+    useStore.getState().releaseMomentaryByKey('k');
+    // A latching switch stays where the press put it.
+    expect(useStore.getState().elements[0].state).toBe(1);
+  });
+
+  it('setShortcuts replaces the overlay without touching the circuit', () => {
+    const id = addSwitch();
+    useStore.getState().setShortcuts({ copy: 'Ctrl+z', toggleRunning: 'p' });
+    expect(useStore.getState().shortcuts).toEqual({ copy: 'Ctrl+z', toggleRunning: 'p' });
+    expect(useStore.getState().elements[0].id).toBe(id);
+  });
+});
+
 describe('updateSettings reload classification', () => {
   it.each([
     ['timeStep', 1e-5, true],

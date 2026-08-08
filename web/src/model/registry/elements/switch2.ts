@@ -72,6 +72,7 @@ export const SWITCH2_DEF: ElementDef = {
   },
   dump: (e) => [...switchTokens(e), e.params.link ?? 0, e.params.throwCount ?? 2],
   dumpFlags: labelFlags,
+  fields: [{ name: 'keyShortcut', label: 'Keyboard Shortcut', type: 'text', target: 'keyShortcut' }],
   draw(g, e) {
     const posts = switch2Posts(e);
     const throws = Math.max(2, e.params.throwCount ?? 2);

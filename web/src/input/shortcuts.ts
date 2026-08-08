@@ -1,5 +1,10 @@
 /** Keyboard shortcut matching. Pure and DOM-free: it maps a plain event
- *  descriptor to an action id, and App.tsx does the dispatch. */
+ *  descriptor to an action id, and App.tsx does the dispatch. Stage 3 adds the
+ *  user-assignable overlay: a runtime map from assignable action to a chord
+ *  signature, consulted before the hardcoded table (the ShortcutsDialog edits
+ *  it). */
+
+import type { StorageLike } from '../state/appPrefs';
 
 export type ShortcutAction =
   | { type: 'undo' }
@@ -20,7 +25,8 @@ export type ShortcutAction =
   | { type: 'selectAll' }
   | { type: 'rotate' }
   | { type: 'mirror' }
-  | { type: 'swap' };
+  | { type: 'swap' }
+  | { type: 'toggleRunning' };
 
 export interface KeyEventLike {
   key: string;
@@ -98,13 +104,132 @@ export const SHORTCUTS: ShortcutEntry[] = [
   { mod: false, shift: false, key: 't', action: { type: 'swap' } },
 ];
 
-export function matchShortcut(ev: KeyEventLike): ShortcutAction | null {
+/** The commands the ShortcutsDialog can rebind: upstream's assignable menu
+ *  items plus the Start/Stop row (ShortcutsDialog.java:72-94). Nudge is
+ *  excluded: its binding is the four-arrow chord, not a single key. */
+export const ASSIGNABLE_ACTIONS = [
+  'undo',
+  'redo',
+  'delete',
+  'save',
+  'open',
+  'copy',
+  'cut',
+  'paste',
+  'duplicate',
+  'selectAll',
+  'rotate',
+  'mirror',
+  'swap',
+  'zoomIn',
+  'zoomOut',
+  'zoomReset',
+  'escape',
+  'selectMode',
+  'toggleRunning',
+] as const;
+
+export type AssignableAction = (typeof ASSIGNABLE_ACTIONS)[number];
+
+/** The dialog's row labels, one per assignable command. */
+export const ACTION_LABELS: Record<AssignableAction, string> = {
+  undo: 'Undo',
+  redo: 'Redo',
+  delete: 'Delete',
+  save: 'Save As',
+  open: 'Open File',
+  copy: 'Copy',
+  cut: 'Cut',
+  paste: 'Paste',
+  duplicate: 'Duplicate',
+  selectAll: 'Select All',
+  rotate: 'Rotate',
+  mirror: 'Mirror',
+  swap: 'Swap',
+  zoomIn: 'Zoom In',
+  zoomOut: 'Zoom Out',
+  zoomReset: 'Zoom 100%',
+  escape: 'Escape to select mode',
+  selectMode: 'Space select mode',
+  toggleRunning: 'Start/Stop Simulation',
+};
+
+/** A user-assigned binding: assignable action -> chord signature. Empty when
+ *  unassigned. The dialog edits this map; matchShortcut consults it before the
+ *  hardcoded table, so a user assignment wins over every default
+ *  (UIManager.java:1174-1198). */
+export type ShortcutOverlay = Partial<Record<AssignableAction, string>>;
+
+/** One editable row in the ShortcutsDialog. */
+export interface ShortcutRow {
+  action: AssignableAction;
+  /** The chord signature, or '' when unassigned. */
+  chord: string;
+}
+
+const ASSIGNABLE_SET = new Set<string>(ASSIGNABLE_ACTIONS);
+
+function isAssignableAction(t: string): t is AssignableAction {
+  return ASSIGNABLE_SET.has(t);
+}
+
+/** Letters fold to lowercase so Shift+r and r are the same key; everything
+ *  else (named keys, punctuation, digits, space) is compared exactly. */
+export function normalizeKey(key: string): string {
+  return key.length === 1 && /[a-zA-Z]/.test(key) ? key.toLowerCase() : key;
+}
+
+/** A printable ASCII char, upstream's cc >= 32 && cc < 127 range. Only these
+ *  (space is cc 32 and included) can be switch keyShortcut assignments or
+ *  Stage 4 placement chars; named keys (Enter, Escape, arrows) never are. */
+export function isPrintableKey(key: string): boolean {
+  return key.length === 1 && key.charCodeAt(0) >= 32 && key.charCodeAt(0) < 127;
+}
+
+/** The canonical chord signature for an event, the string the overlay is keyed
+ *  by. Ctrl and Meta are one dimension (the table's mod flag, so a user
+ *  assignment to Ctrl+z wins over the hardcoded undo just as upstream's
+ *  custom shortcut wins over its Ctrl/Meta list). Shift is its own dimension
+ *  only for a letter: a user-assigned 'z' must not swallow Ctrl+Shift+Z, while
+ *  a shifted punctuation key already carries its shift in the key (Shift+= is
+ *  '+'). */
+export function chordOf(
+  ev: Pick<KeyEventLike, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey'>,
+): string {
+  const key = normalizeKey(ev.key);
+  const mod = ev.ctrlKey || ev.metaKey;
+  const shift = ev.shiftKey && /^[a-z]$/.test(key) ? 'Shift+' : '';
+  return `${mod ? 'Ctrl+' : ''}${shift}${key === ' ' ? 'Space' : key}`;
+}
+
+/** The action a chord is assigned to in the overlay, or null. */
+export function actionForChord(overlay: ShortcutOverlay, chord: string): AssignableAction | null {
+  for (const [type, c] of Object.entries(overlay) as [AssignableAction, string][]) {
+    if (c === chord) return type;
+  }
+  return null;
+}
+
+/** True when the overlay binds this chord, so a caller can repeat-guard a
+ *  held user-assigned key the way upstream does (UIManager.java:1181). */
+export function hasChord(overlay: ShortcutOverlay, chord: string): boolean {
+  return actionForChord(overlay, chord) !== null;
+}
+
+export function matchShortcut(
+  ev: KeyEventLike,
+  overlay: ShortcutOverlay = {},
+): ShortcutAction | null {
   // Alt is excluded from every binding so Alt+key browser and OS gestures pass
   // through. Upstream ignores alt; the port should not swallow it.
   if (ev.altKey) return null;
+  // A user-assigned chord beats the hardcoded table (UIManager.java:1174). The
+  // overlay is exact per chord, so assigning 'x' to copy never changes Ctrl+X.
+  const assigned = actionForChord(overlay, chordOf(ev));
+  if (assigned) return { type: assigned } as ShortcutAction;
   // Letters match on the lowercase form (Shift+r is still r), punctuation and
   // named keys on the exact char.
-  const key = ev.key.length === 1 && /[a-zA-Z]/.test(ev.key) ? ev.key.toLowerCase() : ev.key;
+  const key = normalizeKey(ev.key);
   for (const entry of SHORTCUTS) {
     if (entry.mod ? !(ev.ctrlKey || ev.metaKey) : ev.ctrlKey || ev.metaKey) continue;
     if (entry.shift !== undefined && entry.shift !== ev.shiftKey) continue;
@@ -112,4 +237,152 @@ export function matchShortcut(ev: KeyEventLike): ShortcutAction | null {
     return entry.action;
   }
   return null;
+}
+
+/** The chord the SHORTCUTS table binds an action to by default, or '' when
+ *  none (toggleRunning). The dialog shows it in a row the user has not
+ *  reassigned, so the table is the single source of truth for the defaults. */
+export function defaultBindingFor(type: AssignableAction): string {
+  for (const entry of SHORTCUTS) {
+    if (entry.action.type === type) return chordFromEntry(entry);
+  }
+  return '';
+}
+
+function chordFromEntry(entry: ShortcutEntry): string {
+  const mod = entry.mod ? 'Ctrl+' : '';
+  const shift = entry.shift === true ? 'Shift+' : '';
+  return `${mod}${shift}${entry.key === ' ' ? 'Space' : entry.key}`;
+}
+
+/** The dialog's rows: every assignable action with its current binding, the
+ *  overlay's where assigned and the table's default otherwise. */
+export function rowsFromOverlay(overlay: ShortcutOverlay): ShortcutRow[] {
+  return ASSIGNABLE_ACTIONS.map((action) => ({
+    action,
+    chord: overlay[action] ?? defaultBindingFor(action),
+  }));
+}
+
+/** The overlay a set of dialog rows represents: every non-empty chord that is
+ *  a genuine override of the table default. A row showing its default binding
+ *  is omitted, so a no-op OK never writes `delete:'Delete'` or `zoomIn:'+'`
+ *  into the overlay, which would turn the App.tsx repeat guard
+ *  (`ev.repeat && hasChord(...)`) on for keys that must repeat. Clearing a
+ *  binding to the default keeps the same result: no override, default rules. */
+export function overlayFromRows(rows: ShortcutRow[]): ShortcutOverlay {
+  const out: ShortcutOverlay = {};
+  for (const row of rows) {
+    if (row.chord === '') continue;
+    if (row.chord === defaultBindingFor(row.action)) continue;
+    out[row.action] = row.chord;
+  }
+  return out;
+}
+
+/** True when two rows claim the same chord; the dialog flags them and greys
+ *  OK, exactly as upstream's checkForDuplicates refuses to apply
+ *  (ShortcutsDialog.java:188-214). */
+export function hasDuplicateChords(rows: ShortcutRow[]): boolean {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (row.chord === '') continue;
+    if (seen.has(row.chord)) return true;
+    seen.add(row.chord);
+  }
+  return false;
+}
+
+/** The localStorage key for the overlay. Upstream stores it under "shortcuts"
+ *  in a `1;char=command;...` encoding (UIManager.java:1506-1514); the port
+ *  keeps the same concept under a versioned key and a JSON shape, following
+ *  the appPrefs pattern. */
+export const SHORTCUT_STORAGE_KEY = 'shortcuts.v1';
+
+/** The browser storage, or undefined in a node test environment. */
+function defaultStorage(): StorageLike | undefined {
+  if (typeof globalThis === 'undefined') return undefined;
+  return (globalThis as { localStorage?: StorageLike }).localStorage;
+}
+
+const NAMED_KEY = /^[A-Z][A-Za-z]*$/;
+
+/** Named keys the dialog never assigns, so they must not persist even through
+ *  a hand-edited blob. Enter, Tab and the arrows are reserved by the host
+ *  (Enter confirms, Tab moves focus, arrows navigate); Backspace/Delete are
+ *  the dialog's clear keys; Escape closes the dialog. Upstream leaves all of
+ *  these inert too (KeyNames.keyCodeToPlaceholder returns -1 for them). */
+const NON_ASSIGNABLE_KEYS = new Set([
+  'Enter',
+  'Tab',
+  'Escape',
+  'Backspace',
+  'Delete',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+]);
+
+/** True when a stored chord is one chordOf could have produced: an optional
+ *  Ctrl+/Shift+ prefix and a single key (a printable char, Space, or a named
+ *  key like ArrowUp). A hand-edited or stale blob that fails this never binds,
+ *  and the host-reserved named keys (Enter, Tab, Escape, arrows, the clear
+ *  keys) are rejected so they cannot be persisted outside the dialog either. */
+function isValidChord(chord: string): boolean {
+  const rest = chord.startsWith('Ctrl+') ? chord.slice(5) : chord;
+  const key = rest.startsWith('Shift+') ? rest.slice(6) : rest;
+  if (key === '') return false;
+  if (key.length === 1) {
+    const c = key.charCodeAt(0);
+    return c >= 32 && c < 127;
+  }
+  if (key === 'Space') return true;
+  return NAMED_KEY.test(key) && !NON_ASSIGNABLE_KEYS.has(key);
+}
+
+/** Reads the stored overlay. A missing, corrupt or wrong-typed blob yields {},
+ *  and unknown actions or malformed chords are dropped, so a stale entry from
+ *  an older build can never bind a key the matcher would not produce.
+ *  Upstream alerts and falls back on a corrupt entry; the port is quiet, same
+ *  result. */
+export function loadShortcutOverlay(
+  storage: StorageLike | undefined = defaultStorage(),
+): ShortcutOverlay {
+  if (!storage) return {};
+  let raw: string | null = null;
+  try {
+    raw = storage.getItem(SHORTCUT_STORAGE_KEY);
+  } catch {
+    return {};
+  }
+  if (raw === null) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+  const out: ShortcutOverlay = {};
+  for (const [type, chord] of Object.entries(parsed)) {
+    if (isAssignableAction(type) && typeof chord === 'string' && isValidChord(chord)) {
+      out[type] = chord;
+    }
+  }
+  return out;
+}
+
+/** Writes the overlay. A storage failure (private mode, quota) is swallowed:
+ *  shortcuts are a convenience, never a crash. */
+export function saveShortcutOverlay(
+  overlay: ShortcutOverlay,
+  storage: StorageLike | undefined = defaultStorage(),
+): void {
+  if (!storage) return;
+  try {
+    storage.setItem(SHORTCUT_STORAGE_KEY, JSON.stringify(overlay));
+  } catch {
+    // Shortcuts must never take the app down with them.
+  }
 }

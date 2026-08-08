@@ -155,9 +155,11 @@ describe('text field metadata', () => {
   });
 
   it('keeps every target text field a text field', () => {
+    // `target: 'keyShortcut'` reads/writes a top-level element field like
+    // `text` does, so it must render as a text input too.
     for (const def of ELEMENT_DEFS) {
       for (const f of def.fields ?? []) {
-        if (f.target === 'text') expect(f.type).toBe('text');
+        if (f.target === 'text' || f.target === 'keyShortcut') expect(f.type).toBe('text');
       }
     }
   });
@@ -170,7 +172,10 @@ describe('text field metadata', () => {
         ...referencedParams(def.dump),
       ]);
       for (const f of def.fields ?? []) {
-        if (f.target === 'text') continue;
+        // A text or keyShortcut field is bound to a top-level field of
+        // `e` (e.text / e.keyShortcut), not to a param, so there is nothing
+        // in parse/dump/defaults for it to match.
+        if (f.target === 'text' || f.target === 'keyShortcut') continue;
         // A flag field is bound to a bit of `e.flags`, not to a param, so
         // there is nothing in parse/dump/defaults for it to match.
         if (f.flag !== undefined) continue;

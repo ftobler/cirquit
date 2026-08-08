@@ -16,6 +16,7 @@ interface Props {
  *  field is a checkbox, so it is handed to `Field` as 0 or 1. */
 function fieldValue(e: CircuitElement, f: FieldDef): number | string {
   if (f.target === 'text') return e.text ?? '';
+  if (f.target === 'keyShortcut') return e.keyShortcut ?? '';
   if (f.flag !== undefined) return (e.flags & f.flag) !== 0 ? 1 : 0;
   return e.params[f.name] ?? 0;
 }
@@ -266,6 +267,7 @@ export function OptionsPanel({ engine }: Props) {
   const dark = useStore((s) => s.dark);
   const setParam = useStore((s) => s.setParam);
   const setText = useStore((s) => s.setText);
+  const setKeyShortcut = useStore((s) => s.setKeyShortcut);
   const beginEdit = useStore((s) => s.beginEdit);
   const updateElement = useStore((s) => s.updateElement);
   const updateSettings = useStore((s) => s.updateSettings);
@@ -324,6 +326,8 @@ export function OptionsPanel({ engine }: Props) {
               onChange={(v) => {
                 if (f.target === 'text') {
                   setText(selected.id, String(v));
+                } else if (f.target === 'keyShortcut') {
+                  setKeyShortcut(selected.id, String(v));
                 } else if (f.flag !== undefined) {
                   // A file flag is read when the engine builds the circuit and
                   // can change the stamp or the node count, so it has to go
