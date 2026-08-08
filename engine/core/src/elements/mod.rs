@@ -10,16 +10,21 @@
 pub mod analog_switch;
 pub mod analog_switch2;
 pub mod capacitor;
+pub mod chip;
+pub mod counter;
 pub mod current_source;
+pub mod d_flip_flop;
 pub mod decoration;
 pub mod diode;
 pub mod fuse;
 pub mod ground;
 pub mod inductor;
 pub mod inverter;
+pub mod jk_flip_flop;
 pub mod junction;
 pub mod labeled_node;
 pub mod lamp;
+pub mod latch;
 pub mod ldr;
 pub mod led;
 pub mod logic;
@@ -34,8 +39,10 @@ pub mod potentiometer;
 pub mod probe;
 pub mod relay;
 pub mod resistor;
+pub mod ring_counter;
 pub mod schmitt;
 pub mod switch;
+pub mod t_flip_flop;
 pub mod thermistor;
 pub mod transformer;
 pub mod transistor;
@@ -88,6 +95,12 @@ pub const KINDS: &[&str] = &[
     "norGate",
     "xorGate",
     "xnorGate",
+    "dFlipFlop",
+    "jkFlipFlop",
+    "tFlipFlop",
+    "latch",
+    "ringCounter",
+    "counter",
     "triState",
     "schmitt",
     "invertingSchmitt",
@@ -141,6 +154,12 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "norGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Nor)),
         "xorGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Xor)),
         "xnorGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Xnor)),
+        "dFlipFlop" => Box::new(d_flip_flop::DFlipFlop::new(spec)),
+        "jkFlipFlop" => Box::new(jk_flip_flop::JKFlipFlop::new(spec)),
+        "tFlipFlop" => Box::new(t_flip_flop::TFlipFlop::new(spec)),
+        "latch" => Box::new(latch::Latch::new(spec)),
+        "ringCounter" => Box::new(ring_counter::RingCounter::new(spec)),
+        "counter" => Box::new(counter::Counter::new(spec)),
         "triState" => Box::new(tri_state::TriState::new(spec)),
         "schmitt" => Box::new(schmitt::Schmitt::new(spec, false)),
         "invertingSchmitt" => Box::new(schmitt::Schmitt::new(spec, true)),

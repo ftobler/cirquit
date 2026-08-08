@@ -41,6 +41,12 @@ import { TRANSFORMER_DEF, TAPPED_TRANSFORMER_DEF, CUSTOM_TRANSFORMER_DEF } from 
 import { RELAY_DEF, RELAY_COIL_DEF, RELAY_CONTACT_DEF } from './elements/relay';
 import { OPAMP_DEF } from './elements/opamp';
 import { AND_GATE_DEF, NAND_GATE_DEF, OR_GATE_DEF, NOR_GATE_DEF, XOR_GATE_DEF, XNOR_GATE_DEF } from './elements/gate';
+import { DFLIPFLOP_DEF } from './elements/dFlipFlop';
+import { JKFLIPFLOP_DEF } from './elements/jkFlipFlop';
+import { TFLIPFLOP_DEF } from './elements/tFlipFlop';
+import { LATCH_DEF } from './elements/latch';
+import { RING_COUNTER_DEF } from './elements/ringCounter';
+import { COUNTER_DEF } from './elements/counter';
 import { INVERTER_DEF } from './elements/inverter';
 import { LOGIC_INPUT_DEF } from './elements/logicInput';
 import { SCHMITT_DEF, INVERTING_SCHMITT_DEF } from './elements/schmitt';
@@ -101,6 +107,12 @@ export const ELEMENT_DEFS: ElementDef[] = [
   NOR_GATE_DEF,
   XOR_GATE_DEF,
   XNOR_GATE_DEF,
+  DFLIPFLOP_DEF,
+  JKFLIPFLOP_DEF,
+  TFLIPFLOP_DEF,
+  LATCH_DEF,
+  RING_COUNTER_DEF,
+  COUNTER_DEF,
   INVERTER_DEF,
   LOGIC_INPUT_DEF,
   SCHMITT_DEF,

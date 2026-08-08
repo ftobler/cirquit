@@ -7426,3 +7426,413 @@ fn memristor_biased_with_constant_current_integrates_linearly() {
         i
     );
 }
+
+// ─── Digital chip family ───
+
+/// One full clock cycle: raise the clock, let the level settle, drop it, let
+/// that settle. A `set_state` reanalyzes the circuit and zeroes every element
+/// voltage, so the first step after each change still sees the old level and
+/// the edge fires a step later; three steps cover the settling either way.
+fn clock_cycle(c: &mut Circuit, clock_id: u32) {
+    c.set_state(clock_id, 1);
+    c.run(3);
+    c.set_state(clock_id, 0);
+    c.run(3);
+}
+
+#[test]
+fn d_flip_flop_captures_d_on_the_rising_edge() {
+    // D held high, clocked by a logic input. A fresh flip-flop starts Q low
+    // and Qbar high; the first rising edge copies D into Q and Qbar follows.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "dFlipFlop",
+                &[[0, 0], [96, 0], [96, 64], [0, 32]],
+                &[("highVoltage", 5.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[96, 100]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[96, 64], [96, 164]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[96, 164]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    assert!(
+        close(c.element_voltages()[3], 0.0, 1e-9),
+        "fresh Q was not low"
+    );
+    assert!(
+        close(c.element_voltages()[5], 5.0, 1e-9),
+        "fresh Qbar was not high"
+    );
+    clock_cycle(c, 2);
+    assert!(
+        close(c.element_voltages()[3], 5.0, 1e-9),
+        "Q did not capture D"
+    );
+    assert!(
+        close(c.element_voltages()[5], 0.0, 1e-9),
+        "Qbar did not complement Q"
+    );
+    clock_cycle(c, 2);
+    assert!(
+        close(c.element_voltages()[3], 5.0, 1e-9),
+        "Q dropped on a later edge"
+    );
+}
+
+#[test]
+fn t_flip_flop_toggles_on_each_rising_edge() {
+    // T held high: every rising clock edge flips Q, and Qbar follows.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "tFlipFlop",
+                &[[0, 0], [96, 0], [96, 64], [0, 32]],
+                &[("highVoltage", 5.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[96, 100]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[96, 64], [96, 164]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[96, 164]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    assert!(
+        close(c.element_voltages()[3], 0.0, 1e-9),
+        "fresh Q was not low"
+    );
+    clock_cycle(c, 2);
+    assert!(
+        close(c.element_voltages()[3], 5.0, 1e-9),
+        "first edge did not set Q"
+    );
+    clock_cycle(c, 2);
+    assert!(
+        close(c.element_voltages()[3], 0.0, 1e-9),
+        "second edge did not clear Q"
+    );
+    clock_cycle(c, 2);
+    assert!(
+        close(c.element_voltages()[3], 5.0, 1e-9),
+        "third edge did not set Q"
+    );
+}
+
+#[test]
+fn jk_flip_flop_toggles_on_every_negative_edge() {
+    // J = K = 1 turn the JK into a toggle flip-flop. The default triggers on
+    // the falling clock edge. A 1 kHz square clock at dt = 1e-5 s has a 100
+    // step period, high for 0..48 and low from step 49; the level the chip
+    // sees lags one step behind the source, so the first falling edge fires
+    // at step 50 and every 100 steps after that.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "voltage",
+                &[[0, 100], [0, 32]],
+                &[
+                    ("waveform", 2.0),
+                    ("frequency", 1000.0),
+                    ("maxVoltage", 2.5),
+                    ("bias", 2.5),
+                    ("phaseShift", 0.0),
+                    ("dutyCycle", 0.5),
+                ],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "rail", &[[0, 64]], &[("maxVoltage", 5.0)]),
+            elm(
+                5,
+                "jkFlipFlop",
+                &[[0, 0], [0, 32], [0, 64], [96, 0], [96, 64]],
+                &[("highVoltage", 5.0)],
+            ),
+            elm(
+                6,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[96, 100]], &[]),
+            elm(
+                8,
+                "resistor",
+                &[[96, 64], [96, 164]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[96, 164]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    assert!(
+        close(c.element_voltages()[5], 0.0, 1e-9),
+        "fresh Q was not low"
+    );
+    assert!(
+        close(c.element_voltages()[7], 5.0, 1e-9),
+        "fresh Qbar was not high"
+    );
+    c.run(50); // steps 4..53: the first falling edge at step 50
+    assert!(
+        close(c.element_voltages()[5], 5.0, 1e-9),
+        "first edge did not set Q"
+    );
+    c.run(100); // the second falling edge at step 150
+    assert!(
+        close(c.element_voltages()[5], 0.0, 1e-9),
+        "second edge did not clear Q"
+    );
+    c.run(100); // the third falling edge at step 250
+    assert!(
+        close(c.element_voltages()[5], 5.0, 1e-9),
+        "third edge did not set Q"
+    );
+}
+
+#[test]
+fn counter_advances_on_each_clock_edge() {
+    // 3-bit counter with no up/down pin, reset active high and held low.
+    // Every rising edge adds one, wrapping at 2^3.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm_flags(
+                3,
+                "counter",
+                &[[0, 0], [0, 64], [96, 0], [96, 32], [96, 64]],
+                &[("bits", 3.0), ("invertreset", 0.0), ("modulus", 0.0)],
+                0,
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[96, 100]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[96, 32], [96, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[96, 132]], &[]),
+            elm(
+                8,
+                "resistor",
+                &[[96, 64], [96, 164]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[96, 164]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    // The output pins run MSB first, so element 3 (Q2) is the 4s column, 5
+    // (Q1) the 2s and 7 (Q0) the 1s.
+    let count = |c: &Circuit| -> i64 {
+        let v = c.element_voltages();
+        let bit = |i: usize| if v[i] > 2.5 { 1i64 } else { 0 };
+        bit(3) * 4 + bit(5) * 2 + bit(7)
+    };
+    c.run(3);
+    assert_eq!(count(c), 0, "fresh counter did not start at zero");
+    for expected in [1, 2, 3, 4, 5, 6, 7, 0] {
+        clock_cycle(c, 1);
+        assert_eq!(count(c), expected, "count after the next edge");
+    }
+}
+
+#[test]
+fn ring_counter_advances_the_high_bit_each_edge() {
+    // 3-bit ring counter, reset active high (FLAG_RESET_HIGH = 4) and held
+    // low. A fresh ring starts with Q0 high (the reset that runs when no
+    // output is high), and each rising edge moves the single high bit around.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[96, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm_flags(
+                3,
+                "ringCounter",
+                &[[0, 32], [96, 64], [32, -32], [64, -32], [96, -32]],
+                &[("bits", 3.0), ("highVoltage", 5.0)],
+                4,
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[32, -32], [32, 68]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[32, 68]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[64, -32], [64, 68]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[64, 68]], &[]),
+            elm(
+                8,
+                "resistor",
+                &[[96, -32], [96, 68]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[96, 68]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let high = |c: &Circuit| -> usize {
+        let v = c.element_voltages();
+        [3, 5, 7]
+            .iter()
+            .position(|&i| v[i] > 2.5)
+            .expect("no ring output is high")
+    };
+    c.run(3);
+    assert_eq!(high(c), 0, "fresh ring did not start on Q0");
+    for expected in [1, 2, 0] {
+        clock_cycle(c, 1);
+        assert_eq!(high(c), expected, "high bit after the next edge");
+    }
+}
+
+#[test]
+fn latch_outputs_follow_while_load_is_high_and_hold_after() {
+    // 2-bit level latch (FLAG_NO_EDGE = 4): transparent while the load clock
+    // is high, holding the last sampled bits once it drops.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm_flags(
+                3,
+                "latch",
+                &[[0, 32], [0, 0], [96, 32], [96, 0], [0, 64]],
+                &[("bits", 2.0), ("highVoltage", 5.0)],
+                4,
+            ),
+            elm(
+                4,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                5,
+                "resistor",
+                &[[96, 32], [96, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "ground", &[[96, 132]], &[]),
+            elm(
+                7,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(8, "ground", &[[96, 100]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    // O0 is element 4, O1 element 6; bit 0 from the I0 pin, bit 1 from I1.
+    let o = |c: &Circuit| -> i64 {
+        let v = c.element_voltages();
+        let bit = |i: usize| if v[i] > 2.5 { 1i64 } else { 0 };
+        bit(4) | (bit(6) << 1)
+    };
+    // I0 = I1 = 1 but load is low: nothing is sampled yet.
+    c.set_state(1, 1);
+    c.set_state(2, 1);
+    c.run(3);
+    assert_eq!(o(c), 0, "latched with load low");
+    // Load high: the outputs mirror the inputs.
+    c.set_state(4, 1);
+    c.run(3);
+    assert_eq!(o(c), 3, "did not follow while transparent");
+    // Inputs drop while load stays high: the outputs follow.
+    c.set_state(1, 0);
+    c.set_state(2, 0);
+    c.run(3);
+    assert_eq!(o(c), 0, "did not follow the new inputs");
+    // Load drops, then the inputs rise: the outputs hold the last sample.
+    c.set_state(4, 0);
+    c.set_state(1, 1);
+    c.set_state(2, 1);
+    c.run(3);
+    assert_eq!(o(c), 0, "did not hold after load went low");
+}

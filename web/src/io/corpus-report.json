@@ -890,10 +890,6 @@
     "file": "counter.txt",
     "format": "plain",
     "missing": [
-      "156",
-      "156",
-      "156",
-      "156",
       "419"
     ],
     "sliderLines": 0,
@@ -904,14 +900,6 @@
     "file": "counter8.txt",
     "format": "plain",
     "missing": [
-      "156",
-      "156",
-      "156",
-      "156",
-      "156",
-      "156",
-      "156",
-      "156",
       "419"
     ],
     "sliderLines": 0,
@@ -1134,10 +1122,6 @@
     "file": "deccounter.txt",
     "format": "plain",
     "missing": [
-      "156",
-      "156",
-      "156",
-      "156",
       "419"
     ],
     "sliderLines": 0,
@@ -1175,14 +1159,11 @@
   {
     "file": "deltasigma.txt",
     "format": "plain",
-    "missing": [
-      "155",
-      "164",
-      "168"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "diff.txt",
@@ -1206,19 +1187,11 @@
   {
     "file": "digsine.txt",
     "format": "plain",
-    "missing": [
-      "155",
-      "155",
-      "155",
-      "155",
-      "155",
-      "155",
-      "155",
-      "155"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "diodeclip.txt",
@@ -1261,23 +1234,22 @@
   {
     "file": "divideby2.txt",
     "format": "plain",
-    "missing": [
-      "155"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "divideby3.txt",
     "format": "plain",
-    "missing": [
-      "155",
-      "155"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "dram.txt",
@@ -1497,12 +1469,12 @@
   {
     "file": "graycode.txt",
     "format": "plain",
-    "missing": [
-      "164"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "grid.txt",
@@ -1760,16 +1732,12 @@
   {
     "file": "johnsonctr.txt",
     "format": "plain",
-    "missing": [
-      "155",
-      "155",
-      "155",
-      "155",
-      "155"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "joule-thief.txt",
@@ -1784,14 +1752,6 @@
     "file": "jsinterface.txt",
     "format": "plain",
     "missing": [
-      "156",
-      "156",
-      "156",
-      "156",
-      "156",
-      "156",
-      "156",
-      "156",
       "418"
     ],
     "sliderLines": 0,
@@ -1853,7 +1813,6 @@
     "format": "plain",
     "missing": [
       "185",
-      "164",
       "208",
       "405"
     ],
@@ -1864,12 +1823,11 @@
   {
     "file": "ledflasher.txt",
     "format": "plain",
-    "missing": [
-      "163"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "lightbulb.txt",
@@ -2394,13 +2352,11 @@
   {
     "file": "phasecompint.txt",
     "format": "plain",
-    "missing": [
-      "155",
-      "155"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "phaseseq.txt",
@@ -2434,13 +2390,9 @@
     "file": "piso-sr.txt",
     "format": "plain",
     "missing": [
-      "155",
-      "155",
       "184",
       "184",
-      "155",
       "184",
-      "155",
       "184"
     ],
     "sliderLines": 0,
@@ -2589,13 +2541,9 @@
     "missing": [
       "166",
       "166",
-      "164",
       "213",
       "167",
-      "168",
-      "193",
       "212",
-      "168",
       "167",
       "213",
       "212",
@@ -2756,13 +2704,11 @@
   {
     "file": "ringcascade.txt",
     "format": "plain",
-    "missing": [
-      "163",
-      "163"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ringing.txt",
@@ -2924,15 +2870,12 @@
   {
     "file": "sipo-sr.txt",
     "format": "plain",
-    "missing": [
-      "155",
-      "155",
-      "155",
-      "155"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "spark-marx.txt",
@@ -3008,10 +2951,6 @@
     "file": "synccounter.txt",
     "format": "plain",
     "missing": [
-      "156",
-      "156",
-      "156",
-      "156",
       "419"
     ],
     "sliderLines": 0,
@@ -3234,7 +3173,6 @@
     "file": "traffic.txt",
     "format": "plain",
     "missing": [
-      "163",
       "165"
     ],
     "sliderLines": 0,
@@ -3427,10 +3365,6 @@
     "file": "unishiftreg.txt",
     "format": "plain",
     "missing": [
-      "156",
-      "156",
-      "156",
-      "156",
       "423",
       "423",
       "423"
@@ -3443,10 +3377,6 @@
     "file": "updownctr.txt",
     "format": "plain",
     "missing": [
-      "156",
-      "156",
-      "156",
-      "156",
       "419"
     ],
     "sliderLines": 0,
