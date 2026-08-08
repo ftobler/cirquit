@@ -26,7 +26,9 @@ export type ShortcutAction =
   | { type: 'rotate' }
   | { type: 'mirror' }
   | { type: 'swap' }
-  | { type: 'toggleRunning' };
+  | { type: 'toggleRunning' }
+  | { type: 'print' }
+  | { type: 'findComponent' };
 
 export interface KeyEventLike {
   key: string;
@@ -64,6 +66,8 @@ export const SHORTCUTS: ShortcutEntry[] = [
   { mod: true, shift: false, key: 'a', action: { type: 'selectAll' } },
   { mod: true, shift: false, key: 's', action: { type: 'save' } },
   { mod: true, shift: false, key: 'o', action: { type: 'open' } },
+  // Ctrl+P prints the schematic image, not the page (CommandManager.java:73).
+  { mod: true, shift: false, key: 'p', action: { type: 'print' } },
 
   // Plain keys. Delete and Backspace both delete (UIManager.java:1134) and
   // the arrows nudge by one grid step per press (UIManager.java:1153). The
@@ -102,6 +106,11 @@ export const SHORTCUTS: ShortcutEntry[] = [
   { mod: false, shift: false, key: 'r', action: { type: 'rotate' } },
   { mod: false, shift: false, key: 'm', action: { type: 'mirror' } },
   { mod: false, shift: false, key: 't', action: { type: 'swap' } },
+
+  // Find Component: '/' opens the search dialog (UIManager.java:1103-1110).
+  // A shifted '/' is '?' on most layouts, a different key, so no shift guard
+  // is needed.
+  { mod: false, key: '/', action: { type: 'findComponent' } },
 ];
 
 /** The commands the ShortcutsDialog can rebind: upstream's assignable menu

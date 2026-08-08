@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SimEngine } from './engine/simulator';
 import { chordOf, hasChord, isPrintableKey, matchShortcut } from './input/shortcuts';
 import { openCircuit } from './io/fileIO';
 import { circuitFromUrl } from './io/urlShare';
+import { printCircuit } from './render/print';
 import { AboutDialog } from './ui/AboutDialog';
 import { CircuitCanvas } from './ui/CircuitCanvas';
 import { ContextMenu } from './ui/ContextMenu';
 import { ExportAsLinkDialog } from './ui/ExportAsLinkDialog';
 import { ExportAsTextDialog } from './ui/ExportAsTextDialog';
+import { FindComponentDialog } from './ui/FindComponentDialog';
 import { ImportFromTextDialog } from './ui/ImportFromTextDialog';
 import { Menubar } from './ui/Menubar';
 import { OptionsPanel } from './ui/OptionsPanel';
@@ -56,6 +58,11 @@ export default function App() {
   const panelOpen = useStore((s) => s.panelOpen);
   const setPartsOpen = useStore((s) => s.setPartsOpen);
   const setPanelOpen = useStore((s) => s.setPanelOpen);
+  // The print shortcut needs the engine, but the keydown listener is
+  // registered once with no deps; a ref keeps it seeing the latest handle
+  // without re-registering on every engine load.
+  const engineRef = useRef<SimEngine | null>(null);
+  engineRef.current = engine;
 
   // Bring up the wasm engine once, then load whatever circuit was requested.
   useEffect(() => {
@@ -197,6 +204,14 @@ export default function App() {
           // default key upstream (CommandManager.java:100-101).
           s.toggleRunning();
           break;
+        case 'print':
+          // Prints just the schematic image, white background, not the page
+          // (CommandManager.java:73-74).
+          printCircuit(s.elements, s.settings, false, engineRef.current);
+          break;
+        case 'findComponent':
+          s.openDialog('findComponent');
+          break;
       }
     };
     // A momentary switch returns to rest when its shortcut key is let go
@@ -256,6 +271,7 @@ export default function App() {
       {dialog === 'exportAsImage' && <SaveAsImageDialog engine={engine} />}
       {dialog === 'about' && <AboutDialog />}
       {dialog === 'shortcuts' && <ShortcutsDialog />}
+      {dialog === 'findComponent' && <FindComponentDialog />}
       <div className="workspace">
         <aside className={partsOpen ? 'left open' : 'left'}>
           <Toolbox />

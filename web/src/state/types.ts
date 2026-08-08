@@ -20,7 +20,8 @@ export type DialogName =
   | 'exportAsText'
   | 'exportAsImage'
   | 'about'
-  | 'shortcuts';
+  | 'shortcuts'
+  | 'findComponent';
 
 /** A point-in-time copy of everything undo needs to restore. Settings and view
  *  travel with it like the dump header and transform do upstream, so undoing a

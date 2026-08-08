@@ -10,6 +10,7 @@ import { loadLibraryCircuit, loadLibraryIndex, type LibraryGroup } from '../io/l
 import { parseCircuit } from '../io/netlist';
 import { canMirror, canRotate } from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
+import { printCircuit } from '../render/print';
 import { useStore } from '../state/store';
 
 interface Props {
@@ -125,6 +126,7 @@ export function Menubar({ engine }: Props) {
 
   const dark = useStore((s) => s.dark);
   const editable = useStore((s) => s.settings.editable);
+  const conventional = useStore((s) => s.settings.conventional);
   const elements = useStore((s) => s.elements);
   const selectedIds = useStore((s) => s.selectedIds);
   const clipboard = useStore((s) => s.clipboard);
@@ -207,6 +209,13 @@ export function Menubar({ engine }: Props) {
     }
   };
 
+  // Print always renders on white, like upstream's forced-printable print
+  // export (ImageExporter.java:187-189).
+  const doPrint = () => {
+    const s = useStore.getState();
+    printCircuit(s.elements, s.settings, false, engine);
+  };
+
   const selected = elements.filter((e) => selectedIds.includes(e.id));
   const hasSelection = selectedIds.length > 0;
   // A plain wire is one with no route; a routed one is already converted.
@@ -256,7 +265,7 @@ export function Menubar({ engine }: Props) {
     deferred('Create Subcircuit…', 'Subcircuits are not implemented yet'),
     deferred('Find DC Operating Point', 'The DC operating point runs on reset; the one-shot command is not ported'),
     deferred('Recover Auto-Save', 'Auto-save is not implemented yet'),
-    deferred('Print…', 'Printing is not available yet'),
+    { label: 'Print…', shortcut: 'Ctrl+P', onClick: fire(doPrint) },
     {
       label: 'Toggle Full Screen',
       onClick: toggleFullScreen,
@@ -275,7 +284,10 @@ export function Menubar({ engine }: Props) {
     { label: 'Paste', shortcut: 'Ctrl+V', disabled: !editable || !canPaste, onClick: fire(() => useStore.getState().pasteFromClipboard()) },
     { label: 'Duplicate', shortcut: 'Ctrl+D', disabled: !editable || !hasSelection, onClick: fire(() => useStore.getState().duplicateSelection()) },
     { label: 'Select All', shortcut: 'Ctrl+A', disabled: !editable || elements.length === 0, onClick: fire(() => useStore.getState().selectAll()) },
-    deferred('Find Component…', 'Search is not implemented yet', '/'),
+    // An edit command like the rest of the Edit menu, so the read-only gate
+    // applies (CommandManager.java:22-24); the '/' key stays live because
+    // upstream's "key" menu path bypasses the gate (menuPerformed "key").
+    { label: 'Find Component…', shortcut: '/', disabled: !editable, onClick: fire(() => openDialog('findComponent')) },
     // View commands, so they work with editing disabled like the zoom keys do.
     { label: 'Center Circuit', onClick: fire(centerCircuit) },
     { label: 'Zoom 100%', shortcut: '0', onClick: fire(zoomReset) },
@@ -338,12 +350,12 @@ export function Menubar({ engine }: Props) {
 
       <Dropdown label="Options" open={openMenu === 'options'} onToggle={() => toggleMenu('options')} onClose={closeMenus}>
         <CheckItem label="White Background" checked={!dark} onClick={fire(() => setDark(!dark))} />
+        <CheckItem label="Conventional Current Motion" checked={conventional} onClick={fire(() => updateSettings({ conventional: !conventional }))} />
         <CheckItem label="Disable Editing" checked={!editable} onClick={fire(() => updateSettings({ editable: !editable }))} />
         <div className="menu-sep" />
         {menu([
           deferred('European Resistors', 'This app always draws IEC rectangles'),
           deferred('IEC Gates', 'Logic gates are not implemented yet'),
-          deferred('Conventional Current Motion', 'Current-flow direction is set in the Options panel'),
           { label: 'Shortcuts…', onClick: fire(() => openDialog('shortcuts')) },
         ])}
       </Dropdown>

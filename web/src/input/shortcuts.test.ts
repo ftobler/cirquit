@@ -49,6 +49,15 @@ describe('modifier combos', () => {
     expect(matchShortcut(ev({ key: 's', ctrlKey: true }))).toEqual({ type: 'save' });
     expect(matchShortcut(ev({ key: 'o', ctrlKey: true }))).toEqual({ type: 'open' });
   });
+
+  it('Ctrl+P prints the schematic, not the page', () => {
+    expect(matchShortcut(ev({ key: 'p', ctrlKey: true }))).toEqual({ type: 'print' });
+    expect(matchShortcut(ev({ key: 'p', metaKey: true }))).toEqual({ type: 'print' });
+    // Plain p stays unbound (P is PMOS placement upstream), and a shifted
+    // Ctrl chord is unbound like the rest of the modifier group.
+    expect(matchShortcut(ev({ key: 'p' }))).toBeNull();
+    expect(matchShortcut(ev({ key: 'p', ctrlKey: true, shiftKey: true }))).toBeNull();
+  });
 });
 
 describe('modifier exclusivity', () => {
@@ -142,6 +151,16 @@ describe('geometry keys', () => {
   });
 });
 
+describe('find component key', () => {
+  it('/ opens the search, with modifiers unbound', () => {
+    expect(matchShortcut(ev({ key: '/' }))).toEqual({ type: 'findComponent' });
+    expect(matchShortcut(ev({ key: '/', ctrlKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: '/', metaKey: true }))).toBeNull();
+    // A shifted slash is '?' on most layouts and must not open the search.
+    expect(matchShortcut(ev({ key: '?', shiftKey: true }))).toBeNull();
+  });
+});
+
 describe('no conflicts in the SHORTCUTS table', () => {
   const VALID_TYPES = new Set([
     'undo',
@@ -163,6 +182,8 @@ describe('no conflicts in the SHORTCUTS table', () => {
     'rotate',
     'mirror',
     'swap',
+    'print',
+    'findComponent',
   ]);
 
   it('every (modifier, key) pair binds to exactly one action', () => {
@@ -247,6 +268,15 @@ describe('the user-assigned overlay', () => {
     const overlay: ShortcutOverlay = { toggleRunning: 'p' };
     expect(matchShortcut(ev({ key: 'p' }), overlay)).toEqual({ type: 'toggleRunning' });
     expect(matchShortcut(ev({ key: 'p' }))).toBeNull();
+  });
+
+  it('a user assignment to / beats the hardcoded findComponent row', () => {
+    // The overlay is consulted before the table, so assigning '/' to another
+    // command wins over the default search binding (UIManager.java:1174).
+    const overlay: ShortcutOverlay = { copy: '/' };
+    expect(matchShortcut(ev({ key: '/' }), overlay)).toEqual({ type: 'copy' });
+    // Without the assignment the default still opens the search.
+    expect(matchShortcut(ev({ key: '/' }))).toEqual({ type: 'findComponent' });
   });
 });
 

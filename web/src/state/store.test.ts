@@ -611,6 +611,9 @@ describe('updateSettings reload classification', () => {
     ['showPowerColor', true, false],
     ['showGrid', true, false],
     ['editable', false, false],
+    // Dot direction is a per-frame render argument like showCurrent; flipping
+    // it must not restart the simulation.
+    ['conventional', false, false],
     ['smallGrid', true, false],
     ['showCrosshair', true, false],
     ['valueFontSize', 14, false],

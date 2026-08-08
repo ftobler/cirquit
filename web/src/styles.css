@@ -285,6 +285,45 @@ button.active,
   border-color: var(--danger);
 }
 
+/* The Find Component dialog: a scrollable match list, each row clickable and
+   the current selection highlighted. */
+.find-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.find-list button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 5px 8px;
+}
+
+.find-list button:hover {
+  background: var(--panel);
+}
+
+.find-list button.selected {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.find-list .find-category {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .context-menu {
   position: fixed;
   width: 200px;
