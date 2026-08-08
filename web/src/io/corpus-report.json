@@ -186,42 +186,39 @@
   {
     "file": "7segdecoder.txt",
     "format": "plain",
-    "missing": [
-      "157"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "actbutterband.txt",
     "format": "plain",
-    "missing": [
-      "n"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "actbutterhi.txt",
     "format": "plain",
-    "missing": [
-      "n"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "actbutterlo.txt",
     "format": "plain",
-    "missing": [
-      "n"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "adder4-sc.txt",
@@ -360,12 +357,11 @@
   {
     "file": "analogrecip.txt",
     "format": "plain",
-    "missing": [
-      "j"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "avr8js-analog.txt",
@@ -399,12 +395,11 @@
   {
     "file": "bandnoise.txt",
     "format": "plain",
-    "missing": [
-      "n"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "bandpass.txt",
@@ -452,12 +447,11 @@
   {
     "file": "butter10hiaud.txt",
     "format": "plain",
-    "missing": [
-      "n"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "butter10lo.txt",
@@ -471,12 +465,11 @@
   {
     "file": "butter10loaud.txt",
     "format": "plain",
-    "missing": [
-      "n"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "butterbandstop.txt",
@@ -800,12 +793,11 @@
   {
     "file": "comb.txt",
     "format": "plain",
-    "missing": [
-      "n"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "conv-boost.txt",
@@ -851,22 +843,22 @@
   {
     "file": "counter.txt",
     "format": "plain",
-    "missing": [
-      "419"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "counter8.txt",
     "format": "plain",
-    "missing": [
-      "419"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "coupled1.txt",
@@ -1082,12 +1074,12 @@
   {
     "file": "deccounter.txt",
     "format": "plain",
-    "missing": [
-      "419"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "decoder.txt",
@@ -1351,12 +1343,11 @@
   {
     "file": "flashadc.txt",
     "format": "plain",
-    "missing": [
-      "419"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "follower.txt",
@@ -1490,8 +1481,7 @@
     "missing": [
       "166",
       "167",
-      "167",
-      "419"
+      "167"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -1635,43 +1625,38 @@
   {
     "file": "jfetamp.txt",
     "format": "plain",
-    "missing": [
-      "j"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "jfetcurrentsrc.txt",
     "format": "plain",
-    "missing": [
-      "j"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "jfetfollower-nooff.txt",
     "format": "plain",
-    "missing": [
-      "j",
-      "j"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "jfetfollower.txt",
     "format": "plain",
-    "missing": [
-      "j"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "jkff.txt",
@@ -1723,24 +1708,20 @@
   {
     "file": "lambda-diode-osc.txt",
     "format": "plain",
-    "missing": [
-      "j",
-      "j"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "lambda-diode.txt",
     "format": "plain",
-    "missing": [
-      "j",
-      "j"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "latchingrelay.txt",
@@ -2284,12 +2265,11 @@
   {
     "file": "phasecomp.txt",
     "format": "plain",
-    "missing": [
-      "161"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "phasecompint.txt",
@@ -2815,26 +2795,20 @@
   {
     "file": "spark-marx.txt",
     "format": "plain",
-    "missing": [
-      "187",
-      "187",
-      "187",
-      "187",
-      "187"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "spark-sawtooth.txt",
     "format": "plain",
-    "missing": [
-      "187"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "spikegen.txt",
@@ -2884,12 +2858,12 @@
   {
     "file": "synccounter.txt",
     "format": "plain",
-    "missing": [
-      "419"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "td4-add2.txt",
@@ -2964,12 +2938,11 @@
   {
     "file": "tesla.txt",
     "format": "plain",
-    "missing": [
-      "187"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "thevenin.txt",
@@ -3271,12 +3244,12 @@
   {
     "file": "updownctr.txt",
     "format": "plain",
-    "missing": [
-      "419"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "varactor.txt",
@@ -3371,12 +3344,11 @@
   {
     "file": "volume.txt",
     "format": "plain",
-    "missing": [
-      "j"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "wheatstone.txt",

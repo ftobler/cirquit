@@ -15,6 +15,7 @@ pub mod chip;
 pub mod counter;
 pub mod current_source;
 pub mod d_flip_flop;
+pub mod decimal_display;
 pub mod decoration;
 pub mod diode;
 pub mod ext_voltage;
@@ -22,6 +23,7 @@ pub mod fuse;
 pub mod ground;
 pub mod inductor;
 pub mod inverter;
+pub mod jfet;
 pub mod jk_flip_flop;
 pub mod junction;
 pub mod labeled_node;
@@ -36,13 +38,17 @@ pub mod memristor;
 pub mod meter;
 pub mod mosfet;
 pub mod multi_throw_switch;
+pub mod noise;
 pub mod opamp;
+pub mod phase_comp;
 pub mod potentiometer;
 pub mod probe;
 pub mod relay;
 pub mod resistor;
 pub mod ring_counter;
 pub mod schmitt;
+pub mod seven_seg;
+pub mod spark_gap;
 pub mod sweep;
 pub mod switch;
 pub mod t_flip_flop;
@@ -76,6 +82,7 @@ pub const KINDS: &[&str] = &[
     "memristor",
     "voltage",
     "rail",
+    "noise",
     "varRail",
     "extVoltage",
     "current",
@@ -84,6 +91,7 @@ pub const KINDS: &[&str] = &[
     "varactor",
     "led",
     "transistor",
+    "jfet",
     "mosfet",
     "switch",
     "sweep",
@@ -99,6 +107,7 @@ pub const KINDS: &[&str] = &[
     "relayCoil",
     "relayContact",
     "opamp",
+    "phaseComp",
     "inverter",
     "logicInput",
     "andGate",
@@ -108,6 +117,7 @@ pub const KINDS: &[&str] = &[
     "xorGate",
     "xnorGate",
     "dFlipFlop",
+    "decimalDisplay",
     "jkFlipFlop",
     "tFlipFlop",
     "latch",
@@ -116,6 +126,8 @@ pub const KINDS: &[&str] = &[
     "triState",
     "schmitt",
     "invertingSchmitt",
+    "sparkGap",
+    "sevenSeg",
     "labeledNode",
     "output",
     "logicOutput",
@@ -141,6 +153,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "ldr" => Box::new(ldr::Ldr::new(spec)),
         "voltage" => Box::new(voltage_source::VoltageSource::new(spec)),
         "rail" => Box::new(voltage_source::VoltageSource::new_rail(spec)),
+        "noise" => Box::new(noise::Noise::new(spec)),
         "varRail" => Box::new(var_rail::VarRail::new(spec)),
         "extVoltage" => Box::new(ext_voltage::ExtVoltage::new(spec)),
         "current" => Box::new(current_source::CurrentSource::new(spec)),
@@ -149,6 +162,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "varactor" => Box::new(diode::Diode::new_varactor(spec)),
         "led" => Box::new(led::Led::new(spec)),
         "transistor" => Box::new(transistor::BipolarTransistor::new(spec)),
+        "jfet" => Box::new(jfet::Jfet::new(spec)),
         "mosfet" => Box::new(mosfet::Mosfet::new(spec)),
         "switch" => Box::new(switch::Switch::new(spec)),
         "sweep" => Box::new(sweep::Sweep::new(spec)),
@@ -164,6 +178,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "relayCoil" => Box::new(relay::RelayCoil::new(spec)),
         "relayContact" => Box::new(relay::RelayContact::new(spec)),
         "opamp" => Box::new(opamp::OpAmp::new(spec)),
+        "phaseComp" => Box::new(phase_comp::PhaseComp::new(spec)),
         "inverter" => Box::new(inverter::Inverter::new(spec)),
         "logicInput" => Box::new(logic_input::LogicInput::new(spec)),
         "andGate" => Box::new(logic::Gate::new(spec, logic::GateKind::And)),
@@ -173,6 +188,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "xorGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Xor)),
         "xnorGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Xnor)),
         "dFlipFlop" => Box::new(d_flip_flop::DFlipFlop::new(spec)),
+        "decimalDisplay" => Box::new(decimal_display::DecimalDisplay::new(spec)),
         "jkFlipFlop" => Box::new(jk_flip_flop::JKFlipFlop::new(spec)),
         "tFlipFlop" => Box::new(t_flip_flop::TFlipFlop::new(spec)),
         "latch" => Box::new(latch::Latch::new(spec)),
@@ -181,6 +197,8 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "triState" => Box::new(tri_state::TriState::new(spec)),
         "schmitt" => Box::new(schmitt::Schmitt::new(spec, false)),
         "invertingSchmitt" => Box::new(schmitt::Schmitt::new(spec, true)),
+        "sparkGap" => Box::new(spark_gap::SparkGap::new(spec)),
+        "sevenSeg" => Box::new(seven_seg::SevenSeg::new(spec)),
         "labeledNode" => Box::new(labeled_node::LabeledNode::new(spec)),
         "output" => Box::new(meter::Meter::new_output(spec)),
         "logicOutput" => Box::new(logic_output::LogicOutput::new(spec)),

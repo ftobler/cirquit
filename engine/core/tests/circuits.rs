@@ -8113,3 +8113,412 @@ fn timer_divider_biases_ctl_and_trigger_sets_out() {
         volts[n_out]
     );
 }
+
+fn n_jfet_drain(r: f64) -> Circuit {
+    build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", r)]),
+            elm(
+                3,
+                "jfet",
+                &[[200, 100], [100, 100], [100, 0]],
+                &[("pnp", 1.0), ("threshold", -4.0), ("beta", 0.00125)],
+            ),
+            elm(4, "wire", &[[200, 100], [100, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    )
+}
+
+#[test]
+fn n_jfet_saturation_current_with_gate_tied_to_source() {
+    // Gate at source voltage, vt = -4, beta = 0.00125: the depletion channel
+    // conducts its full saturation current ids = .5*beta*(vgs-vt)^2 = 10 mA,
+    // and the gate junction, sitting at 0 V, leaks nothing. The drain voltage
+    // follows Ohm's law on the 50 ohm load: Vd = 5 - ids*R = 4.5 V.
+    let c = &mut n_jfet_drain(50.0);
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.element_voltages()[2], 4.5, 1e-3),
+        "drain was {}",
+        c.element_voltages()[2]
+    );
+    assert!(
+        close(c.element_currents()[2], 0.01, 1e-5),
+        "ids was {}",
+        c.element_currents()[2]
+    );
+}
+
+#[test]
+fn phase_comparator_drives_high_on_i1_edge_and_clears_on_i2_edge() {
+    // A rising edge on I1 with I2 low sets the first internal flip-flop and
+    // drives the output high; a later rising edge on I2 sets the second and,
+    // with both set, the comparator clears and the output drops.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "phaseComp",
+                &[[0, 0], [0, 32], [96, 0]],
+                &[("highVoltage", 5.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[96, 100]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let out = |c: &Circuit| c.element_voltages()[3];
+    c.run(3);
+    assert!(close(out(c), 0.0, 1e-9), "fresh output was not low");
+    c.set_state(1, 1);
+    c.run(3);
+    assert!(
+        close(out(c), 5.0, 1e-9),
+        "first edge did not drive the output high"
+    );
+    c.set_state(1, 0);
+    c.run(3);
+    assert!(
+        close(out(c), 5.0, 1e-9),
+        "output dropped while only ff1 was set"
+    );
+    c.set_state(2, 1);
+    c.run(3);
+    assert!(
+        close(out(c), 0.0, 1e-9),
+        "second edge did not clear the output"
+    );
+}
+
+#[test]
+fn spark_gap_fires_above_breakdown_and_latches_on() {
+    // A 1500 V source through 1000 ohm and the gap: once the gap fires the
+    // loop draws V/(R + r_on) = 0.75 A, and the gap holds 750 V, below the
+    // 1000 V breakdown. It stays on because 0.75 A > holdcurrent.
+    let dt = 1e-5;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 1500.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "sparkGap", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(3);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], 0.75, 1e-6),
+        "resistor current was {}, expected 0.75 A once the gap fired",
+        amps[1]
+    );
+    assert!(
+        close(amps[2], 0.75, 1e-6),
+        "gap current was {}, expected 0.75 A",
+        amps[2]
+    );
+    assert!(
+        close(volts[2], 750.0, 1e-3),
+        "gap held {} V, expected 750 V below breakdown",
+        volts[2]
+    );
+    c.run(97);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[2], 0.75, 1e-6),
+        "latched gap current drifted to {} A",
+        amps[2]
+    );
+}
+
+#[test]
+fn spark_gap_stays_off_below_breakdown() {
+    // A 500 V source across the off gap is below the 1000 V breakdown, so the
+    // gap keeps stamping r_off and the loop current stays at V/(R + r_off).
+    let dt = 1e-5;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 500.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "sparkGap", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(5);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    let expected = 500.0 / (1000.0 + 1e9);
+    assert!(
+        close(amps[2], expected, 1e-12),
+        "off gap drew {}, expected the r_off divider current {}",
+        amps[2],
+        expected
+    );
+    assert!(
+        close(volts[2], 500.0 * 1e9 / (1000.0 + 1e9), 1e-6),
+        "off gap held {}, expected almost the full supply",
+        volts[2]
+    );
+}
+
+#[test]
+fn spark_gap_clears_when_current_drops_below_holdcurrent() {
+    // Fire the gap at 2000 V (loop current 1 A), then cut the source to 1 V:
+    // the on-state current drops below the 1 mA holdcurrent and the gap opens.
+    let dt = 1e-5;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 2000.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "sparkGap", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(3);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[2], 1.0, 1e-6),
+        "expected the fired gap to draw 1 A, got {}",
+        amps[2]
+    );
+    assert!(
+        c.set_param(1, "maxVoltage", 1.0),
+        "source voltage edit refused"
+    );
+    c.run(2);
+    let amps = c.element_currents();
+    let expected = 1.0 / (1000.0 + 1e9);
+    assert!(
+        close(amps[2], expected, 1e-12),
+        "gap should have opened to the r_off current {}, got {}",
+        expected,
+        amps[2]
+    );
+}
+
+#[test]
+fn decimal_display_reads_its_input_bits_as_a_binary_number() {
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                4,
+                "logicInput",
+                &[[0, 96]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                5,
+                "decimalDisplay",
+                &[[0, 0], [0, 32], [0, 64], [0, 96]],
+                &[("bits", 4.0), ("highVoltage", 5.0)],
+            ),
+            elm(
+                6,
+                "resistor",
+                &[[0, 32], [0, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[0, 132]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    // The display's value() reads the thresholded bit pattern: 0101 = 5.
+    assert!(
+        close(c.element_values()[4], 5.0, 1e-9),
+        "display read was {}",
+        c.element_values()[4]
+    );
+}
+
+#[test]
+fn noise_source_across_a_resistor_is_bounded_and_finite() {
+    let c = &mut build_with(
+        vec![
+            elm(1, "noise", &[[0, 0]], &[("maxVoltage", 5.0), ("bias", 0.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "wire", &[[100, 0], [100, 100]], &[]),
+            elm(4, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, false),
+        vec![ScopeSpec {
+            element_id: 1,
+            value: ScopeValue::Voltage,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
+        }],
+    );
+    let report = c.run(200);
+    assert!(report.converged, "noise source broke Newton convergence");
+    assert!(c.error().is_none(), "error: {:?}", c.error());
+    let snap = c.scopes()[0].snapshot();
+    assert!(
+        snap.len() >= 200,
+        "expected one column per step, got {}",
+        snap.len()
+    );
+    for v in snap {
+        assert!(v.is_finite(), "non-finite noise sample {v}");
+        assert!(
+            (-5.0..=5.0).contains(&(v as f64)),
+            "noise sample {v} left [-5, 5]"
+        );
+    }
+}
+
+#[test]
+fn seven_seg_reads_its_segment_input_bits() {
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                4,
+                "logicInput",
+                &[[0, 96]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                5,
+                "logicInput",
+                &[[0, 128]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                6,
+                "logicInput",
+                &[[0, 160]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                7,
+                "logicInput",
+                &[[0, 192]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                8,
+                "sevenSeg",
+                &[
+                    [0, 0],
+                    [0, 32],
+                    [0, 64],
+                    [0, 96],
+                    [0, 128],
+                    [0, 160],
+                    [0, 192],
+                ],
+                &[
+                    ("baseSegments", 7.0),
+                    ("extraSegment", 0.0),
+                    ("diodeDirection", 0.0),
+                    ("highVoltage", 5.0),
+                ],
+            ),
+            elm(9, "ground", &[[64, 224]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let value = |c: &Circuit| c.element_values()[7] as i64;
+    c.set_state(1, 1);
+    c.run(3);
+    assert_eq!(value(c), 1, "segment a alone did not read as bit 0");
+    for id in 2..=6 {
+        c.set_state(id, 1);
+    }
+    c.run(3);
+    assert_eq!(value(c), 0b011_1111, "digit 0 did not read as 63");
+    for id in 1..=7 {
+        c.set_state(id, 0);
+    }
+    c.set_state(2, 1);
+    c.set_state(3, 1);
+    c.run(3);
+    assert_eq!(value(c), 0b000_0110, "digit 1 did not read as 6");
+}

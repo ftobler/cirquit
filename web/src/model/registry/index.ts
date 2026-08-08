@@ -36,7 +36,9 @@ import { ZENER_DEF } from './elements/zener';
 import { VARACTOR_DEF } from './elements/varactor';
 import { LED_DEF } from './elements/led';
 import { TRANSISTOR_DEF } from './elements/transistor';
+import { JFET_DEF } from './elements/jfet';
 import { MOSFET_DEF } from './elements/mosfet';
+import { NOISE_DEF } from './elements/noise';
 import { SWITCH_DEF } from './elements/switch';
 import { SWITCH2_DEF } from './elements/switch2';
 import { ANALOG_SWITCH_DEF } from './elements/analogSwitch';
@@ -46,8 +48,10 @@ import { TRANSMISSION_LINE_DEF } from './elements/transmissionLine';
 import { TIMER_DEF } from './elements/timer';
 import { RELAY_DEF, RELAY_COIL_DEF, RELAY_CONTACT_DEF } from './elements/relay';
 import { OPAMP_DEF } from './elements/opamp';
+import { PHASE_COMP_DEF } from './elements/phaseComp';
 import { AND_GATE_DEF, NAND_GATE_DEF, OR_GATE_DEF, NOR_GATE_DEF, XOR_GATE_DEF, XNOR_GATE_DEF } from './elements/gate';
 import { DFLIPFLOP_DEF } from './elements/dFlipFlop';
+import { DECIMAL_DISPLAY_DEF } from './elements/decimalDisplay';
 import { JKFLIPFLOP_DEF } from './elements/jkFlipFlop';
 import { TFLIPFLOP_DEF } from './elements/tFlipFlop';
 import { LATCH_DEF } from './elements/latch';
@@ -56,6 +60,8 @@ import { COUNTER_DEF } from './elements/counter';
 import { INVERTER_DEF } from './elements/inverter';
 import { LOGIC_INPUT_DEF } from './elements/logicInput';
 import { SCHMITT_DEF, INVERTING_SCHMITT_DEF } from './elements/schmitt';
+import { SEVEN_SEG_DEF } from './elements/sevenSeg';
+import { SPARK_GAP_DEF } from './elements/sparkGap';
 import { TRI_STATE_DEF } from './elements/triState';
 import { LABELED_NODE_DEF } from './elements/labeledNode';
 import { OUTPUT_DEF } from './elements/output';
@@ -101,6 +107,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   RELAY_CONTACT_DEF,
   VOLTAGE_DEF,
   RAIL_DEF,
+  NOISE_DEF,
   VAR_RAIL_DEF,
   EXT_VOLTAGE_DEF,
   SWEEP_DEF,
@@ -111,8 +118,10 @@ export const ELEMENT_DEFS: ElementDef[] = [
   VARACTOR_DEF,
   LED_DEF,
   TRANSISTOR_DEF,
+  JFET_DEF,
   MOSFET_DEF,
   OPAMP_DEF,
+  PHASE_COMP_DEF,
   AND_GATE_DEF,
   NAND_GATE_DEF,
   OR_GATE_DEF,
@@ -120,6 +129,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   XOR_GATE_DEF,
   XNOR_GATE_DEF,
   DFLIPFLOP_DEF,
+  DECIMAL_DISPLAY_DEF,
   JKFLIPFLOP_DEF,
   TFLIPFLOP_DEF,
   LATCH_DEF,
@@ -129,6 +139,8 @@ export const ELEMENT_DEFS: ElementDef[] = [
   LOGIC_INPUT_DEF,
   SCHMITT_DEF,
   INVERTING_SCHMITT_DEF,
+  SEVEN_SEG_DEF,
+  SPARK_GAP_DEF,
   TRI_STATE_DEF,
   LABELED_NODE_DEF,
   OUTPUT_DEF,
@@ -202,11 +214,25 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
     category: 'Semiconductors',
     defaults: { pnp: -1, beta: 0.02, threshold: 1.5 },
   },
+  {
+    id: 'njfet',
+    kind: 'jfet',
+    label: 'N-JFET',
+    category: 'Semiconductors',
+    defaults: { pnp: 1, beta: 0.00125, threshold: -4 },
+  },
+  {
+    id: 'pjfet',
+    kind: 'jfet',
+    label: 'P-JFET',
+    category: 'Semiconductors',
+    defaults: { pnp: -1, beta: 0.00125, threshold: -4 },
+  },
 ];
 
 /** Every pickable tool, in display order within each category. */
 export const TOOLBOX: ToolboxEntry[] = [
-  ...ELEMENT_DEFS.filter((d) => d.kind !== 'transistor' && d.kind !== 'mosfet').map((d) => ({
+  ...ELEMENT_DEFS.filter((d) => d.kind !== 'transistor' && d.kind !== 'mosfet' && d.kind !== 'jfet').map((d) => ({
     id: d.kind,
     kind: d.kind,
     label: d.label,
