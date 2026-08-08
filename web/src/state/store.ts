@@ -18,12 +18,13 @@ import {
   swapTerminalOrder,
 } from '../model/transform';
 import { VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
+import { paramScale, resolveParam } from '../model/sliders';
 import {
   DEFAULT_SETTINGS,
   UNMODELLED_HEADER,
   type CircuitElement,
 } from '../model/types';
-import type { AppState, Snapshot, ViewTransform } from './types';
+import type { AppState, Slider, Snapshot, ViewTransform } from './types';
 import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
 import { gridSize, hasUnsavedChanges, makeElement, makeToolElement, snap } from './helpers';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
@@ -37,6 +38,7 @@ const clone = (s: Snapshot): Snapshot => ({
     trigger: { ...x.trigger },
     plots: x.plots.map((p) => ({ ...p })),
   })),
+  sliders: s.sliders.map((x) => ({ ...x, raw: [...x.raw] })),
   settings: { ...s.settings },
   view: { ...s.view },
 });
@@ -47,16 +49,22 @@ const clone = (s: Snapshot): Snapshot => ({
  *  objects carry the insertion order they were constructed with, which is
  *  stable because every mutator spreads rather than reordering. */
 const snapshotKey = (s: Snapshot): string =>
-  JSON.stringify({ elements: s.elements, scopes: s.scopes, settings: s.settings, view: s.view });
+  JSON.stringify({
+    elements: s.elements,
+    scopes: s.scopes,
+    sliders: s.sliders,
+    settings: s.settings,
+    view: s.view,
+  });
 
 const UNDO_LIMIT = 100;
 
 /**
  * The load warning. The two failure modes are not the same severity and must
  * not be reported as one: a missing element code means the component is absent
- * from both the drawing and the simulation, while a `38` slider or a `!` model
- * definition only means the line rides through untouched. Counts are of
- * distinct types, not lines, so seven sliders are one thing to report.
+ * from both the drawing and the simulation, while a `!` model definition or a
+ * `h` hint only means the line rides through untouched. Counts are of distinct
+ * types, not lines, so seven sliders are one thing to report.
  */
 function describeUnsupported(unsupported: string[]): string | null {
   const types = [...new Set(unsupported)];
@@ -170,6 +178,7 @@ export const useStore = create<AppState>((set, get) => ({
   elements: [],
   selectedIds: [],
   scopes: [],
+  sliders: [],
   // App prefs (colours, digits, font size, wheel sensitivity, crosshair) are
   // merged over the defaults at startup so they survive a page reload; the
   // header-borne and plain settings stay at their defaults.
@@ -278,8 +287,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (!e) return;
     // A row or column sweep shifts only one stored endpoint; updateElement
     // rounds the new coordinate so geometry stays integral.
-    const patch =
-      post === 0 ? { x1: e.x1 + dx, y1: e.y1 + dy } : { x2: e.x2 + dx, y2: e.y2 + dy };
+    const patch = post === 0 ? { x1: e.x1 + dx, y1: e.y1 + dy } : { x2: e.x2 + dx, y2: e.y2 + dy };
     s.updateElement(id, patch);
   },
 
@@ -449,6 +457,14 @@ export const useStore = create<AppState>((set, get) => ({
       scopes: s.scopes.filter(
         (x) => !x.plots.some((p) => p.elementId !== null && selectedIds.includes(p.elementId)),
       ),
+      // A slider bound to a deleted element goes with it, matching upstream's
+      // deleteSliders (CirSim.java:523-531). Its order slot stays, exactly like
+      // a dropped scope's: the line stops serialising because no config
+      // resolves it, and an undo restores both and puts the line back in
+      // place.
+      sliders: s.sliders.filter(
+        (x) => x.elementId === undefined || !selectedIds.includes(x.elementId),
+      ),
       selectedIds: [],
       revision: s.revision + 1,
     }));
@@ -498,6 +514,24 @@ export const useStore = create<AppState>((set, get) => ({
       pendingParams: new Map(s.pendingParams).set(`${id}:${name}`, { id, name, value }),
       paramRevision: s.paramRevision + 1,
     }));
+  },
+
+  setSliderValue: (id, value) => {
+    const s = get();
+    const slider = s.sliders.find((x) => x.id === id);
+    if (!slider || slider.elementId === undefined) return;
+    const kind = s.elements.find((e) => e.id === slider.elementId)?.kind;
+    if (!kind) return;
+    const resolved = resolveParam(kind, slider.editItem, slider.text);
+    if (!resolved) return;
+    // The value arrives in the slider's file range (percent for a duty-cycle
+    // slider); a param whose unit differs is scaled into its own unit after
+    // the panel's min..max position conversion. The scale lives next to the
+    // resolution in sliders.ts so a caption and its param's unit stay in one
+    // table. The engine's live set_param fast path keeps the clock and
+    // reactive state alive; a drag coalesces to its last value in
+    // pendingParams.
+    s.setParam(slider.elementId, resolved.name, value * paramScale(resolved.name));
   },
 
   setText: (id, text) =>
@@ -681,7 +715,9 @@ export const useStore = create<AppState>((set, get) => ({
       if (elementId === null) return s;
       return {
         scopes: s.scopes.map((x) =>
-          x.id === scopeId ? { ...x, plots: [...x.plots, makePlot(allocateId(), elementId, value)] } : x,
+          x.id === scopeId
+            ? { ...x, plots: [...x.plots, makePlot(allocateId(), elementId, value)] }
+            : x,
         ),
         revision: s.revision + 1,
       };
@@ -869,6 +905,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({
       elements: parsed.elements,
       scopes,
+      sliders: parsed.sliders.map((c): Slider => ({ ...c })),
       unmatchedScopes,
       passthrough: parsed.passthrough,
       order: parsed.order,
@@ -934,6 +971,7 @@ export const useStore = create<AppState>((set, get) => ({
       [...scopeConfigs, ...s.unmatchedScopes],
       s.passthrough,
       s.order,
+      s.sliders,
     );
   },
 
@@ -941,6 +979,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({
       elements: [],
       scopes: [],
+      sliders: [],
       unmatchedScopes: [],
       passthrough: [],
       order: [],

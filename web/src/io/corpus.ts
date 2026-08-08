@@ -90,14 +90,14 @@ function allFinite(values: ArrayLike<number>): boolean {
 /** Splits the parser's unsupported list into missing kinds and features. */
 export function plainLoad(parsed: ParsedCircuit): { missing: string[]; sliderLines: number } {
   const missing: string[] = [];
-  let sliderLines = 0;
   for (const code of parsed.unsupported) {
-    // Sliders are a feature to build, not a component to port, and the pure
-    // passthrough types (`h`, `!`, `%`, `?`, `.`, `B`) change nothing at all.
-    if (code === '38') sliderLines += 1;
-    else if (isElementLine(code) || MODEL_CODES.has(code)) missing.push(code);
+    // The pure passthrough types (`h`, `!`, `%`, `?`, `.`, `B`) change
+    // nothing at all.
+    if (isElementLine(code) || MODEL_CODES.has(code)) missing.push(code);
   }
-  return { missing, sliderLines };
+  // Sliders (`38`) are parsed into state now, so the feature count is the
+  // slider list, never a load failure.
+  return { missing, sliderLines: parsed.sliders.length };
 }
 
 /** Entry for a file that could not be read or parsed; the scan must not die. */

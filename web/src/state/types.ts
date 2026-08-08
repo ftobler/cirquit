@@ -26,14 +26,39 @@ export type DialogName =
 export interface Snapshot {
   elements: CircuitElement[];
   scopes: Scope[];
+  sliders: Slider[];
   settings: SimSettings;
   view: ViewTransform;
+}
+
+/**
+ * A slider (`38` line, upstream's Adjustable) in store form. `elementId`
+ * resolves the line's `e` token to a session element; a slider whose target is
+ * an element line this build could not read keeps `elementId` undefined and
+ * renders nothing, but still round-trips.
+ */
+export interface Slider {
+  id: number;
+  elementId?: number;
+  editItem: number;
+  min: number;
+  max: number;
+  /** Optional trailing token; 0 means continuous. */
+  step: number;
+  /** The caption, unescaped. */
+  text: string;
+  logarithmic: boolean;
+  /** FLAG_SHARED `ano` token, or null when the line carries none. */
+  shared: number | null;
+  /** Every token after `38`, so the line round-trips exactly. */
+  raw: string[];
 }
 
 export interface AppState {
   elements: CircuitElement[];
   selectedIds: number[];
   scopes: Scope[];
+  sliders: Slider[];
   settings: SimSettings;
   /** Lines from the loaded file this build does not model, kept for saving. */
   passthrough: string[];
@@ -159,6 +184,12 @@ export interface AppState {
   /** Exchanges posts 0 and 1 on each selected two-terminal part. */
   swapTerminals(): void;
   setParam(id: number, name: string, value: number): void;
+  /** Writes a slider's position-converted value into its bound element's
+   *  parameter through the live `set_param` fast path. A slider that cannot be
+   *  resolved (element gone, no matching field) does nothing: it is
+   *  inert-but-preserved. The undo bracketing (one entry per drag) belongs to
+   *  the panel's `beginEdit` on pointer-down, like the OptionsPanel range. */
+  setSliderValue(id: number, value: number): void;
   /** Edits the element's free text (annotations, labels). */
   setText(id: number, text: string): void;
   /** Interactive state change (switch throw), routed through the live engine. */

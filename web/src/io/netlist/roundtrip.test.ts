@@ -109,6 +109,7 @@ describe('bundled circuit round trips', () => {
         parsed.scopes,
         parsed.passthrough,
         parsed.order,
+        parsed.sliders,
       );
       headers += parsed.order.filter((l) => l.kind === 'header').length;
       anomalies.push(...compare(file, text, out, parsed.order));

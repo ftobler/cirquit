@@ -652,10 +652,7 @@ describe('diode model name', () => {
     // The varactor shares the diode machinery upstream, so a stale name
     // re-applies the model on the next reload and silently discards the
     // edit. This pins the lifecycle fix in store.setParam.
-    const text = [
-      '176 100 100 100 0 2 myvar 0 4e-12',
-      '34 myvar 0 1.328e-6 0 2 0 0',
-    ].join('\n');
+    const text = ['176 100 100 100 0 2 myvar 0 4e-12', '34 myvar 0 1.328e-6 0 2 0 0'].join('\n');
     const [loaded] = parseCircuit(text).elements;
     expect(loaded.modelName).toBe('myvar');
     useStore.getState().addElement(loaded);
@@ -707,11 +704,15 @@ describe('the integer-coordinate invariant', () => {
       params: { resistance: 1000 },
     });
     const elements = () => useStore.getState().elements;
-    const before = Math.abs(elements().find((x) => x.id === a)!.x1 - elements().find((x) => x.id === b)!.x1);
+    const before = Math.abs(
+      elements().find((x) => x.id === a)!.x1 - elements().find((x) => x.id === b)!.x1,
+    );
 
     useStore.getState().moveElements([a, b], 2.3, 0.7);
 
-    const after = Math.abs(elements().find((x) => x.id === a)!.x1 - elements().find((x) => x.id === b)!.x1);
+    const after = Math.abs(
+      elements().find((x) => x.id === a)!.x1 - elements().find((x) => x.id === b)!.x1,
+    );
     expect(after).toBe(before);
     for (const id of [a, b]) {
       const e = elements().find((x) => x.id === id)!;
@@ -1093,23 +1094,33 @@ describe('scope speed', () => {
     expect(useStore.getState().scopes[0].speed).toBe(1);
 
     // The live speed lands in the serialized line's speed token (raw[0]).
-    const line = useStore.getState().toNetlist().split('\n').find((l) => l.startsWith('o '));
+    const line = useStore
+      .getState()
+      .toNetlist()
+      .split('\n')
+      .find((l) => l.startsWith('o '));
     expect(line).toBe('o 0 1 0 4099 20 0.05 0 2 0 3');
   });
 
   it('loadNetlist restores a non-default o-line speed and saves it back', () => {
-    useStore.getState().loadNetlist(
-      '$ 0 0.000005 10 50 5 43 5e-11\n' +
-        'r 0 0 16 0 0 100\nr 16 0 32 0 0 100\n' +
-        'o 0 128 0 4099 20 0.05 0 2 4 3\n',
-    );
+    useStore
+      .getState()
+      .loadNetlist(
+        '$ 0 0.000005 10 50 5 43 5e-11\n' +
+          'r 0 0 16 0 0 100\nr 16 0 32 0 0 100\n' +
+          'o 0 128 0 4099 20 0.05 0 2 4 3\n',
+      );
     const s = useStore.getState();
     expect(s.scopes[0].speed).toBe(128);
 
     // Editing the speed writes it back over the loaded token; the rest of the
     // line stays verbatim.
     useStore.getState().setScopeSpeed(s.scopes[0].id, 256);
-    const line = useStore.getState().toNetlist().split('\n').find((l) => l.startsWith('o '));
+    const line = useStore
+      .getState()
+      .toNetlist()
+      .split('\n')
+      .find((l) => l.startsWith('o '));
     expect(line).toBe('o 0 256 0 4099 20 0.05 0 2 4 3');
   });
 });
@@ -1283,10 +1294,14 @@ describe('scope coupling fast path', () => {
     if (!currentPlot || !voltagePlot) return;
 
     useStore.getState().setPlotCoupling(scope.id, currentPlot.id, true);
-    expect(useStore.getState().scopes[0].plots.find((p) => p.value === 'current')?.acCoupled).toBe(false);
+    expect(useStore.getState().scopes[0].plots.find((p) => p.value === 'current')?.acCoupled).toBe(
+      false,
+    );
 
     useStore.getState().setPlotCoupling(scope.id, voltagePlot.id, true);
-    expect(useStore.getState().scopes[0].plots.find((p) => p.value === 'voltage')?.acCoupled).toBe(true);
+    expect(useStore.getState().scopes[0].plots.find((p) => p.value === 'voltage')?.acCoupled).toBe(
+      true,
+    );
   });
 });
 
@@ -1454,5 +1469,148 @@ describe('import from text equals open', () => {
     expect(s.scopes).toHaveLength(1);
     // A load clears the undo stacks exactly like the Open flow.
     expect(s.undoStack).toHaveLength(0);
+  });
+});
+
+describe('sliders bound to element parameters', () => {
+  const SLIDER_FIXTURE = `$ 0 0.000005 10 50 5 43 5e-11
+r 0 0 16 0 0 100
+r 16 0 32 0 0 220
+38 0 0 1 101 Resistance
+`;
+
+  // A square-wave source plus the corpus-shaped duty slider: `38 14 6 0 100`
+  // declares min 0 max 100 (percent), the port's dutyCycle param is 0..1.
+  const DUTY_FIXTURE = `$ 0 0.000005 10 50 5 43 5e-11
+v 0 0 0 16 0 2 40 5 5 0 0.5
+38 0 6 0 100 Duty\\sCycle
+`;
+
+  it('a slider move edits the bound element through the fast path', () => {
+    useStore.getState().loadNetlist(SLIDER_FIXTURE);
+    const s = useStore.getState();
+    const resistorId = s.elements[0].id;
+    const sliderId = s.sliders[0].id;
+
+    useStore.getState().setSliderValue(sliderId, 75);
+
+    const after = useStore.getState();
+    expect(after.elements[0].params.resistance).toBe(75);
+    expect(after.pendingParams.get(`${resistorId}:resistance`)).toEqual({
+      id: resistorId,
+      name: 'resistance',
+      value: 75,
+    });
+    expect(after.sliders[0].id).toBe(sliderId);
+  });
+
+  it('a slider with no resolvable parameter does nothing', () => {
+    // The slider targets element index 3, which does not exist: inert but
+    // preserved, so nothing is queued and the element is untouched.
+    useStore.getState().loadNetlist(
+      '$ 0 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n38 3 0 1 101 Ghost\n',
+    );
+    const s = useStore.getState();
+    useStore.getState().setSliderValue(s.sliders[0].id, 50);
+    const after = useStore.getState();
+    expect(after.elements[0].params.resistance).toBe(100);
+    expect(after.pendingParams.size).toBe(0);
+  });
+
+  it('a drag is one undo entry and restores the element with it', () => {
+    useStore.getState().loadNetlist(SLIDER_FIXTURE);
+    const sliderId = useStore.getState().sliders[0].id;
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().beginEdit();
+    useStore.getState().setSliderValue(sliderId, 30);
+    useStore.getState().setSliderValue(sliderId, 75);
+
+    const mid = useStore.getState();
+    expect(mid.undoStack.length).toBe(baseline + 1);
+    expect(mid.elements[0].params.resistance).toBe(75);
+
+    useStore.getState().undo();
+    const s = useStore.getState();
+    // The whole element, geometry included, comes back from the snapshot.
+    expect(s.elements[0]).toMatchObject({
+      x1: 0,
+      y1: 0,
+      x2: 16,
+      y2: 0,
+      params: { resistance: 100 },
+    });
+  });
+
+  it('deleting the bound element drops the slider and its serialized line', () => {
+    useStore.getState().loadNetlist(SLIDER_FIXTURE);
+    const s = useStore.getState();
+    useStore.getState().select([s.elements[0].id]);
+    useStore.getState().deleteSelected();
+
+    const after = useStore.getState();
+    expect(after.sliders).toHaveLength(0);
+    // The line no longer serializes at all, unlike a sentinel which would.
+    expect(after.toNetlist()).not.toContain('38');
+    expect(after.toNetlist()).toContain('r 16 0 32 0 0 220');
+
+    // Undo restores the element, the slider and its place in the file.
+    after.undo();
+    const restored = useStore.getState();
+    expect(restored.sliders).toHaveLength(1);
+    expect(restored.toNetlist()).toContain('38 0 0 1 101 Resistance');
+  });
+
+  it('deleting an element ahead of the bound one renumbers its e token', () => {
+    // The -1 sentinel is unreachable through the store: deleteSelected drops
+    // the slider of a deleted element, so nothing here emits it. It is
+    // produced only by direct serialization of a stale config and is covered
+    // in netlist/sliders.test.ts. What this test pins is the renumbering: the
+    // bound resistor slid to index 0, so its slider line is rewritten.
+    useStore.getState().loadNetlist(SLIDER_FIXTURE);
+    const s = useStore.getState();
+    useStore.getState().select([s.elements[1].id]);  // the resistor ahead of the bound one
+    useStore.getState().deleteSelected();
+    const out = useStore.getState().toNetlist();
+    expect(out).toContain('38 0 0 1 101 Resistance');
+  });
+
+  it('a duty-cycle slider drag writes a fraction, not the file percent', () => {
+    // The corpus slider `38 14 6 0 100 Duty\sCycle` declares min 0 max 100
+    // (percent) because upstream's edit item is dutyCycle*100
+    // (VoltageElm.java:578), but the port's dutyCycle param is a fraction in
+    // [0, 1], the divide-by-100 setEditValue does (:660). The scale applies
+    // between the panel's position conversion and setParam.
+    useStore.getState().loadNetlist(DUTY_FIXTURE);
+    const s = useStore.getState();
+    const sliderId = s.sliders[0].id;
+
+    useStore.getState().setSliderValue(sliderId, 50);
+
+    const after = useStore.getState();
+    expect(after.elements[0].params.dutyCycle).toBe(0.5);
+    // A save keeps the duty token a fraction, not the percent the slider uses.
+    const vLine = after.toNetlist().split('\n').find((l) => l.startsWith('v '))!;
+    expect(vLine.split(' ').at(-1)).toBe('0.5');
+  });
+
+  it('a slider move bumps paramRevision, not revision (the sim clock survives)', () => {
+    useStore.getState().loadNetlist(SLIDER_FIXTURE);
+    const s = useStore.getState();
+    const before = { revision: s.revision, paramRevision: s.paramRevision };
+
+    useStore.getState().setSliderValue(s.sliders[0].id, 50);
+
+    const after = useStore.getState();
+    expect(after.revision).toBe(before.revision);
+    expect(after.paramRevision).toBe(before.paramRevision + 1);
+  });
+
+  it('sliders load and clear with the circuit', () => {
+    useStore.getState().loadNetlist(SLIDER_FIXTURE);
+    expect(useStore.getState().sliders).toHaveLength(1);
+    useStore.getState().newCircuit();
+    expect(useStore.getState().sliders).toHaveLength(0);
+    expect(useStore.getState().toNetlist()).not.toContain('38');
   });
 });

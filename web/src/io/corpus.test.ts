@@ -87,7 +87,12 @@ describe('corpus fixtures', () => {
     expect(slider?.sliderLines).toBe(1);
 
     const parsed = parseCircuit(readFileSync(join(FIXTURES_DIR, 'slider-unknown.txt'), 'utf8'));
-    expect(parsed.unsupported).toContain('38');
+    // The slider parses into state; only the `170` sweep element is missing.
+    expect(parsed.unsupported).not.toContain('38');
+    expect(parsed.sliders).toHaveLength(1);
+    // It points at the unread `170` line, so it binds to nothing but still
+    // round-trips.
+    expect(parsed.sliders[0].elementId).toBeUndefined();
     const { missing, sliderLines } = plainLoad(parsed);
     expect(missing).toEqual(['170']);
     expect(sliderLines).toBe(1);

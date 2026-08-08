@@ -1,0 +1,108 @@
+import { describe, expect, it } from 'vitest';
+import {
+  paramScale,
+  resolveParam,
+  sliderPositionToValue,
+  sliderValueToPosition,
+} from './sliders';
+
+describe('slider parameter resolution', () => {
+  it('pins the corpus bindings by caption and alias', () => {
+    // Caption match against the field label.
+    expect(resolveParam('resistor', 0, 'Resistance')).toMatchObject({ name: 'resistance' });
+    expect(resolveParam('current', 0, 'Current')).toMatchObject({ name: 'current' });
+    expect(resolveParam('capacitor', 0, 'Capacitance')).toMatchObject({ name: 'capacitance' });
+    expect(resolveParam('inductor', 0, 'Inductance')).toMatchObject({ name: 'inductance' });
+    // The alias wins where the caption and the port's field order disagree.
+    expect(resolveParam('transistor', 0, 'Beta/hFE')).toMatchObject({ name: 'beta' });
+    // "Duty Cycle" matches the field label even though editItem 6 is stale
+    // against upstream's current edit list.
+    expect(resolveParam('voltage', 6, 'Duty Cycle')).toMatchObject({ name: 'dutyCycle' });
+    expect(resolveParam('resistor', 0, 'Phase Control')).toMatchObject({ name: 'resistance' });
+  });
+
+  it('matches case- and separator-insensitively', () => {
+    expect(resolveParam('voltage', 6, 'duty cycle')).toMatchObject({ name: 'dutyCycle' });
+    expect(resolveParam('voltage', 6, 'Duty-Cycle')).toMatchObject({ name: 'dutyCycle' });
+    expect(resolveParam('transistor', 0, 'BETA/HFE')).toMatchObject({ name: 'beta' });
+  });
+
+  it('falls back to the numeric edit-item index when the caption matches nothing', () => {
+    // The resistor's only numeric field is resistance, at index 0.
+    expect(resolveParam('resistor', 0, 'Unrelated')).toMatchObject({ name: 'resistance' });
+    // The voltage source's numeric fields in port order (waveform is a choice,
+    // so it is skipped): amplitude, frequency, DC offset, phase offset,
+    // rise/fall time, duty cycle.
+    expect(resolveParam('voltage', 1, '')).toMatchObject({ name: 'frequency' });
+    expect(resolveParam('voltage', 5, '')).toMatchObject({ name: 'dutyCycle' });
+  });
+
+  it('an out-of-range index and a kind with no fields resolve to null', () => {
+    expect(resolveParam('resistor', 5, '')).toBeNull();
+    // Wires and grounds expose no numeric fields.
+    expect(resolveParam('wire', 0, '')).toBeNull();
+    expect(resolveParam('ground', 0, '')).toBeNull();
+    // A kind this build cannot draw has no definition at all.
+    expect(resolveParam('sweep', 0, '')).toBeNull();
+  });
+
+  it('excludes text fields from the numeric-index fallback', () => {
+    // A labeled node's only field is its text; without the exclusion the index
+    // fallback would resolve to a phantom `text` param and force a full engine
+    // rebuild on set_param.
+    expect(resolveParam('labeledNode', 0, '')).toBeNull();
+  });
+});
+
+describe('slider value/position conversion', () => {
+  it('maps linear positions to values', () => {
+    expect(sliderPositionToValue(50, 1, 101, false, 0)).toBe(51);
+    expect(sliderPositionToValue(0, 1, 101, false, 0)).toBe(1);
+    expect(sliderPositionToValue(100, 1, 101, false, 0)).toBe(101);
+  });
+
+  it('rounds to the step above min when one is set', () => {
+    // 51 lands exactly on a multiple of 10 above 1; a position that does not
+    // snaps to the nearest one.
+    expect(sliderPositionToValue(50, 1, 101, false, 10)).toBe(51);
+    expect(sliderPositionToValue(51, 1, 101, false, 10)).toBe(51);
+    expect(sliderPositionToValue(5, 0, 100, false, 10)).toBe(10);
+  });
+
+  it('round-trips values through the logarithmic conversion', () => {
+    for (const x of [1, 1.5, 10, 100, 500, 1000, 3.7, 999]) {
+      const pos = sliderValueToPosition(x, 1, 1000, true);
+      const back = sliderPositionToValue(pos, 1, 1000, true, 0);
+      expect(back).toBeCloseTo(x, 9);
+      // The position itself also round-trips.
+      expect(sliderValueToPosition(back, 1, 1000, true)).toBeCloseTo(pos, 9);
+    }
+  });
+
+  it('falls back to linear when log is requested on a non-positive range', () => {
+    expect(sliderValueToPosition(0.5, 0, 1, true)).toBe(50);
+    expect(sliderPositionToValue(50, 0, 1, true, 0)).toBe(0.5);
+  });
+
+  it('log mapping falls back to linear on a degenerate range', () => {
+    // An inverted range would make logMax - logMin negative; the max > min
+    // guard routes it to linear instead (50.5 = (50-100)*100/(1-100)).
+    expect(sliderValueToPosition(50, 100, 1, true)).toBeCloseTo(50.5050505050505, 9);
+    expect(sliderPositionToValue(50, 100, 1, true, 0)).toBeCloseTo(50.5, 9);
+  });
+
+  it('a stored fraction shows at its own position in a percent range', () => {
+    // The corpus duty slider is `38 14 6 0 100 Duty\sCycle`, a percent range,
+    // but the stored param is the fraction 0.56. The thumb read-back keeps the
+    // raw param against the file range: position 0.56, not 56.
+    expect(sliderValueToPosition(0.56, 0, 100, false)).toBe(0.56);
+  });
+
+  it('paramScale converts the file range into the param unit', () => {
+    // Upstream's duty-cycle edit item is the percent (VoltageElm.java:578),
+    // the port's dutyCycle param the fraction, so a slider value is scaled by
+    // 0.01 before set_param. Every other param shares its file range.
+    expect(paramScale('dutyCycle')).toBe(0.01);
+    expect(paramScale('resistance')).toBe(1);
+  });
+});

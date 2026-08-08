@@ -14,6 +14,7 @@ import { OptionsPanel } from './ui/OptionsPanel';
 import { SaveAsDialog } from './ui/SaveAsDialog';
 import { SaveAsImageDialog } from './ui/SaveAsImageDialog';
 import { ScopePanel } from './ui/ScopePanel';
+import { SliderPanel } from './ui/SliderPanel';
 import { Toolbox } from './ui/Toolbox';
 import { hasUnsavedChanges, gridSize, useStore } from './state/store';
 
@@ -223,6 +224,7 @@ export default function App() {
         </main>
         <aside className={panelOpen ? 'right open' : 'right'}>
           <OptionsPanel engine={engine} />
+          <SliderPanel />
         </aside>
         {/* A full-screen tap target that dismisses whichever drawer is open.
             Only rendered when one is, and only the mobile layout shows it. */}

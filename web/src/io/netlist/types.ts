@@ -62,6 +62,40 @@ export interface DiodeModel {
 }
 
 /**
+ * A slider (`38` line, upstream's Adjustable) as stored in the file:
+ * `38 <e> [F<flags>] <editItem> <minValue> <maxValue> [<sharedIndex>]
+ * <sliderText> [<sliderStep>]` (Adjustable.java:47-76). Not an element, so it
+ * takes no scope index; `e` is a position in the element list that counts the
+ * element lines this build cannot read.
+ */
+export interface SliderConfig {
+  /** Session-unique handle, so a save can put the line back where it was. */
+  id: number;
+  /** The element that `e` resolves to, or undefined when it lands on an
+   *  element line this build could not read (or is out of range). Such a
+   *  slider renders nothing but still round-trips. */
+  elementId?: number;
+  /** Index into the element's edit list, kept for the resolution fallback. */
+  editItem: number;
+  min: number;
+  max: number;
+  /** Optional trailing token; 0 means continuous (Adjustable.java:70-72). */
+  step: number;
+  /** The caption, one escaped token, unescaped on load. */
+  text: string;
+  /** FLAG_LOG (bit 2): use a logarithmic value/position conversion. */
+  logarithmic: boolean;
+  /** The `ano` token under FLAG_SHARED (bit 1): an index into the file's
+   *  sliders of the one this shares, `-1` meaning none, or null when the line
+   *  carries no shared index at all. Shared sliders render independently for
+   *  now. */
+  shared: number | null;
+  /** Every token after `38`, kept so the line round-trips exactly. Only the
+   *  `e` token is rewritten, from where the element lands in the file. */
+  raw: string[];
+}
+
+/**
  * One line of the file, in the order it appeared. Replaying this on save is
  * what keeps blank lines, comments and unmodelled lines where the author put
  * them instead of sweeping them to the end.
@@ -73,12 +107,15 @@ export type NetlistLine =
   | { kind: 'header' }
   | { kind: 'element'; id: number }
   | { kind: 'scope'; id: number }
+  | { kind: 'slider'; id: number }
   | { kind: 'other'; line: string };
 
 export interface ParsedCircuit {
   elements: CircuitElement[];
   settings: Partial<SimSettings>;
   scopes: ScopeConfig[];
+  /** Sliders (`38` lines) parsed into bindable state. */
+  sliders: SliderConfig[];
   /** Lines this build does not interpret, re-emitted on save. */
   passthrough: string[];
   /** Types present in the file that this build cannot draw or simulate. */

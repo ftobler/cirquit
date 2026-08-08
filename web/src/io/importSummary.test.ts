@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { summarizeImport } from './importSummary';
+import { SAMPLE } from './netlist/fixtures';
 
 /** Seven elements and one scope with no unmodelled lines, so the pinned
- *  summary string is exact. The bundled SAMPLE fixture carries a `38` slider
- *  line that reports as an unsupported type, so it cannot pin the clean string. */
+ *  summary string is exact. The bundled SAMPLE fixture now parses its `38`
+ *  slider line into state, so it would also produce a clean string; the local
+ *  fixture is kept so the wording has a stable home. */
 const GOOD = `$ 1 0.000005 10.2 50 5 43 5e-11
 v 176 320 176 96 0 0 40 5 0 0 0.5
 r 176 96 384 96 0 1000
@@ -30,6 +32,12 @@ describe('summarizeImport', () => {
     expect(summarizeImport('$ 1 0.000005 10 50 5 43 5e-11\n999 1 2 3 4 0\n')).toContain(
       'unsupported type(s) (999)',
     );
+  });
+
+  it('no longer reports a parsed slider line as unsupported', () => {
+    // SAMPLE carries a `38` slider line; since it parses into state now, the
+    // summary is clean.
+    expect(summarizeImport(SAMPLE)).toBe('7 elements, 1 scope trace');
   });
 
   it('reports 0 elements for garbage without throwing, and preserves it as passthrough', () => {

@@ -178,6 +178,7 @@ describe('line order, blank lines and comments', () => {
       parsed.scopes,
       parsed.passthrough,
       parsed.order,
+      parsed.sliders,
     );
 
   it('keeps blank lines and # comments where the author put them', () => {

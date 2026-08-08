@@ -1,7 +1,14 @@
 import { defForDumpCode } from '../../model/registry';
 import type { CircuitElement, SimSettings } from '../../model/types';
 import type { ScopeValue } from '../../engine/simulator';
-import type { DiodeModel, NetlistLine, ParsedCircuit, ScopeConfig, ScopePlotConfig } from './types';
+import type {
+  DiodeModel,
+  NetlistLine,
+  ParsedCircuit,
+  ScopeConfig,
+  ScopePlotConfig,
+  SliderConfig,
+} from './types';
 import { unescapeToken } from './tokens';
 
 /** Thermal voltage the diode model's forward-drop derivation uses
@@ -49,13 +56,20 @@ function importDecOrHex(token: string): number {
  */
 export function scopeValueFromToken(token: number, kind: string | null): ScopeValue | null {
   switch (token) {
-    case 0: return 'voltage';
-    case 7: return 'power';
-    case 1: return kind === 'transistor' ? null : 'power';  // legacy power id, or VAL_IB
-    case 3: return kind === 'transistor' ? null : 'current';  // VAL_CURRENT, or VAL_IE
-    case 2: return kind === 'lamp' || kind === 'transistor' ? null : 'voltage';  // VAL_R, or VAL_IC
-    case 8: return kind === 'capacitor' || kind === 'polarizedCapacitor' ? null : 'voltage';  // VAL_CHARGE
-    default: return kind === 'transistor' ? null : 'voltage';  // VBE/VBC/VCE on a transistor
+    case 0:
+      return 'voltage';
+    case 7:
+      return 'power';
+    case 1:
+      return kind === 'transistor' ? null : 'power';  // legacy power id, or VAL_IB
+    case 3:
+      return kind === 'transistor' ? null : 'current';  // VAL_CURRENT, or VAL_IE
+    case 2:
+      return kind === 'lamp' || kind === 'transistor' ? null : 'voltage';  // VAL_R, or VAL_IC
+    case 8:
+      return kind === 'capacitor' || kind === 'polarizedCapacitor' ? null : 'voltage';  // VAL_CHARGE
+    default:
+      return kind === 'transistor' ? null : 'voltage';  // VBE/VBC/VCE on a transistor
   }
 }
 
@@ -96,20 +110,131 @@ const NON_ELEMENT_HEADS = '!%?.';
  * and are not repeated here.
  */
 const UPSTREAM_ELEMENT_CODES = new Set([
-  '150', '151', '152', '153', '154', '155', '156', '157', '158', '159',
-  '160', '161', '162', '163', '164', '165', '166', '167', '168', '169',
-  '170', '171', '172', '173', '174', '175', '176', '177', '178', '179',
-  '180', '181', '182', '183', '184', '185', '186', '187', '188', '189',
-  '193', '194', '195', '196', '197',
-  '200', '201', '203',
-  '206', '207', '208', '209', '210', '211', '212', '213', '214', '215', '216',
-  '350', '368', '370', '374',
-  '400', '401', '402', '403', '404', '405', '406', '407', '408', '409',
-  '410', '411', '412', '413', '414', '415', '416', '417', '418', '419',
-  '420', '421', '422', '423', '424', '425', '426', '427', '428', '429',
-  '430', '431', '432', '433', '436',
-  'A', 'I', 'L', 'M', 'O', 'R', 'S', 'T', 'a', 'b', 'c', 'd', 'f', 'g',
-  'i', 'j', 'l', 'm', 'n', 'p', 'r', 's', 't', 'v', 'w', 'x', 'z',
+  '150',
+  '151',
+  '152',
+  '153',
+  '154',
+  '155',
+  '156',
+  '157',
+  '158',
+  '159',
+  '160',
+  '161',
+  '162',
+  '163',
+  '164',
+  '165',
+  '166',
+  '167',
+  '168',
+  '169',
+  '170',
+  '171',
+  '172',
+  '173',
+  '174',
+  '175',
+  '176',
+  '177',
+  '178',
+  '179',
+  '180',
+  '181',
+  '182',
+  '183',
+  '184',
+  '185',
+  '186',
+  '187',
+  '188',
+  '189',
+  '193',
+  '194',
+  '195',
+  '196',
+  '197',
+  '200',
+  '201',
+  '203',
+  '206',
+  '207',
+  '208',
+  '209',
+  '210',
+  '211',
+  '212',
+  '213',
+  '214',
+  '215',
+  '216',
+  '350',
+  '368',
+  '370',
+  '374',
+  '400',
+  '401',
+  '402',
+  '403',
+  '404',
+  '405',
+  '406',
+  '407',
+  '408',
+  '409',
+  '410',
+  '411',
+  '412',
+  '413',
+  '414',
+  '415',
+  '416',
+  '417',
+  '418',
+  '419',
+  '420',
+  '421',
+  '422',
+  '423',
+  '424',
+  '425',
+  '426',
+  '427',
+  '428',
+  '429',
+  '430',
+  '431',
+  '432',
+  '433',
+  '436',
+  'A',
+  'I',
+  'L',
+  'M',
+  'O',
+  'R',
+  'S',
+  'T',
+  'a',
+  'b',
+  'c',
+  'd',
+  'f',
+  'g',
+  'i',
+  'j',
+  'l',
+  'm',
+  'n',
+  'p',
+  'r',
+  's',
+  't',
+  'v',
+  'w',
+  'x',
+  'z',
 ]);
 
 /**
@@ -131,6 +256,7 @@ export function parseCircuit(text: string): ParsedCircuit {
   const elements: CircuitElement[] = [];
   const settings: Partial<SimSettings> = {};
   const scopes: ScopeConfig[] = [];
+  const sliders: SliderConfig[] = [];
   const passthrough: string[] = [];
   const unsupported: string[] = [];
   const order: NetlistLine[] = [];
@@ -271,10 +397,83 @@ export function parseCircuit(text: string): ParsedCircuit {
       continue;
     }
 
+    if (head === '38') {
+      // Slider (Adjustable) line: `38 <e> [F<flags>] <editItem> <minValue>
+      // <maxValue> [<sharedIndex>] <sliderText> [<sliderStep>]`
+      // (Adjustable.java:47-76). It is not an element line upstream either
+      // (CircuitLoader.java:183-188), so it takes no scope index and is not
+      // reported unsupported. The slider gets its own order slot (like a
+      // scope), so the `e` token can be rewritten from where the element
+      // lands and a dropped slider's line stops serialising; a line with no
+      // element to bind rides through in passthrough like any other.
+      const e = Number(tokens[1]);
+      // `e == -1` means "no element": the reader returns without creating an
+      // Adjustable (Adjustable.java:49-50), so the line stays inert. A missing
+      // or non-numeric `e` gets the same treatment. Treating any negative `e`
+      // as unbound is a deliberate superset of upstream's exact `-1` check: a
+      // hand-edited index below zero is just as dead, and the line rides
+      // through passthrough either way.
+      if (Number.isFinite(e) && e >= 0) {
+        // The same skip-non-finite guard readParams uses
+        // (registry/shared.ts:43-48), so a truncated or hand-edited line
+        // degrades field by field instead of stamping NaN.
+        const num = (i: number): number | undefined => {
+          const v = Number(tokens[i]);
+          return tokens[i] !== undefined && Number.isFinite(v) ? v : undefined;
+        };
+        // The F-prefixed token is a backward-compatibility marker: flags are
+        // the integer after it and the editItem is the next token, else the
+        // token IS the editItem and flags default to 0
+        // (Adjustable.java:54-58). Bit 1 = FLAG_SHARED, bit 2 = FLAG_LOG.
+        let flags = 0;
+        let cursor = 2;
+        if (tokens[2] !== undefined && tokens[2].startsWith('F')) {
+          flags = Number(tokens[2].slice(1)) || 0;
+          cursor = 3;
+        }
+        const editItem = num(cursor) ?? 0;
+        // The other constructor's defaults (Adjustable.java:34-35).
+        const min = num(cursor + 1) ?? 1;
+        const max = num(cursor + 2) ?? 1000;
+        let shared: number | null = null;
+        let textCursor = cursor + 3;
+        if ((flags & 1) !== 0) {
+          // FLAG_SHARED inserts the shared index between max and the text.
+          const ano = num(cursor + 3);
+          if (ano !== undefined) shared = ano;
+          textCursor = cursor + 4;
+        }
+        const text = tokens[textCursor] === undefined ? '' : unescapeToken(tokens[textCursor]);
+        // The step token is optional, read under a try upstream
+        // (Adjustable.java:70-72); 0 means continuous.
+        const stepToken = tokens[textCursor + 1];
+        const step =
+          stepToken !== undefined && Number.isFinite(Number(stepToken)) ? Number(stepToken) : 0;
+        const id = allocateId();
+        sliders.push({
+          id,
+          elementId: idByFileIndex.get(e),
+          editItem,
+          min,
+          max,
+          step,
+          text,
+          logarithmic: (flags & 2) !== 0,
+          shared,
+          raw: tokens.slice(1),
+        });
+        order.push({ kind: 'slider', id });
+      } else {
+        passthrough.push(lineText);
+        order.push({ kind: 'other', line: rawLine });
+      }
+      continue;
+    }
+
     const def = defForDumpCode(head);
     if (!def) {
-      // Sliders (`38`), hints (`h`), transistor models (`32`) and anything
-      // newer than this build. Keep the line so a save round-trips.
+      // Hints (`h`), transistor models (`32`) and anything newer than this
+      // build. Keep the line so a save round-trips.
       passthrough.push(lineText);
       order.push({ kind: 'other', line: rawLine });
       if (/^[0-9]+$/.test(head) || /^[a-zA-Z]$/.test(head)) unsupported.push(head);
@@ -333,7 +532,7 @@ export function parseCircuit(text: string): ParsedCircuit {
       model.emissionCoefficient * VT * Math.log(1 / model.saturationCurrent + 1);
   }
 
-  return { elements, settings, scopes, passthrough, unsupported, order };
+  return { elements, settings, scopes, sliders, passthrough, unsupported, order };
 }
 
 /**

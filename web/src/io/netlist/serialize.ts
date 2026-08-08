@@ -1,6 +1,6 @@
 import { defFor } from '../../model/registry';
 import type { CircuitElement, SimSettings } from '../../model/types';
-import type { NetlistLine, ScopeConfig } from './types';
+import type { NetlistLine, ScopeConfig, SliderConfig } from './types';
 import { escapeToken } from './tokens';
 import { isElementLine } from './parse';
 
@@ -65,6 +65,37 @@ function scopeLineFor(s: ScopeConfig, ordinalById: Map<number, number>): string 
 }
 
 /**
+ * One `38` slider line. The `e` token is recomputed from where the target
+ * element landed, like the scope writer, so deleting or reordering an element
+ * ahead of the slider does not silently repoint it. A deleted element writes
+ * the upstream `-1` sentinel (Adjustable.java:49-50); an element line this
+ * build could not read keeps the index the file gave it, the same rule scopes
+ * use. Every other token is kept exactly as loaded. A slider with no loaded
+ * tokens (created in the UI, a later stage) writes upstream's canonical
+ * `e F<flags> editItem min max ano text step` form (Adjustable.java:194-195);
+ * the writer path is shared, only the token form differs.
+ */
+function sliderLineFor(s: SliderConfig, ordinalById: Map<number, number>): string {
+  const index =
+    s.elementId === undefined ? Number(s.raw[0] ?? -1) : (ordinalById.get(s.elementId) ?? -1);
+  if (s.raw.length === 0) {
+    const flags = (s.logarithmic ? 2 : 0);
+    return [
+      '38',
+      index,
+      `F${flags}`,
+      s.editItem,
+      s.min,
+      s.max,
+      s.shared ?? -1,
+      escapeToken(s.text),
+      s.step,
+    ].join(' ');
+  }
+  return ['38', index, ...s.raw.slice(1)].join(' ');
+}
+
+/**
  * Serialises a circuit back to the original format.
  *
  * With an `order` from `parseCircuit`, the file's arrangement is reproduced:
@@ -80,6 +111,7 @@ export function serializeCircuit(
   scopes: ScopeConfig[] = [],
   passthrough: string[] = [],
   order?: NetlistLine[],
+  sliders: SliderConfig[] = [],
 ): string {
   const header = headerLine(settings);
   const rendered: { id: number; line: string }[] = [];
@@ -95,7 +127,8 @@ export function serializeCircuit(
     rendered.forEach((r, i) => ordinalById.set(r.id, i));
     const body = rendered.map((r) => r.line);
     const traces = scopes.map((s) => scopeLineFor(s, ordinalById));
-    return [header, ...body, ...traces, ...passthrough].join('\n') + '\n';
+    const sliderLines = sliders.map((s) => sliderLineFor(s, ordinalById));
+    return [header, ...body, ...traces, ...sliderLines, ...passthrough].join('\n') + '\n';
   }
 
   // Slots are array positions, not ids, so two elements that somehow share an
@@ -108,13 +141,17 @@ export function serializeCircuit(
   });
   const scopeSlots = new Map<number, number>();
   scopes.forEach((s, i) => scopeSlots.set(s.id, i));
+  const sliderSlots = new Map<number, number>();
+  sliders.forEach((s, i) => sliderSlots.set(s.id, i));
 
   const lines: string[] = [];
   const usedElements = new Set<number>();
   const usedScopes = new Set<number>();
-  // Scope lines are written last: their index token depends on where every
-  // element landed, which is only known once the whole walk is done.
-  const deferred: { at: number; slot: number }[] = [];
+  const usedSliders = new Set<number>();
+  // Scope and slider lines are written last: their index tokens depend on
+  // where every element landed, which is only known once the whole walk is
+  // done.
+  const deferred: { at: number; kind: 'scope' | 'slider'; slot: number }[] = [];
   let fileIndex = 0;
   let sawHeader = false;
   for (const entry of order) {
@@ -132,11 +169,18 @@ export function serializeCircuit(
         ordinalById.set(entry.id, fileIndex++);
         lines.push(rendered[slot].line);
       }
+    } else if (entry.kind === 'slider') {
+      const slot = sliderSlots.get(entry.id);
+      if (slot !== undefined && !usedSliders.has(slot)) {
+        usedSliders.add(slot);
+        deferred.push({ at: lines.length, kind: 'slider', slot });
+        lines.push('');
+      }
     } else {
       const slot = scopeSlots.get(entry.id);
       if (slot !== undefined && !usedScopes.has(slot)) {
         usedScopes.add(slot);
-        deferred.push({ at: lines.length, slot });
+        deferred.push({ at: lines.length, kind: 'scope', slot });
         lines.push('');
       }
     }
@@ -146,7 +190,7 @@ export function serializeCircuit(
   // `<cir>` form, which this build only passes through, and prefixing it with
   // a `$` line would stop upstream recognising it as XML at all
   // (CircuitLoader.java:73-80).
-  if (!sawHeader && rendered.length + scopes.length > 0) {
+  if (!sawHeader && rendered.length + scopes.length + sliders.length > 0) {
     lines.unshift(header);
     for (const d of deferred) d.at += 1;
   }
@@ -158,7 +202,15 @@ export function serializeCircuit(
   scopes.forEach((s, i) => {
     if (!usedScopes.has(i)) lines.push(scopeLineFor(s, ordinalById));
   });
-  for (const d of deferred) lines[d.at] = scopeLineFor(scopes[d.slot], ordinalById);
+  sliders.forEach((s, i) => {
+    if (!usedSliders.has(i)) lines.push(sliderLineFor(s, ordinalById));
+  });
+  for (const d of deferred) {
+    lines[d.at] =
+      d.kind === 'scope'
+        ? scopeLineFor(scopes[d.slot], ordinalById)
+        : sliderLineFor(sliders[d.slot], ordinalById);
+  }
 
   return lines.join('\n') + '\n';
 }

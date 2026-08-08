@@ -163,8 +163,8 @@ fetch it).
   file is preserved but not looked up.
 - **Scope line fidelity.** `o` lines are parsed for their element attachment
   only; the remaining display fields are preserved verbatim but not
-  interpreted. Sliders (`38`), hints (`h`) and subcircuit definitions are
-  likewise preserved but inert.
+  interpreted. Hints (`h`) and subcircuit definitions are likewise preserved
+  but inert.
 - **XML circuits.** Current upstream saves a `<cir …>` document rather than
   the text format, and 38 of the 373 bundled circuits are in that form. They
   load as an empty circuit here and are passed through byte-for-byte on save,
@@ -234,7 +234,7 @@ fetch it).
 - [x] Rotate/flip, and the element-specific flags that control orientation
 - [x] Copy/paste and duplicate
 - [ ] Wire auto-routing and junction dots
-- [ ] Sliders (`38` lines) bound to element parameters
+- [x] Sliders (`38` lines) bound to element parameters
 - [ ] Full scope UI: stacked traces, time/div, cursors, X-Y mode, FFT
 - [ ] Subcircuits (`CustomComposite`)
 

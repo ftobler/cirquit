@@ -6,6 +6,7 @@ export const fresh = () => ({
   elements: [],
   selectedIds: [],
   scopes: [],
+  sliders: [],
   settings: { ...DEFAULT_SETTINGS },
   passthrough: [],
   unmatchedScopes: [],

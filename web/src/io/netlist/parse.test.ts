@@ -101,8 +101,12 @@ describe('netlist parsing', () => {
     const parsed = parseCircuit(SAMPLE);
     expect(parsed.scopes).toHaveLength(1);
     expect(parsed.scopes[0].plots[0].elementIndex).toBe(4);
-    // The `38` slider line is not modelled but must survive a save.
-    expect(parsed.passthrough.some((l) => l.startsWith('38 '))).toBe(true);
+    // The `38` slider line parses into state now; it takes its own order slot
+    // so the e token can be rewritten on save, and is not reported unsupported.
+    expect(parsed.sliders).toHaveLength(1);
+    expect(parsed.sliders[0].text).toBe('Capacitance');
+    expect(parsed.unsupported).not.toContain('38');
+    expect(parsed.order).toContainEqual({ kind: 'slider', id: parsed.sliders[0].id });
   });
 
   it('round-trips element lines byte-for-byte', () => {
@@ -334,5 +338,89 @@ describe('scope o-line fidelity', () => {
       '-1',
       'matched',
     ]);
+  });
+});
+
+describe('slider (38) parsing', () => {
+  /** One element per file index, mirroring the corpus slider targets: resistor
+   *  0, current source 1, capacitor 2, inductor 3, transistor 4, resistor 5,
+   *  square-wave voltage source 6. */
+  const FIXTURE = `$ 1 0.000005 10 50 5 43 5e-11
+r 0 0 16 0 0 100
+i 0 0 16 0 0 0.002
+c 0 0 16 0 0 1e-6 0.001
+l 0 0 16 0 0 1 0
+t 0 0 16 0 0 1 0 0 100
+r 16 0 32 0 0 16087
+v 0 0 0 16 0 2 40 5 5 0 0.56
+38 0 0 1 101 Resistance
+38 1 0 0 0.005 Current
+38 2 0 0.000001 0.000101 Capacitance
+38 3 0 0.01 1.01 Inductance
+38 4 0 1 1000 Beta/hFE
+38 5 0 100 22000 Phase\\sControl
+38 6 6 0 100 Duty\\sCycle
+`;
+
+  it('parses every corpus-form slider into its bound element and fields', () => {
+    const parsed = parseCircuit(FIXTURE);
+    expect(parsed.sliders).toHaveLength(7);
+    // The five corpus lines each resolve to the element their caption names.
+    const [resistance, current, capacitance, inductance, beta, phase, duty] = parsed.sliders;
+    expect(resistance).toMatchObject({
+      elementId: parsed.elements[0].id,
+      editItem: 0,
+      min: 1,
+      max: 101,
+      text: 'Resistance',
+      step: 0,
+      logarithmic: false,
+      shared: null,
+    });
+    expect(current).toMatchObject({ elementId: parsed.elements[1].id, text: 'Current' });
+    expect(capacitance).toMatchObject({ elementId: parsed.elements[2].id, min: 1e-6, max: 1.01e-4, text: 'Capacitance' });
+    expect(inductance).toMatchObject({ elementId: parsed.elements[3].id, text: 'Inductance' });
+    expect(beta).toMatchObject({ elementId: parsed.elements[4].id, text: 'Beta/hFE' });
+    // The escaped caption token comes back unescaped.
+    expect(phase).toMatchObject({ elementId: parsed.elements[5].id, text: 'Phase Control' });
+    expect(duty).toMatchObject({ elementId: parsed.elements[6].id, editItem: 6, text: 'Duty Cycle' });
+    // A parsed slider is not an unsupported type.
+    expect(parsed.unsupported).not.toContain('38');
+  });
+
+  it('an out-of-range e or the -1 sentinel leaves the line inert', () => {
+    const parsed = parseCircuit(FIXTURE.replace('38 6 6 0 100 Duty\\sCycle', '38 -1 6 0 100 Duty\\sCycle'));
+    // The sentinel line binds to nothing and is preserved, so it drops from
+    // the slider list but not from the file.
+    expect(parsed.sliders).toHaveLength(6);
+    expect(parsed.passthrough.some((l) => l.startsWith('38 -1'))).toBe(true);
+    const out = parseCircuit(FIXTURE + '38 99 0 1 100 Ghost\\sSlider\n');
+    expect(out.sliders).toHaveLength(8);
+    expect(out.sliders[7].elementId).toBeUndefined();
+  });
+
+  it('reads F-prefixed flags, editItem, shared index and step', () => {
+    const fixture = (line: string) =>
+      parseCircuit(
+        'r 0 0 16 0 0 100\nr 16 0 32 0 0 220\nr 32 0 48 0 0 330\nr 48 0 64 0 0 470\n' + line,
+      );
+    const withFlags = fixture('38 3 F2 0 1 100 Text 0.5\n');
+    expect(withFlags.sliders[0]).toMatchObject({
+      elementId: withFlags.elements[3].id,
+      editItem: 0,
+      min: 1,
+      max: 100,
+      step: 0.5,
+      text: 'Text',
+      logarithmic: true,
+      shared: null,
+    });
+    const shared = fixture('38 3 F1 0 1 100 2 Text 0\n');
+    expect(shared.sliders[0]).toMatchObject({ shared: 2, step: 0, logarithmic: false });
+    // The old no-F form predates the flags field (Adjustable.java:54-58).
+    const legacy = fixture('38 3 0 1 100 Text\n');
+    expect(legacy.sliders[0]).toMatchObject({ editItem: 0, step: 0, text: 'Text' });
+    expect(legacy.sliders[0].shared).toBeNull();
+    expect(legacy.sliders[0].logarithmic).toBe(false);
   });
 });

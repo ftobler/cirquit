@@ -134,13 +134,18 @@ describe('scope lines index the file, not the elements this build can read', () 
     ]);
   });
 
-  it('reports a slider line as preserved rather than missing', () => {
+  it('parses slider lines into state and reports nothing missing', () => {
     useStore.getState().loadNetlist(
       '$ 0 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n' +
         '38 0 0 1 2 A\n38 0 1 1 2 B\n',
     );
-    const problem = useStore.getState().problem ?? '';
-    // Two lines, one type: the count is of types, and the wording is honest.
-    expect(problem).toBe('1 other line type(s) (38) were preserved but not interpreted.');
+    const s = useStore.getState();
+    // Both sliders bind to the resistor; a parsed slider is not an unsupported
+    // type, so the load warning is silent.
+    expect(s.sliders).toHaveLength(2);
+    expect(s.sliders.every((x) => x.elementId === s.elements[0].id)).toBe(true);
+    expect(s.problem).toBeNull();
+    // The lines still come back in place.
+    expect(s.toNetlist()).toContain('38 0 0 1 2 A\n38 0 1 1 2 B');
   });
 });
