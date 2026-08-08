@@ -263,7 +263,7 @@ export function Menubar({ engine }: Props) {
     { label: 'Export As Text…', onClick: fire(() => openDialog('exportAsText')) },
     { label: 'Save As Image…', onClick: fire(() => openDialog('exportAsImage')) },
     { label: 'Copy Circuit Image to Clipboard', onClick: () => void copyImage() },
-    deferred('Save As SVG…', 'SVG export is not implemented yet'),
+    { label: 'Save As SVG…', onClick: fire(() => openDialog('exportAsSvg')) },
     deferred('Create Subcircuit…', 'Subcircuits are not implemented yet'),
     deferred('Find DC Operating Point', 'The DC operating point runs on reset; the one-shot command is not ported'),
     // Enabled only while a recovery exists (UIManager.java:170); the flag is

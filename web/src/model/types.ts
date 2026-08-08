@@ -138,9 +138,50 @@ export interface Theme {
   border: string;
 }
 
+/** The subset of the canvas 2D context the draw layer calls. Typed as a
+ *  structural interface, not `CanvasRenderingContext2D`, so `g.ctx` can be
+ *  either a real canvas context at runtime or the SVG recorder on export, and
+ *  so headless node tests never need a DOM canvas. A real context satisfies
+ *  it, and the recorder implements it, on purpose. */
+export interface Context2D {
+  fillStyle: string | CanvasGradient | CanvasPattern;
+  strokeStyle: string | CanvasGradient | CanvasPattern;
+  lineWidth: number;
+  lineCap: string;
+  lineJoin: string;
+  globalAlpha: number;
+  font: string;
+  textAlign: string;
+  textBaseline: string;
+  setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
+  scale(x: number, y: number): void;
+  translate(x: number, y: number): void;
+  save(): void;
+  restore(): void;
+  beginPath(): void;
+  moveTo(x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  closePath(): void;
+  arc(
+    x: number,
+    y: number,
+    radius: number,
+    startAngle: number,
+    endAngle: number,
+    counterclockwise?: boolean,
+  ): void;
+  rect(x: number, y: number, w: number, h: number): void;
+  stroke(): void;
+  fill(): void;
+  fillRect(x: number, y: number, w: number, h: number): void;
+  fillText(text: string, x: number, y: number, maxWidth?: number): void;
+  measureText(text: string): { width: number };
+  setLineDash(segments: number[]): void;
+}
+
 /** Per-frame drawing state handed to each element's `draw`. */
 export interface DrawContext {
-  ctx: CanvasRenderingContext2D;
+  ctx: Context2D;
   theme: Theme;
   /** Voltage at each terminal, indexed like `posts()`. */
   voltages: number[];

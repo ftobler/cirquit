@@ -19,6 +19,7 @@ export type DialogName =
   | 'exportAsLink'
   | 'exportAsText'
   | 'exportAsImage'
+  | 'exportAsSvg'
   | 'about'
   | 'shortcuts'
   | 'findComponent';

@@ -279,6 +279,7 @@ export default function App() {
       {dialog === 'exportAsLink' && <ExportAsLinkDialog />}
       {dialog === 'exportAsText' && <ExportAsTextDialog />}
       {dialog === 'exportAsImage' && <SaveAsImageDialog engine={engine} />}
+      {dialog === 'exportAsSvg' && <SaveAsImageDialog engine={engine} format="svg" />}
       {dialog === 'about' && <AboutDialog />}
       {dialog === 'shortcuts' && <ShortcutsDialog />}
       {dialog === 'findComponent' && <FindComponentDialog />}
