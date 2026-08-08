@@ -11,7 +11,7 @@
  * rotated or mirrored part's terminal coordinates match the original exactly.
  */
 
-import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP } from './registry';
+import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRI_STATE_FLIP } from './registry';
 import type { CircuitElement } from './types';
 
 /** Whether the element can turn a quarter turn. One-post parts (ground, rails,
@@ -114,6 +114,20 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
   if (!canMirror(e)) return e;
   const cx = (e.x1 + e.x2) / 2;
   const vertical = e.x1 === e.x2;
+  // The tri-state's control offset is absolute (a fixed sign, TriStateElm.java:
+  // 122), so a mirror must flip FLAG_FLIP unconditionally, unlike the
+  // dsign-driven parts where a horizontal mirror only needs dsign to move the
+  // hanging posts (TriStateElm.java:319-322).
+  if (e.kind === 'triState') {
+    return {
+      ...withoutRoute(e),
+      x1: 2 * cx - e.x1,
+      y1: e.y1,
+      x2: 2 * cx - e.x2,
+      y2: e.y2,
+      flags: e.flags ^ TRI_STATE_FLIP,
+    };
+  }
   let flipBit = 0;
   if (e.kind === 'mosfet' || e.kind === 'relay') flipBit = MOSFET_FLIP;
   else if (e.kind === 'transformer') flipBit = TRANSFORMER_FLIP;

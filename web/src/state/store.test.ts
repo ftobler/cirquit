@@ -619,6 +619,9 @@ describe('updateSettings reload classification', () => {
     // The resistor symbol is pure draw-mode like conventional; the choice must
     // not restart the simulation.
     ['euroResistors', false, false],
+    // The gate symbol toggle is pure draw-mode like euroResistors; the choice
+    // must not restart the simulation.
+    ['euroGates', true, false],
     ['smallGrid', true, false],
     ['showCrosshair', true, false],
     ['valueFontSize', 14, false],
@@ -672,6 +675,29 @@ describe('euroResistors persistence', () => {
     } finally {
       delete (globalThis as { localStorage?: StorageLike }).localStorage;
     }
+  });
+});
+
+describe('euroGates persistence', () => {
+  it('survives a simulated reload: updateSettings stores it, re-init reads it', () => {
+    const map = new Map<string, string>();
+    (globalThis as { localStorage?: StorageLike }).localStorage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    };
+    try {
+      useStore.getState().updateSettings({ euroGates: true });
+      const blob = JSON.parse(map.get(APP_PREF_STORAGE_KEY) ?? '{}') as Record<string, unknown>;
+      expect(blob.euroGates).toBe(true);
+      // The store initialiser merges stored prefs over DEFAULT_SETTINGS, so a
+      // reload comes back IEC and a default store stays ANSI.
+      expect({ ...DEFAULT_SETTINGS, ...loadAppPrefs() }).toMatchObject({ euroGates: true });
+      expect(useStore.getState().settings.euroGates).toBe(true);
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+    // A default store keeps the American shapes (upstream's non-German default).
+    expect(DEFAULT_SETTINGS.euroGates).toBe(false);
   });
 });
 
@@ -784,6 +810,9 @@ describe('options panel settings', () => {
     expect(DEFAULT_SETTINGS.showCrosshair).toBe(false);
     // European symbols are the port's default (upstream's non-US default).
     expect(DEFAULT_SETTINGS.euroResistors).toBe(true);
+    // The gates keep the American shapes by default, upstream's non-German
+    // locale default (GateElm.useEuroGates).
+    expect(DEFAULT_SETTINGS.euroGates).toBe(false);
     expect(DEFAULT_SETTINGS.valueFontSize).toBe(12);
     expect(DEFAULT_SETTINGS.shortDecimalDigits).toBe(1);
     expect(DEFAULT_SETTINGS.decimalDigits).toBe(3);

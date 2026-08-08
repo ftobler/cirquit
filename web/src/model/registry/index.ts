@@ -10,7 +10,7 @@
  * its kind there, then add a definition here in `elements/`.
  */
 
-import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP } from './flags';
+import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRI_STATE_FLIP } from './flags';
 import { switchLever, switchLeverTip, switchIecPoints, groundBars } from './shared';
 import { WIRE_DEF } from './elements/wire';
 import { GROUND_DEF } from './elements/ground';
@@ -36,13 +36,17 @@ import { SWITCH2_DEF } from './elements/switch2';
 import { TRANSFORMER_DEF, TAPPED_TRANSFORMER_DEF, CUSTOM_TRANSFORMER_DEF } from './elements/transformer';
 import { RELAY_DEF, RELAY_COIL_DEF, RELAY_CONTACT_DEF } from './elements/relay';
 import { OPAMP_DEF } from './elements/opamp';
+import { AND_GATE_DEF, NAND_GATE_DEF, OR_GATE_DEF, NOR_GATE_DEF, XOR_GATE_DEF, XNOR_GATE_DEF } from './elements/gate';
+import { INVERTER_DEF } from './elements/inverter';
+import { SCHMITT_DEF, INVERTING_SCHMITT_DEF } from './elements/schmitt';
+import { TRI_STATE_DEF } from './elements/triState';
 import { LABELED_NODE_DEF } from './elements/labeledNode';
 import { OUTPUT_DEF } from './elements/output';
 import { PROBE_DEF } from './elements/probe';
 import { DECORATION_DEF } from './elements/decoration';
 import type { CircuitElement, ElementDef, Point } from '../types';
 
-export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP };
+export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRI_STATE_FLIP };
 export { switchLever, switchLeverTip, switchIecPoints, groundBars };
 export { opampInputSign, opAmpInputAnchors, opAmpLabelAnchors } from './elements/opamp';
 export { transistorSideFactor, transistorBarContacts, transistorArrowTip } from './elements/transistor';
@@ -50,6 +54,7 @@ export { switch2Poles } from './elements/switch2';
 export { zenerMarks } from './elements/diode';
 export { potWiperGeometry } from './elements/potentiometer';
 export { railLead, railText, railLabelAnchor, railValueText, railValueAnchor, RAIL_CIRCLE } from './elements/rail';
+export { gateInverting, gateInputCount, gatePosts } from './elements/gate';
 
 export const ELEMENT_DEFS: ElementDef[] = [
   WIRE_DEF,
@@ -80,6 +85,16 @@ export const ELEMENT_DEFS: ElementDef[] = [
   TRANSISTOR_DEF,
   MOSFET_DEF,
   OPAMP_DEF,
+  AND_GATE_DEF,
+  NAND_GATE_DEF,
+  OR_GATE_DEF,
+  NOR_GATE_DEF,
+  XOR_GATE_DEF,
+  XNOR_GATE_DEF,
+  INVERTER_DEF,
+  SCHMITT_DEF,
+  INVERTING_SCHMITT_DEF,
+  TRI_STATE_DEF,
   LABELED_NODE_DEF,
   OUTPUT_DEF,
   PROBE_DEF,
@@ -103,7 +118,7 @@ export function postsOf(e: CircuitElement): Point[] {
 }
 
 /** Toolbox groupings, in display order. */
-export const CATEGORIES = ['Basics', 'Sources', 'Semiconductors', 'Active', 'Other'];
+export const CATEGORIES = ['Basics', 'Sources', 'Semiconductors', 'Active', 'Logic', 'Other'];
 
 /**
  * One pickable tool. Most kinds appear once, mirroring their `ElementDef`;

@@ -210,6 +210,11 @@ export interface DrawContext {
    *  render argument like `conventional`, read at draw time (upstream's global
    *  `euroResistors` app option, CircuitElm.showEuroResistors). */
   euroResistors: boolean;
+  /** Draw the IEC gate rectangle with the function glyph inside; off draws the
+   *  American distinctive shapes. A per-frame render argument like
+   *  `euroResistors`, read at draw time (upstream's `euroGatesCheckItem`,
+   *  GateElm.useEuroGates). */
+  euroGates: boolean;
   selected: boolean;
   /** The element under the pointer; colours its stroke and fill with
    *  `theme.highlight` like the shift-highlighted net below. */
@@ -276,6 +281,10 @@ export interface SimSettings {
   /** Draw the IEC resistor box instead of the American zigzag. An app pref
    *  like `conventional`: pure draw-mode, never part of the file or header. */
   euroResistors: boolean;
+  /** Draw the IEC gate rectangle with the function glyph inside instead of the
+   *  American distinctive shapes. An app pref like `euroResistors`: pure
+   *  draw-mode, never part of the file or header. */
+  euroGates: boolean;
   /** Read-only gate, upstream's `noEditing` (UIManager.java:116). UI-only:
    *  not a header token, so it never bumps the engine revision. */
   editable: boolean;
@@ -342,6 +351,9 @@ export const DEFAULT_SETTINGS: SimSettings = {
   // European symbols are the port's default, matching the upstream default
   // outside the US and this app's IEC-only history.
   euroResistors: true,
+  // The port keeps the American distinctive gate shapes by default, matching
+  // upstream's non-German locale default (GateElm.useEuroGates).
+  euroGates: false,
   editable: true,
   smallGrid: false,
   showCrosshair: false,

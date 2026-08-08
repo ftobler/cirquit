@@ -118,10 +118,7 @@
     "file": "555int.txt",
     "format": "plain",
     "missing": [
-      "153",
-      "153",
-      "b",
-      "I"
+      "b"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -142,7 +139,6 @@
     "format": "plain",
     "missing": [
       "165",
-      "152",
       "L"
     ],
     "sliderLines": 0,
@@ -221,36 +217,10 @@
     "format": "plain",
     "missing": [
       "157",
-      "I",
-      "I",
-      "I",
-      "I",
       "L",
       "L",
       "L",
-      "L",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "150",
-      "150",
-      "150",
-      "150",
-      "150",
-      "150",
-      "150",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151"
+      "L"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -804,12 +774,8 @@
     "file": "clockedsrff.txt",
     "format": "plain",
     "missing": [
-      "151",
-      "151",
       "M",
       "M",
-      "151",
-      "151",
       "L",
       "L"
     ],
@@ -866,15 +832,8 @@
     "missing": [
       "159",
       "159",
-      "I",
-      "I",
       "159",
       "159",
-      "I",
-      "I",
-      "I",
-      "I",
-      "I",
       "L",
       "M",
       "M"
@@ -911,7 +870,6 @@
     "file": "cmostransgate.txt",
     "format": "plain",
     "missing": [
-      "I",
       "L"
     ],
     "sliderLines": 0,
@@ -924,7 +882,6 @@
     "missing": [
       "L",
       "L",
-      "I",
       "M"
     ],
     "sliderLines": 0,
@@ -1261,12 +1218,8 @@
       "156",
       "156",
       "M",
-      "150",
-      "150",
       "M",
       "M",
-      "150",
-      "150",
       "M",
       "419"
     ],
@@ -1278,14 +1231,8 @@
     "file": "decoder.txt",
     "format": "plain",
     "missing": [
-      "150",
-      "150",
-      "150",
-      "150",
-      "I",
       "L",
       "L",
-      "I",
       "M",
       "M",
       "M",
@@ -1309,12 +1256,11 @@
   {
     "file": "delta-pwm.txt",
     "format": "plain",
-    "missing": [
-      "183"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "deltasigma.txt",
@@ -1327,8 +1273,7 @@
       "M",
       "M",
       "M",
-      "M",
-      "153"
+      "M"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -1348,22 +1293,11 @@
     "format": "plain",
     "missing": [
       "L",
-      "I",
       "L",
       "L",
       "L",
-      "I",
-      "154",
-      "154",
-      "151",
-      "151",
-      "151",
-      "151",
-      "152",
-      "I",
       "M",
       "M",
-      "153",
       "M"
     ],
     "sliderLines": 0,
@@ -1442,8 +1376,7 @@
     "missing": [
       "155",
       "155",
-      "M",
-      "153"
+      "M"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -1453,12 +1386,6 @@
     "file": "dram.txt",
     "format": "plain",
     "missing": [
-      "150",
-      "150",
-      "150",
-      "150",
-      "I",
-      "I",
       "L",
       "L",
       "159",
@@ -1544,12 +1471,6 @@
     "file": "edgedff.txt",
     "format": "plain",
     "missing": [
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
       "L",
       "M",
       "M"
@@ -1633,8 +1554,6 @@
     "file": "flashadc.txt",
     "format": "plain",
     "missing": [
-      "154",
-      "154",
       "419"
     ],
     "sliderLines": 0,
@@ -1662,16 +1581,11 @@
     "file": "fulladd.txt",
     "format": "plain",
     "missing": [
-      "154",
-      "154",
       "M",
       "L",
       "L",
       "L",
-      "M",
-      "150",
-      "150",
-      "152"
+      "M"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -1716,9 +1630,6 @@
     "file": "graycode.txt",
     "format": "plain",
     "missing": [
-      "154",
-      "154",
-      "154",
       "M",
       "M",
       "M",
@@ -1768,8 +1679,6 @@
     "file": "halfadd.txt",
     "format": "plain",
     "missing": [
-      "154",
-      "150",
       "L",
       "L",
       "M",
@@ -1903,13 +1812,11 @@
   {
     "file": "inv-osc.txt",
     "format": "plain",
-    "missing": [
-      "I",
-      "I"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "invertamp.txt",
@@ -1983,17 +1890,8 @@
     "file": "jkff.txt",
     "format": "plain",
     "missing": [
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "I",
       "M",
       "M",
-      "151",
       "L",
       "L"
     ],
@@ -2010,16 +1908,6 @@
       "155",
       "155",
       "155",
-      "150",
-      "150",
-      "150",
-      "150",
-      "150",
-      "150",
-      "150",
-      "150",
-      "150",
-      "150",
       "M",
       "M",
       "M",
@@ -2210,10 +2098,6 @@
       "L",
       "L",
       "L",
-      "151",
-      "151",
-      "151",
-      "151",
       "M"
     ],
     "sliderLines": 0,
@@ -2224,18 +2108,8 @@
     "file": "masterslaveff.txt",
     "format": "plain",
     "missing": [
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "151",
-      "I",
       "M",
       "M",
-      "I",
       "L"
     ],
     "sliderLines": 0,
@@ -2433,7 +2307,6 @@
     "file": "mux.txt",
     "format": "plain",
     "missing": [
-      "I",
       "L"
     ],
     "sliderLines": 0,
@@ -2444,17 +2317,10 @@
     "file": "mux3state.txt",
     "format": "plain",
     "missing": [
-      "151",
-      "150",
       "L",
-      "150",
-      "151",
       "M",
-      "I",
       "L",
-      "L",
-      "I",
-      "I"
+      "L"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -2464,8 +2330,6 @@
     "file": "nandff.txt",
     "format": "plain",
     "missing": [
-      "151",
-      "151",
       "L",
       "L",
       "M",
@@ -2738,8 +2602,7 @@
     "format": "plain",
     "missing": [
       "155",
-      "155",
-      "150"
+      "155"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -2790,7 +2653,6 @@
       "L",
       "L",
       "M",
-      "I",
       "184"
     ],
     "sliderLines": 0,
@@ -2801,8 +2663,7 @@
     "file": "pll.txt",
     "format": "plain",
     "missing": [
-      "158",
-      "154"
+      "158"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -2910,14 +2771,9 @@
     "file": "priencoder.txt",
     "format": "plain",
     "missing": [
-      "152",
-      "150",
-      "I",
-      "152",
       "L",
       "L",
       "L",
-      "152",
       "L",
       "M",
       "M",
@@ -2952,7 +2808,6 @@
       "166",
       "166",
       "164",
-      "182",
       "213",
       "167",
       "168",
@@ -2965,7 +2820,6 @@
       "168",
       "167",
       "213",
-      "182",
       "160",
       "160",
       "212",
@@ -3173,9 +3027,6 @@
     "missing": [
       "163",
       "163",
-      "150",
-      "150",
-      "I",
       "M",
       "M",
       "M",
@@ -3274,7 +3125,6 @@
     "file": "samplenhold.txt",
     "format": "plain",
     "missing": [
-      "I",
       "L"
     ],
     "sliderLines": 0,
@@ -3424,11 +3274,9 @@
       "L",
       "159",
       "159",
-      "I",
       "L",
       "L",
-      "M",
-      "I"
+      "M"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -3440,7 +3288,6 @@
     "missing": [
       "159",
       "159",
-      "I",
       "170"
     ],
     "sliderLines": 0,
@@ -3451,7 +3298,6 @@
     "file": "switchfilter.txt",
     "format": "plain",
     "missing": [
-      "I",
       "L"
     ],
     "sliderLines": 0,
@@ -3485,8 +3331,6 @@
       "156",
       "156",
       "156",
-      "150",
-      "150",
       "419"
     ],
     "sliderLines": 0,
@@ -3710,16 +3554,12 @@
     "format": "plain",
     "missing": [
       "163",
-      "152",
-      "152",
       "162",
       "162",
       "162",
       "162",
       "162",
       "162",
-      "152",
-      "152",
       "165"
     ],
     "sliderLines": 0,
@@ -3920,36 +3760,10 @@
     "file": "unishiftreg.txt",
     "format": "plain",
     "missing": [
-      "150",
-      "150",
-      "150",
-      "150",
-      "153",
-      "153",
-      "150",
-      "150",
-      "150",
-      "150",
-      "153",
-      "150",
-      "150",
-      "150",
-      "150",
-      "153",
-      "150",
-      "150",
-      "150",
-      "150",
-      "I",
-      "I",
-      "I",
-      "I",
       "156",
       "156",
       "156",
       "156",
-      "I",
-      "I",
       "L",
       "L",
       "L",
@@ -3958,7 +3772,6 @@
       "L",
       "L",
       "L",
-      "I",
       "M",
       "M",
       "M",
@@ -3976,20 +3789,10 @@
     "format": "plain",
     "missing": [
       "156",
-      "150",
-      "152",
       "156",
-      "150",
       "L",
-      "I",
-      "150",
       "156",
-      "152",
-      "150",
-      "150",
-      "152",
       "156",
-      "150",
       "419"
     ],
     "sliderLines": 0,
@@ -4068,8 +3871,7 @@
       "159",
       "159",
       "159",
-      "159",
-      "I"
+      "159"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -4126,10 +3928,6 @@
     "file": "xor.txt",
     "format": "plain",
     "missing": [
-      "151",
-      "151",
-      "151",
-      "151",
       "M",
       "L",
       "L"
@@ -4141,12 +3939,12 @@
   {
     "file": "xorphasedet.txt",
     "format": "plain",
-    "missing": [
-      "154"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "zeneriv.txt",

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { calcLeads, makeTheme, rectCorners, ZIGZAG_HS, zigzagPoints } from '../render/draw';
+import { calcLeads, interp, makeTheme, rectCorners, ZIGZAG_HS, zigzagPoints } from '../render/draw';
 import {
   ELEMENT_DEFS,
   defFor,
@@ -80,6 +80,7 @@ const context = (ctx: CtxStub, overrides: Partial<DrawContext> = {}): DrawContex
   showPowerColor: false,
   conventional: true,
   euroResistors: true,
+  euroGates: false,
   selected: false,
   hovered: false,
   onHighlightedNet: false,
@@ -616,5 +617,106 @@ describe('transformer posts', () => {
       };
       expect(postsOf(el)).toHaveLength(6);
     }
+  });
+});
+
+describe('logic gate draw paths', () => {
+  const draw = (kind: string, euro: boolean, params: Record<string, number> = {}, flags = 0) => {
+    const ctx = mkCtx();
+    const e = element(kind, 0, 0, 96, 0, flags, params);
+    defFor(kind)?.draw(context(ctx, { euroGates: euro }), e);
+    return ctx;
+  };
+  const lineTos = (ctx: CtxStub) => ctx.lineTo.mock.calls.map((a) => ({ x: a[0], y: a[1] }));
+
+  it.each(['andGate', 'orGate', 'xorGate', 'nandGate', 'norGate', 'xnorGate'])(
+    '%s draws the IEC rectangle with the glyph inside when euroGates is on',
+    (kind) => {
+      const ctx = draw(kind, true);
+      // The rectangle corners land as lineTo calls (the loop closes by
+      // repeating the first corner), all four must be painted.
+      const [lead1, lead2] = calcLeads(element(kind, 0, 0, 96, 0), 28 * 2);
+      const corners = [
+        interp(lead1, lead2, 0, 28),
+        interp(lead1, lead2, 0, -28),
+        interp(lead1, lead2, 1, -28),
+        interp(lead1, lead2, 1, 28),
+      ];
+      const drawn = lineTos(ctx);
+      for (const p of corners) expect(drawn).toContainEqual(p);
+      expect(ctx.fillText).toHaveBeenCalled();
+    },
+  );
+
+  it.each(['andGate', 'orGate', 'xorGate', 'inverter', 'triState', 'schmitt', 'invertingSchmitt'])(
+    '%s draws its ANSI body without the IEC text when euroGates is off',
+    (kind) => {
+      const ctx = draw(kind, false);
+      expect(ctx.fillText).not.toHaveBeenCalled();
+      expect(ctx.lineTo.mock.calls.length).toBeGreaterThan(0);
+    },
+  );
+
+  it('a vertical AND bulges sideways by the full hs2, not a squashed front', () => {
+    // A downward AND at (0,0)-(0,96): ww = 28, hs2 = 28, leads at (0,20) and
+    // (0,76). Upstream swaps the ellipse radii for dx == 0 (rx = hs2,
+    // AndGateElm.java:46-49), so the arc wings reach x = +-28 at the body
+    // midpoint height; an along-axis squash would leave them near the axis.
+    const ctx = mkCtx();
+    const gate = element('andGate', 0, 0, 0, 96);
+    defFor('andGate')?.draw(context(ctx, { euroGates: false }), gate);
+    const drawn = lineTos(ctx);
+    expect(drawn).toContainEqual({ x: 28, y: 48 });
+    expect(drawn).toContainEqual({ x: -28, y: 48 });
+    // And the front still lands on the output lead.
+    expect(drawn).toContainEqual({ x: 0, y: 76 });
+  });
+});
+
+describe('tri-state posts and mirror', () => {
+  const tri = (x1: number, y1: number, x2: number, y2: number, flags = 0) =>
+    element('triState', x1, y1, x2, y2, flags);
+
+  it('hangs the control post below a left-to-right tri-state', () => {
+    // point3 = interp(lead1, lead2, .5, sign*16) with sign = -1 by default
+    // (TriStateElm.java:122-123), and the port's perpendicular puts -16 below.
+    expect(postsOf(tri(0, 0, 32, 0))).toEqual([
+      { x: 0, y: 0 },
+      { x: 32, y: 0 },
+      { x: 16, y: 16 },
+    ]);
+  });
+
+  it('FLAG_FLIP moves the control post above the axis', () => {
+    expect(postsOf(tri(0, 0, 32, 0, 1))).toEqual([
+      { x: 0, y: 0 },
+      { x: 32, y: 0 },
+      { x: 16, y: -16 },
+    ]);
+  });
+
+  it('a horizontal mirror toggles FLAG_FLIP; the reversed orientation keeps the control side', () => {
+    // The control offset is absolute (TriStateElm.java:122), so the mirror
+    // must toggle the flag; on a horizontal part the reversed perpendicular
+    // then cancels it, exactly as upstream's flipX + setPoints produce
+    // (TriStateElm.java:319-322).
+    const m = mirrorElement(tri(0, 0, 32, 0));
+    expect(m.x1).toBe(32);
+    expect(m.x2).toBe(0);
+    expect(m.flags & 1).toBe(1);
+    const mirrored = postsOf(m);
+    expect(mirrored[0]).toEqual({ x: 32, y: 0 });
+    expect(mirrored[1]).toEqual({ x: 0, y: 0 });
+    expect(mirrored[2]).toEqual({ x: 16, y: 16 });
+  });
+
+  it('a vertical mirror moves the control to the other side', () => {
+    // Downward part, control on the -x flank by default; the mirror keeps the
+    // axis vertical, so toggling FLAG_FLIP swings the control to +x.
+    const down = tri(16, 0, 16, 32);
+    expect(postsOf(down)[2]).toEqual({ x: 0, y: 16 });
+    const m = mirrorElement(down);
+    expect(m.flags & 1).toBe(1);
+    expect(postsOf(m)[2]).toEqual({ x: 32, y: 16 });
   });
 });

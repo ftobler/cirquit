@@ -57,3 +57,15 @@ export const TAPPED_FLIP = 1;
  *  form. Same bit and same meaning on both text-bearing types
  *  (TextElm.java:38, LabeledNodeElm.java:30); their writers always set it. */
 export const FLAG_ESCAPE = 4;
+
+/** The gates share the three FlagBits from GateElm.java:26-28: small body
+ *  (half-size geometry), hysteresis on the inputs, and a bubble on every
+ *  input. */
+export const GATE_SMALL = 1;           // GateElm.java:26
+export const GATE_SCHMITT = 2;         // GateElm.java:27
+export const GATE_INVERT_INPUTS = 4;   // GateElm.java:28
+/** The tri-state buffer's control-side flag; bit 1, like the asymmetric
+ *  parts' shared FLAG_SWAP, but with its own meaning (TriStateElm.java:37).
+ *  transform.ts mirrors it unconditionally, because the control offset is
+ *  absolute rather than dsign-driven. */
+export const TRI_STATE_FLIP = 1;       // TriStateElm.java:37

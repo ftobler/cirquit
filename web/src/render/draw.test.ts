@@ -79,6 +79,7 @@ const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext =
   showPowerColor: false,
   conventional: true,
   euroResistors: true,
+  euroGates: false,
   selected: false,
   hovered: false,
   onHighlightedNet: false,

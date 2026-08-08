@@ -15,6 +15,7 @@ export const APP_PREF_STORAGE_KEY = 'options.prefs.v1';
 export const APP_PREF_KEYS = [
   'showCrosshair',
   'euroResistors',
+  'euroGates',
   'positiveColor',
   'negativeColor',
   'neutralColor',
@@ -43,7 +44,7 @@ const NUMBER_RANGES: Partial<Record<AppPrefKey, { min: number; max: number }>> =
 const COLOR_KEYS = ['positiveColor', 'negativeColor', 'neutralColor', 'selectionColor', 'currentColor'] as const;
 
 /** The boolean app prefs, validated as exactly a true/false. */
-const BOOLEAN_KEYS = ['showCrosshair', 'euroResistors'] as const;
+const BOOLEAN_KEYS = ['showCrosshair', 'euroResistors', 'euroGates'] as const;
 
 /** True when a stored value is a safe, in-range pref value of the right type. */
 function isValidPref(key: AppPrefKey, value: unknown): value is number | string | boolean | null {

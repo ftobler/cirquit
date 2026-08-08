@@ -14,10 +14,12 @@ pub mod diode;
 pub mod fuse;
 pub mod ground;
 pub mod inductor;
+pub mod inverter;
 pub mod junction;
 pub mod labeled_node;
 pub mod lamp;
 pub mod ldr;
+pub mod logic;
 pub mod meter;
 pub mod mosfet;
 pub mod multi_throw_switch;
@@ -26,10 +28,12 @@ pub mod potentiometer;
 pub mod probe;
 pub mod relay;
 pub mod resistor;
+pub mod schmitt;
 pub mod switch;
 pub mod thermistor;
 pub mod transformer;
 pub mod transistor;
+pub mod tri_state;
 pub mod voltage_source;
 pub mod wire;
 
@@ -66,6 +70,16 @@ pub const KINDS: &[&str] = &[
     "relayCoil",
     "relayContact",
     "opamp",
+    "inverter",
+    "andGate",
+    "nandGate",
+    "orGate",
+    "norGate",
+    "xorGate",
+    "xnorGate",
+    "triState",
+    "schmitt",
+    "invertingSchmitt",
     "labeledNode",
     "output",
     "probe",
@@ -103,6 +117,16 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "relayCoil" => Box::new(relay::RelayCoil::new(spec)),
         "relayContact" => Box::new(relay::RelayContact::new(spec)),
         "opamp" => Box::new(opamp::OpAmp::new(spec)),
+        "inverter" => Box::new(inverter::Inverter::new(spec)),
+        "andGate" => Box::new(logic::Gate::new(spec, logic::GateKind::And)),
+        "nandGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Nand)),
+        "orGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Or)),
+        "norGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Nor)),
+        "xorGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Xor)),
+        "xnorGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Xnor)),
+        "triState" => Box::new(tri_state::TriState::new(spec)),
+        "schmitt" => Box::new(schmitt::Schmitt::new(spec, false)),
+        "invertingSchmitt" => Box::new(schmitt::Schmitt::new(spec, true)),
         "labeledNode" => Box::new(labeled_node::LabeledNode::new(spec)),
         "output" => Box::new(meter::Meter::new_output(spec)),
         "probe" => Box::new(probe::Probe::new(spec)),

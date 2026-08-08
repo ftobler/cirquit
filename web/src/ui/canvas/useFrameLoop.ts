@@ -244,6 +244,7 @@ export function useFrameLoop(
           showPowerColor: settings.showPowerColor,
           conventional: settings.conventional,
           euroResistors: settings.euroResistors,
+          euroGates: settings.euroGates,
           selected: selectedIds.includes(e.id),
           hovered: hoveredId === e.id,
           onHighlightedNet,

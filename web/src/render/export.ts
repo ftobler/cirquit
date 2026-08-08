@@ -82,6 +82,7 @@ export function drawAllElements(
       showPowerColor: settings.showPowerColor,
       conventional: settings.conventional,
       euroResistors: settings.euroResistors,
+      euroGates: settings.euroGates,
       selected: false,
       hovered: false,
       onHighlightedNet: false,

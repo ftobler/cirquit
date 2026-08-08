@@ -145,8 +145,8 @@ fetch it).
   edits, interactive switches.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
-- 121 Rust tests, of which 115 are the end-to-end circuit checks against analytic
-  results in `engine/core/tests/circuits.rs`, and 332 TypeScript tests. CI runs
+- 179 Rust tests, of which 158 are the end-to-end circuit checks against analytic
+  results in `engine/core/tests/circuits.rs`, and 885 TypeScript tests. CI runs
   fmt, clippy, tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -223,8 +223,8 @@ fetch it).
 
 ### Milestone A — solver depth
 
-- [ ] Adaptive timestep with step rejection
-- [ ] Matrix simplification / constant-row elimination
+- [x] Adaptive timestep with step rejection
+- [x] Matrix simplification / constant-row elimination
 - [ ] Sparse matrix path for large circuits
 - [x] Convergence diagnostics surfaced in the UI (which element failed)
 - [ ] Benchmark harness with representative circuits, wired into CI
@@ -235,13 +235,13 @@ fetch it).
 - [x] Copy/paste and duplicate
 - [x] Wire auto-routing and junction dots
 - [x] Sliders (`38` lines) bound to element parameters
-- [ ] Full scope UI: stacked traces, time/div, cursors, X-Y mode, FFT
+- [x] Full scope UI: stacked traces, time/div, cursors, X-Y mode, FFT
 - [ ] Subcircuits (`CustomComposite`)
 
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **29 of ~200**.
+a test. Done so far: **39 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, transformer, tapped transformer, custom transformer, fuse,
@@ -267,9 +267,11 @@ lamp, thermistor, potentiometer, switch, SPDT switch, LDR, varactor.
 - [ ] Analog switch, analog mux, timer (555), phase comparator
 - [ ] ADC, DAC, sample and hold
 
-**Logic** — none yet.
+**Logic** — done: inverter, AND, NAND, OR, NOR, XOR, XNOR, tri-state buffer,
+Schmitt trigger (inverting and non-inverting), all behind the `euroGates` IEC
+symbol toggle.
 
-- [ ] Gates: AND, OR, NAND, NOR, XOR, XNOR, inverter, tri-state, Schmitt
+- [x] Gates: AND, OR, NAND, NOR, XOR, XNOR, inverter, tri-state, Schmitt
 - [ ] Flip-flops: D, JK, T, latch, monostable
 - [ ] Counters, shift registers (SIPO/PISO), ring counter, sequence generator
 - [ ] Multiplexer, demultiplexer, adders, seven-segment and decoders
@@ -287,8 +289,8 @@ voltmeter, text.
 
 ### Milestone D — polish
 
-- [ ] Mobile / touch layout
-- [ ] Keyboard shortcut parity
+- [x] Mobile / touch layout
+- [x] Keyboard shortcut parity
 - [ ] Import upstream's `subcircuits.html` and other side pages
 - [ ] Accessibility pass on the panels
 
@@ -351,6 +353,25 @@ Dump codes implemented so far, with their trailing field order:
 | `O`   | output         | scale                                                      |
 | `p`   | probe          | meter, scale, resistance                                   |
 | `x`   | text           | size, text (FLAG_ESCAPE = 4, always set on save)           |
+| `I`   | inverter       | slewRate, highVoltage                                      |
+| `150` | AND gate       | inputCount, lastOutputVoltage, highVoltage                 |
+| `151` | NAND gate      | same as `150`                                              |
+| `152` | OR gate        | same as `150`                                              |
+| `153` | NOR gate       | same as `150`                                              |
+| `154` | XOR gate       | same as `150`                                              |
+| `431` | XNOR gate      | same as `150`                                              |
+| `180` | tri-state buffer | r_on, r_off, r_off_ground, highVoltage                   |
+| `182` | Schmitt trigger (non-inverting) | slewRate, lowerTrigger, upperTrigger, logicOnLevel, logicOffLevel |
+| `183` | Schmitt trigger (inverting) | same as `182`                                    |
+
+For the gate rows the `inputCount` token is the post count minus one (1 to 8
+inputs); `lastOutputVoltage` restores the gate's output state on load
+(`> highVoltage/2` means the output was high) and seeds the inputs so the
+first solve agrees. Flag bits on the gate rows: 1 FLAG_SMALL (half-size
+geometry), 2 FLAG_SCHMITT (input hysteresis at 0.35/0.55 of `highVoltage`),
+4 FLAG_INVERT_INPUTS. The tri-state buffer is single-bit here (upstream's bus
+width is XML-only); its `r_off_ground` token defaults to 0 on load, so a bare
+`180` line round-trips.
 
 For the `t` row: the `pnp` token is `+1` for NPN and `-1` for PNP; the file sign
 is the type, so a non-negative token (including `0` from older saves) reads as

@@ -1056,3 +1056,136 @@ describe('transformer file formats', () => {
     expect(bad.text).toBe('garbage');
   });
 });
+
+describe('logic gate file formats', () => {
+  /** Parses a single element line and re-emits it, returning that line. */
+  const gateLine = (line: string, code: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith(`${code} `)) ?? '' };
+  };
+
+  it('a two-input AND gate line round-trips byte-for-byte', () => {
+    // inputCount lastOutputVoltage highVoltage, the GateElm token order
+    // (GateElm.java:55-61). Numeric tokens normalise like every other element,
+    // so 0.0 writes back as 0.
+    const line = '150 192 176 336 176 0 2 0 5';
+    const { e, elementLine } = gateLine(line, '150');
+    expect(e.params.inputCount).toBe(2);
+    expect(e.params.lastOutputVoltage).toBe(0);
+    expect(e.params.highVoltage).toBe(5);
+    expect(elementLine).toBe(line);
+  });
+
+  it.each([
+    ['nandGate', '151'],
+    ['orGate', '152'],
+    ['norGate', '153'],
+    ['xorGate', '154'],
+    ['xnorGate', '431'],
+  ])('%s round-trips its line', (_kind, code) => {
+    const line = `${code} 192 176 336 176 0 3 2.5 5`;
+    const { e, elementLine } = gateLine(line, code);
+    expect(e.params.inputCount).toBe(3);
+    expect(e.params.lastOutputVoltage).toBe(2.5);
+    expect(e.params.highVoltage).toBe(5);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a gate line without the highVoltage token takes upstream 5', () => {
+    const { e, elementLine } = gateLine('150 192 176 336 176 0 2 0.0', '150');
+    expect(e.params.highVoltage).toBe(5);
+    expect(elementLine).toBe('150 192 176 336 176 0 2 0 5');
+  });
+
+  it('a bare gate line loads the two-input defaults', () => {
+    const { e, elementLine } = gateLine('150 192 176 336 176 0', '150');
+    expect(e.params.inputCount).toBe(2);
+    expect(e.params.highVoltage).toBe(5);
+    expect(elementLine).toBe('150 192 176 336 176 0 2 0 5');
+  });
+
+  it('gate flag bits ride through a save', () => {
+    // FLAG_SMALL (1), FLAG_SCHMITT (2) and FLAG_INVERT_INPUTS (4) are format
+    // bits (GateElm.java:26-28); flags 6 is schmitt + invert-inputs.
+    const { e, elementLine } = gateLine('151 0 0 32 0 6 2 0 5', '151');
+    expect(e.flags).toBe(6);
+    expect(elementLine).toBe('151 0 0 32 0 6 2 0 5');
+  });
+
+  it('gate posts follow the editable input count', () => {
+    const two = parseCircuit('150 0 0 96 0 0 2 0 5').elements[0];
+    expect(postsOf(two)).toEqual([
+      { x: 0, y: 16 },
+      { x: 0, y: -16 },
+      { x: 96, y: 0 },
+    ]);
+    const three = parseCircuit('150 0 0 96 0 0 3 0 5').elements[0];
+    expect(postsOf(three)).toEqual([
+      { x: 0, y: 16 },
+      { x: 0, y: 0 },
+      { x: 0, y: -16 },
+      { x: 96, y: 0 },
+    ]);
+  });
+
+  it('an inverter line round-trips byte-for-byte', () => {
+    const line = 'I 272 208 352 208 0 0.5 5';
+    const { e, elementLine } = gateLine(line, 'I');
+    expect(e.params.slewRate).toBe(0.5);
+    expect(e.params.highVoltage).toBe(5);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a tri-state line round-trips byte-for-byte', () => {
+    // r_on r_off r_off_ground highVoltage (TriStateElm.java:52-67). The token
+    // constructor's r_off_ground default is 0, which a bare line keeps. The
+    // 1e10 off resistance writes as the expanded integer, like every numeric
+    // token this port emits.
+    const line = '180 0 0 96 0 0 0.1 10000000000 0 5';
+    const { e, elementLine } = gateLine(line, '180');
+    expect(e.params.r_on).toBe(0.1);
+    expect(e.params.r_off).toBe(1e10);
+    expect(e.params.r_off_ground).toBe(0);
+    expect(e.params.highVoltage).toBe(5);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a tri-state with a pulldown keeps its r_off_ground token', () => {
+    const line = '180 0 0 96 0 0 0.1 10000000000 100000000 5';
+    const { e, elementLine } = gateLine(line, '180');
+    expect(e.params.r_off_ground).toBe(1e8);
+    expect(elementLine).toBe(line);
+  });
+
+  it.each([
+    ['schmitt', '182'],
+    ['invertingSchmitt', '183'],
+  ])('%s round-trips its five tokens', (_kind, code) => {
+    const line = `${code} 0 0 96 0 0 0.5 1.66 3.33 5 0`;
+    const { e, elementLine } = gateLine(line, code);
+    expect(e.params.slewRate).toBe(0.5);
+    expect(e.params.lowerTrigger).toBe(1.66);
+    expect(e.params.upperTrigger).toBe(3.33);
+    expect(e.params.logicOnLevel).toBe(5);
+    expect(e.params.logicOffLevel).toBe(0);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a fresh gate dumps the upstream constructor defaults', () => {
+    const e = makeElement('andGate', 0, 0, 32, 0);
+    expect(e.params.inputCount).toBe(2);
+    expect(e.params.highVoltage).toBe(5);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('150 0 0 32 0 0 2 0 5');
+  });
+
+  it('a fresh tri-state dumps the token-constructor defaults, not the fresh ones', () => {
+    // The fresh constructor's r_off_ground is 1e8 but the token one is 0
+    // (TriStateElm.java:44-45, :56), so a save writes what a reload reads.
+    const e = makeElement('triState', 0, 0, 32, 0);
+    expect(e.params.r_off_ground).toBe(0);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('180 0 0 32 0 0 0.1 10000000000 0 5');
+  });
+});

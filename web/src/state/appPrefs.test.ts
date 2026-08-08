@@ -48,6 +48,7 @@ describe('app prefs', () => {
     expect(back).toEqual({
       showCrosshair: false,
       euroResistors: true,
+      euroGates: false,
       positiveColor: '#123456',
       negativeColor: null,
       neutralColor: null,
@@ -69,6 +70,15 @@ describe('app prefs', () => {
     // A wrong-typed stored value is dropped like any other invalid pref.
     storage.setItem(APP_PREF_STORAGE_KEY, JSON.stringify({ euroResistors: 'yes' }));
     expect(loadAppPrefs(storage).euroResistors).toBeUndefined();
+  });
+
+  it('round-trips the euroGates symbol toggle as a boolean', () => {
+    const { storage } = fakeStorage();
+    saveAppPrefs({ ...DEFAULT_SETTINGS, euroGates: true }, storage);
+    expect(loadAppPrefs(storage).euroGates).toBe(true);
+    // A wrong-typed stored value is dropped like any other invalid pref.
+    storage.setItem(APP_PREF_STORAGE_KEY, JSON.stringify({ euroGates: 1 }));
+    expect(loadAppPrefs(storage).euroGates).toBeUndefined();
   });
 
   it('a corrupt blob is a fallback, not a crash', () => {
