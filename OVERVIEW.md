@@ -233,7 +233,7 @@ fetch it).
 
 - [x] Rotate/flip, and the element-specific flags that control orientation
 - [x] Copy/paste and duplicate
-- [ ] Wire auto-routing and junction dots
+- [x] Wire auto-routing and junction dots
 - [x] Sliders (`38` lines) bound to element parameters
 - [ ] Full scope UI: stacked traces, time/div, cursors, X-Y mode, FFT
 - [ ] Subcircuits (`CustomComposite`)
