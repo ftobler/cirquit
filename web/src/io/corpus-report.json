@@ -2,70 +2,58 @@
   {
     "file": "3-cgand.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "3-cgor.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "3-f211.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "3-f220.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "3-f221.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "3-invert.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "3motor.txt",
@@ -138,8 +126,7 @@
     "file": "555missing.txt",
     "format": "plain",
     "missing": [
-      "165",
-      "L"
+      "165"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -149,8 +136,7 @@
     "file": "555monostable.txt",
     "format": "plain",
     "missing": [
-      "165",
-      "L"
+      "165"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -191,12 +177,8 @@
     "format": "plain",
     "missing": [
       "165",
-      "L",
       "165",
-      "165",
-      "M",
-      "M",
-      "M"
+      "165"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -216,11 +198,7 @@
     "file": "7segdecoder.txt",
     "format": "plain",
     "missing": [
-      "157",
-      "L",
-      "L",
-      "L",
-      "L"
+      "157"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -411,11 +389,6 @@
       "418",
       "418",
       "418",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
       "418",
       "418"
     ],
@@ -429,12 +402,7 @@
     "missing": [
       "418",
       "418",
-      "418",
-      "M",
-      "M",
-      "M",
-      "L",
-      "L"
+      "418"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -448,12 +416,7 @@
       "418",
       "418",
       "418",
-      "418",
-      "162",
-      "162",
-      "162",
-      "162",
-      "162"
+      "418"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -773,39 +736,30 @@
   {
     "file": "clockedsrff.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "cmosff.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "M",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cmosinverter.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cmosinvertercap.txt",
@@ -818,75 +772,58 @@
   {
     "file": "cmosinverterslow.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cmosmsff.txt",
     "format": "plain",
-    "missing": [
-      "159",
-      "159",
-      "159",
-      "159",
-      "L",
-      "M",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "cmosnand.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cmosnor.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cmostransgate.txt",
     "format": "plain",
-    "missing": [
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cmosxor.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "colpitts.txt",
@@ -957,10 +894,6 @@
       "156",
       "156",
       "156",
-      "M",
-      "M",
-      "M",
-      "M",
       "419"
     ],
     "sliderLines": 0,
@@ -978,15 +911,7 @@
       "156",
       "156",
       "156",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
       "156",
-      "M",
       "419"
     ],
     "sliderLines": 0,
@@ -1181,15 +1106,11 @@
   {
     "file": "dac.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "darlington.txt",
@@ -1217,10 +1138,6 @@
       "156",
       "156",
       "156",
-      "M",
-      "M",
-      "M",
-      "M",
       "419"
     ],
     "sliderLines": 0,
@@ -1230,28 +1147,21 @@
   {
     "file": "decoder.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "M",
-      "M",
-      "M",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "delayrc.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "delta-pwm.txt",
@@ -1266,14 +1176,9 @@
     "file": "deltasigma.txt",
     "format": "plain",
     "missing": [
-      "160",
       "155",
       "164",
-      "168",
-      "M",
-      "M",
-      "M",
-      "M"
+      "168"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -1291,18 +1196,12 @@
   {
     "file": "digcompare.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "L",
-      "L",
-      "M",
-      "M",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "digsine.txt",
@@ -1363,8 +1262,7 @@
     "file": "divideby2.txt",
     "format": "plain",
     "missing": [
-      "155",
-      "M"
+      "155"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -1375,8 +1273,7 @@
     "format": "plain",
     "missing": [
       "155",
-      "155",
-      "M"
+      "155"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -1385,55 +1282,38 @@
   {
     "file": "dram.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "159",
-      "159",
-      "L",
-      "L",
-      "M",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "dtlinverter.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "dtlnand.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "dtlnor.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "early.txt",
@@ -1448,15 +1328,11 @@
   {
     "file": "eclnor.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "M",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "eclosc.txt",
@@ -1470,25 +1346,21 @@
   {
     "file": "edgedff.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "M",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "fanout.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "filt-hipass-l.txt",
@@ -1580,16 +1452,12 @@
   {
     "file": "fulladd.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L",
-      "L",
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "fullrect-sc.txt",
@@ -1630,10 +1498,6 @@
     "file": "graycode.txt",
     "format": "plain",
     "missing": [
-      "M",
-      "M",
-      "M",
-      "M",
       "164"
     ],
     "sliderLines": 0,
@@ -1678,15 +1542,12 @@
   {
     "file": "halfadd.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "M",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "hartley.txt",
@@ -1889,15 +1750,12 @@
   {
     "file": "jkff.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "johnsonctr.txt",
@@ -1907,22 +1765,7 @@
       "155",
       "155",
       "155",
-      "155",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M"
+      "155"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -1931,12 +1774,11 @@
   {
     "file": "joule-thief.txt",
     "format": "plain",
-    "missing": [
-      "162"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "jsinterface.txt",
@@ -2000,12 +1842,11 @@
   {
     "file": "leadingedge.txt",
     "format": "plain",
-    "missing": [
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ledarray.txt",
@@ -2024,14 +1865,7 @@
     "file": "ledflasher.txt",
     "format": "plain",
     "missing": [
-      "163",
-      "L",
-      "162",
-      "162",
-      "162",
-      "162",
-      "162",
-      "162"
+      "163"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -2094,27 +1928,22 @@
   {
     "file": "majority.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "masterslaveff.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "M",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "mirror.txt",
@@ -2193,75 +2022,61 @@
   {
     "file": "mr-crossbar.txt",
     "format": "plain",
-    "missing": [
-      "m",
-      "m",
-      "m",
-      "m",
-      "m",
-      "m",
-      "m",
-      "m"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mr-sine.txt",
     "format": "plain",
-    "missing": [
-      "m"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mr-sine2.txt",
     "format": "plain",
-    "missing": [
-      "m"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mr-sine3.txt",
     "format": "plain",
-    "missing": [
-      "m"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mr-square.txt",
     "format": "plain",
-    "missing": [
-      "m"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mr-triangle.txt",
     "format": "plain",
-    "missing": [
-      "m"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mr.txt",
     "format": "plain",
     "missing": [
-      "m",
       "172"
     ],
     "sliderLines": 0,
@@ -2284,15 +2099,11 @@
   {
     "file": "multivib-bi.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "multivib-mono.txt",
@@ -2306,38 +2117,30 @@
   {
     "file": "mux.txt",
     "format": "plain",
-    "missing": [
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mux3state.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "nandff.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "M",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "nic-r.txt",
@@ -2362,47 +2165,38 @@
   {
     "file": "nmosinverter.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "nmosinverter2.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "nmosinverter3.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "nmosnand.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "norton-invert.txt",
@@ -2647,12 +2441,6 @@
       "155",
       "184",
       "155",
-      "L",
-      "L",
-      "L",
-      "L",
-      "L",
-      "M",
       "184"
     ],
     "sliderLines": 0,
@@ -2770,18 +2558,12 @@
   {
     "file": "priencoder.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "L",
-      "L",
-      "M",
-      "M",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "pushpull.txt",
@@ -2811,29 +2593,13 @@
       "213",
       "167",
       "168",
-      "160",
-      "160",
       "193",
       "212",
-      "160",
-      "160",
       "168",
       "167",
       "213",
-      "160",
-      "160",
       "212",
       "212",
-      "160",
-      "160",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
       "403"
     ],
     "sliderLines": 0,
@@ -2843,19 +2609,11 @@
   {
     "file": "r2rladder.txt",
     "format": "plain",
-    "missing": [
-      "160",
-      "160",
-      "160",
-      "L",
-      "L",
-      "L",
-      "160",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "rectify.txt",
@@ -2889,28 +2647,20 @@
   {
     "file": "relayand.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "relayctr.txt",
     "format": "plain",
-    "missing": [
-      "162",
-      "162",
-      "162",
-      "159"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "relayff.txt",
@@ -2924,35 +2674,20 @@
   {
     "file": "relaymux.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "L",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "relayor.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "relayosc.txt",
@@ -2985,14 +2720,11 @@
   {
     "file": "relayxor.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "res-par.txt",
@@ -3026,23 +2758,7 @@
     "format": "plain",
     "missing": [
       "163",
-      "163",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M",
-      "M"
+      "163"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -3087,49 +2803,38 @@
   {
     "file": "rtlinverter.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "rtlnand.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "rtlnor.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "samplenhold.txt",
     "format": "plain",
-    "missing": [
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "satcore-comparison.txt",
@@ -3223,12 +2928,7 @@
       "155",
       "155",
       "155",
-      "155",
-      "L",
-      "M",
-      "M",
-      "M",
-      "M"
+      "155"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -3270,24 +2970,16 @@
   {
     "file": "sram.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "159",
-      "159",
-      "L",
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "switchedcap.txt",
     "format": "plain",
     "missing": [
-      "159",
-      "159",
       "170"
     ],
     "sliderLines": 0,
@@ -3297,31 +2989,20 @@
   {
     "file": "switchfilter.txt",
     "format": "plain",
-    "missing": [
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "swtreedac.txt",
     "format": "plain",
-    "missing": [
-      "160",
-      "160",
-      "160",
-      "160",
-      "160",
-      "160",
-      "160",
-      "L",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "synccounter.txt",
@@ -3554,12 +3235,6 @@
     "format": "plain",
     "missing": [
       "163",
-      "162",
-      "162",
-      "162",
-      "162",
-      "162",
-      "162",
       "165"
     ],
     "sliderLines": 0,
@@ -3704,37 +3379,29 @@
   {
     "file": "ttlinverter.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ttlnand.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "L",
-      "M"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ttlnor.txt",
     "format": "plain",
-    "missing": [
-      "L",
-      "M",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "twint.txt",
@@ -3764,18 +3431,6 @@
       "156",
       "156",
       "156",
-      "L",
-      "L",
-      "L",
-      "L",
-      "L",
-      "L",
-      "L",
-      "L",
-      "M",
-      "M",
-      "M",
-      "M",
       "423",
       "423",
       "423"
@@ -3790,7 +3445,6 @@
     "missing": [
       "156",
       "156",
-      "L",
       "156",
       "156",
       "419"
@@ -3867,15 +3521,11 @@
   {
     "file": "voltinvert.txt",
     "format": "plain",
-    "missing": [
-      "159",
-      "159",
-      "159",
-      "159"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "voltquad.txt",
@@ -3927,14 +3577,12 @@
   {
     "file": "xor.txt",
     "format": "plain",
-    "missing": [
-      "M",
-      "L",
-      "L"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "xorphasedet.txt",

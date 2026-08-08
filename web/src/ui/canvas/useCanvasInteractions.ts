@@ -13,7 +13,7 @@ import type { ScrollValueSession } from '../../model/scrollValue';
 import type { CircuitElement, Point } from '../../model/types';
 import { distanceToElement, nearestPost, postAt, postPatch } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
-import { gridSize, makeToolElement, snap, useStore } from '../../state/store';
+import { gridSize, makeToolElement, nextSwitchState, snap, useStore } from '../../state/store';
 import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
 import { DRAG_DELAY_MS, LONG_PRESS_MS, TouchGesture, type GestureAction } from '../gestures';
 import { useStoreRef } from './useStoreRef';
@@ -335,8 +335,10 @@ export function useCanvasInteractions(
       const def = defFor(hit.kind);
       if (def?.interactive && state.running && !ev.altKey) {
         const momentary = hit.kind === 'switch' && (hit.params.momentary ?? 0) !== 0;
-        const throwCount = Math.max(2, hit.params.throwCount ?? 2);
-        const next = ((hit.state ?? 0) + 1) % (hit.kind === 'switch' ? 2 : throwCount);
+        // The next state respects the part's range: binary for a plain switch
+        // and two-level logic input, `throwCount` throws for an SPDT, and the
+        // three positions of a ternary logic input (nextSwitchState).
+        const next = nextSwitchState(hit);
         // One click is one undo entry. Upstream does not push here (doSwitch
         // returns before the mouse-down pushUndo), this is a deliberate
         // divergence; the dedup in commit keeps repeat clicks from stacking.

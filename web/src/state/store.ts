@@ -19,7 +19,7 @@ import {
   rotateElement,
   swapTerminalOrder,
 } from '../model/transform';
-import { VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
+import { LOGIC_INPUT_TERNARY, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import { paramScale, resolveParam } from '../model/sliders';
 import {
   DEFAULT_SETTINGS,
@@ -1263,10 +1263,14 @@ function zoomAroundCentre(s: AppState, factor: number): ViewTransform {
 }
 
 /** The next throw after a toggle, matching the canvas pointer path: an SPST
- *  flips between its two positions, an SPDT cycles its throws
- *  (SwitchElm.simpleToggle, SwitchElm.java:185-189). */
-function nextSwitchState(e: CircuitElement): number {
+ *  flips between its two positions, an SPDT cycles its throws, and a ternary
+ *  logic input cycles its three positions (SwitchElm.simpleToggle,
+ *  SwitchElm.java:185-189). */
+export function nextSwitchState(e: CircuitElement): number {
   const throwCount = Math.max(2, e.params.throwCount ?? 2);
+  if (e.kind === 'logicInput' && (e.flags & LOGIC_INPUT_TERNARY) !== 0) {
+    return ((e.state ?? 0) + 1) % 3;
+  }
   return ((e.state ?? 0) + 1) % (e.kind === 'switch' ? 2 : throwCount);
 }
 

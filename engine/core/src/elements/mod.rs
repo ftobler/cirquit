@@ -7,6 +7,8 @@
 //! One module per element type. `junction.rs` is the exception: it holds the
 //! Newton machinery shared by the diode and transistor families.
 
+pub mod analog_switch;
+pub mod analog_switch2;
 pub mod capacitor;
 pub mod current_source;
 pub mod decoration;
@@ -19,7 +21,11 @@ pub mod junction;
 pub mod labeled_node;
 pub mod lamp;
 pub mod ldr;
+pub mod led;
 pub mod logic;
+pub mod logic_input;
+pub mod logic_output;
+pub mod memristor;
 pub mod meter;
 pub mod mosfet;
 pub mod multi_throw_switch;
@@ -53,16 +59,20 @@ pub const KINDS: &[&str] = &[
     "thermistor",
     "potentiometer",
     "ldr",
+    "memristor",
     "voltage",
     "rail",
     "current",
     "diode",
     "zener",
     "varactor",
+    "led",
     "transistor",
     "mosfet",
     "switch",
+    "analogSwitch",
     "switch2",
+    "analogSwitch2",
     "transformer",
     "tappedTransformer",
     "customTransformer",
@@ -71,6 +81,7 @@ pub const KINDS: &[&str] = &[
     "relayContact",
     "opamp",
     "inverter",
+    "logicInput",
     "andGate",
     "nandGate",
     "orGate",
@@ -82,6 +93,7 @@ pub const KINDS: &[&str] = &[
     "invertingSchmitt",
     "labeledNode",
     "output",
+    "logicOutput",
     "probe",
     "decoration",
 ];
@@ -98,6 +110,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "fuse" => Box::new(fuse::Fuse::new(spec)),
         "lamp" => Box::new(lamp::Lamp::new(spec)),
         "thermistor" => Box::new(thermistor::Thermistor::new(spec)),
+        "memristor" => Box::new(memristor::Memristor::new(spec)),
         "potentiometer" => Box::new(potentiometer::Potentiometer::new(spec)),
         "ldr" => Box::new(ldr::Ldr::new(spec)),
         "voltage" => Box::new(voltage_source::VoltageSource::new(spec)),
@@ -106,10 +119,13 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "diode" => Box::new(diode::Diode::new(spec)),
         "zener" => Box::new(diode::Diode::new_zener(spec)),
         "varactor" => Box::new(diode::Diode::new_varactor(spec)),
+        "led" => Box::new(led::Led::new(spec)),
         "transistor" => Box::new(transistor::BipolarTransistor::new(spec)),
         "mosfet" => Box::new(mosfet::Mosfet::new(spec)),
         "switch" => Box::new(switch::Switch::new(spec)),
+        "analogSwitch" => Box::new(analog_switch::AnalogSwitch::new(spec)),
         "switch2" => Box::new(multi_throw_switch::MultiThrowSwitch::new(spec)),
+        "analogSwitch2" => Box::new(analog_switch2::AnalogSwitch2::new(spec)),
         "transformer" => Box::new(transformer::Transformer::new_basic(spec)),
         "tappedTransformer" => Box::new(transformer::Transformer::new_tapped(spec)),
         "customTransformer" => Box::new(transformer::Transformer::new_custom(spec)),
@@ -118,6 +134,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "relayContact" => Box::new(relay::RelayContact::new(spec)),
         "opamp" => Box::new(opamp::OpAmp::new(spec)),
         "inverter" => Box::new(inverter::Inverter::new(spec)),
+        "logicInput" => Box::new(logic_input::LogicInput::new(spec)),
         "andGate" => Box::new(logic::Gate::new(spec, logic::GateKind::And)),
         "nandGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Nand)),
         "orGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Or)),
@@ -129,6 +146,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "invertingSchmitt" => Box::new(schmitt::Schmitt::new(spec, true)),
         "labeledNode" => Box::new(labeled_node::LabeledNode::new(spec)),
         "output" => Box::new(meter::Meter::new_output(spec)),
+        "logicOutput" => Box::new(logic_output::LogicOutput::new(spec)),
         "probe" => Box::new(probe::Probe::new(spec)),
         "decoration" => Box::new(decoration::Decoration::new(spec)),
         _ => return None,

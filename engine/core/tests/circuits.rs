@@ -7039,3 +7039,390 @@ fn gate_restores_last_output_from_the_file_token() {
     );
     assert!(close(out("andGate", 0.0), 0.0, 1e-9), "AND remembers low");
 }
+
+#[test]
+fn logic_input_high_drives_a_divider() {
+    // A logic input at position 1 is a 5 V source to ground; across two equal
+    // 1 k resistors the midpoint sits at half its output and the source
+    // delivers the divider current.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(close(volts[2], 2.5, 1e-9), "midpoint was {}", volts[2]);
+    assert!(
+        close(amps[1], 2.5e-3, 1e-12),
+        "source current was {}",
+        amps[1]
+    );
+    assert!(
+        close(amps[2], 2.5e-3, 1e-12),
+        "first resistor current was {}",
+        amps[2]
+    );
+}
+
+#[test]
+fn logic_output_reads_its_node_voltage() {
+    // A 5 V rail drives a logic output with the pull-down flag set: the 1 M
+    // pull-down to ground must not drag the node down. The element's readout
+    // is the node voltage itself, and a voltage scope on the element samples
+    // that same value (getVoltageDiff, LogicOutputElm.java:97).
+    let c = &mut build_with(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "ground", &[[100, 0]], &[]),
+            elm_flags(3, "logicOutput", &[[0, 0]], &[("threshold", 2.5)], 4),
+        ],
+        opts(1e-5, true),
+        vec![ScopeSpec {
+            element_id: 3,
+            value: ScopeValue::Voltage,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
+        }],
+    );
+    c.run(1);
+    assert!(
+        close(c.element_voltages()[2], 5.0, 1e-9),
+        "logic output readout was {}",
+        c.element_voltages()[2]
+    );
+    let snap = c.scopes()[0].snapshot();
+    assert_eq!(snap.len(), 2, "expected one min/max column");
+    assert!(
+        close(snap[0] as f64, 5.0, 1e-9),
+        "scope min was {}",
+        snap[0]
+    );
+    assert!(
+        close(snap[1] as f64, 5.0, 1e-9),
+        "scope max was {}",
+        snap[1]
+    );
+}
+
+#[test]
+fn led_drops_about_two_volts_forward() {
+    // A 5 V source through 1 k drives a few mA into the LED. The LED's
+    // forward drop is 2.1024259 V at 1 A (LEDElm.java:41), so at a few mA it
+    // sits just under 2 V and the loop current is roughly (5 - 2.1)/R.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "led", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(20);
+
+    let vd = c.element_voltages()[2];
+    let i = c.element_currents()[1];
+    assert!((1.5..2.4).contains(&vd), "forward drop was {vd}");
+    assert!(close(i, (5.0 - vd) / 1000.0, 1e-5), "current was {i}");
+    assert!(close(i, (5.0 - 2.1) / 1000.0, 0.5e-3), "current was {i}");
+}
+
+#[test]
+fn analog_switch_passes_signal_above_threshold_only() {
+    // A 5 V source drives a 1 k feed through the analog switch to ground; the
+    // control post is driven by its own 5 V source. With the control above
+    // the 2.5 V threshold the switch stamps r_on, so the loop current is
+    // 5/(R + r_on).
+    let closed = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "analogSwitch",
+                &[[100, 0], [100, 100], [84, 50]],
+                &[("r_on", 20.0), ("r_off", 1e10), ("threshold", 2.5)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "voltage", &[[84, 34], [84, 50]], &[("maxVoltage", 5.0)]),
+            elm(7, "ground", &[[84, 34]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    closed.run(5);
+    let expected = 5.0 / (1000.0 + 20.0);
+    assert!(
+        close(closed.element_currents()[1], expected, 1e-12),
+        "closed switch drew {}, expected {expected}",
+        closed.element_currents()[1]
+    );
+
+    let open = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "analogSwitch",
+                &[[100, 0], [100, 100], [84, 50]],
+                &[("r_on", 20.0), ("r_off", 1e10), ("threshold", 2.5)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "voltage", &[[84, 34], [84, 50]], &[("maxVoltage", 0.0)]),
+            elm(7, "ground", &[[84, 34]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    open.run(5);
+    assert!(
+        close(open.element_currents()[1], 0.0, 1e-8),
+        "open switch should pass no current, got {}",
+        open.element_currents()[1]
+    );
+}
+
+#[test]
+fn analog_switch2_routes_current_to_the_selected_throw_only() {
+    // A 5 V source through a 1k resistor into the SPDT analog switch's common
+    // post. The control rail sits at 5 V, above the 2.5 V threshold, so throw
+    // 1 carries r_on and is grounded, carrying I = 5/(R+r_on). Throw 2
+    // carries r_off and reads zero.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "analogSwitch2",
+                &[[100, 0], [300, -16], [300, 16], [200, -16]],
+                &[("r_on", 20.0), ("r_off", 1e10), ("threshold", 2.5)],
+            ),
+            elm(4, "ground", &[[300, -16]], &[]),
+            elm(
+                5,
+                "resistor",
+                &[[300, 16], [300, 116]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "ground", &[[300, 116]], &[]),
+            elm(7, "rail", &[[200, -16]], &[("maxVoltage", 5.0)]),
+            elm(8, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(5);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let expected = 5.0 / (1000.0 + 20.0);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], expected, 1e-9),
+        "divider current was {}, expected {}",
+        amps[1],
+        expected
+    );
+    assert!(
+        close(amps[2], expected, 1e-9),
+        "switch current was {}, expected {}",
+        amps[2],
+        expected
+    );
+    assert!(
+        close(c.element_voltages()[2], 5.0 * 20.0 / (1000.0 + 20.0), 1e-9),
+        "common voltage was {}, expected the r_on divider drop",
+        c.element_voltages()[2]
+    );
+    assert!(
+        close(amps[4], 0.0, 1e-9),
+        "unselected throw's resistor carried {}, expected none",
+        amps[4]
+    );
+}
+
+#[test]
+fn analog_switch2_pulldown_grounds_the_unselected_throw() {
+    // The same divider as the routing test above, with FLAG_PULLDOWN (2) set:
+    // the unselected throw is no longer stamped with `r_off` to the common, it
+    // is tied to ground through `r_off` for the whole run instead, so its node
+    // reads zero while the common carries the divider drop
+    // (AnalogSwitch2Elm.java:100-117).
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm_flags(
+                3,
+                "analogSwitch2",
+                &[[100, 0], [300, -16], [300, 16], [200, -16]],
+                &[("r_on", 20.0), ("r_off", 1e10), ("threshold", 2.5)],
+                2,
+            ),
+            elm(4, "ground", &[[300, -16]], &[]),
+            elm(
+                5,
+                "resistor",
+                &[[300, 16], [300, 116]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "ground", &[[300, 116]], &[]),
+            elm(7, "rail", &[[200, -16]], &[("maxVoltage", 5.0)]),
+            elm(8, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(5);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let expected = 5.0 / (1000.0 + 20.0);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], expected, 1e-9),
+        "divider current was {}, expected {}",
+        amps[1],
+        expected
+    );
+    assert!(
+        close(amps[2], expected, 1e-9),
+        "switch current was {}, expected {}",
+        amps[2],
+        expected
+    );
+    assert!(
+        close(c.element_voltages()[2], 5.0 * 20.0 / (1000.0 + 20.0), 1e-9),
+        "common voltage was {}, expected the r_on divider drop",
+        c.element_voltages()[2]
+    );
+    // The switch's posts start at flattened index 4 (2 for the source, 2 for
+    // the divider); throw 2 is its third post. The pulldown leaves it at
+    // ground exactly, unlike the `r_off`-to-common stamp the routing test
+    // relies on, which would leave it at the divider's drop.
+    let nodes = c.element_nodes();
+    let throw2 = nodes[6] as usize;
+    assert!(
+        close(c.node_voltages()[throw2], 0.0, 1e-9),
+        "unselected throw sat at {}, expected the pulldown's ground",
+        c.node_voltages()[throw2]
+    );
+    assert!(
+        close(amps[4], 0.0, 1e-9),
+        "unselected throw's load carried {}, expected none",
+        amps[4]
+    );
+}
+
+#[test]
+fn memristor_biased_with_constant_current_integrates_linearly() {
+    // A current source in series with a memristor to ground forces a constant
+    // 1 mA through it, so dopeWidth integrates linearly and the resistance
+    // sweeps from r_off toward r_on. The discrete update (MemristorElm.java:
+    // 119-127) advances dopeWidth from the *previous* step's converged current,
+    // and a fresh element starts with current 0, so step 1 stamps the initial
+    // r_off and advances nothing; from step 2 on each step moves dopeWidth by
+    // delta = dt*mobility*r_on*I/totalWidth. The resistance a step stamps uses
+    // the wd captured *before* that step's advance (the same capture-before-
+    // advance order as the lamp), so step N stamps the blend at
+    // wd = (N-2)*delta/totalWidth. With these numbers delta = totalWidth/10,
+    // so after 10 steps the last stamped resistance is at wd = 0.8,
+    // R = 3280 ohm, V = 3.28 V.
+    let dt = 1e-6;
+    let i = 1e-3;
+    let r_on = 100.0;
+    let r_off = 16000.0;
+    let total_width = 1e-8;
+    let mobility = 1e-10;
+    let steps = 10u32;
+
+    let delta = dt * mobility * r_on * i / total_width; // 1e-9 m per step
+    let wd = (steps - 2) as f64 * delta / total_width; // 0.8
+    let resistance = r_on * wd + r_off * (1.0 - wd); // 3280 ohm
+
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 0], [100, 0]], &[("current", i)]),
+            elm(
+                2,
+                "memristor",
+                &[[100, 0], [200, 0]],
+                &[
+                    ("r_on", r_on),
+                    ("r_off", r_off),
+                    ("totalWidth", total_width),
+                    ("mobility", mobility),
+                ],
+            ),
+            elm(3, "ground", &[[0, 0]], &[]),
+            elm(4, "ground", &[[200, 0]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(steps);
+
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        close(volts[1], i * resistance, 1e-9),
+        "memristor voltage {}, expected {} (R = {})",
+        volts[1],
+        i * resistance,
+        resistance
+    );
+    assert!(
+        close(amps[1], i, 1e-12),
+        "memristor current {}, expected the source's {} A",
+        amps[1],
+        i
+    );
+}

@@ -7,7 +7,7 @@ import { SAMPLE } from '../io/netlist/fixtures';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 import { APP_PREF_STORAGE_KEY, loadAppPrefs, type StorageLike } from './appPrefs';
 import { RECOVERY_STORAGE_KEY, readRecovery, startAutoSave, type RecoveryStorage } from './recovery';
-import { hasUnsavedChanges, makeElement, useStore } from './store';
+import { hasUnsavedChanges, makeElement, nextSwitchState, useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
@@ -565,6 +565,42 @@ describe('switch keyboard shortcuts', () => {
     expect(useStore.getState().elements[0].state).toBe(2);
     useStore.getState().toggleSwitchByKey('s');
     expect(useStore.getState().elements[0].state).toBe(0);
+  });
+
+  it('a ternary logic input cycles its three positions', () => {
+    // The pointer toggle routes through nextSwitchState, so the ternary range
+    // (LogicInputElm FLAG_TERNARY) must reach position 2 instead of folding
+    // back to 0 after one click.
+    const base = {
+      id: 1,
+      kind: 'logicInput',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 1,  // FLAG_TERNARY
+      params: { position: 0, momentary: 0 },
+      state: 0,
+    };
+    expect(nextSwitchState(base)).toBe(1);
+    expect(nextSwitchState({ ...base, state: 1 })).toBe(2);
+    expect(nextSwitchState({ ...base, state: 2 })).toBe(0);
+  });
+
+  it('a two-level logic input flips between its two positions', () => {
+    const base = {
+      id: 1,
+      kind: 'logicInput',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0 },
+      state: 0,
+    };
+    expect(nextSwitchState(base)).toBe(1);
+    expect(nextSwitchState({ ...base, state: 1 })).toBe(0);
   });
 
   it('releaseMomentaryByKey lets a momentary switch back up on keyup', () => {

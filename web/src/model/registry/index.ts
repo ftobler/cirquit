@@ -23,25 +23,31 @@ import { LAMP_DEF } from './elements/lamp';
 import { THERMISTOR_DEF } from './elements/thermistor';
 import { POTENTIOMETER_DEF } from './elements/potentiometer';
 import { LDR_DEF } from './elements/ldr';
+import { MEMRISTOR_DEF } from './elements/memristor';
 import { VOLTAGE_DEF } from './elements/voltage';
 import { RAIL_DEF } from './elements/rail';
 import { CURRENT_DEF } from './elements/current';
 import { DIODE_DEF } from './elements/diode';
 import { ZENER_DEF } from './elements/zener';
 import { VARACTOR_DEF } from './elements/varactor';
+import { LED_DEF } from './elements/led';
 import { TRANSISTOR_DEF } from './elements/transistor';
 import { MOSFET_DEF } from './elements/mosfet';
 import { SWITCH_DEF } from './elements/switch';
 import { SWITCH2_DEF } from './elements/switch2';
+import { ANALOG_SWITCH_DEF } from './elements/analogSwitch';
+import { ANALOG_SWITCH2_DEF } from './elements/analogSwitch2';
 import { TRANSFORMER_DEF, TAPPED_TRANSFORMER_DEF, CUSTOM_TRANSFORMER_DEF } from './elements/transformer';
 import { RELAY_DEF, RELAY_COIL_DEF, RELAY_CONTACT_DEF } from './elements/relay';
 import { OPAMP_DEF } from './elements/opamp';
 import { AND_GATE_DEF, NAND_GATE_DEF, OR_GATE_DEF, NOR_GATE_DEF, XOR_GATE_DEF, XNOR_GATE_DEF } from './elements/gate';
 import { INVERTER_DEF } from './elements/inverter';
+import { LOGIC_INPUT_DEF } from './elements/logicInput';
 import { SCHMITT_DEF, INVERTING_SCHMITT_DEF } from './elements/schmitt';
 import { TRI_STATE_DEF } from './elements/triState';
 import { LABELED_NODE_DEF } from './elements/labeledNode';
 import { OUTPUT_DEF } from './elements/output';
+import { LOGIC_OUTPUT_DEF } from './elements/logicOutput';
 import { PROBE_DEF } from './elements/probe';
 import { DECORATION_DEF } from './elements/decoration';
 import type { CircuitElement, ElementDef, Point } from '../types';
@@ -68,8 +74,11 @@ export const ELEMENT_DEFS: ElementDef[] = [
   THERMISTOR_DEF,
   POTENTIOMETER_DEF,
   LDR_DEF,
+  MEMRISTOR_DEF,
   SWITCH_DEF,
   SWITCH2_DEF,
+  ANALOG_SWITCH_DEF,
+  ANALOG_SWITCH2_DEF,
   TRANSFORMER_DEF,
   TAPPED_TRANSFORMER_DEF,
   CUSTOM_TRANSFORMER_DEF,
@@ -82,6 +91,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   DIODE_DEF,
   ZENER_DEF,
   VARACTOR_DEF,
+  LED_DEF,
   TRANSISTOR_DEF,
   MOSFET_DEF,
   OPAMP_DEF,
@@ -92,11 +102,13 @@ export const ELEMENT_DEFS: ElementDef[] = [
   XOR_GATE_DEF,
   XNOR_GATE_DEF,
   INVERTER_DEF,
+  LOGIC_INPUT_DEF,
   SCHMITT_DEF,
   INVERTING_SCHMITT_DEF,
   TRI_STATE_DEF,
   LABELED_NODE_DEF,
   OUTPUT_DEF,
+  LOGIC_OUTPUT_DEF,
   PROBE_DEF,
   DECORATION_DEF,
 ];

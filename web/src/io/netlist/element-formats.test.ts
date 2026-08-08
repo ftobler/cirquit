@@ -1189,3 +1189,179 @@ describe('logic gate file formats', () => {
     expect(out).toContain('180 0 0 32 0 0 0.1 10000000000 0 5');
   });
 });
+
+describe('LED file format', () => {
+  /** Parses a single `162` line and re-emits it, returning that line. */
+  const ledLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('162 ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('the bundled model form round-trips byte-for-byte', () => {
+    // FLAG_MODEL (2): one escaped model-name token, then the colour and
+    // brightness tail (LEDElm.java:37-53).
+    const line = '162 0 0 100 0 2 default-led 1 0 0 0.01';
+    const { e, elementLine } = ledLine(line);
+    expect(e.modelName).toBe('default-led');
+    expect(e.params.colorR).toBe(1);
+    expect(e.params.colorG).toBe(0);
+    expect(e.params.colorB).toBe(0);
+    expect(e.params.maxBrightnessCurrent).toBe(0.01);
+    expect(elementLine).toBe(line);
+  });
+
+  it('the forward-drop form round-trips byte-for-byte', () => {
+    // FLAG_FWDROP (1): the drop token leads, then the same colour tail.
+    // 2.1024259 V is upstream's own default drop (LEDElm.java:41).
+    const line = '162 0 0 100 0 1 2.1024259 1 0 0 0.01';
+    const { e, elementLine } = ledLine(line);
+    expect(e.params.forwardVoltage).toBe(2.1024259);
+    expect(e.params.colorR).toBe(1);
+    expect(e.params.colorG).toBe(0);
+    expect(e.params.colorB).toBe(0);
+    expect(e.params.maxBrightnessCurrent).toBe(0.01);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a flagless line reads the default drop and saves the value form', () => {
+    // With neither flag the colour tokens start the tail and the drop falls
+    // back to the 2.1024259 default. The save writes the value form, which
+    // must carry exactly FLAG_FWDROP so a reload does not misread it as a
+    // model name (the dumpFlags comment in led.ts).
+    const { e, elementLine } = ledLine('162 0 0 100 0 0 1.0 0.0 0.0');
+    expect(e.params.forwardVoltage).toBe(2.1024259);
+    expect(e.params.colorR).toBe(1);
+    expect(e.params.colorG).toBe(0);
+    expect(e.params.colorB).toBe(0);
+    expect(e.params.maxBrightnessCurrent).toBe(0.01);
+    expect(elementLine).toBe('162 0 0 100 0 1 2.1024259 1 0 0 0.01');
+  });
+
+  it('a fresh LED dumps the upstream constructor defaults', () => {
+    const e = makeElement('led', 0, 0, 32, 0);
+    expect(e.params.forwardVoltage).toBe(2.1024259);
+    expect(e.params.maxBrightnessCurrent).toBe(0.01);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('162 0 0 32 0 1 2.1024259 1 0 0 0.01');
+  });
+});
+
+describe('logic input file format', () => {
+  /** Parses a single `L` line and re-emits it, returning that line. */
+  const logicLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('L ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('an unlabelled line round-trips its two levels', () => {
+    const line = 'L 0 0 100 0 0 0 false 5 0';
+    const { e, elementLine } = logicLine(line);
+    expect(e.params.hiV).toBe(5);
+    expect(e.params.loV).toBe(0);
+    expect(e.state).toBe(0);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a label shifts hiV and loV one token along', () => {
+    // The label token exists only under FLAG_LABEL and is consumed before the
+    // two levels are read (SwitchElm.java:66-67, LogicInputElm.java:38-40), so
+    // hiV/loV follow it rather than the switch's position/momentary pair.
+    const line = 'L 0 0 100 0 4 1 false A 5 0';
+    const { e, elementLine } = logicLine(line);
+    expect(e.text).toBe('A');
+    expect(e.params.position).toBe(1);
+    expect(e.params.hiV).toBe(5);
+    expect(e.params.loV).toBe(0);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a ternary input keeps its third position', () => {
+    // FLAG_TERNARY (1) needs no extra token: position 2 is a plain value.
+    const line = 'L 0 0 100 0 1 2 false 5 0';
+    const { e, elementLine } = logicLine(line);
+    expect(e.params.position).toBe(2);
+    expect(e.state).toBe(2);
+    expect(elementLine).toBe(line);
+  });
+});
+
+describe('memristor file format', () => {
+  /** Parses a single `m` line and re-emits it, returning that line. */
+  const memLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('m ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('a five-token line round-trips with the saved current defaulted to 0', () => {
+    // The optional sixth token is the saved operating-point current
+    // (MemristorElm.java:41-48). A line without it loads current 0, and the
+    // save writes the token back, as every dump() in this port does.
+    const { e, elementLine } = memLine('m 0 0 100 0 0 100 16000 0 1e-8 1e-10');
+    expect(e.params.r_on).toBe(100);
+    expect(e.params.r_off).toBe(16000);
+    expect(e.params.dopeWidth).toBe(0);
+    expect(e.params.totalWidth).toBe(1e-8);
+    expect(e.params.mobility).toBe(1e-10);
+    expect(e.params.current).toBe(0);
+    expect(elementLine).toBe('m 0 0 100 0 0 100 16000 0 1e-8 1e-10 0');
+  });
+
+  it('a six-token line round-trips byte-for-byte', () => {
+    const line = 'm 0 0 100 0 0 100 16000 0 1e-8 1e-10 0.005';
+    const { e, elementLine } = memLine(line);
+    expect(e.params.current).toBe(0.005);
+    expect(elementLine).toBe(line);
+  });
+});
+
+describe('analog switch and logic output file formats', () => {
+  /** Parses a single element line and re-emits it, returning that line. */
+  const elementLine = (line: string, code: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith(`${code} `)) ?? '' };
+  };
+
+  it('an analog switch line round-trips byte-for-byte', () => {
+    // r_on r_off threshold, with FLAG_PULLDOWN (2) as the fresh constructor
+    // sets it (AnalogSwitchElm.java:43).
+    const line = '159 0 0 100 0 2 20 10000000000 2.5';
+    const { e, elementLine: out } = elementLine(line, '159');
+    expect(e.params.r_on).toBe(20);
+    expect(e.params.r_off).toBe(1e10);
+    expect(e.params.threshold).toBe(2.5);
+    expect(e.flags).toBe(2);
+    expect(out).toBe(line);
+  });
+
+  it('an analog switch 2 line round-trips byte-for-byte', () => {
+    const line = '160 0 0 100 0 2 20 10000000000 2.5';
+    const { e, elementLine: out } = elementLine(line, '160');
+    expect(e.params.r_on).toBe(20);
+    expect(e.params.r_off).toBe(1e10);
+    expect(e.params.threshold).toBe(2.5);
+    expect(out).toBe(line);
+  });
+
+  it('a fresh analog switch 2 defaults to the pulldown flag', () => {
+    // AnalogSwitch2Elm inherits the SPST's fresh FLAG_PULLDOWN, so the saved
+    // line carries bit 2 (AnalogSwitchElm.java:43).
+    const e = makeElement('analogSwitch2', 0, 0, 32, 0);
+    expect(e.flags).toBe(2);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('160 0 0 32 0 2 20 10000000000 2.5');
+  });
+
+  it('a logic output line round-trips byte-for-byte', () => {
+    const line = 'M 0 0 100 0 0 2.5';
+    const { e, elementLine: out } = elementLine(line, 'M');
+    expect(e.params.threshold).toBe(2.5);
+    expect(out).toBe(line);
+  });
+});
