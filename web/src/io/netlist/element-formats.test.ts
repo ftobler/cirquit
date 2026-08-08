@@ -1365,3 +1365,124 @@ describe('analog switch and logic output file formats', () => {
     expect(out).toBe(line);
   });
 });
+
+describe('batch-3 source and chip file formats', () => {
+  /** Parses a single element line and re-emits it, returning that line. */
+  const elementLine = (line: string, code: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith(`${code} `)) ?? '' };
+  };
+
+  it('a sweep line round-trips byte-for-byte', () => {
+    // minF maxF maxV sweepTime (SweepElm.java:40-45), with FLAG_LOG (1) and
+    // FLAG_BIDIR (2) as flags 3.
+    const line = '170 240 160 208 160 3 20 1000 5 0.1';
+    const { e, elementLine: out } = elementLine(line, '170');
+    expect(e.params.minF).toBe(20);
+    expect(e.params.maxF).toBe(1000);
+    expect(e.params.maxV).toBe(5);
+    expect(e.params.sweepTime).toBe(0.1);
+    expect(e.flags).toBe(3);
+    expect(out).toBe(line);
+  });
+
+  it('a fresh sweep dumps the upstream constructor defaults', () => {
+    // FLAG_BIDIR (2) is the default (SweepElm.java:35).
+    const e = makeElement('sweep', 0, 0, 64, 0);
+    expect(e.flags).toBe(2);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('170 0 0 64 0 2 20 4000 5 0.1');
+  });
+
+  it('a transmission line round-trips byte-for-byte', () => {
+    // delay imped width, then the series-resistance token upstream always
+    // writes as 0 (TransLineElm.java:55).
+    const line = '171 0 0 100 0 0 0.005 75 64 0';
+    const { e, elementLine: out } = elementLine(line, '171');
+    expect(e.params.delay).toBe(0.005);
+    expect(e.params.imped).toBe(75);
+    expect(e.params.width).toBe(64);
+    expect(out).toBe(line);
+  });
+
+  it('a fresh transmission line defaults delay to upstream 0.005', () => {
+    // Upstream's fresh constructor sets delay = 1000*maxTimeStep = 0.005
+    // (TransLineElm.java:34), which the file save must agree with.
+    const e = makeElement('transmissionLine', 0, 0, 32, 0);
+    expect(e.params.delay).toBe(0.005);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('171 0 0 32 0 0 0.005 75 32 0');
+  });
+
+  it('an audio output line round-trips byte-for-byte', () => {
+    // duration samplingRate labelNum (AudioOutputElm.java:41-49).
+    const line = '211 512 384 576 384 0 1 8000 1';
+    const { e, elementLine: out } = elementLine(line, '211');
+    expect(e.params.duration).toBe(1);
+    expect(e.params.samplingRate).toBe(8000);
+    expect(e.params.labelNum).toBe(1);
+    expect(out).toBe(line);
+  });
+
+  it('an external voltage line round-trips its escaped name', () => {
+    // The rail tokens, then the escaped name (ExtVoltageElm.java:28-33).
+    const line = '418 304 80 256 80 0 1 40 5 0 0 0.5 pin\\s8';
+    const { e, elementLine: out } = elementLine(line, '418');
+    expect(e.text).toBe('pin 8');
+    expect(out).toBe(line);
+  });
+
+  it('an external voltage with an empty name keeps the \\0 escape', () => {
+    // A save must not rewrite the empty name to 'ext', or the line loses a
+    // token the user's file carried.
+    const line = '418 0 0 32 0 0 1 40 5 0 0 0.5 \\0';
+    const { e, elementLine: out } = elementLine(line, '418');
+    expect(e.text).toBe('');
+    expect(out).toBe(line);
+  });
+
+  it('a fresh external voltage falls back to the name ext', () => {
+    // Only a part that never carried a name token writes the constructor
+    // default (ExtVoltageElm.java:27), on the VOLTAGE_SHOW_VOLTAGE flag.
+    const e = makeElement('extVoltage', 0, 0, 32, 0);
+    expect(e.flags).toBe(16);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('418 0 0 32 0 16 1 40 5 0 0 0.5 ext');
+  });
+
+  it('a var rail round-trips its raw caption tokens', () => {
+    // The six source tokens, then the raw caption; a `+` is stored as `%2B`
+    // so it survives the token format (VarRailElm.java:42-45).
+    const line = '172 272 288 192 288 0 6 4.5 5 0 0 0.5 Voltage %2B 1';
+    const { e, elementLine: out } = elementLine(line, '172');
+    expect(e.text).toBe('Voltage + 1');
+    expect(out).toBe(line);
+  });
+
+  it('a timer line with the ground pin round-trips its OUT state', () => {
+    // flags 4 is FLAG_GROUND; the trailing token is the saved OUT level
+    // (TimerElm.java:55).
+    const line = '165 240 128 256 128 4 0';
+    const { e, elementLine: out } = elementLine(line, '165');
+    expect(e.params.voltage5).toBe(0);
+    expect(out).toBe(line);
+  });
+
+  it('a timer with a ground pin keeps 8 posts, matching the engine', () => {
+    // The engine's hasReset() forces the reset pin when the ground pin is set
+    // (TimerElm.java:62), so flags 4 still allocates 8 posts; a stale 7-post
+    // layout would alias the reset and ground nodes.
+    const e = parseCircuit('165 0 0 32 0 4 0').elements[0];
+    expect(postsOf(e)).toHaveLength(8);
+  });
+
+  it('a timer with custom high voltage writes the token and its flag', () => {
+    // FLAG_CUSTOM_VOLTAGE (8192) makes the high-voltage token optional; a
+    // non-5 value saves the token and the flag together (ChipElm.java:51-56).
+    const line = '165 240 128 256 128 8192 3.3 0';
+    const { e, elementLine: out } = elementLine(line, '165');
+    expect(e.params.highVoltage).toBe(3.3);
+    expect(out).toBe(line);
+  });
+});

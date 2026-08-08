@@ -9,6 +9,7 @@
 
 pub mod analog_switch;
 pub mod analog_switch2;
+pub mod audio_output;
 pub mod capacitor;
 pub mod chip;
 pub mod counter;
@@ -16,6 +17,7 @@ pub mod current_source;
 pub mod d_flip_flop;
 pub mod decoration;
 pub mod diode;
+pub mod ext_voltage;
 pub mod fuse;
 pub mod ground;
 pub mod inductor;
@@ -41,12 +43,16 @@ pub mod relay;
 pub mod resistor;
 pub mod ring_counter;
 pub mod schmitt;
+pub mod sweep;
 pub mod switch;
 pub mod t_flip_flop;
 pub mod thermistor;
+pub mod timer;
 pub mod transformer;
 pub mod transistor;
+pub mod transmission_line;
 pub mod tri_state;
+pub mod var_rail;
 pub mod voltage_source;
 pub mod wire;
 
@@ -64,11 +70,14 @@ pub const KINDS: &[&str] = &[
     "fuse",
     "lamp",
     "thermistor",
+    "timer",
     "potentiometer",
     "ldr",
     "memristor",
     "voltage",
     "rail",
+    "varRail",
+    "extVoltage",
     "current",
     "diode",
     "zener",
@@ -77,12 +86,15 @@ pub const KINDS: &[&str] = &[
     "transistor",
     "mosfet",
     "switch",
+    "sweep",
     "analogSwitch",
+    "audioOutput",
     "switch2",
     "analogSwitch2",
     "transformer",
     "tappedTransformer",
     "customTransformer",
+    "transmissionLine",
     "relay",
     "relayCoil",
     "relayContact",
@@ -123,11 +135,14 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "fuse" => Box::new(fuse::Fuse::new(spec)),
         "lamp" => Box::new(lamp::Lamp::new(spec)),
         "thermistor" => Box::new(thermistor::Thermistor::new(spec)),
+        "timer" => Box::new(timer::Timer::new(spec)),
         "memristor" => Box::new(memristor::Memristor::new(spec)),
         "potentiometer" => Box::new(potentiometer::Potentiometer::new(spec)),
         "ldr" => Box::new(ldr::Ldr::new(spec)),
         "voltage" => Box::new(voltage_source::VoltageSource::new(spec)),
         "rail" => Box::new(voltage_source::VoltageSource::new_rail(spec)),
+        "varRail" => Box::new(var_rail::VarRail::new(spec)),
+        "extVoltage" => Box::new(ext_voltage::ExtVoltage::new(spec)),
         "current" => Box::new(current_source::CurrentSource::new(spec)),
         "diode" => Box::new(diode::Diode::new(spec)),
         "zener" => Box::new(diode::Diode::new_zener(spec)),
@@ -136,12 +151,15 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "transistor" => Box::new(transistor::BipolarTransistor::new(spec)),
         "mosfet" => Box::new(mosfet::Mosfet::new(spec)),
         "switch" => Box::new(switch::Switch::new(spec)),
+        "sweep" => Box::new(sweep::Sweep::new(spec)),
         "analogSwitch" => Box::new(analog_switch::AnalogSwitch::new(spec)),
+        "audioOutput" => Box::new(audio_output::AudioOutput::new(spec)),
         "switch2" => Box::new(multi_throw_switch::MultiThrowSwitch::new(spec)),
         "analogSwitch2" => Box::new(analog_switch2::AnalogSwitch2::new(spec)),
         "transformer" => Box::new(transformer::Transformer::new_basic(spec)),
         "tappedTransformer" => Box::new(transformer::Transformer::new_tapped(spec)),
         "customTransformer" => Box::new(transformer::Transformer::new_custom(spec)),
+        "transmissionLine" => Box::new(transmission_line::TransmissionLine::new(spec)),
         "relay" => Box::new(relay::Relay::new(spec)),
         "relayCoil" => Box::new(relay::RelayCoil::new(spec)),
         "relayContact" => Box::new(relay::RelayContact::new(spec)),

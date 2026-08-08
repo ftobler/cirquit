@@ -7836,3 +7836,280 @@ fn latch_outputs_follow_while_load_is_high_and_hold_after() {
     c.run(3);
     assert_eq!(o(c), 0, "did not hold after load went low");
 }
+
+#[test]
+fn transmission_line_step_reaches_open_far_end_after_delay() {
+    // A 10 V step drives the left port through a matched 75 ohm source
+    // resistor; the right port is open. After exactly one delay the far-end
+    // post rises from 0 to 10 V and holds there.
+    let dt = 5e-6;
+    let len = 10;
+    let delay = len as f64 * dt;
+    let c = &mut build_with(
+        vec![
+            elm(
+                1,
+                "transmissionLine",
+                &[[0, 100], [400, 100], [0, 0], [400, 0]],
+                &[("delay", delay), ("imped", 75.0)],
+            ),
+            elm(2, "ground", &[[0, 100]], &[]),
+            elm(3, "ground", &[[400, 100]], &[]),
+            elm(
+                4,
+                "voltage",
+                &[[-100, 100], [-100, 0]],
+                &[("maxVoltage", 10.0)],
+            ),
+            elm(5, "resistor", &[[-100, 0], [0, 0]], &[("resistance", 75.0)]),
+            elm(6, "ground", &[[-100, 100]], &[]),
+        ],
+        opts(dt, false),
+        vec![tr_scope(1, ScopeValue::NodeVoltage, 3)],
+    );
+    c.run(len);
+    assert!(
+        close(last_sample(c, 0), 0.0, 1e-9),
+        "far end should be 0 before the delay"
+    );
+    c.run(1);
+    assert!(
+        close(last_sample(c, 0), 10.0, 1e-3),
+        "far end should reach the source value"
+    );
+    c.run(len);
+    assert!(
+        close(last_sample(c, 0), 10.0, 1e-3),
+        "far end must hold after the round trip"
+    );
+}
+
+#[test]
+fn var_rail_feeds_its_voltage_into_a_divider() {
+    let c = &mut build(
+        vec![
+            elm(1, "varRail", &[[0, 0]], &[("voltage", 3.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(close(volts[0], 3.0, 1e-9), "rail readout was {}", volts[0]);
+    assert!(close(volts[2], 1.5, 1e-9), "midpoint was {}", volts[2]);
+    assert!(close(amps[1], 1.5e-3, 1e-12), "current was {}", amps[1]);
+    assert!(c.set_param(1, "voltage", 6.0));
+    c.run(5);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(close(volts[0], 6.0, 1e-9), "rail readout was {}", volts[0]);
+    assert!(close(volts[2], 3.0, 1e-9), "midpoint was {}", volts[2]);
+    assert!(close(amps[1], 3e-3, 1e-12), "current was {}", amps[1]);
+}
+
+#[test]
+fn ext_voltage_feeds_the_divider() {
+    let c = &mut build(
+        vec![
+            elm(1, "extVoltage", &[[0, 0]], &[("voltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        close(volts[0], 5.0, 1e-9),
+        "source readout was {}",
+        volts[0]
+    );
+    assert!(close(volts[2], 2.5, 1e-9), "midpoint was {}", volts[2]);
+    assert!(close(amps[1], 2.5e-3, 1e-12), "current was {}", amps[1]);
+}
+
+#[test]
+fn sweep_with_constant_frequency_degenerates_to_ac_source() {
+    let freq = 100.0;
+    let dt = 1e-5;
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "sweep",
+                &[[0, 100]],
+                &[
+                    ("minF", freq),
+                    ("maxF", freq),
+                    ("maxV", 5.0),
+                    ("sweepTime", 0.1),
+                ],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[0, 100], [0, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[0, 0]], &[]),
+        ],
+        opts(dt, false),
+    );
+    c.run(250);
+    let v = c.element_voltages()[1];
+    assert!(close(v, 5.0, 1e-9), "quarter-period voltage was {v}");
+    c.run(500);
+    let v = c.element_voltages()[1];
+    assert!(close(v, -5.0, 1e-9), "three-quarter voltage was {v}");
+}
+
+#[test]
+fn sweep_integrates_the_frequency_ramp_in_phase() {
+    let c = &mut build(
+        vec![
+            elm_flags(
+                1,
+                "sweep",
+                &[[0, 100]],
+                &[
+                    ("minF", 100.0),
+                    ("maxF", 200.0),
+                    ("maxV", 5.0),
+                    ("sweepTime", 0.1),
+                ],
+                2, // FLAG_BIDIR
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[0, 100], [0, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[0, 0]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(5000);
+    let v = c.element_voltages()[1];
+    assert!(close(v, 5.0, 1e-9), "mid-ramp voltage was {v}");
+    c.run(5000);
+    let v = c.element_voltages()[1];
+    assert!(close(v, 0.0, 1e-9), "ramp-top voltage was {v}");
+    c.run(5000);
+    let v = c.element_voltages()[1];
+    assert!(close(v, -5.0, 1e-9), "return-ramp voltage was {v}");
+}
+
+#[test]
+fn audio_output_reads_its_node_voltage_and_draws_no_current() {
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "wire", &[[0, 0], [100, 0]], &[]),
+            elm(
+                3,
+                "audioOutput",
+                &[[100, 0]],
+                &[
+                    ("duration", 1.0),
+                    ("samplingRate", 8000.0),
+                    ("labelNum", 1.0),
+                ],
+            ),
+            elm(4, "ground", &[[200, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        close(volts[2], 5.0, 1e-9),
+        "audio output read {} V, expected the rail's 5 V",
+        volts[2]
+    );
+    assert!(
+        close(amps[2], 0.0, 1e-12),
+        "audio output carried {} A, expected none",
+        amps[2]
+    );
+}
+
+#[test]
+fn timer_divider_biases_ctl_and_trigger_sets_out() {
+    // The 555's internal divider stamps VCC->CTL 5000 ohm and CTL->ground
+    // 10000 ohm, so CTL sits at two thirds of VCC, and pulling TRIG below
+    // CTL/2 drives OUT to the rail. RST is held high, THRES tied below CTL,
+    // DIS parked on ground.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[64, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "ground", &[[64, 288]], &[]),
+            elm_flags(
+                3,
+                "timer",
+                &[
+                    [0, 96],    // 0 DIS
+                    [0, 192],   // 1 TRIG
+                    [0, 240],   // 2 THRES
+                    [64, 0],    // 3 VCC
+                    [64, 336],  // 4 CTL
+                    [128, 192], // 5 OUT
+                    [128, 96],  // 6 RST
+                    [64, 288],  // 7 GND
+                ],
+                &[("highVoltage", 5.0)],
+                6, // FLAG_RESET | FLAG_GROUND
+            ),
+            elm(4, "wire", &[[128, 96], [64, 0]], &[]), // RST to VCC
+            elm(5, "wire", &[[0, 240], [64, 288]], &[]), // THRES to ground
+            elm(6, "ground", &[[0, 192]], &[]),         // TRIG below CTL/2
+            elm(7, "wire", &[[0, 96], [64, 288]], &[]), // DIS to ground
+        ],
+        opts(1e-5, false),
+    );
+    c.run(5);
+    let nodes = c.element_nodes();
+    let volts = c.node_voltages();
+    // The timer is element index 2; its posts start at flattened index 2 (the
+    // rail and ground before it each carry one post).
+    let n_ctl = nodes[2 + 4] as usize;
+    let n_out = nodes[2 + 5] as usize;
+    assert!(
+        close(volts[n_ctl], 5.0 * 2.0 / 3.0, 1e-6),
+        "CTL was {} V, expected two thirds of VCC",
+        volts[n_ctl]
+    );
+    assert!(
+        volts[n_out] > 4.9,
+        "OUT was {} V, expected the rail",
+        volts[n_out]
+    );
+}

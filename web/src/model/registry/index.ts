@@ -26,6 +26,10 @@ import { LDR_DEF } from './elements/ldr';
 import { MEMRISTOR_DEF } from './elements/memristor';
 import { VOLTAGE_DEF } from './elements/voltage';
 import { RAIL_DEF } from './elements/rail';
+import { VAR_RAIL_DEF } from './elements/varRail';
+import { EXT_VOLTAGE_DEF } from './elements/extVoltage';
+import { SWEEP_DEF } from './elements/sweep';
+import { AUDIO_OUTPUT_DEF } from './elements/audioOutput';
 import { CURRENT_DEF } from './elements/current';
 import { DIODE_DEF } from './elements/diode';
 import { ZENER_DEF } from './elements/zener';
@@ -38,6 +42,8 @@ import { SWITCH2_DEF } from './elements/switch2';
 import { ANALOG_SWITCH_DEF } from './elements/analogSwitch';
 import { ANALOG_SWITCH2_DEF } from './elements/analogSwitch2';
 import { TRANSFORMER_DEF, TAPPED_TRANSFORMER_DEF, CUSTOM_TRANSFORMER_DEF } from './elements/transformer';
+import { TRANSMISSION_LINE_DEF } from './elements/transmissionLine';
+import { TIMER_DEF } from './elements/timer';
 import { RELAY_DEF, RELAY_COIL_DEF, RELAY_CONTACT_DEF } from './elements/relay';
 import { OPAMP_DEF } from './elements/opamp';
 import { AND_GATE_DEF, NAND_GATE_DEF, OR_GATE_DEF, NOR_GATE_DEF, XOR_GATE_DEF, XNOR_GATE_DEF } from './elements/gate';
@@ -88,11 +94,17 @@ export const ELEMENT_DEFS: ElementDef[] = [
   TRANSFORMER_DEF,
   TAPPED_TRANSFORMER_DEF,
   CUSTOM_TRANSFORMER_DEF,
+  TRANSMISSION_LINE_DEF,
+  TIMER_DEF,
   RELAY_DEF,
   RELAY_COIL_DEF,
   RELAY_CONTACT_DEF,
   VOLTAGE_DEF,
   RAIL_DEF,
+  VAR_RAIL_DEF,
+  EXT_VOLTAGE_DEF,
+  SWEEP_DEF,
+  AUDIO_OUTPUT_DEF,
   CURRENT_DEF,
   DIODE_DEF,
   ZENER_DEF,

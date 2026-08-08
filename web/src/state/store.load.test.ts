@@ -71,13 +71,13 @@ describe('load and save keep the file arrangement', () => {
 });
 
 describe('scope lines index the file, not the elements this build can read', () => {
-  // `170` is SweepElm, which this build has no model for. Upstream counts it
-  // in the element list all the same, so both scope indices sit one past what
-  // the port's own element array would say.
+  // `177` is SCR, which this build has no model for. Upstream counts it in the
+  // element list all the same, so both scope indices sit one past what the
+  // port's own element array would say.
   const FILE = [
     '$ 1 0.000005 10.20027730826997 50 5 43 5e-11',
     'r 0 0 16 0 0 100',
-    '170 32 0 48 0 0 20 0.1 1000 0',
+    '177 32 0 48 0 0 20 0.1 1000 0',
     'r 64 0 80 0 0 220',
     'o 0 64 0 4099 20 0.05 0 2 4 3',
     'o 1 8 0 34 6 0.00625 0 -1 sweep',
@@ -88,7 +88,7 @@ describe('scope lines index the file, not the elements this build can read', () 
   it('attaches each scope to the element the file meant', () => {
     useStore.getState().loadNetlist(FILE);
     const s = useStore.getState();
-    // Two traces on the two resistors; the one on the sweep has no element to
+    // Two traces on the two resistors; the one on the SCR has no element to
     // attach to and is not silently invented onto the wrong one.
     expect(s.scopes.map((x) => x.plots[0].elementId)).toEqual([s.elements[0].id, s.elements[1].id]);
     expect(s.unmatchedScopes).toHaveLength(1);
@@ -103,30 +103,32 @@ describe('scope lines index the file, not the elements this build can read', () 
   it('reports the missing element kind as missing, not as a preserved line', () => {
     useStore.getState().loadNetlist(FILE);
     const problem = useStore.getState().problem ?? '';
-    expect(problem).toContain('170');
+    expect(problem).toContain('177');
     expect(problem).toContain('missing from the drawing and the simulation');
   });
 
   it('attaches allpass1.txt the way the file means it', () => {
     // The bundled case this came from. Its element lines are
-    // a r r w r w c g w 170 O, and the unimplemented `170` sweep is number 9,
-    // so `o 9` has no element here and `o 10` is the `O` readout. Counting
-    // only the readable elements attached `o 9` to that readout instead and
-    // dropped `o 10` as out of range, losing the line from the saved file.
+    // a r r w r w c g w 170 O, and the `170` sweep is number 9, so `o 9`
+    // lands on the sweep and `o 10` on the `O` readout. The scope indices
+    // count the element list including every line, not just the readable ones.
     const text = readFileSync(
       fileURLToPath(new URL('../../public/circuits/allpass1.txt', import.meta.url)),
       'utf8',
     );
     useStore.getState().loadNetlist(text);
     const s = useStore.getState();
-    expect(s.scopes).toHaveLength(1);
-    expect(s.elements.find((e) => e.id === s.scopes[0].plots[0].elementId)?.kind).toBe('output');
-    expect(s.unmatchedScopes.map((c) => c.elementIndex)).toEqual([9]);
+    // Both `o` lines attach: `o 9` to the sweep, `o 10` to the readout.
+    expect(s.scopes).toHaveLength(2);
+    expect(
+      s.scopes.map((x) => s.elements.find((e) => e.id === x.plots[0].elementId)?.kind),
+    ).toEqual(['sweep', 'output']);
+    expect(s.unmatchedScopes).toHaveLength(0);
     // Both `o` lines come back, last and with every display field, and the
     // `170` keeps its place among the elements. The header and the element
     // lines re-render their numbers, so they are checked by the corpus sweep.
     expect(s.toNetlist().split('\n').slice(-5)).toEqual([
-      '170 240 208 192 208 3 10.0 2000.0 5.0 0.1',
+      '170 240 208 192 208 3 10 2000 5 0.1',
       'O 416 224 480 224 0 0',
       'o 9 8 0 34 6.0 0.00625 0 -1 input',
       'o 10 8 0 34 6.0 9.765625E-55 0 -1 output',

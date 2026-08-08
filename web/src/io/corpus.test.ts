@@ -83,18 +83,18 @@ describe('corpus fixtures', () => {
     const entries = scanCorpus(FIXTURES_DIR);
     const slider = entries.find((e) => e.file === 'slider-unknown.txt');
     expect(slider?.load).toBe('missing');
-    expect(slider?.missing).toEqual(['170']);
+    expect(slider?.missing).toEqual(['177']);
     expect(slider?.sliderLines).toBe(1);
 
     const parsed = parseCircuit(readFileSync(join(FIXTURES_DIR, 'slider-unknown.txt'), 'utf8'));
-    // The slider parses into state; only the `170` sweep element is missing.
+    // The slider parses into state; only the `177` SCR element is missing.
     expect(parsed.unsupported).not.toContain('38');
     expect(parsed.sliders).toHaveLength(1);
-    // It points at the unread `170` line, so it binds to nothing but still
+    // It points past the unread `177` line, so it binds to nothing but still
     // round-trips.
     expect(parsed.sliders[0].elementId).toBeUndefined();
     const { missing, sliderLines } = plainLoad(parsed);
-    expect(missing).toEqual(['170']);
+    expect(missing).toEqual(['177']);
     expect(sliderLines).toBe(1);
   });
 

@@ -95,12 +95,11 @@
   {
     "file": "555dutycycle.txt",
     "format": "plain",
-    "missing": [
-      "165"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "555int.txt",
@@ -115,84 +114,74 @@
   {
     "file": "555lowduty.txt",
     "format": "plain",
-    "missing": [
-      "165"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "555missing.txt",
     "format": "plain",
-    "missing": [
-      "165"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "555monostable.txt",
     "format": "plain",
-    "missing": [
-      "165"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "555pulsemod.txt",
     "format": "plain",
-    "missing": [
-      "165"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "555saw.txt",
     "format": "plain",
-    "missing": [
-      "165"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "555schmitt.txt",
     "format": "plain",
-    "missing": [
-      "165"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "555sequencer.txt",
     "format": "plain",
-    "missing": [
-      "165",
-      "165",
-      "165"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "555square.txt",
     "format": "plain",
-    "missing": [
-      "165"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "7segdecoder.txt",
@@ -208,8 +197,7 @@
     "file": "actbutterband.txt",
     "format": "plain",
     "missing": [
-      "n",
-      "211"
+      "n"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -219,7 +207,6 @@
     "file": "actbutterhi.txt",
     "format": "plain",
     "missing": [
-      "211",
       "n"
     ],
     "sliderLines": 0,
@@ -230,8 +217,7 @@
     "file": "actbutterlo.txt",
     "format": "plain",
     "missing": [
-      "n",
-      "211"
+      "n"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -248,12 +234,11 @@
   {
     "file": "allpass1.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "allpass2.txt",
@@ -385,49 +370,37 @@
   {
     "file": "avr8js-analog.txt",
     "format": "plain",
-    "missing": [
-      "418",
-      "418",
-      "418",
-      "418",
-      "418"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "avr8js-logic.txt",
     "format": "plain",
-    "missing": [
-      "418",
-      "418",
-      "418"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "avr8js-strobe.txt",
     "format": "plain",
-    "missing": [
-      "418",
-      "418",
-      "418",
-      "418",
-      "418"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "bandnoise.txt",
     "format": "plain",
     "missing": [
-      "n",
-      "211"
+      "n"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -436,12 +409,11 @@
   {
     "file": "bandpass.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "besselbutter.txt",
@@ -471,19 +443,17 @@
   {
     "file": "butter10hi.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "butter10hiaud.txt",
     "format": "plain",
     "missing": [
-      "n",
-      "211"
+      "n"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -492,19 +462,17 @@
   {
     "file": "butter10lo.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "butter10loaud.txt",
     "format": "plain",
     "missing": [
-      "n",
-      "211"
+      "n"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -513,12 +481,11 @@
   {
     "file": "butterbandstop.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cap.txt",
@@ -587,8 +554,7 @@
     "file": "cc2.txt",
     "format": "plain",
     "missing": [
-      "179",
-      "172"
+      "179"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -597,29 +563,26 @@
   {
     "file": "cc2imp.txt",
     "format": "plain",
-    "missing": [
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cc2impn.txt",
     "format": "plain",
-    "missing": [
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cc2n.txt",
     "format": "plain",
     "missing": [
-      "179",
-      "172"
+      "179"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -838,8 +801,7 @@
     "file": "comb.txt",
     "format": "plain",
     "missing": [
-      "n",
-      "211"
+      "n"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -936,12 +898,11 @@
   {
     "file": "crossover.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "crystalosc.txt",
@@ -1224,12 +1185,11 @@
   {
     "file": "diodevar.txt",
     "format": "plain",
-    "missing": [
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "divideby2.txt",
@@ -1337,62 +1297,56 @@
   {
     "file": "filt-hipass-l.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "filt-hipass.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "filt-lopass-l.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "filt-lopass.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "filt-vcvs-hipass.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "filt-vcvs-lopass.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "flashadc.txt",
@@ -1751,12 +1705,11 @@
   {
     "file": "jsinterface.txt",
     "format": "plain",
-    "missing": [
-      "418"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ladder.txt",
@@ -1772,7 +1725,6 @@
     "format": "plain",
     "missing": [
       "j",
-      "172",
       "j"
     ],
     "sliderLines": 0,
@@ -2034,12 +1986,11 @@
   {
     "file": "mr.txt",
     "format": "plain",
-    "missing": [
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "multivib-a.txt",
@@ -2112,13 +2063,11 @@
   {
     "file": "nmosfet.txt",
     "format": "plain",
-    "missing": [
-      "172",
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "nmosinverter.txt",
@@ -2192,33 +2141,29 @@
   {
     "file": "notch.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "npn.txt",
     "format": "plain",
-    "missing": [
-      "172",
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ohms.txt",
     "format": "plain",
-    "missing": [
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "opamp-regulator.txt",
@@ -2232,23 +2177,22 @@
   {
     "file": "opamp.txt",
     "format": "plain",
-    "missing": [
-      "172",
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "opampfeedback.txt",
     "format": "plain",
-    "missing": [
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "opint-current.txt",
@@ -2290,8 +2234,7 @@
     "file": "ota-gain.txt",
     "format": "plain",
     "missing": [
-      "402",
-      "172"
+      "402"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -2312,8 +2255,7 @@
     "file": "ota-vca.txt",
     "format": "plain",
     "missing": [
-      "402",
-      "172"
+      "402"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -2370,12 +2312,11 @@
   {
     "file": "phaseshiftosc.txt",
     "format": "plain",
-    "missing": [
-      "211"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "phasesplit.txt",
@@ -2452,24 +2393,22 @@
   {
     "file": "pmosfet.txt",
     "format": "plain",
-    "missing": [
-      "172",
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "pnp.txt",
     "format": "plain",
-    "missing": [
-      "172",
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "pot.txt",
@@ -2575,22 +2514,20 @@
   {
     "file": "relaxosc.txt",
     "format": "plain",
-    "missing": [
-      "211"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "relay.txt",
     "format": "plain",
-    "missing": [
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "relayand.txt",
@@ -2812,12 +2749,11 @@
   {
     "file": "sawtooth.txt",
     "format": "plain",
-    "missing": [
-      "211"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "schmitt.txt",
@@ -2851,12 +2787,11 @@
   {
     "file": "sine.txt",
     "format": "plain",
-    "missing": [
-      "211"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "sinediode.txt",
@@ -2922,12 +2857,11 @@
   {
     "file": "switchedcap.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "switchfilter.txt",
@@ -3049,135 +2983,101 @@
   {
     "file": "tl.txt",
     "format": "plain",
-    "missing": [
-      "171"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tlfreq.txt",
     "format": "plain",
-    "missing": [
-      "170",
-      "170",
-      "171",
-      "171"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tllight.txt",
     "format": "plain",
-    "missing": [
-      "171",
-      "171"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tllopass.txt",
     "format": "plain",
-    "missing": [
-      "170",
-      "171",
-      "171",
-      "171",
-      "171",
-      "171"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tlmatch1.txt",
     "format": "plain",
-    "missing": [
-      "171",
-      "171",
-      "171",
-      "171"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tlmatch2.txt",
     "format": "plain",
-    "missing": [
-      "171",
-      "171",
-      "171",
-      "171",
-      "171",
-      "171"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tlmis1.txt",
     "format": "plain",
-    "missing": [
-      "171",
-      "171"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tlmismatch.txt",
     "format": "plain",
-    "missing": [
-      "171",
-      "171",
-      "171"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tlstand.txt",
     "format": "plain",
-    "missing": [
-      "171"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tlterm.txt",
     "format": "plain",
-    "missing": [
-      "171",
-      "171",
-      "171",
-      "171"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "traffic.txt",
     "format": "plain",
-    "missing": [
-      "165"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "trans-diffamp-common.txt",
@@ -3275,29 +3175,25 @@
   {
     "file": "triangle.txt",
     "format": "plain",
-    "missing": [
-      "211"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "trianglevco.txt",
     "format": "plain",
-    "missing": [
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "triode.txt",
     "format": "plain",
     "missing": [
-      "172",
-      "172",
       "173"
     ],
     "sliderLines": 0,
@@ -3344,12 +3240,11 @@
   {
     "file": "twint.txt",
     "format": "plain",
-    "missing": [
-      "170"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ujtosc.txt",
@@ -3395,22 +3290,20 @@
   {
     "file": "varactorvco.txt",
     "format": "plain",
-    "missing": [
-      "172"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "vco.txt",
     "format": "plain",
-    "missing": [
-      "211"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "vilnius.txt",

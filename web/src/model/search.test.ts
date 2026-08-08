@@ -38,14 +38,16 @@ describe('filterComponents', () => {
   });
 
   it('sorts matches alphabetically by label, a pinned order', () => {
-    // 'trans' hits the three transformer labels and both transistor kinds; the
-    // exact order pins the comparator so a future change to it is noticed.
+    // 'trans' hits the three transformer labels, both transistor kinds and the
+    // transmission line; the exact order pins the comparator so a future
+    // change to it is noticed.
     expect(filterComponents('trans').map((m) => m.label)).toEqual([
       'Custom transformer',
       'NPN',
       'PNP',
       'Tapped transformer',
       'Transformer',
+      'Transmission line',
     ]);
   });
 });
