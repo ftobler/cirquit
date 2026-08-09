@@ -10,7 +10,7 @@
  * its kind there, then add a definition here in `elements/`.
  */
 
-import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRI_STATE_FLIP } from './flags';
+import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP } from './flags';
 import { switchLever, switchLeverTip, switchIecPoints, groundBars } from './shared';
 import { WIRE_DEF } from './elements/wire';
 import { ADC_DEF } from './elements/adc';
@@ -43,9 +43,14 @@ import { ZENER_DEF } from './elements/zener';
 import { VARACTOR_DEF } from './elements/varactor';
 import { LED_DEF } from './elements/led';
 import { TRANSISTOR_DEF } from './elements/transistor';
+import { DARLINGTON_DEF } from './elements/darlington';
+import { DIAC_DEF } from './elements/diac';
 import { TUNNEL_DIODE_DEF } from './elements/tunnelDiode';
+import { TRIAC_DEF } from './elements/triac';
+import { TRIODE_DEF } from './elements/triode';
 import { JFET_DEF } from './elements/jfet';
 import { MOSFET_DEF } from './elements/mosfet';
+import { LED_ARRAY_DEF } from './elements/ledArray';
 import { MULTIPLEXER_DEF } from './elements/multiplexer';
 import { NOISE_DEF } from './elements/noise';
 import { SWITCH_DEF } from './elements/switch';
@@ -82,7 +87,7 @@ import { PROBE_DEF } from './elements/probe';
 import { DECORATION_DEF } from './elements/decoration';
 import type { CircuitElement, ElementDef, Point } from '../types';
 
-export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRI_STATE_FLIP };
+export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP };
 export { switchLever, switchLeverTip, switchIecPoints, groundBars };
 export { opampInputSign, opAmpInputAnchors, opAmpLabelAnchors } from './elements/opamp';
 export { transistorSideFactor, transistorBarContacts, transistorArrowTip } from './elements/transistor';
@@ -129,14 +134,18 @@ export const ELEMENT_DEFS: ElementDef[] = [
   DAC_DEF,
   ADC_DEF,
   CURRENT_DEF,
+  DARLINGTON_DEF,
   DIODE_DEF,
   ZENER_DEF,
   VARACTOR_DEF,
   LED_DEF,
+  LED_ARRAY_DEF,
   TUNNEL_DIODE_DEF,
+  DIAC_DEF,
   TRANSISTOR_DEF,
   JFET_DEF,
   MOSFET_DEF,
+  TRIODE_DEF,
   MULTIPLEXER_DEF,
   OPAMP_DEF,
   PHASE_COMP_DEF,
@@ -160,6 +169,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   INVERTING_SCHMITT_DEF,
   SEVEN_SEG_DEF,
   SCR_DEF,
+  TRIAC_DEF,
   SPARK_GAP_DEF,
   TRI_STATE_DEF,
   LABELED_NODE_DEF,
@@ -252,11 +262,25 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
     category: 'Semiconductors',
     defaults: { pnp: -1, beta: 0.00125, threshold: -4 },
   },
+  {
+    id: 'npndarlington',
+    kind: 'darlington',
+    label: 'NPN Darlington',
+    category: 'Semiconductors',
+    defaults: { pnp: 1 },
+  },
+  {
+    id: 'pnpdarlington',
+    kind: 'darlington',
+    label: 'PNP Darlington',
+    category: 'Semiconductors',
+    defaults: { pnp: -1 },
+  },
 ];
 
 /** Every pickable tool, in display order within each category. */
 export const TOOLBOX: ToolboxEntry[] = [
-  ...ELEMENT_DEFS.filter((d) => d.kind !== 'transistor' && d.kind !== 'mosfet' && d.kind !== 'jfet').map((d) => ({
+  ...ELEMENT_DEFS.filter((d) => d.kind !== 'transistor' && d.kind !== 'mosfet' && d.kind !== 'jfet' && d.kind !== 'darlington').map((d) => ({
     id: d.kind,
     kind: d.kind,
     label: d.label,

@@ -11,7 +11,7 @@
  * rotated or mirrored part's terminal coordinates match the original exactly.
  */
 
-import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRI_STATE_FLIP } from './registry';
+import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP } from './registry';
 import type { CircuitElement } from './types';
 
 /** Whether the element can turn a quarter turn. One-post parts (ground, rails,
@@ -78,6 +78,13 @@ export function rotateElement(e: CircuitElement): CircuitElement {
  * shared bit 1 the other two use, so a rotate must never touch its bit 1:
  * that bit means P-channel there.
  *
+ * The triode's rotate (TriodeElm.java:251-268) is the same flipXY-then-flipY
+ * sequence, but its flipXY toggles FLAG_FLIP unconditionally and its flipY
+ * then toggles it again for a part horizontal after the turn and for a legacy
+ * (no FLAG_DSIGN_FIX) part that was horizontal before it. A fresh horizontal
+ * part ends up toggled once; a vertical part twice, so the two cancel; a
+ * legacy horizontal part twice as well.
+ *
  * The basic transformer is upstream's flipXY then flipY too
  * (TransformerElm.java:385-400): flipXY toggles FLAG_VERTICAL, and flipY
  * toggles FLAG_FLIP only when the part is now horizontal, i.e. when it was
@@ -91,6 +98,12 @@ function rotateFlags(e: CircuitElement): number {
     return flags;
   }
   if (e.kind === 'tappedTransformer' || e.kind === 'customTransformer') return e.flags;
+  if (e.kind === 'triode') {
+    let flags = e.flags ^ TRIODE_FLIP;  // flipXY toggles unconditionally
+    if (e.x1 === e.x2) flags ^= TRIODE_FLIP;  // vertical part: flipY cancels
+    else if ((e.flags & TRIODE_DSIGN_FIX) === 0) flags ^= TRIODE_FLIP;  // legacy horizontal part
+    return flags;
+  }
   if (e.kind === 'mosfet' || e.kind === 'relay') {
     let flags = e.flags ^ MOSFET_FLIP;
     if (e.x1 === e.x2) flags ^= MOSFET_FLIP;
@@ -108,7 +121,10 @@ function rotateFlags(e: CircuitElement): number {
  * moves the hanging terminals to the true mirror side; only a vertical part
  * (whose axis direction is unchanged) needs its orientation flag flipped. The
  * transformers follow upstream's `flipX` (TransformerElm.java:385-389), which
- * toggles FLAG_FLIP exactly when the part is vertical.
+ * toggles FLAG_FLIP exactly when the part is vertical. The triode differs: a
+ * legacy (no FLAG_DSIGN_FIX) horizontal part needs the flip too, because
+ * without the bit its electrode side is a fixed 1 rather than dsign
+ * (TriodeElm.java:251-255).
  */
 export function mirrorElement(e: CircuitElement): CircuitElement {
   if (!canMirror(e)) return e;
@@ -126,6 +142,22 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
       x2: 2 * cx - e.x2,
       y2: e.y2,
       flags: e.flags ^ TRI_STATE_FLIP,
+    };
+  }
+  if (e.kind === 'triode') {
+    // Upstream flipX toggles FLAG_FLIP for a vertical part and for a legacy
+    // (no FLAG_DSIGN_FIX) horizontal part (TriodeElm.java:251-255). A fresh
+    // horizontal part keeps the bit: the dsign term alone moves the plate and
+    // cathode posts to the true mirror side.
+    const legacy = (e.flags & TRIODE_DSIGN_FIX) === 0;
+    const flags = vertical || legacy ? e.flags ^ TRIODE_FLIP : e.flags;
+    return {
+      ...withoutRoute(e),
+      x1: 2 * cx - e.x1,
+      y1: e.y1,
+      x2: 2 * cx - e.x2,
+      y2: e.y2,
+      flags,
     };
   }
   let flipBit = 0;

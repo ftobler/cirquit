@@ -1740,8 +1740,7 @@
     "file": "ledarray.txt",
     "format": "plain",
     "missing": [
-      "208",
-      "405"
+      "208"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -2215,8 +2214,7 @@
     "file": "ota-ringmod.txt",
     "format": "plain",
     "missing": [
-      "402",
-      "400"
+      "402"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -2236,8 +2234,7 @@
     "file": "ota-vcf-single.txt",
     "format": "plain",
     "missing": [
-      "402",
-      "400"
+      "402"
     ],
     "sliderLines": 0,
     "load": "missing",
@@ -3113,13 +3110,11 @@
   {
     "file": "triacdimmer.txt",
     "format": "plain",
-    "missing": [
-      "206",
-      "203"
-    ],
+    "missing": [],
     "sliderLines": 1,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "triangle.txt",
@@ -3142,22 +3137,20 @@
   {
     "file": "triode.txt",
     "format": "plain",
-    "missing": [
-      "173"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "triodeamp.txt",
     "format": "plain",
-    "missing": [
-      "173"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ttlinverter.txt",

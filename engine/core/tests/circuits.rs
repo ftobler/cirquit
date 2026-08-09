@@ -2872,6 +2872,115 @@ fn transistor_initial_state_is_seeded_on_load() {
 }
 
 #[test]
+fn darlington_current_gain_is_the_product_of_the_two_betas() {
+    // A darlington is two Ebers-Moll transistors in cascade: Q1's emitter
+    // feeds Q2's base and the collectors share one post, so the current gain
+    // compounds. In the linear region Ic = ic1 + ic2 = beta*ib +
+    // beta*(beta+1)*ib = beta*(beta+2)*ib, which is 10200 with beta = 100.
+    // That ratio, not an absolute current, is the hand-derivable assertion:
+    // it follows from the Ebers-Moll equations alone, so the pair of series
+    // Vbe drops cancels out of it. The 47 M base resistor keeps the ~0.85 mA
+    // collector current well below the 5 mA saturation of the 1 k load, so
+    // the pair stays in the linear region where the ratio holds.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 47_000_000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[0, 0], [200, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            // Posts: base, collector, emitter.
+            elm(
+                4,
+                "darlington",
+                &[[100, 0], [200, 0], [200, 100]],
+                &[("pnp", 1.0)],
+            ),
+            elm(5, "ground", &[[200, 100]], &[]),
+        ],
+        opts_budget(1e-5, true, 1000),
+    );
+    c.run(50);
+
+    let currents = c.element_currents();
+    let ib = currents[1]; // through the 47 M base resistor
+    let ic = currents[2]; // through the 1 k collector load
+    assert!(ib > 1e-8 && ib < 2e-7, "base current was {ib}");
+    assert!(ic > 5e-4 && ic < 1.5e-3, "collector current was {ic}");
+    let measured_gain = ic / ib;
+    assert!(
+        (10_000.0..10_400.0).contains(&measured_gain),
+        "darlington gain was {measured_gain}, expected beta*(beta+2) = 10200"
+    );
+
+    // The operating point follows from the gain and the load line: Vb =
+    // Vbe1 + Vbe2 ~ 1.06 V and Vc = 5 - Ic*1k ~ 4.15 V. The reported element
+    // current is the collector current into the device.
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let (nb, nc, _ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+    assert!((0.98..1.14).contains(&v[nb]), "base was {}", v[nb]);
+    assert!((4.0..4.3).contains(&v[nc]), "collector was {}", v[nc]);
+    assert!(
+        currents[3] > 0.0,
+        "reported darlington current was {}",
+        currents[3]
+    );
+
+    // The PNP in the same orientation is reverse biased and off: the base is
+    // pulled to the rail, no base current flows and the collector load draws
+    // nothing, the darlington's mirror of the transistor's own polarity test.
+    let mut pnp = build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 47_000_000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[0, 0], [200, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                4,
+                "darlington",
+                &[[100, 0], [200, 0], [200, 100]],
+                &[("pnp", -1.0)],
+            ),
+            elm(5, "ground", &[[200, 100]], &[]),
+        ],
+        opts_budget(1e-5, true, 1000),
+    );
+    pnp.run(50);
+    let nodes = pnp.element_nodes();
+    let v = pnp.node_voltages();
+    let (nb, nc, _ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+    assert!(
+        (4.9..5.1).contains(&v[nb]) && (4.9..5.1).contains(&v[nc]),
+        "PNP base and collector were {} and {}",
+        v[nb],
+        v[nc]
+    );
+    assert!(
+        pnp.element_currents()[2].abs() < 1e-9,
+        "PNP leaked {} A through the collector load",
+        pnp.element_currents()[2]
+    );
+}
+
+#[test]
 fn open_switch_breaks_the_loop() {
     let make = |position: f64| {
         build(
@@ -8238,6 +8347,100 @@ fn n_jfet_saturation_current_with_gate_tied_to_source() {
 }
 
 #[test]
+fn triode_plate_current_matches_its_power_law() {
+    // The triode sits between two ideal sources, so its terminal voltages are
+    // pinned: plate at +250 V and the grid at vg, cathode grounded. The
+    // reported element current is the cathode current `ids + ig` from
+    // upstream's law (TriodeElm.java:169-202): `ival = vgk + vpk/mu`,
+    // `ids = pow(ival, 1.5)/kg1` above cutoff and `vpk*1e-8` below, with
+    // `ig = vgk/6000` once the grid conducts. The values below are
+    // hand-rounded from that law at mu = 93, kg1 = 680.
+    let plate_current = |vg: f64| {
+        let c = &mut build(
+            vec![
+                elm(1, "voltage", &[[0, 0], [0, 200]], &[("maxVoltage", 250.0)]),
+                elm(2, "voltage", &[[100, 0], [100, 200]], &[("maxVoltage", vg)]),
+                elm(
+                    3,
+                    "triode",
+                    &[[0, 200], [100, 200], [100, 0]],
+                    &[("mu", 93.0), ("kg1", 680.0)],
+                ),
+                elm(4, "ground", &[[0, 0]], &[]),
+                elm(5, "ground", &[[100, 0]], &[]),
+            ],
+            opts_budget(1e-5, true, 100),
+        );
+        let report = c.run(20);
+        assert!(
+            report.converged,
+            "triode stalled at Vg = {vg}: {:?}",
+            report.failing
+        );
+        c.element_currents()[2]
+    };
+
+    // At Vg = 0 the tube conducts `(250/93)^1.5/680` with no grid current; at
+    // Vg = 1 the grid adds its `vgk/6000` share; at Vg = -3 ival is negative,
+    // so the plate collapses to the `vpk*1e-8` leak. The bias values pin the
+    // same plate voltage in each build, isolating the grid's effect.
+    for (vg, want) in [
+        (0.0, 6.481_517_19e-3),
+        (1.0, 1.058_283_15e-2),
+        (-3.0, 2.5e-6),
+    ] {
+        assert!(
+            close(plate_current(vg), want, 1e-6),
+            "at Vg = {vg} the triode drew {}, expected {want}",
+            plate_current(vg)
+        );
+    }
+
+    // End-to-end stamp check: a 400 V supply feeds the plate through a 2380
+    // ohm resistor with the grid grounded. The load line crosses the triode
+    // curve exactly at Vp = 372 V, where `ids = (400-372)/2380 = 1/85` and the
+    // law gives `(372/93)^1.5/680 = 4^1.5/680 = 8/680 = 1/85`. A sign error in
+    // the stamped companion moves the plate voltage off this window.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 0], [0, 400]], &[("maxVoltage", 400.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 400], [100, 400]],
+                &[("resistance", 2380.0)],
+            ),
+            elm(
+                3,
+                "triode",
+                &[[100, 400], [200, 400], [200, 0]],
+                &[("mu", 93.0), ("kg1", 680.0)],
+            ),
+            elm(4, "ground", &[[0, 0]], &[]),
+            elm(5, "ground", &[[200, 0]], &[]),
+            elm(6, "ground", &[[200, 400]], &[]),
+        ],
+        opts_budget(1e-5, true, 200),
+    );
+    let report = c.run(20);
+    assert!(
+        report.converged,
+        "load-line triode stalled: {:?}",
+        report.failing
+    );
+    let vp = c.element_voltages()[2];
+    assert!(
+        close(vp, 372.0, 0.5),
+        "plate voltage was {vp} V, expected ~372"
+    );
+    let ids = c.element_currents()[2];
+    assert!(
+        close(ids, 1.0 / 85.0, 1e-4),
+        "plate current was {ids} A, expected ~1/85"
+    );
+}
+
+#[test]
 fn phase_comparator_drives_high_on_i1_edge_and_clears_on_i2_edge() {
     // A rising edge on I1 with I2 low sets the first internal flip-flop and
     // drives the output high; a later rising edge on I2 sets the second and,
@@ -8507,6 +8710,245 @@ fn scr_blocks_until_gate_pulse_then_latches() {
 }
 
 #[test]
+fn diac_blocks_below_breakover_and_conducts_above() {
+    // The diac's off state stamps a 1e8 ohm resistor per branch, so 20 V
+    // through 1k leaves nearly the whole supply across the device and only a
+    // microamp-scale leakage. 40 V exceeds the 30 V breakdown and latches the
+    // 500 ohm on state; the loop then settles at the load-line fixed point
+    // i = (V - vd)/1500 where vd = 2*vt*ln(i/Is + 1) is the forward drop of
+    // the internal default-model diode (Is = 1.71435e-7): i = 26.25 mA and
+    // the device holds 13.745 V. Dropping the supply to 10 V puts the on-state
+    // current at ~6.3 mA, below the 10 mA holdcurrent, and the diac opens
+    // again. A -40 V build fires the mirrored back-to-back branch and conducts
+    // the same 26.25 mA in reverse, pinning the second junction's stamp signs.
+    let dt = 1e-5;
+    let blocking = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 20.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "diac", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts_budget(dt, false, 200),
+    );
+    blocking.run(5);
+    let volts = blocking.element_voltages();
+    let amps = blocking.element_currents();
+    assert!(
+        amps[2] < 1e-5,
+        "blocked diac drew {} A, expected only the r_off leakage",
+        amps[2]
+    );
+    assert!(
+        close(volts[2], 20.0, 0.05),
+        "blocked diac held {} V, expected nearly the full 20 V supply",
+        volts[2]
+    );
+
+    let conducting = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 40.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "diac", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts_budget(dt, false, 200),
+    );
+    let report = conducting.run(20);
+    assert!(
+        report.converged,
+        "diac firing stalled: {:?}",
+        report.failing
+    );
+    let volts = conducting.element_voltages();
+    let amps = conducting.element_currents();
+    assert!(
+        close(amps[2], 0.02625, 5e-4),
+        "fired diac drew {} A, expected ~26.25 mA",
+        amps[2]
+    );
+    assert!(
+        close(volts[2], 13.745, 0.05),
+        "fired diac held {} V, expected ~13.745 V",
+        volts[2]
+    );
+
+    // The 26.25 mA on-state is well above the 10 mA holdcurrent, so it latches
+    // until the supply drops and the current falls under the threshold.
+    assert!(
+        conducting.set_param(1, "maxVoltage", 10.0),
+        "supply edit refused"
+    );
+    conducting.run(2);
+    let volts = conducting.element_voltages();
+    let amps = conducting.element_currents();
+    assert!(
+        amps[2] < 1e-5,
+        "diac stayed on after the current dropped below holdcurrent, drew {} A",
+        amps[2]
+    );
+    assert!(
+        close(volts[2], 10.0, 0.05),
+        "cleared diac held {} V, expected the full 10 V supply",
+        volts[2]
+    );
+
+    let reversed = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", -40.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "diac", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts_budget(dt, false, 200),
+    );
+    let report = reversed.run(20);
+    assert!(
+        report.converged,
+        "reverse diac firing stalled: {:?}",
+        report.failing
+    );
+    let volts = reversed.element_voltages();
+    let amps = reversed.element_currents();
+    assert!(
+        close(amps[2], -0.02625, 5e-4),
+        "reverse-fired diac drew {} A, expected ~-26.25 mA",
+        amps[2]
+    );
+    assert!(
+        close(volts[2], -13.745, 0.05),
+        "reverse-fired diac held {} V, expected ~-13.745 V",
+        volts[2]
+    );
+}
+
+#[test]
+fn triac_blocks_both_ways_until_gate_pulse_then_latches() {
+    // The triac's off state is not an open circuit: the main path is a 10e5
+    // (upstream's literal `10e5`) ohm resistor in series with a back-to-back
+    // diode pair, so a 2 V supply leaks about 18 uA through it (2 V across
+    // the 10e5 less the small diode drop), far below the 8.2 mA holding
+    // current, and the MT2-MT1 voltage holds near the full supply. The
+    // antiparallel diodes block the reverse polarity the same way, which is
+    // the point of a triac over an SCR. Driving the gate to 3 V pushes 30 mA
+    // through the internal 100 ohm gate resistor, past the 10 mA trigger, and
+    // the next step latches the resistor to 0.01 ohm: the loop then draws
+    // (2 - v_on)/50 with v_on ~ 0.62 V, about 27.6 mA. That main current is
+    // well above holdingI, so the latch survives the gate returning to 0 V.
+    let dt = 1e-5;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 2.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 50.0)]),
+            elm(3, "triac", &[[100, 0], [100, 200], [128, 128]], &[]),
+            elm(4, "wire", &[[100, 200], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(
+                6,
+                "voltage",
+                &[[128, 48], [128, 128]],
+                &[("maxVoltage", 0.0)],
+            ),
+            elm(7, "ground", &[[128, 48]], &[]),
+        ],
+        opts_budget(dt, false, 200),
+    );
+    c.run(20);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        amps[2] < 1e-4,
+        "blocked triac drew {} A, expected only the ~2 uA off-state leakage",
+        amps[2]
+    );
+    assert!(
+        close(volts[2], 2.0, 0.05),
+        "blocked triac held {} V, expected nearly the full 2 V supply",
+        volts[2]
+    );
+
+    // Reverse the supply: the back-to-back diodes block the other polarity
+    // just the same while the latch is off.
+    assert!(
+        c.set_param(1, "maxVoltage", -2.0),
+        "reverse polarity refused"
+    );
+    c.run(20);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        amps[2] < 1e-4,
+        "reverse-blocked triac drew {} A, expected only leakage",
+        amps[2]
+    );
+    assert!(
+        close(volts[2], -2.0, 0.05),
+        "reverse-blocked triac held {} V, expected nearly the full -2 V supply",
+        volts[2]
+    );
+
+    // Back to forward polarity, then a gate pulse: 3 V on the gate drives
+    // 30 mA through the internal 100 ohm gate resistor, over the 10 mA
+    // trigger, so the latch fires and the MT2-MT1 voltage drops to the
+    // diode's on-state drop.
+    assert!(c.set_param(1, "maxVoltage", 2.0), "forward return refused");
+    assert!(c.set_param(6, "maxVoltage", 3.0), "gate pulse refused");
+    c.run(5);
+    let volts = c.element_voltages();
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], 0.0276, 5e-4),
+        "fired triac drew {} A through the load, expected ~27.6 mA",
+        amps[1]
+    );
+    assert!(
+        close(amps[2], 0.0276, 5e-4),
+        "fired triac main current was {} A, expected ~27.6 mA",
+        amps[2]
+    );
+    assert!(
+        close(volts[2], 0.62, 0.05),
+        "fired triac held {} V MT2-MT1, expected the ~0.62 V on drop",
+        volts[2]
+    );
+
+    // Gate back to 0 V: the 27.6 mA main current stays far above the 8.2 mA
+    // holding current, so the latch must hold even with the gate current gone.
+    assert!(c.set_param(6, "maxVoltage", 0.0), "gate return refused");
+    c.run(5);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], 0.0276, 5e-4),
+        "triac unlatched after the gate went low, drew {} A",
+        amps[1]
+    );
+    let volts = c.element_voltages();
+    assert!(
+        close(volts[2], 0.62, 0.05),
+        "latched triac drifted to {} V MT2-MT1",
+        volts[2]
+    );
+}
+
+#[test]
 fn decimal_display_reads_its_input_bits_as_a_binary_number() {
     let c = &mut build(
         vec![
@@ -8763,6 +9205,84 @@ fn seven_seg_reads_its_segment_input_bits() {
     c.set_state(3, 1);
     c.run(3);
     assert_eq!(value(c), 0b000_0110, "digit 1 did not read as 6");
+}
+
+#[test]
+fn led_array_lights_the_cells_whose_columns_are_driven_low() {
+    // A 2x2 LED array: the south columns driven by logic inputs, the west
+    // rows pulled to 5 V through 1 k. Each cell is a Shockley diode from its
+    // row post (anode) to its column post (cathode), so it conducts when its
+    // row sits above its column (LEDArrayElm.java:93-97). A lit cell pulls
+    // its row down to the diode drop, roughly 1.6 V at the 3.73-emission
+    // default-led model, while the reverse cells stay dark. The value()
+    // readout is the lit-cell bit pattern, bit i = the cell (ix, iy) with
+    // i = iy*sizeX + ix, so column 0 low lights bits 0 and 2.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[64, 0], [64, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[64, 32], [64, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "rail", &[[64, 100]], &[("maxVoltage", 5.0)]),
+            elm(6, "rail", &[[64, 132]], &[("maxVoltage", 5.0)]),
+            elm(
+                7,
+                "ledArray",
+                &[[0, 0], [0, 32], [64, 0], [64, 32]],
+                &[("sizeX", 2.0), ("sizeY", 2.0)],
+            ),
+            elm(8, "ground", &[[164, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let lit = |c: &Circuit| c.element_values()[6] as i64;
+    c.run(3);
+    assert_eq!(lit(c), 0b0101, "column 0 low lit the wrong cells");
+    // The lit cells pull the rows down to the diode drop, so the row0 feed
+    // resistor reads about 5 - 1.6 = 3.4 V across it.
+    let vd = c.element_voltages()[2];
+    assert!((-3.5..-3.0).contains(&vd), "row0 drop was {vd}");
+    // Flip the drives: column 1 low lights the cells beside column 0.
+    c.set_state(1, 1);
+    c.set_state(2, 0);
+    c.run(3);
+    assert_eq!(lit(c), 0b1010, "column 1 low lit the wrong cells");
+    // Both columns high leaves every cell dark: no cell sees its row above
+    // its column, the rows sit at the rail unloaded, and the feed resistors
+    // carry only the Newton convergence residual (a few tens of microvolts).
+    c.set_state(2, 1);
+    c.run(3);
+    assert_eq!(lit(c), 0, "both columns high lit a cell");
+    assert!(
+        close(c.element_voltages()[2], 0.0, 1e-3),
+        "an unlit row should sit at the rail, got {}",
+        c.element_voltages()[2]
+    );
+    // Both columns low lights the whole grid.
+    c.set_state(1, 0);
+    c.set_state(2, 0);
+    c.run(3);
+    assert_eq!(lit(c), 0b1111, "both columns low did not light the grid");
 }
 
 #[test]

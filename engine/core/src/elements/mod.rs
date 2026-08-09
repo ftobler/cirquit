@@ -20,9 +20,11 @@ pub mod counter;
 pub mod current_source;
 pub mod d_flip_flop;
 pub mod dac;
+pub mod darlington;
 pub mod de_multiplexer;
 pub mod decimal_display;
 pub mod decoration;
+pub mod diac;
 pub mod diode;
 pub mod ext_voltage;
 pub mod fuse;
@@ -37,6 +39,7 @@ pub mod lamp;
 pub mod latch;
 pub mod ldr;
 pub mod led;
+pub mod led_array;
 pub mod line;
 pub mod logic;
 pub mod logic_input;
@@ -68,6 +71,8 @@ pub mod transformer;
 pub mod transistor;
 pub mod transmission_line;
 pub mod tri_state;
+pub mod triac;
+pub mod triode;
 pub mod tunnel_diode;
 pub mod var_rail;
 pub mod vco;
@@ -101,14 +106,18 @@ pub const KINDS: &[&str] = &[
     "vco",
     "dac",
     "current",
+    "darlington",
     "diode",
     "zener",
     "varactor",
     "led",
+    "ledArray",
     "tunnelDiode",
+    "diac",
     "transistor",
     "jfet",
     "mosfet",
+    "triode",
     "switch",
     "sweep",
     "analogSwitch",
@@ -147,6 +156,7 @@ pub const KINDS: &[&str] = &[
     "invertingSchmitt",
     "sparkGap",
     "scr",
+    "triac",
     "sevenSeg",
     "labeledNode",
     "output",
@@ -184,14 +194,18 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "vco" => Box::new(vco::Vco::new(spec)),
         "dac" => Box::new(dac::Dac::new(spec)),
         "current" => Box::new(current_source::CurrentSource::new(spec)),
+        "darlington" => Box::new(darlington::Darlington::new(spec)),
         "diode" => Box::new(diode::Diode::new(spec)),
         "zener" => Box::new(diode::Diode::new_zener(spec)),
         "varactor" => Box::new(diode::Diode::new_varactor(spec)),
         "led" => Box::new(led::Led::new(spec)),
+        "ledArray" => Box::new(led_array::LedArray::new(spec)),
         "tunnelDiode" => Box::new(tunnel_diode::TunnelDiode::new(spec)),
+        "diac" => Box::new(diac::Diac::new(spec)),
         "transistor" => Box::new(transistor::BipolarTransistor::new(spec)),
         "jfet" => Box::new(jfet::Jfet::new(spec)),
         "mosfet" => Box::new(mosfet::Mosfet::new(spec)),
+        "triode" => Box::new(triode::Triode::new(spec)),
         "switch" => Box::new(switch::Switch::new(spec)),
         "sweep" => Box::new(sweep::Sweep::new(spec)),
         "analogSwitch" => Box::new(analog_switch::AnalogSwitch::new(spec)),
@@ -230,6 +244,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "invertingSchmitt" => Box::new(schmitt::Schmitt::new(spec, true)),
         "sparkGap" => Box::new(spark_gap::SparkGap::new(spec)),
         "scr" => Box::new(scr::Scr::new(spec)),
+        "triac" => Box::new(triac::Triac::new(spec)),
         "sevenSeg" => Box::new(seven_seg::SevenSeg::new(spec)),
         "labeledNode" => Box::new(labeled_node::LabeledNode::new(spec)),
         "output" => Box::new(meter::Meter::new_output(spec)),

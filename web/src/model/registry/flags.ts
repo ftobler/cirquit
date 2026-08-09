@@ -17,6 +17,16 @@ export const OPAMP_SWAP = FLAG_SWAP;   // OpAmpElm.java:28
 export const OPAMP_SMALL = 2;          // OpAmpElm.java:29
 export const OPAMP_GAIN = 8;           // OpAmpElm.java:31
 export const TRANSISTOR_FLIP = FLAG_SWAP; // TransistorElm.java:44
+/** The triode's electrode-side bit. Bit 1 like the shared FLAG_SWAP, but its
+ *  own meaning (TriodeElm.java:26): it negates the `dsign`-derived electrode
+ *  side. transform.ts toggles it on rotate/mirror in the cases upstream's
+ *  flipX/flipY/flipXY override (TriodeElm.java:251-268). */
+export const TRIODE_FLIP = 1;            // TriodeElm.java:26
+/** A fresh triode tracks its electrode side with the drag direction; a loaded
+ *  file may not carry the bit (TriodeElm.java:35). transform.ts treats a part
+ *  without it as legacy and toggles FLAG_FLIP where a dsign-driven part would
+ *  not need it (TriodeElm.java:253-255, :261-262). */
+export const TRIODE_DSIGN_FIX = 2;       // TriodeElm.java:27
 export const MOSFET_PNP = 1;            // MosfetElm.java:35
 export const MOSFET_FLIP = 8;           // MosfetElm.java:37
 export const RELAY_SWAP_COIL = 1;       // RelayElm.java:39

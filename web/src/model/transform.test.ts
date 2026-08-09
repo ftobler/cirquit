@@ -122,6 +122,62 @@ describe('mosfet transforms', () => {
   });
 });
 
+describe('triode transforms', () => {
+  // The triode's FLAG_FLIP is bit 1 and its FLAG_DSIGN_FIX bit 2
+  // (TriodeElm.java:26-27). Upstream's rotate (flipXY then flipY) toggles
+  // FLAG_FLIP unconditionally, and the trailing flipY toggles it again for a
+  // part that is horizontal after the turn and for a legacy (no DSIGN_FIX)
+  // part that was horizontal before it (TriodeElm.java:251-268). A fresh part
+  // is flags 2 (DSIGN_FIX), the load form for the corpus's flagless lines is 0.
+
+  it('rotates a fresh horizontal part, toggling the flip bit once', () => {
+    const t = element('triode', 0, 0, 160, 0, 2);
+    const r = rotateElement(t);
+    expect(r.flags).toBe(3);
+    // The plate and cathode ride the rigid quarter turn to the far flank,
+    // exactly like the transistor's collector and emitter.
+    expect(postsOf(r)).toEqual([
+      { x: 48, y: -80 },
+      { x: 80, y: 80 },
+      { x: 112, y: -64 },
+    ]);
+  });
+
+  it('rotates a vertical part twice, so the flip bit cancels', () => {
+    const t = element('triode', 80, 80, 80, -80, 2);
+    expect(rotateElement(t).flags).toBe(2);
+  });
+
+  it('rotates a legacy flagless horizontal part twice, so the flip bit cancels', () => {
+    const t = element('triode', 0, 0, 160, 0, 0);
+    expect(rotateElement(t).flags).toBe(0);
+  });
+
+  it('mirrors a fresh horizontal part through dsign alone, keeping the bit', () => {
+    const t = element('triode', 0, 0, 160, 0, 2);
+    const m = mirrorElement(t);
+    expect(m).toMatchObject({ x1: 160, y1: 0, x2: 0, y2: 0 });
+    expect(m.flags).toBe(2);
+    expect(postsOf(m)).toEqual([
+      { x: 0, y: -32 },
+      { x: 160, y: 0 },
+      { x: 16, y: 32 },
+    ]);
+  });
+
+  it('mirrors a fresh vertical part, toggling the flip bit', () => {
+    const t = element('triode', 80, -80, 80, 80, 2);
+    expect(mirrorElement(t).flags).toBe(3);
+  });
+
+  it('mirrors a legacy flagless horizontal part, toggling the flip bit', () => {
+    // Without DSIGN_FIX the electrode side is a fixed 1 rather than dsign, so
+    // the mirror must flip the bit to move the hanging posts across.
+    const t = element('triode', 0, 0, 160, 0, 0);
+    expect(mirrorElement(t).flags).toBe(1);
+  });
+});
+
 describe('mirrorElement', () => {
   it('keeps the bounding box and flips the order of posts on a transistor', () => {
     const t = element('transistor', 0, 0, 160, 0, 0, { pnp: 1 });
