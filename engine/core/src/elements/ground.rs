@@ -33,4 +33,13 @@ impl Element for Ground {
     fn is_ground(&self) -> bool {
         true
     }
+    fn current_into_node(&self, _post: usize) -> f64 {
+        // A ground sinks the current its node delivers: positive `current`
+        // flows from the node down the stem into earth, which is an outflow
+        // from the node's point of view. Upstream's
+        // `GroundElm.getCurrentIntoNode` returns `-current` (GroundElm.java:
+        // 161). The ground pass in `recover_wire_currents` never reads this
+        // (it skips grounds), so it only feeds the per-post export.
+        -self.base().current
+    }
 }

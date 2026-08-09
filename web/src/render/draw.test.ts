@@ -25,6 +25,8 @@ import {
   zigzagPoints,
 } from './draw';
 import { RESISTOR_DEF } from '../model/registry/elements/resistor';
+import { GROUND_DEF } from '../model/registry/elements/ground';
+import { TRANSISTOR_DEF, transistorBarContacts } from '../model/registry/elements/transistor';
 import { INDUCTOR_DEF } from '../model/registry/elements/inductor';
 import { RELAY_DEF } from '../model/registry/elements/relay';
 import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
@@ -149,6 +151,8 @@ const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext =
   power: 0,
   value: 0,
   dotPhase,
+  postCurrents: [],
+  postDotPhases: [],
   showCurrent: true,
   showValues: false,
   showVoltageColor: false,
@@ -317,6 +321,119 @@ describe('current dots', () => {
       1e-3,
     );
     expect(ctx.fillStyle).toBe(makeTheme().currentDotElectron);
+  });
+});
+
+describe('per-post current dots', () => {
+  // The ground stem and the transistor's three leads are the two elements that
+  // draw per-post runs. The mkCtx stub records every arc, and neither symbol
+  // draws arcs of its own (the stem, bars, base rectangle and arrow are lines
+  // and polygons), so every recorded arc is a current dot.
+
+  const groundElement = (): CircuitElement => ({
+    id: 1,
+    kind: 'ground',
+    x1: 100,
+    y1: 0,
+    x2: 100,
+    y2: 32,
+    flags: 0,
+    params: {},
+  });
+
+  const transistorElement = (): CircuitElement => ({
+    id: 1,
+    kind: 'transistor',
+    x1: 0,
+    y1: 0,
+    x2: 100,
+    y2: 0,
+    flags: 0,
+    params: { pnp: 1 },
+  });
+
+  it('a ground draws a dot run down the stem only when current flows', () => {
+    const { ctx, arcs } = mkCtx();
+    GROUND_DEF.draw({ ...context(ctx, 2), voltages: [0], current: 5e-3 }, groundElement());
+    expect(arcs.length).toBeGreaterThan(0);
+    // The run goes p1 -> p2, so every dot lies on the stem and the first one
+    // sits a phase offset from the post.
+    expect(arcs[0]).toEqual({ x: 100, y: 2 });
+    expect(arcs.every((a) => a.x === 100 && a.y >= 0 && a.y <= 32)).toBe(true);
+  });
+
+  it('a ground draws no dots when its current is zero', () => {
+    const { ctx, arcs } = mkCtx();
+    GROUND_DEF.draw({ ...context(ctx, 2), voltages: [0], current: 0 }, groundElement());
+    expect(arcs).toEqual([]);
+  });
+
+  it('a transistor draws one run per terminal along its own lead', () => {
+    // All three terminal currents non-zero: arcs appear on the base lead (the
+    // axis), the collector lead (-y side, the port's interp perpendicular is
+    // the negation of upstream's) and the emitter lead (+y side), and the
+    // counts follow the lead lengths (~84 and ~16 units each at one dot per
+    // 16).
+    const { ctx, arcs } = mkCtx();
+    TRANSISTOR_DEF.draw(
+      {
+        ...context(ctx, 0),
+        voltages: [0, 0, 0],
+        postCurrents: [-1e-4, -1e-3, 1.1e-3],
+        postDotPhases: [0, 0, 0],
+      },
+      transistorElement(),
+    );
+    const onBase = arcs.filter((a) => Math.abs(a.y) < 1);
+    const onCollector = arcs.filter((a) => a.y < -2);
+    const onEmitter = arcs.filter((a) => a.y > 2);
+    expect(onBase.length).toBeGreaterThan(0);
+    expect(onCollector.length).toBeGreaterThan(0);
+    expect(onEmitter.length).toBeGreaterThan(0);
+    expect(onBase.length).toBe(6);  // 84 units of base lead
+    expect(onCollector.length).toBe(2);  // 16 units of collector lead
+    expect(onEmitter.length).toBe(2);  // 16 units of emitter lead
+  });
+
+  it('a transistor with a dead collector draws no collector dots', () => {
+    // The reported defect: a saturated transistor drives ic to zero while ib
+    // stays alive, and the collector must draw nothing while the base and
+    // emitter keep their runs.
+    const { ctx, arcs } = mkCtx();
+    TRANSISTOR_DEF.draw(
+      {
+        ...context(ctx, 0),
+        voltages: [0, 0, 0],
+        postCurrents: [-1e-4, 0, 1e-4],
+        postDotPhases: [0, 0, 0],
+      },
+      transistorElement(),
+    );
+    expect(arcs.filter((a) => Math.abs(a.y) < 1).length).toBeGreaterThan(0);  // base
+    expect(arcs.filter((a) => a.y > 2).length).toBeGreaterThan(0);  // emitter
+    expect(arcs.filter((a) => a.y < -2)).toEqual([]);  // collector dead
+  });
+
+  it('draws no dots for either element when showCurrent is off', () => {
+    const { ctx: c1, arcs: a1 } = mkCtx();
+    GROUND_DEF.draw(
+      { ...context(c1, 2), voltages: [0], current: 5e-3, showCurrent: false },
+      groundElement(),
+    );
+    expect(a1).toEqual([]);
+
+    const { ctx: c2, arcs: a2 } = mkCtx();
+    TRANSISTOR_DEF.draw(
+      {
+        ...context(c2, 0),
+        voltages: [0, 0, 0],
+        postCurrents: [-1e-4, -1e-3, 1.1e-3],
+        postDotPhases: [0, 0, 0],
+        showCurrent: false,
+      },
+      transistorElement(),
+    );
+    expect(a2).toEqual([]);
   });
 });
 
@@ -1353,5 +1470,48 @@ describe('current dot direction', () => {
         }),
       ).toBe(true);
     }
+  });
+
+  it('a transistor collector run still advances from the post toward the body', () => {
+    // The collector run flipped its endpoints (post, contact -> contact, post)
+    // and negated its current (g.current -> -ic through current_into_node);
+    // the two cancel, so the dots must still travel from the collector post
+    // toward the body contact. The per-post phase integrates the negated
+    // current, so it *decreases* each frame; draw at 0 and -2 and assert the
+    // dot train shifts toward the contact (c1), not the post.
+    const e = {
+      id: 1,
+      kind: 'transistor',
+      x1: 0,
+      y1: 0,
+      x2: 100,
+      y2: 0,
+      flags: 0,
+      params: { pnp: 1 },
+    };
+    const drawAt = (phase: number): Point[] => {
+      const { ctx, arcs } = dotCtx();
+      TRANSISTOR_DEF.draw(
+        {
+          ...context(ctx, 0),
+          voltages: [0, 0, 0],
+          current: 1e-4,
+          postCurrents: [0, -1e-4, 0],
+          postDotPhases: [0, phase, 0],
+        },
+        e,
+      );
+      return dots(arcs);
+    };
+    const post = TRANSISTOR_DEF.posts(e)[1];
+    const [c1] = transistorBarContacts(e);
+    const dir = unit({ x: post.x - c1.x, y: post.y - c1.y });
+    const project = (p: Point): number => (p.x - c1.x) * dir.x + (p.y - c1.y) * dir.y;
+    const at0 = drawAt(0).map(project);
+    const atNeg = drawAt(-2).map(project);
+    // At phase 0 the leading dot sits at the post end (the full lead length);
+    // two negated steps pull the whole train toward the body contact.
+    expect(Math.max(...at0)).toBeGreaterThan(15);
+    expect(Math.max(...atNeg)).toBeLessThan(Math.max(...at0));
   });
 });

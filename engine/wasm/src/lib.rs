@@ -197,6 +197,14 @@ impl Simulator {
         self.circuit.element_currents()
     }
 
+    /// Current each terminal exchanges with its node, flattened in element
+    /// order then post order, indexed like `elementNodes` so the renderer can
+    /// animate each lead on its own current.
+    #[wasm_bindgen(js_name = elementPostCurrents)]
+    pub fn element_post_currents(&self) -> Vec<f64> {
+        self.circuit.element_post_currents()
+    }
+
     /// Voltage across each element, in the order they were supplied.
     #[wasm_bindgen(js_name = elementVoltages)]
     pub fn element_voltages(&self) -> Vec<f64> {

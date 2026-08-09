@@ -214,6 +214,15 @@ export interface DrawContext {
   value: number;
   /** Advances each animation frame; drives the current-flow animation. */
   dotPhase: number;
+  /** Current each terminal exchanges with its node, indexed like `posts()`
+   *  (the engine's `current_into_node`: positive flows into the node from the
+   *  element, so a two-terminal element reads `-current` at post 0 and
+   *  `+current` at post 1). Elements that animate a single run keep using
+   *  `current`; multi-terminal elements use this per-post slice. */
+  postCurrents: number[];
+  /** Per-terminal dot phase, for elements that animate each lead on its own
+   *  current. Indexed like `posts()`. */
+  postDotPhases: number[];
   showCurrent: boolean;
   showValues: boolean;
   showVoltageColor: boolean;

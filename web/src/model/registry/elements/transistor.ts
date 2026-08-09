@@ -1,6 +1,6 @@
 import {
   arrowHead,
-  currentDots,
+  currentDotsFrom,
   dsign,
   elementLength,
   endpoints,
@@ -45,7 +45,14 @@ function drawTransistorBody(g: DrawContext, e: CircuitElement): void {
     arrowHead(g, e1, posts[2], 8, voltageColor(g, g.voltages[2]));
   }
 
-  currentDots(g, posts[1], c1, g.current);
+  // One dot run per terminal, each from the body contact outward to its post,
+  // each animated on its own current and phase (TransistorElm.java:179-184).
+  // `postCurrents[i]` is `current_into_node(i)`, which is upstream's -ib, -ic
+  // and -ie term for term, so a base carrying a fraction of the collector
+  // current crawls while the collector runs.
+  currentDotsFrom(g, base, posts[0], g.postCurrents[0], g.postDotPhases[0]);
+  currentDotsFrom(g, c1, posts[1], g.postCurrents[1], g.postDotPhases[1]);
+  currentDotsFrom(g, e1, posts[2], g.postCurrents[2], g.postDotPhases[2]);
 }
 
 /** Fraction along the axis of the base bar's back edge (TransistorElm.java:227). */

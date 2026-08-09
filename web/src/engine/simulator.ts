@@ -323,6 +323,15 @@ export class SimEngine {
     return this.sim.elementCurrents();
   }
 
+  /** Current each terminal exchanges with its node, flattened in the engine's
+   *  element order then post order, indexed like `elementNodes()`: the offset
+   *  from `postOffset(id)` slices the element's own terminal currents. A
+   *  two-terminal element reports `-current` at post 0 and `+current` at
+   *  post 1; a ground reports `-current` (upstream `getCurrentIntoNode`). */
+  elementPostCurrents(): Float64Array {
+    return this.sim.elementPostCurrents();
+  }
+
   elementVoltages(): Float64Array {
     return this.sim.elementVoltages();
   }

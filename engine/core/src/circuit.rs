@@ -1030,57 +1030,95 @@ impl Circuit {
                 edge_elm.push(ei);
             }
         }
-        if edges.is_empty() {
-            return;
-        }
-
-        // Net current each coordinate receives from the non-removable world.
-        let mut injection = vec![0.0; coords.len()];
-        for elm in self.elements.iter() {
-            if elm.removable_wire() && elm.post_count() >= 2 {
-                continue;
-            }
-            for pi in 0..elm.post_count() {
-                let Some(&c) = coord_id.get(&elm.base().posts[pi]) else {
-                    continue;
-                };
-                injection[c] += elm.current_into_node(pi);
-            }
-        }
-
-        let mut resolved = vec![false; edges.len()];
-        let mut currents = vec![0.0; edges.len()];
-
-        // Resolve chains and trees in the natural order: a wire whose other
-        // endpoint is fully determined derives its current from KCL there.
-        loop {
-            let mut progress = false;
-            for i in 0..edges.len() {
-                if resolved[i] {
+        if !edges.is_empty() {
+            // Net current each coordinate receives from the non-removable
+            // world. Grounds are excluded: they are sinks, never injectors, so
+            // counting them (their `current_into_node` is `-current`) would
+            // double-count their own previous-step current back into the KCL.
+            let mut injection = vec![0.0; coords.len()];
+            for elm in self.elements.iter() {
+                if (elm.removable_wire() && elm.post_count() >= 2) || elm.is_ground() {
                     continue;
                 }
-                let (c0, c1) = (edges[i][0], edges[i][1]);
-                if can_resolve(&edges, &resolved, i, c0) {
-                    currents[i] = kcl_sum(&edges, &resolved, &injection, c0, &currents);
-                    resolved[i] = true;
-                    progress = true;
-                } else if c1 != c0 && can_resolve(&edges, &resolved, i, c1) {
-                    currents[i] = -kcl_sum(&edges, &resolved, &injection, c1, &currents);
-                    resolved[i] = true;
-                    progress = true;
+                for pi in 0..elm.post_count() {
+                    let Some(&c) = coord_id.get(&elm.base().posts[pi]) else {
+                        continue;
+                    };
+                    injection[c] += elm.current_into_node(pi);
                 }
             }
-            if !progress {
-                break;
+
+            let mut resolved = vec![false; edges.len()];
+            let mut currents = vec![0.0; edges.len()];
+
+            // Resolve chains and trees in the natural order: a wire whose
+            // other endpoint is fully determined derives its current from KCL
+            // there.
+            loop {
+                let mut progress = false;
+                for i in 0..edges.len() {
+                    if resolved[i] {
+                        continue;
+                    }
+                    let (c0, c1) = (edges[i][0], edges[i][1]);
+                    if can_resolve(&edges, &resolved, i, c0) {
+                        currents[i] = kcl_sum(&edges, &resolved, &injection, c0, &currents);
+                        resolved[i] = true;
+                        progress = true;
+                    } else if c1 != c0 && can_resolve(&edges, &resolved, i, c1) {
+                        currents[i] = -kcl_sum(&edges, &resolved, &injection, c1, &currents);
+                        resolved[i] = true;
+                        progress = true;
+                    }
+                }
+                if !progress {
+                    break;
+                }
+            }
+
+            if resolved.iter().any(|&r| !r) {
+                resolve_stuck_wires(&edges, &mut resolved, &mut currents, &injection);
+            }
+
+            for (i, &ei) in edge_elm.iter().enumerate() {
+                self.elements[ei].base_mut().current = currents[i];
             }
         }
+        self.recover_ground_currents();
+    }
 
-        if resolved.iter().any(|&r| !r) {
-            resolve_stuck_wires(&edges, &mut resolved, &mut currents, &injection);
+    /// Gives each ground symbol the current the rest of the circuit delivers
+    /// into its post coordinate. Grounds stay out of the wire graph (they are
+    /// never edges or injectors), so their current only exists once every wire
+    /// touching the coordinate is resolved, which is why this runs after the
+    /// wire pass. The sum counts resolved wires by their recovered current and
+    /// skips grounds. Grounds sharing a coordinate split the coordinate's net
+    /// evenly, a deterministic choice that sums back to the true total.
+    fn recover_ground_currents(&mut self) {
+        let mut by_coord: HashMap<[i32; 2], Vec<usize>> = HashMap::new();
+        for (ei, elm) in self.elements.iter().enumerate() {
+            if elm.is_ground() {
+                by_coord.entry(elm.base().posts[0]).or_default().push(ei);
+            }
         }
-
-        for (i, &ei) in edge_elm.iter().enumerate() {
-            self.elements[ei].base_mut().current = currents[i];
+        for (coord, grounds) in by_coord {
+            let mut net = 0.0;
+            for elm in self.elements.iter() {
+                if elm.is_ground() {
+                    continue;
+                }
+                for pi in 0..elm.post_count() {
+                    if elm.base().posts[pi] == coord {
+                        net += elm.current_into_node(pi);
+                    }
+                }
+            }
+            // Positive reads as current flowing from the node down the stem
+            // into earth, matching upstream's `getCurrentIntoNode(n) = -current`.
+            let share = net / grounds.len() as f64;
+            for ei in grounds {
+                self.elements[ei].base_mut().current = share;
+            }
         }
     }
 
@@ -1231,6 +1269,23 @@ impl Circuit {
     /// Per-element current, in element order.
     pub fn element_currents(&self) -> Vec<f64> {
         self.elements.iter().map(|e| e.base().current).collect()
+    }
+
+    /// Current each terminal exchanges with its node, flattened in element
+    /// order then post order, laid out identically to [`Circuit::element_nodes`]
+    /// so the renderer indexes it with the same post-offset map. Each entry is
+    /// [`Element::current_into_node`], the current leaving the device into the
+    /// node at that post. A two-terminal element reports `-current` at post 0
+    /// and `+current` at post 1; a ground reports `-current` (upstream's
+    /// `GroundElm.getCurrentIntoNode`).
+    pub fn element_post_currents(&self) -> Vec<f64> {
+        let mut out = Vec::new();
+        for e in &self.elements {
+            for i in 0..e.post_count() {
+                out.push(e.current_into_node(i));
+            }
+        }
+        out
     }
 
     /// Per-element terminal voltage difference, in element order. Sources

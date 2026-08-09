@@ -3,7 +3,7 @@ import type { SimEngine } from '../../engine/simulator';
 import { scopeParamsFingerprint } from '../../engine/simulator';
 import { defFor } from '../../model/registry';
 import type { DrawContext, Point } from '../../model/types';
-import { dotPhaseStep, TOO_FAST, wrapPhase } from '../../render/dots';
+import { dotPhaseStep, stepPostPhases, TOO_FAST, wrapPhase } from '../../render/dots';
 import { makeTheme } from '../../render/draw';
 import { drawGrid } from '../../render/grid';
 import { invalidDropPoint } from '../../render/geometry';
@@ -25,6 +25,7 @@ export function useFrameLoop(
   pointerRef: React.MutableRefObject<Point | null>,
 ): void {
   const dotPhaseRef = useRef(new Map<number, number>());
+  const postPhaseRef = useRef(new Map<number, number[]>());
   const lastFrameRef = useRef(performance.now());
   const loadedRevision = useRef(-1);
   const appliedParamRevision = useRef(-1);
@@ -63,8 +64,9 @@ export function useFrameLoop(
       if (engine && loadedRevision.current !== state.revision) {
         loadedRevision.current = state.revision;
         // A new netlist invalidates every element's accumulated phase, and
-        // clearing the map stops it growing across circuit loads.
+        // clearing the maps stops them growing across circuit loads.
         dotPhaseRef.current.clear();
+        postPhaseRef.current.clear();
         const err = engine.setCircuit(elements, settings, scopes, widthOf);
         const warnings = err ? [err] : engine.warnings();
         useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
@@ -109,6 +111,7 @@ export function useFrameLoop(
           // A param the engine cannot patch live (unknown id or name) would
           // otherwise read as a dead slider; rebuild the whole circuit.
           dotPhaseRef.current.clear();
+          postPhaseRef.current.clear();
           const err = engine.setCircuit(elements, settings, scopes, widthOf);
           const warnings = err ? [err] : engine.warnings();
           useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
@@ -118,6 +121,7 @@ export function useFrameLoop(
 
       // Advance the simulation.
       let currents: Float64Array | null = null;
+      let postCurrents: Float64Array | null = null;
       let nodeVoltages: Float64Array | null = null;
       let elementNodes: Uint32Array | null = null;
       let values: Float64Array | null = null;
@@ -140,6 +144,7 @@ export function useFrameLoop(
           }
         }
         currents = engine.elementCurrents();
+        postCurrents = engine.elementPostCurrents();
         nodeVoltages = engine.nodeVoltages();
         elementNodes = engine.elementNodes();
         values = engine.elementValues();
@@ -202,6 +207,9 @@ export function useFrameLoop(
           return node === undefined ? 0 : (nodeVoltages[node] ?? 0);
         });
         const current = idx !== undefined && currents ? (currents[idx] ?? 0) : 0;
+        const postCs = posts.map((_, i) =>
+          offset !== undefined && postCurrents ? (postCurrents[offset + i] ?? 0) : 0,
+        );
         const voltage = voltages.length >= 2 ? voltages[0] - voltages[1] : (voltages[0] ?? 0);
         const value = idx !== undefined && values ? (values[idx] ?? 0) : 0;
 
@@ -226,6 +234,23 @@ export function useFrameLoop(
           step === TOO_FAST ? TOO_FAST : wrapPhase((dotPhaseRef.current.get(e.id) ?? 0) + step);
         if (running) dotPhaseRef.current.set(e.id, phase === TOO_FAST ? 0 : phase);
 
+        // Per-terminal phases step each post on its own current, so a
+        // saturated collector cannot drag the base or emitter into TOO_FAST or
+        // speed them up. Integrated in place, exactly like the scalar phase.
+        let postPhases = postPhaseRef.current.get(e.id);
+        if (!postPhases || postPhases.length !== posts.length) {
+          postPhases = new Array(posts.length).fill(0);
+          postPhaseRef.current.set(e.id, postPhases);
+        }
+        const postDotPhases = stepPostPhases(
+          postPhases,
+          postCs,
+          settings.currentSpeed,
+          elapsed,
+          settings.conventional,
+          running,
+        );
+
         const g: DrawContext = {
           ctx,
           theme,
@@ -238,6 +263,8 @@ export function useFrameLoop(
           power: current * voltage,
           value,
           dotPhase: phase,
+          postCurrents: postCs,
+          postDotPhases,
           showCurrent: settings.showCurrent,
           showValues: settings.showValues,
           showVoltageColor: settings.showVoltageColor,

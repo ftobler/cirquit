@@ -1,4 +1,4 @@
-import { line } from '../../../render/draw';
+import { currentDots, line } from '../../../render/draw';
 import { elementColor, groundBars, onePost, readParams, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
@@ -12,6 +12,11 @@ function drawGroundSymbol(g: DrawContext, e: CircuitElement): void {
   for (const [a, b] of groundBars(p1, p2, e.params.symbolType ?? 0)) {
     line(g, a, b, color);
   }
+  // One dot run down the whole stem, post to symbol end (GroundElm.java:
+  // 93-94). The ground's `current` is positive flowing from the node down
+  // the stem into earth, so a positive current animates from the post into
+  // the symbol.
+  currentDots(g, p1, p2, g.current);
 }
 
 export const GROUND_DEF: ElementDef = {

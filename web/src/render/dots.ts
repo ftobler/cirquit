@@ -53,3 +53,33 @@ export function dotPhaseAfter(phase: number, distance: number): number {
   if (phase === TOO_FAST) return TOO_FAST;
   return wrapPhase(phase + distance);
 }
+
+/**
+ * Advances a per-post phase array one frame, in place while running, returning
+ * the drawn phases for the frame. Each post steps on its own current, so a
+ * saturated terminal cannot drag its neighbours into `TOO_FAST` or speed them
+ * up; a post that is too fast draws the flow line and is rewound to a clean
+ * phase in storage so it resumes without a jump once its current drops back
+ * under the threshold. The paused behaviour matches the per-element phase: the
+ * stored phases stay frozen, and the drawn value is `phase + step`, which does
+ * not accumulate.
+ */
+export function stepPostPhases(
+  phases: number[],
+  currents: number[],
+  currentSpeed: number,
+  dt: number,
+  conventional: boolean,
+  running: boolean,
+): number[] {
+  return phases.map((phase, i) => {
+    const step = dotPhaseStep(currents[i] ?? 0, currentSpeed, dt, conventional);
+    if (step === TOO_FAST) {
+      if (running) phases[i] = 0;
+      return TOO_FAST;
+    }
+    const next = wrapPhase(phase + step);
+    if (running) phases[i] = next;
+    return next;
+  });
+}

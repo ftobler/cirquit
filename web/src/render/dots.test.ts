@@ -3,6 +3,7 @@ import {
   DOT_SPACING,
   dotPhaseAfter,
   dotPhaseStep,
+  stepPostPhases,
   TOO_FAST,
   wrapPhase,
 } from './dots';
@@ -176,5 +177,40 @@ describe('long-run stability', () => {
     expect(
       Math.abs(delta - step) < 1e-9 || Math.abs(Math.abs(delta - step) - DOT_SPACING) < 1e-9,
     ).toBe(true);
+  });
+});
+
+describe('stepPostPhases', () => {
+  it('steps each post on its own current so 100x currents diverge by 100x', () => {
+    // dotPhaseStep is linear in current, so over N frames a post carrying a
+    // current 100x a neighbour's accumulates a phase 100x larger (both far
+    // below the too-fast threshold and the wrap).
+    const phases = [0, 0];
+    const currents = [1e-3, 1e-5];
+    for (let f = 0; f < 50; f++) {
+      stepPostPhases(phases, currents, 50, dt, true, true);
+    }
+    expect(phases[0]).toBeGreaterThan(0);
+    expect(phases[1]).toBeGreaterThan(0);
+    expect(phases[0]).toBeCloseTo(100 * phases[1], 8);
+  });
+
+  it('keeps one post TOO_FAST from leaking into its neighbour', () => {
+    // At speed 50 and dt = 1 a 3.3e-3 A current trips the too-fast threshold
+    // while 1e-6 A stays legal: the fast post draws the flow line and is
+    // rewound in storage, the slow post keeps advancing normally.
+    const phases = [0, 0];
+    const out = stepPostPhases(phases, [3.3e-3, 1e-6], 50, 1, true, true);
+    expect(out[0]).toBe(TOO_FAST);
+    expect(out[1]).toBeGreaterThan(0);
+    expect(phases[0]).toBe(0);  // rewound for when the current recovers
+    expect(phases[1]).toBeCloseTo(dotPhaseStep(1e-6, 50, 1), 12);
+  });
+
+  it('freezes the stored phases while paused', () => {
+    const phases = [0, 0];
+    const before = phases.slice();
+    stepPostPhases(phases, [1e-3, 1e-4], 50, dt, true, false);
+    expect(phases).toEqual(before);
   });
 });

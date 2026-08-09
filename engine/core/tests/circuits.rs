@@ -3908,6 +3908,286 @@ fn wire_merge_shrinks_the_matrix() {
     assert_eq!(c.vs_count(), 1);
 }
 
+// The ground-current tests below use rails where the ground must carry the
+// current. A two-terminal voltage source closes its loop through the circuit
+// elements, so a single ground attached to it is only a reference node and
+// reads 0; the ground genuinely sinks a current only when the return path is
+// through the reference, which a rail (whose negative terminal is the
+// reference already) provides. The plan reads "5 V source" loosely; its own
+// case 2 says "6 V rail" for exactly this reason.
+
+#[test]
+fn ground_reports_the_current_it_sinks() {
+    // A 5 V rail drives 1 kΩ into a ground symbol, so the ground is the
+    // current's only sink and must report 5 mA, positive flowing from the
+    // node down the stem into earth.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    assert!(
+        close(c.element_currents()[2], 5e-3, 1e-9),
+        "ground current was {}",
+        c.element_currents()[2]
+    );
+}
+
+#[test]
+fn ground_sums_every_branch_at_its_coordinate() {
+    // A 6 V rail into 1 kΩ and 2 kΩ, both returning to one ground: the ground
+    // must report the sum of the two branch currents, 6 mA + 3 mA = 9 mA.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 6.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 2000.0)],
+            ),
+            elm(4, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    assert!(
+        close(c.element_currents()[1], 6e-3, 1e-9),
+        "first branch was {}",
+        c.element_currents()[1]
+    );
+    assert!(
+        close(c.element_currents()[2], 3e-3, 1e-9),
+        "second branch was {}",
+        c.element_currents()[2]
+    );
+    assert!(
+        close(c.element_currents()[3], 9e-3, 1e-9),
+        "ground current was {}",
+        c.element_currents()[3]
+    );
+}
+
+#[test]
+fn wire_between_resistor_and_ground_keeps_both_currents() {
+    // The single-ground case with a wire between the resistor and the ground:
+    // the wire recovers 5 mA from the wire graph first, then the ground sums
+    // that recovered current at its coordinate. This pins the ordering
+    // (ground after wires) and that the ground is excluded from the wire graph.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "wire", &[[100, 0], [100, 100]], &[]),
+            elm(4, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    assert!(
+        close(c.element_currents()[2], 5e-3, 1e-9),
+        "wire current was {}",
+        c.element_currents()[2]
+    );
+    assert!(
+        close(c.element_currents()[3], 5e-3, 1e-9),
+        "ground current was {}",
+        c.element_currents()[3]
+    );
+}
+
+#[test]
+fn grounds_on_separate_branches_each_keep_their_own_current() {
+    // Two grounds at different coordinates on different branches: each must
+    // report its own branch current (6 mA and 3 mA), not the total.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 6.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[0, 0], [200, 0]],
+                &[("resistance", 2000.0)],
+            ),
+            elm(4, "ground", &[[100, 0]], &[]),
+            elm(5, "ground", &[[200, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 6e-3, 1e-9),
+        "first ground was {}",
+        c.element_currents()[3]
+    );
+    assert!(
+        close(c.element_currents()[4], 3e-3, 1e-9),
+        "second ground was {}",
+        c.element_currents()[4]
+    );
+}
+
+#[test]
+fn grounds_sharing_a_coordinate_split_the_net_evenly() {
+    // Two grounds stacked on one coordinate split the coordinate's net evenly,
+    // and the halves sum back to the single-ground answer from the rail case.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[100, 0]], &[]),
+            elm(4, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let first = c.element_currents()[2];
+    let second = c.element_currents()[3];
+    assert!(
+        close(first, 2.5e-3, 1e-9) && close(second, 2.5e-3, 1e-9),
+        "stacked grounds took {first} and {second}"
+    );
+    assert!(close(first + second, 5e-3, 1e-9));
+}
+
+#[test]
+fn no_ground_symbol_leaves_wire_recovery_untouched() {
+    // The ground pass must not disturb the no-ground-symbol fallback: a
+    // divider with no ground symbol still solves (the first node becomes the
+    // reference) and its wire still recovers the loop current.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(5);
+    assert!(
+        report.converged,
+        "no-ground divider failed to solve: {}",
+        report.error.unwrap_or_default()
+    );
+    assert!(!c.warnings().is_empty(), "expected a no-ground warning");
+    assert!(
+        close(c.element_currents()[1], 5e-3, 1e-9),
+        "divider current was {}",
+        c.element_currents()[1]
+    );
+    assert!(
+        close(c.element_currents()[3], 5e-3, 1e-9),
+        "wire current was {}",
+        c.element_currents()[3]
+    );
+}
+
+#[test]
+fn element_post_currents_matches_the_post_major_layout() {
+    // The per-post array must be laid out identically to element_nodes, so the
+    // renderer indexes both with the same post-offset map. The three entries
+    // of the transistor (whose base current is forced to 1e-6 by the current
+    // source) must be `current_into_node` at each post: `-ib`, `-ic`, `-ie`.
+    let c = &mut build(
+        vec![
+            // Forced base current: 1e-6 into the base node at (100,100).
+            elm(1, "current", &[[0, 0], [100, 100]], &[("current", 1e-6)]),
+            elm(2, "rail", &[[300, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                3,
+                "resistor",
+                &[[300, 0], [300, 100]],
+                &[("resistance", 10_000.0)],
+            ),
+            // Posts: base, collector, emitter.
+            elm(
+                4,
+                "transistor",
+                &[[100, 100], [300, 100], [100, 200]],
+                &[
+                    ("saturationCurrent", 1e-13),
+                    ("betaReverse", 1.0),
+                    ("beta", 100.0),
+                ],
+            ),
+            elm(5, "ground", &[[100, 200]], &[]),
+            elm(6, "ground", &[[0, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(20);
+
+    let posts = c.element_post_currents();
+    assert_eq!(
+        posts.len(),
+        c.element_nodes().len(),
+        "per-post array must match the flattened post count"
+    );
+
+    // Element order: current source (2 posts), rail (1), resistor (2),
+    // transistor (3), two grounds (1 each). The transistor's slice starts at
+    // offset 5.
+    let ic = c.element_currents()[3];
+    let (pb, pc, pe) = (posts[5], posts[6], posts[7]);
+    assert!(
+        close(pc, -ic, 1e-9),
+        "collector post current was {pc}, expected -Ic = {}",
+        -ic
+    );
+    assert!(
+        close(pb, -1e-6, 1e-9),
+        "base post current was {pb}, expected -Ib = -1e-6"
+    );
+    // KCL: the three terminal currents sum to zero, so the negated entries do
+    // too (-ib - ic - ie = 0). This pins the emitter entry to -ie.
+    assert!(
+        close(pb + pc + pe, 0.0, 1e-9),
+        "terminal currents did not sum to zero: {pb} {pc} {pe}"
+    );
+}
+
 /// A sine source into a grounded resistor, the shape every source test below
 /// shares. Post 0 sits on a ground symbol and the resistor's far end is
 /// grounded too, so the described circuit "post 0 grounded, post 1 through a

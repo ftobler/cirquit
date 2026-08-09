@@ -76,6 +76,10 @@ export function drawAllElements(
       power: current * voltage,
       value,
       dotPhase: 0,
+      // Exports draw with `showCurrent: false`, so per-post currents and
+      // phases are handed as zeros like the scalar phase.
+      postCurrents: [],
+      postDotPhases: [],
       showCurrent: false,
       showValues: settings.showValues,
       showVoltageColor: settings.showVoltageColor,

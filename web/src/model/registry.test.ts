@@ -82,6 +82,8 @@ const context = (ctx: CtxStub, overrides: Partial<DrawContext> = {}): DrawContex
   power: 0,
   value: 0,
   dotPhase: 0,
+  postCurrents: [],
+  postDotPhases: [],
   showCurrent: false,
   showValues: false,
   showVoltageColor: false,
