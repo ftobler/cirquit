@@ -35,6 +35,12 @@ export function dsign(a: Point, b: Point): number {
  * :420-421), not a rounding bug: a raw coordinate of exactly x.5 lands on x,
  * the integer below, where `Math.round` would nudge it to x+1 and move the
  * post off the grid orientation the original tooling snapped to.
+ *
+ * THE ROUNDING RULE: `interp` rounds, and is for points that must land on the
+ * grid: posts, lead ends, anything another element's geometry has to agree
+ * with. Body geometry (plates, bars, arrowheads, glyph positions) uses
+ * `interpPrecise` and `interp2Precise`, so a diagonal element's symbol keeps
+ * its exact shape at any angle.
  */
 export function interp(a: Point, b: Point, f: number, g = 0): Point {
   let px = b.y - a.y;
@@ -71,6 +77,14 @@ export function interpPrecise(a: Point, b: Point, f: number, g = 0): Point {
 /** Both perpendicular displacements at once: `+g` then `-g`. */
 export function interp2(a: Point, b: Point, f: number, g: number): [Point, Point] {
   return [interp(a, b, f, g), interp(a, b, f, -g)];
+}
+
+/**
+ * Both perpendicular displacements at once, at exact float coordinates, for
+ * body geometry that must stay perpendicular to the axis on a diagonal.
+ */
+export function interp2Precise(a: Point, b: Point, f: number, g: number): [Point, Point] {
+  return [interpPrecise(a, b, f, g), interpPrecise(a, b, f, -g)];
 }
 
 export function elementLength(e: CircuitElement): number {

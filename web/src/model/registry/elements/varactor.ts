@@ -1,4 +1,4 @@
-import { calcLeads, interp2, line, voltageColor } from '../../../render/draw';
+import { calcLeads, interp2Precise, line, voltageColor } from '../../../render/draw';
 import { readParams, twoPosts } from '../shared';
 import { drawDiodeBody } from './diode';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
@@ -13,7 +13,9 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 function drawVaractorBody(g: DrawContext, e: CircuitElement): void {
   drawDiodeBody(g, e, false);
   const [lead1, lead2] = calcLeads(e, 16);
-  const [p1, p2] = interp2(lead1, lead2, 0.6, 7);
+  // Body geometry, drawn without grid rounding so the plate stays square to
+  // the body on a diagonal (VaractorElm.java:57-68).
+  const [p1, p2] = interp2Precise(lead1, lead2, 0.6, 7);
   line(g, p1, p2, voltageColor(g, g.voltages[0]), 2.5);
 }
 

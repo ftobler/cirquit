@@ -6,7 +6,8 @@ import {
   drawLeads,
   endpoints,
   interp,
-  interp2,
+  interpPrecise,
+  interp2Precise,
   line,
   triangle,
 } from '../../../render/draw';
@@ -58,10 +59,12 @@ function drawLedBody(g: DrawContext, e: CircuitElement): void {
   // the triangle is scaled to sit inside the ring instead of spanning the
   // whole body like the plain diode's.
   const color = elementColor(g, (g.voltages[0] + g.voltages[1]) / 2, g.power);
-  const [t1, t2] = interp2(lead1, lead2, 0.25, 6);
-  const tip = interp(lead1, lead2, 0.75);
+  // The diode arrow is body geometry, so it is drawn without the grid rounding
+  // `interp` applies to posts, keeping the triangle square to the body.
+  const [t1, t2] = interp2Precise(lead1, lead2, 0.25, 6);
+  const tip = interpPrecise(lead1, lead2, 0.75);
   triangle(g, t1, t2, tip, color);
-  const [b1, b2] = interp2(lead1, lead2, 0.75, 6);
+  const [b1, b2] = interp2Precise(lead1, lead2, 0.75, 6);
   line(g, b1, b2, color, 2.5);
 
   // Upstream draws the dots only on the two leads, never across the glowing

@@ -3,7 +3,7 @@ import {
   currentDotsPath,
   drawLeads,
   endpoints,
-  interp2,
+  interp2Precise,
   line,
   triangle,
   voltageColor,
@@ -21,11 +21,13 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 function drawTunnelDiodeBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 16);
   drawLeads(g, e, lead1, lead2);
-  const [t1, t2] = interp2(lead1, lead2, 0, 8);
+  // The triangle base, cathode bar and wings are body geometry, so they are
+  // interpolated without the grid rounding `interp` applies to posts.
+  const [t1, t2] = interp2Precise(lead1, lead2, 0, 8);
   triangle(g, t1, t2, lead2, elementColor(g, g.voltages[0], g.power));
   const color2 = voltageColor(g, g.voltages[1]);
-  const [b1, b2] = interp2(lead1, lead2, 1, 8);
-  const [w0, w1] = interp2(lead1, lead2, 0.8, 8);
+  const [b1, b2] = interp2Precise(lead1, lead2, 1, 8);
+  const [w0, w1] = interp2Precise(lead1, lead2, 0.8, 8);
   line(g, b1, b2, color2, 2.5);
   line(g, w0, b1, color2, 2.5);
   line(g, w1, b2, color2, 2.5);

@@ -4,8 +4,8 @@ import {
   drawLeads,
   elementLength,
   endpoints,
-  interp,
-  interp2,
+  interpPrecise,
+  interp2Precise,
   triangle,
 } from '../../../render/draw';
 import { elementColor, readParams, twoPosts } from '../shared';
@@ -27,11 +27,14 @@ function drawSparkGap(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, dist + alen);
   drawLeads(g, e, lead1, lead2);
   const dn = elementLength(e);
-  const tip1 = interp(p1, p2, (dn - alen) / (2 * dn));
-  const tip2 = interp(p1, p2, (dn + alen) / (2 * dn));
+  // The arrow tips and bases are body geometry, so they are interpolated
+  // without the grid rounding `interp` applies to posts, keeping the two
+  // arrows square to the body on a diagonal.
+  const tip1 = interpPrecise(p1, p2, (dn - alen) / (2 * dn));
+  const tip2 = interpPrecise(p1, p2, (dn + alen) / (2 * dn));
   const fLead = (dn - dist - alen) / (2 * dn);
-  const [a1, a2] = interp2(p1, p2, fLead, alen);
-  const [b1, b2] = interp2(p1, p2, 1 - fLead, alen);
+  const [a1, a2] = interp2Precise(p1, p2, fLead, alen);
+  const [b1, b2] = interp2Precise(p1, p2, 1 - fLead, alen);
   triangle(g, tip1, a1, a2, elementColor(g, g.voltages[0], g.power));
   triangle(g, tip2, b1, b2, elementColor(g, g.voltages[1], g.power));
   currentDots(g, p1, lead1, g.current);

@@ -3,8 +3,8 @@ import {
   currentDotsPath,
   drawLeads,
   endpoints,
-  interp,
-  interp2,
+  interpPrecise,
+  interp2Precise,
   line,
   triangle,
 } from '../../../render/draw';
@@ -16,8 +16,9 @@ export function drawDiodeBody(g: DrawContext, e: CircuitElement, zener: boolean)
   drawLeads(g, e, lead1, lead2);
   const color = elementColor(g, (g.voltages[0] + g.voltages[1]) / 2, g.power);
   // Both DiodeElm and ZenerElm use hs = 8 for the triangle base and the
-  // cathode bar (DiodeElm.java:118, ZenerElm.java:45).
-  const [t1, t2] = interp2(lead1, lead2, 0, 8);
+  // cathode bar (DiodeElm.java:118, ZenerElm.java:45). Body geometry, so the
+  // base and bar stay perpendicular to the body at any angle.
+  const [t1, t2] = interp2Precise(lead1, lead2, 0, 8);
   triangle(g, t1, t2, lead2, color);
   if (zener) {
     const { bar, wing0, wing1 } = zenerMarks(lead1, lead2);
@@ -25,7 +26,7 @@ export function drawDiodeBody(g: DrawContext, e: CircuitElement, zener: boolean)
     line(g, wing0, bar[0], color, 2);
     line(g, wing1, bar[1], color, 2);
   } else {
-    const [b1, b2] = interp2(lead1, lead2, 1, 8);
+    const [b1, b2] = interp2Precise(lead1, lead2, 1, 8);
     line(g, b1, b2, color, 2.5);
   }
   const [p1, p2] = endpoints(e);
@@ -43,11 +44,13 @@ export function zenerMarks(lead1: Point, lead2: Point): {
   wing0: Point;
   wing1: Point;
 } {
-  const [b1, b2] = interp2(lead1, lead2, 1, 8);
+  // The bar and the wings swept back off it are body geometry, so they are
+  // interpolated without the grid rounding `interp` applies to posts.
+  const [b1, b2] = interp2Precise(lead1, lead2, 1, 8);
   return {
     bar: [b1, b2],
-    wing0: interp(b1, b2, -0.2, -8),
-    wing1: interp(b2, b1, -0.2, -8),
+    wing0: interpPrecise(b1, b2, -0.2, -8),
+    wing1: interpPrecise(b2, b1, -0.2, -8),
   };
 }
 

@@ -3,24 +3,61 @@ import {
   currentDotsFrom,
   dotPhaseAfter,
   drawLeads,
+  elementLength,
   endpoints,
   formatValue,
-  interp2,
+  interp2Precise,
   label,
   line,
   voltageColor,
 } from '../../../render/draw';
 import { CAP_BACK_EULER, CAP_RESISTANCE } from '../flags';
 import { readParams, twoPosts, writeParams } from '../shared';
-import type { CircuitElement, DrawContext, ElementDef } from '../../types';
+import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
+
+/** Plate gap: the leads stop 4 units short of the centre each side, upstream's
+ *  `f = (dn/2-4)/dn` (CapacitorElm.java:100). */
+const CAP_PLATE_GAP = 8;
+/** Plate half-width, upstream's `interpPoint2(point1, point2, ..., f, 12)`
+ *  (CapacitorElm.java:107-108). */
+const CAP_PLATE_HALF_WIDTH = 12;
+/** Plate stroke, upstream's `drawThickLine` default width (CircuitElm.java:
+ *  1013-1014). */
+const CAP_PLATE_STROKE = 3;
+
+export interface CapacitorPlateGeometry {
+  lead1: Point;
+  lead2: Point;
+  plate1: [Point, Point];
+  plate2: [Point, Point];
+}
+
+/** The capacitor's drawn geometry: the floored lead ends (the lead-body
+ *  junction) and the two plates. The plate perpendicular comes from the true
+ *  axis `p1 -> p2`, not the floored lead axis, or a diagonal capacitor's
+ *  plates tilt off perpendicular and jump as the element is dragged
+ *  (diagonal-body-rounding). Only the along-axis fraction comes from
+ *  `calcLeads`, so the plates sit where the leads meet the body. */
+export function capacitorPlateGeometry(e: CircuitElement): CapacitorPlateGeometry {
+  const [p1, p2] = endpoints(e);
+  const [lead1, lead2] = calcLeads(e, CAP_PLATE_GAP);
+  const dn = elementLength(e);
+  // Same short-element guard as calcLeads (returns the posts): plates at
+  // fractions 0 and 1 of the true axis, never crossed.
+  const f = dn < CAP_PLATE_GAP ? 0 : (dn - CAP_PLATE_GAP) / (2 * dn);
+  return {
+    lead1,
+    lead2,
+    plate1: interp2Precise(p1, p2, f, CAP_PLATE_HALF_WIDTH),
+    plate2: interp2Precise(p1, p2, 1 - f, CAP_PLATE_HALF_WIDTH),
+  };
+}
 
 export function drawCapacitorBody(g: DrawContext, e: CircuitElement): void {
-  const [lead1, lead2] = calcLeads(e, 6);
+  const { lead1, lead2, plate1, plate2 } = capacitorPlateGeometry(e);
   drawLeads(g, e, lead1, lead2);
-  const [a1, a2] = interp2(lead1, lead2, 0, 9);
-  const [b1, b2] = interp2(lead1, lead2, 1, 9);
-  line(g, a1, a2, voltageColor(g, g.voltages[0]), 2.5);
-  line(g, b1, b2, voltageColor(g, g.voltages[1]), 2.5);
+  line(g, plate1[0], plate1[1], voltageColor(g, g.voltages[0]), CAP_PLATE_STROKE);
+  line(g, plate2[0], plate2[1], voltageColor(g, g.voltages[1]), CAP_PLATE_STROKE);
   // The plate gap breaks the current path, so the dots cannot cross the body
   // in one run; the second lead starts at the phase the first would have
   // reached at the gap, keeping the two inlets aligned (CapacitorElm.java:

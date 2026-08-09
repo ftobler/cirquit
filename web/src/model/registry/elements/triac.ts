@@ -2,7 +2,8 @@ import {
   currentDots,
   endpoints,
   interp,
-  interp2,
+  interpPrecise,
+  interp2Precise,
   line,
   triangle,
   voltageColor,
@@ -77,25 +78,26 @@ function drawTriac(g: DrawContext, e: CircuitElement): void {
   line(g, p1, lead1, voltageColor(g, g.voltages[0]));
   line(g, lead2, p2, voltageColor(g, g.voltages[1]));
   // The plates sit across the lead ends, one per main terminal
-  // (TriacElm.java:126-130).
-  const [pa1, pa2] = interp2(lead1, lead2, 0, HS);
+  // (TriacElm.java:126-130). Body geometry, so the plates and arrow triangles
+  // are interpolated without the grid rounding `interp` applies to posts.
+  const [pa1, pa2] = interp2Precise(lead1, lead2, 0, HS);
   line(g, pa1, pa2, elementColor(g, g.voltages[0], g.power), 2.5);
-  const [pb1, pb2] = interp2(lead1, lead2, 1, HS);
+  const [pb1, pb2] = interp2Precise(lead1, lead2, 1, HS);
   line(g, pb1, pb2, elementColor(g, g.voltages[1], g.power), 2.5);
   // The arrow triangles, each filled with the voltage of the end its apex
   // faces (TriacElm.java:132-141, :161-170).
   triangle(
     g,
-    interp(lead1, lead2, 0, -ARROW_HS),
-    interp(lead1, lead2, 1, -HS),
-    interp(lead1, lead2, 1, 0),
+    interpPrecise(lead1, lead2, 0, -ARROW_HS),
+    interpPrecise(lead1, lead2, 1, -HS),
+    interpPrecise(lead1, lead2, 1, 0),
     elementColor(g, g.voltages[1], g.power),
   );
   triangle(
     g,
-    interp(lead1, lead2, 1, ARROW_HS),
-    interp(lead1, lead2, 0, HS),
-    interp(lead1, lead2, 0, 0),
+    interpPrecise(lead1, lead2, 1, ARROW_HS),
+    interpPrecise(lead1, lead2, 0, HS),
+    interpPrecise(lead1, lead2, 0, 0),
     elementColor(g, g.voltages[0], g.power),
   );
   const gateColor = voltageColor(g, g.voltages[2]);

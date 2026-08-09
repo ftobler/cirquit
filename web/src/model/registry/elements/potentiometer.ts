@@ -4,7 +4,8 @@ import {
   endpoints,
   formatValue,
   interp,
-  interp2,
+  interpPrecise,
+  interp2Precise,
   label,
   line,
   polyline,
@@ -100,11 +101,13 @@ export function potWiperGeometry(e: CircuitElement): {
   const soff = Math.trunc(((e.params.position ?? 0.5) - 0.5) * 32);  // PotElm.java:207
   const f = 0.5 + soff / dn;
   const dir = Math.sign(offset) || 1;
-  const corner = interp(p1, end, f, offset);
-  const arrowPoint = interp(p1, end, f, 8 * dir);
+  // The wiper corner and arrowhead are body geometry, so they are interpolated
+  // without the grid rounding `interp` applies to posts.
+  const corner = interpPrecise(p1, end, f, offset);
+  const arrowPoint = interpPrecise(p1, end, f, 8 * dir);
   const clen = Math.abs(offset) - 8;
   const frac = clen !== 0 ? (clen - 8) / clen : 0;
-  return { corner, arrowPoint, arrowBase: interp2(corner, arrowPoint, frac, 8) };
+  return { corner, arrowPoint, arrowBase: interp2Precise(corner, arrowPoint, frac, 8) };
 }
 
 export const POTENTIOMETER_DEF: ElementDef = {

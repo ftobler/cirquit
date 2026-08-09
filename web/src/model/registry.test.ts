@@ -536,7 +536,10 @@ describe('capacitor centering', () => {
     'keeps the plates centred for length %i',
     (len) => {
       const cap = element('capacitor', 0, 0, len, 0);
-      const [lead1, lead2] = calcLeads(cap, 6);
+      // 8 is the plate gap upstream's `f = (dn/2-4)/dn` produces
+      // (CapacitorElm.java:100), so the leads stop 4 short of the midpoint
+      // each side.
+      const [lead1, lead2] = calcLeads(cap, 8);
       // The plate-gap centre is the element midpoint exactly, and both plates
       // are equidistant from it: this pins the "not 100% centered" report
       // against the interp rounding change.

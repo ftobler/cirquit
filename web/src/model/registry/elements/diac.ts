@@ -3,8 +3,8 @@ import {
   currentDotsPath,
   drawLeads,
   endpoints,
-  interp,
-  interp2,
+  interpPrecise,
+  interp2Precise,
   line,
   polygon,
 } from '../../../render/draw';
@@ -23,18 +23,28 @@ function drawDiac(g: DrawContext, e: CircuitElement): void {
   drawLeads(g, e, lead1, lead2);
   const color0 = elementColor(g, g.voltages[0], g.power);
   const color1 = elementColor(g, g.voltages[1], g.power);
-  const [p1a, p1b] = interp2(lead1, lead2, 0, 16);
-  const [p2a, p2b] = interp2(lead1, lead2, 1, 16);
+  // Plates and arrow triangles are body geometry, so they are interpolated
+  // without the grid rounding `interp` applies to posts.
+  const [p1a, p1b] = interp2Precise(lead1, lead2, 0, 16);
+  const [p2a, p2b] = interp2Precise(lead1, lead2, 1, 16);
   line(g, p1a, p1b, color0, 2.5);
   line(g, p2a, p2b, color1, 2.5);
   polygon(
     g,
-    [interp(lead1, lead2, 1, 8), interp(lead1, lead2, 0, 16), interp(lead1, lead2, 0, 0)],
+    [
+      interpPrecise(lead1, lead2, 1, 8),
+      interpPrecise(lead1, lead2, 0, 16),
+      interpPrecise(lead1, lead2, 0, 0),
+    ],
     color0,
   );
   polygon(
     g,
-    [interp(lead1, lead2, 0, -8), interp(lead1, lead2, 1, -16), interp(lead1, lead2, 1, 0)],
+    [
+      interpPrecise(lead1, lead2, 0, -8),
+      interpPrecise(lead1, lead2, 1, -16),
+      interpPrecise(lead1, lead2, 1, 0),
+    ],
     color1,
   );
   const [p1, p2] = endpoints(e);

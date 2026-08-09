@@ -7,6 +7,7 @@ import {
   interp,
   interp2,
   interpPrecise,
+  interp2Precise,
   rectCorners,
 } from './draw';
 import {
@@ -26,6 +27,7 @@ import {
   transistorBarContacts,
   groundBars,
 } from '../model/registry';
+import { capacitorPlateGeometry } from '../model/registry/elements/capacitor';
 import type { CircuitElement, Point } from '../model/types';
 
 const element = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
@@ -154,6 +156,39 @@ describe('interpPrecise', () => {
       expect(along).toBeGreaterThanOrEqual(prev);
       prev = along;
     }
+  });
+});
+
+describe('interp2Precise', () => {
+  // Signed perpendicular distance of `p` from the a->b axis.
+  const perpDist = (a: Point, b: Point, p: Point) =>
+    Math.abs((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)) /
+    Math.hypot(b.y - a.y, b.x - a.x);
+
+  it('returns exact floats, equidistant from and perpendicular to the axis', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 96, y: 32 };  // 3:1 shallow diagonal, where the floors disagree most
+    const [p, q] = interp2Precise(a, b, 0.5, 12);
+    // The pair spans the perpendicular: dot with the axis is zero within float
+    // epsilon, and both endpoints sit exactly 12 off the axis.
+    const dot = (q.x - p.x) * (b.x - a.x) + (q.y - p.y) * (b.y - a.y);
+    expect(dot).toBeCloseTo(0, 9);
+    expect(perpDist(a, b, p)).toBeCloseTo(12, 9);
+    expect(perpDist(a, b, q)).toBeCloseTo(12, 9);
+    // Not integers: this is the exact position a floored helper would lose.
+    expect(Number.isInteger(p.x)).toBe(false);
+  });
+
+  it('characterises the defect it fixes: interp2 leaves a nonzero dot', () => {
+    // The two floored endpoints land on different pixel rows, tilting the bar
+    // up to a pixel over its length. This pins that the rounded helper really
+    // is the bug before the precise one asserts the fix.
+    const a = { x: 0, y: 0 };
+    const b = { x: 96, y: 32 };
+    const [p, q] = interp2(a, b, 0.5, 12);
+    const dot = (q.x - p.x) * (b.x - a.x) + (q.y - p.y) * (b.y - a.y);
+    expect(dot).not.toBe(0);
+    expect(Math.abs(dot)).toBeGreaterThan(50);
   });
 });
 
@@ -505,14 +540,19 @@ describe('SPDT poles', () => {
 describe('zener cathode marks', () => {
   it('spreads the swept wings past both bar ends', () => {
     // The wings start a fifth of the way back along the bar and step 8 across
-    // the perpendicular, so they exit past the bar (ZenerElm.java:58-59).
+    // the perpendicular, so they exit past the bar (ZenerElm.java:58-59). The
+    // marks are body geometry, so the wing tips sit at the exact floats rather
+    // than the grid-floored positions `interp` would give (diagonal-body-
+    // rounding); on this horizontal bar the difference is -11.2 vs -11.
     const { bar, wing0, wing1 } = zenerMarks({ x: 16, y: 0 }, { x: 48, y: 0 });
     expect(bar).toEqual([
       { x: 48, y: -8 },
       { x: 48, y: 8 },
     ]);
-    expect(wing0).toEqual({ x: 40, y: -11 });
-    expect(wing1).toEqual({ x: 56, y: 11 });
+    expect(wing0.x).toBe(40);
+    expect(wing0.y).toBeCloseTo(-11.2, 9);
+    expect(wing1.x).toBe(56);
+    expect(wing1.y).toBeCloseTo(11.2, 9);
     expect(wing0.x).toBeLessThan(bar[0].x);
     expect(wing1.x).toBeGreaterThan(bar[1].x);
   });
@@ -606,5 +646,122 @@ describe('transistor drawing geometry', () => {
     // the bar and the post (TransistorElm.java:241-242).
     const tip = transistorArrowTip(part('transistor', 0, 0, 64, 0, 0, { pnp: -1 }));
     expect(tip).toEqual({ x: 53, y: -5 });
+  });
+});
+
+describe('capacitor plates', () => {
+  // Signed perpendicular distance of `p` from the a->b axis.
+  const perpDist = (a: Point, b: Point, p: Point) =>
+    Math.abs((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)) /
+    Math.hypot(b.y - a.y, b.x - a.x);
+
+  it('sits 12 either side of the axis, each plate 24 long', () => {
+    const cap = part('capacitor', 0, 0, 160, 0);
+    const { plate1, plate2 } = capacitorPlateGeometry(cap);
+    // Horizontal axis: the plate endpoints straddle y = 0 at ±12, upstream's
+    // `interpPoint2(..., f, 12)` half-width (CapacitorElm.java:107-108).
+    expect(plate1.map((p) => p.y).sort((a, b) => a - b)).toEqual([-12, 12]);
+    expect(plate2.map((p) => p.y).sort((a, b) => a - b)).toEqual([-12, 12]);
+    // Assert the geometry, not the pixels: each plate is 24 long, and the two
+    // plates' half-widths together span 24 from the axis.
+    expect(Math.abs(plate1[1].y - plate1[0].y)).toBe(24);
+    expect(plate2[0].y).toBe(-12);
+    expect(plate2[1].y).toBe(12);
+  });
+
+  it('leaves an 8-unit gap between the plates for a long capacitor', () => {
+    const cap = part('capacitor', 0, 0, 160, 0);
+    const { plate1, plate2 } = capacitorPlateGeometry(cap);
+    // Plate centres at fractions f and 1-f of the axis, f = (dn/2-4)/dn
+    // (CapacitorElm.java:100), so the gap is exactly 8 on any length.
+    const centreX = (plate: [Point, Point]) => (plate[0].x + plate[1].x) / 2;
+    expect(centreX(plate2) - centreX(plate1)).toBe(8);
+  });
+
+  it('keeps the plates perpendicular to the axis at several angles', () => {
+    // The shallow 3:1 and 5:3 slopes are where the floored lead axis diverges
+    // most from the true axis; 45 degrees happens to land the floors in step.
+    const slopes: [number, number][] = [
+      [96, 32],
+      [80, 48],
+      [32, 96],
+      [64, 64],
+      [112, 16],
+    ];
+    for (const [dx, dy] of slopes) {
+      const cap = part('capacitor', 0, 0, dx, dy);
+      const { plate1, plate2 } = capacitorPlateGeometry(cap);
+      // Each plate is perpendicular to the true element axis: dot with the
+      // axis is zero within float epsilon.
+      for (const [a, b] of [plate1, plate2]) {
+        const dot = (b.x - a.x) * dx + (b.y - a.y) * dy;
+        expect(dot).toBeCloseTo(0, 9);
+      }
+      // The two plates are parallel to each other: cross product zero.
+      const d1 = { x: plate1[1].x - plate1[0].x, y: plate1[1].y - plate1[0].y };
+      const d2 = { x: plate2[1].x - plate2[0].x, y: plate2[1].y - plate2[0].y };
+      expect(d1.x * d2.y - d1.y * d2.x).toBeCloseTo(0, 9);
+      // And each endpoint really does sit 12 off the true axis.
+      for (const p of [...plate1, ...plate2]) {
+        expect(perpDist({ x: 0, y: 0 }, { x: dx, y: dy }, p)).toBeCloseTo(12, 9);
+      }
+    }
+  });
+
+  it('changes nothing for axis-aligned capacitors', () => {
+    // The rounding is invisible on-axis: the precise true-axis plates equal
+    // the floored-lead computation the fix replaced, which is what keeps the
+    // change safe to apply across a dozen elements.
+    for (const cap of [
+      part('capacitor', 0, 0, 160, 0),
+      part('capacitor', 0, 0, 0, 160),
+    ]) {
+      const { lead1, lead2, plate1, plate2 } = capacitorPlateGeometry(cap);
+      expect(plate1).toEqual(interp2(lead1, lead2, 0, 12));
+      expect(plate2).toEqual(interp2(lead1, lead2, 1, 12));
+    }
+  });
+
+  it('keeps posts and lead ends on integers, axis-aligned and diagonal', () => {
+    for (const cap of [
+      part('capacitor', 0, 0, 160, 0),
+      part('capacitor', 0, 0, 96, 32),
+    ]) {
+      const { lead1, lead2 } = capacitorPlateGeometry(cap);
+      for (const p of [lead1, lead2]) {
+        expect(Number.isInteger(p.x)).toBe(true);
+        expect(Number.isInteger(p.y)).toBe(true);
+      }
+    }
+    const diag = part('capacitor', 0, 0, 96, 32);
+    expect(Number.isInteger(diag.x1) && Number.isInteger(diag.y1)).toBe(true);
+    expect(Number.isInteger(diag.x2) && Number.isInteger(diag.y2)).toBe(true);
+  });
+
+  it('falls back to the posts on a short element without crossing the plates', () => {
+    const cap = part('capacitor', 0, 0, 6, 0);
+    const { lead1, lead2, plate1, plate2 } = capacitorPlateGeometry(cap);
+    // calcLeads' short-element fallback returns the posts (dn < bodyLength);
+    // the plates follow to fractions 0 and 1 of the axis, still ±12 and never
+    // crossed.
+    expect(lead1).toEqual({ x: 0, y: 0 });
+    expect(lead2).toEqual({ x: 6, y: 0 });
+    expect(plate1.map((p) => p.x).sort((a, b) => a - b)).toEqual([0, 0]);
+    expect(plate2.map((p) => p.x).sort((a, b) => a - b)).toEqual([6, 6]);
+    expect(plate1[1].y - plate1[0].y).toBe(24);
+  });
+
+  it('draws identical plate geometry for capacitor and polarizedCapacitor', () => {
+    // Both share drawCapacitorBody (polarizedCapacitor.ts:10), so one test
+    // covers both kinds; a future edit that draws only one its own body
+    // breaks this.
+    const cap = part('capacitor', 0, 0, 160, 0);
+    const pol = part('polarizedCapacitor', 0, 0, 160, 0);
+    const a = capacitorPlateGeometry(cap);
+    const b = capacitorPlateGeometry(pol);
+    expect(b.lead1).toEqual(a.lead1);
+    expect(b.lead2).toEqual(a.lead2);
+    expect(b.plate1).toEqual(a.plate1);
+    expect(b.plate2).toEqual(a.plate2);
   });
 });
