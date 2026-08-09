@@ -12,6 +12,7 @@ import {
   drawLeads,
   formatValue,
   gradientPolyline,
+  interp,
   line,
   makeTheme,
   polyline,
@@ -434,6 +435,64 @@ describe('per-post current dots', () => {
       transistorElement(),
     );
     expect(a2).toEqual([]);
+  });
+
+  it('starts each transistor dot run at its bar contact, body outward', () => {
+    // Phase 0 puts the first dot of each run exactly on its anchor: the base
+    // run at the bar's back edge and the collector and emitter runs at their
+    // bar contacts, all three from the body outward to their posts. The
+    // reordering of the base-bar fill must not move these anchors.
+    const { ctx, arcs } = mkCtx();
+    TRANSISTOR_DEF.draw(
+      {
+        ...context(ctx, 0),
+        voltages: [0, 0, 0],
+        postCurrents: [-1e-4, -1e-3, 1.1e-3],
+        postDotPhases: [0, 0, 0],
+      },
+      transistorElement(),
+    );
+    const t = transistorElement();
+    const p1 = { x: t.x1, y: t.y1 };
+    const p2 = { x: t.x2, y: t.y2 };
+    const dn = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const base = interp(p1, p2, 1 - 16 / dn);
+    const [c1, e1] = transistorBarContacts(t);
+    const onBase = arcs.filter((a) => Math.abs(a.y) < 1);
+    const onCollector = arcs.filter((a) => a.y < -2);
+    const onEmitter = arcs.filter((a) => a.y > 2);
+    expect(onBase[0]).toEqual(base);
+    expect(onCollector[0]).toEqual(c1);
+    expect(onEmitter[0]).toEqual(e1);
+  });
+
+  it('fills the base bar last, over the leads, the arrow and the dots', () => {
+    // Upstream fills its rectPoly last (TransistorElm.java:186-188), so the
+    // bar covers the inner ends of the C/E leads and the innermost base dots;
+    // the port once filled it first, which left the junction reading as two
+    // separate shapes. The four-corner bar must be the last fill of the draw.
+    const { ctx, calls } = mkCtx();
+    TRANSISTOR_DEF.draw(
+      {
+        ...context(ctx, 0),
+        voltages: [0, 0, 0],
+        postCurrents: [-1e-4, -1e-3, 1.1e-3],
+        postDotPhases: [0, 0, 0],
+      },
+      transistorElement(),
+    );
+    expect(calls.slice(-7)).toEqual([
+      'beginPath',
+      'moveTo',
+      'lineTo',
+      'lineTo',
+      'lineTo',
+      'closePath',
+      'fill',
+    ]);
+    const lastFill = calls.lastIndexOf('fill');
+    expect(lastFill).toBeGreaterThan(calls.lastIndexOf('stroke'));
+    expect(lastFill).toBeGreaterThan(calls.lastIndexOf('arc'));
   });
 });
 

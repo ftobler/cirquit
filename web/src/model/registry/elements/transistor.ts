@@ -27,7 +27,6 @@ function drawTransistorBody(g: DrawContext, e: CircuitElement): void {
   const base = interp(p1, p2, backFraction(dn));
   const [backTop, backBottom] = interp2(p1, p2, backFraction(dn), OPEN_HS);
   const [frontTop, frontBottom] = interp2(p1, p2, frontFraction(dn), OPEN_HS);
-  polygon(g, [backTop, frontTop, frontBottom, backBottom], baseColor);
   line(g, p1, base, baseColor);
 
   // The collector and emitter leads leave the bar's near edge just off the
@@ -53,6 +52,17 @@ function drawTransistorBody(g: DrawContext, e: CircuitElement): void {
   currentDotsFrom(g, base, posts[0], g.postCurrents[0], g.postDotPhases[0]);
   currentDotsFrom(g, c1, posts[1], g.postCurrents[1], g.postDotPhases[1]);
   currentDotsFrom(g, e1, posts[2], g.postCurrents[2], g.postDotPhases[2]);
+
+  // The bar is filled last, on top of the leads, the arrow and the dot runs,
+  // so its front face covers the inner ends of the C/E leads and the base
+  // run's innermost dots, exactly as upstream fills its rectPoly last
+  // (TransistorElm.java:186-188). The port once filled it first, which made
+  // the junction read as two separate shapes. Options (b) and (c) from the
+  // plan, attaching the leads at the bar's corners or moving the bar forward
+  // toward the posts, were considered and rejected: both change upstream's
+  // symbol proportions. The contacts stay at ±6 and the bar edges stay at
+  // 1-16/dn and 1-13/dn.
+  polygon(g, [backTop, frontTop, frontBottom, backBottom], baseColor);
 }
 
 /** Fraction along the axis of the base bar's back edge (TransistorElm.java:227). */
@@ -84,13 +94,16 @@ export function transistorBarContacts(e: CircuitElement): [Point, Point] {
   return interp2(p1, p2, frontFraction(elementLength(e)), 6 * transistorSideFactor(e));
 }
 
-/** Arrow tip on the emitter lead: the emitter post for NPN, a point a third
- *  of the bar back for PNP (TransistorElm.java:241-242). */
+/** Arrow tip on the emitter lead: the emitter post for NPN, the emitter bar
+ *  contact for PNP. The PNP arrow is drawn from the emitter post back to this
+ *  point, so it lies exactly on the lead by construction, the mirror of the
+ *  NPN one. This diverges from upstream, which floats the PNP tip beside the
+ *  lead at 1-11/dn (TransistorElm.java:241-242): there the arrow runs at a
+ *  45-degree tilt to a lead that leaves the bar at 37.6 degrees, and its
+ *  point hangs 2.5 units clear of the wire. Terminal geometry is untouched. */
 export function transistorArrowTip(e: CircuitElement): Point | null {
-  const [p1, p2] = endpoints(e);
   if ((e.params.pnp ?? 1) !== -1) return null;  // NPN arrow lands on the post
-  const dn = elementLength(e);
-  return interp(p1, p2, dn > 0 ? 1 - 11 / dn : 1, -5 * transistorSideFactor(e));
+  return transistorBarContacts(e)[1];
 }
 
 function transistorPosts(e: CircuitElement): Point[] {

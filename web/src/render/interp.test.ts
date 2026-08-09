@@ -28,6 +28,9 @@ import {
   groundBars,
 } from '../model/registry';
 import { capacitorPlateGeometry } from '../model/registry/elements/capacitor';
+import { OPEN_HS } from '../model/registry/shared';
+import { TRANSISTOR_FLIP } from '../model/registry/flags';
+import { mirrorElement } from '../model/transform';
 import type { CircuitElement, Point } from '../model/types';
 
 const element = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
@@ -640,12 +643,81 @@ describe('transistor drawing geometry', () => {
     expect(e1).toEqual({ x: 51, y: 6 });
   });
 
-  it('points the NPN arrow at the emitter post and the PNP one inward', () => {
+  it('keeps the NPN arrow pointing at the emitter post', () => {
     expect(transistorArrowTip(part('transistor', 0, 0, 64, 0, 0, { pnp: 1 }))).toBeNull();
-    // PNP: the tip is a third of the bar back from the emitter post, between
-    // the bar and the post (TransistorElm.java:241-242).
-    const tip = transistorArrowTip(part('transistor', 0, 0, 64, 0, 0, { pnp: -1 }));
-    expect(tip).toEqual({ x: 53, y: -5 });
+  });
+
+  it('lands the PNP arrow tip on the emitter bar contact', () => {
+    // The PNP arrow is the mirror of the NPN one: drawn from the emitter post
+    // to the bar contact, so it lies on the emitter lead by construction
+    // instead of floating beside it as upstream's does (TransistorElm.java:
+    // 241-242).
+    const t = part('transistor', 0, 0, 64, 0, 0, { pnp: -1 });
+    expect(transistorArrowTip(t)).toEqual({ x: 51, y: -6 });
+    expect(transistorArrowTip(t)).toEqual(transistorBarContacts(t)[1]);
+  });
+
+  it('keeps the PNP arrow collinear with the emitter lead', () => {
+    // The arrow is drawn from the emitter post to the bar contact, so the
+    // cross product of (tip - post) and (barContact - post) is zero: the
+    // arrow axis lies exactly on the lead at any orientation, polarity and
+    // flip. Upstream's floating tip tilts the arrow 7 degrees off the lead
+    // (TransistorElm.java:241-242).
+    const cross = (post: Point, tip: Point, contact: Point) =>
+      (tip.x - post.x) * (contact.y - post.y) - (tip.y - post.y) * (contact.x - post.x);
+    const variants = [
+      part('transistor', 0, 0, 64, 0, 0, { pnp: -1 }),
+      part('transistor', 0, 0, 0, 64, 0, { pnp: -1 }),
+      part('transistor', 0, 0, 64, 0, TRANSISTOR_FLIP, { pnp: -1 }),
+    ];
+    for (const v of variants) {
+      const tip = transistorArrowTip(v);
+      const contact = transistorBarContacts(v)[1];
+      const post = postsOf(v)[2];
+      expect(tip).not.toBeNull();
+      expect(cross(post, tip as Point, contact)).toBe(0);
+    }
+  });
+
+  it('keeps the PNP arrow tip on the emitter side of the axis', () => {
+    // The tip is the bar contact, and it must stay on the emitter's side of
+    // the axis (the side the emitter post is on) under a mirror and under
+    // TRANSISTOR_FLIP, or the arrow points at the wrong terminal. Same
+    // signed-distance formula as the registry tests' axisSide helper.
+    const side = (e: CircuitElement, p: Point): number =>
+      (e.x2 - e.x1) * (p.y - e.y1) - (e.y2 - e.y1) * (p.x - e.x1);
+    const t = part('transistor', 0, 0, 64, 0, 0, { pnp: -1 });
+    const variants = [t, mirrorElement(t), part('transistor', 0, 0, 64, 0, TRANSISTOR_FLIP, { pnp: -1 })];
+    for (const v of variants) {
+      const tip = transistorArrowTip(v);
+      expect(tip).not.toBeNull();
+      expect(side(v, tip as Point) * side(v, postsOf(v)[2])).toBeGreaterThan(0);
+    }
+  });
+
+  it('starts the C/E leads on the bar front face', () => {
+    // The contact shares the front edge's axial coordinate and its
+    // perpendicular offset is inside the bar's half height, so the leads
+    // begin on the face rather than short of it or on the far side. States
+    // the property rather than the numbers, so a change to the 1-13/dn or ±6
+    // fractions that splits the junction fails here.
+    const cases = [
+      part('transistor', 0, 0, 64, 0, 0, { pnp: 1 }),
+      part('transistor', 0, 0, 0, 64, 0, { pnp: 1 }),
+    ];
+    for (const t of cases) {
+      const p1 = { x: t.x1, y: t.y1 };
+      const p2 = { x: t.x2, y: t.y2 };
+      const dn = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const front = interp2(p1, p2, 1 - 13 / dn, OPEN_HS);
+      const axial = (p: Point): number => (p.x - p1.x) * (p2.x - p1.x) + (p.y - p1.y) * (p2.y - p1.y);
+      const perp = (p: Point): number =>
+        Math.abs((p.x - p1.x) * (p2.y - p1.y) - (p.y - p1.y) * (p2.x - p1.x));
+      for (const contact of transistorBarContacts(t)) {
+        expect(axial(contact)).toBe(axial(front[0]));
+        expect(perp(contact)).toBeLessThanOrEqual(perp(front[0]));
+      }
+    }
   });
 });
 
