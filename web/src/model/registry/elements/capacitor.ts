@@ -123,6 +123,7 @@ export const CAPACITOR_DEF: ElementDef = {
   label: 'Capacitor',
   category: 'Basics',
   dumpCode: 'c',
+  shortcut: 'c',  // CapacitorElm.java
   postCount: 2,
   posts: twoPosts,
   // 1e-3, not 0: upstream's constructor puts a small charge on every fresh

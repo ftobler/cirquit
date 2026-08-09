@@ -68,6 +68,7 @@ export const DIODE_DEF: ElementDef = {
   label: 'Diode',
   category: 'Semiconductors',
   dumpCode: 'd',
+  shortcut: 'd',  // DiodeElm.java
   postCount: 2,
   posts: twoPosts,
   // The default matches upstream's "default" model (DiodeModel.java:83):

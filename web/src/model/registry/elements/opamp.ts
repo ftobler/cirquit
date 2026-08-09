@@ -113,6 +113,7 @@ export const OPAMP_DEF: ElementDef = {
   label: 'Op-amp',
   category: 'Active',
   dumpCode: 'a',
+  shortcut: 'a',  // OpAmpElm.java; the swapped variant 'A' has no port tool
   postCount: 3,
   posts: opAmpPosts,
   canMirror: true,

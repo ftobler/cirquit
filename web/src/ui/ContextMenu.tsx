@@ -159,19 +159,19 @@ export function ContextMenu() {
     },
     {
       label: 'Swap Terminals',
-      shortcut: 'T',
+      shortcut: 'Alt+T',
       disabled: !editable || !canSwapSelection,
       action: () => useStore.getState().swapTerminals(),
     },
     {
       label: 'Rotate',
-      shortcut: 'R',
+      shortcut: 'Alt+R',
       disabled: !editable || !canRotateSelection,
       action: () => useStore.getState().rotateSelection(),
     },
     {
       label: 'Mirror',
-      shortcut: 'M',
+      shortcut: 'Alt+M',
       disabled: !editable || !canMirrorSelection,
       action: () => useStore.getState().mirrorSelection(),
     },

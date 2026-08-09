@@ -70,6 +70,7 @@ export const SWITCH_DEF: ElementDef = {
   label: 'Switch',
   category: 'Basics',
   dumpCode: 's',
+  shortcut: 's',  // SwitchElm.java
   postCount: 2,
   posts: twoPosts,
   interactive: true,

@@ -8,6 +8,7 @@ export const DECORATION_DEF: ElementDef = {
   label: 'Text',
   category: 'Other',
   dumpCode: 'x',
+  shortcut: 't',  // TextElm.java
   postCount: 1,
   posts: onePost,
   defaults: { size: 24 },  // TextElm.java:44

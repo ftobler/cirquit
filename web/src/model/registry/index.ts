@@ -237,6 +237,11 @@ export interface ToolboxEntry {
   category: string;
   /** Params merged over the def's defaults when a part is placed. */
   defaults?: Record<string, number>;
+  /** Upstream placement char for the split N/P flavours, which one `kind`
+   *  cannot carry (`shortcut` on the def would leave the second char out).
+   *  Only the four split semiconductors have it: NPN/PNP and N-/P-channel
+   *  each need their own key, so the char lives where the flavour does. */
+  shortcut?: string;
 }
 
 const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
@@ -245,6 +250,7 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
     kind: 'transistor',
     label: 'NPN',
     category: 'Semiconductors',
+    shortcut: 'n',  // NTransistorElm.java
     defaults: { pnp: 1, beta: 100 },
   },
   {
@@ -252,6 +258,7 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
     kind: 'transistor',
     label: 'PNP',
     category: 'Semiconductors',
+    shortcut: 'p',  // PTransistorElm.java
     defaults: { pnp: -1, beta: 100 },
   },
   {
@@ -259,6 +266,7 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
     kind: 'mosfet',
     label: 'N-MOSFET',
     category: 'Semiconductors',
+    shortcut: 'N',  // NMosfetElm.java
     defaults: { pnp: 1, beta: 0.02, threshold: 1.5 },
   },
   {
@@ -266,6 +274,7 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
     kind: 'mosfet',
     label: 'P-MOSFET',
     category: 'Semiconductors',
+    shortcut: 'P',  // PMosfetElm.java
     defaults: { pnp: -1, beta: 0.02, threshold: 1.5 },
   },
   {
@@ -320,3 +329,21 @@ export function toolboxEntry(tool: string): ToolboxEntry {
 export function toolDef(tool: string): ElementDef | undefined {
   return defFor(toolboxEntry(tool).kind);
 }
+
+/**
+ * The placement-shortcut map: upstream's `getShortcut()` char to the tool or
+ * kind it arms, keyed by the exact char because case is significant ('p' and
+ * 'P' are different elements, UIManager.java:1397-1406's registration loop).
+ * Scanned from the defs and the split toolbox entries, so a shortcut lives
+ * next to the element that declares it and cannot drift from it.
+ */
+export const PLACEMENT_BY_CHAR: ReadonlyMap<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (const d of ELEMENT_DEFS) {
+    if (d.shortcut !== undefined) m.set(d.shortcut, d.kind);
+  }
+  for (const t of TOOLBOX) {
+    if (t.shortcut !== undefined) m.set(t.shortcut, t.id);
+  }
+  return m;
+})();

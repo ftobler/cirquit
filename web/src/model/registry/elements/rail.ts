@@ -122,6 +122,7 @@ export const RAIL_DEF: ElementDef = {
   label: 'Voltage rail',
   category: 'Sources',
   dumpCode: 'R',
+  shortcut: 'V',  // RailElm.java
   postCount: 1,
   posts: onePost,
   draggablePosts: 2,  // the free end is a control point, not a terminal

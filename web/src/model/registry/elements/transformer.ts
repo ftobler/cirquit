@@ -143,6 +143,7 @@ export const TRANSFORMER_DEF: ElementDef = {
   label: 'Transformer',
   category: 'Basics',
   dumpCode: 'T',
+  shortcut: 'T',  // TransformerElm.java
   postCount: 4,
   posts: basicPosts,
   noDiagonal: true,  // TransformerElm.java:40

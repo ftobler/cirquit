@@ -11,6 +11,7 @@ export const VOLTAGE_DEF: ElementDef = {
   label: 'Voltage source',
   category: 'Sources',
   dumpCode: 'v',
+  shortcut: 'v',  // DCVoltageElm.java
   postCount: 2,
   posts: twoPosts,
   vertical: true,       // VoltageElm.java:93

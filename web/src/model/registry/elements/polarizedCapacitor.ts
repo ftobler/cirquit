@@ -31,6 +31,7 @@ export const POLARIZED_CAPACITOR_DEF: ElementDef = {
   label: 'Polarized Capacitor',
   category: 'Basics',
   dumpCode: '209',
+  shortcut: 'C',  // PolarCapacitorElm.java
   postCount: 2,
   posts: twoPosts,
   defaults: {

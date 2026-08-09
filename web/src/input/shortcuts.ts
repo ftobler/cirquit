@@ -4,6 +4,7 @@
  *  signature, consulted before the hardcoded table (the ShortcutsDialog edits
  *  it). */
 
+import { PLACEMENT_BY_CHAR } from '../model/registry';
 import type { StorageLike } from '../state/appPrefs';
 
 export type ShortcutAction =
@@ -28,7 +29,8 @@ export type ShortcutAction =
   | { type: 'swap' }
   | { type: 'toggleRunning' }
   | { type: 'print' }
-  | { type: 'findComponent' };
+  | { type: 'findComponent' }
+  | { type: 'place'; kind: string };
 
 export interface KeyEventLike {
   key: string;
@@ -41,6 +43,10 @@ export interface KeyEventLike {
 export interface ShortcutEntry {
   /** Requires ctrl or meta held, and no alt. False requires none of the three. */
   mod: boolean;
+  /** Requires alt held. False/absent requires none. The rotate/mirror/swap
+   *  rows live here: their plain letters are upstream placement chars, so the
+   *  geometry commands moved to Alt rather than fight over them. */
+  alt?: boolean;
   /** Required shift state. Undefined ignores shift, which the `+` zoom key
    *  needs: on most layouts it only exists behind Shift+=. */
   shift?: boolean;
@@ -101,12 +107,16 @@ export const SHORTCUTS: ShortcutEntry[] = [
   // values some engines still emit).
   { mod: false, key: 'Numpad0', action: { type: 'zoomReset' } },
 
-  // Geometry commands, the landed editing-gestures keys. Shift is excluded so
-  // a shifted key cannot trigger them: in Stage 4 every letter of both cases
-  // is an element placement char, and those rows would take precedence here.
-  { mod: false, shift: false, key: 'r', action: { type: 'rotate' } },
-  { mod: false, shift: false, key: 'm', action: { type: 'mirror' } },
-  { mod: false, shift: false, key: 't', action: { type: 'swap' } },
+  // Geometry commands, the landed editing-gestures keys. The plain r and t
+  // were surrendered to upstream placement parity: upstream has no plain-key
+  // rotate, mirror or swap, and its r arms a resistor and t arms a text label,
+  // so the commands moved to Alt, which the matcher guards against the browser
+  // the way Ctrl is (UIManager's modifier chords). m is free upstream too, and
+  // joining it keeps the three letters memorable. Alt+Shift+r stays unbound:
+  // the shift guard excludes it like the other letter chords.
+  { mod: false, alt: true, shift: false, key: 'r', action: { type: 'rotate' } },
+  { mod: false, alt: true, shift: false, key: 'm', action: { type: 'mirror' } },
+  { mod: false, alt: true, shift: false, key: 't', action: { type: 'swap' } },
 
   // Find Component: '/' opens the search dialog (UIManager.java:1103-1110).
   // A shifted '/' is '?' on most layouts, a different key, so no shift guard
@@ -191,7 +201,7 @@ export function normalizeKey(key: string): string {
 
 /** A printable ASCII char, upstream's cc >= 32 && cc < 127 range. Only these
  *  (space is cc 32 and included) can be switch keyShortcut assignments or
- *  Stage 4 placement chars; named keys (Enter, Escape, arrows) never are. */
+ *  element placement chars; named keys (Enter, Escape, arrows) never are. */
 export function isPrintableKey(key: string): boolean {
   return key.length === 1 && key.charCodeAt(0) >= 32 && key.charCodeAt(0) < 127;
 }
@@ -199,17 +209,19 @@ export function isPrintableKey(key: string): boolean {
 /** The canonical chord signature for an event, the string the overlay is keyed
  *  by. Ctrl and Meta are one dimension (the table's mod flag, so a user
  *  assignment to Ctrl+z wins over the hardcoded undo just as upstream's
- *  custom shortcut wins over its Ctrl/Meta list). Shift is its own dimension
- *  only for a letter: a user-assigned 'z' must not swallow Ctrl+Shift+Z, while
- *  a shifted punctuation key already carries its shift in the key (Shift+= is
- *  '+'). */
+ *  custom shortcut wins over its Ctrl/Meta list). Alt is its own dimension,
+ *  the geometry commands' home since their plain letters are placement chars.
+ *  Shift is its own dimension only for a letter: a user-assigned 'z' must not
+ *  swallow Ctrl+Shift+Z, while a shifted punctuation key already carries its
+ *  shift in the key (Shift+= is '+'). */
 export function chordOf(
-  ev: Pick<KeyEventLike, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey'>,
+  ev: Pick<KeyEventLike, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
 ): string {
   const key = normalizeKey(ev.key);
   const mod = ev.ctrlKey || ev.metaKey;
+  const alt = ev.altKey ? 'Alt+' : '';
   const shift = ev.shiftKey && /^[a-z]$/.test(key) ? 'Shift+' : '';
-  return `${mod ? 'Ctrl+' : ''}${shift}${key === ' ' ? 'Space' : key}`;
+  return `${mod ? 'Ctrl+' : ''}${alt}${shift}${key === ' ' ? 'Space' : key}`;
 }
 
 /** The action a chord is assigned to in the overlay, or null. */
@@ -229,22 +241,35 @@ export function hasChord(overlay: ShortcutOverlay, chord: string): boolean {
 export function matchShortcut(
   ev: KeyEventLike,
   overlay: ShortcutOverlay = {},
+  placement: ReadonlyMap<string, string> = PLACEMENT_BY_CHAR,
 ): ShortcutAction | null {
-  // Alt is excluded from every binding so Alt+key browser and OS gestures pass
-  // through. Upstream ignores alt; the port should not swallow it.
-  if (ev.altKey) return null;
-  // A user-assigned chord beats the hardcoded table (UIManager.java:1174). The
-  // overlay is exact per chord, so assigning 'x' to copy never changes Ctrl+X.
+  // A user-assigned chord beats the hardcoded table and the placement map
+  // (UIManager.java:1174). The overlay is exact per chord, so assigning 'x' to
+  // copy never changes Ctrl+X. An Alt chord is only a chord if the overlay
+  // says so: chordOf carries alt, so an assignment to Alt+r round-trips here
+  // even though the table's plain-letter rows no longer collide with it.
   const assigned = actionForChord(overlay, chordOf(ev));
   if (assigned) return { type: assigned } as ShortcutAction;
   // Letters match on the lowercase form (Shift+r is still r), punctuation and
   // named keys on the exact char.
   const key = normalizeKey(ev.key);
+  const modHeld = ev.ctrlKey || ev.metaKey;
   for (const entry of SHORTCUTS) {
-    if (entry.mod ? !(ev.ctrlKey || ev.metaKey) : ev.ctrlKey || ev.metaKey) continue;
+    if (entry.mod !== modHeld) continue;
+    if ((entry.alt ?? false) !== ev.altKey) continue;
     if (entry.shift !== undefined && entry.shift !== ev.shiftKey) continue;
     if (entry.key !== key) continue;
     return entry.action;
+  }
+  // Element placement: a plain printable key that no command or user
+  // assignment binds arms the element whose registry shortcut it is, the same
+  // MODE_ADD_ELM the toolbox buttons arm (UIManager.java:1273-1284). Modifiers
+  // suppress this path, so Ctrl+W (browser close-tab) and Alt+key browser
+  // gestures never arm a tool, and the char is looked up raw, not lowercased:
+  // 'p' and 'P' are different elements, exactly as the map keys them.
+  if (!modHeld && !ev.altKey && isPrintableKey(ev.key)) {
+    const kind = placement.get(ev.key);
+    if (kind !== undefined) return { type: 'place', kind };
   }
   return null;
 }
@@ -261,8 +286,9 @@ export function defaultBindingFor(type: AssignableAction): string {
 
 function chordFromEntry(entry: ShortcutEntry): string {
   const mod = entry.mod ? 'Ctrl+' : '';
+  const alt = entry.alt ? 'Alt+' : '';
   const shift = entry.shift === true ? 'Shift+' : '';
-  return `${mod}${shift}${entry.key === ' ' ? 'Space' : entry.key}`;
+  return `${mod}${alt}${shift}${entry.key === ' ' ? 'Space' : entry.key}`;
 }
 
 /** The dialog's rows: every assignable action with its current binding, the
@@ -335,12 +361,14 @@ const NON_ASSIGNABLE_KEYS = new Set([
 ]);
 
 /** True when a stored chord is one chordOf could have produced: an optional
- *  Ctrl+/Shift+ prefix and a single key (a printable char, Space, or a named
- *  key like ArrowUp). A hand-edited or stale blob that fails this never binds,
- *  and the host-reserved named keys (Enter, Tab, Escape, arrows, the clear
- *  keys) are rejected so they cannot be persisted outside the dialog either. */
+ *  Ctrl+/Alt+/Shift+ prefix and a single key (a printable char, Space, or a
+ *  named key like ArrowUp). A hand-edited or stale blob that fails this never
+ *  binds, and the host-reserved named keys (Enter, Tab, Escape, arrows, the
+ *  clear keys) are rejected so they cannot be persisted outside the dialog
+ *  either. */
 function isValidChord(chord: string): boolean {
-  const rest = chord.startsWith('Ctrl+') ? chord.slice(5) : chord;
+  let rest = chord.startsWith('Ctrl+') ? chord.slice(5) : chord;
+  rest = rest.startsWith('Alt+') ? rest.slice(4) : rest;
   const key = rest.startsWith('Shift+') ? rest.slice(6) : rest;
   if (key === '') return false;
   if (key.length === 1) {

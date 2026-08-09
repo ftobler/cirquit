@@ -37,6 +37,7 @@ export const LOGIC_OUTPUT_DEF: ElementDef = {
   label: 'Logic output',
   category: 'Logic',
   dumpCode: 'M',
+  shortcut: 'o',  // LogicOutputElm.java
   postCount: 1,
   posts: onePost,
   draggablePosts: 2,  // the free end is a control point, not a terminal

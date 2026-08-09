@@ -207,6 +207,7 @@ export const RELAY_DEF: ElementDef = {
   label: 'Relay',
   category: 'Basics',
   dumpCode: '178',
+  shortcut: 'R',  // RelayElm.java
   postCount: 5,
   posts: relayPosts,
   noDiagonal: true,  // RelayElm.java:93

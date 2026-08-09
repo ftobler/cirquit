@@ -32,6 +32,7 @@ export const INDUCTOR_DEF: ElementDef = {
   label: 'Inductor',
   category: 'Basics',
   dumpCode: 'l',
+  shortcut: 'L',  // InductorElm.java
   postCount: 2,
   posts: twoPosts,
   // The second token is the running state the file was saved with

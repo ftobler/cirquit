@@ -7,6 +7,7 @@ export const ZENER_DEF: ElementDef = {
   label: 'Zener diode',
   category: 'Semiconductors',
   dumpCode: 'z',
+  shortcut: 'z',  // ZenerElm.java
   postCount: 2,
   posts: twoPosts,
   // The defaults are upstream's "default-zener" model (DiodeModel.java:84),

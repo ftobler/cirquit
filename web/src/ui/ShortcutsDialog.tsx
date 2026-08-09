@@ -33,8 +33,9 @@ export function ShortcutsDialog() {
   // as upstream leaves them inert (keyCodeToPlaceholder returns -1 for Enter
   // and the arrows): Escape closes the dialog, Tab moves focus, Enter does
   // nothing, and the arrow keys keep their navigation roles. Alt chords are
-  // not offered either: the matcher returns null on alt by design, so an
-  // assigned one could never fire and the browser gesture would be dead.
+  // assignable now that the matcher matches them (the geometry commands' home
+  // since their plain letters are placement chars), so a user can move them
+  // or hand another command an Alt key.
   const capture = (i: number, ev: React.KeyboardEvent<HTMLInputElement>) => {
     if (
       ev.key === 'Escape' ||
@@ -52,7 +53,6 @@ export function ShortcutsDialog() {
       setRow(i, '');
       return;
     }
-    if (ev.altKey) return;
     ev.preventDefault();
     setRow(i, chordOf(ev));
   };

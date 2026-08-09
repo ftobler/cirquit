@@ -51,6 +51,7 @@ export const LOGIC_INPUT_DEF: ElementDef = {
   label: 'Logic input',
   category: 'Logic',
   dumpCode: 'L',
+  shortcut: 'i',  // LogicInputElm.java
   postCount: 1,
   posts: onePost,
   draggablePosts: 2,  // the free end is a control point, not a terminal

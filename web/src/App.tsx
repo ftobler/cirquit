@@ -48,6 +48,7 @@ const EDIT_ACTIONS = new Set([
   'rotate',
   'mirror',
   'swap',
+  'place',
 ]);
 
 export default function App() {
@@ -149,6 +150,13 @@ export default function App() {
           break;
         case 'selectMode':
           s.setTool(null);
+          break;
+        case 'place':
+          // A placement char arms the element, the same setTool the toolbox
+          // button and Find Component use: upstream's MODE_ADD_ELM
+          // (UIManager.java:1273-1284). The split semiconductors carry their
+          // toolbox id here (pnp, pmos), so the N/P flavour arms exactly.
+          s.setTool(action.kind);
           break;
         case 'nudge':
           // The matcher reports a unit-less step count; the grid size resolves

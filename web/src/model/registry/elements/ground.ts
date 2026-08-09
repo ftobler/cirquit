@@ -24,6 +24,7 @@ export const GROUND_DEF: ElementDef = {
   label: 'Ground',
   category: 'Basics',
   dumpCode: 'g',
+  shortcut: 'g',  // GroundElm.java
   postCount: 1,
   posts: onePost,
   draggablePosts: 2,  // the free end is a control point, not a terminal

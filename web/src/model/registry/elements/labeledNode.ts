@@ -7,6 +7,7 @@ export const LABELED_NODE_DEF: ElementDef = {
   label: 'Labeled node',
   category: 'Other',
   dumpCode: '207',
+  shortcut: 'b',  // LabeledNodeElm.java
   postCount: 1,
   posts: onePost,
   fields: [{ name: 'text', label: 'Text', type: 'text', target: 'text' }],

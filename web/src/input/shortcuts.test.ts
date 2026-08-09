@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ELEMENT_DEFS, PLACEMENT_BY_CHAR, TOOLBOX } from '../model/registry';
 import type { StorageLike } from '../state/appPrefs';
 import {
   chordOf,
@@ -53,19 +54,19 @@ describe('modifier combos', () => {
   it('Ctrl+P prints the schematic, not the page', () => {
     expect(matchShortcut(ev({ key: 'p', ctrlKey: true }))).toEqual({ type: 'print' });
     expect(matchShortcut(ev({ key: 'p', metaKey: true }))).toEqual({ type: 'print' });
-    // Plain p stays unbound (P is PMOS placement upstream), and a shifted
-    // Ctrl chord is unbound like the rest of the modifier group.
-    expect(matchShortcut(ev({ key: 'p' }))).toBeNull();
+    // A shifted Ctrl chord is unbound like the rest of the modifier group;
+    // plain p is the PNP placement char, asserted with the placement cases.
     expect(matchShortcut(ev({ key: 'p', ctrlKey: true, shiftKey: true }))).toBeNull();
   });
 });
 
 describe('modifier exclusivity', () => {
-  it('plain z, y, c and Shift+Z without ctrl all return null', () => {
-    expect(matchShortcut(ev({ key: 'z' }))).toBeNull();
+  it('plain y and Shift+Z without ctrl return null; z and c are placement chars', () => {
     expect(matchShortcut(ev({ key: 'y' }))).toBeNull();
-    expect(matchShortcut(ev({ key: 'c' }))).toBeNull();
-    expect(matchShortcut(ev({ key: 'z', shiftKey: true }))).toBeNull();
+    // Shift+Z is a capital Z, which no element claims.
+    expect(matchShortcut(ev({ key: 'Z', shiftKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: 'z' }))).toEqual({ type: 'place', kind: 'zener' });
+    expect(matchShortcut(ev({ key: 'c' }))).toEqual({ type: 'place', kind: 'capacitor' });
   });
 
   it('Ctrl+Alt+Z returns null, so Alt chords pass through', () => {
@@ -103,12 +104,11 @@ describe('space, P and Escape', () => {
     expect(matchShortcut(ev({ key: ' ' }))).toEqual({ type: 'selectMode' });
   });
 
-  it('p and P are unbound: P is PMOS placement upstream, run/pause is button-only', () => {
-    // The corrected decision recorded in the plan: the earlier draft's
-    // P-as-run/pause is wrong because P arms PMOS upstream (PMosfetElm.java:25)
-    // and p arms PNP. No letter is free, so run/pause has no key at all.
-    expect(matchShortcut(ev({ key: 'p' }))).toBeNull();
-    expect(matchShortcut(ev({ key: 'P', shiftKey: true }))).toBeNull();
+  it('p and P arm the PNP and P-MOSFET tools, so run/pause stays button-only', () => {
+    // P arms PMOS upstream (PMosfetElm.java:25) and p arms PNP; neither is
+    // free for run/pause, which has no key at all.
+    expect(matchShortcut(ev({ key: 'p' }))).toEqual({ type: 'place', kind: 'pnp' });
+    expect(matchShortcut(ev({ key: 'P', shiftKey: true }))).toEqual({ type: 'place', kind: 'pmos' });
   });
 });
 
@@ -142,12 +142,14 @@ describe('zoom keys', () => {
 });
 
 describe('geometry keys', () => {
-  it('bare r, m, t rotate, mirror and swap; shift excludes them', () => {
-    expect(matchShortcut(ev({ key: 'r' }))).toEqual({ type: 'rotate' });
-    expect(matchShortcut(ev({ key: 'm' }))).toEqual({ type: 'mirror' });
-    expect(matchShortcut(ev({ key: 't' }))).toEqual({ type: 'swap' });
-    expect(matchShortcut(ev({ key: 'r', shiftKey: true }))).toBeNull();
-    expect(matchShortcut(ev({ key: 'M', shiftKey: true }))).toBeNull();
+  it('plain r and t are upstream placement chars, not rotate and swap', () => {
+    // The port's own rotate/mirror/swap used to sit on these letters; upstream
+    // owns them (r is a resistor, t is a text label), so the commands moved to
+    // Alt and the plain keys arm elements again.
+    expect(matchShortcut(ev({ key: 'r' }))).toEqual({ type: 'place', kind: 'resistor' });
+    expect(matchShortcut(ev({ key: 't' }))).toEqual({ type: 'place', kind: 'decoration' });
+    // m has no upstream element and its command moved to Alt, so it is free.
+    expect(matchShortcut(ev({ key: 'm' }))).toBeNull();
   });
 });
 
@@ -158,6 +160,146 @@ describe('find component key', () => {
     expect(matchShortcut(ev({ key: '/', metaKey: true }))).toBeNull();
     // A shifted slash is '?' on most layouts and must not open the search.
     expect(matchShortcut(ev({ key: '?', shiftKey: true }))).toBeNull();
+  });
+});
+
+describe('element placement chars', () => {
+  it('the reported w and g arm the wire and ground tools', () => {
+    expect(matchShortcut(ev({ key: 'w' }))).toEqual({ type: 'place', kind: 'wire' });
+    expect(matchShortcut(ev({ key: 'g' }))).toEqual({ type: 'place', kind: 'ground' });
+  });
+
+  it('every registry shortcut resolves to its element, case-respectingly', () => {
+    const expectKind = (key: string, kind: string, shiftKey = false) => {
+      expect(matchShortcut(ev({ key, shiftKey }))).toEqual({ type: 'place', kind });
+    };
+    expectKind('w', 'wire');
+    expectKind('g', 'ground');
+    expectKind('r', 'resistor');
+    expectKind('c', 'capacitor');
+    expectKind('L', 'inductor', true);
+    expectKind('d', 'diode');
+    expectKind('z', 'zener');
+    expectKind('l', 'led');
+    expectKind('v', 'voltage');
+    expectKind('V', 'rail', true);
+    expectKind('s', 'switch');
+    expectKind('S', 'switch2', true);
+    expectKind('R', 'relay', true);
+    expectKind('T', 'transformer', true);
+    expectKind('n', 'npn');
+    expectKind('p', 'pnp');
+    expectKind('N', 'nmos', true);
+    expectKind('P', 'pmos', true);
+    expectKind('a', 'opamp');
+    expectKind('i', 'logicInput');
+    expectKind('o', 'logicOutput');
+    expectKind('b', 'labeledNode');
+    expectKind('t', 'decoration');
+    expectKind('1', 'inverter');
+    expectKind('2', 'andGate');
+    expectKind('3', 'orGate');
+    expectKind('4', 'xorGate');
+    expectKind('@', 'nandGate', true);
+    expectKind('#', 'norGate', true);
+    expectKind('$', 'xnorGate', true);
+  });
+
+  it('the seven case pairs are distinct, each asserted separately', () => {
+    expect(matchShortcut(ev({ key: 'p' }))).toEqual({ type: 'place', kind: 'pnp' });
+    expect(matchShortcut(ev({ key: 'P', shiftKey: true }))).toEqual({ type: 'place', kind: 'pmos' });
+    expect(matchShortcut(ev({ key: 's' }))).toEqual({ type: 'place', kind: 'switch' });
+    expect(matchShortcut(ev({ key: 'S', shiftKey: true }))).toEqual({ type: 'place', kind: 'switch2' });
+    expect(matchShortcut(ev({ key: 'c' }))).toEqual({ type: 'place', kind: 'capacitor' });
+    expect(matchShortcut(ev({ key: 'C', shiftKey: true }))).toEqual({
+      type: 'place',
+      kind: 'polarizedCapacitor',
+    });
+    expect(matchShortcut(ev({ key: 'v' }))).toEqual({ type: 'place', kind: 'voltage' });
+    expect(matchShortcut(ev({ key: 'V', shiftKey: true }))).toEqual({ type: 'place', kind: 'rail' });
+    expect(matchShortcut(ev({ key: 'a' }))).toEqual({ type: 'place', kind: 'opamp' });
+    // A (swapped op-amp) and W (routed wire) have no port tool, so they stay
+    // unbound rather than aliasing their lowercase element.
+    expect(matchShortcut(ev({ key: 'A', shiftKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: 'W', shiftKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: 'w' }))).toEqual({ type: 'place', kind: 'wire' });
+    expect(matchShortcut(ev({ key: 'l' }))).toEqual({ type: 'place', kind: 'led' });
+    expect(matchShortcut(ev({ key: 'L', shiftKey: true }))).toEqual({ type: 'place', kind: 'inductor' });
+  });
+
+  it('chars with no element resolve to null', () => {
+    for (const key of ['q', 'e', 'x', 'y']) {
+      expect(matchShortcut(ev({ key }))).toBeNull();
+    }
+  });
+
+  it('modifiers suppress placement: Ctrl+w, Meta+w and Alt+w never arm a tool', () => {
+    expect(matchShortcut(ev({ key: 'w', ctrlKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: 'w', metaKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: 'w', altKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: 'w', ctrlKey: true, shiftKey: true }))).toBeNull();
+  });
+
+  it('a user-assigned shortcut beats placement for the same char', () => {
+    const overlay: ShortcutOverlay = { undo: 'w' };
+    expect(matchShortcut(ev({ key: 'w' }), overlay)).toEqual({ type: 'undo' });
+    expect(matchShortcut(ev({ key: 'w' }))).toEqual({ type: 'place', kind: 'wire' });
+  });
+
+  it('the derived element map and the command table never bind the same plain key', () => {
+    // The collision test that would have caught the r/m/t overlap: a plain
+    // command key and a placement char on the same letter would make one of
+    // them dead, so any future overlap fails loudly.
+    const commandKeys = new Set<string>();
+    for (const entry of SHORTCUTS) {
+      if (entry.mod || entry.alt) continue;
+      commandKeys.add(entry.key);
+    }
+    for (const ch of PLACEMENT_BY_CHAR.keys()) {
+      expect(commandKeys.has(ch)).toBe(false);
+    }
+  });
+
+  it('no two defs or toolbox entries declare the same shortcut', () => {
+    // The derived map is keyed by char, so a def-vs-toolbox overlap would
+    // silently overwrite (last wins) without failing; scanning the union of
+    // the defs and the split toolbox entries catches that too.
+    const seen = new Set<string>();
+    for (const d of ELEMENT_DEFS) {
+      if (d.shortcut === undefined) continue;
+      expect(seen.has(d.shortcut)).toBe(false);
+      seen.add(d.shortcut);
+    }
+    for (const t of TOOLBOX) {
+      if (t.shortcut === undefined) continue;
+      expect(seen.has(t.shortcut)).toBe(false);
+      seen.add(t.shortcut);
+    }
+  });
+});
+
+describe('alt geometry chords', () => {
+  it('Alt+r, Alt+m and Alt+t rotate, mirror and swap', () => {
+    expect(matchShortcut(ev({ key: 'r', altKey: true }))).toEqual({ type: 'rotate' });
+    expect(matchShortcut(ev({ key: 'm', altKey: true }))).toEqual({ type: 'mirror' });
+    expect(matchShortcut(ev({ key: 't', altKey: true }))).toEqual({ type: 'swap' });
+  });
+
+  it('Alt+Shift+r is excluded and other Alt+letter chords pass through', () => {
+    expect(matchShortcut(ev({ key: 'r', altKey: true, shiftKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: 'z', altKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: 'g', altKey: true }))).toBeNull();
+  });
+
+  it('ctrl+alt never matches the alt rows, so the browser keeps those gestures', () => {
+    expect(matchShortcut(ev({ key: 'r', altKey: true, ctrlKey: true }))).toBeNull();
+  });
+
+  it('a user-assigned Alt chord fires like any other overlay entry', () => {
+    const overlay: ShortcutOverlay = { copy: 'Alt+r' };
+    expect(matchShortcut(ev({ key: 'r', altKey: true }), overlay)).toEqual({ type: 'copy' });
+    // Without the assignment the table default wins.
+    expect(matchShortcut(ev({ key: 'r', altKey: true }))).toEqual({ type: 'rotate' });
   });
 });
 
@@ -184,12 +326,13 @@ describe('no conflicts in the SHORTCUTS table', () => {
     'swap',
     'print',
     'findComponent',
+    'place',
   ]);
 
-  it('every (modifier, key) pair binds to exactly one action', () => {
+  it('every (modifier, alt, key) triple binds to exactly one action', () => {
     const seen = new Set<string>();
     for (const entry of SHORTCUTS) {
-      const signature = `${entry.mod}:${entry.shift ?? 'any'}:${entry.key}`;
+      const signature = `${entry.mod}:${entry.alt ?? false}:${entry.shift ?? 'any'}:${entry.key}`;
       // A duplicate chord would make the earlier row dead; fail loudly.
       expect(seen.has(signature)).toBe(false);
       seen.add(signature);
@@ -242,7 +385,7 @@ describe('the user-assigned overlay', () => {
     // and an unrelated key stays unbound.
     expect(matchShortcut(ev({ key: 'x' }), overlay)).toEqual({ type: 'copy' });
     expect(matchShortcut(ev({ key: 'x', ctrlKey: true }), overlay)).toEqual({ type: 'cut' });
-    expect(matchShortcut(ev({ key: 'z' }), overlay)).toBeNull();
+    expect(matchShortcut(ev({ key: 'q' }), overlay)).toBeNull();
   });
 
   it('clearing a binding restores the hardcoded one', () => {
@@ -267,7 +410,8 @@ describe('the user-assigned overlay', () => {
   it('a user-assigned toggleRunning is the only way run/pause binds a key', () => {
     const overlay: ShortcutOverlay = { toggleRunning: 'p' };
     expect(matchShortcut(ev({ key: 'p' }), overlay)).toEqual({ type: 'toggleRunning' });
-    expect(matchShortcut(ev({ key: 'p' }))).toBeNull();
+    // Without the assignment, p is the PNP placement char.
+    expect(matchShortcut(ev({ key: 'p' }))).toEqual({ type: 'place', kind: 'pnp' });
   });
 
   it('a user assignment to / beats the hardcoded findComponent row', () => {
@@ -289,6 +433,12 @@ describe('chord signatures', () => {
     expect(chordOf(ev({ key: 'z', metaKey: true }))).toBe('Ctrl+z');
   });
 
+  it('chordOf folds alt into its own prefix, before shift', () => {
+    expect(chordOf(ev({ key: 'r', altKey: true }))).toBe('Alt+r');
+    expect(chordOf(ev({ key: 'r', altKey: true, shiftKey: true }))).toBe('Alt+Shift+r');
+    expect(chordOf(ev({ key: 'z', ctrlKey: true, altKey: true }))).toBe('Ctrl+Alt+z');
+  });
+
   it('chordOf folds a shifted punctuation key into the key, not a Shift prefix', () => {
     expect(chordOf(ev({ key: '+', shiftKey: true }))).toBe('+');
     expect(chordOf(ev({ key: '=' }))).toBe('=');
@@ -299,6 +449,10 @@ describe('chord signatures', () => {
     const rows = rowsFromOverlay({});
     expect(rows.find((r) => r.action === 'undo')?.chord).toBe('Ctrl+z');
     expect(rows.find((r) => r.action === 'selectMode')?.chord).toBe('Space');
+    // The geometry commands' plain letters moved to Alt for placement parity.
+    expect(rows.find((r) => r.action === 'rotate')?.chord).toBe('Alt+r');
+    expect(rows.find((r) => r.action === 'mirror')?.chord).toBe('Alt+m');
+    expect(rows.find((r) => r.action === 'swap')?.chord).toBe('Alt+t');
     expect(rows.find((r) => r.action === 'toggleRunning')?.chord).toBe('');
   });
 
@@ -348,6 +502,12 @@ describe('shortcut overlay persistence', () => {
     const storage = fakeStorage();
     saveShortcutOverlay({ copy: 'Ctrl+z', toggleRunning: 'p' }, storage);
     expect(loadShortcutOverlay(storage)).toEqual({ copy: 'Ctrl+z', toggleRunning: 'p' });
+  });
+
+  it('an Alt chord round-trips through storage like any other', () => {
+    const storage = fakeStorage();
+    saveShortcutOverlay({ rotate: 'Alt+r' }, storage);
+    expect(loadShortcutOverlay(storage)).toEqual({ rotate: 'Alt+r' });
   });
 
   it('a corrupt blob is a fallback, not a crash', () => {

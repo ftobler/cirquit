@@ -38,6 +38,7 @@ export const RESISTOR_DEF: ElementDef = {
   label: 'Resistor',
   category: 'Basics',
   dumpCode: 'r',
+  shortcut: 'r',  // ResistorElm.java
   postCount: 2,
   posts: twoPosts,
   defaults: { resistance: 1000 },

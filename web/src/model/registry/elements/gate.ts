@@ -288,12 +288,14 @@ function gateDef(
   dumpCode: string,
   label: string,
   defaults: Record<string, number>,
+  shortcut: string,
 ): ElementDef {
   return {
     kind,
     label,
     category: 'Logic',
     dumpCode,
+    shortcut,  // the gate's upstream placement char (GateElm.java subclasses)
     postCount: 3,
     posts: gatePosts,
     noDiagonal: true,   // GateElm.java:40
@@ -316,11 +318,11 @@ function gateDef(
 
 const GATE_DEFAULTS = { inputCount: 2, lastOutputVoltage: 0, highVoltage: 5 };
 
-export const AND_GATE_DEF = gateDef('andGate', '150', 'AND gate', GATE_DEFAULTS);
-export const NAND_GATE_DEF = gateDef('nandGate', '151', 'NAND gate', GATE_DEFAULTS);
-export const OR_GATE_DEF = gateDef('orGate', '152', 'OR gate', GATE_DEFAULTS);
-export const NOR_GATE_DEF = gateDef('norGate', '153', 'NOR gate', GATE_DEFAULTS);
-export const XOR_GATE_DEF = gateDef('xorGate', '154', 'XOR gate', GATE_DEFAULTS);
-export const XNOR_GATE_DEF = gateDef('xnorGate', '431', 'XNOR gate', GATE_DEFAULTS);
+export const AND_GATE_DEF = gateDef('andGate', '150', 'AND gate', GATE_DEFAULTS, '2');  // AndGateElm.java
+export const NAND_GATE_DEF = gateDef('nandGate', '151', 'NAND gate', GATE_DEFAULTS, '@');  // NandGateElm.java
+export const OR_GATE_DEF = gateDef('orGate', '152', 'OR gate', GATE_DEFAULTS, '3');  // OrGateElm.java
+export const NOR_GATE_DEF = gateDef('norGate', '153', 'NOR gate', GATE_DEFAULTS, '#');  // NorGateElm.java
+export const XOR_GATE_DEF = gateDef('xorGate', '154', 'XOR gate', GATE_DEFAULTS, '4');  // XorGateElm.java
+export const XNOR_GATE_DEF = gateDef('xnorGate', '431', 'XNOR gate', GATE_DEFAULTS, '$');  // XnorGateElm.java
 
 export { gateInputCount, gateInverting, gatePosts };

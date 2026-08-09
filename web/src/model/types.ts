@@ -96,6 +96,12 @@ export interface ElementDef {
    * codes both occur; it is stored as a string either way.
    */
   dumpCode: string;
+  /** Upstream's placement char (`getShortcut()`): the plain key that arms
+   *  this element, e.g. 'w' for wire, 'g' for ground. Case is significant, so
+   *  'p' and 'P' would be different elements. The input matcher derives its
+   *  placement map from this field, so adding an element cannot forget its
+   *  key. Absent means the element is not reachable from the keyboard. */
+  shortcut?: string;
   postCount: number;
   /** How many stored endpoints (`x1,y1`, `x2,y2`) the user can drag
    *  independently. Differs from `postCount` only for parts whose free end is

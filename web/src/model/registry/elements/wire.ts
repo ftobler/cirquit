@@ -13,6 +13,7 @@ export const WIRE_DEF: ElementDef = {
   label: 'Wire',
   category: 'Basics',
   dumpCode: 'w',
+  shortcut: 'w',  // WireElm.java
   postCount: 2,
   posts: twoPosts,
   defaultLength: 4,  // 64 px, upstream's default getDragLength()

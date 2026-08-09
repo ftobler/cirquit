@@ -66,6 +66,7 @@ export const INVERTER_DEF: ElementDef = {
   label: 'Inverter',
   category: 'Logic',
   dumpCode: 'I',
+  shortcut: '1',  // InverterElm.java
   postCount: 2,
   posts: twoPosts,
   noDiagonal: true,   // InverterElm.java:30

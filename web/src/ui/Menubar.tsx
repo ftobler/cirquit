@@ -298,8 +298,8 @@ export function Menubar({ engine }: Props) {
     { label: 'Zoom 100%', shortcut: '0', onClick: fire(zoomReset) },
     { label: 'Zoom In', shortcut: '+', onClick: fire(zoomIn) },
     { label: 'Zoom Out', shortcut: '-', onClick: fire(zoomOut) },
-    { label: 'Rotate', shortcut: 'R', disabled: !editable || !canRotateSelection, onClick: fire(() => useStore.getState().rotateSelection()) },
-    { label: 'Mirror', shortcut: 'M', disabled: !editable || !canMirrorSelection, onClick: fire(() => useStore.getState().mirrorSelection()) },
+    { label: 'Rotate', shortcut: 'Alt+R', disabled: !editable || !canRotateSelection, onClick: fire(() => useStore.getState().rotateSelection()) },
+    { label: 'Mirror', shortcut: 'Alt+M', disabled: !editable || !canMirrorSelection, onClick: fire(() => useStore.getState().mirrorSelection()) },
   ];
 
   const scopesItems: MenuItemDef[] = [

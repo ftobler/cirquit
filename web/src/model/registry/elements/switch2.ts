@@ -53,6 +53,7 @@ export const SWITCH2_DEF: ElementDef = {
   label: 'SPDT switch',
   category: 'Basics',
   dumpCode: 'S',
+  shortcut: 'S',  // Switch2Elm.java
   postCount: 3,
   posts: switch2Posts,
   interactive: true,

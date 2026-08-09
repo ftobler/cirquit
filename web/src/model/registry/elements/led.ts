@@ -87,6 +87,7 @@ export const LED_DEF: ElementDef = {
   category: 'Semiconductors',
   // getDumpType() returns the int 162, not a char (LEDElm.java:55).
   dumpCode: '162',
+  shortcut: 'l',  // LEDElm.java
   postCount: 2,
   posts: twoPosts,
   // The same three engine params as the diode (a named model would encode the
