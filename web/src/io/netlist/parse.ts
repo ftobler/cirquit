@@ -2,6 +2,7 @@ import { defForDumpCode } from '../../model/registry';
 import type { CircuitElement, SimSettings } from '../../model/types';
 import type { ScopeValue } from '../../engine/simulator';
 import type {
+  CustomLogicModel,
   DiodeModel,
   NetlistLine,
   ParsedCircuit,
@@ -20,6 +21,57 @@ const VT = 0.025865;
  *  share the diode model machinery upstream (VaractorElm and ZenerElm extend
  *  DiodeElm), so one lookup serves them all. */
 const MODEL_KINDS = new Set(['diode', 'zener', 'varactor']);
+
+/**
+ * Splits a custom-logic `rules` string into the left/right table the engine
+ * evaluates, mirroring `parseRules` (CustomLogicModel.java:185-245). Each
+ * non-empty, non-comment line is lowercased and trimmed, split on `=` into
+ * exactly two parts, and validated against the pin counts; a letter used twice
+ * on the left becomes its uppercase compare form so `aA` means "pin 1 equals
+ * pin 0". Upstream aborts the whole table on the first bad line on the undump
+ * path (it `return`s with the fresh empty vectors), so this mirrors that too:
+ * one malformed line means the model matches no rules at all. `triState`
+ * turns on the moment any right side contains a `_`.
+ */
+function parseCustomLogicRules(
+  inputs: string[],
+  outputs: string[],
+  rules: string,
+): { rulesLeft: string[]; rulesRight: string[]; triState: boolean } {
+  const none = { rulesLeft: [] as string[], rulesRight: [] as string[], triState: false };
+  const rulesLeft: string[] = [];
+  const rulesRight: string[] = [];
+  let triState = false;
+  for (const rawLine of rules.split('\n')) {
+    const s = rawLine.toLowerCase().trim();
+    if (s.length === 0 || s.startsWith('#')) continue;
+    const parts = s.replaceAll(' ', '').split('=');
+    if (parts.length !== 2) return none;
+    if (parts[0].length < inputs.length) return none;
+    if (parts[0].length > inputs.length + outputs.length) return none;
+    if (parts[1].length !== outputs.length) return none;
+    const used = new Array(26).fill(false);
+    let rl = '';
+    for (const x of parts[0]) {
+      if (x === '?' || x === '+' || x === '-' || x === '0' || x === '1') {
+        rl += x;
+        continue;
+      }
+      if (x < 'a' || x > 'z') return none;
+      const i = x.charCodeAt(0) - 97;
+      if (used[i]) rl += String.fromCharCode(65 + i);  // A..Z: compare form
+      else {
+        used[i] = true;
+        rl += x;
+      }
+    }
+    const rr = parts[1];
+    if (rr.includes('_')) triState = true;
+    rulesLeft.push(rl);
+    rulesRight.push(rr);
+  }
+  return { rulesLeft, rulesRight, triState };
+}
 
 let nextId = 1;
 /** Ids only need to be unique within a session; the file format has none. */
@@ -134,7 +186,6 @@ const UPSTREAM_ELEMENT_CODES = new Set([
   '200',
   '201',
   '207',
-  '208',
   '209',
   '210',
   '214',
@@ -215,6 +266,7 @@ export function parseCircuit(text: string): ParsedCircuit {
   const order: NetlistLine[] = [];
   const diodeModels = new Map<string, DiodeModel>();
   const transistorModels = new Map<string, TransistorModel>();
+  const customLogicModels = new Map<string, CustomLogicModel>();
 
   /**
    * Upstream's reader breaks a line on `\n` or `\r`, so a classic-Mac file of
@@ -388,6 +440,44 @@ export function parseCircuit(text: string): ParsedCircuit {
       continue;
     }
 
+    if (head === '!') {
+      // Custom-logic model library line (CustomLogicModel.undump,
+      // CustomLogicModel.java:82-95): `! <escaped name> <flags> <escaped
+      // inputs> <escaped outputs> <escaped infoText> <escaped rules>`.
+      // `inputs`/`outputs` are comma-separated escaped pin-name lists and
+      // `rules` is a series of `left=right` pairs separated by newlines, the
+      // `\q` and `\n` escapes decoding to `=` and a newline
+      // (CustomLogicModel.java:259-264). Like the `34`/`32` lines it rides
+      // through in passthrough so a save re-emits it in place, and it is not
+      // an element line upstream either, so it takes no scope index and is not
+      // reported unsupported. Only a line carrying the name and the pin lists
+      // and rules becomes a resolvable model; a partial line is preserved but
+      // never resolves, degrading like any other truncated model line.
+      const name = tokens[1] === undefined ? '' : unescapeToken(tokens[1]);
+      const flags = Number(tokens[2]) || 0;
+      const inputs = tokens[3] === undefined ? [] : unescapeToken(tokens[3]).split(',');
+      const outputs = tokens[4] === undefined ? [] : unescapeToken(tokens[4]).split(',');
+      const infoText = tokens[5] === undefined ? '' : unescapeToken(tokens[5]);
+      const rules = tokens[6] === undefined ? '' : unescapeToken(tokens[6]);
+      if (name !== '' && tokens[3] !== undefined && tokens[4] !== undefined && tokens[6] !== undefined) {
+        const parsed = parseCustomLogicRules(inputs, outputs, rules);
+        customLogicModels.set(name, {
+          name,
+          flags,
+          inputs,
+          outputs,
+          infoText,
+          rules,
+          rulesLeft: parsed.rulesLeft,
+          rulesRight: parsed.rulesRight,
+          triState: parsed.triState,
+        });
+      }
+      passthrough.push(lineText);
+      order.push({ kind: 'other', line: rawLine });
+      continue;
+    }
+
     if (head === '38') {
       // Slider (Adjustable) line: `38 <e> [F<flags>] <editItem> <minValue>
       // <maxValue> [<sharedIndex>] <sliderText> [<sliderStep>]`
@@ -507,7 +597,11 @@ export function parseCircuit(text: string): ParsedCircuit {
   // entry wins over the element defaults, matching upstream's
   // `getModelWithNameOrCopy` (DiodeModel.java:62-76); an unknown name leaves
   // the element on its defaults. The transistor resolves its own `32` table
-  // into satCur and betaR, the only Ebers-Moll params the port models.
+  // into satCur and betaR, the only Ebers-Moll params the port models. A
+  // custom-logic `208` element carries its model name in `text` (the Model
+  // Name field), so it resolves against the `!` library into the structured
+  // model the engine is handed; a miss leaves it on the defaults, exactly like
+  // upstream's `getModelWithNameOrCopy` returning the copied fallback.
   for (const e of elements) {
     if (e.kind === 'transistor') {
       if (e.modelName === undefined) continue;
@@ -515,6 +609,11 @@ export function parseCircuit(text: string): ParsedCircuit {
       if (model === undefined) continue;
       e.params.saturationCurrent = model.saturationCurrent;
       e.params.betaReverse = model.betaReverse;
+      continue;
+    }
+    if (e.kind === 'customLogic') {
+      const model = e.text === undefined ? undefined : customLogicModels.get(e.text);
+      if (model !== undefined) e.model = model;
       continue;
     }
     if (!MODEL_KINDS.has(e.kind) || e.modelName === undefined) continue;

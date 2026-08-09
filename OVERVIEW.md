@@ -275,7 +275,8 @@ symbol toggle.
 - [ ] Flip-flops: D, JK, T, latch, monostable
 - [ ] Counters, shift registers (SIPO/PISO), ring counter, sequence generator
 - [ ] Multiplexer, demultiplexer, adders, seven-segment and decoders
-- [ ] SRAM, ROM, custom logic, delay buffer, bus splitter
+- [ ] SRAM, ROM, delay buffer, bus splitter
+- [x] Custom logic (the `!` model line and the `208` element)
 
 **Instruments and annotation** — done: labeled node, voltage readout,
 voltmeter, text.
@@ -363,6 +364,7 @@ Dump codes implemented so far, with their trailing field order:
 | `180` | tri-state buffer | r_on, r_off, r_off_ground, highVoltage                   |
 | `182` | Schmitt trigger (non-inverting) | slewRate, lowerTrigger, upperTrigger, logicOnLevel, logicOffLevel |
 | `183` | Schmitt trigger (inverting) | same as `182`                                    |
+| `208` | custom logic   | modelName (escaped), then one outputVoltage per output pin |
 
 For the gate rows the `inputCount` token is the post count minus one (1 to 8
 inputs); `lastOutputVoltage` restores the gate's output state on load
@@ -380,6 +382,22 @@ on load, swapped against their names: `lastVbe` seeds the collector node and
 `lastVbc` the emitter node. The trailing `modelName` token is optional (3 to 5
 tokens occur in the wild; beta then keeps its default of 100) and is preserved
 verbatim on save.
+
+For the `208` row the model is a named `!` line, parsed into real state like
+the `34`/`32` model lines: `! <escaped name> <flags> <escaped inputs> <escaped
+outputs> <escaped infoText> <escaped rules>` (CustomLogicModel.undump). The
+input/output tokens are comma-separated pin-name lists and `rules` is a series
+of `left=right` pairs separated by newlines, the `\q`/`\n` escapes decoding to
+`=` and a newline. The line rides through in passthrough so a save re-emits it
+in place; only its parameters are interpreted. The element token stream is the
+escaped model name then one saved output voltage per output pin
+(CustomLogicElm.java:24-36), the count coming from the resolved model, so a
+`208` line whose model name has no `!` line falls back to a 4-input/2-output
+default. The engine evaluates the rule table every step and each output is a
+voltage source to ground; a model with a `_` in any right side is tri-state,
+needing an internal node and a 1e8/1e-3 ohm resistor per output. The model
+reaches the engine as a serialised blob in `spec.model`, separate from the
+label, which carries the model name.
 
 For the `f` row the channel type is FLAG_PNP (bit 1), not a token: `+1` is an
 N-channel and `-1` a P-channel, so flags 1 means P. The two trailing tokens are

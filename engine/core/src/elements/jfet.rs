@@ -91,6 +91,7 @@ impl Jfet {
             posts: Vec::new(),
             params: HashMap::new(),
             label: None,
+            model: None,
             flags: 0,
         });
         Self {

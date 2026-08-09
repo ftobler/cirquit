@@ -23,6 +23,14 @@ pub struct ElementSpec {
     /// Free-form label, used by named-node elements.
     #[serde(default)]
     pub label: Option<String>,
+    /// A serialised model definition, for the element types whose behaviour
+    /// comes from a named model in the file rather than numeric params. The
+    /// custom-logic element (208) carries its resolved `!`-line model here as
+    /// JSON: the input/output counts and the parsed rule table. Kept separate
+    /// from `label` because the label is that element's model name, a plain
+    /// string the engine never interprets.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Bit flags carried through from the original file format.
     #[serde(default)]
     pub flags: i64,

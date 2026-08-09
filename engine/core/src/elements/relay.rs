@@ -46,6 +46,7 @@ fn coil_inductor_spec(inductance: f64, coil_current: f64) -> ElementSpec {
             ("current".into(), coil_current),
         ]),
         label: None,
+        model: None,
         flags: 2,
     }
 }

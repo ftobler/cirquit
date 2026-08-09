@@ -21,6 +21,7 @@ pub mod controlled_source;
 pub mod counter;
 pub mod cross_switch;
 pub mod current_source;
+pub mod custom_logic;
 pub mod d_flip_flop;
 pub mod dac;
 pub mod darlington;
@@ -162,6 +163,7 @@ pub const KINDS: &[&str] = &[
     "counter",
     "adc",
     "multiplexer",
+    "customLogic",
     "triState",
     "schmitt",
     "invertingSchmitt",
@@ -259,6 +261,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "counter" => Box::new(counter::Counter::new(spec)),
         "adc" => Box::new(adc::Adc::new(spec)),
         "multiplexer" => Box::new(multiplexer::Multiplexer::new(spec)),
+        "customLogic" => Box::new(custom_logic::CustomLogic::new(spec)),
         "triState" => Box::new(tri_state::TriState::new(spec)),
         "schmitt" => Box::new(schmitt::Schmitt::new(spec, false)),
         "invertingSchmitt" => Box::new(schmitt::Schmitt::new(spec, true)),

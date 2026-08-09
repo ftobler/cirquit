@@ -75,6 +75,45 @@ export interface TransistorModel {
 }
 
 /**
+ * A custom-logic model loaded from a `!` line (`! <escaped name> <flags>
+ * <escaped inputs> <escaped outputs> <escaped infoText> <escaped rules>`,
+ * CustomLogicModel.undump, CustomLogicModel.java:82-95). Keyed by the
+ * unescaped name like the diode and transistor models. `inputs` and `outputs`
+ * are comma-separated pin-name lists; `rules` is a series of `left=right`
+ * pairs separated by newlines. The line itself stays in passthrough so a save
+ * re-emits it in place; only its parameters are interpreted, into the library
+ * the 208 resolution reads.
+ */
+export interface CustomLogicModel {
+  /** The model name, the `!` line's first token. */
+  name: string;
+  /** The model's flag word, kept for round-tripping and future use
+   *  (FLAG_SCHMITT is not ported). */
+  flags: number;
+  /** The input pin names, west side, in order. */
+  inputs: string[];
+  /** The output pin names, east side, in order. */
+  outputs: string[];
+  /** The tooltip/info line, currently display-only. */
+  infoText: string;
+  /** The raw rules string exactly as the `!` line carried it, preserved for a
+   *  future model editor. */
+  rules: string;
+  /**
+   * The rule table split into left and right strings by `parseRules`
+   * (CustomLogicModel.java:185-245): each line lowercased, trimmed, split on
+   * `=`, validated against the pin counts, and pattern letters de-duplicated
+   * (a second occurrence of a letter becomes its uppercase compare form). This
+   * is the form the engine evaluates, so the engine never re-parses rules.
+   */
+  rulesLeft: string[];
+  rulesRight: string[];
+  /** True when any right side contains a `_`, which needs the per-output
+   *  internal-node resistor path (CustomLogicModel.java:240-241). */
+  triState: boolean;
+}
+
+/**
  * A slider (`38` line, upstream's Adjustable) as stored in the file:
  * `38 <e> [F<flags>] <editItem> <minValue> <maxValue> [<sharedIndex>]
  * <sliderText> [<sliderStep>]` (Adjustable.java:47-76). Not an element, so it

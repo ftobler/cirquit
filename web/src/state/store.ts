@@ -39,6 +39,18 @@ const clone = (s: Snapshot): Snapshot => ({
     // A route is a nested array; without this a future in-place route mutator
     // would silently corrupt the undo snapshot.
     if (e.route) copy.route = e.route.map((r) => [...r]);
+    // A resolved device model is a nested object, and the custom-logic rules
+    // vectors inside it are arrays; clone them so a snapshot can never alias
+    // the live element.
+    if (e.model) {
+      copy.model = {
+        ...e.model,
+        inputs: [...e.model.inputs],
+        outputs: [...e.model.outputs],
+        rulesLeft: [...e.model.rulesLeft],
+        rulesRight: [...e.model.rulesRight],
+      };
+    }
     return copy;
   }),
   // Plots and triggers are nested objects, so a shallow spread would alias the
@@ -622,9 +634,11 @@ export const useStore = create<AppState>((set, get) => ({
       const clean = text.replace(/[\r\n]/g, '');
       // A labeled node's text is structural, not display-only: the engine
       // merges nodes that share a label, so it must reload to learn the
-      // change. Every other text-bearing element is display-only and can take
-      // the fast path without restarting the simulation.
-      const reload = target.kind === 'labeledNode';
+      // change. A custom-logic model name is structural too: the model fixes
+      // the post count, which only a rebuild can reallocate. Every other
+      // text-bearing element is display-only and can take the fast path
+      // without restarting the simulation.
+      const reload = target.kind === 'labeledNode' || target.kind === 'customLogic';
       return {
         elements: s.elements.map((e) => (e.id === id ? { ...e, text: clean } : e)),
         revision: reload ? s.revision + 1 : s.revision,

@@ -243,6 +243,10 @@ export class SimEngine {
             Object.entries(params).filter(([, v]) => Number.isFinite(v)),
           ),
           label: e.text ?? null,
+          // A resolved device model (the custom-logic `!`-line model) rides
+          // the second string carrier: the label is that element's model
+          // name, so the definition has to travel separately, serialised.
+          model: e.model !== undefined ? JSON.stringify(e.model) : null,
           flags: e.flags,
         };
       }),

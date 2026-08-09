@@ -1704,12 +1704,11 @@
   {
     "file": "ledarray.txt",
     "format": "plain",
-    "missing": [
-      "208"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ledflasher.txt",

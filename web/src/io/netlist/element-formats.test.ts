@@ -1617,3 +1617,74 @@ describe('controlled source file formats', () => {
     ]);
   });
 });
+
+describe('custom logic file format', () => {
+  const HEADER = '$ 1 0.000005 10 50 5 43 5e-11\n';
+  /** The ledarray.txt smiley pair: the `!` model line and its `208` element. */
+  const MODEL_LINE =
+    '! smiley 0 S2,S1,S0 A,B,C,D,E,F,G,H smiley\\sgenerator ' +
+    '000\\q00111100\\n001\\q01000010\\n111\\q00111100\\n';
+  const ELEMENT_LINE = '208 528 336 624 336 0 smiley 0 0 5 5 5 5 0 0';
+
+  it('parses a `!` model line and a `208` element into a model and element', () => {
+    const parsed = parseCircuit(HEADER + MODEL_LINE + '\n' + ELEMENT_LINE + '\n');
+    // The `!` line is not an element: it rides in passthrough, in place.
+    expect(parsed.elements).toHaveLength(1);
+    expect(parsed.passthrough).toContain(MODEL_LINE);
+    const cl = parsed.elements[0];
+    expect(cl.kind).toBe('customLogic');
+    expect(cl.text).toBe('smiley');
+    expect(cl.model?.inputs).toEqual(['S2', 'S1', 'S0']);
+    expect(cl.model?.outputs).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+    expect(cl.model?.infoText).toBe('smiley generator');
+    expect(cl.model?.triState).toBe(false);
+    // The rules round-trip their escapes: `\q` is `=`, `\n` a newline, `\s` a
+    // space, and parseRules drops the trailing empty line.
+    expect(cl.model?.rules).toBe('000=00111100\n001=01000010\n111=00111100\n');
+    expect(cl.model?.rulesLeft).toEqual(['000', '001', '111']);
+    expect(cl.model?.rulesRight).toEqual(['00111100', '01000010', '00111100']);
+    // The saved output voltages land in output order (output 2 reads high).
+    expect(cl.params.voltage0).toBe(0);
+    expect(cl.params.voltage2).toBe(5);
+    // Posts are the 3 inputs plus 8 outputs, the model's pin table.
+    expect(postsOf(cl)).toHaveLength(11);
+  });
+
+  it('re-emits the `!` line and `208` element byte-for-byte', () => {
+    const text = HEADER + MODEL_LINE + '\n' + ELEMENT_LINE + '\n';
+    const parsed = parseCircuit(text);
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toBe(text);
+    const again = parseCircuit(out);
+    expect(again.elements[0].model).toEqual(parsed.elements[0].model);
+    expect(again.elements[0].params).toEqual(parsed.elements[0].params);
+  });
+
+  it('a `208` line whose model name has no `!` line stays on the defaults', () => {
+    const parsed = parseCircuit(HEADER + ELEMENT_LINE + '\n');
+    const cl = parsed.elements[0];
+    expect(cl.text).toBe('smiley');
+    expect(cl.model).toBeUndefined();
+    // The element keeps its model name and output voltages for the round trip,
+    // but draws the fallback 4-input / 2-output body.
+    expect(cl.params.voltage0).toBe(0);
+    expect(postsOf(cl)).toHaveLength(6);
+  });
+
+  it('parses the pattern dedup upstream applies to repeated left-side letters', () => {
+    // `aa` written as the same letter twice dedups to the save/compare pair
+    // (CustomLogicModel.java:231-237): the second `a` becomes `A`, so the
+    // rule means "pin 0 equals pin 1".
+    const line = '! eq 0 A,B C,D eq ' + 'aa\\q10\\n00\\q00\\n';
+    const parsed = parseCircuit(line + '\n208 0 0 96 0 0 eq 0 0\n');
+    expect(parsed.passthrough).toContain(line);
+    expect(parsed.elements[0].model?.rulesLeft).toEqual(['aA', '00']);
+    expect(parsed.elements[0].model?.rulesRight).toEqual(['10', '00']);
+  });
+});

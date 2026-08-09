@@ -147,11 +147,13 @@ describe('netlist parsing', () => {
   });
 
   it('reports the non-element line types upstream dispatches on', () => {
-    // `!` custom-logic model, `%`/`?` afilter, `.` subcircuit definition
-    // (CircuitLoader.java:163-191). None is an element, but none is
-    // interpreted either, so the load has to admit it.
+    // `%`/`?` afilter and `.` subcircuit definitions are neither elements nor
+    // interpreted, so the load has to admit them. A `!` custom-logic model
+    // line is now interpreted when it carries a full table, but a partial line
+    // (here, no pin lists or rules) stays preserved-but-unresolvable like any
+    // other truncated model line.
     const parsed = parseCircuit('! model stuff\n% 1 2\n? 3 4\n. sub\n');
-    expect(parsed.unsupported).toEqual(['!', '%', '?', '.']);
+    expect(parsed.unsupported).toEqual(['%', '?', '.']);
     expect(parsed.passthrough).toEqual(['! model stuff', '% 1 2', '? 3 4', '. sub']);
   });
 });

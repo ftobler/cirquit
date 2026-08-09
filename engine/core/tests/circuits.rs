@@ -19,6 +19,7 @@ fn elm(id: u32, kind: &str, posts: &[[i32; 2]], params: &[(&str, f64)]) -> Eleme
             .map(|(k, v)| (k.to_string(), *v))
             .collect::<HashMap<_, _>>(),
         label: None,
+        model: None,
         flags: 0,
     }
 }
@@ -49,6 +50,36 @@ fn elm_expr(id: u32, kind: &str, posts: &[[i32; 2]], input_count: f64, expr: &st
             .map(|(k, v)| (k.to_string(), *v))
             .collect::<HashMap<_, _>>(),
         label: Some(expr.into()),
+        model: None,
+        flags: 0,
+    }
+}
+
+/// A custom-logic element whose model arrives as the serialised JSON blob in
+/// `spec.model`, the carrier the frontend uses for the resolved `!`-line model.
+/// `rules` is the parsed left/right table; the engine does not re-parse it.
+fn elm_model(
+    id: u32,
+    posts: &[[i32; 2]],
+    inputs: usize,
+    outputs: usize,
+    tri_state: bool,
+    rules: &[(&str, &str)],
+) -> ElementSpec {
+    let model = serde_json::json!({
+        "inputs": (0..inputs).map(|i| String::from_utf8(vec![b'A' + i as u8]).unwrap()).collect::<Vec<_>>(),
+        "outputs": (0..outputs).map(|i| String::from_utf8(vec![b'A' + inputs as u8 + i as u8]).unwrap()).collect::<Vec<_>>(),
+        "triState": tri_state,
+        "rulesLeft": rules.iter().map(|(l, _)| *l).collect::<Vec<_>>(),
+        "rulesRight": rules.iter().map(|(_, r)| *r).collect::<Vec<_>>(),
+    });
+    ElementSpec {
+        id,
+        kind: "customLogic".into(),
+        posts: posts.to_vec(),
+        params: HashMap::new(),
+        label: None,
+        model: Some(model.to_string()),
         flags: 0,
     }
 }
@@ -7711,6 +7742,145 @@ fn tri_state_disables_into_high_impedance() {
     assert!(
         tristate_output(5.0, 0.0, &[("r_off_ground", 1e8)]) < 1e-3,
         "disabled output with a pulldown should sit at 0"
+    );
+}
+
+/// Output voltage of a 2-in/2-out custom-logic chip's `out`-th output, driven
+/// by rails on the inputs. Posts: the inputs at (0,0) and (0,32), the outputs
+/// at (96,0) and (96,32), each output pulled to ground through a 1k load whose
+/// drop is what `element_voltages` reads back.
+fn custom_output(a: f64, b: f64, rules: &[(&str, &str)], out: usize) -> f64 {
+    let mut c = build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", a)]),
+            elm(2, "rail", &[[0, 32]], &[("maxVoltage", b)]),
+            elm_model(3, &[[0, 0], [0, 32], [96, 0], [96, 32]], 2, 2, false, rules),
+            elm(
+                4,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[96, 100]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[96, 32], [96, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[96, 132]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(5);
+    // The output's own voltage_diff is `V(input0) - V(input1)`, useless here,
+    // so read the load resistor's drop, which is the output node to ground.
+    c.element_voltages()[if out == 0 { 3 } else { 5 }]
+}
+
+#[test]
+fn custom_logic_evaluates_its_truth_table() {
+    // A 2-in/2-out model where output 0 is the AND and output 1 the OR of the
+    // inputs, one rule per input pair (the ledarray smiley's shape). Every
+    // left string is exactly the input count, every right string the output
+    // count.
+    let rules = [("00", "00"), ("01", "01"), ("10", "01"), ("11", "11")];
+    for (a, b, and, or) in [
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 5.0, 0.0, 5.0),
+        (5.0, 0.0, 0.0, 5.0),
+        (5.0, 5.0, 5.0, 5.0),
+    ] {
+        assert!(
+            close(custom_output(a, b, &rules, 0), and, 1e-6),
+            "AND of {a} and {b} should read {and}"
+        );
+        assert!(
+            close(custom_output(a, b, &rules, 1), or, 1e-6),
+            "OR of {a} and {b} should read {or}"
+        );
+    }
+}
+
+#[test]
+fn custom_logic_pattern_and_dont_care_rules_match_like_upstream() {
+    // The first rule `aA=10` matches exactly when the two inputs are equal:
+    // `a` saves input 0 into the pattern table, `A` compares input 1 against
+    // it (the parseRules dedup turns the second occurrence of the letter into
+    // the compare form). The `??` fallback matches every other input pair with
+    // both positions don't-care, so unequal inputs take the second rule.
+    let rules = [("aA", "10"), ("??", "01")];
+    for (a, b) in [(0.0, 0.0), (5.0, 5.0)] {
+        assert!(
+            close(custom_output(a, b, &rules, 0), 5.0, 1e-6),
+            "equal inputs {a},{b}: output 0 should be high"
+        );
+        assert!(
+            close(custom_output(a, b, &rules, 1), 0.0, 1e-6),
+            "equal inputs {a},{b}: output 1 should be low"
+        );
+    }
+    for (a, b) in [(0.0, 5.0), (5.0, 0.0)] {
+        assert!(
+            close(custom_output(a, b, &rules, 0), 0.0, 1e-6),
+            "unequal inputs {a},{b}: output 0 should be low"
+        );
+        assert!(
+            close(custom_output(a, b, &rules, 1), 5.0, 1e-6),
+            "unequal inputs {a},{b}: output 1 should be high"
+        );
+    }
+}
+
+#[test]
+fn custom_logic_tri_state_output_goes_high_impedance() {
+    // A 1-in/1-out tri-state model: input high drives the output through the
+    // 1e-3 ohm path, input low sets `_` and opens the 1e8 path, leaving the
+    // output to whatever the circuit pins it to. The output node sits in the
+    // middle of a 5 V / ground 1k divider: driven, it pins the midpoint; at
+    // high impedance it floats to the 2.5 V divider point, which a driven-low
+    // output could never reach. The midpoint is resistor R2's drop.
+    let midpoint = |input: f64| {
+        let mut c = build(
+            vec![
+                elm(1, "rail", &[[0, 0]], &[("maxVoltage", input)]),
+                elm_model(
+                    2,
+                    &[[0, 0], [200, 100]],
+                    1,
+                    1,
+                    true,
+                    &[("1", "1"), ("0", "_")],
+                ),
+                elm(
+                    3,
+                    "resistor",
+                    &[[200, 0], [200, 100]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(4, "rail", &[[200, 0]], &[("maxVoltage", 5.0)]),
+                elm(
+                    5,
+                    "resistor",
+                    &[[200, 100], [200, 200]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(6, "ground", &[[200, 200]], &[]),
+            ],
+            opts(1e-5, false),
+        );
+        c.run(5);
+        c.element_voltages()[4]
+    };
+    assert!(
+        close(midpoint(5.0), 5.0, 1e-3),
+        "driven output pins the divider midpoint high, got {}",
+        midpoint(5.0)
+    );
+    assert!(
+        close(midpoint(0.0), 2.5, 1e-3),
+        "high-impedance output floats to the 2.5 V divider point, got {}",
+        midpoint(0.0)
     );
 }
 

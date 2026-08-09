@@ -85,6 +85,7 @@ import { CC2_DEF } from './elements/cc2';
 import { VCVS_DEF } from './elements/vcvs';
 import { VCCS_DEF } from './elements/vccs';
 import { UNIJUNCTION_DEF } from './elements/unijunction';
+import { CUSTOM_LOGIC_DEF } from './elements/customLogic';
 import { SPARK_GAP_DEF } from './elements/sparkGap';
 import { TRI_STATE_DEF } from './elements/triState';
 import { LABELED_NODE_DEF } from './elements/labeledNode';
@@ -184,6 +185,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   VCVS_DEF,
   VCCS_DEF,
   UNIJUNCTION_DEF,
+  CUSTOM_LOGIC_DEF,
   TRIAC_DEF,
   SPARK_GAP_DEF,
   TRI_STATE_DEF,

@@ -1,6 +1,8 @@
 /** Core data model. Geometry and presentation live here; the Rust engine only
  *  ever sees terminal coordinates and parameters. */
 
+import type { CustomLogicModel } from '../io/netlist/types';
+
 export interface Point {
   x: number;
   y: number;
@@ -23,6 +25,14 @@ export interface CircuitElement {
   text?: string;
   /** Named device-model reference, carried through from the file format. */
   modelName?: string;
+  /**
+   * A resolved device-model definition, for element types whose behaviour
+   * comes from a named model line rather than numeric params: the custom-logic
+   * element's `!`-line model, resolved by the netlist second pass and carried
+   * to the engine as a serialised blob. Immutable once set; the store clones
+   * it so undo snapshots never alias the live element.
+   */
+  model?: CustomLogicModel;
   /** Keyboard shortcut that toggles this element (the switch keyShortcut).
    *  Session-only: upstream serializes it only in the XML format
    *  (SwitchElm.java:79-90), never the .txt netlist, so it is deliberately

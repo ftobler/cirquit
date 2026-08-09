@@ -146,6 +146,35 @@ describe('text field metadata', () => {
     expect(def?.fields).toEqual([{ name: 'text', label: 'Text', type: 'text', target: 'text' }]);
   });
 
+  it('the custom logic model name is a text field, and its posts follow the model', () => {
+    const def = ELEMENT_DEFS.find((d) => d.kind === 'customLogic');
+    expect(def?.dumpCode).toBe('208');
+    // The only editable is the model name, which lives in `e.text` like the
+    // labeled node's, because the model fixes the pin count.
+    expect(def?.fields).toEqual([
+      { name: 'modelName', label: 'Model Name', type: 'text', target: 'text' },
+    ]);
+    // No model: the fallback 4-input / 2-output body.
+    const fresh = element('customLogic', 0, 0, 96, 0);
+    expect(postsOf(fresh)).toHaveLength(6);
+    // A resolved model widens the body to its pin table.
+    const loaded = {
+      ...fresh,
+      model: {
+        name: 'eq',
+        flags: 0,
+        inputs: ['A', 'B'],
+        outputs: ['C', 'D', 'E'],
+        infoText: '',
+        rules: '',
+        rulesLeft: ['aa'],
+        rulesRight: ['10'],
+        triState: false,
+      },
+    };
+    expect(postsOf(loaded)).toHaveLength(5);
+  });
+
   it('keeps every flag field a checkbox', () => {
     // A `flag` field toggles a bit of `e.flags`; the panel only renders that
     // as a checkbox under `type: 'bool'`, and any other type would silently
