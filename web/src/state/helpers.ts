@@ -1,18 +1,12 @@
 /** Pure store helpers: grid snapping, dirty tracking and element construction. */
 
 import { defFor, toolboxEntry } from '../model/registry';
-import { GRID_SIZE, type SimSettings } from '../model/types';
+import { GRID_SIZE } from '../model/types';
 
 /** Rounds a coordinate to the nearest grid intersection. `grid` defaults to
  *  the full-size grid so existing call sites keep their 16-unit step. */
 export function snap(v: number, grid: number = GRID_SIZE): number {
   return Math.round(v / grid) * grid;
-}
-
-/** Grid spacing for a settings object: 8 on small grid, 16 otherwise
- *  (UIManager.java:988-992). */
-export function gridSize(s: SimSettings): number {
-  return s.smallGrid ? 8 : GRID_SIZE;
 }
 
 /** True when reloading the page would lose edits since the last export. */

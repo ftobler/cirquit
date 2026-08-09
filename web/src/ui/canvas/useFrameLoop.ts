@@ -10,7 +10,7 @@ import { invalidDropPoint } from '../../render/geometry';
 import { postDotPoints, shouldDrawDot } from '../../render/junction';
 import { scopeWidth } from '../../scope/geometry';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
-import { gridSize } from '../../state/helpers';
+import { GRID_SIZE } from '../../model/types';
 import { useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
@@ -162,7 +162,7 @@ export function useFrameLoop(
       ctx.scale(view.scale, view.scale);
       ctx.translate(-view.x, -view.y);
 
-      const grid = gridSize(settings);
+      const grid = GRID_SIZE;
       if (settings.showGrid && view.scale > 0.4) {
         drawGrid(ctx, view.x, view.y, width / view.scale, height / view.scale, theme.grid, grid);
       }

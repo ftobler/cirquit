@@ -304,9 +304,6 @@ export interface SimSettings {
   /** Read-only gate, upstream's `noEditing` (UIManager.java:116). UI-only:
    *  not a header token, so it never bumps the engine revision. */
   editable: boolean;
-  /** Header flag bit 2: 8-unit grid and snap instead of 16
-   *  (UIManager.java:988-992). A circuit setting, so it lives in the file. */
-  smallGrid: boolean;
   /** Drawn grid-snapped crosshair guide lines under the pointer. An app pref,
    *  stored like upstream's `crossHair` key (UIManager.java:219). */
   showCrosshair: boolean;
@@ -331,10 +328,11 @@ export interface SimSettings {
   // Loading a file must not invent new values for the `$` tokens this build
   // ignores, so they are parked here and written back unchanged. Undefined
   // means the file had no such token and the writer falls back to a default.
-  /** Token 1 as loaded. Bits 1 (show current), 2 (small grid), 4 (volts off),
-   *  8 (power on), 16 (show values), 64 (adaptive timestep) and 128 (DC
-   *  operating point) are modelled; the rest are re-emitted so a save does not
-   *  silently clear the user's settings. */
+  /** Token 1 as loaded. Bits 1 (show current), 4 (volts off), 8 (power on), 16
+   *  (show values), 64 (adaptive timestep) and 128 (DC operating point) are
+   *  modelled; bit 2 (upstream's small grid, removed as an option) and every
+   *  other bit are re-emitted so a save does not silently clear the user's
+   *  settings. */
   headerFlags?: number;
 }
 
@@ -371,7 +369,6 @@ export const DEFAULT_SETTINGS: SimSettings = {
   euroResistors: true,
   euroGates: true,
   editable: true,
-  smallGrid: false,
   showCrosshair: false,
   positiveColor: null,
   negativeColor: null,

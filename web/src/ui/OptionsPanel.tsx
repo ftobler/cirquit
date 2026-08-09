@@ -494,14 +494,6 @@ export function OptionsPanel({ engine }: Props) {
         <label className="check">
           <input
             type="checkbox"
-            checked={settings.smallGrid}
-            onChange={(e) => updateSettings({ smallGrid: e.target.checked })}
-          />
-          <span>Small grid</span>
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
             checked={settings.showCrosshair}
             onChange={(e) => updateSettings({ showCrosshair: e.target.checked })}
           />

@@ -23,6 +23,7 @@ import { LOGIC_INPUT_TERNARY, VOLTAGE_PULSE_DUTY } from '../model/registry/flags
 import { paramScale, resolveParam } from '../model/sliders';
 import {
   DEFAULT_SETTINGS,
+  GRID_SIZE,
   UNMODELLED_HEADER,
   type CircuitElement,
 } from '../model/types';
@@ -30,7 +31,7 @@ import type { AppState, Slider, Snapshot, ViewTransform } from './types';
 import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
 import { readRecovery } from './recovery';
 import { loadShortcutOverlay, normalizeKey, saveShortcutOverlay } from '../input/shortcuts';
-import { gridSize, hasUnsavedChanges, makeElement, makeToolElement, RECOVERED_UNSAVED, snap } from './helpers';
+import { hasUnsavedChanges, makeElement, makeToolElement, RECOVERED_UNSAVED, snap } from './helpers';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 
 const clone = (s: Snapshot): Snapshot => ({
@@ -387,12 +388,11 @@ export const useStore = create<AppState>((set, get) => ({
       // fully blocked re-route falls back to the L-shape upstream uses.
       let reroute: [number, number][] | null = null;
       if (geometry && target && target.route && target.route.length >= 2) {
-        const grid = gridSize(s.settings);
         const routed = routeWire(
           { x: Math.round(patch.x1 ?? target.x1), y: Math.round(patch.y1 ?? target.y1) },
           { x: Math.round(patch.x2 ?? target.x2), y: Math.round(patch.y2 ?? target.y2) },
           routingObstacles(s.elements, id),
-          grid,
+          GRID_SIZE,
         );
         reroute =
           routed.length >= 2
@@ -1150,7 +1150,6 @@ export const useStore = create<AppState>((set, get) => ({
         minTimeStep: DEFAULT_SETTINGS.minTimeStep,
         iterCount: DEFAULT_SETTINGS.iterCount,
         showCurrent: DEFAULT_SETTINGS.showCurrent,
-        smallGrid: DEFAULT_SETTINGS.smallGrid,
         showVoltageColor: DEFAULT_SETTINGS.showVoltageColor,
         showPowerColor: DEFAULT_SETTINGS.showPowerColor,
         showValues: DEFAULT_SETTINGS.showValues,
@@ -1297,16 +1296,15 @@ function insertElementsFromText(text: string): void {
   if (parsed.elements.length === 0) return;
   const state = useStore.getState();
   state.commit();
-  // A paste lands one square away, so on a small grid it offsets by 8 to keep
-  // the duplicate from sitting on top of the original (UIManager.java:1001).
-  const grid = gridSize(state.settings);
+  // A paste lands one square away, so the duplicate does not sit on top of
+  // the original (UIManager.java:1001).
   const added = parsed.elements.map((e) => ({
     ...e,
     id: allocateId(),
-    x1: e.x1 + grid,
-    y1: e.y1 + grid,
-    x2: e.x2 + grid,
-    y2: e.y2 + grid,
+    x1: e.x1 + GRID_SIZE,
+    y1: e.y1 + GRID_SIZE,
+    x2: e.x2 + GRID_SIZE,
+    y2: e.y2 + GRID_SIZE,
   }));
   useStore.setState((s) => ({
     elements: [...s.elements, ...added],
@@ -1336,4 +1334,4 @@ function transformSelected(
 }
 
 export type { AppState, ViewTransform };
-export { gridSize, hasUnsavedChanges, makeElement, makeToolElement, RECOVERED_UNSAVED, snap };
+export { hasUnsavedChanges, makeElement, makeToolElement, RECOVERED_UNSAVED, snap };

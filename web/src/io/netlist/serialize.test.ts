@@ -67,14 +67,14 @@ describe('the $ header', () => {
   });
 
   it('keeps the flag bits it does not model when an edit changes the one it does', () => {
-    // Bit 32 (linear scale in the afilter) is nowhere decoded here, so turning
-    // value labels off must not clear it. Bits 1, 2 and 4 (dots, small grid,
+    // Bits 32 (linear scale in the afilter) and 2 (upstream's small grid) are
+    // nowhere decoded into a setting, so turning value labels off must not
+    // clear them: both ride the headerFlags passthrough. Bits 1 and 4 (dots,
     // volts) are modelled and recomputed from their settings, so they survive
     // the edit too.
     const { line } = headerOf('$ 5 1e-5 10 50 5 43 5e-11\n', { showValues: false });
     expect(line.split(' ')[1]).toBe(String(16 | 5));
-    // With bit 2 set, the small-grid flag is recomputed from the setting and
-    // stays set through the same edit.
+    // The headerFlags passthrough carries bit 2 into the same edit unchanged.
     const withSmallGrid = headerOf('$ 7 1e-5 10 50 5 43 5e-11\n', { showValues: false });
     expect(withSmallGrid.line.split(' ')[1]).toBe(String(16 | 7));
   });

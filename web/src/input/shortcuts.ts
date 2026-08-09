@@ -72,7 +72,8 @@ export const SHORTCUTS: ShortcutEntry[] = [
   // Plain keys. Delete and Backspace both delete (UIManager.java:1134) and
   // the arrows nudge by one grid step per press (UIManager.java:1153). The
   // delta is a unit-less step count: the matcher has no store access, so
-  // App.tsx resolves it against the small-grid setting (8 or 16) at dispatch.
+  // App.tsx resolves it against the constant grid step (GRID_SIZE = 16) at
+  // dispatch.
   // Ctrl+Delete / Ctrl+Backspace pass through to the browser: the mod combos
   // above are exclusive, so a held ctrl unmatches these plain rows, which is
   // the deliberate consequence of the exact-match matcher.

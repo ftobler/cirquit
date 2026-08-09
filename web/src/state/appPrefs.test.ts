@@ -29,7 +29,7 @@ describe('app prefs', () => {
       positiveColor: '#123456',
       wheelSensitivity: 2,
       // Circuit keys must not leak into the stored blob.
-      smallGrid: true,
+      autoDC: true,
       timeStep: 1e-6,
     };
     saveAppPrefs(settings, storage);
@@ -37,7 +37,7 @@ describe('app prefs', () => {
     const blob = JSON.parse(raw() ?? '{}') as Record<string, unknown>;
     expect(blob.positiveColor).toBe('#123456');
     expect(blob.wheelSensitivity).toBe(2);
-    expect('smallGrid' in blob).toBe(false);
+    expect('autoDC' in blob).toBe(false);
     expect('timeStep' in blob).toBe(false);
     // Every stored key is one the plan declared a pref.
     for (const key of Object.keys(blob)) {

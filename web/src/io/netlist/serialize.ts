@@ -11,19 +11,21 @@ import { isElementLine } from './parse';
  * circuit has always written when it did not.
  */
 function headerLine(settings: SimSettings): string {
-  // Bits 1 (show current), 2 (small grid), 4 (voltage off), 8 (power on), 16
-  // (show values), 64 (adaptive timestep) and 128 (DC operating point) are
-  // modelled, so each is recomputed from its setting; every other loaded bit
-  // is passed straight back. The two colour modes are mutually exclusive, so
-  // at most one of bits 4 and 8 is set, the shape upstream's own writer
-  // produces (dumpOptions).
+  // Bits 1 (show current), 4 (voltage off), 8 (power on), 16 (show values), 64
+  // (adaptive timestep) and 128 (DC operating point) are modelled, so each is
+  // recomputed from its setting; every other loaded bit is passed straight
+  // back. Bit 2 is upstream's small grid, an option this port removed: the bit
+  // is deliberately kept in the passthrough set rather than dropped on save,
+  // so the byte upstream wrote is the byte the port writes. It rides the
+  // `headerFlags` field like bits 32 and above, an inert value nothing reads.
+  // The two colour modes are mutually exclusive, so at most one of bits 4 and
+  // 8 is set, the shape upstream's own writer produces (dumpOptions).
   const flags =
     (settings.showCurrent ? 1 : 0) |
-    (settings.smallGrid ? 2 : 0) |
     (settings.showVoltageColor ? 0 : 4) |
     (settings.showPowerColor ? 8 : 0) |
     (settings.showValues ? 0 : 16) |
-    ((settings.headerFlags ?? 0) & ~(1 | 2 | 4 | 8 | 16 | 64 | 128)) |
+    ((settings.headerFlags ?? 0) & ~(1 | 4 | 8 | 16 | 64 | 128)) |
     (settings.adaptiveTimeStep ? 64 : 0) |
     (settings.autoDC ? 128 : 0);
   return [

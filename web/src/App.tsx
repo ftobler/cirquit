@@ -19,8 +19,9 @@ import { ScopePanel } from './ui/ScopePanel';
 import { ShortcutsDialog } from './ui/ShortcutsDialog';
 import { SliderPanel } from './ui/SliderPanel';
 import { Toolbox } from './ui/Toolbox';
-import { hasUnsavedChanges, gridSize, useStore } from './state/store';
+import { hasUnsavedChanges, useStore } from './state/store';
 import { startAutoSave } from './state/recovery';
+import { GRID_SIZE } from './model/types';
 
 /** A small RC circuit, so the app opens on something that actually runs. */
 const STARTER_CIRCUIT = `$ 1 0.000005 10.2 50 5 43 5e-11
@@ -151,9 +152,10 @@ export default function App() {
           break;
         case 'nudge':
           // The matcher reports a unit-less step count; the grid size resolves
-          // it here so a small-grid circuit nudges by 8, like upstream's
-          // app.gridSize (UIManager.java:1153).
-          s.nudgeSelection(action.dx * gridSize(s.settings), action.dy * gridSize(s.settings));
+          // it here so a nudge moves one grid square, like upstream's
+          // app.gridSize (UIManager.java:1153). The step is always 16: the
+          // small-grid option is removed, so there is one spacing.
+          s.nudgeSelection(action.dx * GRID_SIZE, action.dy * GRID_SIZE);
           break;
         case 'zoomIn':
           s.zoomIn();

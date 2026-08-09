@@ -11,9 +11,10 @@ import {
 } from '../../model/scrollValue';
 import type { ScrollValueSession } from '../../model/scrollValue';
 import type { CircuitElement, Point } from '../../model/types';
+import { GRID_SIZE } from '../../model/types';
 import { distanceToElement, nearestPost, postAt, postPatch } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
-import { gridSize, makeToolElement, nextSwitchState, snap, useStore } from '../../state/store';
+import { makeToolElement, nextSwitchState, snap, useStore } from '../../state/store';
 import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
 import { DRAG_DELAY_MS, LONG_PRESS_MS, TouchGesture, type GestureAction } from '../gestures';
 import { useStoreRef } from './useStoreRef';
@@ -269,7 +270,7 @@ export function useCanvasInteractions(
 
   const startRowCol = (axis: 'row' | 'col', p: Point) => {
     const state = useStore.getState();
-    const grid = gridSize(state.settings);
+    const grid = GRID_SIZE;
     const x = snap(p.x, grid);
     const y = snap(p.y, grid);
     const captured: { id: number; post: 0 | 1 }[] = [];
@@ -368,7 +369,7 @@ export function useCanvasInteractions(
     }
 
     if (state.tool) {
-      const grid = gridSize(state.settings);
+      const grid = GRID_SIZE;
       const x = snap(p.x, grid);
       const y = snap(p.y, grid);
       const def = toolDef(state.tool);
@@ -464,7 +465,7 @@ export function useCanvasInteractions(
     const state = useStore.getState();
     const p = toCircuit(ev.clientX, ev.clientY);
     pointerRef.current = toClient(ev.clientX, ev.clientY);
-    const grid = gridSize(state.settings);
+    const grid = GRID_SIZE;
 
     if (isTouch) {
       const g = gestureRef.current!;

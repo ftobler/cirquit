@@ -10,7 +10,7 @@ import type { SimSettings } from '../model/types';
 export const APP_PREF_STORAGE_KEY = 'options.prefs.v1';
 
 /** The settings keys that are app prefs. Circuit settings (header-borne, e.g.
- *  `smallGrid`) and plain settings (`stepsPerFrame`, `showGrid`, ...) are
+ *  `autoDC`) and plain settings (`stepsPerFrame`, `showGrid`, ...) are
  *  deliberately absent: New resets the first and both ride in the state. */
 export const APP_PREF_KEYS = [
   'showCrosshair',

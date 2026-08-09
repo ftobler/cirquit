@@ -319,16 +319,16 @@ export function parseCircuit(text: string): ParsedCircuit {
       // nonsense token falls back to the default instead of zeroing the ramp.
       if (Number.isFinite(powerRange) && powerRange > 0) settings.powerRange = powerRange;
       if (Number.isFinite(minTimeStep) && minTimeStep > 0) settings.minTimeStep = minTimeStep;
-      // Bit 1 shows the current dots, bit 2 turns the small grid on, bit 4
-      // switches voltage colouring off, bit 8 turns power colouring on, bit 16
-      // suppresses value labels, bit 64 enables the adaptive timestep, bit 128
-      // enables the DC operating point on reset (CirSim.java:437-444,
-      // readCircuitFlags). Bit 32 is linear scale in the afilter, which the
-      // port has no model for: kept verbatim, not modelled here.
+      // Bit 1 shows the current dots, bit 4 switches voltage colouring off,
+      // bit 8 turns power colouring on, bit 16 suppresses value labels, bit 64
+      // enables the adaptive timestep, bit 128 enables the DC operating point
+      // on reset (CirSim.java:437-444, readCircuitFlags). Bits 2 (upstream's
+      // small grid) and 32 (linear scale in the afilter) are kept verbatim,
+      // not modelled here: the port has no grid-spacing or filter option, but
+      // a save must not clear a file bit upstream wrote.
       const flags = Number(tokens[1]) || 0;
       settings.headerFlags = flags;
       settings.showCurrent = (flags & 1) !== 0;
-      settings.smallGrid = (flags & 2) !== 0;
       // "Voltage off" is bit 4; a power-mode file sets bit 8 as well, and the
       // power flag wins when both arrive (readCircuitFlags,
       // CircuitLoader.java:274-277).

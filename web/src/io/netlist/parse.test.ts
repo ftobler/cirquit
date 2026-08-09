@@ -59,12 +59,28 @@ describe('netlist parsing', () => {
     expect(parseCircuit('$ 1 0.000005 10 50 5 43 5e-11\n').settings.showCurrent).toBe(true);
   });
 
-  it('decodes header flag bit 2 into smallGrid', () => {
-    expect(parseCircuit('$ 3 0.000005 10 50 5 43 5e-11\n').settings.smallGrid).toBe(true);
-    expect(parseCircuit('$ 1 0.000005 10 50 5 43 5e-11\n').settings.smallGrid).toBe(false);
+  it('preserves header flag bit 2 through a parse-save round trip', () => {
+    // The small-grid option is removed, but the file byte upstream wrote must
+    // survive load-and-save: bit 2 rides the headerFlags passthrough, never a
+    // settings field. A header with the bit set re-serialises with it set, and
+    // one without stays without.
+    for (const [header, expectBit] of [
+      ['$ 3', 2],
+      ['$ 1', 0],
+    ] as const) {
+      const parsed = parseCircuit(`${header} 0.000005 10 50 5 43 5e-11\n`);
+      const out = serializeCircuit(
+        parsed.elements,
+        { ...DEFAULT_SETTINGS, ...parsed.settings },
+        parsed.scopes,
+        parsed.passthrough,
+        parsed.order,
+      );
+      expect(Number(out.split('\n')[0].split(' ')[1]) & 2).toBe(expectBit);
+    }
   });
 
-  it('round-trips small grid through the header flags', () => {
+  it('round-trips a small-grid file through the header flags', () => {
     const parsed = parseCircuit('$ 3 0.000005 10 50 5 43 5e-11\n');
     const out = serializeCircuit(
       parsed.elements,
@@ -75,10 +91,10 @@ describe('netlist parsing', () => {
     );
     expect(Number(out.split('\n')[0].split(' ')[1]) & 2).toBe(2);
     const again = parseCircuit(out);
-    expect(again.settings.smallGrid).toBe(true);
+    expect(Number(again.settings.headerFlags ?? 0) & 2).toBe(2);
   });
 
-  it('a fresh circuit writes small grid clear (flag bits 0)', () => {
+  it('a fresh circuit writes header flag bit 2 clear', () => {
     const out = serializeCircuit([], { ...DEFAULT_SETTINGS });
     expect(Number(out.split('\n')[0].split(' ')[1]) & 2).toBe(0);
   });

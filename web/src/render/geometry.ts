@@ -95,10 +95,11 @@ export function splitWire(
   ];
 }
 
-/** Snaps `v` to a circuit grid for split points on a routed segment. The unit
- *  is the small grid, 8, which divides the 16-unit grid: every grid-aligned
- *  coordinate is a multiple of 8, so a point the caller already snapped to the
- *  active grid never moves, whichever of the two grids is active. */
+/** Snaps `v` to a circuit half-grid for split points on a routed segment. The
+ *  unit is 8, half the 16-unit grid: every grid-aligned coordinate is a
+ *  multiple of 8, so a point the caller already snapped to the grid never
+ *  moves, while a split can still land on a half-grid position between two
+ *  grid-aligned bends. */
 const SNAP_GRID = 8;
 
 function snapGrid(v: number): number {

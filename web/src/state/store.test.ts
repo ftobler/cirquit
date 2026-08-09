@@ -7,7 +7,7 @@ import { SAMPLE } from '../io/netlist/fixtures';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 import { APP_PREF_STORAGE_KEY, loadAppPrefs, type StorageLike } from './appPrefs';
 import { RECOVERY_STORAGE_KEY, readRecovery, startAutoSave, type RecoveryStorage } from './recovery';
-import { hasUnsavedChanges, makeElement, nextSwitchState, useStore } from './store';
+import { hasUnsavedChanges, makeElement, makeToolElement, nextSwitchState, snap, useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
@@ -658,7 +658,6 @@ describe('updateSettings reload classification', () => {
     // The gate symbol toggle is pure draw-mode like euroResistors; the choice
     // must not restart the simulation.
     ['euroGates', false, false],
-    ['smallGrid', true, false],
     ['showCrosshair', true, false],
     ['valueFontSize', 14, false],
     ['shortDecimalDigits', 2, false],
@@ -843,7 +842,6 @@ r 0 0 16 0 0 100
 
 describe('options panel settings', () => {
   it('DEFAULT_SETTINGS carries the new keys with upstream values', () => {
-    expect(DEFAULT_SETTINGS.smallGrid).toBe(false);
     expect(DEFAULT_SETTINGS.showCrosshair).toBe(false);
     // European symbols are the port's default (upstream's non-US default).
     expect(DEFAULT_SETTINGS.euroResistors).toBe(true);
@@ -870,24 +868,52 @@ describe('options panel settings', () => {
     expect(JSON.parse(JSON.stringify(s))).toEqual(s);
   });
 
-  it('loads header flag bit 2 into smallGrid and clears it when the bit is clear', () => {
+  it('preserves header flag bit 2 through a load and save', () => {
+    // The small-grid option is gone, but a file saved with upstream's bit 2
+    // must come back with the bit still set: the byte upstream wrote is the
+    // byte the port writes. Bit 2 is decoded into nothing, just parked in the
+    // headerFlags passthrough.
     useStore.getState().loadNetlist('$ 3 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n');
-    expect(useStore.getState().settings.smallGrid).toBe(true);
+    expect(Number(useStore.getState().settings.headerFlags) & 2).toBe(2);
+    expect(useStore.getState().toNetlist().split('\n')[0]).toBe('$ 3 0.000005 10 50 5 43 5e-11');
     useStore.getState().loadNetlist('$ 1 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n');
-    expect(useStore.getState().settings.smallGrid).toBe(false);
+    expect(Number(useStore.getState().settings.headerFlags ?? 0) & 2).toBe(0);
+    expect(useStore.getState().toNetlist().split('\n')[0]).toBe('$ 1 0.000005 10 50 5 43 5e-11');
   });
 
   it('newCircuit resets circuit settings but keeps app prefs and plain settings', () => {
-    // smallGrid is header-borne (a circuit setting), positiveColor an app
-    // pref, stepsPerFrame a plain setting: New resets only the first.
-    useStore.getState().updateSettings({ smallGrid: true, positiveColor: '#123456' });
+    // autoDC is header-borne (a circuit setting), positiveColor an app pref,
+    // stepsPerFrame a plain setting: New resets only the first.
+    useStore.getState().updateSettings({ autoDC: true, positiveColor: '#123456' });
     useStore.getState().updateSettings({ stepsPerFrame: 320 });
     useStore.getState().newCircuit();
     const s = useStore.getState().settings;
-    expect(s.smallGrid).toBe(false);
+    expect(s.autoDC).toBe(false);
     expect(s.showCurrent).toBe(true);
     expect(s.positiveColor).toBe('#123456');
     expect(s.stepsPerFrame).toBe(320);
+  });
+
+  it('grid spacing is a constant even on a small-grid file', () => {
+    // The small-grid option is gone, so a file that sets upstream's header bit
+    // 2 must not change the snap step: placement and drag still land on 16.
+    useStore.getState().loadNetlist('$ 3 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n');
+    expect(Number(useStore.getState().settings.headerFlags) & 2).toBe(2);
+    // Place: the pointer is snapped to the grid before the element is created,
+    // exactly as the interaction does (useCanvasInteractions.ts:371-373).
+    const x = snap(7.5, GRID_SIZE);
+    const y = snap(23.25, GRID_SIZE);
+    const id = useStore.getState().addElement(makeToolElement('resistor', x, y, x + GRID_SIZE, y));
+    let e = useStore.getState().elements.find((el) => el.id === id)!;
+    expect([e.x1, e.y1, e.x2, e.y2].every((v) => v % GRID_SIZE === 0)).toBe(true);
+    // Drag: each pointer is snapped before its delta is taken, as the move
+    // handler does (useCanvasInteractions.ts:534-535), so the stored
+    // coordinates stay on 16-multiples.
+    const from = snap(7.5, GRID_SIZE);
+    const to = snap(59.3, GRID_SIZE);
+    useStore.getState().moveElements([id], to - from, 0);
+    e = useStore.getState().elements.find((el) => el.id === id)!;
+    expect([e.x1, e.y1, e.x2, e.y2].every((v) => v % GRID_SIZE === 0)).toBe(true);
   });
 });
 
