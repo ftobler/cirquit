@@ -3058,6 +3058,102 @@ fn transistor_initial_state_is_seeded_on_load() {
 }
 
 #[test]
+fn transistor_model_line_resolves_saturation_current_into_the_engine() {
+    // The `32` line is the transistor twin of the `34` diode-model line: a
+    // TransistorModel table the element's model name looks up. The port's
+    // Ebers-Moll consumes only satCur and betaR (as `saturationCurrent` and
+    // `betaReverse`), so this builds exactly the spec that resolution writes
+    // and checks the engine uses it: a current source forces a known base
+    // current, which pins the operating point without a load-line coupling.
+    //
+    // In the active region (vbc << 0, so rev ~ -sat) the port's model gives
+    //   ib = fwd/bf - sat/br,   fwd = sat*(exp(Vbe/VT) - 1)
+    //   => Vbe = VT*ln(1 + bf*(ib + sat/br)/sat)
+    //   => Ic = fwd + sat*(1 + 1/br) = bf*ib + sat*(bf/br + 1 + 1/br)
+    // The early.txt model `early` (satCur 1e-13, betaR 1) resolves to the
+    // port's own defaults, so the corpus file must not change behaviour; a
+    // model whose satCur is 1e-9 shifts Vbe down by exactly
+    // VT*ln((1 + bf*(ib + sat2/br)/sat2)/(1 + bf*(ib + sat1/br)/sat1))
+    // ~ 0.238 V, proving the resolved saturation current is not ignored.
+    let stage = |sat: f64, br: f64, beta: f64| {
+        build(
+            vec![
+                // Forced base current: 1e-6 into the base node at (100,100).
+                elm(1, "current", &[[0, 0], [100, 100]], &[("current", 1e-6)]),
+                elm(2, "rail", &[[300, 0]], &[("maxVoltage", 5.0)]),
+                elm(
+                    3,
+                    "resistor",
+                    &[[300, 0], [300, 100]],
+                    &[("resistance", 10_000.0)],
+                ),
+                // Posts: base, collector, emitter.
+                elm(
+                    4,
+                    "transistor",
+                    &[[100, 100], [300, 100], [100, 200]],
+                    &[
+                        ("saturationCurrent", sat),
+                        ("betaReverse", br),
+                        ("beta", beta),
+                    ],
+                ),
+                elm(5, "ground", &[[100, 200]], &[]),
+                elm(6, "ground", &[[0, 0]], &[]),
+            ],
+            opts(1e-5, true),
+        )
+    };
+
+    // The resolved spec for early.txt's `early` model: beta 100 from the
+    // element line, satCur and betaR from the `32` line. At ib = 1e-6 the
+    // equations give Vbe = 0.53601 V, Ic ~ 1e-4 A and a collector at
+    // 5 - Ic*10k ~ 4 V, all active-region values.
+    let c = &mut stage(1e-13, 1.0, 100.0);
+    c.run(20);
+    let v = c.node_voltages();
+    let nodes = c.element_nodes();
+    let (nb, nc, ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+    let vbe = v[nb] - v[ne];
+    assert!(close(vbe, 0.5360, 5e-3), "early-model Vbe was {vbe}");
+    assert!(
+        close(v[nc], 4.0, 1e-2),
+        "early-model collector was {}",
+        v[nc]
+    );
+    let currents = c.element_currents();
+    let ic = currents[2]; // the 10k collector load
+    assert!(close(ic, 1e-4, 1e-6), "early-model Ic was {ic}");
+    assert!(
+        (95.0..105.0).contains(&(ic / 1e-6)),
+        "early-model gain was {}",
+        ic / 1e-6
+    );
+
+    // A model whose satCur differs (1e-9, documented as not in the corpus)
+    // drops Vbe to 0.2978 V, the exact Ebers-Moll prediction for the same
+    // forced base current, while Ic stays at bf*ib (the extra 2*sat ~ 2e-9 A
+    // of junction leakage is far below the assertion tolerance).
+    let c2 = &mut stage(1e-9, 1.0, 100.0);
+    c2.run(20);
+    let v = c2.node_voltages();
+    let nodes = c2.element_nodes();
+    let (nb, _nc, ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+    let vbe_high = v[nb] - v[ne];
+    assert!(close(vbe_high, 0.2978, 5e-3), "high-Is Vbe was {vbe_high}");
+    assert!(
+        close(vbe - vbe_high, 0.2382, 1e-2),
+        "Vbe shift was {}",
+        vbe - vbe_high
+    );
+    assert!(
+        close(c2.element_currents()[2], 1e-4, 1e-6),
+        "high-Is Ic was {}",
+        c2.element_currents()[2]
+    );
+}
+
+#[test]
 fn darlington_current_gain_is_the_product_of_the_two_betas() {
     // A darlington is two Ebers-Moll transistors in cascade: Q1's emitter
     // feeds Q2's base and the collectors share one post, so the current gain
@@ -6572,6 +6668,113 @@ fn spdt_voltage_source_closure_follows_the_selected_throw() {
         close(c.element_currents()[3], 0.0, 1e-12),
         "idle resistor carried {}, expected none",
         c.element_currents()[3]
+    );
+}
+
+/// The cross-switch divider: a 10 V rail driving one pole, a 5 V rail the
+/// other, each feeding its own load through the switch. Throwing the lever
+/// swaps which rail drives which load, with each closed pole an ideal short.
+fn cross_switch_divider_circuit() -> Circuit {
+    build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "ground", &[[0, 100]], &[]),
+            elm(
+                3,
+                "crossSwitch",
+                &[[0, 0], [112, -16], [0, 48], [112, 64]],
+                &[("position", 0.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[112, -16], [112, -64]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[112, -64]], &[]),
+            elm(6, "voltage", &[[0, 80], [0, 48]], &[("maxVoltage", 5.0)]),
+            elm(7, "ground", &[[0, 80]], &[]),
+            elm(
+                8,
+                "resistor",
+                &[[112, 64], [112, 128]],
+                &[("resistance", 2000.0)],
+            ),
+            elm(9, "ground", &[[112, 128]], &[]),
+        ],
+        opts(1e-5, true),
+    )
+}
+
+#[test]
+fn cross_switch_crosses_the_pole_pairs_on_throw() {
+    // A cross switch is two independent pole pairs whose throw pairing swaps
+    // with the lever: posts (0,1)+(2,3) straight through at position 0,
+    // crossed to (0,3)+(2,1) at position 1. Each pole is an ideal short
+    // (a 0 V voltage source), so position 0 ties the 10 V rail to the 1k
+    // load and the 5 V rail to the 2k load, each load sitting at its rail's
+    // full potential; throwing the lever swaps which rail drives which load.
+    let c = &mut cross_switch_divider_circuit();
+    c.run(5);
+    assert!(
+        close(c.element_voltages()[3], 10.0, 1e-9),
+        "1k load at position 0 was {} V, expected 10 V",
+        c.element_voltages()[3]
+    );
+    assert!(
+        close(c.element_voltages()[7], 5.0, 1e-9),
+        "2k load at position 0 was {} V, expected 5 V",
+        c.element_voltages()[7]
+    );
+    assert!(
+        close(c.element_currents()[3], 0.01, 1e-9),
+        "1k load current at position 0 was {} A, expected 10 mA",
+        c.element_currents()[3]
+    );
+    assert!(
+        close(c.element_currents()[7], 0.0025, 1e-9),
+        "2k load current at position 0 was {} A, expected 2.5 mA",
+        c.element_currents()[7]
+    );
+
+    // Position 1 crosses the throws, so the 10 V rail now drives the 2k load
+    // and the 5 V rail the 1k.
+    assert!(c.set_state(3, 1), "cross switch refused position 1");
+    c.run(5);
+    assert!(
+        close(c.element_voltages()[3], 5.0, 1e-9),
+        "1k load at position 1 was {} V, expected 5 V",
+        c.element_voltages()[3]
+    );
+    assert!(
+        close(c.element_voltages()[7], 10.0, 1e-9),
+        "2k load at position 1 was {} V, expected 10 V",
+        c.element_voltages()[7]
+    );
+    assert!(
+        close(c.element_currents()[3], 0.005, 1e-9),
+        "1k load current at position 1 was {} A, expected 5 mA",
+        c.element_currents()[3]
+    );
+    assert!(
+        close(c.element_currents()[7], 0.005, 1e-9),
+        "2k load current at position 1 was {} A, expected 5 mA",
+        c.element_currents()[7]
+    );
+
+    // And back to straight-through, exercising the re-analyse path in both
+    // directions.
+    assert!(c.set_state(3, 0), "cross switch refused position 0");
+    c.run(5);
+    assert!(
+        close(c.element_voltages()[3], 10.0, 1e-9),
+        "1k load after re-throw was {} V, expected 10 V",
+        c.element_voltages()[3]
+    );
+    assert!(
+        close(c.element_voltages()[7], 5.0, 1e-9),
+        "2k load after re-throw was {} V, expected 5 V",
+        c.element_voltages()[7]
     );
 }
 

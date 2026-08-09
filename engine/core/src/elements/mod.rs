@@ -17,6 +17,7 @@ pub mod r#box;
 pub mod capacitor;
 pub mod chip;
 pub mod counter;
+pub mod cross_switch;
 pub mod current_source;
 pub mod d_flip_flop;
 pub mod dac;
@@ -127,6 +128,7 @@ pub const KINDS: &[&str] = &[
     "analogSwitch",
     "audioOutput",
     "switch2",
+    "crossSwitch",
     "analogSwitch2",
     "transformer",
     "tappedTransformer",
@@ -219,6 +221,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "analogSwitch" => Box::new(analog_switch::AnalogSwitch::new(spec)),
         "audioOutput" => Box::new(audio_output::AudioOutput::new(spec)),
         "switch2" => Box::new(multi_throw_switch::MultiThrowSwitch::new(spec)),
+        "crossSwitch" => Box::new(cross_switch::CrossSwitch::new(spec)),
         "analogSwitch2" => Box::new(analog_switch2::AnalogSwitch2::new(spec)),
         "transformer" => Box::new(transformer::Transformer::new_basic(spec)),
         "tappedTransformer" => Box::new(transformer::Transformer::new_tapped(spec)),

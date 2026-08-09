@@ -24,14 +24,14 @@ describe('transistor corpus parity', () => {
         if (e.params.pnp === -1) pnp += 1;
         else if (e.params.pnp === 1) npn += 1;
         else anomalies.push(`${file}: pnp=${e.params.pnp}`);
-        if (e.text !== undefined) withModel += 1;
+        if (e.modelName !== undefined) withModel += 1;
         const [again] = parseCircuit(
           serializeCircuit([e], { ...DEFAULT_SETTINGS, ...parsed.settings }),
         ).elements;
         if (again.params.pnp !== e.params.pnp) {
           anomalies.push(`${file}: pnp changed on round trip`);
         }
-        if (again.text !== e.text) {
+        if (again.modelName !== e.modelName) {
           anomalies.push(`${file}: model name changed on round trip`);
         }
       }

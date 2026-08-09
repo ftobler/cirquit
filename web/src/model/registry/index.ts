@@ -57,6 +57,7 @@ import { MULTIPLEXER_DEF } from './elements/multiplexer';
 import { NOISE_DEF } from './elements/noise';
 import { SWITCH_DEF } from './elements/switch';
 import { SWITCH2_DEF } from './elements/switch2';
+import { CROSS_SWITCH_DEF } from './elements/crossSwitch';
 import { ANALOG_SWITCH_DEF } from './elements/analogSwitch';
 import { ANALOG_SWITCH2_DEF } from './elements/analogSwitch2';
 import { TRANSFORMER_DEF, TAPPED_TRANSFORMER_DEF, CUSTOM_TRANSFORMER_DEF } from './elements/transformer';
@@ -116,6 +117,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   MOTOR_PROTECTION_SWITCH_DEF,
   SWITCH_DEF,
   SWITCH2_DEF,
+  CROSS_SWITCH_DEF,
   ANALOG_SWITCH_DEF,
   ANALOG_SWITCH2_DEF,
   TRANSFORMER_DEF,

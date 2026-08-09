@@ -8,6 +8,7 @@ import type {
   ScopeConfig,
   ScopePlotConfig,
   SliderConfig,
+  TransistorModel,
 } from './types';
 import { unescapeToken } from './tokens';
 
@@ -167,7 +168,6 @@ const UPSTREAM_ELEMENT_CODES = new Set([
   '425',
   '426',
   '429',
-  '430',
   '431',
   '432',
   '433',
@@ -218,6 +218,7 @@ export function parseCircuit(text: string): ParsedCircuit {
   const unsupported: string[] = [];
   const order: NetlistLine[] = [];
   const diodeModels = new Map<string, DiodeModel>();
+  const transistorModels = new Map<string, TransistorModel>();
 
   /**
    * Upstream's reader breaks a line on `\n` or `\r`, so a classic-Mac file of
@@ -354,6 +355,43 @@ export function parseCircuit(text: string): ParsedCircuit {
       continue;
     }
 
+    if (head === '32') {
+      // Transistor-model library line (TransistorModel.undump,
+      // TransistorModel.java:234-248): `32 <escaped name> <flags> <satCur>
+      // <invRollOffF> <BEleakCur> <leakBEemissionCoeff> <invRollOffR>
+      // <BCleakCur> <leakBCemissionCoeff> <emissionCoeffF> <emissionCoeffR>
+      // <invEarlyVoltF> <invEarlyVoltR> <betaR> [junction/transit-time
+      // tokens]`. The port's Ebers-Moll consumes only satCur (index 3) and
+      // betaR (index 14); the rest of the table stays on the line but is not
+      // resolved into params. Like the `34` line it rides through in
+      // passthrough so a save re-emits it in place, and it is not an element
+      // line upstream either, so it takes no scope index and is not reported
+      // unsupported.
+      // The same skip-non-finite guard readParams uses, so a truncated or
+      // hand-edited line degrades field by field instead of stamping NaN. A
+      // line missing the full table, or with a non-positive satCur/betaR, is
+      // still preserved but never becomes a resolvable model.
+      const name = tokens[1] === undefined ? '' : unescapeToken(tokens[1]);
+      const num = (i: number): number | undefined => {
+        const v = Number(tokens[i]);
+        return tokens[i] !== undefined && Number.isFinite(v) ? v : undefined;
+      };
+      const saturationCurrent = num(3);
+      const betaReverse = num(14);
+      if (
+        name !== '' &&
+        saturationCurrent !== undefined &&
+        saturationCurrent > 0 &&
+        betaReverse !== undefined &&
+        betaReverse > 0
+      ) {
+        transistorModels.set(name, { saturationCurrent, betaReverse });
+      }
+      passthrough.push(lineText);
+      order.push({ kind: 'other', line: rawLine });
+      continue;
+    }
+
     if (head === '38') {
       // Slider (Adjustable) line: `38 <e> [F<flags>] <editItem> <minValue>
       // <maxValue> [<sharedIndex>] <sliderText> [<sliderStep>]`
@@ -429,8 +467,8 @@ export function parseCircuit(text: string): ParsedCircuit {
 
     const def = defForDumpCode(head);
     if (!def) {
-      // Hints (`h`), transistor models (`32`) and anything newer than this
-      // build. Keep the line so a save round-trips.
+      // Hints (`h`) and anything newer than this build. Keep the line so a
+      // save round-trips.
       passthrough.push(lineText);
       order.push({ kind: 'other', line: rawLine });
       if (/^[0-9]+$/.test(head) || /^[a-zA-Z]$/.test(head)) unsupported.push(head);
@@ -472,8 +510,17 @@ export function parseCircuit(text: string): ParsedCircuit {
   // reason: a `34` line can sit below the element that names it. The library
   // entry wins over the element defaults, matching upstream's
   // `getModelWithNameOrCopy` (DiodeModel.java:62-76); an unknown name leaves
-  // the element on its defaults.
+  // the element on its defaults. The transistor resolves its own `32` table
+  // into satCur and betaR, the only Ebers-Moll params the port models.
   for (const e of elements) {
+    if (e.kind === 'transistor') {
+      if (e.modelName === undefined) continue;
+      const model = transistorModels.get(e.modelName);
+      if (model === undefined) continue;
+      e.params.saturationCurrent = model.saturationCurrent;
+      e.params.betaReverse = model.betaReverse;
+      continue;
+    }
     if (!MODEL_KINDS.has(e.kind) || e.modelName === undefined) continue;
     const model = diodeModels.get(e.modelName);
     if (model === undefined) continue;

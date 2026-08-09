@@ -1223,12 +1223,11 @@
   {
     "file": "early.txt",
     "format": "plain",
-    "missing": [
-      "32"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "eclnor.txt",
@@ -2510,12 +2509,11 @@
   {
     "file": "relays.txt",
     "format": "plain",
-    "missing": [
-      "430"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "relaytff.txt",

@@ -492,10 +492,10 @@ describe('transistor file format', () => {
       't 496 256 560 256 0 1 -3.1354863883836575 0.6928898087953951 100 early',
     );
     expect(e.params.pnp).toBe(1);
-    expect(e.text).toBe('early');
+    expect(e.modelName).toBe('early');
     expect(elementLine.endsWith(' early')).toBe(true);
     const [again] = parseCircuit(elementLine).elements;
-    expect(again.text).toBe('early');
+    expect(again.modelName).toBe('early');
     expect(again.params.pnp).toBe(1);
   });
 

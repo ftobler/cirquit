@@ -106,8 +106,10 @@ export const TRANSISTOR_DEF: ElementDef = {
   noDiagonal: true,  // TransistorElm.java:80
   defaults: { pnp: 1, beta: 100 },
   // The file sign is the type: +1 is NPN, -1 is PNP, and the optional 5th
-  // token is the model name. A non-negative pnp (including the legacy 0
-  // saved by older builds) normalises to NPN.
+  // token is the unescaped model name, read into the `modelName` slot the
+  // `32` model-library resolution looks up (TransistorElm.java:58-75). A
+  // non-negative pnp (including the legacy 0 saved by older builds)
+  // normalises to NPN.
   parse: (t, e) => {
     const raw = Number(t[0]);
     e.params.pnp = Number.isFinite(raw) ? (raw < 0 ? -1 : 1) : 1;
@@ -116,7 +118,7 @@ export const TRANSISTOR_DEF: ElementDef = {
     if (t[1] !== undefined && Number.isFinite(Number(t[1]))) e.params.lastVbe = Number(t[1]);
     if (t[2] !== undefined && Number.isFinite(Number(t[2]))) e.params.lastVbc = Number(t[2]);
     if (t[3] !== undefined && Number.isFinite(Number(t[3]))) e.params.beta = Number(t[3]);
-    if (t[4] !== undefined) e.text = t[4];
+    if (t[4] !== undefined) e.modelName = t[4];
   },
   // The model name is re-emitted only when it was present on load, so a line
   // that arrived with 4 tokens stays 4 tokens.
@@ -125,7 +127,7 @@ export const TRANSISTOR_DEF: ElementDef = {
     e.params.lastVbe ?? 0,
     e.params.lastVbc ?? 0,
     e.params.beta ?? 100,
-    ...(e.text !== undefined ? [e.text] : []),
+    ...(e.modelName !== undefined ? [e.modelName] : []),
   ],
   fields: [
     {

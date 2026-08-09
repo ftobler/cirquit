@@ -66,15 +66,11 @@ export const SIM_TIMEOUT_MS = 60_000;
 export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {};
 
 /**
- * Device-model definitions: `32` transistor. Not elements, so they take no
- * slot in the element list, but not harmless passthrough either: the port
- * keeps the model name and simulates the default parameters instead, so a
- * file carrying one is not fully loaded. Counted with the missing kinds until
- * the model table is parsed. The `34` diode-model lines are parsed and
- * resolved on load (zener-model-line-parsing), so they no longer reach the
- * unsupported list at all.
+ * Device-model definitions: none left. The `32` transistor lines are parsed
+ * and resolved on load (transistor-model-lines), like the `34` diode-model
+ * lines before them, so they no longer reach the unsupported list at all.
  */
-const MODEL_CODES = new Set(['32']);
+const MODEL_CODES = new Set<string>();
 
 /** Files in the corpus directory that are not circuits. */
 const NON_CIRCUITS = new Set(['setuplist.txt', 'README.md']);

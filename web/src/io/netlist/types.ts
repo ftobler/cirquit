@@ -62,6 +62,19 @@ export interface DiodeModel {
 }
 
 /**
+ * A transistor model loaded from a `32` line (`32 <escaped name> <flags>
+ * <satCur> ... <betaR>`, TransistorModel.undump, TransistorModel.java:234-248).
+ * Keyed by the unescaped name, like the diode models. The port's Ebers-Moll
+ * consumes only satCur and betaR; the rest of the table (early voltage,
+ * high-current roll-off, junction leakage) stays on the line but is not
+ * resolved into params.
+ */
+export interface TransistorModel {
+  saturationCurrent: number;
+  betaReverse: number;
+}
+
+/**
  * A slider (`38` line, upstream's Adjustable) as stored in the file:
  * `38 <e> [F<flags>] <editItem> <minValue> <maxValue> [<sharedIndex>]
  * <sliderText> [<sliderStep>]` (Adjustable.java:47-76). Not an element, so it
