@@ -207,7 +207,10 @@ export function useCanvasInteractions(
     (deltaY: number) => {
       const p = popoverRef.current;
       if (!p) return;
-      const session = stepScrollValue(p.session, deltaY);
+      // wheelSensitivity is steps per notch, read live so a settings change
+      // mid-session takes effect on the next wheel tick (ScrollValuePopup.java:214).
+      const sensitivity = useStore.getState().settings.wheelSensitivity;
+      const session = stepScrollValue(p.session, deltaY, sensitivity);
       useStore.getState().setParam(session.id, session.param, selectionValue(session));
       setPopover({ ...p, session });
     },
@@ -706,8 +709,12 @@ export function useCanvasInteractions(
       // opening deltaY (ScrollValuePopup.java:59, :76). commit's dedup drops a
       // session that never changes anything.
       state.commit();
-      const session0 = openScrollValue(hit.kind, hit.id, param, hit.params[param] ?? 0);
-      const session = stepScrollValue(session0, wheelPixels(ev.deltaY, ev.deltaMode));
+      const session0 = openScrollValue(hit.kind, hit.id, hit.params[param] ?? 0);
+      const session = stepScrollValue(
+        session0,
+        wheelPixels(ev.deltaY, ev.deltaMode),
+        state.settings.wheelSensitivity,
+      );
       state.setParam(session.id, session.param, selectionValue(session));
       setPopover({ session, x: ev.clientX, y: ev.clientY });
       return;

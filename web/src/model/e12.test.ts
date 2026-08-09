@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { E12, e12DecadeRange, e12Values } from './e12';
+import { E12, e12DecadeRange, e12Values, linearValues } from './e12';
 
 describe('e12DecadeRange', () => {
   it('mirrors upstream ranges for the three scrollable kinds', () => {
@@ -74,5 +74,45 @@ describe('e12Values', () => {
 
   it('returns an empty list for an unknown kind', () => {
     expect(e12Values('mosfet', 1000)).toEqual({ values: [], index: 0 });
+  });
+});
+
+describe('linearValues', () => {
+  it('builds a +/-100 step ladder centred on the current value', () => {
+    const { values, index } = linearValues(1, 5);
+    expect(values.length).toBe(201);
+    expect(values[0]).toBe(-95);
+    expect(values[values.length - 1]).toBe(105);
+    expect(values[index]).toBe(5);
+    expect(index).toBe(100);
+  });
+
+  it('centres on the snapped grid point and splices an off-grid current', () => {
+    const { values, index } = linearValues(1, 4.7);
+    expect(values.length).toBe(202);
+    expect(values[index]).toBe(4.7);
+    expect(values[index - 1]).toBe(4);
+    expect(values[index + 1]).toBe(5);
+  });
+
+  it('steps a current source by 1 mA', () => {
+    const { values, index } = linearValues(1e-3, 0.01);
+    expect(values.length).toBe(201);
+    expect(values[index]).toBeCloseTo(0.01);
+    expect(values[index + 1]).toBeCloseTo(0.011);
+    expect(values[index - 1]).toBeCloseTo(0.009);
+  });
+
+  it('allows negative values deliberately', () => {
+    const { values, index } = linearValues(1, -5);
+    expect(values[index]).toBe(-5);
+    expect(values[0]).toBe(-105);
+    expect(values[values.length - 1]).toBe(95);
+  });
+
+  it('stays on a grid point without splicing a duplicate', () => {
+    const { values, index } = linearValues(1, 6);
+    expect(values[index]).toBe(6);
+    expect(values.length).toBe(201);
   });
 });

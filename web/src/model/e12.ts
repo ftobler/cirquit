@@ -46,3 +46,28 @@ export function e12Values(kind: string, current: number): { values: number[]; in
   values.push(current);
   return { values, index: values.length - 1 };
 }
+
+/** The linear ladder sources step on: every grid point within +/-100 steps of
+ *  `current`, snapped to the step grid with the current value spliced in at
+ *  its sorted position when off-grid, the same splice rule as `e12Values`.
+ *  Bound so the popover list stays renderable; the session reopens centred
+ *  every time the popover opens, so the bound is never a ceiling in practice.
+ *  Negative values are allowed deliberately: a negative source is legal and
+ *  useful, so the ladder must not clamp them out. */
+export function linearValues(step: number, current: number): { values: number[]; index: number } {
+  const centre = Math.round(current / step);
+  const values: number[] = [];
+  for (let k = centre - 100; k <= centre + 100; k++) values.push(k * step);
+  for (let i = 0; i < values.length; i++) {
+    // Same float-noise-tolerant match as e12Values above.
+    if (Math.abs(current - values[i]) <= Math.abs(values[i]) * 1e-9) {
+      return { values, index: i };
+    }
+    if (current < values[i]) {
+      values.splice(i, 0, current);
+      return { values, index: i };
+    }
+  }
+  values.push(current);
+  return { values, index: values.length - 1 };
+}
