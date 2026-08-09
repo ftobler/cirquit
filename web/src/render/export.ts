@@ -78,6 +78,9 @@ export function drawAllElements(
       power: current * voltage,
       value,
       state,
+      // Exports draw the transmission line as its flat body: no engine wave
+      // samples reach the static image (it is one instant, not an animation).
+      wave: [],
       dotPhase: 0,
       // Exports draw with `showCurrent: false`, so per-post currents and
       // phases are handed as zeros like the scalar phase.

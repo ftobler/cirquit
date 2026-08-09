@@ -156,6 +156,11 @@ export interface Theme {
    *  it, so a printable export flips it with the background exactly like the
    *  original. */
   whiteColor: string;
+  /** Upstream's `Color.darkGray` (64,64,64): the transmission line's body
+   *  fill behind its voltage strips, which upstream fills dark gray
+   *  (TransLineElm.java:130-132). A real dark grey rather than a borrowed
+   *  text colour, so the strip margins read like the original. */
+  darkGray: string;
   text: string;
   selection: string;
   highlight: string;
@@ -237,6 +242,12 @@ export interface DrawContext {
    *  its number means: a fuse's melt fraction `heat / i2t` (>= 1 blown), a
    *  lamp's filament temperature in kelvin; every other element reports 0. */
   state: number;
+  /** Per-element body samples from the engine's `transmissionLineWave`, one
+   *  value per drawn strip of the body, in draw order: the transmission line's
+   *  delay-line voltage averaged from both travelling waves and resampled to
+   *  the drawn length. Empty for every other element (which never populates
+   *  it) and on export, which draws the flat body. */
+  wave: number[];
   /** Advances each animation frame; drives the current-flow animation. */
   dotPhase: number;
   /** Current each terminal exchanges with its node, indexed like `posts()`

@@ -4,7 +4,7 @@ import { scopeParamsFingerprint } from '../../engine/simulator';
 import { defFor } from '../../model/registry';
 import type { DrawContext, Point } from '../../model/types';
 import { dotPhaseStep, stepPostPhases, TOO_FAST, wrapPhase } from '../../render/dots';
-import { makeTheme } from '../../render/draw';
+import { elementLength, makeTheme } from '../../render/draw';
 import { drawGrid } from '../../render/grid';
 import { invalidDropPoint } from '../../render/geometry';
 import { postDotPoints, shouldDrawDot } from '../../render/junction';
@@ -216,6 +216,15 @@ export function useFrameLoop(
         const value = idx !== undefined && values ? (values[idx] ?? 0) : 0;
         const state = idx !== undefined && states ? (states[idx] ?? 0) : 0;
 
+        // The body-wave strips only exist for the transmission line, so only
+        // that kind pays for the on-demand engine call; every other element
+        // draws the flat body from an empty array. `segments = dn/2` is the
+        // upstream draw's own resample count (TransLineElm.java:126).
+        let wave: number[] = [];
+        if (engine && e.kind === 'transmissionLine') {
+          wave = Array.from(engine.transmissionLineWave(e.id, Math.floor(elementLength(e) / 2)));
+        }
+
         // The engine is authoritative for a fuse's pop; the store's `e.state`
         // is the serialized copy. Push the live value in on a transition (both
         // directions, so a reset un-pops it), exactly as a switch throw flows
@@ -280,6 +289,7 @@ export function useFrameLoop(
           power: current * voltage,
           value,
           state,
+          wave,
           dotPhase: phase,
           postCurrents: postCs,
           postDotPhases,

@@ -1,4 +1,4 @@
-import { currentDots, interp, line, voltageColor } from '../../../render/draw';
+import { currentDotsFrom, interp, interpPrecise, line, voltageColor } from '../../../render/draw';
 import { readParams, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -42,9 +42,9 @@ function lineGeometry(e: CircuitElement): LineGeometry {
 function drawTransmissionLine(g: DrawContext, e: CircuitElement): void {
   const { posts, inner } = lineGeometry(e);
   // The body is a filled rectangle between the near and far edges, diagonal to
-  // the axis (TransLineElm.java:131-132). Upstream fills dark gray; the port's
-  // theme has no dark gray, so the text colour stands in.
-  g.ctx.fillStyle = g.theme.text;
+  // the axis (TransLineElm.java:131-132). Upstream fills dark gray, so the
+  // theme carries a dark-grey entry rather than borrowing the text colour.
+  g.ctx.fillStyle = g.theme.darkGray;
   g.ctx.fillRect(
     inner[2].x,
     inner[2].y,
@@ -54,18 +54,35 @@ function drawTransmissionLine(g: DrawContext, e: CircuitElement): void {
   for (let i = 0; i < 4; i++) {
     line(g, posts[i], inner[i], voltageColor(g, g.voltages[i]));
   }
+  // The travelling wave: one strip per drawn segment, each coloured by the
+  // delay-line voltage at that position, already averaged and resampled to the
+  // drawn length by the engine (TransLineElm.java:126-149). Each strip draws
+  // the thin boundary line at its near fraction, then the thick band along the
+  // near edge; an empty array (no engine, or before the first stamp) falls
+  // back to the flat body. `interpPrecise` keeps the band seamless: rounded
+  // neighbours would leave a pixel gap between strips.
+  if (g.wave.length > 0) {
+    const segf = 1 / g.wave.length;
+    for (let i = 0; i < g.wave.length; i++) {
+      const color = voltageColor(g, g.wave[i]);
+      const far = interpPrecise(inner[0], inner[1], i * segf);
+      const near = interpPrecise(inner[2], inner[3], i * segf);
+      line(g, far, near, color, 1);
+      line(g, interpPrecise(inner[2], inner[3], (i + 1) * segf), near, color);
+    }
+  }
   // The far edge reads as the line's far conductor, drawn over the body in the
-  // inner-post colour (TransLineElm.java:150-151). The animated wave segments
-  // are skipped: the ring buffer never crosses the engine boundary.
+  // inner-post colour (TransLineElm.java:150-151).
   line(g, inner[0], inner[1], voltageColor(g, g.voltages[0]));
-  // Both runs carry the left source's current reversed, matching upstream's
-  // `drawDots(g, posts[0], inner[0], -curCount1)` and
-  // `drawDots(g, posts[2], inner[2], -curCount1)` with `curCount1 =
-  // updateDotCount(-current1, ...)` (TransLineElm.java:154, :158). The right
-  // port's runs are not drawn: the engine boundary exposes only the left
-  // source's current.
-  currentDots(g, inner[0], posts[0], g.current);
-  currentDots(g, posts[2], inner[2], g.current);
+  // The four dot runs mirror upstream's `-curCount1`/`-curCount2` pairs
+  // (TransLineElm.java:154-160): the two runs of each port carry that port's
+  // source current, with the inner-post run reversed by swapping its
+  // endpoints. Each run steps on its own post phase, so the two ports can
+  // carry different currents without dragging each other's speed.
+  currentDotsFrom(g, inner[0], posts[0], g.postCurrents[0], g.postDotPhases[0]);
+  currentDotsFrom(g, posts[2], inner[2], g.postCurrents[0], g.postDotPhases[0]);
+  currentDotsFrom(g, inner[1], posts[1], g.postCurrents[1], g.postDotPhases[1]);
+  currentDotsFrom(g, posts[3], inner[3], g.postCurrents[1], g.postDotPhases[1]);
 }
 
 export const TRANSMISSION_LINE_DEF: ElementDef = {

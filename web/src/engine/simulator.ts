@@ -353,6 +353,14 @@ export class SimEngine {
     return this.sim.elementStates();
   }
 
+  /** Strip voltages for one transmission line's body wave, already averaged
+   *  and resampled to `segments` samples (one per drawn strip). Empty before
+   *  the first stamp and for ids that are not transmission lines, so the draw
+   *  falls back to the flat body. */
+  transmissionLineWave(id: number, segments: number): Float32Array {
+    return this.sim.transmissionLineWave(id, segments);
+  }
+
   /** Dissipated power per element, using the scope Power-trace convention
    *  (so a delivering source reads negative), matching the readout upstream
    *  shows. */

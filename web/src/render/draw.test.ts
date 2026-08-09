@@ -37,6 +37,7 @@ import { MOSFET_DEF } from '../model/registry/elements/mosfet';
 import { RAIL_DEF } from '../model/registry/elements/rail';
 import { VOLTAGE_DEF } from '../model/registry/elements/voltage';
 import { LAMP_DEF } from '../model/registry/elements/lamp';
+import { TRANSMISSION_LINE_DEF } from '../model/registry/elements/transmissionLine';
 import { TOO_FAST, dotPhaseStep } from './dots';
 import {
   CHIP_FLIP_X,
@@ -65,6 +66,7 @@ interface CtxStub {
   stroke: ReturnType<typeof vi.fn>;
   arc: ReturnType<typeof vi.fn>;
   fill: ReturnType<typeof vi.fn>;
+  fillRect: ReturnType<typeof vi.fn>;
   save: ReturnType<typeof vi.fn>;
   restore: ReturnType<typeof vi.fn>;
   setLineDash: ReturnType<typeof vi.fn>;
@@ -128,6 +130,7 @@ const mkCtx = (): {
       arcs.push({ x, y });
     }),
     fill: record('fill'),
+    fillRect: record('fillRect'),
     save: record('save'),
     restore: record('restore'),
     setLineDash: record('setLineDash'),
@@ -155,6 +158,7 @@ const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext =
   power: 0,
   value: 0,
   state: 0,
+  wave: [],
   dotPhase,
   postCurrents: [],
   postDotPhases: [],
@@ -982,6 +986,7 @@ describe('lamp current-dot carry', () => {
         arcs.push({ x, y, r });
       }),
       fill: vi.fn(),
+      fillRect: vi.fn(),
       save: vi.fn(),
       restore: vi.fn(),
       setLineDash: vi.fn(),
@@ -1529,6 +1534,59 @@ describe('chip pin labels inside the housing', () => {
   });
 });
 
+describe('transmission line body wave', () => {
+  const tl = (): CircuitElement => ({
+    id: 1,
+    kind: 'transmissionLine',
+    x1: 0,
+    y1: 0,
+    x2: 400,
+    y2: 0,
+    flags: 0,
+    params: { width: 32 },
+  });
+
+  it('draws one strip per sample, spanning the inner edges end to end', () => {
+    const { ctx, paths, strokes } = mkCtx();
+    // Four samples at quarter fractions: `segf = 1/4` is exact in binary, so
+    // the first boundary lands exactly on inner[0]/inner[2] and the last band
+    // exactly on inner[3]. Geometry: posts are (0,32),(400,32),(0,0),(400,0),
+    // inner (0,24),(400,24),(0,8),(400,8), the body between y=8 and y=24.
+    TRANSMISSION_LINE_DEF.draw(
+      { ...context(ctx, 0), voltages: [0, 0, 0, 0], showVoltageColor: true, wave: [5, 0, -5, 0] },
+      tl(),
+    );
+    // The four lead strokes come first, then the strips: each draws a thin
+    // boundary line (width 1) and a thick band (the default 3) in the strip's
+    // own voltage colour, then the far edge. The first boundary spans
+    // inner[0] -> inner[2], the last band ends on inner[3].
+    expect(paths[4][0]).toEqual({ x: 0, y: 24 });
+    expect(paths[4][1]).toEqual({ x: 0, y: 8 });
+    expect(paths[11][0]).toEqual({ x: 400, y: 8 });
+    // Colours come straight from voltageColor: +5 V green, 0 V neutral,
+    // -5 V red, with the two weights per strip.
+    expect(strokes[4].style).toBe('rgb(0,255,0)');
+    expect(strokes[4].width).toBe(1);
+    expect(strokes[5].style).toBe('rgb(0,255,0)');
+    expect(strokes[5].width).toBe(3);
+    expect(strokes[6].style).toBe('rgb(128,128,128)');
+    expect(strokes[7].style).toBe('rgb(128,128,128)');
+    expect(strokes[8].style).toBe('rgb(255,0,0)');
+    expect(strokes[9].style).toBe('rgb(255,0,0)');
+  });
+
+  it('falls back to the flat body when the wave array is empty', () => {
+    const { ctx, calls, strokes } = mkCtx();
+    TRANSMISSION_LINE_DEF.draw(
+      { ...context(ctx, 0), voltages: [0, 0, 0, 0], wave: [] },
+      tl(),
+    );
+    // The four leads and the far edge only: no per-strip strokes appear.
+    expect(calls.filter((c) => c === 'stroke').length).toBe(5);
+    expect(strokes.length).toBe(5);
+  });
+});
+
 describe('current dot direction', () => {
   // The animated dots must advance from post A toward post B on a circuit
   // with a known current loop, sampled two frames apart. The engine reports
@@ -1579,6 +1637,7 @@ describe('current dot direction', () => {
         arcs.push({ x, y, r });
       }),
       fill: vi.fn(),
+      fillRect: vi.fn(),
       save: vi.fn(),
       restore: vi.fn(),
       setLineDash: vi.fn(),
@@ -1699,6 +1758,55 @@ describe('current dot direction', () => {
       { x: 78, y: 16 },
       { x: 100, y: 16 },
     ]);
+  });
+
+  it('the transmission line draws four runs, each port flowing the upstream way', () => {
+    // The four runs mirror TransLineElm.java:154-160: both of a port's runs
+    // carry that port's own source current, with the inner-post run reversed
+    // by swapping its endpoints. Geometry: posts (0,32),(400,32),(0,0),(400,0),
+    // inner (0,24),(400,24),(0,8),(400,8). With positive port currents, the
+    // heads sit at inner[0], posts[2], inner[1], posts[3], and every run
+    // advances toward its far end (all four point downward here).
+    const drawTl = (phase: number): Point[] => {
+      const { ctx, arcs } = dotCtx();
+      TRANSMISSION_LINE_DEF.draw(
+        {
+          ...context(ctx, 0),
+          voltages: [0, 0, 0, 0],
+          postCurrents: [0.01, 0.01, 0, 0],
+          postDotPhases: [phase, phase, 0, 0],
+        },
+        {
+          id: 1,
+          kind: 'transmissionLine',
+          x1: 0,
+          y1: 0,
+          x2: 400,
+          y2: 0,
+          flags: 0,
+          params: { width: 32 },
+        },
+      );
+      return dots(arcs);
+    };
+    const heads = [
+      { x: 0, y: 24 },
+      { x: 0, y: 0 },
+      { x: 400, y: 24 },
+      { x: 400, y: 0 },
+    ];
+    for (const head of heads) {
+      expect(hasDot(drawTl(0), head)).toBe(true);
+    }
+    const advanced = [
+      { x: 0, y: 26 },
+      { x: 0, y: 2 },
+      { x: 400, y: 26 },
+      { x: 400, y: 2 },
+    ];
+    for (const p of advanced) {
+      expect(hasDot(drawTl(2), p)).toBe(true);
+    }
   });
 
   it('electron-flow mode reverses every direction and changes nothing else', () => {

@@ -193,6 +193,34 @@ impl Element for TransmissionLine {
         }
     }
 
+    fn body_samples(&self, segments: usize) -> Vec<f32> {
+        // The strip walk of TransLineElm.draw (TransLineElm.java:126-149),
+        // done next to the ring it reads: `ix0` anchors the read to the write
+        // cursor so the picture stays still while the buffer rotates, `ix1`
+        // walks the left ring forward and `ix2` the right ring backward, which
+        // is what superimposes a left-travelling wave on a right-travelling
+        // one. Averaging the two slots is the displayed voltage. Empty before
+        // the first stamp (upstream's `voltageL != null` guard) and when the
+        // element is shorter than two units (`segments = dn/2` is 0).
+        if self.voltage_l.is_empty() || segments == 0 {
+            return Vec::new();
+        }
+        // `u64` products so a long buffer times a long element cannot wrap the
+        // 32-bit wasm `usize`; the division truncates like the Java's `int`
+        // arithmetic, and the quotient is always < `len`, so `ix0` minus it
+        // never underflows.
+        let len = self.len_steps as u64;
+        let segs = segments as u64;
+        let ix0 = self.ptr as u64 + len - 1;
+        let mut out = Vec::with_capacity(segments);
+        for i in 0..segs {
+            let ix1 = ((ix0 - len * i / segs) % len) as usize;
+            let ix2 = ((ix0 - len * (segs - 1 - i) / segs) % len) as usize;
+            out.push(((self.voltage_l[ix1] + self.voltage_r[ix2]) / 2.0) as f32);
+        }
+        out
+    }
+
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         match name {
             // A delay edit re-sizes the ring from the fixed nominal step;
@@ -213,5 +241,111 @@ impl Element for TransmissionLine {
         self.voltage_l.iter_mut().for_each(|v| *v = 0.0);
         self.voltage_r.iter_mut().for_each(|v| *v = 0.0);
         self.ptr = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// A line with its ring forced to `len_steps` slots, bypassing `stamp` so
+    /// a test can place samples by hand. The `delay`/`imped` params are the
+    /// constructor defaults; the fields are set directly after.
+    fn line(len_steps: usize) -> TransmissionLine {
+        let spec = ElementSpec {
+            id: 1,
+            kind: "transmissionLine".into(),
+            posts: vec![[0, 0], [0, 0], [0, 0], [0, 0]],
+            params: HashMap::new(),
+            label: None,
+            model: None,
+            flags: 0,
+        };
+        let mut e = TransmissionLine::new(&spec);
+        e.len_steps = len_steps;
+        e.voltage_l = vec![0.0; len_steps];
+        e.voltage_r = vec![0.0; len_steps];
+        e
+    }
+
+    #[test]
+    fn empty_buffers_report_no_wave() {
+        // A freshly built line has no ring yet (upstream's `voltageL != null`
+        // guard); the readout must be empty, not a panic. A zero `segments`
+        // (an element shorter than two units, `dn/2 = 0`) is empty too.
+        let spec = ElementSpec {
+            id: 1,
+            kind: "transmissionLine".into(),
+            posts: vec![[0, 0], [0, 0], [0, 0], [0, 0]],
+            params: HashMap::new(),
+            label: None,
+            model: None,
+            flags: 0,
+        };
+        assert!(TransmissionLine::new(&spec).body_samples(10).is_empty());
+        assert!(line(100).body_samples(0).is_empty());
+    }
+
+    #[test]
+    fn wave_travels_with_the_write_cursor() {
+        // A lone left-ring sample reads at half its value (averaged with the
+        // right ring's zero). With 100 slots and 10 strips the strip walk
+        // covers 10 slots per strip, so ten committed steps move the spike
+        // exactly one strip forward.
+        let mut e = line(100);
+        e.voltage_l[0] = 5.0;
+        e.ptr = 1;
+        let wave = e.body_samples(10);
+        assert_eq!(wave.len(), 10);
+        assert_eq!(wave[0], 2.5, "spike should sit at strip 0");
+        assert!(wave[1..].iter().all(|&v| v == 0.0));
+        e.ptr = 11;
+        let wave = e.body_samples(10);
+        assert_eq!(wave[1], 2.5, "ten committed steps move the spike one strip");
+        assert_eq!(wave[0], 0.0);
+        e.ptr = 31;
+        let wave = e.body_samples(10);
+        assert_eq!(
+            wave[3], 2.5,
+            "thirty committed steps move the spike three strips"
+        );
+    }
+
+    #[test]
+    fn left_and_right_ring_waves_superimpose_at_the_mirrored_strip() {
+        // The two rings walk in opposite directions: the strip whose left-ring
+        // read is slot 70 reads slot 40 on the right ring, so a forward wave
+        // and a backward wave meet at the same place and add to the full
+        // value. A lone spike in each ring averages to 5 V at that strip and
+        // nothing anywhere else.
+        let mut e = line(100);
+        e.voltage_l[70] = 5.0;
+        e.voltage_r[40] = 5.0;
+        e.ptr = 1;
+        let wave = e.body_samples(10);
+        assert_eq!(wave.len(), 10);
+        assert_eq!(wave[3], 5.0, "both half-waves should add at strip 3");
+        assert!(wave
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != 3)
+            .all(|(_, &v)| v == 0.0));
+    }
+
+    #[test]
+    fn resamples_to_any_segment_count() {
+        // The draw resamples the ring to the on-screen length, so segments
+        // finer and coarser than the buffer both return exactly `segments`
+        // values, and the `% len` wrap must never index out of range at the
+        // ring end (`ix0` at `ptr = 0` and `ptr = len - 1`).
+        let mut e = line(10);
+        e.ptr = 5;
+        assert_eq!(e.body_samples(100).len(), 100);
+        assert_eq!(e.body_samples(3).len(), 3);
+        e.ptr = 0;
+        assert_eq!(e.body_samples(17).len(), 17);
+        e.ptr = 9;
+        assert_eq!(e.body_samples(4).len(), 4);
     }
 }

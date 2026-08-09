@@ -732,6 +732,9 @@ function lightTheme(): Theme {
     wire: '#000000',
     // Upstream's printable mode sets whiteColor to black (UIManager.java:578).
     whiteColor: '#000000',
+    // Upstream's Color.darkGray, same constant both themes: the transmission
+    // line's body fill behind its voltage strips.
+    darkGray: '#404040',
     text: '#24292f',
     selection: '#0969da',
     highlight: '#d0782d',
@@ -756,6 +759,9 @@ function darkTheme(): Theme {
     wire: '#c9d1d9',
     // Upstream's normal theme sets whiteColor to white (UIManager.java:583).
     whiteColor: '#ffffff',
+    // Upstream's Color.darkGray (Color.java:28), the exact constant the dark
+    // theme carries: the transmission line's body fill.
+    darkGray: '#404040',
     text: '#8b949e',
     selection: '#00ffff',
     highlight: '#f0883e',

@@ -213,6 +213,17 @@ impl Circuit {
             .unwrap_or_default()
     }
 
+    /// Per-element body-wave samples for the renderer, resampled to `segments`
+    /// strips. Only the transmission line reports anything; an unknown id and
+    /// every other element return empty, so the frontend can call this for a
+    /// single kind without a per-element tag on the other side.
+    pub fn body_samples(&self, id: u32, segments: usize) -> Vec<f32> {
+        let Some(&ei) = self.id_index.get(&id) else {
+            return Vec::new();
+        };
+        self.elements[ei].body_samples(segments)
+    }
+
     /// Trigger display anchor for one scope trace.
     pub fn trigger_info(&self, index: usize, width: usize) -> Option<crate::scope::TriggerInfo> {
         self.scopes.get(index).map(|s| s.trigger_info(width))

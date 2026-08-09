@@ -344,6 +344,16 @@ pub trait Element {
     fn display_state(&self) -> f64 {
         0.0
     }
+
+    /// Per-element sample array the renderer can pull on demand, one value per
+    /// drawn segment of the element body. Default: nothing. The transmission
+    /// line ships its delay-line wave here, already averaged from the two
+    /// travelling waves and resampled to `segments` strips; every other
+    /// element reports empty, so the frontend only pays for the call on kinds
+    /// that ask.
+    fn body_samples(&self, _segments: usize) -> Vec<f32> {
+        Vec::new()
+    }
 }
 
 /// Convenience for the very common two-terminal case.

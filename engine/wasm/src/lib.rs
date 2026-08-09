@@ -268,6 +268,17 @@ impl Simulator {
         self.circuit.recent_samples(index)
     }
 
+    /// Strip voltages for a transmission line's body wave, already averaged
+    /// from the two travelling waves and resampled to `segments` samples (one
+    /// per drawn strip, `segments = dn/2` like the upstream draw loop). Empty
+    /// before the first stamp and for ids that are not transmission lines. An
+    /// on-demand per-element array like `recentSamples`, so no other element
+    /// pays for the crossing.
+    #[wasm_bindgen(js_name = transmissionLineWave)]
+    pub fn transmission_line_wave(&self, id: u32, segments: usize) -> Vec<f32> {
+        self.circuit.body_samples(id, segments)
+    }
+
     /// Trigger display info for a scope. `width` is the display width in
     /// pixels; the UI passes the canvas width so the anchor counts against the
     /// same window the drawing does.
