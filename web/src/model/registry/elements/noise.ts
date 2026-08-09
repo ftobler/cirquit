@@ -14,6 +14,7 @@ export const NOISE_DEF: ElementDef = {
   dumpCode: 'n',
   postCount: 1,
   posts: onePost,
+  draggablePosts: 2,  // the free end is a control point, not a terminal
   defaultFlags: VOLTAGE_SHOW_VOLTAGE,  // NoiseElm extends RailElm, inherits the voltage source flag
   defaults: {
     waveform: NOISE_WAVEFORM,

@@ -14,11 +14,15 @@
 import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP } from './registry';
 import type { CircuitElement } from './types';
 
-/** Whether the element can turn a quarter turn. One-post parts (ground, rails,
- *  annotations) have no axis to rotate about and their stray `x2,y2` must not
- *  be moved. */
+/** Whether the element can turn a quarter turn. A stem-bearing one-post part
+ *  (ground, rails, logic inputs) rotates about its own midpoint like any
+ *  two-point element: its free end is a draggable control point, and
+ *  `rotateElement`'s arithmetic already operates on the stored `(x1,y1,x2,y2)`
+ *  with no post assumptions. Only the post-only annotations (text, readouts),
+ *  whose stray second point is meaningless, stay a single-point no-op. */
 export function canRotate(e: CircuitElement): boolean {
-  return (defFor(e.kind)?.postCount ?? 0) >= 2;
+  const def = defFor(e.kind);
+  return (def?.draggablePosts ?? def?.postCount ?? 0) >= 2;
 }
 
 /** Whether Mirror is offered. Only the asymmetric three-post bodies declare it;

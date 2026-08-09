@@ -18,6 +18,7 @@ export const VAR_RAIL_DEF: ElementDef = {
   dumpCode: '172',
   postCount: 1,
   posts: onePost,
+  draggablePosts: 2,  // the free end is a control point, not a terminal
   // VarRailElm.java:29-38 inherits the voltage source's FLAG_SHOW_VOLTAGE.
   defaultFlags: VOLTAGE_SHOW_VOLTAGE,
   defaults: { maxVoltage: 5, bias: 0, voltage: 5 },

@@ -169,8 +169,8 @@ describe('rotate, mirror and swap terminals', () => {
 
   it('is a no-op when the selection cannot take the command, matching a disabled menu item', () => {
     const resistor = addResistor();
-    const ground = useStore.getState().addElement({
-      kind: 'ground',
+    const text = useStore.getState().addElement({
+      kind: 'decoration',
       x1: 0,
       y1: 0,
       x2: 0,
@@ -183,8 +183,8 @@ describe('rotate, mirror and swap terminals', () => {
     // Mirror is only offered on the asymmetric bodies.
     useStore.getState().select([resistor]);
     useStore.getState().mirrorSelection();
-    // Rotate needs two posts; a ground has one.
-    useStore.getState().select([ground]);
+    // Rotate needs two points; a text annotation has one.
+    useStore.getState().select([text]);
     useStore.getState().rotateSelection();
 
     const s = useStore.getState();

@@ -23,6 +23,7 @@ export const EXT_VOLTAGE_DEF: ElementDef = {
   dumpCode: '418',
   postCount: 1,
   posts: onePost,
+  draggablePosts: 2,  // the free end is a control point, not a terminal
   defaultFlags: VOLTAGE_SHOW_VOLTAGE,  // VoltageElm.java:23-24, the rail's constructor flag
   // The rail's token defaults with waveform pinned to WF_AC and the injected
   // `voltage` added; the name default lives in extName() because defaults

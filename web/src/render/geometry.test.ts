@@ -177,6 +177,62 @@ describe('ground free-end drag', () => {
   });
 });
 
+describe('stem-bearing one-post family', () => {
+  // The ten kinds whose (x2,y2) is a drawn stem end, ground already covered
+  // above. Each must hit-test along the whole stem so the far end can be
+  // ctrl-dragged, and the free end must never read as a connection point.
+  const STEM = [
+    'rail',
+    'varRail',
+    'extVoltage',
+    'noise',
+    'logicInput',
+    'logicOutput',
+    'antenna',
+    'audioOutput',
+    'sweep',
+  ];
+
+  it.each(STEM)(
+    '%s hit-tests a point on a diagonal stem, so the free end is clickable',
+    (kind) => {
+      const e = element(0, 0, 32, 32);
+      e.kind = kind;
+      // The midpoint lies on the stem: distance 0, far under the 8-unit hit
+      // tolerance. A point near the far end is on the segment too.
+      expect(distanceToElement({ x: 16, y: 16 }, e)).toBe(0);
+      expect(distanceToElement({ x: 30, y: 30 }, e)).toBeCloseTo(0, 9);
+    },
+  );
+
+  it('keeps a labeled node unhittable at its stray far point', () => {
+    const n = element(0, 0, 32, 32);
+    n.kind = 'labeledNode';
+    // The box is drawn at (0,0); the midpoint of the stray (32,32) span is
+    // 22.6 units away, past the hit tolerance, so it never intercepts.
+    expect(distanceToElement({ x: 16, y: 16 }, n)).toBeCloseTo(Math.hypot(16, 16), 9);
+  });
+
+  it('nearestPost targets the far endpoint of a rail, like a ground', () => {
+    const r = element(0, 0, 32, 0);
+    r.kind = 'rail';
+    // The ctrl-drag gate counts draggable endpoints, so a click near the label
+    // end enters dragpost with post 2, whose patch moves only x2,y2.
+    expect(nearestPost({ x: 30, y: 2 }, r)).toBe(2);
+    expect(nearestPost({ x: 2, y: 2 }, r)).toBe(1);
+  });
+
+  it('never treats a rail free end as a connection point', () => {
+    const dragged = { ...element(0, 0, 160, 32), id: 2, kind: 'wire' as const };
+    const vertical = { ...element(160, 0, 160, 160), id: 3, kind: 'wire' as const };
+    const rail = { ...element(0, 0, 160, 32), id: 4, kind: 'rail' as const };
+    // The rail's free end sits on the vertical wire's interior at (160,32).
+    // It is not a post, so it does not occupy the junction: the dragged wire
+    // end still flags as no-connect there instead of connecting.
+    expect(invalidDropPoint(dragged, 160, 32, [dragged, vertical, rail])).toEqual({ x: 160, y: 32 });
+  });
+});
+
 describe('pointOnSegmentInterior', () => {
   const a = { x: 0, y: 0 };
   const b = { x: 160, y: 0 };

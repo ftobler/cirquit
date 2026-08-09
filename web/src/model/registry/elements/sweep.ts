@@ -16,6 +16,7 @@ export const SWEEP_DEF: ElementDef = {
   dumpCode: '170',
   postCount: 1,
   posts: onePost,
+  draggablePosts: 2,  // the free end is a control point, not a terminal
   defaultLength: 4,          // 64 px, like the voltage source's drag length
   defaultFlags: FLAG_BIDIR,  // SweepElm.java:35
   defaults: { minF: 20, maxF: 4000, maxV: 5, sweepTime: 0.1 },

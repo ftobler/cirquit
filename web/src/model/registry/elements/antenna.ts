@@ -14,6 +14,7 @@ export const ANTENNA_DEF: ElementDef = {
   dumpCode: 'A',
   postCount: 1,
   posts: onePost,
+  draggablePosts: 2,  // the free end is a control point, not a terminal
   defaultFlags: VOLTAGE_SHOW_VOLTAGE,  // AntennaElm extends RailElm, inherits the voltage source flag
   defaults: {
     waveform: AC_WAVEFORM,

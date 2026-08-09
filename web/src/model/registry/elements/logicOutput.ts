@@ -39,6 +39,7 @@ export const LOGIC_OUTPUT_DEF: ElementDef = {
   dumpCode: 'M',
   postCount: 1,
   posts: onePost,
+  draggablePosts: 2,  // the free end is a control point, not a terminal
   defaultFlags: 0,
   defaults: { threshold: 2.5 },
   parse: (t, e) => readParams(t, e, ['threshold']),

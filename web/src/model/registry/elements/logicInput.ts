@@ -50,6 +50,7 @@ export const LOGIC_INPUT_DEF: ElementDef = {
   dumpCode: 'L',
   postCount: 1,
   posts: onePost,
+  draggablePosts: 2,  // the free end is a control point, not a terminal
   interactive: true,
   defaults: { hiV: 5, loV: 0, position: 0, momentary: 0 },
   parse: (t, e) => {

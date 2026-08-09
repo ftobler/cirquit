@@ -14,10 +14,33 @@ const element = (
 ): CircuitElement => ({ id: 1, kind, x1, y1, x2, y2, flags, params });
 
 describe('capability gates', () => {
-  it('rotates any part with an axis, but not one-post annotations', () => {
+  it('rotates any part with an axis, but not post-only annotations', () => {
     expect(canRotate(element('resistor', 0, 0, 160, 0))).toBe(true);
     expect(canRotate(element('opamp', 0, 0, 160, 0))).toBe(true);
-    expect(canRotate(element('ground', 0, 0, 0, 0))).toBe(false);
+    expect(canRotate(element('decoration', 0, 0, 0, 0))).toBe(false);
+  });
+
+  it('rotates the stem-bearing one-post family, but not the post-only one', () => {
+    // A stem-bearing part's free end is a draggable control point, so it has a
+    // real second endpoint to turn about its midpoint like any two-point part.
+    for (const kind of [
+      'ground',
+      'rail',
+      'varRail',
+      'extVoltage',
+      'noise',
+      'logicInput',
+      'logicOutput',
+      'antenna',
+      'audioOutput',
+      'sweep',
+    ]) {
+      expect(canRotate(element(kind, 0, 0, 32, 0))).toBe(true);
+    }
+    // The post-only annotations keep their stray x2,y2 out of the turn.
+    for (const kind of ['labeledNode', 'decoration', 'output']) {
+      expect(canRotate(element(kind, 0, 0, 32, 0))).toBe(false);
+    }
   });
 
   it('mirrors only the asymmetric three-post bodies', () => {
@@ -85,9 +108,21 @@ describe('rotateElement', () => {
     expect(postsOf(r)[2]).toEqual({ x: 96, y: -80 });  // emitter
   });
 
-  it('is a no-op on a one-post element', () => {
-    const g = element('ground', 0, 0, 16, 0);
-    expect(rotateElement(g)).toEqual(g);
+  it('is a no-op on a post-only one-post element', () => {
+    const d = element('decoration', 0, 0, 16, 0);
+    expect(rotateElement(d)).toEqual(d);
+  });
+
+  it('rotates a diagonal rail about its midpoint, keeping the stem length', () => {
+    const r = element('rail', 0, 0, 32, 32);
+    const turned = rotateElement(r);
+    expect([turned.x1, turned.y1, turned.x2, turned.y2]).toEqual([0, 32, 32, 0]);
+    // The store invariant "stored endpoints are integers" survives the turn.
+    for (const v of [turned.x1, turned.y1, turned.x2, turned.y2]) expect(Number.isInteger(v)).toBe(true);
+    // The post-to-free-end distance is unchanged, so the symbol still hangs
+    // the same distance off the connection post.
+    const stem = Math.hypot(r.x2 - r.x1, r.y2 - r.y1);
+    expect(Math.hypot(turned.x2 - turned.x1, turned.y2 - turned.y1)).toBe(stem);
   });
 });
 

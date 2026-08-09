@@ -31,6 +31,34 @@ describe('elementBox', () => {
     const e = element(1, 8, 16, 24, 16, 'unknown-kind');
     expect(elementBox(e)).toEqual({ x0: 8, y0: 16, x1: 24, y1: 16 });
   });
+
+  it('spans the stored endpoints of a stem-bearing one-post part', () => {
+    // A rail's waveform circle sits on the free end, which is a control point,
+    // not a post: the box must span the whole stem like upstream's
+    // getBoundingBox, or the circle would fall outside its own selection box.
+    expect(elementBox(element(1, 0, 0, 32, 32, 'rail'))).toEqual({ x0: 0, y0: 0, x1: 32, y1: 32 });
+    expect(elementBox(element(1, 0, 0, 32, 0, 'ground'))).toEqual({ x0: 0, y0: 0, x1: 32, y1: 0 });
+  });
+
+  it('spans the off-axis posts of a multi-terminal part', () => {
+    // A transistor's collector and emitter hang 16 units perpendicular to the
+    // axis (transistorPosts at interp2(..., 1, OPEN_HS*d)), so a box over the
+    // bare endpoints (0,0)-(160,0) would miss them. Regression: the old
+    // `postCount` fallback collapsed the box to the axis and these terminals
+    // fell outside their own selection box.
+    expect(elementBox(element(1, 0, 0, 160, 0, 'transistor'))).toEqual({
+      x0: 0,
+      y0: -16,
+      x1: 160,
+      y1: 16,
+    });
+  });
+
+  it('keeps a post-only annotation boxed on its single post', () => {
+    // A labeled node draws at (x1,y1) only; its stray x2,y2 must stay out of
+    // the selection box just as it stays out of hit-testing.
+    expect(elementBox(element(1, 0, 0, 320, 240, 'labeledNode'))).toEqual({ x0: 0, y0: 0, x1: 1, y1: 1 });
+  });
 });
 
 describe('boxesIntersect', () => {

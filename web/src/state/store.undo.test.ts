@@ -42,6 +42,38 @@ describe('ctrl-drag post movement undo', () => {
     useStore.getState().undo();
     expect(useStore.getState().elements[0]).toEqual(original);
   });
+
+  it('a rail free-end ctrl-drag moves only the control point, one undo step', () => {
+    // The canvas handler enters dragpost with post 2 when ctrl-dragging the
+    // far end (its draggablePosts is 2), so each move writes postPatch(2, ...)
+    // and never touches the connection post.
+    const id = useStore.getState().addElement({
+      kind: 'rail',
+      x1: 0,
+      y1: 0,
+      x2: 32,
+      y2: 0,
+      flags: 0,
+      params: {},
+    });
+    const original = useStore.getState().elements[0];
+    const commitsBefore = useStore.getState().undoStack.length;
+    useStore.getState().commit();
+    for (const [x, y] of [
+      [48, 16],
+      [64, 48],
+    ]) {
+      useStore.getState().updateElement(id, postPatch(2, x, y));
+    }
+    const dragged = useStore.getState().elements[0];
+    expect(dragged.x2).toBe(64);
+    expect(dragged.y2).toBe(48);
+    expect(dragged.x1).toBe(original.x1);
+    expect(dragged.y1).toBe(original.y1);
+    expect(useStore.getState().undoStack.length).toBe(commitsBefore + 1);
+    useStore.getState().undo();
+    expect(useStore.getState().elements[0]).toEqual(original);
+  });
 });
 
 describe('context menu state', () => {

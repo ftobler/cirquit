@@ -10,6 +10,7 @@ export const AUDIO_OUTPUT_DEF: ElementDef = {
   dumpCode: '211',
   postCount: 1,
   posts: onePost,
+  draggablePosts: 2,  // the free end is a control point, not a terminal
   // AudioOutputElm.java:31-34: one second of audio at the last-used sample
   // rate. The `labelNum` is normally a per-session counter; 0 is the default
   // here because the port has no cross-element scan. The static site has no

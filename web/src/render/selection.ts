@@ -3,7 +3,7 @@
  *  (CircuitElm.selectRect, CircuitElm.java:1326-1331). */
 
 import type { CircuitElement, Point } from '../model/types';
-import { postsOf } from '../model/registry';
+import { defFor, postsOf } from '../model/registry';
 
 export interface Box {
   x0: number;
@@ -25,14 +25,32 @@ export function boxFromPoints(a: Point, b: Point): Box {
 /**
  * Union of an element's posts, the port's `boundingBox` equivalent: exactly
  * the endpoint rectangle for a two-terminal part, the union of the drawn posts
- * for a multi-terminal one. A fully collapsed element gets a 1-unit box, so it
- * stays selectable (upstream setBbox's `x2-x1+1`, CircuitElm.java:857-861).
+ * for a multi-terminal one. A stem-bearing one-post part (whose free end is a
+ * draggable control point, not a post) spans its stored endpoints instead,
+ * matching upstream's getBoundingBox. A fully collapsed element gets a 1-unit
+ * box, so it stays selectable (upstream setBbox's `x2-x1+1`, CircuitElm.java:
+ * 857-861).
  */
 export function elementBox(e: CircuitElement): Box {
   let posts = postsOf(e);
   if (posts.length === 0) {
     // A kind this build does not draw has no posts; fall back to the stored
     // endpoints so it can still be box-selected.
+    posts = [
+      { x: e.x1, y: e.y1 },
+      { x: e.x2, y: e.y2 },
+    ];
+  }
+  // A stem-bearing one-post part (ground, rails, logic inputs) hangs its symbol
+  // off a draggable free end that is not a post. Its box must span the stored
+  // endpoints like upstream's getBoundingBox (CircuitElm.java:854-861), or a
+  // rail's circle would sit outside its own selection box. Post-only parts
+  // (text, readouts) keep the single-post box; their stray `x2,y2` stays out.
+  // The key is `draggablePosts` being SET, never the `postCount` fallback: a
+  // transistor or op-amp has many posts hanging off its axis, and collapsing
+  // its box to the two stored endpoints would drop them from selection.
+  const def = defFor(e.kind);
+  if ((def?.draggablePosts ?? 0) > 1) {
     posts = [
       { x: e.x1, y: e.y1 },
       { x: e.x2, y: e.y2 },

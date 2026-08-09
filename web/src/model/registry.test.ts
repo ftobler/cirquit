@@ -762,3 +762,22 @@ describe('tri-state posts and mirror', () => {
     expect(postsOf(m)[2]).toEqual({ x: 32, y: 16 });
   });
 });
+
+describe('stem-bearing one-post symbol draw', () => {
+  it('a diagonal rail centres its waveform circle on the free end', () => {
+    const ctx = mkCtx();
+    // WF_AC (waveform 1) is the branch that draws the circle, anchored on p2
+    // (RailElm.java:55), so the diagonal stem must put the symbol at (32,32).
+    defFor('rail')?.draw(context(ctx), element('rail', 0, 0, 32, 32, 0, { waveform: 1 }));
+    const arcs = ctx.arc.mock.calls.map((a) => ({ x: a[0], y: a[1] }));
+    expect(arcs).toContainEqual({ x: 32, y: 32 });
+  });
+
+  it('a diagonal logic input centres its bold glyph on the free end', () => {
+    const ctx = mkCtx();
+    defFor('logicInput')?.draw(context(ctx), element('logicInput', 0, 0, 32, 32));
+    // The L/H glyph is drawn at (x2,y2) (LogicInputElm.java:79-81), which is
+    // where the stem's far end lands on a diagonal placement.
+    expect(ctx.fillText).toHaveBeenCalledWith('L', 32, 32);
+  });
+});
