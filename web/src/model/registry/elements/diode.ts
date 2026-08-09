@@ -22,12 +22,14 @@ export function drawDiodeBody(g: DrawContext, e: CircuitElement, zener: boolean)
   triangle(g, t1, t2, lead2, color);
   if (zener) {
     const { bar, wing0, wing1 } = zenerMarks(lead1, lead2);
-    line(g, bar[0], bar[1], color, 2.5);
-    line(g, wing0, bar[0], color, 2);
-    line(g, wing1, bar[1], color, 2);
+    // The cathode bar and wings are drawThickLine strokes upstream
+    // (ZenerElm.java:71-78), the 3-unit body weight.
+    line(g, bar[0], bar[1], color);
+    line(g, wing0, bar[0], color);
+    line(g, wing1, bar[1], color);
   } else {
     const [b1, b2] = interp2Precise(lead1, lead2, 1, 8);
-    line(g, b1, b2, color, 2.5);
+    line(g, b1, b2, color);
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);

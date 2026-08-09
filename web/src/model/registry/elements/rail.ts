@@ -168,7 +168,7 @@ export const RAIL_DEF: ElementDef = {
     } else if (wf === 6) {
       drawRailLabel(g, e, lead1, 'Noise');
     } else {
-      circle(g, p2, RAIL_CIRCLE, g.theme.text, false, 3);
+      circle(g, p2, RAIL_CIRCLE, g.theme.text, false);
       drawWaveformGlyph(g, p2, wf, RAIL_CIRCLE);
       const showF = g.showValues;
       if ((e.flags & RAIL_SHOW_VOLTAGE) !== 0) {

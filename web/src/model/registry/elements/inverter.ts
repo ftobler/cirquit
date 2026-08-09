@@ -55,7 +55,9 @@ function drawInverter(g: DrawContext, e: CircuitElement): void {
     const apex = interp(p1, p2, 0.5 + (ww - 5) / dn);
     closedPolyline(g, [t0, t1, apex, t0], color);
   }
-  circle(g, pcircle, 3, g.theme.wire, false, 3);
+  // The bubble is a drawThickCircle stroke upstream (InverterElm.java:75),
+  // the 3-unit body weight.
+  circle(g, pcircle, 3, g.theme.wire, false);
   currentDots(g, lead2, p2, g.current);
 }
 

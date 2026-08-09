@@ -27,8 +27,10 @@ function drawDiac(g: DrawContext, e: CircuitElement): void {
   // without the grid rounding `interp` applies to posts.
   const [p1a, p1b] = interp2Precise(lead1, lead2, 0, 16);
   const [p2a, p2b] = interp2Precise(lead1, lead2, 1, 16);
-  line(g, p1a, p1b, color0, 2.5);
-  line(g, p2a, p2b, color1, 2.5);
+  // The plates are drawThickLine strokes upstream (DiacElm.java:106-109), the
+  // 3-unit body weight.
+  line(g, p1a, p1b, color0);
+  line(g, p2a, p2b, color1);
   polygon(
     g,
     [

@@ -261,13 +261,15 @@ export function useFrameLoop(
       // exactly 2, so a plain two-element pass-through connection hides while
       // dead ends and real junctions keep theirs, matching makePostDrawList
       // (SimulationManager.java:1056-1108). Drawn after all elements, like the
-      // upstream postDrawList pass.
+      // upstream postDrawList pass. The radius is upstream's drawPost
+      // fillOval(pt.x-3, pt.y-3, 7, 7), a 7 px filled circle (CircuitElm.java:
+      // 851-854), so a junction reads at the same weight as the thicker bodies.
       ctx.fillStyle = theme.wire;
       for (const [key, count] of postDotPoints(elements)) {
         if (!shouldDrawDot(count)) continue;
         const [x, y] = key.split(',').map(Number);
         ctx.beginPath();
-        ctx.arc(x, y, 1.8, 0, Math.PI * 2);
+        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
         ctx.fill();
       }
 

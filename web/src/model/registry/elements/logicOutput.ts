@@ -52,7 +52,7 @@ export const LOGIC_OUTPUT_DEF: ElementDef = {
     // The thick lead runs from the post to 12 units short of the free end
     // (LogicOutputElm.java:64-66), like the logic input's.
     const lead1 = interp(p1, p2, 1 - 12 / dn);
-    line(g, p1, lead1, voltageColor(g, g.voltages[0]), 3);
+    line(g, p1, lead1, voltageColor(g, g.voltages[0]));
     // Upstream centres the bold letter at the free end, light-grey by default
     // and selection-coloured when highlighted (LogicOutputElm.java:69-87).
     g.ctx.fillStyle = limbColor(g, g.theme.text);

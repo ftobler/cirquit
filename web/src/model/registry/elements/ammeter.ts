@@ -71,7 +71,9 @@ export const AMMETER_DEF: ElementDef = {
       const [lead1, lead2] = calcLeads(e, 24);  // circleSize*2 (AmmeterElm.java:204)
       drawLeads(g, e, lead1, lead2);
       const mid = interp(lead1, lead2, 0.5);
-      circle(g, mid, 12, g.theme.wire, false, 1.5);
+      // The circle is a drawThickCircle upstream (AmmeterElm.java:172), the
+      // 3-unit body weight.
+      circle(g, mid, 12, g.theme.wire, false);
       g.ctx.fillStyle = g.theme.text;
       g.ctx.font = canvasFont(10);
       g.ctx.textAlign = 'center';

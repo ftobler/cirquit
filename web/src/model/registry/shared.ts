@@ -193,7 +193,9 @@ function drawWaveformGlyph(g: DrawContext, centre: Point, waveform: number, r: n
     pts.push({ x, y: centre.y - s * r * 0.4 });
   }
   g.ctx.strokeStyle = color;
-  g.ctx.lineWidth = 1.2;
+  // The waveform glyph is drawn at lineWidth 3 upstream (VoltageElm.java:
+  // 392), the same body weight as the source circle that frames it.
+  g.ctx.lineWidth = 3;
   g.ctx.beginPath();
   pts.forEach((p, i) => (i === 0 ? g.ctx.moveTo(p.x, p.y) : g.ctx.lineTo(p.x, p.y)));
   g.ctx.stroke();

@@ -81,9 +81,11 @@ function drawTriac(g: DrawContext, e: CircuitElement): void {
   // (TriacElm.java:126-130). Body geometry, so the plates and arrow triangles
   // are interpolated without the grid rounding `interp` applies to posts.
   const [pa1, pa2] = interp2Precise(lead1, lead2, 0, HS);
-  line(g, pa1, pa2, elementColor(g, g.voltages[0], g.power), 2.5);
+  // The plates are drawThickLine strokes upstream (TriacElm.java:164-167),
+  // the 3-unit body weight.
+  line(g, pa1, pa2, elementColor(g, g.voltages[0], g.power));
   const [pb1, pb2] = interp2Precise(lead1, lead2, 1, HS);
-  line(g, pb1, pb2, elementColor(g, g.voltages[1], g.power), 2.5);
+  line(g, pb1, pb2, elementColor(g, g.voltages[1], g.power));
   // The arrow triangles, each filled with the voltage of the end its apex
   // faces (TriacElm.java:132-141, :161-170).
   triangle(

@@ -233,7 +233,9 @@ function drawGate(g: DrawContext, e: CircuitElement): void {
     );
     line(g, posts[i], inGate, voltageColor(g, g.voltages[i]));
     if ((e.flags & GATE_INVERT_INPUTS) !== 0) {
-      circle(g, interp(lead1, lead2, -4 / (2 * ww), hs * i0), 3, g.theme.wire, false, 3);
+      // Invert-input bubbles are drawThickCircle strokes upstream
+      // (GateElm.java:216-218), the 3-unit body weight.
+      circle(g, interp(lead1, lead2, -4 / (2 * ww), hs * i0), 3, g.theme.wire, false);
     }
     i0++;
   }
@@ -243,7 +245,7 @@ function drawGate(g: DrawContext, e: CircuitElement): void {
   let outLead = lead2;
   if (inverting) {
     outLead = interp(p1, p2, 0.5 + (ww + 8) / dn);
-    circle(g, interp(p1, p2, 0.5 + (ww + 4) / dn), 3, g.theme.wire, false, 3);
+    circle(g, interp(p1, p2, 0.5 + (ww + 4) / dn), 3, g.theme.wire, false);
   }
   line(g, outLead, p2, voltageColor(g, g.voltages[n]));
 
@@ -273,6 +275,8 @@ function drawGate(g: DrawContext, e: CircuitElement): void {
   }
 
   if ((e.flags & GATE_SCHMITT) !== 0) {
+    // The hysteresis Z is a drawPolygon at setLineWidth(2) upstream
+    // (GateElm.java:209), deliberately finer than the 3-unit body.
     polyline(g, schmittPolygon(lead1, lead2, s, 0.47), color, 2);
   }
   currentDots(g, outLead, p2, g.current);

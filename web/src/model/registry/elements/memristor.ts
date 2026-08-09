@@ -40,9 +40,11 @@ function drawMemristorBody(g: DrawContext, e: CircuitElement): void {
     const color = elementColor(g, v, g.power);
     const p1 = interp(lead1, lead2, i * segf, hs * ox);
     const p2 = interp(lead1, lead2, i * segf, hs * nx);
-    line(g, p1, p2, color, 3);
+    // The zigzag is drawThickLine upstream (MemristorElm.java:100-104), the
+    // 3-unit body weight.
+    line(g, p1, p2, color);
     if (i === MEMRISTOR_SEGMENTS) break;
-    line(g, p1, interp(lead1, lead2, (i + 1) * segf, hs * nx), color, 3);
+    line(g, p1, interp(lead1, lead2, (i + 1) * segf, hs * nx), color);
     ox = nx;
   }
   const [p1, p2] = endpoints(e);

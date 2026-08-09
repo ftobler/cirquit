@@ -294,6 +294,15 @@ describe('renderCircuitToSvg', () => {
     expect(svg.match(/stroke-linecap="butt"/g)).toHaveLength(3);
   });
 
+  it('carries the 3-unit body stroke weight into the export', () => {
+    // The recorder emits `this.lineWidth` as stroke-width (svg.ts:256), so the
+    // default 3 (drawThickLine, CircuitElm.java:1007-1021) must reach the SVG
+    // for bodies and wires, and no 2-unit remnant may survive.
+    const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
+    expect(svg.match(/stroke-width="3"/g)?.length).toBeGreaterThan(0);
+    expect(svg).not.toContain('stroke-width="2"');
+  });
+
   it('closes the IEC resistor body path with a Z command', () => {
     // The body is a genuinely closed subpath in the export, not a polyline
     // that merely returns to its start: the Z gives the start corner a real

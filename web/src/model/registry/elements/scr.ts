@@ -82,8 +82,10 @@ function drawScr(g: DrawContext, e: CircuitElement): void {
   const [t1, t2] = interp2Precise(lead1, lead2, 0, HS);
   triangle(g, t1, t2, lead2, elementColor(g, g.voltages[0], g.power));
   // The cathode bar across the lead end, then the gate lead out to its post.
+  // The bar is a drawThickLine stroke upstream (SCRElm.java:168), the 3-unit
+  // body weight.
   const [c1, c2] = interp2Precise(lead1, lead2, 1, HS);
-  line(g, c1, c2, elementColor(g, g.voltages[1], g.power), 2.5);
+  line(g, c1, c2, elementColor(g, g.voltages[1], g.power));
   const gateColor = voltageColor(g, g.voltages[2]);
   line(g, lead2, gate0, gateColor);
   line(g, gate0, gate1, gateColor);

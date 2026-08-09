@@ -55,9 +55,11 @@ function drawSchmitt(g: DrawContext, e: CircuitElement, inverting: boolean): voi
   const [t0, t1] = interp2(lead1, lead2, 0, HS);
   const apex = interp(p1, p2, 0.5 + (ww - 5) / dn);
   closedPolyline(g, [t0, t1, apex, t0], g.theme.wire);
+  // The hysteresis Z is a drawPolygon at setLineWidth(2) upstream
+  // (SchmittElm.java:77-78), deliberately finer than the 3-unit body.
   polyline(g, zSymbol(lead1, lead2), g.theme.wire, 2);
   if (inverting) {
-    circle(g, interp(p1, p2, 0.5 + (ww - 2) / dn), 3, g.theme.wire, false, 3);
+    circle(g, interp(p1, p2, 0.5 + (ww - 2) / dn), 3, g.theme.wire, false);
   }
   currentDots(g, lead2, p2, g.current);
 }

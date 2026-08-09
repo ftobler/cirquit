@@ -12,9 +12,10 @@ export const LINE_DEF: ElementDef = {
   defaultLength: 4,  // 64 px, the base getDragLength()
   draw(g, e) {
     const [p1, p2] = endpoints(e);
-    // Upstream strokes the whole span in gray (LineElm.java:50-55); the text
-    // colour is the port's annotation gray. `line` applies selection and hover
-    // highlighting.
-    line(g, p1, p2, g.theme.text);
+    // Upstream strokes the whole span in gray at the ambient width 1
+    // (LineElm.java:50-55), a drawing annotation, not a schematic body, so it
+    // stays thin while real components draw thick. `line` applies selection
+    // and hover highlighting.
+    line(g, p1, p2, g.theme.text, 1);
   },
 };

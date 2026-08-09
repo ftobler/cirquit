@@ -91,7 +91,7 @@ function drawTriode(g: DrawContext, e: CircuitElement): void {
   const geo = triodeGeometry(e);
   // The tube envelope, drawn first so the electrodes sit on top
   // (TriodeElm.java:103).
-  circle(g, geo.p2, CIRCLER, g.theme.wire, false, 2);
+  circle(g, geo.p2, CIRCLER, g.theme.wire, false);
   // Plate: the lead to its post and the top bar (TriodeElm.java:106-110).
   const plateColor = elementColor(g, g.voltages[0], g.power);
   line(g, geo.plate0, geo.plate1, plateColor);

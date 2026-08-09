@@ -55,7 +55,9 @@ export const PROBE_DEF: ElementDef = {
     line(g, { x: e.x1, y: e.y1 }, lead1, voltageColor(g, g.voltages[0]));
     line(g, lead2, { x: e.x2, y: e.y2 }, voltageColor(g, g.voltages[1]));
     const mid = interp(lead1, lead2, 0.5);
-    circle(g, mid, 9, g.theme.wire, false, 1.5);
+    // The circle is a drawThickCircle upstream (ProbeElm.java:232), the
+    // 3-unit body weight.
+    circle(g, mid, 9, g.theme.wire, false);
     g.ctx.fillStyle = g.theme.text;
     g.ctx.font = canvasFont(9);
     g.ctx.textAlign = 'center';

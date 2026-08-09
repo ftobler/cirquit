@@ -47,18 +47,21 @@ function drawSwitchIec(
   momentary: boolean,
 ): void {
   const [p0, p1, p2, p3, p4, p5, p6] = switchIecPoints(lead1, lead2, closed);
-  line(g, p2, p3, color);
+  // Upstream strokes the whole IEC symbol with plain `g.drawLine` calls
+  // (SwitchElm.java:147-159), the fine detail that must stay at width 1 while
+  // the lever and leads draw thick.
+  line(g, p2, p3, color, 1);
   g.ctx.setLineDash([3, 3]);
   if (momentary) {
-    line(g, p1, p0, color);
+    line(g, p1, p0, color, 1);
   } else {
-    line(g, p6, p0, color);
-    line(g, p1, p4, color);
+    line(g, p6, p0, color, 1);
+    line(g, p1, p4, color, 1);
   }
   g.ctx.setLineDash([]);
   if (!momentary) {
-    line(g, p4, p5, color);
-    line(g, p6, p5, color);
+    line(g, p4, p5, color, 1);
+    line(g, p6, p5, color, 1);
   }
 }
 

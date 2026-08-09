@@ -35,10 +35,12 @@ function drawLampBody(g: DrawContext, e: CircuitElement): void {
   const bulb = interp(filament0, filament1, 0.5);
   const midColor = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
   circle(g, bulb, LAMP_BULB_RADIUS, midColor, true);
-  circle(g, bulb, LAMP_BULB_RADIUS, g.theme.wire, false, 2);
-  line(g, lead1, filament0, voltageColor(g, g.voltages[0]), 3);
-  line(g, lead2, filament1, voltageColor(g, g.voltages[1]), 3);
-  line(g, filament0, filament1, midColor, 3);
+  // The bulb outline and filament are drawThickCircle/drawThickLine upstream
+  // (LampElm.java:135-141), the 3-unit body weight.
+  circle(g, bulb, LAMP_BULB_RADIUS, g.theme.wire, false);
+  line(g, lead1, filament0, voltageColor(g, g.voltages[0]));
+  line(g, lead2, filament1, voltageColor(g, g.voltages[1]));
+  line(g, filament0, filament1, midColor);
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, filament0, filament1, lead2, p2], g.current);
 }

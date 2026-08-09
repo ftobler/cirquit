@@ -176,7 +176,7 @@ export function limbColor(g: DrawContext, color: string): string {
 export function strokeStyle(
   g: DrawContext,
   color: string,
-  width = 2,
+  width = 3,
   cap: CanvasLineCap = 'butt',
 ): void {
   g.ctx.strokeStyle = limbColor(g, color);
@@ -186,7 +186,9 @@ export function strokeStyle(
   // opt into round through the cap argument, so a routed corner or a diagonal
   // wire end reads as a continuous conductor (upstream's ambient round cap,
   // UIManager.java:636). Miter is upstream's join too: it never sets lineJoin,
-  // so the canvas default is what the original renders.
+  // so the canvas default is what the original renders. The width default of 3
+  // is upstream's `drawThickLine` (CircuitElm.java:1007-1021); fine detail
+  // sites that upstream strokes with a plain `g.drawLine` pass 1 explicitly.
   g.ctx.lineCap = cap;
   g.ctx.lineJoin = 'miter';
 }
@@ -196,7 +198,7 @@ export function line(
   a: Point,
   b: Point,
   color: string,
-  width = 2,
+  width = 3,
   cap: CanvasLineCap = 'butt',
 ): void {
   strokeStyle(g, color, width, cap);
@@ -210,7 +212,7 @@ export function polyline(
   g: DrawContext,
   pts: Point[],
   color: string,
-  width = 2,
+  width = 3,
   cap: CanvasLineCap = 'butt',
   closed = false,
 ): void {
@@ -235,7 +237,7 @@ export function closedPolyline(
   g: DrawContext,
   pts: Point[],
   color: string,
-  width = 2,
+  width = 3,
   cap: CanvasLineCap = 'butt',
 ): void {
   polyline(g, pts, color, width, cap, true);
@@ -247,7 +249,7 @@ export function circle(
   r: number,
   color: string,
   fill = false,
-  width = 2,
+  width = 3,
 ): void {
   strokeStyle(g, color, width);
   g.ctx.beginPath();
@@ -473,8 +475,11 @@ export function currentDotsFrom(
   g.ctx.fillStyle = dotColor(g);
   for (let d = offset; d < len; d += DOT_SPACING) {
     const p = interpPrecise(a, b, d / len);
+    // Fixed size, never derived from the stroke width: a radius of 2 matches
+    // upstream's 4x4 fillRect (CircuitElm.java:510), so the dots stay visible
+    // on the thicker 3-unit bodies without scaling with them.
     g.ctx.beginPath();
-    g.ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2);
+    g.ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
     g.ctx.fill();
   }
 }

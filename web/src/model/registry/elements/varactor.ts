@@ -16,7 +16,9 @@ function drawVaractorBody(g: DrawContext, e: CircuitElement): void {
   // Body geometry, drawn without grid rounding so the plate stays square to
   // the body on a diagonal (VaractorElm.java:57-68).
   const [p1, p2] = interp2Precise(lead1, lead2, 0.6, 7);
-  line(g, p1, p2, voltageColor(g, g.voltages[0]), 2.5);
+  // The extra plate is a drawThickLine stroke upstream (VaractorElm.java:87),
+  // the 3-unit body weight.
+  line(g, p1, p2, voltageColor(g, g.voltages[0]));
 }
 
 export const VARACTOR_DEF: ElementDef = {

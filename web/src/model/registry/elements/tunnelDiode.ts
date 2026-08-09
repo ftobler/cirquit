@@ -28,9 +28,11 @@ function drawTunnelDiodeBody(g: DrawContext, e: CircuitElement): void {
   const color2 = voltageColor(g, g.voltages[1]);
   const [b1, b2] = interp2Precise(lead1, lead2, 1, 8);
   const [w0, w1] = interp2Precise(lead1, lead2, 0.8, 8);
-  line(g, b1, b2, color2, 2.5);
-  line(g, w0, b1, color2, 2.5);
-  line(g, w1, b2, color2, 2.5);
+  // The cathode bar and wings are drawThickLine strokes upstream
+  // (TunnelDiodeElm.java:67-69), the 3-unit body weight.
+  line(g, b1, b2, color2);
+  line(g, w0, b1, color2);
+  line(g, w1, b2, color2);
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
 }

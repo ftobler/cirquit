@@ -27,13 +27,15 @@ export const WIRE_DEF: ElementDef = {
       for (let i = 0; i < pts.length - 1; i++) {
         // Round caps close each segment's corners, since a routed wire strokes
         // independent segments rather than one path; miter joins never apply.
-        line(g, pts[i], pts[i + 1], color, 2, 'round');
+        // Upstream draws wires with drawThickLine (WireElm.java:87), so the
+        // weight is 3, never the ambient 1.
+        line(g, pts[i], pts[i + 1], color, 3, 'round');
       }
       currentDotsPath(g, pts, g.current);
       return;
     }
     const [p1, p2] = endpoints(e);
-    line(g, p1, p2, voltageColor(g, g.voltages[0]), 2, 'round');
+    line(g, p1, p2, voltageColor(g, g.voltages[0]), 3, 'round');
     currentDots(g, p1, p2, g.current);
   },
 };

@@ -25,7 +25,9 @@ export const CURRENT_DEF: ElementDef = {
     const [lead1, lead2] = drawSourceCircle(g, e, 12);
     const a = interp(lead1, lead2, 0.5 - 0.28);
     const b = interp(lead1, lead2, 0.5 + 0.28);
-    line(g, a, b, g.theme.text, 1.5);
+    // The arrow shaft is a drawThickLine upstream (CurrentElm.java:88), the
+    // 3-unit body weight.
+    line(g, a, b, g.theme.text);
     arrowHead(g, a, b, 7, g.theme.text);
   label(g, e, formatValue(e.params.current ?? 0, 'A', g.valueDigits), 20);
   },

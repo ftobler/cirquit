@@ -138,16 +138,16 @@ function drawOta(g: DrawContext, e: CircuitElement): void {
   line(g, geo.in4[0], geo.in4[1], voltageColor(g, g.voltages[3]));
 
   // The triangle outline, the two filled arrows and their base bars, then the
-  // two output circles (OTAElm.java:71-77).
-  closedPolyline(g, [geo.triangle[0], geo.triangle[1], geo.triangle[2], geo.triangle[0]], body, 3);
+  // two output circles (OTAElm.java:71-77), all thick upstream.
+  closedPolyline(g, [geo.triangle[0], geo.triangle[1], geo.triangle[2], geo.triangle[0]], body);
   const [a1, a2] = arrowSpan(geo.in3[1], geo.in1[1]);
   arrowHead(g, a1, a2, 8, body);
   line(g, geo.bar1[0], geo.bar1[1], body);
   const [b1, b2] = arrowSpan(geo.in3[1], geo.in2[1]);
   arrowHead(g, b1, b2, 8, body);
   line(g, geo.bar2[0], geo.bar2[1], body);
-  circle(g, geo.circCent[0], CIRC_DIAM / 2, body, false, 3);
-  circle(g, geo.circCent[1], CIRC_DIAM / 2, body, false, 3);
+  circle(g, geo.circCent[0], CIRC_DIAM / 2, body, false);
+  circle(g, geo.circCent[1], CIRC_DIAM / 2, body, false);
 
   // The plus rides the non-inverting side two pixels above its anchor, the
   // minus exactly on the inverting one (OTAElm.java:79-80).

@@ -85,8 +85,10 @@ function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
     line(g, bladeStart, { x, y: ay + 64 }, topColor(i));
     line(g, { x, y: ay + 64 }, { x, y: ay + 80 }, topColor(i));
 
-    // The fuse X just below the terminal (MotorProtectionSwitchElm.java:159-160).
+    // The fuse X just below the terminal (MotorProtectionSwitchElm.java:159-160),
+    // a plain drawLine upstream and so drawn at fine width 1.
     g.ctx.strokeStyle = topColor(i);
+    g.ctx.lineWidth = 1;
     g.ctx.beginPath();
     g.ctx.moveTo(x - 4, ay + 12);
     g.ctx.lineTo(x + 4, ay + 20);
@@ -95,13 +97,13 @@ function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
     g.ctx.stroke();
 
     // The zigzag heat element whose I²t integration trips the switch
-    // (MotorProtectionSwitchElm.java:164-170).
+    // (MotorProtectionSwitchElm.java:164-170), plain drawLines upstream.
     const heatColor = voltageColor(g, (g.voltages[2 * i] + g.voltages[2 * i + 1]) / 2);
-    line(g, { x, y: ay + 80 }, { x, y: ay + 96 }, heatColor);
-    line(g, { x: x - 12, y: ay + 96 }, { x: x - 12, y: ay + 112 }, heatColor);
-    line(g, { x: x - 12, y: ay + 96 }, { x, y: ay + 96 }, heatColor);
-    line(g, { x: x - 12, y: ay + 112 }, { x, y: ay + 112 }, heatColor);
-    line(g, { x, y: ay + 112 }, { x, y: ay + 128 }, heatColor);
+    line(g, { x, y: ay + 80 }, { x, y: ay + 96 }, heatColor, 1);
+    line(g, { x: x - 12, y: ay + 96 }, { x: x - 12, y: ay + 112 }, heatColor, 1);
+    line(g, { x: x - 12, y: ay + 96 }, { x, y: ay + 96 }, heatColor, 1);
+    line(g, { x: x - 12, y: ay + 112 }, { x, y: ay + 112 }, heatColor, 1);
+    line(g, { x, y: ay + 112 }, { x, y: ay + 128 }, heatColor, 1);
 
     // The overcurrent threshold marker (MotorProtectionSwitchElm.java:175).
     g.ctx.fillStyle = g.theme.text;
@@ -114,7 +116,9 @@ function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
   }
 
   // The label terminal block on the left and the label text beside it
-  // (MotorProtectionSwitchElm.java:141-146, :183-191).
+  // (MotorProtectionSwitchElm.java:141-146, :183-191). Upstream draws the
+  // block's grid and lead as plain `g.drawLine` calls, so they stay at fine
+  // width 1 while the channel leads draw thick.
   const square = { x: ax - CHANNEL_SPACING - 12, y: ay + 36 };
   closedPolyline(
     g,
@@ -126,13 +130,15 @@ function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
       square,
     ],
     g.theme.text,
+    1,
   );
-  line(g, { x: square.x - CHANNEL_SPACING / 2, y: square.y + 12 }, square, g.theme.text);
+  line(g, { x: square.x - CHANNEL_SPACING / 2, y: square.y + 12 }, square, g.theme.text, 1);
   line(
     g,
     { x: square.x - CHANNEL_SPACING / 2, y: square.y },
     { x: square.x - CHANNEL_SPACING / 2, y: square.y + 24 },
     g.theme.text,
+    1,
   );
   if (e.text) {
     g.ctx.fillStyle = g.theme.text;

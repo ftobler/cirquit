@@ -32,7 +32,7 @@ function drawLogicInput(g: DrawContext, e: CircuitElement): void {
   // The thick lead runs from the post to 12 units short of the label end
   // (LogicInputElm.java:70-73).
   const lead1 = interp(p1, p2, 1 - 12 / dn);
-  line(g, p1, lead1, voltageColor(g, g.voltages[0]), 3);
+  line(g, p1, lead1, voltageColor(g, g.voltages[0]));
   currentDots(g, p1, lead1, g.current);
   // Upstream centres the bold letter at the free end and colours it by
   // selection like the lead is coloured by voltage (LogicInputElm.java:75-83).

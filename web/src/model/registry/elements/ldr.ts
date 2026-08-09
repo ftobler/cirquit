@@ -63,10 +63,11 @@ function drawLdrBody(g: DrawContext, e: CircuitElement): void {
   const len = Math.hypot(lead2.x - lead1.x, lead2.y - lead1.y);
   if (len > 0) {
     const pt = (x: number, y: number): Point => interp(lead1, lead2, x / len, -y);
-    polyline(g, [pt(-8, 26), pt(8, 12)], color, 3);
-    polyline(g, [pt(2, 12), pt(8, 12), pt(8, 18)], color, 3);
-    polyline(g, [pt(12, 26), pt(26, 12)], color, 3);
-    polyline(g, [pt(20, 12), pt(26, 12), pt(26, 18)], color, 3);
+    // The two light arrows, thick like the body (LDRElm.java:114).
+    polyline(g, [pt(-8, 26), pt(8, 12)], color);
+    polyline(g, [pt(2, 12), pt(8, 12), pt(8, 18)], color);
+    polyline(g, [pt(12, 26), pt(26, 12)], color);
+    polyline(g, [pt(20, 12), pt(26, 12), pt(26, 18)], color);
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);

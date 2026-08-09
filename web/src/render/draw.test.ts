@@ -7,6 +7,7 @@ import {
   closedPolyline,
   currentDots,
   currentDotsPath,
+  drawLeads,
   formatValue,
   line,
   makeTheme,
@@ -264,7 +265,7 @@ describe('stroke caps', () => {
 
   it('line() with a round cap sets round and leaves miter joins', () => {
     const { ctx } = mkCtx();
-    line(context(ctx, 0), { x: 0, y: 0 }, { x: 32, y: 0 }, '#ffffff', 2, 'round');
+    line(context(ctx, 0), { x: 0, y: 0 }, { x: 32, y: 0 }, '#ffffff', 3, 'round');
     expect(ctx.lineCap).toBe('round');
     expect(ctx.lineJoin).toBe('miter');
   });
@@ -283,6 +284,71 @@ describe('stroke caps', () => {
     polyline(context(ctx, 0), [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 32, y: 0 }], '#ffffff');
     expect(ctx.lineCap).toBe('butt');
     expect(ctx.lineJoin).toBe('miter');
+  });
+});
+
+describe('stroke widths', () => {
+  // The port maps upstream's two weights onto the one default: bodies and
+  // leads stroke at `drawThickLine`'s 3 (CircuitElm.java:1007-1021), while
+  // fine detail that upstream strokes with a plain `g.drawLine` passes 1.
+  it('line() defaults to the 3-unit body weight', () => {
+    const { ctx } = mkCtx();
+    line(context(ctx, 0), { x: 0, y: 0 }, { x: 32, y: 0 }, '#ffffff');
+    expect(ctx.lineWidth).toBe(3);
+  });
+
+  it('polyline() and closedPolyline() default to the same 3-unit weight', () => {
+    const { ctx } = mkCtx();
+    polyline(context(ctx, 0), [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 32, y: 0 }], '#ffffff');
+    expect(ctx.lineWidth).toBe(3);
+    closedPolyline(
+      context(ctx, 0),
+      [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 32, y: 0 }, { x: 0, y: 0 }],
+      '#ffffff',
+    );
+    expect(ctx.lineWidth).toBe(3);
+  });
+
+  it('strokes the resistor body at 3, upstream setLineWidth(3.0)', () => {
+    // ResistorElm.java:73 sets 3.0 before the zigzag path; the port's body is
+    // a polyline over the same zigzagPoints, so it must inherit the default.
+    const { ctx } = mkCtx();
+    polyline(context(ctx, 0), zigzagPoints({ x: 0, y: 0 }, { x: 32, y: 0 }, ZIGZAG_HS), '#ffffff');
+    expect(ctx.lineWidth).toBe(3);
+  });
+
+  it('strokes a lead through drawLeads at 3, upstream draw2Leads/drawThickLine', () => {
+    // CircuitElm.java:460-467: both leads are drawThickLine at width 3.
+    const { ctx } = mkCtx();
+    drawLeads(
+      context(ctx, 0),
+      { id: 1, kind: 'resistor', x1: 0, y1: 0, x2: 64, y2: 0, flags: 0, params: {} },
+      { x: 8, y: 0 },
+      { x: 56, y: 0 },
+    );
+    expect(ctx.lineWidth).toBe(3);
+  });
+
+  it('an explicit width argument still wins, so fine detail can pass 1', () => {
+    // The fine end of the mapping: switch IEC symbols (SwitchElm.java:147-159),
+    // chip clock markers (ChipElm.java:117-120) and the chip lineOver bars
+    // (ChipElm.java:149-151) are plain g.drawLine/g.drawPolyline calls upstream
+    // and pass 1 here.
+    const { ctx } = mkCtx();
+    line(context(ctx, 0), { x: 0, y: 0 }, { x: 32, y: 0 }, '#ffffff', 1);
+    expect(ctx.lineWidth).toBe(1);
+  });
+
+  it('a chip housing strokes at 3, matching drawThickPolygon', () => {
+    // ChipElm.java:159 draws the housing with drawThickPolygon (width 3), the
+    // same default the port's shared drawChip relies on.
+    const { ctx } = mkCtx();
+    closedPolyline(
+      context(ctx, 0),
+      [{ x: 0, y: 0 }, { x: 32, y: 0 }, { x: 32, y: 16 }, { x: 0, y: 16 }, { x: 0, y: 0 }],
+      '#ffffff',
+    );
+    expect(ctx.lineWidth).toBe(3);
   });
 });
 

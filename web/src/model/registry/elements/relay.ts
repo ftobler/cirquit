@@ -158,14 +158,15 @@ function drawRelay(g: DrawContext, e: CircuitElement): void {
     coilLeads[x].x - coilLeads[1 - x].x,
     coilLeads[x].y - coilLeads[1 - x].y,
   );
-  polyline(g, coilPoints(coilLeads[x], coilLeads[1 - x], Math.max(1, Math.ceil(len / 11))), g.theme.text, 3);
+  polyline(g, coilPoints(coilLeads[x], coilLeads[1 - x], Math.max(1, Math.ceil(len / 11))), g.theme.text);
 
   if ((e.flags & RELAY_SHOW_BOX) !== 0) {
     closedPolyline(g, [outline[0], outline[1], outline[2], outline[3], outline[0]], g.theme.text);
   }
 
   // Dashed lines running beside the switch bank, the only part of the symbol
-  // that moves with the blade (RelayElm.java:236-251).
+  // that moves with the blade (RelayElm.java:236-251). Upstream strokes them
+  // with a plain `g.drawLine`, so they stay at fine width 1.
   for (let i = 0; i < poleCount; i++) {
     let a: Point;
     if (i === 0) {
@@ -176,7 +177,7 @@ function drawRelay(g: DrawContext, e: CircuitElement): void {
     }
     const b = interp(p1, p2, 0.5, Math.trunc(openhs * (-i * 3 - 0.5 + pos)) - 5 * dflip);
     g.ctx.setLineDash([4, 4]);
-    line(g, a, b, g.theme.text);
+    line(g, a, b, g.theme.text, 1);
     g.ctx.setLineDash([]);
   }
 

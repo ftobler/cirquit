@@ -50,7 +50,9 @@ function drawLedBody(g: DrawContext, e: CircuitElement): void {
 
   // The ring is the LED's static outline and the disc inside carries the
   // colour, the classic diode-inside-a-circle symbol (LEDElm.java:90-104).
-  circle(g, centre, LED_RING, g.theme.wire, false, 2);
+  // Upstream strokes the ring with drawThickCircle (LEDElm.java:92), so it is
+  // the 3-unit body weight.
+  circle(g, centre, LED_RING, g.theme.wire, false);
   circle(g, centre, LED_RING - 4, ledGlow(g, e), true);
 
   // The diode arrow on top keeps the part reading as an LED even when the
@@ -65,7 +67,9 @@ function drawLedBody(g: DrawContext, e: CircuitElement): void {
   const tip = interpPrecise(lead1, lead2, 0.75);
   triangle(g, t1, t2, tip, color);
   const [b1, b2] = interp2Precise(lead1, lead2, 0.75, 6);
-  line(g, b1, b2, color, 2.5);
+  // The cathode bar is a drawThickLine stroke upstream (DiodeElm.java:163),
+  // the 3-unit weight.
+  line(g, b1, b2, color);
 
   // Upstream draws the dots only on the two leads, never across the glowing
   // body (LEDElm.java:107-108), so each run gets its own phase.

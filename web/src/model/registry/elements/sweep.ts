@@ -43,7 +43,7 @@ export const SWEEP_DEF: ElementDef = {
       y: p2.y - (SWEEP_CIRCLE * (p2.y - p1.y)) / dn,
     };
     line(g, p1, lead1, color);
-    circle(g, p2, SWEEP_CIRCLE, g.theme.text, false, 3);
+    circle(g, p2, SWEEP_CIRCLE, g.theme.text, false);
     drawWaveformGlyph(g, p2, 1, SWEEP_CIRCLE);
     // An arrowhead on the glyph's high-frequency side marks the sweep
     // direction, telling the symbol apart from the plain AC source.

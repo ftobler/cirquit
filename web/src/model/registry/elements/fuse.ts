@@ -35,7 +35,7 @@ function drawFuseBody(g: DrawContext, e: CircuitElement): void {
     for (let i = 0; i <= segments; i++) {
       pts.push(interp(lead1, lead2, i / segments, 6 * Math.sin((i * Math.PI * 2) / segments)));
     }
-    polyline(g, pts, color, 3);
+    polyline(g, pts, color);
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);

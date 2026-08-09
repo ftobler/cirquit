@@ -29,7 +29,9 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
 
   const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
   triangle(g, t1, t2, lead2, g.theme.panel);
-  closedPolyline(g, [t1, t2, lead2, t1], g.theme.wire, 2);
+  // The triangle outline is a drawThickPolygon upstream (OpAmpElm.java:101),
+  // the 3-unit body weight.
+  closedPolyline(g, [t1, t2, lead2, t1], g.theme.wire);
 
   // The minus glyph sits on the inverting input, the plus on the other. The
   // minus anchor is 2 above its lead, the plus exactly on it (OpAmpElm.java:

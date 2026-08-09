@@ -210,18 +210,21 @@ export function drawChip(
   const frame = chipFrame(e);
   const body = chipBody(e, frame, sizeX, sizeY);
   // The housing is a stroked polygon upstream (drawThickPolygon, ChipElm.java:
-  // 156). The corner list repeats body[0] to keep the four corners explicit;
-  // closePath is what actually closes the loop, so the start corner gets a
-  // real join instead of two butt-capped stroke ends.
-  closedPolyline(g, [body[0], body[1], body[2], body[3], body[0]], g.theme.wire, 2);
+  // 159), the 3-unit body weight. The corner list repeats body[0] to keep the
+  // four corners explicit; closePath is what actually closes the loop, so the
+  // start corner gets a real join instead of two butt-capped stroke ends.
+  closedPolyline(g, [body[0], body[1], body[2], body[3], body[0]], g.theme.wire);
   pins.forEach((pin, i) => {
     const pt = chipPinPoints(e, frame, sizeX, sizeY, pin);
-    line(g, pt.post, pt.stub, voltageColor(g, g.voltages[i]), 3);
+    line(g, pt.post, pt.stub, voltageColor(g, g.voltages[i]));
     if (pin.bubble && pt.bubble) {
-      // A bubble is a stroked ring over the stub, the port's usual bubble.
-      circle(g, pt.bubble, 3, g.theme.wire, false, 3);
+      // A bubble is a stroked ring over the stub, the port's usual bubble
+      // (ChipElm.java:131-133, drawThickCircle at width 3).
+      circle(g, pt.bubble, 3, g.theme.wire, false);
     }
     if (pt.clockPoints) {
+      // The three-point clock marker is a plain drawPolyline upstream
+      // (ChipElm.java:117-120), so it stays at fine width 1.
       polyline(g, pt.clockPoints, g.theme.wire, 1);
     }
   });

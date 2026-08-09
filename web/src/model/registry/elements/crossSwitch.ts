@@ -131,10 +131,11 @@ function drawCrossSwitch(g: DrawContext, e: CircuitElement): void {
     }
 
     // The dashed link between the levers, drawn once with the first pole
-    // (CrossSwitchElm.java:121-129).
+    // (CrossSwitchElm.java:121-129). Upstream strokes it with a plain
+    // `g.drawLine`, so it stays at fine width 1 while the levers draw thick.
     if (i === 0) {
       g.ctx.setLineDash([4, 4]);
-      line(g, geo.linePoints[0], geo.linePoints[1], g.theme.text);
+      line(g, geo.linePoints[0], geo.linePoints[1], g.theme.text, 1);
       g.ctx.setLineDash([]);
     }
 

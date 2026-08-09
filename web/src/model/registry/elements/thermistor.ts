@@ -73,7 +73,8 @@ function drawThermistorBody(g: DrawContext, e: CircuitElement): void {
       interp(lead1, lead2, hs / len, -hs * 2),
       interp(lead1, lead2, 1, hs * 2),
     ];
-    polyline(g, accent, color, 3);
+    // The temperature accent, thick like the body (ThermistorNTCElm.java:142).
+    polyline(g, accent, color);
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
