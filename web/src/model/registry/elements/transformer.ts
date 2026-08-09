@@ -97,11 +97,17 @@ const basicPosts = (e: CircuitElement): Point[] => basicGeometry(e).ptEnds;
  *  ramp follows the winding's own two terminal voltages, `v0`/`v1`, in the
  *  order the `csign` swap draws them: the from/to flip that reverses the coil
  *  direction reverses the gradient too. Round caps keep the angled per-segment
- *  joints covered, upstream's LineCap.ROUND in drawCoil. */
+ *  joints covered, upstream's LineCap.ROUND in drawCoil; bevel joins flatten
+ *  the cusps where the loops return to the axis. */
 function drawCoilBetween(g: DrawContext, a: Point, b: Point, csign: number, v0: number, v1: number): void {
   const [from, to] = csign > 0 ? [a, b] : [b, a];
   const [vf, vt] = csign > 0 ? [v0, v1] : [v1, v0];
-  gradientPolyline(g, coilPoints(from, to, COIL_LOOPS), { cap: 'round', v0: vf, v1: vt });
+  gradientPolyline(g, coilPoints(from, to, COIL_LOOPS), {
+    cap: 'round',
+    join: 'bevel',
+    v0: vf,
+    v1: vt,
+  });
 }
 
 function drawBasicTransformer(g: DrawContext, e: CircuitElement): void {

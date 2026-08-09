@@ -2,7 +2,37 @@ import { describe, expect, it } from 'vitest';
 import { SvgRecorder, renderCircuitToSvg } from './svg';
 import { makeTheme } from './draw';
 import { RESISTOR_DEF } from '../model/registry/elements/resistor';
+import { INDUCTOR_DEF } from '../model/registry/elements/inductor';
 import { DEFAULT_SETTINGS, type CircuitElement, type DrawContext } from '../model/types';
+
+/** A DrawContext on a fresh recorder, the same fields the canvas path sets. */
+function drawCtx(rec: SvgRecorder): DrawContext {
+  return {
+    ctx: rec,
+    theme: makeTheme(false, DEFAULT_SETTINGS),
+    voltages: [0, 0],
+    current: 1e-3,
+    voltage: 0,
+    power: 0,
+    value: 0,
+    dotPhase: 0,
+    showCurrent: false,
+    showValues: false,
+    showVoltageColor: false,
+    showPowerColor: false,
+    conventional: true,
+    euroResistors: true,
+    euroGates: false,
+    selected: false,
+    hovered: false,
+    onHighlightedNet: false,
+    voltageRange: 5,
+    powerRange: 50,
+    scale: 1,
+    valueDigits: 1,
+    valueFontSize: 12,
+  };
+}
 
 /** A fresh recorder with an identity transform and default styles. */
 function rec(): SvgRecorder {
@@ -295,6 +325,39 @@ describe('renderCircuitToSvg', () => {
     const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
     expect(svg.match(/stroke-linecap="round"/g)).toHaveLength(1);
     expect(svg.match(/stroke-linecap="butt"/g)).toHaveLength(46);
+  });
+
+  it('exports the coil with bevel joins and a resistor body with miter', () => {
+    // The recorder mirrors lineJoin into stroke-linejoin, so the coil's bevel
+    // must reach the SVG while a resistor body and every other polyline keep
+    // miter. Export is what gets shared, so the join has to survive it.
+    const coil = new SvgRecorder();
+    INDUCTOR_DEF.draw(drawCtx(coil), {
+      id: 1,
+      kind: 'inductor',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: { inductance: 1e-3 },
+    });
+    const coilSvg = coil.toString(200, 100);
+    expect(coilSvg).toContain('stroke-linejoin="bevel"');
+    const res = new SvgRecorder();
+    RESISTOR_DEF.draw(drawCtx(res), {
+      id: 1,
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    const resSvg = res.toString(200, 100);
+    expect(resSvg).toContain('stroke-linejoin="miter"');
+    expect(resSvg).not.toContain('stroke-linejoin="bevel"');
   });
 
   it('carries the 3-unit body stroke weight into the export', () => {

@@ -178,19 +178,25 @@ export function strokeStyle(
   color: string,
   width = 3,
   cap: CanvasLineCap = 'butt',
+  join: CanvasLineJoin = 'miter',
 ): void {
   g.ctx.strokeStyle = limbColor(g, color);
   g.ctx.lineWidth = width;
-  // Butt is the ambient cap, miter the join: the crisp-line decision that
-  // symbol ends stay flush and polygon corners keep their sharp points. Wires
-  // opt into round through the cap argument, so a routed corner or a diagonal
-  // wire end reads as a continuous conductor (upstream's ambient round cap,
-  // UIManager.java:636). Miter is upstream's join too: it never sets lineJoin,
-  // so the canvas default is what the original renders. The width default of 3
-  // is upstream's `drawThickLine` (CircuitElm.java:1007-1021); fine detail
-  // sites that upstream strokes with a plain `g.drawLine` pass 1 explicitly.
+  // Butt is the ambient cap, miter the ambient join: the crisp-line decision
+  // that symbol ends stay flush and polygon corners keep their sharp points.
+  // Wires opt into round through the cap argument, so a routed corner or a
+  // diagonal wire end reads as a continuous conductor (upstream's ambient
+  // round cap, UIManager.java:636). Miter is upstream's join too: it never
+  // sets lineJoin, so the canvas default is what the original renders. That
+  // default is right for polygons, whose corners miter into crisp points, and
+  // wrong for the coil: its loop junctions drop back to the axis and turn at
+  // near-zero angles, where miter spikes and the canvas silently clamps at
+  // miterLimit. The coil passes 'bevel' so those cusps flatten. The width
+  // default of 3 is upstream's `drawThickLine` (CircuitElm.java:1007-1021);
+  // fine detail sites that upstream strokes with a plain `g.drawLine` pass 1
+  // explicitly.
   g.ctx.lineCap = cap;
-  g.ctx.lineJoin = 'miter';
+  g.ctx.lineJoin = join;
 }
 
 export function line(
@@ -200,8 +206,9 @@ export function line(
   color: string,
   width = 3,
   cap: CanvasLineCap = 'butt',
+  join: CanvasLineJoin = 'miter',
 ): void {
-  strokeStyle(g, color, width, cap);
+  strokeStyle(g, color, width, cap, join);
   g.ctx.beginPath();
   g.ctx.moveTo(a.x, a.y);
   g.ctx.lineTo(b.x, b.y);
@@ -214,10 +221,11 @@ export function polyline(
   color: string,
   width = 3,
   cap: CanvasLineCap = 'butt',
+  join: CanvasLineJoin = 'miter',
   closed = false,
 ): void {
   if (pts.length < 2) return;
-  strokeStyle(g, color, width, cap);
+  strokeStyle(g, color, width, cap, join);
   g.ctx.beginPath();
   g.ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) g.ctx.lineTo(pts[i].x, pts[i].y);
@@ -239,8 +247,9 @@ export function closedPolyline(
   color: string,
   width = 3,
   cap: CanvasLineCap = 'butt',
+  join: CanvasLineJoin = 'miter',
 ): void {
-  polyline(g, pts, color, width, cap, true);
+  polyline(g, pts, color, width, cap, join, true);
 }
 
 /**
@@ -281,9 +290,10 @@ export function axisColor(
  * sub-segments so its ramp stays smooth instead of one band per side; every
  * cut shares its endpoints exactly, so butt caps leave no seam along a straight
  * run. Coils pass `cap: 'round'`, upstream's LineCap.ROUND in drawCoil, so
- * their angled joints stay covered. The axis defaults to the first and last
- * points; a closed polyline (whose last point repeats the first) must pass
- * `axis` explicitly.
+ * their angled joints stay covered, and `join: 'bevel'` so the near-zero-angle
+ * cusps where the loops return to the axis flatten instead of spiking under
+ * miter. The axis defaults to the first and last points; a closed polyline
+ * (whose last point repeats the first) must pass `axis` explicitly.
  */
 export function gradientPolyline(
   g: DrawContext,
@@ -295,6 +305,9 @@ export function gradientPolyline(
     /** Cap for the per-segment strokes; coils pass 'round' (drawCoil's
      *  LineCap.ROUND). Defaults butt. */
     cap?: CanvasLineCap;
+    /** Join for the per-segment strokes; coils pass 'bevel' so their loop
+     *  junctions stay flat. Defaults miter. */
+    join?: CanvasLineJoin;
     /** Body axis the fraction is measured along; defaults to `[pts[0],
      *  pts[pts.length - 1]]`, which is right for every open body. */
     axis?: [Point, Point];
@@ -319,7 +332,7 @@ export function gradientPolyline(
       const mx = (p0.x + p1.x) / 2;
       const my = (p0.y + p1.y) / 2;
       const f = len2 > 0 ? ((mx - axis[0].x) * ax + (my - axis[0].y) * ay) / len2 : 0;
-      line(g, p0, p1, axisColor(g, f, opts.v0, opts.v1), 3, opts.cap);
+      line(g, p0, p1, axisColor(g, f, opts.v0, opts.v1), 3, opts.cap, opts.join);
     }
   }
 }

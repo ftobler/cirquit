@@ -18,8 +18,10 @@ function drawInductorBody(g: DrawContext, e: CircuitElement): void {
   drawLeads(g, e, lead1, lead2);
   // The coil shades along the voltage drop (CircuitElm.drawCoil's gradient);
   // the round caps are upstream's LineCap.ROUND for the coil, which also keeps
-  // the angled joints of the per-segment strokes covered.
-  gradientPolyline(g, coilPoints(lead1, lead2, COIL_LOOPS), { cap: 'round' });
+  // the angled joints of the per-segment strokes covered. Bevel joins flatten
+  // the near-zero-angle cusps where each loop returns to the axis, which miter
+  // would spike at.
+  gradientPolyline(g, coilPoints(lead1, lead2, COIL_LOOPS), { cap: 'round', join: 'bevel' });
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
   label(g, e, formatValue(e.params.inductance ?? 0, 'H', g.valueDigits));

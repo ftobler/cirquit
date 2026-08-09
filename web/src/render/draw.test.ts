@@ -25,6 +25,8 @@ import {
   zigzagPoints,
 } from './draw';
 import { RESISTOR_DEF } from '../model/registry/elements/resistor';
+import { INDUCTOR_DEF } from '../model/registry/elements/inductor';
+import { RELAY_DEF } from '../model/registry/elements/relay';
 import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
 import { TOO_FAST } from './dots';
 import {
@@ -56,6 +58,7 @@ interface CtxStub {
   fill: ReturnType<typeof vi.fn>;
   save: ReturnType<typeof vi.fn>;
   restore: ReturnType<typeof vi.fn>;
+  setLineDash: ReturnType<typeof vi.fn>;
   fillText: ReturnType<typeof vi.fn>;
   measureText: (text: string) => { width: number };
 }
@@ -76,13 +79,13 @@ const mkCtx = (): {
   arcs: { x: number; y: number }[];
   texts: TextRecord[];
   paths: { x: number; y: number }[][];
-  strokes: { style: string; width: number }[];
+  strokes: { style: string; width: number; join: string }[];
 } => {
   const calls: string[] = [];
   const arcs: { x: number; y: number }[] = [];
   const texts: TextRecord[] = [];
   const paths: { x: number; y: number }[][] = [];
-  const strokes: { style: string; width: number }[] = [];
+  const strokes: { style: string; width: number; join: string }[] = [];
   const record = (name: string) => vi.fn(() => calls.push(name));
   const stub: CtxStub = {
     fillStyle: '',
@@ -106,9 +109,10 @@ const mkCtx = (): {
     closePath: record('closePath'),
     stroke: vi.fn(() => {
       calls.push('stroke');
-      // The colour at stroke time, in draw order: how a per-segment gradient
-      // body is asserted on.
-      strokes.push({ style: stub.strokeStyle, width: stub.lineWidth });
+      // The colour, width and join at stroke time, in draw order: how a
+      // per-segment gradient body is asserted on, and how the coil's bevel
+      // joins are told apart from a polygon's miter ones.
+      strokes.push({ style: stub.strokeStyle, width: stub.lineWidth, join: stub.lineJoin });
     }),
     arc: vi.fn((x: number, y: number) => {
       calls.push('arc');
@@ -117,6 +121,7 @@ const mkCtx = (): {
     fill: record('fill'),
     save: record('save'),
     restore: record('restore'),
+    setLineDash: record('setLineDash'),
     fillText: vi.fn((text: string, x: number, y: number) => {
       calls.push('fillText');
       texts.push({ text, x, y, font: stub.font, align: stub.textAlign, baseline: stub.textBaseline });
@@ -338,11 +343,106 @@ describe('stroke caps', () => {
 
   it('polyline() keeps butt caps and miter joins so polygon corners stay sharp', () => {
     // Regression guard for the crisp-line intent: a polygonal body (the zigzag
-    // resistor, the coil, the bodyRect loop) must not soften its corners.
+    // resistor, the bodyRect loop) must not soften its corners. The coil opts
+    // out through its own bevel join argument, asserted in the coil tests.
     const { ctx } = mkCtx();
     polyline(context(ctx, 0), [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 32, y: 0 }], '#ffffff');
     expect(ctx.lineCap).toBe('butt');
     expect(ctx.lineJoin).toBe('miter');
+  });
+});
+
+describe('coil bevel joins', () => {
+  // Every coil body strokes through gradientPolyline with join 'bevel': the
+  // loop junctions drop back to the axis at near-zero angles, where a miter
+  // spikes and the canvas silently clamps at miterLimit. A resistor's zigzag
+  // and every other polyline keep miter.
+  const drawCtx = (ctx: CanvasRenderingContext2D, voltages: number[]): DrawContext => ({
+    ...context(ctx, 0),
+    voltages,
+  });
+
+  it('gradientPolyline passes a bevel join through to its per-segment strokes', () => {
+    const { ctx, strokes } = mkCtx();
+    gradientPolyline(drawCtx(ctx, [10, 0]), [{ x: 0, y: 0 }, { x: 32, y: 0 }], {
+      cap: 'round',
+      join: 'bevel',
+    });
+    expect(strokes.length).toBeGreaterThan(0);
+    expect(strokes.every((s) => s.join === 'bevel')).toBe(true);
+  });
+
+  it('the inductor body strokes bevel while its leads stay miter', () => {
+    const { ctx, strokes } = mkCtx();
+    INDUCTOR_DEF.draw(drawCtx(ctx, [0, 0]), {
+      id: 1,
+      kind: 'inductor',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: {},
+    });
+    // Two lead lines first, then the coil's per-segment gradient strokes.
+    expect(strokes[0].join).toBe('miter');
+    expect(strokes[1].join).toBe('miter');
+    expect(strokes.length).toBeGreaterThan(2);
+    expect(strokes.slice(2).every((s) => s.join === 'bevel')).toBe(true);
+  });
+
+  it('the relay coil strokes bevel, at its own body weight', () => {
+    const { ctx, strokes } = mkCtx();
+    RELAY_DEF.draw(drawCtx(ctx, [0, 0, 0, 0, 0]), {
+      id: 1,
+      kind: 'relay',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: {},
+    });
+    const bevels = strokes.filter((s) => s.join === 'bevel');
+    expect(bevels.length).toBeGreaterThan(0);
+    expect(bevels.every((s) => s.width === 3)).toBe(true);  // the coil's body weight
+  });
+
+  it('both transformer windings stroke bevel, not the leads or core bars', () => {
+    const { ctx, strokes } = mkCtx();
+    TRANSFORMER_DEF.draw(drawCtx(ctx, [10, 0, 0, 10]), {
+      id: 1,
+      kind: 'transformer',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: {},
+    });
+    // Four leads first, then the primary and secondary coils, then the two
+    // core bars. The coil bevels sit between the miter leads and bars.
+    expect(strokes.slice(0, 4).every((s) => s.join === 'miter')).toBe(true);
+    expect(strokes.slice(-2).every((s) => s.join === 'miter')).toBe(true);
+    const bevels = strokes.filter((s) => s.join === 'bevel');
+    expect(bevels.length).toBeGreaterThan(0);
+    expect(bevels.every((s) => s.width === 3)).toBe(true);  // the winding's body weight
+  });
+
+  it('a resistor body keeps every stroke miter', () => {
+    const { ctx, strokes } = mkCtx();
+    RESISTOR_DEF.draw(drawCtx(ctx, [0, 0]), {
+      id: 1,
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    expect(strokes.length).toBeGreaterThan(0);
+    expect(strokes.every((s) => s.join === 'miter')).toBe(true);
   });
 });
 
