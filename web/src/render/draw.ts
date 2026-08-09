@@ -173,27 +173,48 @@ export function limbColor(g: DrawContext, color: string): string {
   return color;
 }
 
-export function strokeStyle(g: DrawContext, color: string, width = 2): void {
+export function strokeStyle(
+  g: DrawContext,
+  color: string,
+  width = 2,
+  cap: CanvasLineCap = 'butt',
+): void {
   g.ctx.strokeStyle = limbColor(g, color);
   g.ctx.lineWidth = width;
-  // Butt caps end flush at the segment endpoints and miter joins keep polygon
-  // corners crisp points, instead of the round caps and joins that bulge wire
-  // ends and soften every corner.
-  g.ctx.lineCap = 'butt';
+  // Butt is the ambient cap, miter the join: the crisp-line decision that
+  // symbol ends stay flush and polygon corners keep their sharp points. Wires
+  // opt into round through the cap argument, so a routed corner or a diagonal
+  // wire end reads as a continuous conductor (upstream's ambient round cap,
+  // UIManager.java:636). Miter is upstream's join too: it never sets lineJoin,
+  // so the canvas default is what the original renders.
+  g.ctx.lineCap = cap;
   g.ctx.lineJoin = 'miter';
 }
 
-export function line(g: DrawContext, a: Point, b: Point, color: string, width = 2): void {
-  strokeStyle(g, color, width);
+export function line(
+  g: DrawContext,
+  a: Point,
+  b: Point,
+  color: string,
+  width = 2,
+  cap: CanvasLineCap = 'butt',
+): void {
+  strokeStyle(g, color, width, cap);
   g.ctx.beginPath();
   g.ctx.moveTo(a.x, a.y);
   g.ctx.lineTo(b.x, b.y);
   g.ctx.stroke();
 }
 
-export function polyline(g: DrawContext, pts: Point[], color: string, width = 2): void {
+export function polyline(
+  g: DrawContext,
+  pts: Point[],
+  color: string,
+  width = 2,
+  cap: CanvasLineCap = 'butt',
+): void {
   if (pts.length < 2) return;
-  strokeStyle(g, color, width);
+  strokeStyle(g, color, width, cap);
   g.ctx.beginPath();
   g.ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) g.ctx.lineTo(pts[i].x, pts[i].y);

@@ -6,7 +6,9 @@ import {
   currentDots,
   currentDotsPath,
   formatValue,
+  line,
   makeTheme,
+  polyline,
   powerColor,
   powerColorT,
   powerMult,
@@ -242,12 +244,37 @@ describe('current dots', () => {
     );
     expect(ctx.fillStyle).toBe(makeTheme().currentDotElectron);
   });
+});
 
-  it('sets butt caps and miter joins on every stroke', () => {
-    // Pins the crisp-line regression: round caps and joins would bulge wire
-    // ends and soften polygon corners.
+describe('stroke caps', () => {
+  it('defaults to butt caps and miter joins', () => {
+    // Pins the crisp-line decision: symbol ends stay flush and polygon corners
+    // stay sharp. Wires opt into round caps explicitly.
     const { ctx } = mkCtx();
     strokeStyle(context(ctx, 0), '#ffffff');
+    expect(ctx.lineCap).toBe('butt');
+    expect(ctx.lineJoin).toBe('miter');
+  });
+
+  it('line() with a round cap sets round and leaves miter joins', () => {
+    const { ctx } = mkCtx();
+    line(context(ctx, 0), { x: 0, y: 0 }, { x: 32, y: 0 }, '#ffffff', 2, 'round');
+    expect(ctx.lineCap).toBe('round');
+    expect(ctx.lineJoin).toBe('miter');
+  });
+
+  it('line() without a cap still sets butt', () => {
+    const { ctx } = mkCtx();
+    line(context(ctx, 0), { x: 0, y: 0 }, { x: 32, y: 0 }, '#ffffff');
+    expect(ctx.lineCap).toBe('butt');
+    expect(ctx.lineJoin).toBe('miter');
+  });
+
+  it('polyline() keeps butt caps and miter joins so polygon corners stay sharp', () => {
+    // Regression guard for the crisp-line intent: a polygonal body (the zigzag
+    // resistor, the coil, the bodyRect loop) must not soften its corners.
+    const { ctx } = mkCtx();
+    polyline(context(ctx, 0), [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 32, y: 0 }], '#ffffff');
     expect(ctx.lineCap).toBe('butt');
     expect(ctx.lineJoin).toBe('miter');
   });

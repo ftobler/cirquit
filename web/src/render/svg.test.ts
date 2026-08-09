@@ -284,6 +284,16 @@ describe('renderCircuitToSvg', () => {
     expect(svg).toContain('height="100"');
   });
 
+  it('emits round caps on the wire stroke and butt on the resistor', () => {
+    // The recorder copies whatever strokeStyle sets, so the wire's round cap
+    // must reach the SVG while the resistor's leads and body keep butt. The
+    // circuit is one wire plus one IEC resistor: one round stroke, three butt
+    // strokes (two leads and the bodyRect loop).
+    const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
+    expect(svg.match(/stroke-linecap="round"/g)).toHaveLength(1);
+    expect(svg.match(/stroke-linecap="butt"/g)).toHaveLength(3);
+  });
+
   it('fills the white background like the PNG export', () => {
     const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
     expect(svg).toContain('<rect x="0" y="0" width="396" height="100" fill="#ffffff"');

@@ -25,13 +25,15 @@ export const WIRE_DEF: ElementDef = {
       const pts = e.route.map(([x, y]) => ({ x, y }));
       const color = voltageColor(g, g.voltages[0]);
       for (let i = 0; i < pts.length - 1; i++) {
-        line(g, pts[i], pts[i + 1], color);
+        // Round caps close each segment's corners, since a routed wire strokes
+        // independent segments rather than one path; miter joins never apply.
+        line(g, pts[i], pts[i + 1], color, 2, 'round');
       }
       currentDotsPath(g, pts, g.current);
       return;
     }
     const [p1, p2] = endpoints(e);
-    line(g, p1, p2, voltageColor(g, g.voltages[0]));
+    line(g, p1, p2, voltageColor(g, g.voltages[0]), 2, 'round');
     currentDots(g, p1, p2, g.current);
   },
 };
