@@ -168,6 +168,17 @@ pub trait Element {
         self.connects(a, b)
     }
 
+    /// The two terminals of a current-output device, for the broken-path
+    /// check (upstream's INDUCT `FindPathInfo`). Analysis unions every
+    /// element's `dc_connects` pairs and marks a source broken when its two
+    /// output terminals have no DC path through the rest of the circuit. Only
+    /// current sources implement it; the default is inert. The controlled
+    /// current source reports its C+/C- pair, which is not its first two
+    /// posts, so the pair has to come from here rather than a kind check.
+    fn current_output_nodes(&self) -> Option<(usize, usize)> {
+        None
+    }
+
     /// Broken flag set by analysis when the element has no DC current path.
     /// Only current sources implement it; the default is inert.
     fn set_broken(&mut self, _broken: bool) {}

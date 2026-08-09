@@ -11,7 +11,7 @@
  * rotated or mirrored part's terminal coordinates match the original exactly.
  */
 
-import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP } from './registry';
+import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP } from './registry';
 import type { CircuitElement } from './types';
 
 /** Whether the element can turn a quarter turn. One-post parts (ground, rails,
@@ -109,6 +109,14 @@ function rotateFlags(e: CircuitElement): number {
     if (e.x1 === e.x2) flags ^= MOSFET_FLIP;
     return flags;
   }
+  if (e.kind === 'unijunction') {
+    // flipXY toggles FLAG_FLIP unconditionally, flipY toggles it again when
+    // the part is now horizontal, so a horizontal part ends toggled once and
+    // a vertical one twice, which cancels (UnijunctionElm.java:141-156).
+    let flags = e.flags ^ UJT_FLIP;
+    if (e.x1 === e.x2) flags ^= UJT_FLIP;
+    return flags;
+  }
   if (e.kind !== 'opamp' && e.kind !== 'transistor') return e.flags;
   let flags = e.flags ^ FLAG_SWAP;
   if (e.x1 === e.x2) flags ^= FLAG_SWAP;
@@ -165,6 +173,7 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
   else if (e.kind === 'transformer') flipBit = TRANSFORMER_FLIP;
   else if (e.kind === 'opamp' || e.kind === 'transistor') flipBit = FLAG_SWAP;
   else if (e.kind === 'tappedTransformer' || e.kind === 'customTransformer') flipBit = TAPPED_FLIP;
+  else if (e.kind === 'unijunction') flipBit = UJT_FLIP;
   const flags = vertical && flipBit !== 0 ? e.flags ^ flipBit : e.flags;
   return { ...withoutRoute(e), x1: 2 * cx - e.x1, y1: e.y1, x2: 2 * cx - e.x2, y2: e.y2, flags };
 }

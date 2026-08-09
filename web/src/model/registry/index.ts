@@ -81,6 +81,10 @@ import { LOGIC_INPUT_DEF } from './elements/logicInput';
 import { SCHMITT_DEF, INVERTING_SCHMITT_DEF } from './elements/schmitt';
 import { SEVEN_SEG_DEF } from './elements/sevenSeg';
 import { SCR_DEF } from './elements/scr';
+import { CC2_DEF } from './elements/cc2';
+import { VCVS_DEF } from './elements/vcvs';
+import { VCCS_DEF } from './elements/vccs';
+import { UNIJUNCTION_DEF } from './elements/unijunction';
 import { SPARK_GAP_DEF } from './elements/sparkGap';
 import { TRI_STATE_DEF } from './elements/triState';
 import { LABELED_NODE_DEF } from './elements/labeledNode';
@@ -99,6 +103,7 @@ export { zenerMarks } from './elements/diode';
 export { potWiperGeometry } from './elements/potentiometer';
 export { railLead, railText, railLabelAnchor, railValueText, railValueAnchor, RAIL_CIRCLE } from './elements/rail';
 export { gateInverting, gateInputCount, gatePosts } from './elements/gate';
+export { UJT_FLIP } from './elements/unijunction';
 
 export const ELEMENT_DEFS: ElementDef[] = [
   WIRE_DEF,
@@ -175,6 +180,10 @@ export const ELEMENT_DEFS: ElementDef[] = [
   INVERTING_SCHMITT_DEF,
   SEVEN_SEG_DEF,
   SCR_DEF,
+  CC2_DEF,
+  VCVS_DEF,
+  VCCS_DEF,
+  UNIJUNCTION_DEF,
   TRIAC_DEF,
   SPARK_GAP_DEF,
   TRI_STATE_DEF,

@@ -1486,3 +1486,134 @@ describe('batch-3 source and chip file formats', () => {
     expect(out).toBe(line);
   });
 });
+
+describe('controlled source file formats', () => {
+  /** Parses a single element line and re-emits it, returning that line. */
+  const csLine = (line: string, code: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith(`${code} `)) ?? '' };
+  };
+
+  it('a CCII+ conveyor line round-trips byte-for-byte (cc2.txt:2)', () => {
+    // The single gain token (CC2Elm.java:29-33). `1.0` normalises to `1` like
+    // every numeric token this port writes, so the assertion is on values.
+    const line = '179 272 224 304 224 0 1.0';
+    const { e, elementLine } = csLine(line, '179');
+    expect(e.params.gain).toBe(1);
+    expect(elementLine).toBe('179 272 224 304 224 0 1');
+  });
+
+  it('a CCII- conveyor line round-trips its negative gain', () => {
+    // The corpus cc2n.txt line; a negative gain is the whole point of the
+    // CCII- flavour.
+    const line = '179 272 224 304 224 0 -1.0';
+    const { e, elementLine } = csLine(line, '179');
+    expect(e.params.gain).toBe(-1);
+    expect(elementLine).toBe('179 272 224 304 224 0 -1');
+  });
+
+  it('a VCVS line with the qam-256 expression round-trips byte-for-byte', () => {
+    // qam-256.txt:52. The `\p` escape decodes to `+` on load and the save
+    // writes it back, so the line is byte-identical.
+    const line = '212 624 368 672 368 0 5 (a*2-d)*b\\p(e*2-d)*c';
+    const { e, elementLine } = csLine(line, '212');
+    expect(e.params.inputCount).toBe(5);
+    expect(e.text).toBe('(a*2-d)*b+(e*2-d)*c');
+    expect(elementLine).toBe(line);
+  });
+
+  it('a VCCS line round-trips byte-for-byte (qam-256.txt:24)', () => {
+    // The shared VCCS/VCVS token layout: inputCount then the expression.
+    const line = '213 976 528 1008 528 0 2 a*b*2/1000';
+    const { e, elementLine } = csLine(line, '213');
+    expect(e.params.inputCount).toBe(2);
+    expect(e.text).toBe('a*b*2/1000');
+    expect(elementLine).toBe(line);
+  });
+
+  it('a bare unijunction line round-trips byte-for-byte (ujtosc.txt:11)', () => {
+    // No tokens follow the common fields (dumpWithMask(0),
+    // UnijunctionElm.java:49-52); the flags still ride through.
+    const line = '417 416 176 496 176 1';
+    const { e, elementLine } = csLine(line, '417');
+    expect(e.flags).toBe(1);
+    expect(elementLine).toBe(line);
+  });
+
+  it('the expression escape set survives a round trip', () => {
+    // `+`, `=`, `#`, `&` and space are all in the shared escape set
+    // (CustomLogicModel.java:259-263), so an expression containing them is
+    // one token on the line and the unescaped string on the element.
+    const line = '213 0 0 32 0 2 2 a\\pb\\qc\\hd\\ae\\sf';
+    const { e, elementLine } = csLine(line, '213');
+    expect(e.text).toBe('a+b=c#d&e f');
+    expect(elementLine).toBe(line);
+    const [again] = parseCircuit(elementLine).elements;
+    expect(again.text).toBe('a+b=c#d&e f');
+  });
+
+  it('a fresh VCVS dumps the upstream constructor expression', () => {
+    const e = makeElement('vcvs', 0, 0, 32, 0);
+    expect(e.params.inputCount).toBe(2);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    // The fresh constructor's expression (VCCSElm.java:45); none of its
+    // characters are in the escape set, so the token is verbatim.
+    expect(out).toContain('212 0 0 32 0 0 2 .1*(a-b)');
+  });
+
+  it('a fresh CCII dumps gain 1', () => {
+    const e = makeElement('cc2', 0, 0, 32, 0);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('179 0 0 32 0 0 1');
+  });
+
+  it('the conveyor posts land where the corpus wires connect', () => {
+    // ccvccs.txt:2 spans (208,192)-(336,192); the corpus wires hang off
+    // (208,192) to the west (the X output post) and (304,224) on the east
+    // (the Z post), with the Y input at (208,256) under the X.
+    const e = parseCircuit('179 208 192 336 192 0 1').elements[0];
+    expect(postsOf(e)).toEqual([
+      { x: 208, y: 192 },
+      { x: 208, y: 256 },
+      { x: 304, y: 224 },
+    ]);
+  });
+
+  it('a VCVS with five inputs spaces its posts over the 5-row chip', () => {
+    // qam-256.txt:52 spans (624,368)-(672,368); input B connects at
+    // (624,400), V+ at (720,368) and V- at (720,400).
+    const e = parseCircuit('212 624 368 672 368 0 5 (a*2-d)*b\\p(e*2-d)*c').elements[0];
+    expect(postsOf(e)).toEqual([
+      { x: 624, y: 368 },
+      { x: 624, y: 400 },
+      { x: 624, y: 432 },
+      { x: 624, y: 464 },
+      { x: 624, y: 496 },
+      { x: 720, y: 368 },
+      { x: 720, y: 400 },
+    ]);
+  });
+
+  it('a VCCS with two inputs keeps the 2-row chip height', () => {
+    const e = parseCircuit('213 976 528 1008 528 0 2 a*b*2/1000').elements[0];
+    expect(postsOf(e)).toEqual([
+      { x: 976, y: 528 },
+      { x: 976, y: 560 },
+      { x: 1072, y: 528 },
+      { x: 1072, y: 560 },
+    ]);
+  });
+
+  it('the unijunction posts match the ujtosc.txt wires', () => {
+    // ujtosc.txt:11 spans (416,176)-(496,176): the emitter hangs at the first
+    // endpoint, B1 below the axis and B2 above it (UnijunctionElm.java:
+    // 126-128), where the file's resistors connect.
+    const e = parseCircuit('417 416 176 496 176 1').elements[0];
+    expect(postsOf(e)).toEqual([
+      { x: 416, y: 176 },
+      { x: 496, y: 208 },
+      { x: 496, y: 176 },
+    ]);
+  });
+});

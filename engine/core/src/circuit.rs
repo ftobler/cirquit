@@ -523,8 +523,7 @@ impl Circuit {
             }
         }
         for elm in self.elements.iter_mut() {
-            if elm.kind() == "current" {
-                let (n0, n1) = (elm.base().nodes[0], elm.base().nodes[1]);
+            if let Some((n0, n1)) = elm.current_output_nodes() {
                 let broken = uf.find(n0) != uf.find(n1);
                 elm.set_broken(broken);
             }

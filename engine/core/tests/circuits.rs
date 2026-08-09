@@ -37,6 +37,22 @@ fn elm_flags(
     e
 }
 
+/// A controlled source whose expression arrives as the element's label, the
+/// string carrier the frontend uses for the `exprString` token.
+fn elm_expr(id: u32, kind: &str, posts: &[[i32; 2]], input_count: f64, expr: &str) -> ElementSpec {
+    ElementSpec {
+        id,
+        kind: kind.into(),
+        posts: posts.to_vec(),
+        params: [("inputCount", input_count)]
+            .iter()
+            .map(|(k, v)| (k.to_string(), *v))
+            .collect::<HashMap<_, _>>(),
+        label: Some(expr.into()),
+        flags: 0,
+    }
+}
+
 fn build(elements: Vec<ElementSpec>, options: SimOptions) -> Circuit {
     build_with(elements, options, Vec::new())
 }
@@ -10581,4 +10597,364 @@ fn antenna_across_a_resistor_is_bounded_and_finite() {
             "antenna sample {v} left [-30, 30]"
         );
     }
+}
+
+#[test]
+fn cc2_positive_gain_conveys_voltage_and_current() {
+    // CCII+ (gain +1): X follows Y and the Z current equals the X current.
+    // Y is driven to 1 V, X loaded with 1 k to ground and Z with 1 k to
+    // ground, so V(X) = V(Y) = 1 V and V(Z) = 1 V, with 1 mA in both loads.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 1.0)]),
+            elm(2, "wire", &[[0, 0], [50, 200]], &[]),
+            // Posts: X (output), Y (input), Z (current output).
+            elm(
+                3,
+                "cc2",
+                &[[50, 0], [50, 200], [150, 100]],
+                &[("gain", 1.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[50, 0], [50, 300]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                5,
+                "resistor",
+                &[[150, 100], [150, 300]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "ground", &[[50, 300]], &[]),
+            elm(7, "ground", &[[150, 300]], &[]),
+            elm(8, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    // The cc2 is element index 2; its three posts start at flattened index
+    // 2*2 = 4.
+    let (nx, ny, nz) = (nodes[4] as usize, nodes[5] as usize, nodes[6] as usize);
+    assert!(
+        close(v[nx], 1.0, 1e-6) && close(v[ny], 1.0, 1e-6),
+        "X/Y were {}/{}, expected 1 V",
+        v[nx],
+        v[ny]
+    );
+    assert!(close(v[nz], 1.0, 1e-6), "Z was {}, expected 1 V", v[nz]);
+    let cur = c.element_currents();
+    // The X-load and Z-load resistors (elements 4 and 5) both carry 1 mA.
+    assert!(
+        close(cur[3], 1e-3, 1e-6) && close(cur[4], 1e-3, 1e-6),
+        "load currents were {}/{} A, expected 1 mA",
+        cur[3],
+        cur[4]
+    );
+}
+
+#[test]
+fn cc2_negative_gain_inverts_current() {
+    // CCII- (gain -1): X still follows Y but the Z current is negated, so the
+    // Z load reads -1 mA while the X load reads +1 mA.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 1.0)]),
+            elm(2, "wire", &[[0, 0], [50, 200]], &[]),
+            elm(
+                3,
+                "cc2",
+                &[[50, 0], [50, 200], [150, 100]],
+                &[("gain", -1.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[50, 0], [50, 300]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                5,
+                "resistor",
+                &[[150, 100], [150, 300]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "ground", &[[50, 300]], &[]),
+            elm(7, "ground", &[[150, 300]], &[]),
+            elm(8, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let (nx, _ny, nz) = (nodes[4] as usize, nodes[5] as usize, nodes[6] as usize);
+    assert!(close(v[nx], 1.0, 1e-6), "X was {}, expected 1 V", v[nx]);
+    // V(Z) = gain * V(X) = -1 V.
+    assert!(close(v[nz], -1.0, 1e-6), "Z was {}, expected -1 V", v[nz]);
+    let cur = c.element_currents();
+    assert!(
+        close(cur[3], 1e-3, 1e-6),
+        "X load current was {}, expected +1 mA",
+        cur[3]
+    );
+    assert!(
+        close(cur[4], -1e-3, 1e-6),
+        "Z load current was {}, expected -1 mA",
+        cur[4]
+    );
+}
+
+#[test]
+fn vcvs_expression_drives_the_output() {
+    // 212 with one input: V(V+) - V(V-) = expr(a). A 1 V input and expr
+    // "2*a" put 2 V across the output pair, which a 1 k load sees as 2 mA.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 1.0)]),
+            elm(2, "wire", &[[0, 0], [50, 0]], &[]),
+            // Posts: input A, V+, V-.
+            elm_expr(3, "vcvs", &[[50, 0], [150, 100], [150, 200]], 1.0, "2*a"),
+            elm(4, "wire", &[[150, 200], [150, 300]], &[]),
+            elm(
+                5,
+                "resistor",
+                &[[150, 100], [150, 300]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "ground", &[[150, 300]], &[]),
+            elm(7, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    // The vcvs is element index 2; posts start at flattened index 2*2 = 4.
+    let (vp, vn) = (nodes[4 + 1] as usize, nodes[4 + 2] as usize);
+    assert!(
+        close(v[vp] - v[vn], 2.0, 1e-6),
+        "output was {}/{}, expected 2 V",
+        v[vp],
+        v[vn]
+    );
+    assert!(
+        close(c.element_currents()[4], 2e-3, 1e-6),
+        "load current was {}, expected 2 mA",
+        c.element_currents()[4]
+    );
+}
+
+#[test]
+fn vcvs_two_input_linear_map() {
+    // 212 with two inputs: expr "a+b" with A = 1 V and B = 0.5 V drives the
+    // output to 1.5 V.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 1.0)]),
+            elm(2, "ground", &[[0, 100]], &[]),
+            elm(3, "wire", &[[0, 0], [50, 0]], &[]),
+            elm(4, "voltage", &[[0, 300], [0, 200]], &[("maxVoltage", 0.5)]),
+            elm(5, "ground", &[[0, 300]], &[]),
+            elm(6, "wire", &[[0, 200], [50, 200]], &[]),
+            // Posts: input A, input B, V+, V-.
+            elm_expr(
+                7,
+                "vcvs",
+                &[[50, 0], [50, 200], [150, 100], [150, 300]],
+                2.0,
+                "a+b",
+            ),
+            elm(
+                8,
+                "resistor",
+                &[[150, 100], [150, 400]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "wire", &[[150, 300], [150, 400]], &[]),
+            elm(10, "ground", &[[150, 400]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    // The vcvs is element index 6; posts start at flattened index
+    // 2 + 1 + 2 + 2 + 1 + 2 = 10.
+    let (vp, vn) = (nodes[10 + 2] as usize, nodes[10 + 3] as usize);
+    assert!(
+        close(v[vp] - v[vn], 1.5, 1e-6),
+        "output was {}/{}, expected 1.5 V",
+        v[vp],
+        v[vn]
+    );
+}
+
+#[test]
+fn vccs_expression_current_into_load() {
+    // 213 with one input: the output current is expr(a). A 5 V input and expr
+    // "0.001*a" push 5 mA through a 1 k load, so V(C+) = 5 V.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "wire", &[[0, 0], [50, 0]], &[]),
+            // Posts: input A, C+, C-.
+            elm_expr(
+                3,
+                "vccs",
+                &[[50, 0], [150, 100], [150, 200]],
+                1.0,
+                "0.001*a",
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[150, 100], [150, 300]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "wire", &[[150, 200], [150, 300]], &[]),
+            elm(6, "ground", &[[150, 300]], &[]),
+            elm(7, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    // The vccs is element index 2; posts start at flattened index 2*2 = 4.
+    let (vc, _vm) = (nodes[4 + 1] as usize, nodes[4 + 2] as usize);
+    assert!(
+        close(v[vc], 5.0, 1e-4),
+        "C+ was {}, expected 5 V across the 1 k load",
+        v[vc]
+    );
+    assert!(
+        close(c.element_currents()[3], 5e-3, 1e-5),
+        "load current was {}, expected 5 mA",
+        c.element_currents()[3]
+    );
+}
+
+#[test]
+fn vccs_with_no_dc_path_reports_zero_current() {
+    // A vccs whose output pair has no DC path (C- hangs off a capacitor) is
+    // marked broken like an independent current source: it stamps a 1e8 ohm
+    // resistor and reports zero current, so every node stays near ground.
+    let c = &mut build(
+        vec![
+            elm_expr(1, "vccs", &[[0, 0], [100, 0], [100, 100]], 1.0, "0.001*a"),
+            elm(2, "capacitor", &[[100, 100], [200, 100]], &[]),
+            elm(3, "ground", &[[200, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    for (i, v) in c.node_voltages().iter().enumerate() {
+        assert!(v.abs() < 1e3, "node {i} reached {} V", v);
+    }
+    assert!(
+        close(c.element_currents()[0], 0.0, 1e-9),
+        "broken vccs reported {} A",
+        c.element_currents()[0]
+    );
+}
+
+#[test]
+fn unijunction_fires_when_the_emitter_is_driven_high() {
+    // The UJT's internal CCVS makes V(node6) = 1000 * I(emitter) and the VCCS
+    // feedback is what fires the emitter-to-B1 path. B2 sits on a 10 V rail
+    // and B1 on a 100 ohm load: with E held at 0 V the device is off (B1 near
+    // ground, no emitter current), and once E is driven above the peak point
+    // (about 6.6 V here) the emitter conducts and B1 is pulled up by the
+    // E-B1 current. This asserts the static operating point rather than a full
+    // relaxation oscillation, which needs the adaptive timestep upstream turns
+    // on for this element (UnijunctionElm.java:46) and is hard to pin
+    // analytically. The fired operating point needs the gmin ramps room to
+    // climb, so its Newton budget is the app's default 1000, not the test
+    // helper's 100.
+    let off = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 0.0)]),
+            elm(2, "wire", &[[0, 0], [100, 0]], &[]),
+            // Posts: emitter E, base-one B1, base-two B2.
+            elm(3, "unijunction", &[[100, 0], [100, 300], [100, 500]], &[]),
+            elm(
+                4,
+                "resistor",
+                &[[100, 300], [100, 400]],
+                &[("resistance", 100.0)],
+            ),
+            elm(5, "ground", &[[100, 400]], &[]),
+            elm(6, "rail", &[[300, 500]], &[("maxVoltage", 10.0)]),
+            elm(7, "wire", &[[300, 500], [100, 500]], &[]),
+            elm(8, "ground", &[[0, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = off.run(10);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let v = off.node_voltages();
+    // The unijunction is element index 2; its three posts start at flattened
+    // index 2 + 2 = 4.
+    let nb1 = off.element_nodes()[4 + 1] as usize;
+    let ie = off.element_currents()[0];
+    assert!(
+        v[nb1] < 0.5,
+        "not-fired B1 was {} V, expected near ground",
+        v[nb1]
+    );
+    assert!(
+        ie.abs() < 1e-4,
+        "not-fired emitter current was {} A, expected near zero",
+        ie
+    );
+
+    // The same circuit with E driven above the peak point fires: B1 is pulled
+    // up to a few volts and the emitter conducts tens of milliamps.
+    let fired = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 8.0)]),
+            elm(2, "wire", &[[0, 0], [100, 0]], &[]),
+            elm(3, "unijunction", &[[100, 0], [100, 300], [100, 500]], &[]),
+            elm(
+                4,
+                "resistor",
+                &[[100, 300], [100, 400]],
+                &[("resistance", 100.0)],
+            ),
+            elm(5, "ground", &[[100, 400]], &[]),
+            elm(6, "rail", &[[300, 500]], &[("maxVoltage", 10.0)]),
+            elm(7, "wire", &[[300, 500], [100, 500]], &[]),
+            elm(8, "ground", &[[0, 200]], &[]),
+        ],
+        opts_budget(1e-5, true, 1000),
+    );
+    let report = fired.run(10);
+    assert!(
+        report.converged,
+        "fired circuit did not converge: {:?}",
+        report.error
+    );
+    let v = fired.node_voltages();
+    let nb1 = fired.element_nodes()[4 + 1] as usize;
+    let ie = fired.element_currents()[0];
+    assert!(
+        v[nb1] > 2.0,
+        "fired B1 was {} V, expected the E-B1 path pulled up",
+        v[nb1]
+    );
+    assert!(
+        ie > 1e-2,
+        "fired emitter current was {} A, expected tens of milliamps",
+        ie
+    );
 }

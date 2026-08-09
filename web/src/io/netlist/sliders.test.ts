@@ -88,11 +88,11 @@ describe('slider round trips', () => {
   });
 
   it('an element line this build cannot read keeps the loaded e token', () => {
-    // slider-unknown.txt's `38 2` points past an unread `417` unijunction:
-    // there is no session element to renumber, so the token stays exactly as
-    // the file had it.
+    // slider-unknown.txt's `38 2` points past an unread `214` CCVS: there is
+    // no session element to renumber, so the token stays exactly as the file
+    // had it.
     const parsed = parseCircuit(
-      '$ 0 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n417 32 0 48 0 0 20\n38 2 0 1 100 Text\n',
+      '$ 0 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n214 32 0 48 0 0 20\n38 2 0 1 100 Text\n',
     );
     expect(parsed.sliders[0].elementId).toBeUndefined();
     expect(save(parsed)).toContain('38 2 0 1 100 Text');

@@ -177,6 +177,12 @@ impl Element for CurrentSource {
         true
     }
 
+    /// The two source terminals are the pair analysis tests for a DC path
+    /// (CurrentElm.java:203-207).
+    fn current_output_nodes(&self) -> Option<(usize, usize)> {
+        Some((self.base.nodes[0], self.base.nodes[1]))
+    }
+
     /// Only a source without voltage compliance can be forced broken: a
     /// voltage-limited one carries its own path through the companion
     /// (CurrentElm.java:102-104).

@@ -217,6 +217,60 @@ describe('mirrorElement', () => {
   });
 });
 
+describe('unijunction FLAG_FLIP', () => {
+  it('mirrors a horizontal part across the vertical axis without the flag', () => {
+    // A horizontal part's mirror reverses dsign, which alone moves the E/B1/B2
+    // posts across; upstream's flipX leaves FLAG_FLIP alone when dx != 0
+    // (UnijunctionElm.java:141-145).
+    const u = element('unijunction', 0, 0, 32, 0);
+    const before = postsOf(u);
+    const m = mirrorElement(u);
+    expect(m).toMatchObject({ x1: 32, y1: 0, x2: 0, y2: 0 });
+    expect(m.flags & 2).toBe(0);
+    const after = postsOf(m);
+    // Rigid mirror about x = 16: the emitter lands on the old B2 column.
+    expect(after[0]).toEqual({ x: 32, y: 0 });
+    expect(after[1]).toEqual({ x: 0, y: 32 });
+    expect(after[2]).toEqual({ x: 0, y: 0 });
+    expect(before).not.toEqual(after);
+  });
+
+  it('mirrors a vertical part by toggling FLAG_FLIP', () => {
+    // A vertical part's dsign is unchanged by the mirror, so the flag flips
+    // and the hanging B1/B2 posts cross over (UnijunctionElm.java:141-145,
+    // dx == 0).
+    const u = element('unijunction', 16, 0, 16, 32, 1);
+    const m = mirrorElement(u);
+    expect(m.flags & 2).toBe(2);
+    expect(postsOf(m)).toEqual([
+      { x: 16, y: 0 },
+      { x: 48, y: 32 },
+      { x: 16, y: 32 },
+    ]);
+  });
+
+  it('rotates a horizontal part with a single flag toggle', () => {
+    // flipXY toggles FLAG_FLIP, flipY toggles it back only for a part that was
+    // vertical before the turn (UnijunctionElm.java:141-156), so a horizontal
+    // part ends toggled once.
+    const u = element('unijunction', 0, 0, 32, 0);
+    const r = rotateElement(u);
+    expect(r.flags & 2).toBe(2);
+    expect(postsOf(r)).toEqual([
+      { x: 16, y: 16 },
+      { x: 48, y: -16 },
+      { x: 16, y: -16 },
+    ]);
+  });
+
+  it('four turns return the original element', () => {
+    const original = element('unijunction', 0, 0, 32, 0);
+    let e = original;
+    for (let i = 0; i < 4; i++) e = rotateElement(e);
+    expect(e).toEqual(original);
+  });
+});
+
 describe('swapTerminalOrder', () => {
   it('reverses post order and keeps the body centre on a diode', () => {
     const d = element('diode', 0, 0, 160, 0);

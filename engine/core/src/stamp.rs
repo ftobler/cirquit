@@ -22,6 +22,11 @@
 //! per node (SimulationManager.java:1229-1268). A stamp whose two nodes fall in
 //! different closures is dropped, the way upstream returns on a matrix
 //! mismatch: correct elements never stamp across closures.
+//!
+//! The controlled-source helpers layer on an already-stamped voltage source:
+//! `vcvs` extends the source's constraint row with control voltages, `cccs`
+//! couples the source's current unknown into node rows. Both must be called
+//! after the underlying `voltage_source`.
 
 use crate::closure::Closure;
 
@@ -215,6 +220,54 @@ impl<'a> Stamper<'a> {
         self.node_pair(n1, cn2, -gain);
         self.node_pair(n2, cn1, -gain);
         self.node_pair(n2, cn2, gain);
+    }
+
+    /// A voltage-controlled voltage source, layered on an already-stamped
+    /// `voltage_source`: adds `coef` at the `vs` constraint row's `n1` column
+    /// and `-coef` at its `n2` column (upstream's `stampVCVS`,
+    /// SimulationManager.java:1151-1154). The constraint row therefore picks
+    /// up `coef*(V(n1) - V(n2))` from the control terminals, so the CC2's
+    /// `voltage_source(GROUND, X, vs, 0)` plus `vcvs(GROUND, Y, 1, vs)` makes
+    /// X follow Y. Must be called after `voltage_source`, and the control
+    /// terminals must live in the source's closure.
+    pub fn vcvs(&mut self, n1: usize, n2: usize, coef: f64, vs: usize) {
+        let c = self.vs_closure[vs];
+        let vn = self.vs_row[vs];
+        let r1 = self.node_row(n1);
+        let r2 = self.node_row(n2);
+        let sys = &mut self.closures[c].sys;
+        if let Some(r) = r1 {
+            debug_assert_eq!(self.node_closure[n1], c, "VCVS terminal straddles closures");
+            sys.add(vn, r, coef);
+        }
+        if let Some(r) = r2 {
+            debug_assert_eq!(self.node_closure[n2], c, "VCVS terminal straddles closures");
+            sys.add(vn, r, -coef);
+        }
+    }
+
+    /// A current-controlled current source: delivers `gain * I(vs)` into `n2`
+    /// and draws it from `n1`, where `I(vs)` is the current through the
+    /// already-stamped voltage source `vs` (upstream's `stampCCCS`,
+    /// SimulationManager.java:1217-1220). Adds `gain` at the `n1` node row's
+    /// `vs` column and `-gain` at `n2`'s.
+    pub fn cccs(&mut self, n1: usize, n2: usize, vs: usize, gain: f64) {
+        let vn = self.vs_row[vs];
+        let vc = self.vs_closure[vs];
+        if n1 != GROUND {
+            let c = self.node_closure[n1];
+            debug_assert_eq!(c, vc, "CCCS control source straddles closures");
+            if c == vc {
+                self.closures[c].sys.add(self.node_row[n1], vn, gain);
+            }
+        }
+        if n2 != GROUND {
+            let c = self.node_closure[n2];
+            debug_assert_eq!(c, vc, "CCCS control source straddles closures");
+            if c == vc {
+                self.closures[c].sys.add(self.node_row[n2], vn, -gain);
+            }
+        }
     }
 
     /// Marks the Newton iteration as not yet settled, and records which

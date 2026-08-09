@@ -538,12 +538,11 @@
   {
     "file": "cc2.txt",
     "format": "plain",
-    "missing": [
-      "179"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cc2imp.txt",
@@ -566,75 +565,65 @@
   {
     "file": "cc2n.txt",
     "format": "plain",
-    "missing": [
-      "179"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ccdiff.txt",
     "format": "plain",
-    "missing": [
-      "179",
-      "179"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cciamp.txt",
     "format": "plain",
-    "missing": [
-      "179"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ccinductor.txt",
     "format": "plain",
-    "missing": [
-      "179",
-      "179"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ccint.txt",
     "format": "plain",
-    "missing": [
-      "179",
-      "179"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ccitov.txt",
     "format": "plain",
-    "missing": [
-      "179"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ccvccs.txt",
     "format": "plain",
-    "missing": [
-      "179"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ceamp.txt",
@@ -2405,16 +2394,12 @@
   {
     "file": "qam-256.txt",
     "format": "plain",
-    "missing": [
-      "213",
-      "212",
-      "213",
-      "212",
-      "212"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "r2rladder.txt",
@@ -3152,12 +3137,11 @@
   {
     "file": "ujtosc.txt",
     "format": "plain",
-    "missing": [
-      "417"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "unishiftreg.txt",

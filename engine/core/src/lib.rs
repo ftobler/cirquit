@@ -32,6 +32,7 @@ pub mod circuit;
 pub mod closure;
 pub mod element;
 pub mod elements;
+pub mod expr;
 pub mod matrix;
 pub mod scope;
 pub mod spec;

@@ -15,7 +15,9 @@ pub mod antenna;
 pub mod audio_output;
 pub mod r#box;
 pub mod capacitor;
+pub mod cc2;
 pub mod chip;
+pub mod controlled_source;
 pub mod counter;
 pub mod cross_switch;
 pub mod current_source;
@@ -77,8 +79,11 @@ pub mod tri_state;
 pub mod triac;
 pub mod triode;
 pub mod tunnel_diode;
+pub mod unijunction;
 pub mod var_rail;
+pub mod vccs;
 pub mod vco;
+pub mod vcvs;
 pub mod voltage_source;
 pub mod wire;
 
@@ -173,6 +178,10 @@ pub const KINDS: &[&str] = &[
     "box",
     "line",
     "scope",
+    "cc2",
+    "vcvs",
+    "vccs",
+    "unijunction",
 ];
 
 /// Builds the model for a spec, or `None` if the type is not implemented yet.
@@ -266,6 +275,10 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "box" => Box::new(r#box::Box::new(spec)),
         "line" => Box::new(line::Line::new(spec)),
         "scope" => Box::new(scope::Scope::new(spec)),
+        "cc2" => Box::new(cc2::Cc2::new(spec)),
+        "vcvs" => Box::new(vcvs::Vcvs::new(spec)),
+        "vccs" => Box::new(vccs::Vccs::new(spec)),
+        "unijunction" => Box::new(unijunction::Unijunction::new(spec)),
         _ => return None,
     };
     Some(e)

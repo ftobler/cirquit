@@ -42,9 +42,8 @@ describe('slider parameter resolution', () => {
     // Wires and grounds expose no numeric fields.
     expect(resolveParam('wire', 0, '')).toBeNull();
     expect(resolveParam('ground', 0, '')).toBeNull();
-    // A kind this build cannot draw (the unijunction, dump 417) has no
-    // definition at all. The diac now does, so it is no longer the canonical
-    // absent kind.
+    // A kind with no fields (the unijunction, dump 417) resolves to nothing,
+    // like a definition that is absent altogether.
     expect(resolveParam('unijunction', 0, '')).toBeNull();
   });
 

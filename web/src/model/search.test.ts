@@ -11,8 +11,9 @@ describe('filterComponents', () => {
   it('matches the kind too, so the split NPN/PNP rows both appear', () => {
     // Both transistor flavours share kind 'transistor' even though their
     // labels are NPN and PNP; the kind match is what makes them searchable.
+    // The unijunction transistor also matches, on its label.
     const hits = filterComponents('transistor');
-    expect(hits.map((m) => m.id).sort()).toEqual(['npn', 'pnp']);
+    expect(hits.map((m) => m.id).sort()).toEqual(['npn', 'pnp', 'unijunction']);
   });
 
   it('matches the category, returning every entry in it', () => {
@@ -38,9 +39,9 @@ describe('filterComponents', () => {
   });
 
   it('sorts matches alphabetically by label, a pinned order', () => {
-    // 'trans' hits the three transformer labels, both transistor kinds and the
-    // transmission line; the exact order pins the comparator so a future
-    // change to it is noticed.
+    // 'trans' hits the three transformer labels, both transistor kinds, the
+    // transmission line and the unijunction; the exact order pins the
+    // comparator so a future change to it is noticed.
     expect(filterComponents('trans').map((m) => m.label)).toEqual([
       'Custom transformer',
       'NPN',
@@ -48,6 +49,7 @@ describe('filterComponents', () => {
       'Tapped transformer',
       'Transformer',
       'Transmission line',
+      'Unijunction transistor',
     ]);
   });
 });
