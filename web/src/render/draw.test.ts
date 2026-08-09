@@ -21,7 +21,15 @@ import {
   zigzagPoints,
 } from './draw';
 import { TOO_FAST } from './dots';
-import type { DrawContext } from '../model/types';
+import {
+  CHIP_FLIP_X,
+  CHIP_FLIP_Y,
+  CHIP_FLIP_XY,
+  CHIP_SMALL,
+  drawChip,
+  type ChipPinDef,
+} from '../model/registry/elements/dFlipFlop';
+import type { CircuitElement, DrawContext } from '../model/types';
 
 interface CtxStub {
   fillStyle: string;
@@ -30,6 +38,9 @@ interface CtxStub {
   lineCap: string;
   lineJoin: string;
   globalAlpha: number;
+  font: string;
+  textAlign: string;
+  textBaseline: string;
   beginPath: ReturnType<typeof vi.fn>;
   moveTo: ReturnType<typeof vi.fn>;
   lineTo: ReturnType<typeof vi.fn>;
@@ -39,6 +50,17 @@ interface CtxStub {
   fill: ReturnType<typeof vi.fn>;
   save: ReturnType<typeof vi.fn>;
   restore: ReturnType<typeof vi.fn>;
+  fillText: ReturnType<typeof vi.fn>;
+  measureText: (text: string) => { width: number };
+}
+
+interface TextRecord {
+  text: string;
+  x: number;
+  y: number;
+  font: string;
+  align: string;
+  baseline: string;
 }
 
 const mkCtx = (): {
@@ -46,9 +68,13 @@ const mkCtx = (): {
   stub: CtxStub;
   calls: string[];
   arcs: { x: number; y: number }[];
+  texts: TextRecord[];
+  paths: { x: number; y: number }[][];
 } => {
   const calls: string[] = [];
   const arcs: { x: number; y: number }[] = [];
+  const texts: TextRecord[] = [];
+  const paths: { x: number; y: number }[][] = [];
   const record = (name: string) => vi.fn(() => calls.push(name));
   const stub: CtxStub = {
     fillStyle: '',
@@ -57,9 +83,18 @@ const mkCtx = (): {
     lineCap: '',
     lineJoin: '',
     globalAlpha: 1,
+    font: '',
+    textAlign: '',
+    textBaseline: '',
     beginPath: record('beginPath'),
-    moveTo: record('moveTo'),
-    lineTo: record('lineTo'),
+    moveTo: vi.fn((x: number, y: number) => {
+      calls.push('moveTo');
+      paths.push([{ x, y }]);
+    }),
+    lineTo: vi.fn((x: number, y: number) => {
+      calls.push('lineTo');
+      if (paths.length > 0) paths[paths.length - 1].push({ x, y });
+    }),
     closePath: record('closePath'),
     stroke: record('stroke'),
     arc: vi.fn((x: number, y: number) => {
@@ -69,8 +104,19 @@ const mkCtx = (): {
     fill: record('fill'),
     save: record('save'),
     restore: record('restore'),
+    fillText: vi.fn((text: string, x: number, y: number) => {
+      calls.push('fillText');
+      texts.push({ text, x, y, font: stub.font, align: stub.textAlign, baseline: stub.textBaseline });
+    }),
+    // The same heuristic the SVG recorder uses, `length * size * 0.6`, so the
+    // font-shrink loop terminates headlessly like it does on a real canvas.
+    measureText: (text: string) => {
+      const m = /^(\d+(?:\.\d+)?)px/.exec(stub.font);
+      const size = m ? Number(m[1]) : 10;
+      return { width: text.length * size * 0.6 };
+    },
   };
-  return { ctx: stub as unknown as CanvasRenderingContext2D, stub, calls, arcs };
+  return { ctx: stub as unknown as CanvasRenderingContext2D, stub, calls, arcs, texts, paths };
 };
 
 const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext => ({
@@ -558,5 +604,232 @@ describe('canvas font', () => {
   it('keeps the CSS body shorthand in step with the canvas family', async () => {
     const css = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
     expect(css).toMatch(/font:\s*[^;}]*Roboto/);
+  });
+});
+
+describe('chip pin labels inside the housing', () => {
+  const chip = (flags = 0): CircuitElement => ({
+    id: 1,
+    kind: 'dFlipFlop',
+    x1: 0,
+    y1: 0,
+    x2: 96,
+    y2: 0,
+    flags,
+    params: {},
+  });
+
+  /** The label's horizontal box from the recorded fillText and its font, the
+   *  same measure the stub reported. */
+  const labelBox = (t: TextRecord): { min: number; max: number } => {
+    const m = /^(\d+(?:\.\d+)?)px/.exec(t.font);
+    const sw = t.text.length * (m ? Number(m[1]) : 10) * 0.6;
+    if (t.align === 'left') return { min: t.x, max: t.x + sw };
+    if (t.align === 'right') return { min: t.x - sw, max: t.x };
+    return { min: t.x - sw / 2, max: t.x + sw / 2 };
+  };
+
+  /** The drawn body rectangle: drawChip strokes the housing last, so the last
+   *  recorded path is the closed polyline of its four corners. */
+  const housingRect = (paths: { x: number; y: number }[][]): { minX: number; maxX: number; minY: number; maxY: number } => {
+    const p = paths[paths.length - 1];
+    return {
+      minX: Math.min(...p.map((q) => q.x)),
+      maxX: Math.max(...p.map((q) => q.x)),
+      minY: Math.min(...p.map((q) => q.y)),
+      maxY: Math.max(...p.map((q) => q.y)),
+    };
+  };
+
+  const draw = (flags: number, sizeX: number, sizeY: number, pins: ChipPinDef[]) => {
+    const { ctx, texts, paths } = mkCtx();
+    drawChip(context(ctx, 0), chip(flags), sizeX, sizeY, pins);
+    return { texts, paths };
+  };
+
+  it('keeps a W and an E label strictly inside the body rectangle', () => {
+    const { texts, paths } = draw(0, 2, 3, [
+      { side: 'W', pos: 0, text: 'D' },
+      { side: 'E', pos: 0, text: 'Q' },
+    ]);
+    const body = housingRect(paths);
+    for (const t of texts) {
+      const box = labelBox(t);
+      expect(box.min).toBeGreaterThan(body.minX);
+      expect(box.max).toBeLessThan(body.maxX);
+    }
+    // W reads inward from just inside the left edge, E from the right edge.
+    const [w, e] = texts;
+    expect(w.align).toBe('left');
+    expect(w.x).toBe(21);  // textloc.x (32) - (cspc - 5)
+    expect(e.align).toBe('right');
+    expect(e.x).toBe(75);  // textloc.x (64) + (cspc - 5)
+  });
+
+  it('keeps labels inside on a FLAG_SMALL chip, where the margin is tightest', () => {
+    const { texts, paths } = draw(CHIP_SMALL, 2, 3, [
+      { side: 'W', pos: 0, text: 'D' },
+      { side: 'E', pos: 0, text: 'Q' },
+    ]);
+    const body = housingRect(paths);
+    for (const t of texts) {
+      const box = labelBox(t);
+      expect(box.min).toBeGreaterThan(body.minX);
+      expect(box.max).toBeLessThan(body.maxX);
+    }
+    const [w, e] = texts;
+    expect(w.x).toBe(13);  // textloc.x (16) - (cspc - 5)
+    expect(e.x).toBe(35);  // textloc.x (32) + (cspc - 5)
+  });
+
+  it('shrinks a long label until it fits the space available', () => {
+    const { texts } = draw(0, 2, 3, [{ side: 'W', pos: 0, text: 'ABCDEFG' }]);
+    const [t] = texts;
+    const box = labelBox(t);
+    expect(box.max - box.min).toBeLessThanOrEqual(24);  // cspc*2 - 8
+    expect(box.max - box.min).toBeLessThan(84);  // the unsqueezed width at font 20
+  });
+
+  it('grants a wider budget on a wide chip with no vertical pins', () => {
+    const narrow = draw(0, 2, 3, [{ side: 'W', pos: 0, text: 'ABCDEFG' }]).texts[0];
+    const wide = draw(0, 3, 3, [{ side: 'W', pos: 0, text: 'ABCDEFG' }]).texts[0];
+    const fontPx = (font: string) => Number(/^(\d+)px/.exec(font)?.[1]);
+    expect(fontPx(wide.font)).toBeGreaterThan(fontPx(narrow.font));
+    expect(labelBox(wide).max - labelBox(wide).min).toBeLessThanOrEqual(40);  // cspc*2.5 + cspc*(sizeX-3)
+  });
+
+  it('keeps the narrow budget when a vertical pin could collide', () => {
+    const { texts } = draw(0, 4, 4, [
+      { side: 'W', pos: 0, text: 'ABCDEFG' },
+      { side: 'S', pos: 1, text: 'e' },
+    ]);
+    // hasVertical suppresses the wide-chip branch even on a wide chip, so the
+    // label must fit the one-pin-cell width like a narrow chip.
+    const [t] = texts;
+    expect(labelBox(t).max - labelBox(t).min).toBeLessThanOrEqual(24);
+  });
+
+  it('swaps the W/E alignment under CHIP_FLIP_X so each label hugs its real edge', () => {
+    const { texts } = draw(CHIP_FLIP_X, 2, 3, [
+      { side: 'W', pos: 0, text: 'D' },
+      { side: 'E', pos: 0, text: 'Q' },
+    ]);
+    // Flipping X moves the W pin's anchor to the east edge, so its label
+    // right-aligns there; the E pin mirrors to the west.
+    const [w, e] = texts;
+    expect(w.align).toBe('right');
+    expect(w.x).toBe(75);
+    expect(e.align).toBe('left');
+    expect(e.x).toBe(21);
+  });
+
+  it('keeps W/E labels inside under every flip flag', () => {
+    const layouts: ChipPinDef[] = [
+      { side: 'W', pos: 0, text: 'D' },
+      { side: 'E', pos: 0, text: 'Q' },
+    ];
+    for (const flags of [CHIP_FLIP_X, CHIP_FLIP_Y, CHIP_FLIP_XY, CHIP_FLIP_X | CHIP_FLIP_Y]) {
+      const { texts, paths } = draw(flags, 2, 3, layouts);
+      const body = housingRect(paths);
+      for (const t of texts) {
+        const box = labelBox(t);
+        expect(box.min).toBeGreaterThan(body.minX);
+        expect(box.max).toBeLessThan(body.maxX);
+      }
+    }
+  });
+
+  it('keeps a vertical pin label centred under the flip flags', () => {
+    const { texts } = draw(CHIP_FLIP_XY, 2, 3, [{ side: 'W', pos: 0, text: 'D' }]);
+    // Under FLAG_FLIP_XY a W pin becomes an N pin, which stays centred.
+    const [t] = texts;
+    expect(t.align).toBe('center');
+    expect(t.x).toBe(32);
+  });
+
+  it('keeps every label inside for representative chip families', () => {
+    const layouts: { sizeX: number; sizeY: number; pins: ChipPinDef[] }[] = [
+      // dFlipFlop: D on the west, Q and /Q on the east, a lineOver label.
+      {
+        sizeX: 2,
+        sizeY: 3,
+        pins: [
+          { side: 'W', pos: 0, text: 'D' },
+          { side: 'E', pos: 0, text: 'Q' },
+          { side: 'E', pos: 2, text: 'Q', lineOver: true },
+          { side: 'W', pos: 1, text: '', clock: true },
+        ],
+      },
+      // adc: the bit outputs on the east, In and V+ on the west, no vertical pins.
+      {
+        sizeX: 2,
+        sizeY: 4,
+        pins: [
+          { side: 'E', pos: 3, text: 'D0' },
+          { side: 'E', pos: 2, text: 'D1' },
+          { side: 'E', pos: 1, text: 'D2' },
+          { side: 'E', pos: 0, text: 'D3' },
+          { side: 'W', pos: 0, text: 'In' },
+          { side: 'W', pos: 3, text: 'V+' },
+        ],
+      },
+      // sevenSeg: segments a-d on the west, e-g on the south.
+      {
+        sizeX: 4,
+        sizeY: 4,
+        pins: [
+          { side: 'W', pos: 0, text: 'a' },
+          { side: 'W', pos: 1, text: 'b' },
+          { side: 'W', pos: 2, text: 'c' },
+          { side: 'W', pos: 3, text: 'd' },
+          { side: 'S', pos: 1, text: 'e' },
+          { side: 'S', pos: 2, text: 'f' },
+          { side: 'S', pos: 3, text: 'g' },
+        ],
+      },
+    ];
+    for (const { sizeX, sizeY, pins } of layouts) {
+      const { texts, paths } = draw(0, sizeX, sizeY, pins);
+      const body = housingRect(paths);
+      expect(texts.length).toBeGreaterThan(0);
+      for (const t of texts) {
+        const box = labelBox(t);
+        expect(box.min).toBeGreaterThan(body.minX);
+        expect(box.max).toBeLessThan(body.maxX);
+        expect(t.y).toBeGreaterThan(body.minY);
+        expect(t.y).toBeLessThan(body.maxY);
+      }
+    }
+  });
+
+  it('draws the lineOver bar from the label metrics on both sides', () => {
+    // The bar sits at textloc.y - asc + asc/3, the label's baseline minus its
+    // font size, and spans exactly the measured label width sw, not the
+    // hardcoded -5 offset the old code used. The W and E pins anchor the bar
+    // from opposite ends, so both are covered.
+    for (const side of ['W', 'E'] as const) {
+      const pin: ChipPinDef = { side, pos: side === 'E' ? 2 : 0, text: 'Q', lineOver: true };
+      const { texts, paths } = draw(0, 2, 3, [pin]);
+      const [t] = texts;
+      const asc = Number(/^(\d+(?:\.\d+)?)px/.exec(t.font)?.[1]);
+      const sw = t.text.length * asc * 0.6;
+      // The y and the exact span single the bar out from the pin stubs, which
+      // are also horizontal two-point lines.
+      const bars = paths.filter((p) => {
+        if (p.length !== 2 || p[0].y !== p[1].y) return false;
+        return (
+          Math.abs(p[0].y - (t.y - asc)) < 1e-9 &&
+          Math.abs(Math.abs(p[1].x - p[0].x) - sw) < 1e-9
+        );
+      });
+      expect(bars).toHaveLength(1);
+      const [p0, p1] = bars[0];
+      expect(p0.y).toBeCloseTo(t.y - asc, 9);
+      expect(Math.abs(p1.x - p0.x)).toBeCloseTo(sw, 9);
+      // The bar spans exactly the label's own box.
+      const box = labelBox(t);
+      expect(Math.min(p0.x, p1.x)).toBe(box.min);
+      expect(Math.max(p0.x, p1.x)).toBe(box.max);
+    }
   });
 });

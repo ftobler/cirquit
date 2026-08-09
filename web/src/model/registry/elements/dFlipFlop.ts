@@ -209,13 +209,13 @@ export function drawChip(
 ): void {
   const frame = chipFrame(e);
   const body = chipBody(e, frame, sizeX, sizeY);
-  // The housing is a stroked polygon upstream (drawThickPolygon, ChipElm.java:
-  // 159), the 3-unit body weight. The corner list repeats body[0] to keep the
-  // four corners explicit; closePath is what actually closes the loop, so the
-  // start corner gets a real join instead of two butt-capped stroke ends.
-  closedPolyline(g, [body[0], body[1], body[2], body[3], body[0]], g.theme.wire);
+  // Whether any N/S pin exists. A W/E label may only be given extra room when
+  // no vertical pin can collide with it, the hasVertical scan upstream runs
+  // before the per-pin loop (ChipElm.java:93-99, 124-128).
+  let hasVertical = false;
   pins.forEach((pin, i) => {
     const pt = chipPinPoints(e, frame, sizeX, sizeY, pin);
+    if (pt.side === 'N' || pt.side === 'S') hasVertical = true;
     line(g, pt.post, pt.stub, voltageColor(g, g.voltages[i]));
     if (pin.bubble && pt.bubble) {
       // A bubble is a stroked ring over the stub, the port's usual bubble
@@ -231,35 +231,75 @@ export function drawChip(
   pins.forEach((pin) => {
     if (!pin.text) return;
     const pt = chipPinPoints(e, frame, sizeX, sizeY, pin);
-    g.ctx.fillStyle = g.theme.text;
-    g.ctx.font = canvasFont(10);
-    g.ctx.textBaseline = 'middle';
     const cspc = chipCspc(e);
-    if (pt.side === 'W' || pt.side === 'E') {
-      // W labels right-align just inside the body edge, E labels left-align,
-      // so neither crosses the body (ChipElm.java:142-147).
-      g.ctx.textAlign = pt.side === 'W' ? 'right' : 'left';
-      const x = pt.textloc.x + (pt.side === 'W' ? -(cspc - 5) : cspc - 5);
-      g.ctx.fillText(pin.text, x, pt.textloc.y);
+    const csize = cspc / 8;
+    g.ctx.fillStyle = g.theme.text;
+    // Measure each label and shrink the font until it fits the space between
+    // the body edge and the pin's label anchor, the loop upstream runs per
+    // pin (ChipElm.java:122-138). The floor at 4 px stops a label that can
+    // never fit from hanging the frame loop: upstream has no floor and would
+    // spin, the port draws at 4 and lets it clip.
+    let fsz = 10 * csize;
+    let availSpace = cspc * 2 - 8;
+    if (!hasVertical && sizeX > 2) {
+      // No N/S pin can collide with the W/E labels, so a wide chip may widen
+      // the budget with its extra cells instead of keeping one pin cell
+      // (ChipElm.java:124-128).
+      availSpace = cspc * 2.5 + cspc * (sizeX - 3);
+    }
+    let sw = 0;
+    while (true) {
+      g.ctx.font = canvasFont(fsz);
+      sw = g.ctx.measureText(pin.text).width;
+      if (sw <= availSpace || fsz <= 4) break;
+      fsz -= 1;
+    }
+    const asc = fsz;
+    // chipPinPoints has already remapped the side for FLAG_FLIP_XY; a flipped
+    // X then swaps W and E again (flippedXSide, ChipElm.java:610-618), so the
+    // label hugs whichever body edge the pin's label anchor actually sits by.
+    let align = pt.side;
+    if ((e.flags & CHIP_FLIP_X) !== 0) {
+      if (align === 'W') align = 'E';
+      else if (align === 'E') align = 'W';
+    }
+    // W labels left-align just inside the body edge and read inward, E labels
+    // right-align at the mirror offset, N/S labels stay centred (ChipElm.java:
+    // 140-147). The baseline follows upstream's drawString, textloc.y + asc/3,
+    // so a shrunk font keeps the label anchored like the original.
+    g.ctx.textBaseline = 'alphabetic';
+    if (align === 'W') {
+      g.ctx.textAlign = 'left';
+      const x = pt.textloc.x - (cspc - 5);
+      g.ctx.fillText(pin.text, x, pt.textloc.y + asc / 3);
       if (pin.lineOver) {
-        const w = g.ctx.measureText(pin.text).width;
-        line(g, { x, y: pt.textloc.y - 5 }, { x: x + w, y: pt.textloc.y - 5 }, g.theme.text, 1);
+        const y = pt.textloc.y - asc + asc / 3;
+        line(g, { x, y }, { x: x + sw, y }, g.theme.text, 1);
+      }
+    } else if (align === 'E') {
+      g.ctx.textAlign = 'right';
+      const x = pt.textloc.x + (cspc - 5);
+      g.ctx.fillText(pin.text, x, pt.textloc.y + asc / 3);
+      if (pin.lineOver) {
+        const y = pt.textloc.y - asc + asc / 3;
+        line(g, { x: x - sw, y }, { x, y }, g.theme.text, 1);
       }
     } else {
       g.ctx.textAlign = 'center';
-      g.ctx.fillText(pin.text, pt.textloc.x, pt.textloc.y);
+      g.ctx.fillText(pin.text, pt.textloc.x, pt.textloc.y + asc / 3);
       if (pin.lineOver) {
-        const w = g.ctx.measureText(pin.text).width;
-        line(
-          g,
-          { x: pt.textloc.x - w / 2, y: pt.textloc.y - 5 },
-          { x: pt.textloc.x + w / 2, y: pt.textloc.y - 5 },
-          g.theme.text,
-          1,
-        );
+        const y = pt.textloc.y - asc + asc / 3;
+        line(g, { x: pt.textloc.x - sw / 2, y }, { x: pt.textloc.x + sw / 2, y }, g.theme.text, 1);
       }
     }
   });
+  // The housing is stroked last so its outline survives on top of any pin or
+  // label overlap, the draw order upstream uses (drawThickPolygon comes after
+  // the pin loop, ChipElm.java:155-159). It is a drawThickPolygon at the 3-unit
+  // body weight; the corner list repeats body[0] to keep the four corners
+  // explicit, and closePath is what actually closes the loop, so the start
+  // corner gets a real join instead of two butt-capped stroke ends.
+  closedPolyline(g, [body[0], body[1], body[2], body[3], body[0]], g.theme.wire);
 }
 
 /** Parameter names of the pins whose levels the file saves, in post order. */
