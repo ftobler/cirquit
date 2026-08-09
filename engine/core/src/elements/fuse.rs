@@ -116,6 +116,29 @@ impl Element for Fuse {
         true
     }
 
+    /// The store confirms a pop (or an engine reset's un-pop) back into the
+    /// model so its `blown` copy and the serialized token never diverge on a
+    /// rebuild, exactly as a switch position lands through this same hook.
+    /// Blowing is still driven by heat; this only lets the frontend's
+    /// persisted value ride in.
+    fn set_state(&mut self, state: i32) -> bool {
+        self.blown = state != 0;
+        true
+    }
+
+    /// Melt fraction `heat / i2t`: below 1 the filament is intact and warming,
+    /// at or above 1 it is blown. Once blown the number is clamped to stay at
+    /// least 1 even as the heat bleeds off (cooling keeps running after the
+    /// open), or a popped fuse would redraw its body a few seconds later.
+    fn display_state(&self) -> f64 {
+        let fraction = self.heat / self.i2t;
+        if self.blown {
+            fraction.max(1.0)
+        } else {
+            fraction
+        }
+    }
+
     fn reset(&mut self) {
         self.base.reset();
         self.heat = 0.0;

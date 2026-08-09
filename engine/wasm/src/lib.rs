@@ -226,6 +226,14 @@ impl Simulator {
         self.circuit.element_values()
     }
 
+    /// Live render state per element, in the order they were supplied. Each
+    /// element defines its own scalar: a fuse's melt fraction (>= 1 blown), a
+    /// lamp's filament temperature in kelvin; everything else reports 0.
+    #[wasm_bindgen(js_name = elementStates)]
+    pub fn element_states(&self) -> Vec<f64> {
+        self.circuit.element_states()
+    }
+
     /// Node index for every element terminal, flattened in element order, so
     /// the renderer can colour each terminal by node voltage.
     #[wasm_bindgen(js_name = elementNodes)]

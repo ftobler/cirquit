@@ -289,6 +289,107 @@ fn fuse_blows_under_sustained_overcurrent() {
     );
 }
 
+#[test]
+fn fuse_display_state_passes_one_on_the_step_it_blows() {
+    // The renderer thresholds the fuse's melt fraction at 1, so the state
+    // report must cross 1 on the very step the electrical behaviour opens:
+    // the drawing cannot lag the pop by a frame. Reset must drop it back to 0.
+    let dt = 1e-3;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 3.0)]),
+            elm(
+                2,
+                "fuse",
+                &[[0, 0], [0, 100]],
+                &[("resistance", 1.0), ("i2t", 1.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    // Heat accumulates from the previous step's current, so the first step
+    // cannot blow anything; step one at a time until the fraction crosses 1.
+    let mut steps = 0;
+    loop {
+        c.run(1);
+        steps += 1;
+        if c.element_states()[1] > 1.0 {
+            break;
+        }
+        assert!(steps < 100_000, "fuse never blew");
+    }
+
+    let states = c.element_states();
+    assert!(
+        states[1] > 1.0,
+        "display_state must exceed 1 the step it blows, got {}",
+        states[1]
+    );
+    assert!(
+        c.element_currents()[1].abs() < 1e-6,
+        "the blow must have opened the fuse already"
+    );
+
+    c.reset();
+    assert_eq!(
+        c.element_states()[1],
+        0.0,
+        "reset must un-pop the fuse and clear its heat"
+    );
+}
+
+#[test]
+fn fuse_set_state_confirms_an_unpop_once_the_heat_has_decayed() {
+    // The frontend pushes a reset fuse's live `e.state` back through
+    // set_state so the store copy and the model never diverge. Releasing
+    // `blown` alone cannot show an intact fuse while the heat is still past
+    // i2t, so let the open fuse cool below its rating first — the blown clamp
+    // holds the report at exactly 1 — then confirm the un-pop and check the
+    // fraction falls through.
+    let dt = 1e-3;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 3.0)]),
+            elm(
+                2,
+                "fuse",
+                &[[0, 0], [0, 100]],
+                &[("resistance", 1.0), ("i2t", 1.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    let mut steps = 0;
+    loop {
+        c.run(1);
+        steps += 1;
+        if c.element_states()[1] > 1.0 {
+            break;
+        }
+        assert!(steps < 100_000, "fuse never blew");
+    }
+
+    // Heat bleeds off the open fuse at i2t/3 per second (FuseElm.java:156-160);
+    // 2 s drops it well below the rating, and the blown clamp pins the report.
+    c.run(2000);
+    assert_eq!(
+        c.element_states()[1],
+        1.0,
+        "the blown clamp must hold the fraction at exactly 1"
+    );
+
+    assert!(c.set_state(2, 0), "the un-pop confirm must be accepted");
+    assert!(
+        c.element_states()[1] < 1.0,
+        "releasing blown must let the melt fraction fall below 1, got {}",
+        c.element_states()[1]
+    );
+}
+
 /// The motorprotect.txt pattern: a protection switch across a source that can
 /// overcurrent it, plus a normally-closed relay contact sharing the switch's
 /// label carrying a separate 5 V load. The intact switch drives its NC
@@ -540,6 +641,117 @@ fn lamp_settles_toward_its_warm_resistance_under_sustained_voltage() {
         expected_r,
         amps[1]
     );
+}
+
+/// Ports the lamp's temperature update (`startIteration`, LampElm.java:176-182)
+/// exactly like `lamp_resistance_after` ports its resistance, so the expected
+/// filament temperature comes from literally the same discrete loop the engine
+/// runs. The two share the previous step's power and the 0.4 s baseline time
+/// constants, so the only difference is that this returns `temp` rather than
+/// the resistance stamped from it.
+fn lamp_temp_after(dt: f64, steps: u32, applied_v: f64, nom_pow: f64, nom_v: f64) -> f64 {
+    const ROOM_TEMP: f64 = 300.0;
+    let mut temp = ROOM_TEMP;
+    let mut prev_power = 0.0;
+    let cap = 1.57e-4 * nom_pow;
+    let capw = cap;
+    let capc = cap;
+    let cr = 2600.0 / nom_pow;
+    for _ in 0..steps {
+        let nom_r = nom_v * nom_v / nom_pow;
+        let tp = temp.min(5390.0);
+        let resistance = nom_r
+            * (1.26104 - 4.90662 * (17.1839 / tp - 0.00318794).sqrt() - 7.8569 / (tp - 187.56));
+        temp += prev_power * dt / capw;
+        temp -= dt * (temp - ROOM_TEMP) / (capc * cr);
+        prev_power = applied_v * (applied_v / resistance);
+    }
+    temp
+}
+
+#[test]
+fn lamp_display_state_reports_the_rising_filament_temperature() {
+    // Drive a default lamp (100 W @ 120 V) at its rated voltage for 5 s, and
+    // the reported state must follow the same rising temp the resistance curve
+    // is stamped from, settling near its ~2900 K steady state. Reset returns
+    // it to room temperature.
+    let dt = 1e-3;
+    let steps = 5000;
+    let expected = lamp_temp_after(dt, steps, 120.0, 100.0, 120.0);
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 120.0)]),
+            elm(2, "lamp", &[[0, 0], [0, 100]], &[]),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    c.run(steps);
+    let temp = c.element_states()[1];
+    assert!(
+        temp > 2000.0,
+        "a lamp at rated voltage should be hot after 5 s, got {} K",
+        temp
+    );
+    assert!(
+        close(temp, expected, 1.0),
+        "display_state temp {} K should match the discrete update's {} K",
+        temp,
+        expected
+    );
+
+    c.reset();
+    assert_eq!(
+        c.element_states()[1],
+        300.0,
+        "reset must return the filament to room temperature"
+    );
+}
+
+#[test]
+fn element_states_lines_up_one_entry_per_element_with_the_voltages() {
+    // The renderer indexes every per-element array by the same engine order,
+    // so a mixed circuit must report exactly one state per element, in the
+    // same order as the voltages, with every non-animated element at the
+    // default 0.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "fuse", &[[100, 0], [100, 100]], &[]),
+            elm(
+                4,
+                "lamp",
+                &[[100, 100], [200, 100]],
+                &[("nomPower", 100.0), ("nomVoltage", 120.0)],
+            ),
+            elm(5, "wire", &[[200, 100], [300, 100]], &[]),
+            elm(6, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-4, true),
+    );
+
+    let states = c.element_states();
+    let volts = c.element_voltages();
+    assert_eq!(
+        states.len(),
+        volts.len(),
+        "states must have one entry per element, like the voltages"
+    );
+    // Element order is the spec order: fuse at index 2, lamp at index 3.
+    assert_eq!(states[2], 0.0, "an intact fuse reports a 0 melt fraction");
+    assert_eq!(states[3], 300.0, "a cold lamp reports room temperature");
+    for (i, s) in states.iter().enumerate() {
+        if i != 2 && i != 3 {
+            assert_eq!(*s, 0.0, "element {i} must default to display state 0");
+        }
+    }
 }
 
 /// Ports ThermistorNTCElm.java's temperature-to-resistance chain

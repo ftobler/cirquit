@@ -51,6 +51,7 @@ export function drawAllElements(
   const elementNodes = engine?.elementNodes() ?? null;
   const currents = engine?.elementCurrents() ?? null;
   const values = engine?.elementValues() ?? null;
+  const states = engine?.elementStates() ?? null;
 
   for (const e of elements) {
     const def = defFor(e.kind);
@@ -66,6 +67,7 @@ export function drawAllElements(
     const current = idx !== undefined && currents ? (currents[idx] ?? 0) : 0;
     const voltage = voltages.length >= 2 ? voltages[0] - voltages[1] : (voltages[0] ?? 0);
     const value = idx !== undefined && values ? (values[idx] ?? 0) : 0;
+    const state = idx !== undefined && states ? (states[idx] ?? 0) : 0;
 
     const g: DrawContext = {
       ctx,
@@ -75,6 +77,7 @@ export function drawAllElements(
       voltage,
       power: current * voltage,
       value,
+      state,
       dotPhase: 0,
       // Exports draw with `showCurrent: false`, so per-post currents and
       // phases are handed as zeros like the scalar phase.
@@ -104,8 +107,9 @@ export function drawAllElements(
  *  background (the image dialogs pass `dark: false` so the PNG always prints
  *  on white like upstream's forced-printable export), no grid, no current
  *  dots, and the bounds-fitted transform in place of the live view. Live node
- *  voltages, currents and values colour the schematic when `engine` is given;
- *  zeros otherwise, which is what a null engine (no wasm handle) produces. */
+ *  voltages, currents, values and render states colour the schematic when
+ *  `engine` is given; zeros otherwise, which is what a null engine (no wasm
+ *  handle) produces. */
 export function renderCircuitToCanvas(
   canvas: HTMLCanvasElement,
   elements: CircuitElement[],

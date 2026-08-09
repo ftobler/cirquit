@@ -12,6 +12,8 @@ import {
 import { mirrorElement } from './transform';
 import { DIODE_DEF } from './registry/elements/diode';
 import { ZENER_DEF } from './registry/elements/zener';
+import { FUSE_DEF } from './registry/elements/fuse';
+import { LAMP_DEF } from './registry/elements/lamp';
 import type { CircuitElement, DrawContext, Point } from './types';
 
 const element = (
@@ -45,12 +47,14 @@ interface CtxStub {
 }
 
 /** Minimal canvas stub, recording geometry calls so a draw can be asserted on.
- *  `strokes` captures the strokeStyle at each stroke, in draw order, which is
- *  how a per-segment gradient body is asserted on. The stroke closure reads the
- *  same object the draw layer writes to (`context` hands this stub to `def.draw`
- *  unchanged), so a spread copy would never see the live colour. */
-const mkCtx = (): CtxStub & { strokes: string[] } => {
+ *  `strokes` captures the strokeStyle at each stroke and `fills` the fillStyle
+ *  at each fill, in draw order, which is how a per-segment gradient body or a
+ *  filled bulb is asserted on. The closures read the same object the draw
+ *  layer writes to (`context` hands this stub to `def.draw` unchanged), so a
+ *  spread copy would never see the live colour. */
+const mkCtx = (): CtxStub & { strokes: string[]; fills: string[] } => {
   const strokes: string[] = [];
+  const fills: string[] = [];
   const stub = {
     fillStyle: '',
     strokeStyle: '',
@@ -65,12 +69,12 @@ const mkCtx = (): CtxStub & { strokes: string[] } => {
     lineTo: vi.fn(),
     stroke: vi.fn(() => strokes.push(stub.strokeStyle)),
     arc: vi.fn(),
-    fill: vi.fn(),
+    fill: vi.fn(() => fills.push(stub.fillStyle)),
     closePath: vi.fn(),
     fillText: vi.fn(),
     measureText: (text: string) => ({ width: text.length * 6 }),
   } as CtxStub;
-  return Object.assign(stub, { strokes });
+  return Object.assign(stub, { strokes, fills });
 };
 
 const context = (ctx: CtxStub, overrides: Partial<DrawContext> = {}): DrawContext => ({
@@ -81,6 +85,7 @@ const context = (ctx: CtxStub, overrides: Partial<DrawContext> = {}): DrawContex
   voltage: 0,
   power: 0,
   value: 0,
+  state: 0,
   dotPhase: 0,
   postCurrents: [],
   postDotPhases: [],
@@ -827,5 +832,54 @@ describe('stem-bearing one-post symbol draw', () => {
     // The L/H glyph is drawn at (x2,y2) (LogicInputElm.java:79-81), which is
     // where the stem's far end lands on a diagonal placement.
     expect(ctx.fillText).toHaveBeenCalledWith('L', 32, 32);
+  });
+});
+
+describe('fuse draw and the live melt state', () => {
+  it('a fuse past the blown threshold draws the leads only, no body', () => {
+    const ctx = mkCtx();
+    FUSE_DEF.draw(context(ctx, { state: 2 }), element('fuse', 0, 0, 160, 0));
+    // Two lead strokes and no sine body: the 16-segment filament polyline
+    // would add a third stroke and sixteen more lineTo calls.
+    expect(ctx.strokes).toHaveLength(2);
+    expect(ctx.lineTo.mock.calls).toHaveLength(2);
+  });
+
+  it('an intact fuse draws the sine body, heat-tinted', () => {
+    const ctx = mkCtx();
+    // State 0.5 = half the i2t rating: still whole, warming toward the pop.
+    FUSE_DEF.draw(context(ctx, { state: 0.5 }), element('fuse', 0, 0, 160, 0));
+    expect(ctx.strokes).toHaveLength(3);
+    expect(ctx.lineTo.mock.calls).toHaveLength(18);  // 2 leads + 16 sine segments
+    // The body is the flat heat colour of the second ramp band, not the wire
+    // colour and not a per-segment gradient.
+    expect(ctx.strokes[2]).toBe('rgb(255,127,0)');
+  });
+
+  it('the file still draws an intact body for a default element (state 0)', () => {
+    const ctx = mkCtx();
+    FUSE_DEF.draw(context(ctx), element('fuse', 0, 0, 160, 0));
+    expect(ctx.strokes).toHaveLength(3);
+  });
+});
+
+describe('lamp draw and the live temperature state', () => {
+  const fillOf = (state: number): string => {
+    const ctx = mkCtx();
+    LAMP_DEF.draw(context(ctx, { state }), element('lamp', 0, 0, 160, 0));
+    expect(ctx.fills).toHaveLength(1);  // only the bulb disc is filled
+    return ctx.fills[0];
+  };
+
+  it('fills the bulb near black at room temperature', () => {
+    expect(fillOf(300)).toBe('rgb(0,0,0)');
+  });
+
+  it('fills the bulb orange at a hot filament', () => {
+    expect(fillOf(1500)).toBe('rgb(255,153,0)');
+  });
+
+  it('fills the bulb white well above the top band breakpoint', () => {
+    expect(fillOf(3000)).toBe('rgb(255,255,255)');
   });
 });

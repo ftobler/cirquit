@@ -7,6 +7,7 @@ import {
   gradientPolyline,
   interp,
   line,
+  tempColor,
   voltageColor,
 } from '../../../render/draw';
 import { readParams, twoPosts, writeParams } from '../shared';
@@ -21,12 +22,10 @@ const LAMP_BULB_RADIUS = 20;
 
 /**
  * Two lead-to-filament diagonals crossing inside a circular bulb outline
- * (LampElm.java:123-155). Upstream tints the bulb fill by filament
- * temperature (`getTempColor`, keyed off the same `temp` state
- * `startIteration` evolves); the engine doesn't report that state back per
- * frame — only voltages and currents round-trip — which is the same gap
- * `drawFuseBody` above works around for accumulated heat, so this uses the
- * same voltage colouring every other two-terminal body does instead.
+ * (LampElm.java:123-155). The bulb fill is the filament temperature in
+ * `g.state` mapped through `tempColor`, upstream's getTempColor keyed off the
+ * same `temp` state `startIteration` evolves: black when cold, through orange
+ * and yellow to white when hot (LampElm.java:101-121, :132-133).
  */
 function drawLampBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, LAMP_LEAD_GAP);
@@ -34,12 +33,11 @@ function drawLampBody(g: DrawContext, e: CircuitElement): void {
   const filament0 = interp(lead1, lead2, 0, LAMP_FILAMENT_OFFSET);
   const filament1 = interp(lead1, lead2, 1, LAMP_FILAMENT_OFFSET);
   const bulb = interp(filament0, filament1, 0.5);
-  const midColor = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
-  // The bulb fill stays a single midpoint colour: it is a filled disc, which
-  // the per-segment stroke mechanism cannot shade, and the envelope is not
-  // the conducting path anyway. The filament is the conductor, so it shades
-  // along the drop from lead1's post to lead2's.
-  circle(g, bulb, LAMP_BULB_RADIUS, midColor, true);
+  // The bulb fill is a single temperature colour, not a gradient: it is a
+  // filled disc, which the per-segment stroke mechanism cannot shade, and the
+  // envelope is not the conducting path anyway. The filament is the conductor,
+  // so it shades along the drop from lead1's post to lead2's.
+  circle(g, bulb, LAMP_BULB_RADIUS, tempColor(g.state), true);
   // The bulb outline and filament are drawThickCircle/drawThickLine upstream
   // (LampElm.java:135-141), the 3-unit body weight.
   circle(g, bulb, LAMP_BULB_RADIUS, g.theme.wire, false);

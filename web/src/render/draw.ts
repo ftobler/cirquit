@@ -132,6 +132,66 @@ export function voltageColor(g: DrawContext, v: number): string {
     : mix(g.theme.neutral, g.theme.negative, -t);
 }
 
+/** Maps a filament temperature in kelvin to its incandescent colour, the four
+ *  bands of LampElm.getTempColor (LampElm.java:101-121): black below 800 K,
+ *  then red, orange, yellow, white above 2400 K. The breakpoints and the
+ *  integer truncation are upstream's exactly, so the bulb matches the original
+ *  at every temperature. */
+export function tempColor(temp: number): string {
+  const clamp0 = (x: number) => Math.max(0, Math.trunc(x));
+  if (temp < 1200) {
+    const x = clamp0((255 * (temp - 800)) / 400);
+    return `rgb(${x},0,0)`;
+  }
+  if (temp < 1700) {
+    const x = clamp0((255 * (temp - 1200)) / 500);
+    return `rgb(255,${x},0)`;
+  }
+  if (temp < 2400) {
+    const x = clamp0((255 * (temp - 1700)) / 700);
+    return `rgb(255,255,${x})`;
+  }
+  return 'rgb(255,255,255)';
+}
+
+/** Parses the hex or `rgb(r,g,b)` colours the theme and `mix` produce into
+ *  their channels, for a blend that needs the numbers rather than the string. */
+function parseRgb(color: string): [number, number, number] {
+  const hex = /^#([0-9a-f]{6})$/i.exec(color);
+  if (hex) {
+    const n = parseInt(hex[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const rgb = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(color);
+  if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+  return [255, 255, 255];
+}
+
+/** Colour of the melting fuse filament at melt fraction `heat / i2t`, the
+ *  ramp of FuseElm.getTempColor (FuseElm.java:82-105): below a third of the
+ *  rating it blends from the filament's voltage colour toward red, then red,
+ *  yellow and white as the pop approaches. Pure in the voltage colour string,
+ *  so the draw and a unit test share one implementation.
+ */
+export function fuseColor(voltage: string, fraction: number): string {
+  const c = parseRgb(voltage);
+  if (fraction < 0.3333) {
+    const x = Math.max(0, Math.trunc(255 * fraction * 3));
+    return `rgb(${x + Math.trunc(((255 - x) * c[0]) / 255)},${Math.trunc(
+      ((255 - x) * c[1]) / 255,
+    )},${Math.trunc(((255 - x) * c[2]) / 255)})`;
+  }
+  if (fraction < 0.6667) {
+    const x = Math.max(0, Math.trunc((fraction - 0.3333) * 3 * 255));
+    return `rgb(255,${x},0)`;
+  }
+  if (fraction < 1) {
+    const x = Math.max(0, Math.trunc((fraction - 0.6666) * 3 * 255));
+    return `rgb(255,255,${x})`;
+  }
+  return 'rgb(255,255,255)';
+}
+
 /** Power brightness multiplier from the file-format powerRange token, the
  *  same `exp(powerBar/4.762 - 7)` upstream recomputes every frame
  *  (UIManager.java:630). */

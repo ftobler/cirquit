@@ -329,6 +329,21 @@ pub trait Element {
     fn value(&self) -> f64 {
         self.voltage_diff()
     }
+
+    /// Live per-element state the renderer animates, one scalar per element,
+    /// shipped in the same flat per-element array as the currents and voltages
+    /// (the wasm façade's `elementStates`, next to `elementCurrents`). Each
+    /// element defines what its number means: a fuse reports its melt fraction
+    /// `heat / i2t` (at or above 1 meaning blown), a lamp its filament
+    /// temperature in kelvin, everything else 0. The scalar is deliberately
+    /// generic rather than fuse-shaped, because every consumer queued behind
+    /// this channel is one number too: relay armature position, spark-gap
+    /// conduction, SCR/triac latch state, motor-protection-switch trip.
+    /// Per-element state that is not a scalar needs its own channel (the
+    /// transmission-line wave is a whole array per element).
+    fn display_state(&self) -> f64 {
+        0.0
+    }
 }
 
 /// Convenience for the very common two-terminal case.

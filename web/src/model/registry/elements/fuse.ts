@@ -3,8 +3,10 @@ import {
   currentDotsPath,
   drawLeads,
   endpoints,
-  gradientPolyline,
+  fuseColor,
   interp,
+  polyline,
+  voltageColor,
 } from '../../../render/draw';
 import { twoPosts, readParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
@@ -17,26 +19,25 @@ const FUSE_BODY_LENGTH = 16;
 /**
  * A wavy "melting wire" while intact, matching upstream's un-blown,
  * non-IEC-symbol draw path: 16 segments of a sine wave across the body
- * (FuseElm.java:107-140). Upstream also tints the body by accumulated heat
- * (`getTempColor`); that needs the engine to report heat back per frame,
- * which nothing else here does yet (only voltages and currents round-trip),
- * so this uses the same voltage colouring every other two-terminal body
- * does instead. A blown fuse draws no body at all, just the leads — the open
- * gap upstream leaves behind.
+ * (FuseElm.java:107-140). The melt fraction in `g.state` (the engine's
+ * `heat / i2t`) tints the wire through `fuseColor` and, at or above 1, drops
+ * the body entirely: the leads alone are the open gap upstream leaves when a
+ * fuse pops (FuseElm.java:121-127).
  */
 function drawFuseBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, FUSE_BODY_LENGTH);
   drawLeads(g, e, lead1, lead2);
-  if ((e.params.blown ?? 0) === 0) {
+  if (g.state < 1) {
     const segments = 16;
     const pts: Point[] = [];
     for (let i = 0; i <= segments; i++) {
       pts.push(interp(lead1, lead2, i / segments, 6 * Math.sin((i * Math.PI * 2) / segments)));
     }
-    // The melting wire is the current path, so it shades along the voltage
-    // drop like the resistor body (the sweep's rule: a gradient belongs where
-    // current flows through continuous material).
-    gradientPolyline(g, pts);
+    // Upstream strokes the whole melting wire with one getTempColor
+    // (FuseElm.java:119), so the body is a flat heat-tinted colour, not the
+    // voltage gradient a resistor body gets: a fuse near its rating warms
+    // visibly before it goes.
+    polyline(g, pts, fuseColor(voltageColor(g, g.voltages[0]), g.state));
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
@@ -55,16 +56,19 @@ export const FUSE_DEF: ElementDef = {
   defaults: { resistance: 0.0613, i2t: 6.73 },
   // dump()/the token constructor both go resistance, i2t, heat, blown
   // (FuseElm.java:43-49); blown is a literal `true`/`false` token like a
-  // switch's momentary flag, not a number.
+  // switch's momentary flag, not a number. `e.state` carries the live blown
+  // the engine reports (switch-style), so a fuse that pops in-session saves
+  // as blown and reloads blown.
   parse: (t, e) => {
     readParams(t, e, ['resistance', 'i2t', 'heat']);
     e.params.blown = t[3] === 'true' ? 1 : 0;
+    e.state = e.params.blown;
   },
   dump: (e) => [
     e.params.resistance ?? 0.0613,
     e.params.i2t ?? 6.73,
     e.params.heat ?? 0,
-    (e.params.blown ?? 0) !== 0 ? 'true' : 'false',
+    (e.state ?? e.params.blown ?? 0) !== 0 ? 'true' : 'false',
   ],
   fields: [
     { name: 'resistance', label: 'Resistance', unit: 'Ω' },

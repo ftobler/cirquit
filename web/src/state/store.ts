@@ -656,6 +656,37 @@ export const useStore = create<AppState>((set, get) => ({
       paramRevision: s.paramRevision + 1,
     })),
 
+  unblowFuses: () =>
+    set((s) => {
+      const fuseIds = new Set(s.elements.filter((e) => e.kind === 'fuse').map((e) => e.id));
+      if (fuseIds.size === 0) return s;
+      // A reset un-blows every fuse in the engine; clear the store's live
+      // copies and any queued pop-confirm, or the next frame's pendingStates
+      // drain would re-apply `blown true` to a just-reset fuse. An already
+      // intact fuse keeps its element object, so the reset is a no-op for it.
+      const pendingStates = new Map(s.pendingStates);
+      let pendingChanged = false;
+      for (const id of [...pendingStates.keys()]) {
+        if (fuseIds.has(id)) {
+          pendingStates.delete(id);
+          pendingChanged = true;
+        }
+      }
+      let stateChanged = false;
+      const elements = s.elements.map((e) => {
+        if (e.kind === 'fuse' && (e.state ?? 0) !== 0) {
+          stateChanged = true;
+          return { ...e, state: 0 };
+        }
+        return e;
+      });
+      if (!stateChanged && !pendingChanged) return s;
+      return {
+        ...(stateChanged ? { elements } : {}),
+        ...(pendingChanged ? { pendingStates } : {}),
+      };
+    }),
+
   setKeyShortcut: (id, key) =>
     set((s) => ({
       elements: s.elements.map((e) => {

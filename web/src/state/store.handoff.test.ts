@@ -14,7 +14,8 @@ beforeEach(() => useStore.setState(fresh()));
  */
 function elementSpecs(elements: CircuitElement[]) {
   return elements.map((e) => {
-    const params = { ...e.params, ...(e.state !== undefined ? { position: e.state } : {}) };
+    const params = { ...e.params };
+    if (e.state !== undefined) params[e.kind === 'fuse' ? 'blown' : 'position'] = e.state;
     return {
       id: e.id,
       kind: e.kind,

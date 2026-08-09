@@ -125,6 +125,7 @@ export function useFrameLoop(
       let nodeVoltages: Float64Array | null = null;
       let elementNodes: Uint32Array | null = null;
       let values: Float64Array | null = null;
+      let states: Float64Array | null = null;
       if (engine) {
         if (running) {
           const stats = engine.run(settings.stepsPerFrame);
@@ -148,6 +149,7 @@ export function useFrameLoop(
         nodeVoltages = engine.nodeVoltages();
         elementNodes = engine.elementNodes();
         values = engine.elementValues();
+        states = engine.elementStates();
       }
 
       // ---- render ----
@@ -212,6 +214,21 @@ export function useFrameLoop(
         );
         const voltage = voltages.length >= 2 ? voltages[0] - voltages[1] : (voltages[0] ?? 0);
         const value = idx !== undefined && values ? (values[idx] ?? 0) : 0;
+        const state = idx !== undefined && states ? (states[idx] ?? 0) : 0;
+
+        // The engine is authoritative for a fuse's pop; the store's `e.state`
+        // is the serialized copy. Push the live value in on a transition (both
+        // directions, so a reset un-pops it), exactly as a switch throw flows
+        // store-to-engine through setElementState. The comparison against the
+        // current `e.state` keeps this a one-time write, never a per-frame one.
+        // A null engine reads every state as 0, which must not rewrite a
+        // file-loaded blown fuse's `e.state` to 0.
+        if (engine && e.kind === 'fuse') {
+          const blown = state >= 1;
+          if (((e.state ?? 0) !== 0) !== blown) {
+            useStore.getState().setElementState(e.id, blown ? 1 : 0);
+          }
+        }
 
         // The shift-highlighted net: any terminal on the highlighted node
         // colours the whole element (CircuitElm.isOnHighlightedNet).
@@ -262,6 +279,7 @@ export function useFrameLoop(
           // (upstream's getPower(), CircuitElm.java:1273).
           power: current * voltage,
           value,
+          state,
           dotPhase: phase,
           postCurrents: postCs,
           postDotPhases,

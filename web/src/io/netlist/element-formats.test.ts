@@ -702,6 +702,41 @@ describe('switch and SPDT labels', () => {
   });
 });
 
+describe('fuse file format', () => {
+  /** Parses a single `404` line and re-emits it, returning that line. */
+  const fuseLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('404 ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('round-trips resistance, i2t, heat and the blown token', () => {
+    const { e, elementLine } = fuseLine('404 0 0 160 0 0 0.0613 6.73 1.5 true');
+    expect(e.params.resistance).toBe(0.0613);
+    expect(e.params.i2t).toBe(6.73);
+    expect(e.params.heat).toBe(1.5);
+    expect(e.params.blown).toBe(1);
+    // The parse seeds the live state from the file, switch-style.
+    expect(e.state).toBe(1);
+    expect(elementLine).toBe('404 0 0 160 0 0 0.0613 6.73 1.5 true');
+  });
+
+  it('a fuse that popped in-session saves blown true and reloads blown', () => {
+    // The frame loop syncs the engine's live blown into `e.state`, exactly as
+    // a switch throw lands there, so serialization must read that live copy
+    // rather than the stale file token the element was loaded with.
+    const { e } = fuseLine('404 0 0 160 0 0 0.0613 6.73 0 false');
+    expect(e.state).toBe(0);
+    e.state = 1;
+    const again = parseCircuit(
+      serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim(),
+    ).elements[0];
+    expect(again.state).toBe(1);
+    expect(again.params.blown).toBe(1);
+  });
+});
+
 describe('voltage source file format', () => {
   /** Parses a single `v` line and re-emits it, returning the `v` line. */
   const voltageLine = (line: string) => {

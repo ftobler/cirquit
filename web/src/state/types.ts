@@ -225,6 +225,11 @@ export interface AppState {
   setShortcuts(overlay: ShortcutOverlay): void;
   /** Interactive state change (switch throw), routed through the live engine. */
   setElementState(id: number, state: number): void;
+  /** Clears every fuse's live `state` and drops their queued pop-confirms, the
+   *  store half of the Reset command: the engine half (`engine.reset`) already
+   *  un-blows the models, and this keeps the serialized copies from re-injecting
+   *  `blown true` on the next frame. */
+  unblowFuses(): void;
   /** Drops queued value edits; the frame loop calls this after applying them. */
   clearPending(): void;
 

@@ -66,6 +66,46 @@ describe('value edits go through the fast path', () => {
     expect(after.elements[0].state).toBe(1);
   });
 
+  it('unblowFuses clears fuse blown state and its queued confirm, nothing else', () => {
+    const fuseId = useStore.getState().addElement({
+      kind: 'fuse',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 0.0613, i2t: 6.73 },
+    });
+    const switchId = useStore.getState().addElement({
+      kind: 'switch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0 },
+    });
+    // A fuse that popped in-session (the frame loop synced e.state) with its
+    // pop-confirm still queued, plus an unrelated queued switch throw.
+    useStore.getState().setElementState(fuseId, 1);
+    useStore.getState().setElementState(switchId, 1);
+    const before = useStore.getState();
+
+    useStore.getState().unblowFuses();
+
+    const after = useStore.getState();
+    // The fuse un-pops and its queued confirm is dropped, so the next frame's
+    // pendingStates drain cannot re-apply `blown true` to the reset fuse.
+    expect(after.elements.find((e) => e.id === fuseId)?.state).toBe(0);
+    expect(after.pendingStates.has(fuseId)).toBe(false);
+    // The switch throw rides through untouched.
+    expect(after.elements.find((e) => e.id === switchId)?.state).toBe(1);
+    expect(after.pendingStates.get(switchId)).toBe(1);
+    // The store-side reset is silent: no rebuild and no extra fast-path drain.
+    expect(after.revision).toBe(before.revision);
+    expect(after.paramRevision).toBe(before.paramRevision);
+  });
+
   it('coalesces repeated edits to one pending entry holding the last value', () => {
     const id = addResistor();
 

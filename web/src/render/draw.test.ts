@@ -22,6 +22,8 @@ import {
   rectCorners,
   strokeStyle,
   voltageColor,
+  fuseColor,
+  tempColor,
   ZIGZAG_HS,
   zigzagPoints,
 } from './draw';
@@ -151,6 +153,7 @@ const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext =
   voltage: 0,
   power: 0,
   value: 0,
+  state: 0,
   dotPhase,
   postCurrents: [],
   postDotPhases: [],
@@ -798,6 +801,57 @@ describe('power colouring', () => {
     // For a fixed power, a higher powerRange means a larger |ramp position|;
     // both are negative here, so the value decreases.
     expect(powerColorT(0.02, 40)).toBeGreaterThan(powerColorT(0.02, 60));
+  });
+});
+
+describe('incandescent temperature colour', () => {
+  it('is black below the 800 K lower bound of the first band', () => {
+    // LampElm.getTempColor's first band clamps its (temp-800)/400 ramp at 0,
+    // so room temperature and anything below 800 K read black (LampElm.java:
+    // 102-107).
+    expect(tempColor(300)).toBe('rgb(0,0,0)');
+    expect(tempColor(799)).toBe('rgb(0,0,0)');
+  });
+
+  it('ramps pure red through the 800..1200 K band', () => {
+    expect(tempColor(800)).toBe('rgb(0,0,0)');
+    expect(tempColor(1000)).toBe('rgb(127,0,0)');
+    expect(tempColor(1199)).toBe('rgb(254,0,0)');
+  });
+
+  it('ramps red toward yellow through the 1200..1700 K band', () => {
+    expect(tempColor(1200)).toBe('rgb(255,0,0)');
+    expect(tempColor(1500)).toBe('rgb(255,153,0)');
+    expect(tempColor(1699)).toBe('rgb(255,254,0)');
+  });
+
+  it('ramps yellow toward white through the 1700..2400 K band', () => {
+    expect(tempColor(1700)).toBe('rgb(255,255,0)');
+    expect(tempColor(2000)).toBe('rgb(255,255,109)');
+    expect(tempColor(2399)).toBe('rgb(255,255,254)');
+  });
+
+  it('is white at and above the 2400 K breakpoint', () => {
+    expect(tempColor(2400)).toBe('rgb(255,255,255)');
+    expect(tempColor(3000)).toBe('rgb(255,255,255)');
+  });
+});
+
+describe('fuse melt colour', () => {
+  it('blends the voltage colour toward red below a third of the rating', () => {
+    // FuseElm.getTempColor's first band fades the post-0 voltage colour out as
+    // the heat fraction rises; at zero heat it is the plain voltage colour. A
+    // green filament reads olive at half way to the red end.
+    const green = 'rgb(0,255,0)';
+    expect(fuseColor(green, 0)).toBe('rgb(0,255,0)');
+    expect(fuseColor(green, 0.1666)).toBe('rgb(127,128,0)');
+    expect(fuseColor(green, 0.3333)).toBe('rgb(255,0,0)');
+  });
+
+  it('runs red, yellow, then white as the fraction nears the pop', () => {
+    expect(fuseColor('rgb(0,0,0)', 0.5)).toBe('rgb(255,127,0)');
+    expect(fuseColor('rgb(0,0,0)', 0.75)).toBe('rgb(255,255,63)');
+    expect(fuseColor('rgb(0,0,0)', 1)).toBe('rgb(255,255,255)');
   });
 });
 

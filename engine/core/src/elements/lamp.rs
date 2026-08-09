@@ -149,4 +149,10 @@ impl Element for Lamp {
         self.temp = Self::ROOM_TEMP;
         self.resistance = self.resistance_from_temp();
     }
+
+    /// Filament temperature in kelvin, the number the draw maps through the
+    /// four-band temperature ramp (LampElm.java:101-121) so the bulb glows.
+    fn display_state(&self) -> f64 {
+        self.temp
+    }
 }

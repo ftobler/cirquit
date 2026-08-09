@@ -228,7 +228,11 @@ export class SimEngine {
     ));
     const spec = {
       elements: usable.map((e) => {
-        const params = { ...e.params, ...(e.state !== undefined ? { position: e.state } : {}) };
+        const params = { ...e.params };
+        // A switch's live position rides in as `position`, a fuse's live blown
+        // as `blown`: both are interactive state the engine must see on a
+        // rebuild, since `params` only carries the last value the file had.
+        if (e.state !== undefined) params[e.kind === 'fuse' ? 'blown' : 'position'] = e.state;
         return {
           id: e.id,
           kind: e.kind,
@@ -340,6 +344,13 @@ export class SimEngine {
    *  other element its voltage difference, in the engine's element order. */
   elementValues(): Float64Array {
     return this.sim.elementValues();
+  }
+
+  /** Live render state per element, in the engine's element order. Each
+   *  element defines its own scalar: a fuse's melt fraction (>= 1 blown), a
+   *  lamp's filament temperature in kelvin; everything else reads 0. */
+  elementStates(): Float64Array {
+    return this.sim.elementStates();
   }
 
   /** Dissipated power per element, using the scope Power-trace convention

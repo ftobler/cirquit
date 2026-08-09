@@ -4,6 +4,22 @@ import { makeTheme } from './draw';
 import { RESISTOR_DEF } from '../model/registry/elements/resistor';
 import { INDUCTOR_DEF } from '../model/registry/elements/inductor';
 import { DEFAULT_SETTINGS, type CircuitElement, type DrawContext } from '../model/types';
+import type { SimEngine } from '../engine/simulator';
+
+/** A fake engine returning flat zero arrays with the given per-element render
+ *  states, enough for `drawAllElements` to colour and animate an export. The
+ *  real engine is wasm-backed and cannot run under node. */
+function fakeEngine(states: number[]): SimEngine {
+  return {
+    nodeVoltages: () => new Float64Array(2),
+    elementNodes: () => new Uint32Array(2),
+    elementCurrents: () => new Float64Array(states.length),
+    elementValues: () => new Float64Array(states.length),
+    elementStates: () => new Float64Array(states),
+    indexOf: (id: number) => (id === 1 ? 0 : undefined),
+    postOffset: () => 0,
+  } as unknown as SimEngine;
+}
 
 /** A DrawContext on a fresh recorder, the same fields the canvas path sets. */
 function drawCtx(rec: SvgRecorder): DrawContext {
@@ -15,6 +31,7 @@ function drawCtx(rec: SvgRecorder): DrawContext {
     voltage: 0,
     power: 0,
     value: 0,
+    state: 0,
     dotPhase: 0,
     postCurrents: [],
     postDotPhases: [],
@@ -397,6 +414,7 @@ describe('renderCircuitToSvg', () => {
       voltage: 10,
       power: 0.01,
       value: 0,
+      state: 0,
       dotPhase: 0,
       postCurrents: [],
       postDotPhases: [],
@@ -474,5 +492,26 @@ describe('renderCircuitToSvg', () => {
     const matrix = `matrix(${trim(scale)} 0 0 ${trim(scale)} ${trim(scale * 70)} ${trim(scale * 50)})`;
     const svg = renderCircuitToSvg(elements, DEFAULT_SETTINGS, false, null);
     expect(svg).toContain(`transform="${matrix}"`);
+  });
+
+  it('exports a blown fuse as the open gap, not the melting wire', () => {
+    // The engine's per-element render state reaches the export through the
+    // same elementStates array as the live canvas, so an SVG of a circuit
+    // saved after a pop must show the gap. An intact fuse exports one extra
+    // path: the 16-segment sine body.
+    const fuse: CircuitElement = {
+      id: 1,
+      kind: 'fuse',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: {},
+    };
+    const blown = renderCircuitToSvg([fuse], DEFAULT_SETTINGS, false, fakeEngine([2]));
+    expect(blown.match(/<path /g)).toHaveLength(2);  // two leads only
+    const intact = renderCircuitToSvg([fuse], DEFAULT_SETTINGS, false, fakeEngine([0]));
+    expect(intact.match(/<path /g)).toHaveLength(3);  // leads plus the sine body
   });
 });

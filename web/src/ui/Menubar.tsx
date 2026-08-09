@@ -112,7 +112,6 @@ export function Menubar({ engine }: Props) {
   const toggleRunning = useStore((s) => s.toggleRunning);
   const newCircuit = useStore((s) => s.newCircuit);
   const loadNetlist = useStore((s) => s.loadNetlist);
-  const toNetlist = useStore((s) => s.toNetlist);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const setStatus = useStore((s) => s.setStatus);
@@ -422,10 +421,15 @@ export function Menubar({ engine }: Props) {
         <button
           type="button"
           onClick={() => {
-            // Reloading the netlist into itself is the simplest reset that also
-            // clears element state such as capacitor charge.
-            const text = toNetlist();
-            loadNetlist(text);
+            // engine.reset() rewinds runtime state in place — fuse heat/blown,
+            // capacitor charge, inductor current, lamp temperature — matching
+            // upstream's reset (CircuitElm.reset, FuseElm.reset). The old
+            // netlist self-reload re-injected a popped fuse's `blown true`
+            // token, which is why a fuse survived Reset; unblowFuses drops the
+            // store's live copies and queued pop-confirms so they cannot
+            // re-apply it a frame later.
+            engine?.reset();
+            useStore.getState().unblowFuses();
           }}
           title="Reset"
           aria-label="Reset"

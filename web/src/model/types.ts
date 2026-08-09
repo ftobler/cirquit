@@ -227,6 +227,11 @@ export interface DrawContext {
   /** Instrument reading: a probe's selected meter mode, every other element's
    *  voltage difference, so the readout and a voltage scope agree. */
   value: number;
+  /** Live per-element render state from the engine's `elementStates`, indexed
+   *  like `elementValues` (one scalar per element). Each element defines what
+   *  its number means: a fuse's melt fraction `heat / i2t` (>= 1 blown), a
+   *  lamp's filament temperature in kelvin; every other element reports 0. */
+  state: number;
   /** Advances each animation frame; drives the current-flow animation. */
   dotPhase: number;
   /** Current each terminal exchanges with its node, indexed like `posts()`

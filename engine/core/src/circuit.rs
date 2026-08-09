@@ -1313,6 +1313,14 @@ impl Circuit {
         self.elements.iter().map(|e| e.value()).collect()
     }
 
+    /// Per-element live render state, in element order, one `f64` per element
+    /// like [`Circuit::element_values`]. Each element defines what its scalar
+    /// means through [`Element::display_state`]: a fuse's melt fraction, a
+    /// lamp's filament temperature, 0 for everything else.
+    pub fn element_states(&self) -> Vec<f64> {
+        self.elements.iter().map(|e| e.display_state()).collect()
+    }
+
     /// Node index per element terminal, flattened in element order. Lets the
     /// renderer colour each terminal by its node voltage.
     pub fn element_nodes(&self) -> Vec<u32> {
