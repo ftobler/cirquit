@@ -242,6 +242,159 @@ fn fuse_blows_under_sustained_overcurrent() {
     );
 }
 
+/// The motorprotect.txt pattern: a protection switch across a source that can
+/// overcurrent it, plus a normally-closed relay contact sharing the switch's
+/// label carrying a separate 5 V load. The intact switch drives its NC
+/// contact closed (i_position 0); a trip drives it open
+/// (MotorProtectionSwitchElm.java:245-256).
+fn motor_protection_switch_contact_circuit() -> Circuit {
+    let mut spec = CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 3.0)]),
+            elm(
+                2,
+                "motorProtectionSwitch",
+                &[[0, 0], [0, 100], [48, 0], [48, 100], [96, 0], [96, 100]],
+                &[("resistance", 1.0), ("i2t", 1.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(
+                4,
+                "voltage",
+                &[[400, -96], [400, 0]],
+                &[("maxVoltage", 5.0)],
+            ),
+            elm(5, "ground", &[[400, -96]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[400, 0], [300, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm_flags(
+                7,
+                "relayContact",
+                &[[300, 0], [300, 100]],
+                &[("r_on", 0.05), ("r_off", 1e6)],
+                2, // FLAG_NORMALLY_CLOSED
+            ),
+            elm(8, "ground", &[[300, 100]], &[]),
+        ],
+        options: Some(opts(1e-3, false)),
+        scopes: Vec::new(),
+    };
+    spec.elements[1].label = Some("mps".to_string());
+    spec.elements[6].label = Some("mps".to_string());
+    let mut c = Circuit::new();
+    c.set_circuit(&spec).expect("circuit should analyse");
+    c
+}
+
+#[test]
+fn motor_protection_switch_trips_on_overcurrent_and_resets() {
+    // Four phases on the same model (MotorProtectionSwitchElm.java:221-243):
+    // a current below the I²t rating passes like a plain resistor, an
+    // overcurrent accumulates heat at i² - i2t/3 per second until one channel
+    // crosses its rating and the whole switch opens at ~1 GOhm, a reset
+    // clears the heat and re-closes it, and the label-linked relay contact
+    // follows the trip.
+    //
+    // Low-current phase: 10 V across a 1000 ohm channel draws 10 mA. The
+    // bleed rate i2t/3 dwarfs the i² accumulation (1e6/3 per second against
+    // 1e-4), so heat never climbs and the switch stays on, reading exactly
+    // Ohm's law.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "motorProtectionSwitch",
+                &[[0, 0], [0, 100], [48, 0], [48, 100], [96, 0], [96, 100]],
+                &[("resistance", 1000.0), ("i2t", 1e6)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-3, false),
+    );
+    c.run(5);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], 0.01, 1e-9),
+        "low current through the intact switch was {}, expected 10 mA",
+        amps[1]
+    );
+
+    // Trip phase: a 1 ohm channel straight across a 3 V source draws 3 A,
+    // well past a 1 A²s rating. Heat nets +8.667 per second and crosses the
+    // rating in ~116 steps; once blown, the channel becomes a ~1 GOhm
+    // resistor and the current collapses toward zero.
+    let dt = 1e-3;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 3.0)]),
+            elm(
+                2,
+                "motorProtectionSwitch",
+                &[[0, 0], [0, 100], [48, 0], [48, 100], [96, 0], [96, 100]],
+                &[("resistance", 1.0), ("i2t", 1.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        opts(dt, false),
+    );
+    // One warm-up step: start_iteration's first call sees the switch's
+    // initial current (0), so heat cannot have moved yet and the switch
+    // should still read as a plain 1 ohm resistor here.
+    c.run(1);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], 3.0, 1e-6),
+        "expected the intact switch to draw 3 A, got {}",
+        amps[1]
+    );
+
+    // Comfortably past the ~116 further steps the heat integral needs to
+    // cross its 1.0 A²s rating at a steady 3 A.
+    c.run(300);
+    let amps = c.element_currents();
+    assert!(
+        amps[1].abs() < 1e-6,
+        "expected the tripped switch's current to collapse toward zero, got {}",
+        amps[1]
+    );
+
+    // A reset clears the accumulated heat and re-closes the switch, so the
+    // overcurrent returns and the cycle can begin again.
+    c.reset();
+    c.run(5);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[1], 3.0, 1e-6),
+        "expected the reset switch to draw 3 A again, got {}",
+        amps[1]
+    );
+
+    // Label phase: the intact switch holds its labelled normally-closed
+    // relay contact shut, so the separate 5 V load reads 5 V / (1 k + r_on);
+    // once the switch trips it drives the contact open and the load current
+    // collapses.
+    let c = &mut motor_protection_switch_contact_circuit();
+    c.run(1);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[5], 5.0 / 1000.05, 1e-6),
+        "expected the intact switch to hold its contact closed, load current was {}",
+        amps[5]
+    );
+    c.run(300);
+    let amps = c.element_currents();
+    assert!(
+        amps[5].abs() < 1e-4,
+        "expected the tripped switch to open its labelled contact, load current was {}",
+        amps[5]
+    );
+}
+
 /// Ports LampElm.java's resistance-vs-temperature curve
 /// (`startIteration`, LampElm.java:168-184) so the expected value in each
 /// assertion below comes from literally the same formula the engine runs,
@@ -983,6 +1136,39 @@ fn cap_across_a_rail_is_damped_by_the_cap_v_walk() {
     assert!(
         peak < 1e-3,
         "cap across a rail still ringing, peak {peak} A"
+    );
+}
+
+#[test]
+fn two_rails_without_a_ground_symbol_drive_their_difference() {
+    // Two rails bridge the reference node, so a circuit that never touches a
+    // ground symbol is still grounded through them. The no-ground fallback
+    // must skip such a circuit: grounding the first rail's post would short
+    // that source to itself (a ground-to-ground row) and the build would go
+    // singular. Upstream's setGroundNode only falls back when no rail exists
+    // (SimulationManager.java:517-528).
+    let mut c = build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "rail", &[[100, 0]], &[("maxVoltage", 5.0)]),
+            elm(3, "resistor", &[[0, 0], [100, 0]], &[("resistance", 100.0)]),
+        ],
+        opts(1e-6, false),
+    );
+    // Both posts are normal nodes now, so the resistor carries the rails'
+    // difference; the two rails sink and source the same 50 mA.
+    c.run(1);
+    let i = c.element_currents();
+    assert!(
+        close(i[2], 0.05, 1e-9),
+        "resistor current was {}, expected 50 mA",
+        i[2]
+    );
+    assert!(
+        close(i[0], 0.05, 1e-6) && close(i[1], -0.05, 1e-6),
+        "rail currents {} and {} should be the resistor's 50 mA, opposite signs",
+        i[0],
+        i[1]
     );
 }
 
@@ -6425,6 +6611,219 @@ fn transformer_matrix_connects_couples_a_loaded_secondary_at_dc() {
         close(v2, 0.0588, 2e-4),
         "loaded secondary operating point was {v2}, expected 0.0588"
     );
+}
+
+// ─── Three-phase motor ───────────────────────────────────────────────────────
+
+/// Exact backward-Euler response of a series `RL` stepped at `dt` from rest:
+/// `I_n = (V/R)·(1 - (1 + R·dt/L)^-n)`. Under a balanced three-phase drive the
+/// motor's stator phases reduce to exactly this: equal stator currents couple
+/// into each rotor coil as `(Lm - Lm/2 - Lm/2)·i = 0`, so the rotor stays at
+/// zero current and every phase sees only its own `Ls` in series with `Rs`.
+fn rl_backward_euler_step(v: f64, r: f64, l: f64, dt: f64, n: u32) -> f64 {
+    let decay = (1.0 + r * dt / l).powi(-(n as i32));
+    (v / r) * (1.0 - decay)
+}
+
+#[test]
+fn three_phase_motor_balanced_drive_reaches_v_over_rs() {
+    // Three 10 V DC sources feed the phase-1 posts (0, 2, 4) and the phase-2
+    // posts (1, 3, 5) are grounded, a balanced drive. The stator currents are
+    // then equal, so the rotor flux couplings cancel exactly
+    // (M[3][0] = Lm, M[3][1] = M[3][2] = -Lm/2) and the rotor windings carry
+    // no current: each stator phase is an independent `Ls` in series with
+    // `Rs`, which is the model's phase impedance at DC. The phase current must
+    // therefore follow the discrete RL response and settle to `10/Rs`, and
+    // every rotor node must read 0.
+    let rs = 0.435;
+    let ls = 0.0294;
+    let dt = 1e-3;
+    let c = &mut build_with(
+        vec![
+            // A source's post 0 is the negative terminal, so the ground side
+            // comes first and the phase post hangs off post 1 at +10 V. The
+            // motor's six posts sit at the registry's `motorPosts` positions
+            // for a left-to-right body: phase pairs hang off the axis at a
+            // 32-unit perpendicular offset (posts 0, 2, 4 at y = -32, 0, 32).
+            elm(1, "voltage", &[[0, -64], [0, -32]], &[("maxVoltage", 10.0)]),
+            elm(2, "voltage", &[[0, -64], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(3, "voltage", &[[0, -64], [0, 32]], &[("maxVoltage", 10.0)]),
+            elm(
+                4,
+                "threePhaseMotor",
+                &[[0, -32], [100, 32], [0, 0], [100, 0], [0, 32], [100, -32]],
+                &[
+                    ("Rs", rs),
+                    ("Rr", 0.816),
+                    ("Ls", ls),
+                    ("Lr", 0.0297),
+                    ("lm", 0.0287),
+                    ("b", 0.05),
+                    ("J", 1.0),
+                ],
+            ),
+            elm(5, "ground", &[[0, -64]], &[]),
+            elm(6, "ground", &[[100, 32]], &[]),
+            elm(7, "ground", &[[100, 0]], &[]),
+            elm(8, "ground", &[[100, -32]], &[]),
+        ],
+        opts(dt, false),
+        vec![
+            tr_scope(4, ScopeValue::NodeVoltage, 7), // n002, back-EMF source node
+            tr_scope(4, ScopeValue::NodeVoltage, 9), // n004, rotor coil 3 far end
+            tr_scope(4, ScopeValue::NodeVoltage, 11), // n006, back-EMF source node
+            tr_scope(4, ScopeValue::NodeVoltage, 12), // n007, rotor coil 4 far end
+        ],
+    );
+
+    // tau = Ls/Rs = 67.6 ms, so ten 1 ms steps sit well inside the RL rise.
+    let report = c.run(10);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(c.error().is_none(), "error: {:?}", c.error());
+    let i = c.element_currents();
+    let expected = rl_backward_euler_step(10.0, rs, ls, dt, 10);
+    for (k, phase) in ["U", "V", "W"].iter().enumerate() {
+        assert!(
+            close(i[k], expected, 1e-6),
+            "phase {phase} current at step 10 was {}, expected {expected}",
+            i[k]
+        );
+        assert!(
+            close(i[k], i[0], 1e-12),
+            "phase {phase} current {} diverged from phase U's {}",
+            i[k],
+            i[0]
+        );
+    }
+    assert!(
+        close(i[3], i[0], 1e-9),
+        "motor's own phase current {} should equal the U source's {}",
+        i[3],
+        i[0]
+    );
+    for (k, node) in [(0usize, "n002"), (1, "n004"), (2, "n006"), (3, "n007")] {
+        let v = last_sample(c, k);
+        assert!(close(v, 0.0, 1e-9), "{node} read {v} V, expected 0");
+    }
+
+    // Let the RL transient settle: 3000 more steps is ~44 time constants, so
+    // the phase currents reach the hand-derived steady state `10/Rs`.
+    let report = c.run(3000);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(c.error().is_none(), "error: {:?}", c.error());
+    let i = c.element_currents();
+    let settled = 10.0 / rs;
+    for (k, phase) in ["U", "V", "W"].iter().enumerate() {
+        assert!(
+            close(i[k], settled, 1e-6),
+            "phase {phase} current settled to {}, expected {settled}",
+            i[k]
+        );
+    }
+    assert!(
+        close(i[3], settled, 1e-6),
+        "motor's own settled current {} should equal {settled}",
+        i[3]
+    );
+    for (k, node) in [(0usize, "n002"), (1, "n004"), (2, "n006"), (3, "n007")] {
+        let v = last_sample(c, k);
+        assert!(close(v, 0.0, 1e-9), "{node} read {v} V, expected 0");
+    }
+}
+
+#[test]
+fn wye_motor_on_rails_without_a_ground_symbol_runs() {
+    // The bundled 3motor.txt: three 220 V sine rails, 120 degrees apart, feed
+    // the phase-1 posts and the phase-2 posts are wired into a floating wye
+    // neutral. There is no ground symbol, so the only reference to ground is
+    // through the rails themselves; the no-ground fallback must leave the
+    // rails' posts alone or the first rail's source reads ground-to-ground and
+    // the build goes singular. Balanced drive also has to stay balanced: the
+    // floating neutral carries no current, so the three rail currents sum to
+    // zero.
+    let mut c = build(
+        vec![
+            elm(
+                1,
+                "rail",
+                &[[608, 192]],
+                &[
+                    ("waveform", 1.0),
+                    ("frequency", 50.0),
+                    ("maxVoltage", 220.0),
+                ],
+            ),
+            elm(
+                2,
+                "rail",
+                &[[608, 224]],
+                &[
+                    ("waveform", 1.0),
+                    ("frequency", 50.0),
+                    ("maxVoltage", 220.0),
+                    ("phaseShift", -2.0 * PI / 3.0),
+                ],
+            ),
+            elm(
+                3,
+                "rail",
+                &[[608, 256]],
+                &[
+                    ("waveform", 1.0),
+                    ("frequency", 50.0),
+                    ("maxVoltage", 220.0),
+                    ("phaseShift", 2.0 * PI / 3.0),
+                ],
+            ),
+            elm(
+                4,
+                "threePhaseMotor",
+                &[
+                    [608, 192],
+                    [752, 256],
+                    [608, 224],
+                    [752, 224],
+                    [608, 256],
+                    [752, 192],
+                ],
+                &[
+                    ("Rs", 0.067),
+                    ("Rr", 0.032),
+                    ("Ls", 0.0294),
+                    ("Lr", 0.0297),
+                    ("lm", 0.0287),
+                    ("b", 0.05),
+                    ("J", 0.067),
+                ],
+            ),
+            elm(5, "wire", &[[752, 192], [768, 192]], &[]),
+            elm(6, "wire", &[[752, 224], [768, 224]], &[]),
+            elm(7, "wire", &[[768, 192], [768, 224]], &[]),
+            elm(8, "wire", &[[752, 256], [768, 256]], &[]),
+            elm(9, "wire", &[[768, 224], [768, 256]], &[]),
+        ],
+        opts(5e-6, false),
+    );
+    // 2000 steps is 10 ms, well inside the phase's ~440 ms RL rise: the motor
+    // is drawing real current but the transient has not settled, so only the
+    // balance property is asserted, not a settled magnitude.
+    let report = c.run(2000);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(c.error().is_none(), "error: {:?}", c.error());
+    let i = c.element_currents();
+    let sum = i[0] + i[1] + i[2];
+    assert!(
+        close(sum, 0.0, 1e-6),
+        "rail currents {:?} sum to {sum}, expected 0",
+        &i[..3]
+    );
+    for (k, phase) in ["U", "V", "W"].iter().enumerate() {
+        assert!(
+            i[k].abs() > 1.0,
+            "phase {phase} draws {} A, expected a real drive current",
+            i[k]
+        );
+    }
 }
 
 #[test]

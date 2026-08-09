@@ -47,6 +47,7 @@ pub mod logic_output;
 pub mod memristor;
 pub mod meter;
 pub mod mosfet;
+pub mod motor_protection_switch;
 pub mod multi_throw_switch;
 pub mod multiplexer;
 pub mod noise;
@@ -66,6 +67,7 @@ pub mod sweep;
 pub mod switch;
 pub mod t_flip_flop;
 pub mod thermistor;
+pub mod three_phase_motor;
 pub mod timer;
 pub mod transformer;
 pub mod transistor;
@@ -93,10 +95,12 @@ pub const KINDS: &[&str] = &[
     "fuse",
     "lamp",
     "thermistor",
+    "threePhaseMotor",
     "timer",
     "potentiometer",
     "ldr",
     "memristor",
+    "motorProtectionSwitch",
     "voltage",
     "rail",
     "noise",
@@ -181,8 +185,12 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "fuse" => Box::new(fuse::Fuse::new(spec)),
         "lamp" => Box::new(lamp::Lamp::new(spec)),
         "thermistor" => Box::new(thermistor::Thermistor::new(spec)),
+        "threePhaseMotor" => Box::new(three_phase_motor::ThreePhaseMotor::new(spec)),
         "timer" => Box::new(timer::Timer::new(spec)),
         "memristor" => Box::new(memristor::Memristor::new(spec)),
+        "motorProtectionSwitch" => {
+            Box::new(motor_protection_switch::MotorProtectionSwitch::new(spec))
+        }
         "potentiometer" => Box::new(potentiometer::Potentiometer::new(spec)),
         "ldr" => Box::new(ldr::Ldr::new(spec)),
         "voltage" => Box::new(voltage_source::VoltageSource::new(spec)),

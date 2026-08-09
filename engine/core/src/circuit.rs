@@ -385,9 +385,17 @@ impl Circuit {
                 }
             }
         }
-        if ground_roots.is_empty() && total > 0 {
-            // An ungrounded circuit has no unique solution. Pick a reference
-            // and say so, rather than handing the user a singular matrix.
+        // No ground symbol: upstream grounds the first voltage source's first
+        // terminal, but only when no rail is present (SimulationManager.java:
+        // 517-528, setGroundNode). A rail is a one-post source referencing the
+        // reference node already, so its terminal must stay a normal node; the
+        // fallback below would short it and its voltage source would read
+        // ground-to-ground, which is a degenerate row.
+        let has_rail = self
+            .elements
+            .iter()
+            .any(|e| e.post_count() == 1 && e.is_voltage_source());
+        if ground_roots.is_empty() && total > 0 && !has_rail {
             ground_roots.push(uf.find(0));
             self.warnings
                 .push("No ground symbol: the first node was used as the voltage reference.".into());

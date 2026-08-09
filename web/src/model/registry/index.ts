@@ -25,6 +25,8 @@ import { THERMISTOR_DEF } from './elements/thermistor';
 import { POTENTIOMETER_DEF } from './elements/potentiometer';
 import { LDR_DEF } from './elements/ldr';
 import { MEMRISTOR_DEF } from './elements/memristor';
+import { MOTOR_PROTECTION_SWITCH_DEF } from './elements/motorProtectionSwitch';
+import { THREE_PHASE_MOTOR_DEF } from './elements/threePhaseMotor';
 import { VOLTAGE_DEF } from './elements/voltage';
 import { RAIL_DEF } from './elements/rail';
 import { VAR_RAIL_DEF } from './elements/varRail';
@@ -110,6 +112,8 @@ export const ELEMENT_DEFS: ElementDef[] = [
   POTENTIOMETER_DEF,
   LDR_DEF,
   MEMRISTOR_DEF,
+  THREE_PHASE_MOTOR_DEF,
+  MOTOR_PROTECTION_SWITCH_DEF,
   SWITCH_DEF,
   SWITCH2_DEF,
   ANALOG_SWITCH_DEF,

@@ -23,9 +23,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "3-f220.txt",
@@ -42,9 +41,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "3-invert.txt",
@@ -58,12 +56,11 @@
   {
     "file": "3motor.txt",
     "format": "plain",
-    "missing": [
-      "427"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "3phasewye.txt",
@@ -188,9 +185,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "actbutterband.txt",
@@ -367,9 +363,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "avr8js-logic.txt",
@@ -377,9 +372,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "avr8js-strobe.txt",
@@ -693,9 +687,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cmosff.txt",
@@ -738,9 +731,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cmosnand.txt",
@@ -775,9 +767,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "colpitts.txt",
@@ -844,9 +835,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "counter8.txt",
@@ -854,9 +844,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "coupled1.txt",
@@ -1075,9 +1064,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "decoder.txt",
@@ -1085,9 +1073,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "delayrc.txt",
@@ -1131,9 +1118,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "digsine.txt",
@@ -1150,9 +1136,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "diodecurve.txt",
@@ -1187,9 +1172,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "divideby3.txt",
@@ -1197,9 +1181,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "dram.txt",
@@ -1271,9 +1254,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "fanout.txt",
@@ -1370,9 +1352,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "fullrect-sc.txt",
@@ -1415,9 +1396,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "grid.txt",
@@ -1460,9 +1440,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "hartley.txt",
@@ -1659,9 +1638,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "johnsonctr.txt",
@@ -1669,9 +1647,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "joule-thief.txt",
@@ -1815,9 +1792,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "masterslaveff.txt",
@@ -1825,9 +1801,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mirror.txt",
@@ -1871,9 +1846,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mosmirror.txt",
@@ -1896,12 +1870,11 @@
   {
     "file": "motorprotect.txt",
     "format": "plain",
-    "missing": [
-      "428"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "mr-crossbar.txt",
@@ -2017,9 +1990,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "nic-r.txt",
@@ -2150,9 +2122,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "opampfeedback.txt",
@@ -2160,9 +2131,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "opint-current.txt",
@@ -2300,9 +2270,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "pll.txt",
@@ -2359,9 +2328,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "pnp.txt",
@@ -2369,9 +2337,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "pot.txt",
@@ -2415,9 +2382,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "pushpull.txt",
@@ -2764,9 +2730,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "spark-marx.txt",
@@ -2837,9 +2802,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "td4-add2.txt",
@@ -3094,9 +3058,8 @@
     "missing": [],
     "sliderLines": 1,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "transswitch.txt",
@@ -3204,9 +3167,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "updownctr.txt",
@@ -3214,9 +3176,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "varactor.txt",
@@ -3341,9 +3302,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "xorphasedet.txt",
@@ -3351,9 +3311,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "zeneriv.txt",

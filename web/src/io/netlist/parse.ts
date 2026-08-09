@@ -166,8 +166,6 @@ const UPSTREAM_ELEMENT_CODES = new Set([
   '424',
   '425',
   '426',
-  '427',
-  '428',
   '429',
   '430',
   '431',
