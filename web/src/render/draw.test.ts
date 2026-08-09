@@ -163,8 +163,21 @@ describe('theme colour overrides', () => {
       selectionColor: null,
       currentColor: '#123456',
     });
-    expect(theme.positive).toBe('#3fb950');
+    expect(theme.positive).toBe('#00ff00');
     expect(theme.currentDot).toBe('#123456');
+  });
+
+  it('dark theme colour-scale roles match upstream exactly', () => {
+    // The dark theme is the parity-exact palette: the five colour-scale roles
+    // are upstream's Color constants (CircuitElm.java:200-205, Color.java:
+    // 26-37). A future palette tweak has to argue with this claim. The light
+    // theme is a deliberate legibility divergence and is not covered here.
+    const theme = makeTheme();
+    expect(theme.positive).toBe('#00ff00');  // Color.green
+    expect(theme.negative).toBe('#ff0000');  // Color.red
+    expect(theme.neutral).toBe('#808080');   // Color.gray
+    expect(theme.currentDot).toBe('#ffff00');  // Color.yellow
+    expect(theme.selection).toBe('#00ffff');  // Color.cyan
   });
 });
 
@@ -279,18 +292,18 @@ describe('power colouring', () => {
   it('hits the exact midpoint between neutral and negative at half scale', () => {
     const half = 0.5 / powerMult(50);
     expect(powerColorT(half, 50)).toBeCloseTo(-0.5, 10);
-    // Dark-theme neutral #6e7781 to negative #ff5555 at t = 0.5. The light
-    // theme does not exist yet; when it lands this endpoint colour moves.
-    expect(powerColor(powerContext({ showPowerColor: true }), half)).toBe('rgb(183,102,107)');
+    // Dark-theme neutral #808080 to negative #ff0000 at t = 0.5, the upstream
+    // constants (CircuitElm.java:200-205, Color.java:26-37).
+    expect(powerColor(powerContext({ showPowerColor: true }), half)).toBe('rgb(192,64,64)');
   });
 
   it('colours dissipated power red and generated power green', () => {
     const g = powerContext({ showPowerColor: true });
     // The ramp blends the theme colours, so the endpoints come back as rgb
-    // strings: dark-theme neutral #6e7781, negative #ff5555, positive #3fb950.
-    expect(powerColor(g, 0)).toBe('rgb(110,119,129)');
-    expect(powerColor(g, 1e6)).toBe('rgb(255,85,85)');
-    expect(powerColor(g, -1e6)).toBe('rgb(63,185,80)');
+    // strings: dark-theme neutral #808080, negative #ff0000, positive #00ff00.
+    expect(powerColor(g, 0)).toBe('rgb(128,128,128)');
+    expect(powerColor(g, 1e6)).toBe('rgb(255,0,0)');
+    expect(powerColor(g, -1e6)).toBe('rgb(0,255,0)');
   });
 
   it('returns the wire colour when the mode is off', () => {

@@ -521,7 +521,10 @@ function lightTheme(): Theme {
     // White Background (upstream's printable mode): the schematic renders on
     // white with black wires and dark text, the palette of ImageExporter's
     // forced-printable export. Not byte-for-byte upstream's print palette;
-    // that is a deliberate form difference.
+    // that is a deliberate form difference. The darker #1a7f37 / #cf222e
+    // positive and negative are a deliberate legibility divergence too, since
+    // upstream's saturated primaries would wash out on white; the dark theme
+    // below is the parity-exact palette.
     background: '#ffffff',
     grid: '#d0d7de',
     wire: '#000000',
@@ -541,18 +544,21 @@ function lightTheme(): Theme {
 
 function darkTheme(): Theme {
   return {
+    // The five colour-scale roles are upstream's exact constants
+    // (CircuitElm.java:200-205, Color.java:26-37); draw.test.ts pins the
+    // parity, so a future palette tweak has to argue with the claim.
     background: '#0d1117',
     grid: '#1b2230',
     wire: '#c9d1d9',
     text: '#8b949e',
-    selection: '#58a6ff',
+    selection: '#00ffff',
     highlight: '#f0883e',
-    negative: '#ff5555',
+    negative: '#ff0000',
     // Upstream's no-connect marker is plain red (UIManager.java:710).
     noConnect: '#ff0000',
-    neutral: '#6e7781',
-    positive: '#3fb950',
-    currentDot: '#ffd866',
+    neutral: '#808080',
+    positive: '#00ff00',
+    currentDot: '#ffff00',
     // Upstream's electron-flow cyan (UIManager.java:238); the port has no
     // light theme yet, so a dark-cyan variant is not needed.
     currentDotElectron: '#00ffff',
