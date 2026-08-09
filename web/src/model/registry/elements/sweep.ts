@@ -54,6 +54,9 @@ export const SWEEP_DEF: ElementDef = {
       7,
       g.theme.text,
     );
-    currentDots(g, p1, lead1, g.current);
+    // Stem dots flow symbol-to-post, the same reversal the sweep's ancestor
+    // RailElm applies to its stem (SweepElm.java:120, which calls
+    // `updateDotCount(-current, ...)`).
+    currentDots(g, lead1, p1, g.current);
   },
 };

@@ -48,7 +48,9 @@ export const ANTENNA_DEF: ElementDef = {
     // rail draws for the antenna (RailElm.java:50-64, AntennaElm.java:31-33).
     line(g, p1, lead1, color);
     drawAntennaLabel(g, e, lead1);
-    currentDots(g, p1, lead1, g.current);
+    // AntennaElm inherits RailElm.draw, whose stem dots run against the
+    // reported current (RailElm.java:61-63), i.e. symbol-to-post here.
+    currentDots(g, lead1, p1, g.current);
   },
 };
 

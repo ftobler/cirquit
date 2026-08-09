@@ -2708,13 +2708,14 @@ fn current_scope_samples_the_dc_branch_current() {
 fn opamp_output_current_and_power_match_upstream() {
     // Voltage follower: 5 V into the non-inverting input, the output wired to
     // the inverting input, a 1k load from the output node to ground. The
-    // op-amp sources ~5 mA into the load. Upstream's positive current leaves
-    // the pin (getCurrentIntoNode(2) == -current, OpAmpElm.java:227-231),
-    // while the port's voltage_source(GROUND, node2) unknown is positive into
-    // the pin, so the reported current is -5e-3 and the power
-    // volts[2]*current = 5 * -5e-3 = -0.025 (OpAmpElm.java:109). The finite
-    // open-loop gain drops the follower output to 5 - 5e-5, a deviation the
-    // tolerances below cover.
+    // op-amp sources ~5 mA into the load. Upstream's positive current flows
+    // INTO the output pin (a sinking op-amp: getCurrentIntoNode(2) ==
+    // -current, OpAmpElm.java:227-231), so a sourcing op-amp reports -5e-3;
+    // the port's voltage_source(GROUND, node2) unknown is positive into the
+    // pin and `calculate_current` negates it, giving the same -5e-3 and the
+    // power volts[2]*current = 5 * -5e-3 = -0.025 (OpAmpElm.java:109). The
+    // finite open-loop gain drops the follower output to 5 - 5e-5, a deviation
+    // the tolerances below cover.
     let c = &mut build_with(
         vec![
             elm(
@@ -4339,6 +4340,83 @@ fn source_scope_and_readout_use_upstream_sign() {
         close(snap[1] as f64, 5.0, 1e-9),
         "scope max was {}",
         snap[1]
+    );
+}
+
+#[test]
+fn source_and_resistor_report_a_consistent_current_loop() {
+    // Pins the reported-current sign convention that the dot drawing, the
+    // scope and the ammeter all read: a 5 V source delivering into a 1 k
+    // resistor reports +5 mA, and the resistor reports +5 mA entering its
+    // post 0. The source's MNA unknown is positive when current flows from
+    // post 0 to post 1 inside the source, the same `stampVoltageSource`
+    // upstream stamps on `(nodes[0], nodes[1])` (VoltageElm.java:149-154,
+    // SimulationManager.java:1157-1163), and a delivering source does flow
+    // that way, so +5 mA here is the same sign upstream's `getCurrent()`
+    // returns. The resistor's +5 mA is (V(post0) - V(post1))/R
+    // (ResistorElm.java:109), current entering post 0. Both positive is the
+    // loop: out of the source's post 1, into the resistor's post 0, around
+    // through ground back to the source's post 0. A draw layer that shows
+    // these dots going the other way is the draw's bug, not the engine's.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "wire", &[[100, 0], [100, 100]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[0], 5e-3, 1e-12),
+        "source current was {}",
+        amps[0]
+    );
+    assert!(
+        close(amps[1], 5e-3, 1e-12),
+        "resistor current was {}",
+        amps[1]
+    );
+    assert!(amps[0] * amps[1] > 0.0, "loop currents must agree in sign");
+}
+
+#[test]
+fn rail_reports_delivery_as_positive_like_upstream() {
+    // The rail is a one-post source stamped to ground with the post as the
+    // second terminal, `stampVoltageSource(CircuitNode.ground, nodes[0], ...)`
+    // (RailElm.java:100-105), so its MNA current is positive when current
+    // flows ground to post, i.e. when the rail delivers out of the post. That
+    // is why RailElm.draw negates the current for its stem dots (RailElm.java:
+    // 61): a delivering rail must draw dots running from the symbol toward the
+    // post, and a positive reported current means delivery.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "wire", &[[100, 0], [100, 100]], &[]),
+            elm(4, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[0], 5e-3, 1e-12),
+        "delivering rail current was {}",
+        amps[0]
     );
 }
 

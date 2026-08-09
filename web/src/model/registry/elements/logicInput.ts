@@ -33,7 +33,10 @@ function drawLogicInput(g: DrawContext, e: CircuitElement): void {
   // (LogicInputElm.java:70-73).
   const lead1 = interp(p1, p2, 1 - 12 / dn);
   line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-  currentDots(g, p1, lead1, g.current);
+  // Stem dots flow label-to-post, reversed like the rail's: a one-post source
+  // measures its current delivering out of the post (LogicInputElm.java:87,
+  // `drawDots(g, point1, lead1, -curcount)`).
+  currentDots(g, lead1, p1, g.current);
   // Upstream centres the bold letter at the free end and colours it by
   // selection like the lead is coloured by voltage (LogicInputElm.java:75-83).
   g.ctx.fillStyle = limbColor(g, g.theme.text);

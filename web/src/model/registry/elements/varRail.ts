@@ -61,7 +61,9 @@ export const VAR_RAIL_DEF: ElementDef = {
     // 69-81, WF_VAR is in the DC branch), never the waveform circle.
     const v = e.params.voltage ?? 5;
     drawRailLabel(g, e, lead1, railText(v, g.valueDigits));
-    currentDots(g, p1, lead1, g.current);
+    // VarRailElm inherits RailElm.draw, whose stem dots run against the
+    // reported current (RailElm.java:61-63), i.e. symbol-to-post here.
+    currentDots(g, lead1, p1, g.current);
   },
 };
 

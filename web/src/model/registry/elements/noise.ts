@@ -50,7 +50,9 @@ export const NOISE_DEF: ElementDef = {
     // the rail draws for WF_NOISE (RailElm.java:50-64).
     line(g, p1, lead1, color);
     drawNoiseLabel(g, e, lead1);
-    currentDots(g, p1, lead1, g.current);
+    // NoiseElm inherits RailElm.draw, whose stem dots run against the
+    // reported current (RailElm.java:61-63), i.e. symbol-to-post here.
+    currentDots(g, lead1, p1, g.current);
   },
 };
 

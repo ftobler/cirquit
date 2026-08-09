@@ -88,10 +88,14 @@ function drawMosfet(g: DrawContext, e: CircuitElement): void {
 
   // Current dots along the source rail, the channel and the drain rail. The
   // channel current is reported drain-to-source for an N-channel, so the dots
-  // flow the opposite way along each drawn segment (MosfetElm.java:315-319).
-  currentDots(g, posts[1], src1, -g.current);
-  currentDots(g, src1, drn1, -g.current);
-  currentDots(g, drn1, posts[2], -g.current);
+  // flow the opposite way along each drawn segment; upstream expresses the
+  // same reversal as negated dot counts `-(ids + capCurGS)` on the same
+  // segments (MosfetElm.java:315-319). The port's reversal is the reversed
+  // segment, because the frame phase already encodes the reported current's
+  // sign.
+  currentDots(g, src1, posts[1], g.current);
+  currentDots(g, drn1, src1, g.current);
+  currentDots(g, posts[2], drn1, g.current);
 }
 
 export const MOSFET_DEF: ElementDef = {

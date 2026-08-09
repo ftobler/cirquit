@@ -97,8 +97,16 @@ function drawDarlington(g: DrawContext, e: CircuitElement): void {
   const base = interp(p1, p2, back);
   line(g, p1, base, voltageColor(g, g.voltages[0]));
 
-  currentDots(g, base, p1, g.current);
-  currentDots(g, coll1, coll0, g.current);
+  // Current dots with the sign choices of DarlingtonElm.java:84-89. Upstream
+  // feeds each run the node current: `getCurrentIntoNode(0) = -ib` on the
+  // base, `getCurrentIntoNode(1) = -ic` on the collector and
+  // `getCurrentIntoNode(2) = -ie` on the emitter, all drawn on the
+  // body-to-post segments. Reversing those segments here reproduces the same
+  // dot flow for a conducting pair; only the base lead still uses the single
+  // reported `ic`, since the engine boundary exposes the collector current
+  // only, not the pair's base current.
+  currentDots(g, p1, base, g.current);
+  currentDots(g, coll0, coll1, g.current);
   currentDots(g, emit1, emit0, g.current);
 }
 

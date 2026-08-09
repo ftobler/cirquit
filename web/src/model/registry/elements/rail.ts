@@ -177,7 +177,11 @@ export const RAIL_DEF: ElementDef = {
         drawRailValue(g, e, `${compact(e.params.frequency ?? 0, 'Hz', g.valueDigits)}`);
       }
     }
-    currentDots(g, p1, lead1, g.current);
+    // Current dots flow from the symbol end toward the post: upstream negates
+    // the reported current before drawing the stem (RailElm.java:61-63,
+    // `updateDotCount(-current, curcount)`), which in this port is the
+    // segment drawn post-to-lead reversed.
+    currentDots(g, lead1, p1, g.current);
   },
 };
 

@@ -75,7 +75,9 @@ export const EXT_VOLTAGE_DEF: ElementDef = {
     // rail would draw its voltage (ExtVoltageElm.java:47-49, drawRailText).
     line(g, p1, lead1, color);
     drawExtName(g, e, lead1, extName(e));
-    currentDots(g, p1, lead1, g.current);
+    // ExtVoltageElm inherits RailElm.draw, whose stem dots run against the
+    // reported current (RailElm.java:61-63), i.e. symbol-to-post here.
+    currentDots(g, lead1, p1, g.current);
   },
 };
 

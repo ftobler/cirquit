@@ -43,7 +43,12 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
   g.ctx.textBaseline = 'middle';
   g.ctx.fillText('−', minus.x, minus.y - 2);
   g.ctx.fillText('+', plus.x, plus.y);
-  currentDots(g, lead2, p2, g.current);
+  // Output dots: upstream draws `drawDots(g, point2, lead2, curcount)` with
+  // the raw source current (OpAmpElm.java:105). That current is positive when
+  // the op-amp sinks current into the output pin (getCurrentIntoNode(2) ==
+  // -current, OpAmpElm.java:227-231), so a sourcing op-amp reports a negative
+  // current and the dots flow body-to-post, out of the pin.
+  currentDots(g, p2, lead2, g.current);
 }
 
 /** Default op-amp geometry is size 2 (16/26); FLAG_SMALL selects the 8/13

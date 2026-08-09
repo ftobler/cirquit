@@ -157,7 +157,11 @@ function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
       const current = channelCurrent(g, e, i);
       const x = ax + i * CHANNEL_SPACING;
       currentDots(g, { x, y: ay }, { x, y: ay + 80 }, current);
-      currentDots(g, { x, y: ay + MPS_HEIGHT }, { x, y: ay + 176 }, -current);
+      // The lower run is the mirror of the upper one, like upstream's
+      // `drawDots(g, posts[i*2+1], leads[i*2+1], -curcounts[i])`
+      // (MotorProtectionSwitchElm.java:197): the dots on the lower lead move
+      // toward the bottom post when the channel conducts top to bottom.
+      currentDots(g, { x, y: ay + 176 }, { x, y: ay + MPS_HEIGHT }, current);
     }
   }
 }

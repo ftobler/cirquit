@@ -58,8 +58,14 @@ function drawTransmissionLine(g: DrawContext, e: CircuitElement): void {
   // inner-post colour (TransLineElm.java:150-151). The animated wave segments
   // are skipped: the ring buffer never crosses the engine boundary.
   line(g, inner[0], inner[1], voltageColor(g, g.voltages[0]));
-  currentDots(g, posts[0], inner[0], g.current);
-  currentDots(g, inner[2], posts[2], g.current);
+  // Both runs carry the left source's current reversed, matching upstream's
+  // `drawDots(g, posts[0], inner[0], -curCount1)` and
+  // `drawDots(g, posts[2], inner[2], -curCount1)` with `curCount1 =
+  // updateDotCount(-current1, ...)` (TransLineElm.java:154, :158). The right
+  // port's runs are not drawn: the engine boundary exposes only the left
+  // source's current.
+  currentDots(g, inner[0], posts[0], g.current);
+  currentDots(g, posts[2], inner[2], g.current);
 }
 
 export const TRANSMISSION_LINE_DEF: ElementDef = {

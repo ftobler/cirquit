@@ -71,11 +71,14 @@ function drawJfet(g: DrawContext, e: CircuitElement): void {
 
   // Current dots along each rail, with the sign choices of JfetElm.java:65-74:
   // the source dots run against the reported channel current, the drain dots
-  // with it. The gate-lead dots upstream draws for `gateCurrent` are omitted
-  // because the engine boundary carries one current per element, which for
-  // the JFET is the channel current only.
-  currentDots(g, posts[1], src1, -g.current);
-  currentDots(g, src1, src2, -g.current);
+  // with it. Upstream draws those as `-ids` on the source runs and `-curcountd`
+  // (i.e. `+ids`) on the drain runs; the port's reversal is the reversed
+  // segment on the source runs, since the frame phase already carries the
+  // reported current's sign. The gate-lead dots upstream draws for
+  // `gateCurrent` are omitted because the engine boundary carries one current
+  // per element, which for the JFET is the channel current only.
+  currentDots(g, src1, posts[1], g.current);
+  currentDots(g, src2, src1, g.current);
   currentDots(g, posts[2], drn1, g.current);
   currentDots(g, drn1, drn2, g.current);
 }

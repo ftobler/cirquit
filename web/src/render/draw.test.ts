@@ -28,7 +28,10 @@ import { RESISTOR_DEF } from '../model/registry/elements/resistor';
 import { INDUCTOR_DEF } from '../model/registry/elements/inductor';
 import { RELAY_DEF } from '../model/registry/elements/relay';
 import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
-import { TOO_FAST } from './dots';
+import { MOSFET_DEF } from '../model/registry/elements/mosfet';
+import { RAIL_DEF } from '../model/registry/elements/rail';
+import { VOLTAGE_DEF } from '../model/registry/elements/voltage';
+import { TOO_FAST, dotPhaseStep } from './dots';
 import {
   CHIP_FLIP_X,
   CHIP_FLIP_Y,
@@ -37,7 +40,7 @@ import {
   drawChip,
   type ChipPinDef,
 } from '../model/registry/elements/dFlipFlop';
-import type { CircuitElement, DrawContext } from '../model/types';
+import type { CircuitElement, DrawContext, Point } from '../model/types';
 
 interface CtxStub {
   fillStyle: string;
@@ -1120,6 +1123,235 @@ describe('chip pin labels inside the housing', () => {
       const box = labelBox(t);
       expect(Math.min(p0.x, p1.x)).toBe(box.min);
       expect(Math.max(p0.x, p1.x)).toBe(box.max);
+    }
+  });
+});
+
+describe('current dot direction', () => {
+  // The animated dots must advance from post A toward post B on a circuit
+  // with a known current loop, sampled two frames apart. The engine reports
+  // a 5 V source and a series resistor both as +5 mA (see the circuits.rs
+  // convention tests), and the render layer advances the per-element phase by
+  // `current * currentMult` (dotPhaseStep), so a positive current moves dots
+  // in the positive segment direction every frame. Each test draws the
+  // element at phase 0 and phase 2 and asserts that the leading dot sits at
+  // the path head and then advances two units along it, pinning the segment
+  // direction each draw uses.
+  //
+  // The step is deliberately small. Sampling at half DOT_SPACING (phase 8)
+  // does not discriminate direction: a dot 8 units from the run start wraps
+  // past the first dot's spacing, so the dot nearest the head is a different
+  // dot in the second frame and its distance from the head grows whether the
+  // run points toward or away from it. A 2-unit step keeps the same dot on
+  // the same run, so the test asserts directly where it is: the correct run
+  // starts at the path head, so a dot sits there at phase 0 and 2 units
+  // further along at phase 2, while a reversed run starts at the path tail
+  // (or mid-path) and has no dot at the head at all.
+
+  interface Arc {
+    x: number;
+    y: number;
+    r: number;
+  }
+
+  /** A stub whose arcs record their radius, so the 2-unit current dots can be
+   *  told apart from the symbol circles (radius 12 or 17). */
+  const dotCtx = (): { ctx: CanvasRenderingContext2D; arcs: Arc[] } => {
+    const arcs: Arc[] = [];
+    const stub: CtxStub = {
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      lineCap: '',
+      lineJoin: '',
+      globalAlpha: 1,
+      font: '',
+      textAlign: '',
+      textBaseline: '',
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      stroke: vi.fn(),
+      arc: vi.fn((x: number, y: number, r: number) => {
+        arcs.push({ x, y, r });
+      }),
+      fill: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      setLineDash: vi.fn(),
+      fillText: vi.fn(),
+      measureText: (text: string) => ({ width: text.length * 6 }),
+    };
+    return { ctx: stub as unknown as CanvasRenderingContext2D, arcs };
+  };
+
+  /** The current-dot arcs (radius 2) a draw produced. */
+  const dots = (arcs: Arc[]): Point[] => arcs.filter((a) => a.r === 2);
+
+  /** Unit vector along `p`. */
+  const unit = (p: Point): Point => {
+    const len = Math.hypot(p.x, p.y);
+    return len === 0 ? { x: 0, y: 0 } : { x: p.x / len, y: p.y / len };
+  };
+
+  /** Whether any dot sits within epsilon of `p`. */
+  const hasDot = (pts: Point[], p: Point): boolean =>
+    pts.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.01);
+
+  /** Draw `def` at `phase`, returning the dot arcs. */
+  const drawAt = (def: { draw(g: DrawContext, e: CircuitElement): void }, e: CircuitElement, phase: number, conventional = true): Point[] => {
+    const { ctx, arcs } = dotCtx();
+    def.draw({ ...context(ctx, phase), current: 0.01, voltages: [5, 0, 0], conventional }, e);
+    return dots(arcs);
+  };
+
+  /** Asserts the dots advance along `path`: a dot sits exactly at the path
+   *  head at phase 0, and at phase 2 that same dot is 2 units further along
+   *  the first segment. A run drawn the other way starts at the path tail (or
+   *  mid-path), so no dot sits at the head and the first check fails; a run
+   *  that starts at the head but points away fails the second. Both checks
+   *  therefore fail on the mirrored draw. */
+  const expectAdvances = (def: { draw(g: DrawContext, e: CircuitElement): void }, e: CircuitElement, path: Point[]): void => {
+    const dir = unit({ x: path[1].x - path[0].x, y: path[1].y - path[0].y });
+    expect(hasDot(drawAt(def, e, 0), path[0])).toBe(true);
+    expect(
+      hasDot(drawAt(def, e, 2), {
+        x: path[0].x + 2 * dir.x,
+        y: path[0].y + 2 * dir.y,
+      }),
+    ).toBe(true);
+  };
+
+  it('a resistor draws dots from post 0 toward post 1', () => {
+    // The control: current enters post 0 and leaves post 1
+    // (ResistorElm.java:109), so a positive reported current must march the
+    // dots along the post-0-to-post-1 axis.
+    expectAdvances(
+      RESISTOR_DEF,
+      { id: 1, kind: 'resistor', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: {} },
+      [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+    );
+  });
+
+  it('a DC source draws dots from the negative post toward the positive post', () => {
+    // Delivering 10 mA, the dots enter the symbol on the negative side and
+    // leave the symbol toward the positive post: the whole path advances from
+    // post 0 (negative, (0,100)) to post 1 (positive, (0,0)), matching
+    // VoltageElm.draw's `drawDots(point1, lead1, ...)` and
+    // `drawDots(point2, lead2, -curcount)` split (VoltageElm.java:328-330).
+    expectAdvances(
+      VOLTAGE_DEF,
+      { id: 1, kind: 'voltage', x1: 0, y1: 100, x2: 0, y2: 0, flags: 0, params: { waveform: 0 } },
+      [{ x: 0, y: 100 }, { x: 0, y: 0 }],
+    );
+  });
+
+  it('a rail draws dots from the symbol end toward the post', () => {
+    // A delivering rail measures +current and RailElm.draw negates it for its
+    // stem (`updateDotCount(-current, ...)`, RailElm.java:61), so the dots
+    // run from the symbol at (100,0) back to the post at (0,0). The dot run
+    // itself starts at the stem's lead, one circle radius short of the symbol
+    // (railLead, RailElm.java:43), so the path head is (83,0).
+    expectAdvances(
+      RAIL_DEF,
+      { id: 1, kind: 'rail', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: { waveform: 0, maxVoltage: 5 } },
+      [{ x: 83, y: 0 }, { x: 0, y: 0 }],
+    );
+  });
+
+  // The mosfet draw code is identical for both channel types (the source and
+  // drain labels swap with the channel but the geometry and the dot runs do
+  // not), so both tests assert the same coordinate motion. What differs is the
+  // label meaning: for an N-channel the +16 unit post is the drain and the
+  // dots flow drain-to-source; for a P-channel it is the source and the same
+  // flow is source-to-drain. The reported channel current `ids` is positive
+  // drain-to-source in the device frame for both (MosfetElm.java:642-644),
+  // and the draw reverses each segment against it (MosfetElm.java:315-319),
+  // so a positive `g.current` marches the dots from the (100,-16) post toward
+  // the (100,16) post.
+  const mosfet = (pnp: number): CircuitElement => ({
+    id: 1,
+    kind: 'mosfet',
+    x1: 0,
+    y1: 0,
+    x2: 100,
+    y2: 0,
+    flags: 0,
+    params: { pnp },
+  });
+
+  it('an N-MOSFET channel draws dots from the drain toward the source', () => {
+    expectAdvances(MOSFET_DEF, mosfet(1), [
+      { x: 100, y: -16 },
+      { x: 78, y: -16 },
+      { x: 78, y: 16 },
+      { x: 100, y: 16 },
+    ]);
+  });
+
+  it('a P-MOSFET channel draws dots from the source toward the drain', () => {
+    expectAdvances(MOSFET_DEF, mosfet(-1), [
+      { x: 100, y: -16 },
+      { x: 78, y: -16 },
+      { x: 78, y: 16 },
+      { x: 100, y: 16 },
+    ]);
+  });
+
+  it('electron-flow mode reverses every direction and changes nothing else', () => {
+    // The conventional-current toggle flips the phase step sign in
+    // `dotPhaseStep` (dots.ts: `return conventional ? cadd : -cadd`), so the
+    // per-element phase *decreases* each frame in electron-flow mode. The draw
+    // itself is untouched by the toggle except for the dot colour: the same
+    // phase produces the same dot geometry either way, and a *lower* phase
+    // means the dots are behind where a conventional frame would have put
+    // them. Together those two facts are the flip: every direction reverses,
+    // nothing else changes.
+    const current = 0.01;
+    const dt = 1 / 60;
+    const stepC = dotPhaseStep(current, 50, dt, true);
+    const stepE = dotPhaseStep(current, 50, dt, false);
+    expect(stepC).toBeGreaterThan(0);
+    expect(stepE).toBeCloseTo(-stepC, 12);
+    const cases: Array<{ def: { draw(g: DrawContext, e: CircuitElement): void }; e: CircuitElement; path: Point[] }> = [
+      {
+        def: RESISTOR_DEF,
+        e: { id: 1, kind: 'resistor', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: {} },
+        path: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+      },
+      {
+        def: RAIL_DEF,
+        e: { id: 1, kind: 'rail', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: { waveform: 0, maxVoltage: 5 } },
+        path: [{ x: 83, y: 0 }, { x: 0, y: 0 }],
+      },
+      {
+        def: MOSFET_DEF,
+        e: mosfet(1),
+        path: [{ x: 100, y: -16 }, { x: 78, y: -16 }, { x: 78, y: 16 }, { x: 100, y: 16 }],
+      },
+    ];
+    for (const { def, e, path } of cases) {
+      // Same geometry at the same phase whether the toggle is on or off: the
+      // conventional flag only reaches the draw as the dot colour.
+      const conventional = drawAt(def, e, 2, true);
+      const electron = drawAt(def, e, 2, false);
+      expect(electron.map((p) => `${p.x},${p.y}`).sort()).toEqual(
+        conventional.map((p) => `${p.x},${p.y}`).sort(),
+      );
+      // The dot advances from the head as the phase rises (asserted by the
+      // direction tests), so the *negative* electron step, which drives the
+      // phase down, moves every dot the other way: the dot that a
+      // conventional frame has 2 units along the path sits back at the head
+      // in the preceding electron frame.
+      const dir = unit({ x: path[1].x - path[0].x, y: path[1].y - path[0].y });
+      expect(hasDot(drawAt(def, e, 0), path[0])).toBe(true);
+      expect(
+        hasDot(drawAt(def, e, 2), {
+          x: path[0].x + 2 * dir.x,
+          y: path[0].y + 2 * dir.y,
+        }),
+      ).toBe(true);
     }
   });
 });
