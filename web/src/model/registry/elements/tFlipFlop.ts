@@ -11,7 +11,7 @@ export const TFF_RESET = 2;
 export const TFF_SET = 4;
 
 /** The pin table, from `setupPins` (TFlipFlopElm.java:34-53). */
-function tffPins(e: CircuitElement): ChipPinDef[] {
+export function tffPins(e: CircuitElement): ChipPinDef[] {
   const set = (e.flags & TFF_SET) !== 0;
   const reset = (e.flags & TFF_RESET) !== 0 || set;
   const pins: ChipPinDef[] = [

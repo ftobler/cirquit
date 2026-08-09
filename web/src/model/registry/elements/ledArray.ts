@@ -42,7 +42,7 @@ function ledArraySize(e: CircuitElement): { sizeX: number; sizeY: number } {
 
 /** The pin table, from `setupPins` (LEDArrayElm.java:66-70): the columns on
  *  the south, then the rows on the west, all unlabelled. */
-function ledArrayPins(e: CircuitElement): ChipPinDef[] {
+export function ledArrayPins(e: CircuitElement): ChipPinDef[] {
   const { sizeX, sizeY } = ledArraySize(e);
   const pins: ChipPinDef[] = [];
   for (let i = 0; i < sizeX; i++) {

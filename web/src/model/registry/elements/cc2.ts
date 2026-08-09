@@ -20,7 +20,7 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** The pin table, from `setupPins` (CC2Elm.java:43-51): the X output source
  *  on the west, the Y input two rows down, and the Z output on the east. */
-function cc2Pins(): ChipPinDef[] {
+export function cc2Pins(): ChipPinDef[] {
   return [
     { side: 'W', pos: 0, text: 'X', output: true },
     { side: 'W', pos: 2, text: 'Y' },

@@ -37,7 +37,7 @@ function decimalBits(e: CircuitElement): number {
 /** The pin table, from `setupPins` (DecimalDisplayElm.java:96-102): one west
  *  input per bit, MSB first, so I0 sits at the bottom, exactly like the latch's
  *  bit inputs. */
-function decimalPins(e: CircuitElement): ChipPinDef[] {
+export function decimalPins(e: CircuitElement): ChipPinDef[] {
   const bits = decimalBits(e);
   const pins: ChipPinDef[] = [];
   for (let i = 0; i < bits; i++) {

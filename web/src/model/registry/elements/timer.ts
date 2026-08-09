@@ -22,7 +22,7 @@ export const TIMER_NUMBERS = 8;
  *  pins are active-low and carry an overline unless pin numbers are shown.
  *  Post order must match the engine: 0 DIS, 1 TRIG, 2 THRES, 3 VCC, 4 CTL,
  *  5 OUT, 6 RST, 7 GND. */
-function timerPins(e: CircuitElement): ChipPinDef[] {
+export function timerPins(e: CircuitElement): ChipPinDef[] {
   const ground = (e.flags & TIMER_GROUND) !== 0;
   // A ground pin forces the reset pin, matching the engine's hasReset()
   // (TimerElm.java:62) and the D flip-flop's set-implies-reset rule.

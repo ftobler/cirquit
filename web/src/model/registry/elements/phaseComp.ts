@@ -12,7 +12,7 @@ import type { ChipPinDef } from './dFlipFlop';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** The pin table, from `setupPins` (PhaseCompElm.java:30-38). */
-const phaseCompPins: ChipPinDef[] = [
+export const phaseCompPins: ChipPinDef[] = [
   { side: 'W', pos: 0, text: 'I1' },
   { side: 'W', pos: 1, text: 'I2' },
   { side: 'E', pos: 0, text: 'O', output: true },

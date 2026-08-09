@@ -20,6 +20,9 @@ import {
   swapTerminalOrder,
 } from '../model/transform';
 import { LOGIC_INPUT_TERNARY, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
+import { postsOf } from '../model/registry';
+import { chipPinsOf } from '../model/registry/chips';
+import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import { paramScale, resolveParam } from '../model/sliders';
 import {
   DEFAULT_SETTINGS,
@@ -566,6 +569,45 @@ export const useStore = create<AppState>((set, get) => ({
     // by coordinate, so a reload sees the same node voltages.
     s.commit();
     set({ elements: converted, revision: s.revision + 1 });
+  },
+
+  createTest: () => {
+    // The command aborts (with a browser alert from the caller) when no
+    // single chip is selected, the same guard as upstream
+    // (TestCreator.java:27-30). The alert is a UI concern, so the action
+    // reports the outcome and the menubar shows it.
+    const chip = selectHarnessChip(get().elements, get().selectedIds);
+    if (!chip) return false;
+    // selectHarnessChip already proved the chip's pin table exists, so this
+    // lookup cannot miss; the pins and the posts share index order because
+    // chipPosts maps the same table (ChipElm.getPost).
+    const pins = chipPinsOf(chip)!;
+    const posts = postsOf(chip);
+    const placements = createTestHarness(
+      pins.map((p, i) => ({
+        side: p.side,
+        output: p.output ?? false,
+        post: posts[i],
+        busWidth: p.busWidth,
+        busZ: p.busZ,
+      })),
+      GRID_SIZE,
+      chip.flags,
+    );
+    if (placements.length === 0) return false;
+    // One commit for the whole harness, so Create Test is one undo step,
+    // exactly as upstream pushes once before TestCreator.createTest
+    // (CommandManager.java:146-149).
+    get().commit();
+    const added = placements.map((p) => ({
+      ...makeElement(p.kind, p.x1, p.y1, p.x2, p.y2),
+      id: allocateId(),
+    }));
+    set((st) => ({
+      elements: [...st.elements, ...added],
+      revision: st.revision + 1,
+    }));
+    return true;
   },
 
   setParam: (id, name, value) => {

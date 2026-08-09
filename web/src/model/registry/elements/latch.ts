@@ -51,7 +51,7 @@ function latchSizeY(e: CircuitElement): number {
 
 /** The pin table, from `setupPins` (LatchElm.java:67-109). The bit pins run
  *  MSB first, so I0 sits at the bottom and I_{bits-1} at the top. */
-function latchPins(e: CircuitElement): ChipPinDef[] {
+export function latchPins(e: CircuitElement): ChipPinDef[] {
   const bits = latchBits(e);
   const edge = (e.flags & LATCH_NO_EDGE) === 0;
   const enable = latchEnableMode(e);

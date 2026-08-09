@@ -35,7 +35,7 @@ function adcSizeY(e: CircuitElement): number {
 /** The pin table, from `setupPins` (ADCElm.java:31-40): the bit outputs on
  *  the east, MSB first so D0 sits at the bottom, then the In and V+ inputs on
  *  the west. */
-function adcPins(e: CircuitElement): ChipPinDef[] {
+export function adcPins(e: CircuitElement): ChipPinDef[] {
   const bits = adcBits(e);
   const sizeY = adcSizeY(e);
   const pins: ChipPinDef[] = [];

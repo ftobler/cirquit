@@ -74,7 +74,7 @@ function sevenSegSize(e: CircuitElement): { sizeX: number; sizeY: number } {
  *  positions; any other configuration spills the rest of the segments onto
  *  the east, and the common pin lands on the east (or the west when the chip
  *  is not 7 segments). */
-function sevenSegPins(e: CircuitElement): ChipPinDef[] {
+export function sevenSegPins(e: CircuitElement): ChipPinDef[] {
   const baseSegments = sevenSegBaseSegments(e);
   const extraSegment = Math.round(e.params.extraSegment ?? 0);
   const diodeDirection = Math.round(e.params.diodeDirection ?? 0);

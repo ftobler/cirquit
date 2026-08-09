@@ -63,7 +63,7 @@ function customLogicPinText(name: string | undefined, i: number): string {
 
 /** The pin table, from `setupPins` (CustomLogicElm.java:75-88): the inputs on
  *  the west rows 0.. and the outputs on the east rows 0.., both from the top. */
-function customLogicPins(e: CircuitElement): ChipPinDef[] {
+export function customLogicPins(e: CircuitElement): ChipPinDef[] {
   const inputs = customLogicInputs(e);
   const outputs = customLogicOutputs(e);
   const pins: ChipPinDef[] = [];

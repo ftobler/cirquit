@@ -201,6 +201,12 @@ export interface AppState {
   /** Merges plain-wire chains into routed wires, one undo entry, engine
    *  reload via the revision bump (the Convert Wires to Routed Wires command). */
   convertWiresToRouted(): void;
+  /** Builds a test harness around the single selected chip (TestCreator.java):
+   *  one logic input per input pin and one logic output per output pin,
+   *  `gridSize * 4` outward from each post. Returns false when no single chip
+   *  is selected, in which case nothing is placed and the caller shows the
+   *  "Select a single chip element first" alert. One undo entry on success. */
+  createTest(): boolean;
   setParam(id: number, name: string, value: number): void;
   /** Writes a slider's position-converted value into its bound element's
    *  parameter through the live `set_param` fast path. A slider that cannot be

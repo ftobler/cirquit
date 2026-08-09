@@ -17,7 +17,7 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 /** The pin table, from `setupPins` (VCOElm.java:29-42): Vi and the Vo output
  *  on the west, the two C pins, R1 and R2 on the east. No pin is a state pin,
  *  so none of their levels is saved. */
-function vcoPins(): ChipPinDef[] {
+export function vcoPins(): ChipPinDef[] {
   return [
     { side: 'W', pos: 0, text: 'Vi' },
     { side: 'W', pos: 3, text: 'Vo', output: true },

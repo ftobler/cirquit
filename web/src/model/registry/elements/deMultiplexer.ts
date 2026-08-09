@@ -38,7 +38,7 @@ function demuxOutputCount(e: CircuitElement): number {
 /** The pin table, from `setupPins` (DeMultiplexerElm.java:162-191). Post order
  *  must match the engine: the outputs, then the select bits, then the data
  *  input. No output carries file state, so none is marked `state`. */
-function demuxPins(e: CircuitElement): ChipPinDef[] {
+export function demuxPins(e: CircuitElement): ChipPinDef[] {
   const bits = demuxSelectBits(e);
   const outputCount = demuxOutputCount(e);
   const busSelect = (e.flags & DEMUX_BUS_SELECT) !== 0;

@@ -12,7 +12,7 @@ export const JK_POSITIVE_EDGE = 4;
 export const JK_INVERT_RESET = 8;
 
 /** The pin table, from `setupPins` (JKFlipFlopElm.java:37-56). */
-function jkPins(e: CircuitElement): ChipPinDef[] {
+export function jkPins(e: CircuitElement): ChipPinDef[] {
   const reset = (e.flags & JK_RESET) !== 0;
   const invert = (e.flags & JK_INVERT_RESET) !== 0;
   const pins: ChipPinDef[] = [

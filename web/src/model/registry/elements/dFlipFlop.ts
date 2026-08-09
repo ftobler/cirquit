@@ -36,7 +36,10 @@ export const DFF_INVERT_SET_RESET = 8;
 
 /** One chip pin, the geometry the engine never sees (ChipElm.Pin). `output`
  *  marks a voltage-source pin and `state` one whose level is saved to the
- *  file; the engine's pin table carries the same roles. */
+ *  file; the engine's pin table carries the same roles. `busWidth`/`busZ`
+ *  describe a multi-bit pin (ChipElm.Pin defaults of 1 and 0); no chip in this
+ *  port uses them yet, but the Create Test harness reads them to skip the
+ *  duplicate entries of a bus. */
 export interface ChipPinDef {
   side: 'W' | 'E' | 'N' | 'S';
   pos: number;
@@ -46,6 +49,8 @@ export interface ChipPinDef {
   clock?: boolean;
   bubble?: boolean;
   lineOver?: boolean;
+  busWidth?: number;
+  busZ?: number;
 }
 
 /** Grid half-spacing, `cspc` in ChipElm terms: 16 normally, 8 under FLAG_SMALL
@@ -362,8 +367,9 @@ export function chipDumpFlags(e: CircuitElement): number {
   return (e.flags & ~CHIP_CUSTOM_VOLTAGE) | (custom ? CHIP_CUSTOM_VOLTAGE : 0);
 }
 
-/** The pin table, from `setupPins` (DFlipFlopElm.java:43-65). */
-function dffPins(e: CircuitElement): ChipPinDef[] {
+/** The pin table, from `setupPins` (DFlipFlopElm.java:43-65). Exported so the
+ *  chip registry can hand the harness the pin metadata. */
+export function dffPins(e: CircuitElement): ChipPinDef[] {
   const set = (e.flags & DFF_SET) !== 0;
   const reset = (e.flags & DFF_RESET) !== 0 || set;
   const invert = (e.flags & DFF_INVERT_SET_RESET) !== 0;

@@ -41,7 +41,7 @@ function muxInputCount(e: CircuitElement): number {
  *  east, then the optional inverted output and strobe. Under FLAG_BUS_SELECT
  *  every select pin shares the south position 0, so they merge into one node
  *  exactly as upstream's bus pins do; only the first carries the label. */
-function muxPins(e: CircuitElement): ChipPinDef[] {
+export function muxPins(e: CircuitElement): ChipPinDef[] {
   const bits = muxBits(e);
   const inputCount = muxInputCount(e);
   const inverted = (e.flags & MUX_INVERTED_OUTPUT) !== 0;

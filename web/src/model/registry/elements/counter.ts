@@ -26,7 +26,7 @@ function counterBits(e: CircuitElement): number {
 /** The pin table, from `setupPins` (CounterElm.java:72-85). The output pins
  *  run MSB first (makeBitPins with reversed = true), so Q_{bits-1} sits at the
  *  top and Q0 at the bottom. */
-function counterPins(e: CircuitElement): ChipPinDef[] {
+export function counterPins(e: CircuitElement): ChipPinDef[] {
   const bits = counterBits(e);
   const upDown = (e.flags & COUNTER_UP_DOWN) !== 0;
   const negativeEdge = (e.flags & COUNTER_NEGATIVE_EDGE) !== 0;

@@ -34,7 +34,7 @@ function hasClockInhibit(e: CircuitElement): boolean {
 }
 
 /** The pin table, from `setupPins` (RingCounterElm.java:45-66). */
-function ringPins(e: CircuitElement): ChipPinDef[] {
+export function ringPins(e: CircuitElement): ChipPinDef[] {
   const bits = ringBits(e);
   const sizeX = ringSizeX(e);
   // The reset pin carries an overline when the reset is active low, i.e. when

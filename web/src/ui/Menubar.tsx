@@ -321,7 +321,19 @@ export function Menubar({ engine }: Props) {
       onClick: fire(() => useStore.getState().convertWiresToRouted()),
     },
     deferred('Subcircuit Manager', 'Subcircuits are not implemented yet'),
-    deferred('Create Test', 'Test creation is not implemented yet'),
+    {
+      label: 'Create Test',
+      disabled: !editable,
+      onClick: fire(() => {
+        // The command builds a harness around the selected chip; when no
+        // single chip is selected it aborts with the same alert upstream's
+        // TestCreator shows (TestCreator.java:27-30), rather than placing
+        // anything wrong.
+        if (!useStore.getState().createTest()) {
+          window.alert('Select a single chip element first.');
+        }
+      }),
+    },
   ];
 
   const menu = (items: MenuItemDef[]) =>

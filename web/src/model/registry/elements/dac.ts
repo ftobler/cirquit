@@ -30,7 +30,7 @@ function dacBits(e: CircuitElement): number {
 /** The pin table, from `setupPins` (DACElm.java:31-41): the bit inputs run
  *  MSB first on the west (D0 at the bottom), the O output source at the top of
  *  the east and the V+ full-scale reference at the bottom. */
-function dacPins(e: CircuitElement): ChipPinDef[] {
+export function dacPins(e: CircuitElement): ChipPinDef[] {
   const bits = dacBits(e);
   const sizeY = Math.max(bits, 2);
   const pins: ChipPinDef[] = [];
