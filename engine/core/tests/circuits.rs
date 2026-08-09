@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::f64::consts::PI;
 
-use circuit_core::{Circuit, CircuitSpec, ElementSpec, ScopeSpec, ScopeValue, SimOptions};
+use circuit_core::{Circuit, CircuitSpec, Element, ElementSpec, ScopeSpec, ScopeValue, SimOptions};
 
 fn elm(id: u32, kind: &str, posts: &[[i32; 2]], params: &[(&str, f64)]) -> ElementSpec {
     ElementSpec {
@@ -11126,5 +11126,351 @@ fn unijunction_fires_when_the_emitter_is_driven_high() {
         ie > 1e-2,
         "fired emitter current was {} A, expected tens of milliamps",
         ie
+    );
+}
+
+// ─── Composite elements and the OTA (Milestone B subcircuits) ───
+
+/// A generic composite built from a model string, for exercising the
+/// delegation and node-remapping machinery without the OTA's transistor
+/// network. `external` picks which model nodes are the composite's posts, and
+/// `dumps` are the `_`-joined child dump tokens (flags first, then the child
+/// kind's field values).
+fn elm_composite(
+    id: u32,
+    posts: &[[i32; 2]],
+    model: &str,
+    external: &[usize],
+    dumps: &[&str],
+) -> ElementSpec {
+    let m = serde_json::json!({
+        "model": model,
+        "external": external,
+        "dumps": dumps,
+    });
+    ElementSpec {
+        id,
+        kind: "composite".into(),
+        posts: posts.to_vec(),
+        params: HashMap::new(),
+        label: None,
+        model: Some(m.to_string()),
+        flags: 0,
+    }
+}
+
+/// An OTA whose child dump tokens come from a saved 402 line (the corpus
+/// `_`-joined form), carried to the engine in the `spec.model` string slot.
+fn elm_ota(id: u32, posts: &[[i32; 2]], tokens: &[&str], params: &[(&str, f64)]) -> ElementSpec {
+    ElementSpec {
+        id,
+        kind: "ota".into(),
+        posts: posts.to_vec(),
+        params: params
+            .iter()
+            .map(|(k, v)| (k.to_string(), *v))
+            .collect::<HashMap<_, _>>(),
+        label: None,
+        model: Some(serde_json::to_string(tokens).unwrap()),
+        flags: 0,
+    }
+}
+
+#[test]
+fn composite_resistor_divider_splits_the_supply() {
+    // Two 1k resistors in series between the composite's two posts, the
+    // midpoint its single internal node. The delegation and node remapping
+    // must make it behave exactly like the plain divider: post 0 at 10 V,
+    // post 1 grounded, the internal midpoint at 5 V, 10 mA total.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm_composite(
+                2,
+                &[[0, 0], [300, 0]],
+                "ResistorElm 1 2\rResistorElm 2 3",
+                &[1, 3],
+                &["0_1000", "0_1000"],
+            ),
+            elm(3, "ground", &[[300, 0]], &[]),
+            elm(4, "ground", &[[0, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let v = c.node_voltages();
+    // The midpoint is the composite's one internal node, which `assign_nodes`
+    // hands out after the four terminals. The composite reports no internal
+    // connectivity (upstream's `getConnection` returns false), so the
+    // floating-node walk pins the midpoint with GMIN; a 100 M load across the
+    // 1k divider shifts it by 25 uV, well inside the 1 mV asserted here.
+    assert!(close(v[2], 5.0, 1e-3), "midpoint was {}", v[2]);
+    assert!(
+        close(c.element_voltages()[1], 10.0, 1e-6),
+        "post drop was {}",
+        c.element_voltages()[1]
+    );
+    assert!(
+        close(c.element_currents()[1], 1e-2, 1e-6),
+        "divider current was {}",
+        c.element_currents()[1]
+    );
+}
+
+#[test]
+fn composite_rail_drives_its_post_through_its_vs_row() {
+    // A composite whose only child is a rail exercises the voltage-source
+    // path: the child's source must stamp into the composite's own vs_base
+    // row, and the composite's single post must read the rail voltage. The
+    // 1k load draws 5 mA, which the aggregate current must report.
+    let c = &mut build(
+        vec![
+            elm_composite(1, &[[100, 0]], "RailElm 1", &[1], &["0_0_40_5_0_0_0.5"]),
+            elm(
+                2,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.element_voltages()[0], 5.0, 1e-3),
+        "post voltage was {}",
+        c.element_voltages()[0]
+    );
+    assert!(
+        close(c.element_currents()[0], 5e-3, 1e-6),
+        "rail current was {}",
+        c.element_currents()[0]
+    );
+}
+
+#[test]
+fn composite_with_a_transistor_child_reports_nonlinear() {
+    // A composite whose model contains a transistor is nonlinear, which the
+    // circuit learns through the composite so the Newton loop refactors each
+    // iteration. The flag must not leak out of a pure-resistor composite.
+    let with_transistor = circuit_core::elements::composite::Composite::from_model(
+        "NTransistorElm 1 2 3",
+        &[1, 3],
+        None,
+        "composite",
+    );
+    assert!(
+        with_transistor.nonlinear(),
+        "transistor composite was linear"
+    );
+    assert_eq!(with_transistor.voltage_source_count(), 0);
+    let divider = circuit_core::elements::composite::Composite::from_model(
+        "ResistorElm 1 2\rResistorElm 2 3",
+        &[1, 3],
+        None,
+        "composite",
+    );
+    assert!(!divider.nonlinear(), "resistor composite was nonlinear");
+}
+
+/// The `_`-joined child dump tokens from the bundled ota-gain circuit's 402
+/// line: two rails then sixteen transistors, each carrying its saved flags,
+/// polarity, junction state and beta.
+const OTA_GAIN_TOKENS: &[&str] = &[
+    "0_0_40_-9_0_0_0.5",
+    "0_0_40_9_0_0_0.5",
+    "0_1_-7.706770717572512_0.5136506772730565_100",
+    "0_1_-0.5136506772730565_0.5134043698921236_100",
+    "0_1_0_0.5134043698921236_100",
+    "0_1_-7.77671430671658_0.49657201297165443_100",
+    "0_1_-7.779737407777473_0.49556431261798917_100",
+    "0_-1_0.49656711146272414_-0.49632080411134893_100",
+    "0_-1_0_-0.49632080411134893_100",
+    "0_-1_16.014233971869707_-0.49656711146272414_100",
+    "0_-1_0.4955594111078838_-0.49531310375896176_100",
+    "0_-1_0_-0.49531310375896176_100",
+    "0_-1_8.063446815812046_-0.4955594111078838_100",
+    "0_1_0_0.49631590260242753_100",
+    "0_1_-0.49656220995379385_0.49631590260242753_100",
+    "0_1_-7.952802556764888_0.49656220995379385_100",
+    "0_1_0_0.5578444879154357_100",
+    "0_1_0_0.558852188269101_100",
+];
+
+/// The OTA follower: non-inverting input driven, output wired straight back
+/// to the inverting input. Returns the output node voltage.
+fn ota_follower(tokens: &[&str], vin: f64) -> f64 {
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 300], [100, 300]],
+                &[("maxVoltage", vin)],
+            ),
+            elm(2, "wire", &[[100, 300], [100, 0]], &[]),
+            elm_ota(
+                3,
+                &[[100, 0], [100, 200], [300, 100], [300, 200], [300, 300]],
+                tokens,
+                &[("posVolt", 9.0), ("negVolt", -9.0)],
+            ),
+            elm(4, "wire", &[[300, 300], [100, 200]], &[]),
+            elm(
+                5,
+                "resistor",
+                &[[300, 300], [300, 400]],
+                &[("resistance", 33000.0)],
+            ),
+            elm(6, "ground", &[[300, 400]], &[]),
+            // The post-2 collector load.
+            elm(
+                7,
+                "resistor",
+                &[[300, 100], [400, 100]],
+                &[("resistance", 8200.0)],
+            ),
+            elm(8, "rail", &[[400, 100]], &[("maxVoltage", 9.0)]),
+            // Iabc through 470 ohm from a -7 V rail: about 1.7 mA, enough for
+            // a usable transconductance (upstream biases Iabc through a
+            // resistor too, so the tail is whatever that path allows).
+            elm(9, "rail", &[[100, 500]], &[("maxVoltage", -7.0)]),
+            elm(
+                10,
+                "resistor",
+                &[[100, 500], [300, 200]],
+                &[("resistance", 470.0)],
+            ),
+            elm(11, "ground", &[[0, 300]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(30);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    // The OTA is element index 2; its posts start at flattened index 2 + 2.
+    let out_node = nodes[4 + 4] as usize;
+    c.node_voltages()[out_node]
+}
+
+#[test]
+fn ota_buffers_its_non_inverting_input() {
+    // The OTA in unity-gain feedback follows its non-inverting input across
+    // the supply range. This is the plan's stated fallback when a full gain
+    // stage is too fiddly to pin: the composite's delegation, node remapping
+    // and the two internal rail voltage sources are all exercised, and the
+    // output has to reach several volts each way, which the +/-9 V rails make
+    // possible. The input offset voltage of this topology lands the error
+    // around 10-20 mV, well inside the 30 mV asserted here.
+    for vin in [-3.0, -1.0, 0.0, 0.5, 1.0, 2.0, 5.0] {
+        let out = ota_follower(&[], vin);
+        assert!(
+            (out - vin).abs() < 0.03,
+            "follower output was {out} for input {vin}, expected it to track"
+        );
+    }
+}
+
+#[test]
+fn ota_inverting_gain_stage_inverts_and_amplifies() {
+    // Inverting gain stage: Vin through 1k into the inverting input (post 1),
+    // 10k feedback from the output, non-inverting input grounded. The OTA's
+    // finite transconductance (~3 mS at the ~1.7 mA tail) puts the closed-loop
+    // gain at about -6.8 rather than the ideal -Rf/Rin = -10, so the output is
+    // asserted as a range and the *increment* is pinned against the feedback
+    // ratio. A negative input is not asserted: the input protection clamps
+    // (T15/T16) hold the inverting node above ground when V+ sits at 0, so the
+    // negative half of the transfer saturates at the clamp, as it does on the
+    // real part.
+    let gain_stage = |vin: f64| {
+        let c = &mut build(
+            vec![
+                elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", vin)]),
+                elm(
+                    2,
+                    "resistor",
+                    &[[0, 0], [100, 200]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(
+                    3,
+                    "resistor",
+                    &[[300, 300], [100, 200]],
+                    &[("resistance", 10000.0)],
+                ),
+                elm_ota(
+                    4,
+                    &[[100, 0], [100, 200], [300, 100], [300, 200], [300, 300]],
+                    &[],
+                    &[("posVolt", 9.0), ("negVolt", -9.0)],
+                ),
+                elm(5, "ground", &[[100, 0]], &[]),
+                elm(
+                    6,
+                    "resistor",
+                    &[[300, 300], [300, 400]],
+                    &[("resistance", 33000.0)],
+                ),
+                elm(7, "ground", &[[300, 400]], &[]),
+                elm(
+                    8,
+                    "resistor",
+                    &[[300, 100], [400, 100]],
+                    &[("resistance", 8200.0)],
+                ),
+                elm(9, "rail", &[[400, 100]], &[("maxVoltage", 9.0)]),
+                elm(10, "rail", &[[100, 500]], &[("maxVoltage", -7.0)]),
+                elm(
+                    11,
+                    "resistor",
+                    &[[100, 500], [300, 200]],
+                    &[("resistance", 470.0)],
+                ),
+                elm(12, "ground", &[[0, 200]], &[]),
+            ],
+            opts(1e-5, true),
+        );
+        let report = c.run(30);
+        assert!(report.converged, "did not converge: {:?}", report.error);
+        let nodes = c.element_nodes();
+        // The OTA is element index 3; its posts start at flattened index 6.
+        let out_node = nodes[6 + 4] as usize;
+        c.node_voltages()[out_node]
+    };
+
+    let v_pos = gain_stage(0.5);
+    assert!(
+        (-9.0..-1.0).contains(&v_pos),
+        "positive input gave {v_pos} V, expected a clear negative swing between the rails"
+    );
+    // Incremental gain: a 0.4 V step in the input moves the output by 4 to
+    // 10 times that, inverting.
+    let v_small = gain_stage(0.1);
+    let increment = (v_pos - v_small) / 0.4;
+    assert!(
+        (-10.0..-4.0).contains(&increment),
+        "incremental gain was {increment}, expected between -10 and -4"
+    );
+}
+
+#[test]
+fn ota_parses_the_corpus_child_dump_tokens() {
+    // The saved 402 line's child dump tokens (rail flags + waveform fields,
+    // then transistor pnp/lastVbe/lastVbc/beta) must map onto the child specs
+    // without corrupting the model: the sixteen transistor polarities and the
+    // two rail voltages are what the OTA runs on, so a fresh build and a
+    // token-carrying build must land on the same operating point.
+    let fresh = ota_follower(&[], 1.0);
+    let from_tokens = ota_follower(OTA_GAIN_TOKENS, 1.0);
+    assert!(
+        close(fresh, from_tokens, 1e-6),
+        "token-carrying OTA output {from_tokens} differs from fresh {fresh}"
+    );
+    assert!(
+        close(from_tokens, 1.0, 0.03),
+        "token-carrying follower output was {from_tokens}, expected to track 1 V"
     );
 }

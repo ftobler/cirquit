@@ -41,15 +41,18 @@ const clone = (s: Snapshot): Snapshot => ({
     if (e.route) copy.route = e.route.map((r) => [...r]);
     // A resolved device model is a nested object, and the custom-logic rules
     // vectors inside it are arrays; clone them so a snapshot can never alias
-    // the live element.
+    // the live element. The OTA's model is the same carrier holding a string
+    // array (the composite child-dump tokens), which clones as a plain copy.
     if (e.model) {
-      copy.model = {
-        ...e.model,
-        inputs: [...e.model.inputs],
-        outputs: [...e.model.outputs],
-        rulesLeft: [...e.model.rulesLeft],
-        rulesRight: [...e.model.rulesRight],
-      };
+      copy.model = Array.isArray(e.model)
+        ? [...e.model]
+        : {
+            ...e.model,
+            inputs: [...e.model.inputs],
+            outputs: [...e.model.outputs],
+            rulesLeft: [...e.model.rulesLeft],
+            rulesRight: [...e.model.rulesRight],
+          };
     }
     return copy;
   }),

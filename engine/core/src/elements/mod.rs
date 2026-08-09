@@ -17,6 +17,7 @@ pub mod r#box;
 pub mod capacitor;
 pub mod cc2;
 pub mod chip;
+pub mod composite;
 pub mod controlled_source;
 pub mod counter;
 pub mod cross_switch;
@@ -56,6 +57,7 @@ pub mod multi_throw_switch;
 pub mod multiplexer;
 pub mod noise;
 pub mod opamp;
+pub mod ota;
 pub mod phase_comp;
 pub mod potentiometer;
 pub mod probe;
@@ -144,6 +146,8 @@ pub const KINDS: &[&str] = &[
     "relayCoil",
     "relayContact",
     "opamp",
+    "ota",
+    "composite",
     "phaseComp",
     "inverter",
     "logicInput",
@@ -242,6 +246,14 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "relayCoil" => Box::new(relay::RelayCoil::new(spec)),
         "relayContact" => Box::new(relay::RelayContact::new(spec)),
         "opamp" => Box::new(opamp::OpAmp::new(spec)),
+        "ota" => match ota::from_spec(spec) {
+            Some(c) => Box::new(c),
+            None => return None,
+        },
+        "composite" => match composite::Composite::from_spec(spec) {
+            Some(c) => Box::new(c),
+            None => return None,
+        },
         "phaseComp" => Box::new(phase_comp::PhaseComp::new(spec)),
         "inverter" => Box::new(inverter::Inverter::new(spec)),
         "logicInput" => Box::new(logic_input::LogicInput::new(spec)),

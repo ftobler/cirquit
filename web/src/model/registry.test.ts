@@ -344,6 +344,16 @@ describe('mosfet posts', () => {
   });
 });
 
+describe('ota draw', () => {
+  it('draws the OTA body without throwing', () => {
+    const ctx = mkCtx();
+    const ota = element('ota', 0, 0, 112, 0, 0, { posVolt: 9, negVolt: -9 });
+    expect(() => defFor('ota')?.draw(context(ctx), ota)).not.toThrow();
+    // The plus and minus glyphs are part of the symbol.
+    expect(ctx.fillText).toHaveBeenCalled();
+  });
+});
+
 describe('op-amp posts', () => {
   const op = (x1: number, y1: number, x2: number, y2: number, flags = 0) =>
     element('opamp', x1, y1, x2, y2, flags);

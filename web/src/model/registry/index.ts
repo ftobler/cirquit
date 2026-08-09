@@ -65,6 +65,7 @@ import { TRANSMISSION_LINE_DEF } from './elements/transmissionLine';
 import { TIMER_DEF } from './elements/timer';
 import { RELAY_DEF, RELAY_COIL_DEF, RELAY_CONTACT_DEF } from './elements/relay';
 import { OPAMP_DEF } from './elements/opamp';
+import { OTA_DEF } from './elements/ota';
 import { PHASE_COMP_DEF } from './elements/phaseComp';
 import { AND_GATE_DEF, NAND_GATE_DEF, OR_GATE_DEF, NOR_GATE_DEF, XOR_GATE_DEF, XNOR_GATE_DEF } from './elements/gate';
 import { DFLIPFLOP_DEF } from './elements/dFlipFlop';
@@ -98,6 +99,7 @@ import type { CircuitElement, ElementDef, Point } from '../types';
 export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP };
 export { switchLever, switchLeverTip, switchIecPoints, groundBars };
 export { opampInputSign, opAmpInputAnchors, opAmpLabelAnchors } from './elements/opamp';
+export { otaGeometry } from './elements/ota';
 export { transistorSideFactor, transistorBarContacts, transistorArrowTip } from './elements/transistor';
 export { switch2Poles } from './elements/switch2';
 export { zenerMarks } from './elements/diode';
@@ -160,6 +162,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   TRIODE_DEF,
   MULTIPLEXER_DEF,
   OPAMP_DEF,
+  OTA_DEF,
   PHASE_COMP_DEF,
   AND_GATE_DEF,
   NAND_GATE_DEF,

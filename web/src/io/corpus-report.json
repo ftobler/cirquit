@@ -2160,42 +2160,38 @@
   {
     "file": "ota-gain.txt",
     "format": "plain",
-    "missing": [
-      "402"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ota-ringmod.txt",
     "format": "plain",
-    "missing": [
-      "402"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ota-vca.txt",
     "format": "plain",
-    "missing": [
-      "402"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "ota-vcf-single.txt",
     "format": "plain",
-    "missing": [
-      "402"
-    ],
+    "missing": [],
     "sliderLines": 0,
-    "load": "missing",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "peak-detect.txt",

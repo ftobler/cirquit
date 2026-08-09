@@ -19,6 +19,7 @@
  */
 
 import { chipPosts, drawChip, type ChipPinDef } from './dFlipFlop';
+import type { CustomLogicModel } from '../../../io/netlist/types';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** Model name written for a part with none, matching upstream's fresh-model
@@ -30,14 +31,21 @@ const DEFAULT_MODEL_NAME = 'default';
 const FALLBACK_INPUTS = 4;
 const FALLBACK_OUTPUTS = 2;
 
+/** The resolved model, or undefined while none is bound. The `model` carrier
+ *  is shared with the OTA's raw child-dump array, so an array (never set on a
+ *  custom-logic element) is treated as absent. */
+function customLogicModel(e: CircuitElement): CustomLogicModel | undefined {
+  return e.model !== undefined && !Array.isArray(e.model) ? e.model : undefined;
+}
+
 /** The input pin count, from the resolved model or the fallback. */
 export function customLogicInputs(e: CircuitElement): number {
-  return e.model ? e.model.inputs.length : FALLBACK_INPUTS;
+  return customLogicModel(e)?.inputs.length ?? FALLBACK_INPUTS;
 }
 
 /** The output pin count, from the resolved model or the fallback. */
 export function customLogicOutputs(e: CircuitElement): number {
-  return e.model ? e.model.outputs.length : FALLBACK_OUTPUTS;
+  return customLogicModel(e)?.outputs.length ?? FALLBACK_OUTPUTS;
 }
 
 /** The chip's cell height, `sizeY` from setupPins (CustomLogicElm.java:69-71):
@@ -60,13 +68,13 @@ function customLogicPins(e: CircuitElement): ChipPinDef[] {
   const outputs = customLogicOutputs(e);
   const pins: ChipPinDef[] = [];
   for (let i = 0; i < inputs; i++) {
-    pins.push({ side: 'W', pos: i, text: customLogicPinText(e.model?.inputs[i], i) });
+    pins.push({ side: 'W', pos: i, text: customLogicPinText(customLogicModel(e)?.inputs[i], i) });
   }
   for (let i = 0; i < outputs; i++) {
     pins.push({
       side: 'E',
       pos: i,
-      text: customLogicPinText(e.model?.outputs[i], inputs + i),
+      text: customLogicPinText(customLogicModel(e)?.outputs[i], inputs + i),
     });
   }
   return pins;

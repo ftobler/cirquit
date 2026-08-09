@@ -6,6 +6,7 @@ import { parseCircuit, serializeCircuit } from './index';
 import { makeElement, makeToolElement } from '../../state/store';
 import { postsOf } from '../../model/registry';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
+import type { CustomLogicModel } from './types';
 
 const CIRCUITS_DIR = fileURLToPath(new URL('../../../public/circuits', import.meta.url));
 
@@ -1634,15 +1635,16 @@ describe('custom logic file format', () => {
     const cl = parsed.elements[0];
     expect(cl.kind).toBe('customLogic');
     expect(cl.text).toBe('smiley');
-    expect(cl.model?.inputs).toEqual(['S2', 'S1', 'S0']);
-    expect(cl.model?.outputs).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
-    expect(cl.model?.infoText).toBe('smiley generator');
-    expect(cl.model?.triState).toBe(false);
+    const model = cl.model as CustomLogicModel;
+    expect(model.inputs).toEqual(['S2', 'S1', 'S0']);
+    expect(model.outputs).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+    expect(model.infoText).toBe('smiley generator');
+    expect(model.triState).toBe(false);
     // The rules round-trip their escapes: `\q` is `=`, `\n` a newline, `\s` a
     // space, and parseRules drops the trailing empty line.
-    expect(cl.model?.rules).toBe('000=00111100\n001=01000010\n111=00111100\n');
-    expect(cl.model?.rulesLeft).toEqual(['000', '001', '111']);
-    expect(cl.model?.rulesRight).toEqual(['00111100', '01000010', '00111100']);
+    expect(model.rules).toBe('000=00111100\n001=01000010\n111=00111100\n');
+    expect(model.rulesLeft).toEqual(['000', '001', '111']);
+    expect(model.rulesRight).toEqual(['00111100', '01000010', '00111100']);
     // The saved output voltages land in output order (output 2 reads high).
     expect(cl.params.voltage0).toBe(0);
     expect(cl.params.voltage2).toBe(5);
@@ -1684,7 +1686,68 @@ describe('custom logic file format', () => {
     const line = '! eq 0 A,B C,D eq ' + 'aa\\q10\\n00\\q00\\n';
     const parsed = parseCircuit(line + '\n208 0 0 96 0 0 eq 0 0\n');
     expect(parsed.passthrough).toContain(line);
-    expect(parsed.elements[0].model?.rulesLeft).toEqual(['aA', '00']);
-    expect(parsed.elements[0].model?.rulesRight).toEqual(['10', '00']);
+    const model = parsed.elements[0].model as CustomLogicModel;
+    expect(model.rulesLeft).toEqual(['aA', '00']);
+    expect(model.rulesRight).toEqual(['10', '00']);
+  });
+});
+
+describe('ota file format', () => {
+  /** ota-gain.txt:2 verbatim, the composite's full 18-child dump. */
+  const otaLine = readFileSync(join(CIRCUITS_DIR, 'ota-gain.txt'), 'utf8').split('\n')[1].trim();
+
+  it('parses the corpus 402 line and re-emits it byte-for-byte', () => {
+    const [e] = parseCircuit(otaLine).elements;
+    expect(e.kind).toBe('ota');
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('402 ')) ?? '';
+    expect(elementLine).toBe(otaLine);
+  });
+
+  it('carries the raw child-dump tokens in e.model as a JSON array', () => {
+    const [e] = parseCircuit(otaLine).elements;
+    const tokens = otaLine.split(/\s+/).slice(6);
+    expect(tokens).toHaveLength(18);  // two rails plus sixteen transistors
+    // The OTA's model payload is the raw token array, unlike the custom-logic
+    // model object.
+    const model = e.model as string[];
+    expect(model).toEqual(tokens);
+    // The shape the engine parses: a JSON array of the `_`-joined strings.
+    expect(JSON.stringify(model)).toBe(JSON.stringify(tokens));
+    // The first two tokens are the rails, the next the transistors.
+    expect(model[0]).toBe('0_0_40_-9_0_0_0.5');
+    expect(model[1]).toBe('0_0_40_9_0_0_0.5');
+    expect(model[2]).toMatch(/^0_1_/);
+  });
+
+  it('does not read the supply voltages from the file; the +-9 V defaults apply', () => {
+    // The composite dump has no separate posVolt/negVolt tokens; the rails
+    // carry them inside their child dumps, and the engine re-derives them from
+    // the params, so the loaded element keeps its defaults (ota.rs).
+    const [e] = parseCircuit(otaLine).elements;
+    expect(e.params.posVolt).toBe(9);
+    expect(e.params.negVolt).toBe(-9);
+  });
+
+  it('a bare 402 line round-trips its empty token list', () => {
+    const line = '402 512 528 624 528 0';
+    const [e] = parseCircuit(line).elements;
+    expect(e.model).toEqual([]);
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    expect(out.split('\n').find((l) => l.startsWith('402 ')) ?? '').toBe(line);
+  });
+
+  it('places the five posts where the ota-gain wires connect', () => {
+    // The corpus wires hang off (512,496) and (512,560) to the west (the two
+    // inputs), (512,528) to the collector load, (608,496) to Iabc and
+    // (624,528) to the output.
+    const [e] = parseCircuit(otaLine).elements;
+    expect(postsOf(e)).toEqual([
+      { x: 512, y: 496 },
+      { x: 512, y: 560 },
+      { x: 512, y: 528 },
+      { x: 608, y: 496 },
+      { x: 624, y: 528 },
+    ]);
   });
 });

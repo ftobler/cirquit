@@ -350,6 +350,7 @@ Dump codes implemented so far, with their trailing field order:
 | `425` | relay coil     | label, inductance, coilCurrent, onCurrent, coilR, offCurrent, switchingTime, type, state, switchPosition |
 | `426` | relay contact  | label, r_on, r_off, [i_position]                           |
 | `a`   | op-amp         | maxOut, minOut, gbw, volts0, volts1, gain                  |
+| `402` | OTA            | one raw `_`-joined child-dump token per composite child (2 rails + 16 transistors), carried verbatim |
 | `207` | labeled node   | text (FLAG_ESCAPE = 4, always set on save)                 |
 | `O`   | output         | scale                                                      |
 | `p`   | probe          | meter, scale, resistance                                   |
@@ -398,6 +399,18 @@ voltage source to ground; a model with a `_` in any right side is tri-state,
 needing an internal node and a 1e8/1e-3 ohm resistor per output. The model
 reaches the engine as a serialised blob in `spec.model`, separate from the
 label, which carries the model name.
+
+For the `402` row the OTA is a `CompositeElm` of two rails and sixteen
+transistors (OTAElm.java:8-9), and every token after the flags is one composite
+child's dump, `_`-joined by the old text format and carried raw so a save
+round-trips them byte-for-byte. The first two tokens are the rails, whose
+`maxVoltage` fields are the loaded supply values; the frontend does not read
+them, leaving `posVolt`/`negVolt` on their +/-9 V defaults. The token list
+reaches the engine in `spec.model` as a JSON array of the raw strings, the same
+string carrier the custom-logic model uses, and the engine maps each token onto
+the matching child spec (ota.rs). The five posts are the non-inverting input,
+the inverting input, the collector load, the Iabc bias pin and the output, in
+that order.
 
 For the `f` row the channel type is FLAG_PNP (bit 1), not a token: `+1` is an
 N-channel and `-1` a P-channel, so flags 1 means P. The two trailing tokens are

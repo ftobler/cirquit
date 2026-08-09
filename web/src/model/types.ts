@@ -31,8 +31,14 @@ export interface CircuitElement {
    * element's `!`-line model, resolved by the netlist second pass and carried
    * to the engine as a serialised blob. Immutable once set; the store clones
    * it so undo snapshots never alias the live element.
+   *
+   * The OTA reuses the same string carrier for a different payload: the raw
+   * `_`-joined composite child-dump tokens from a saved `402` line, one string
+   * per child, which the engine parses itself. Distinct payload shapes are
+   * discriminated by the element kind; a string array never appears on a
+   * custom-logic element and a model object never on an OTA.
    */
-  model?: CustomLogicModel;
+  model?: CustomLogicModel | string[];
   /** Keyboard shortcut that toggles this element (the switch keyShortcut).
    *  Session-only: upstream serializes it only in the XML format
    *  (SwitchElm.java:79-90), never the .txt netlist, so it is deliberately
