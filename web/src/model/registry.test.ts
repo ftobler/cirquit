@@ -44,9 +44,14 @@ interface CtxStub {
   measureText: (text: string) => { width: number };
 }
 
-/** Minimal canvas stub, recording geometry calls so a draw can be asserted on. */
-const mkCtx = (): CtxStub => {
-  return {
+/** Minimal canvas stub, recording geometry calls so a draw can be asserted on.
+ *  `strokes` captures the strokeStyle at each stroke, in draw order, which is
+ *  how a per-segment gradient body is asserted on. The stroke closure reads the
+ *  same object the draw layer writes to (`context` hands this stub to `def.draw`
+ *  unchanged), so a spread copy would never see the live colour. */
+const mkCtx = (): CtxStub & { strokes: string[] } => {
+  const strokes: string[] = [];
+  const stub = {
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 0,
@@ -58,13 +63,14 @@ const mkCtx = (): CtxStub => {
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
-    stroke: vi.fn(),
+    stroke: vi.fn(() => strokes.push(stub.strokeStyle)),
     arc: vi.fn(),
     fill: vi.fn(),
     closePath: vi.fn(),
     fillText: vi.fn(),
     measureText: (text: string) => ({ width: text.length * 6 }),
-  };
+  } as CtxStub;
+  return Object.assign(stub, { strokes });
 };
 
 const context = (ctx: CtxStub, overrides: Partial<DrawContext> = {}): DrawContext => ({
@@ -518,10 +524,7 @@ describe('European resistor symbol draw paths', () => {
   );
 
   it.each([
-    ['resistor', 1],
     ['potentiometer', 2],
-    ['thermistor', 1],
-    ['ldr', 1],
     ['dFlipFlop', 1],
   ] as const)('%s strokes a genuinely closed body outline', (kind, closeCount) => {
     // The euro box callers and the chip housing all repeat their first corner
@@ -529,10 +532,34 @@ describe('European resistor symbol draw paths', () => {
     // starts and ends a real join instead of a nicked, butt-capped pair of
     // stroke ends. The count is exact so the potentiometer's arrowhead
     // triangle cannot mask an open body: its fill also calls closePath, so
-    // reverting the box to a plain polyline would drop the count to 1.
+    // reverting the box to a plain polyline would drop the count to 1. The
+    // resistor, thermistor and ldr euro boxes are absent on purpose: they
+    // gradient per segment now and no longer close (see the ramp test below).
     const ctx = draw(kind, true);
     expect(ctx.closePath).toHaveBeenCalledTimes(closeCount);
   });
+
+  it.each(['resistor', 'thermistor', 'ldr'])(
+    '%s euro box shades from post 0 to post 1 along the body',
+    (kind) => {
+      // The gradient box is no longer one closed outline: gradientPolyline
+      // cuts each edge into 2-unit sub-segments, each stroked in the ramp
+      // colour at its own midpoint. The ramp must reach post 0's colour at
+      // the lead1 edge (the box's left side and the first top-edge stroke)
+      // and post 1's at the lead2 edge (the right side), while the four
+      // corners are still all painted.
+      const ctx = mkCtx();
+      const e = element(kind, 0, 0, 160, 0);
+      defFor(kind)?.draw(context(ctx, { showVoltageColor: true, voltages: [10, 0, 0] }), e);
+      expect(ctx.strokes.length).toBeGreaterThan(2);
+      expect(ctx.strokes[0]).toBe('rgb(0,255,0)');        // lead at post 0, clamped positive
+      expect(ctx.strokes).toContain('rgb(128,128,128)');  // neutral at 0 V, the box's lead2 edge
+      expect(new Set(ctx.strokes).size).toBeGreaterThan(1);
+      const [lead1, lead2] = calcLeads(e, 32);
+      const drawn = lineTos(ctx);
+      for (const p of rectCorners(lead1, lead2, 6)) expect(drawn).toContainEqual(p);
+    },
+  );
 
   it('the resistor and pot zigzag is taller than the thermistor and ldr one', () => {
     // Pins the height split outright: the American resistor/pot peaks reach

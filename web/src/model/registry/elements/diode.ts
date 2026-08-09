@@ -14,22 +14,29 @@ import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types
 export function drawDiodeBody(g: DrawContext, e: CircuitElement, zener: boolean): void {
   const [lead1, lead2] = calcLeads(e, 16);
   drawLeads(g, e, lead1, lead2);
-  const color = elementColor(g, (g.voltages[0] + g.voltages[1]) / 2, g.power);
+  // Each sub-shape takes its own side's colour rather than a forced gradient
+  // through a shape that is not a curve along the axis: the triangle (base at
+  // the anode/lead1 end) samples post 0, the cathode bar at the lead2 end
+  // samples post 1. This is the per-terminal split upstream's two
+  // setVoltageColor calls express (DiodeElm.java:156-163) and the capacitor's
+  // plate pair exemplifies (capacitor.ts:22-23).
+  const anodeColor = elementColor(g, g.voltages[0], g.power);
+  const cathodeColor = elementColor(g, g.voltages[1], g.power);
   // Both DiodeElm and ZenerElm use hs = 8 for the triangle base and the
   // cathode bar (DiodeElm.java:118, ZenerElm.java:45). Body geometry, so the
   // base and bar stay perpendicular to the body at any angle.
   const [t1, t2] = interp2Precise(lead1, lead2, 0, 8);
-  triangle(g, t1, t2, lead2, color);
+  triangle(g, t1, t2, lead2, anodeColor);
   if (zener) {
     const { bar, wing0, wing1 } = zenerMarks(lead1, lead2);
     // The cathode bar and wings are drawThickLine strokes upstream
     // (ZenerElm.java:71-78), the 3-unit body weight.
-    line(g, bar[0], bar[1], color);
-    line(g, wing0, bar[0], color);
-    line(g, wing1, bar[1], color);
+    line(g, bar[0], bar[1], cathodeColor);
+    line(g, wing0, bar[0], cathodeColor);
+    line(g, wing1, bar[1], cathodeColor);
   } else {
     const [b1, b2] = interp2Precise(lead1, lead2, 1, 8);
-    line(g, b1, b2, color);
+    line(g, b1, b2, cathodeColor);
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);

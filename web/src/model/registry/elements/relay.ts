@@ -7,9 +7,9 @@ import {
   dsign,
   elementLength,
   endpoints,
+  gradientPolyline,
   interp,
   line,
-  polyline,
   voltageColor,
 } from '../../../render/draw';
 import {
@@ -158,7 +158,15 @@ function drawRelay(g: DrawContext, e: CircuitElement): void {
     coilLeads[x].x - coilLeads[1 - x].x,
     coilLeads[x].y - coilLeads[1 - x].y,
   );
-  polyline(g, coilPoints(coilLeads[x], coilLeads[1 - x], Math.max(1, Math.ceil(len / 11))), g.theme.text);
+  // The coil shades across its own two terminals, not the element's posts 0/1:
+  // `coilLeads[i]` rides the perpendicular of `coilPosts[i]`, whose voltage is
+  // the i-th coil node (RelayElm.java:303-361). Round caps keep the coil's
+  // angled per-segment joints covered, upstream's LineCap.ROUND in drawCoil.
+  gradientPolyline(g, coilPoints(coilLeads[x], coilLeads[1 - x], Math.max(1, Math.ceil(len / 11))), {
+    cap: 'round',
+    v0: g.voltages[3 * poleCount + x],
+    v1: g.voltages[3 * poleCount + 1 - x],
+  });
 
   if ((e.flags & RELAY_SHOW_BOX) !== 0) {
     closedPolyline(g, [outline[0], outline[1], outline[2], outline[3], outline[0]], g.theme.text);

@@ -59,17 +59,20 @@ function drawLedBody(g: DrawContext, e: CircuitElement): void {
   // current is zero and the glow is black. LEDElm.draw only draws this arrow
   // in its highlighted or creating fallback, but this port keeps it visible;
   // the triangle is scaled to sit inside the ring instead of spanning the
-  // whole body like the plain diode's.
-  const color = elementColor(g, (g.voltages[0] + g.voltages[1]) / 2, g.power);
+  // whole body like the plain diode's. The arrow is the anode-side sub-shape
+  // and the bar the cathode-side one, so each samples its own post's colour,
+  // the diode-family split (diode.ts's drawDiodeBody).
+  const anodeColor = elementColor(g, g.voltages[0], g.power);
+  const cathodeColor = elementColor(g, g.voltages[1], g.power);
   // The diode arrow is body geometry, so it is drawn without the grid rounding
   // `interp` applies to posts, keeping the triangle square to the body.
   const [t1, t2] = interp2Precise(lead1, lead2, 0.25, 6);
   const tip = interpPrecise(lead1, lead2, 0.75);
-  triangle(g, t1, t2, tip, color);
+  triangle(g, t1, t2, tip, anodeColor);
   const [b1, b2] = interp2Precise(lead1, lead2, 0.75, 6);
   // The cathode bar is a drawThickLine stroke upstream (DiodeElm.java:163),
   // the 3-unit weight.
-  line(g, b1, b2, color);
+  line(g, b1, b2, cathodeColor);
 
   // Upstream draws the dots only on the two leads, never across the glowing
   // body (LEDElm.java:107-108), so each run gets its own phase.

@@ -6,18 +6,20 @@ import {
   drawLeads,
   endpoints,
   formatValue,
+  gradientPolyline,
   label,
-  polyline,
 } from '../../../render/draw';
 import { IND_BACK_EULER } from '../flags';
-import { elementColor, readParams, twoPosts, writeParams } from '../shared';
+import { readParams, twoPosts, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 function drawInductorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
-  const color = elementColor(g, (g.voltages[0] + g.voltages[1]) / 2, g.power);
-  polyline(g, coilPoints(lead1, lead2, COIL_LOOPS), color);
+  // The coil shades along the voltage drop (CircuitElm.drawCoil's gradient);
+  // the round caps are upstream's LineCap.ROUND for the coil, which also keeps
+  // the angled joints of the per-segment strokes covered.
+  gradientPolyline(g, coilPoints(lead1, lead2, COIL_LOOPS), { cap: 'round' });
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
   label(g, e, formatValue(e.params.inductance ?? 0, 'H', g.valueDigits));

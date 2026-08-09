@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SvgRecorder, renderCircuitToSvg } from './svg';
-import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
+import { makeTheme } from './draw';
+import { RESISTOR_DEF } from '../model/registry/elements/resistor';
+import { DEFAULT_SETTINGS, type CircuitElement, type DrawContext } from '../model/types';
 
 /** A fresh recorder with an identity transform and default styles. */
 function rec(): SvgRecorder {
@@ -287,11 +289,12 @@ describe('renderCircuitToSvg', () => {
   it('emits round caps on the wire stroke and butt on the resistor', () => {
     // The recorder copies whatever strokeStyle sets, so the wire's round cap
     // must reach the SVG while the resistor's leads and body keep butt. The
-    // circuit is one wire plus one IEC resistor: one round stroke, three butt
-    // strokes (two leads and the bodyRect loop).
+    // circuit is one wire plus one IEC resistor: one round stroke, and 46
+    // butt strokes (two leads plus the body's 44 per-segment gradient
+    // strokes: 16+6+16+6 cuts of the 32x12 box edges).
     const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
     expect(svg.match(/stroke-linecap="round"/g)).toHaveLength(1);
-    expect(svg.match(/stroke-linecap="butt"/g)).toHaveLength(3);
+    expect(svg.match(/stroke-linecap="butt"/g)).toHaveLength(46);
   });
 
   it('carries the 3-unit body stroke weight into the export', () => {
@@ -303,13 +306,64 @@ describe('renderCircuitToSvg', () => {
     expect(svg).not.toContain('stroke-width="2"');
   });
 
-  it('closes the IEC resistor body path with a Z command', () => {
-    // The body is a genuinely closed subpath in the export, not a polyline
-    // that merely returns to its start: the Z gives the start corner a real
-    // miter join, fixing the nicked corner the open version had. The box spans
-    // the 32-unit body (80 to 112 for this element) at half-height 6.
+  it('strokes the IEC resistor body per segment instead of one closed box', () => {
+    // The body shades along the voltage drop, so it is no longer one closed
+    // path: each 2-unit edge cut is its own stroke. The first top-edge
+    // segment runs from the lead1 corner, the right and left edges are cut
+    // too, and no path carries the old single closed box `d`.
     const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
-    expect(svg).toContain('d="M80 -6L112 -6L112 6L80 6L80 -6Z"');
+    expect(svg).toContain('d="M80 -6L82 -6"');
+    expect(svg).toContain('d="M112 -6L112 -4"');
+    expect(svg).toContain('d="M80 4L80 2"');
+    expect(svg).not.toContain('d="M80 -6L112 -6L112 6L80 6L80 -6Z"');
+  });
+
+  it('exports a gradient body as plain per-segment strokes with distinct colours', () => {
+    // A body with 10 V across it must export as ordinary per-segment strokes,
+    // each carrying its own ramp colour, and no CanvasGradient may ever reach
+    // the recorder: the recorder stores strokeStyle as a string, so a gradient
+    // object would stringify into the export as garbage.
+    const rec = new SvgRecorder();
+    const g: DrawContext = {
+      ctx: rec,
+      theme: makeTheme(false, DEFAULT_SETTINGS),
+      voltages: [10, 0],
+      current: 1e-3,
+      voltage: 10,
+      power: 0.01,
+      value: 0,
+      dotPhase: 0,
+      showCurrent: false,
+      showValues: false,
+      showVoltageColor: true,
+      showPowerColor: false,
+      conventional: true,
+      euroResistors: true,
+      euroGates: false,
+      selected: false,
+      hovered: false,
+      onHighlightedNet: false,
+      voltageRange: 5,
+      powerRange: 50,
+      scale: 1,
+      valueDigits: 1,
+      valueFontSize: 12,
+    };
+    RESISTOR_DEF.draw(g, {
+      id: 1,
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    const svg = rec.toString(200, 100);
+    const strokes = [...svg.matchAll(/stroke="(#[0-9a-fA-F]{3,8}|rgb\([^)]*\))"/g)].map((m) => m[1]);
+    expect(new Set(strokes).size).toBeGreaterThan(1);
+    expect(svg).not.toContain('[');
+    expect(svg).not.toContain('gradient');
   });
 
   it('fills the white background like the PNG export', () => {

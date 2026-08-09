@@ -4,9 +4,9 @@ import {
   currentDots,
   dsign,
   endpoints,
+  gradientPolyline,
   interp,
   line,
-  polyline,
   voltageColor,
 } from '../../../render/draw';
 import {
@@ -93,10 +93,15 @@ function basicGeometry(e: CircuitElement): BasicGeometry {
 const basicPosts = (e: CircuitElement): Point[] => basicGeometry(e).ptEnds;
 
 /** The coil arcs between the core bars, alternating the bulge side per
- *  winding like upstream's `drawCoil` csign (TransformerElm.java:126-132). */
-function drawCoilBetween(g: DrawContext, a: Point, b: Point, csign: number): void {
+ *  winding like upstream's `drawCoil` csign (TransformerElm.java:126-132). The
+ *  ramp follows the winding's own two terminal voltages, `v0`/`v1`, in the
+ *  order the `csign` swap draws them: the from/to flip that reverses the coil
+ *  direction reverses the gradient too. Round caps keep the angled per-segment
+ *  joints covered, upstream's LineCap.ROUND in drawCoil. */
+function drawCoilBetween(g: DrawContext, a: Point, b: Point, csign: number, v0: number, v1: number): void {
   const [from, to] = csign > 0 ? [a, b] : [b, a];
-  polyline(g, coilPoints(from, to, COIL_LOOPS), g.theme.text);
+  const [vf, vt] = csign > 0 ? [v0, v1] : [v1, v0];
+  gradientPolyline(g, coilPoints(from, to, COIL_LOOPS), { cap: 'round', v0: vf, v1: vt });
 }
 
 function drawBasicTransformer(g: DrawContext, e: CircuitElement): void {
@@ -110,7 +115,8 @@ function drawBasicTransformer(g: DrawContext, e: CircuitElement): void {
   for (let i = 0; i < 2; i++) {
     let csign = d * (i === 1 ? -6 * polarity : 6) * flip;
     if (vertical) csign *= -1;
-    drawCoilBetween(g, ptCoil[i], ptCoil[i + 2], csign);
+    // Winding i spans posts i and i+2 (its own coil, not the element's axis).
+    drawCoilBetween(g, ptCoil[i], ptCoil[i + 2], csign, g.voltages[i], g.voltages[i + 2]);
   }
   line(g, ptCore[0], ptCore[2], g.theme.text);
   line(g, ptCore[1], ptCore[3], g.theme.text);
@@ -220,7 +226,8 @@ function drawTappedTransformer(g: DrawContext, e: CircuitElement): void {
   }
   for (let i = 0; i < 4; i++) {
     if (i === 1) continue;  // the tap has no coil of its own (TappedTransformerElm.java:102-103)
-    drawCoilBetween(g, ptCoil[i], ptCoil[i + 1], i > 1 ? -6 * flip : 6 * flip);
+    // Each coil spans its own adjacent post pair.
+    drawCoilBetween(g, ptCoil[i], ptCoil[i + 1], i > 1 ? -6 * flip : 6 * flip, g.voltages[i], g.voltages[i + 1]);
   }
   line(g, ptCore[0], ptCore[1], g.theme.text);
   line(g, ptCore[2], ptCore[3], g.theme.text);
@@ -445,7 +452,7 @@ function drawCustomTransformer(g: DrawContext, e: CircuitElement): void {
   }
   for (let i = 0; i < geo.coils.length; i++) {
     const n = geo.coils[i].start;
-    drawCoilBetween(g, nodeTaps[n], nodeTaps[n + 1], i < geo.primaryCoils ? 6 : -6);
+    drawCoilBetween(g, nodeTaps[n], nodeTaps[n + 1], i < geo.primaryCoils ? 6 : -6, g.voltages[n], g.voltages[n + 1]);
   }
   line(g, ptCore[0], ptCore[2], g.theme.text);
   line(g, ptCore[1], ptCore[3], g.theme.text);

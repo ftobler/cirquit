@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import {
   CANVAS_FONT_FAMILY,
+  axisColor,
+  axisVoltage,
   bodyRect,
   canvasFont,
   closedPolyline,
@@ -9,6 +11,7 @@ import {
   currentDotsPath,
   drawLeads,
   formatValue,
+  gradientPolyline,
   line,
   makeTheme,
   polyline,
@@ -17,9 +20,12 @@ import {
   powerMult,
   rectCorners,
   strokeStyle,
+  voltageColor,
   ZIGZAG_HS,
   zigzagPoints,
 } from './draw';
+import { RESISTOR_DEF } from '../model/registry/elements/resistor';
+import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
 import { TOO_FAST } from './dots';
 import {
   CHIP_FLIP_X,
@@ -70,11 +76,13 @@ const mkCtx = (): {
   arcs: { x: number; y: number }[];
   texts: TextRecord[];
   paths: { x: number; y: number }[][];
+  strokes: { style: string; width: number }[];
 } => {
   const calls: string[] = [];
   const arcs: { x: number; y: number }[] = [];
   const texts: TextRecord[] = [];
   const paths: { x: number; y: number }[][] = [];
+  const strokes: { style: string; width: number }[] = [];
   const record = (name: string) => vi.fn(() => calls.push(name));
   const stub: CtxStub = {
     fillStyle: '',
@@ -96,7 +104,12 @@ const mkCtx = (): {
       if (paths.length > 0) paths[paths.length - 1].push({ x, y });
     }),
     closePath: record('closePath'),
-    stroke: record('stroke'),
+    stroke: vi.fn(() => {
+      calls.push('stroke');
+      // The colour at stroke time, in draw order: how a per-segment gradient
+      // body is asserted on.
+      strokes.push({ style: stub.strokeStyle, width: stub.lineWidth });
+    }),
     arc: vi.fn((x: number, y: number) => {
       calls.push('arc');
       arcs.push({ x, y });
@@ -116,7 +129,7 @@ const mkCtx = (): {
       return { width: text.length * size * 0.6 };
     },
   };
-  return { ctx: stub as unknown as CanvasRenderingContext2D, stub, calls, arcs, texts, paths };
+  return { ctx: stub as unknown as CanvasRenderingContext2D, stub, calls, arcs, texts, paths, strokes };
 };
 
 const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext => ({
@@ -555,6 +568,183 @@ describe('zigzag resistor body', () => {
       -6, 6, -6, 6, -6, 6, -6, 6,
     ]);
     expect(zigzagPoints({ x: 0, y: 0 }, { x: 32, y: 0 }, 6).slice(1, -1).map((p) => p.y)).not.toContain(8);
+  });
+});
+
+describe('body voltage gradient', () => {
+  /** A DrawContext on a given stub with the two posts at 10 V and 0 V;
+   *  overrides win. The stub is the caller's, so its recorded strokes and the
+   *  drawn colours come from the same object. */
+  const g = (ctx: CanvasRenderingContext2D, overrides: Partial<DrawContext> = {}): DrawContext => ({
+    ...context(ctx, 0),
+    voltages: [10, 0],
+    ...overrides,
+  });
+
+  const element = (params: Record<string, number> = {}): CircuitElement => ({
+    id: 1,
+    kind: 'resistor',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    flags: 0,
+    params: { resistance: 1000, ...params },
+  });
+
+  it('axisVoltage interpolates linearly between the two posts', () => {
+    const gg = g(mkCtx().ctx);
+    expect(axisVoltage(gg, 0)).toBe(10);
+    expect(axisVoltage(gg, 0.25)).toBe(7.5);
+    expect(axisVoltage(gg, 0.5)).toBe(5);
+    expect(axisVoltage(gg, 1)).toBe(0);
+  });
+
+  it('axisVoltage clamps at the ends', () => {
+    const gg = g(mkCtx().ctx);
+    expect(axisVoltage(gg, -0.5)).toBe(10);
+    expect(axisVoltage(gg, 2)).toBe(0);
+  });
+
+  it('axisVoltage honours an explicit post pair', () => {
+    const gg = g(mkCtx().ctx);
+    expect(axisVoltage(gg, 0.5, 6, 4)).toBe(5);
+    expect(axisVoltage(gg, 1.5, 6, 4)).toBe(4);  // still clamped to the pair
+  });
+
+  it('axisColor falls back to the flat power colour under Show Power', () => {
+    // Upstream's `else` branch: with the voltage toggle off, the body takes
+    // the power colour and the ramp disappears entirely (ResistorElm.java:80).
+    const gg = g(mkCtx().ctx, { showPowerColor: true, showVoltageColor: false, power: 1e6 });
+    const colour = axisColor(gg, 0);
+    expect(colour).toBe('rgb(255,0,0)');  // dissipated power saturates the negative end
+    expect(axisColor(gg, 1)).toBe(colour);
+  });
+
+  it('axisColor is the voltage colour at the interpolated voltage', () => {
+    const gg = g(mkCtx().ctx, { showVoltageColor: true });
+    expect(axisColor(gg, 0.5)).toBe(voltageColor(gg, 5));
+  });
+
+  it('a v0=10, v1=0 body ramps its strokes from positive to neutral', () => {
+    const { ctx, strokes } = mkCtx();
+    const gg = g(ctx, { showVoltageColor: true });
+    gradientPolyline(gg, [{ x: 16, y: 0 }, { x: 48, y: 0 }]);
+    // One 32-unit edge, cut into 16 two-unit sub-segments, each stroked in
+    // the ramp colour at its own midpoint fraction (k + 0.5) / 16.
+    expect(strokes).toHaveLength(16);
+    const expected = (k: number) => voltageColor(gg, 10 * (1 - (k + 0.5) / 16));
+    strokes.forEach((s, k) => expect(s.style).toBe(expected(k)));
+    expect(strokes[0].style).toBe('rgb(0,255,0)');  // clamped positive at the 10 V end
+    // The last segment is near the neutral 0 V end, so the ramp moved.
+    expect(strokes[strokes.length - 1].style).not.toBe('rgb(0,255,0)');
+  });
+
+  it('the ramp is monotonic across the body', () => {
+    // A small drop inside the colour scale, so every segment is a distinct
+    // blend: the red channel must climb strictly from the positive end (low
+    // red) to the negative end (high red) with no doubling back.
+    const { ctx, strokes } = mkCtx();
+    const gg = g(ctx, { showVoltageColor: true, voltages: [2, -2] });
+    gradientPolyline(gg, [{ x: 16, y: 0 }, { x: 48, y: 0 }]);
+    const red = (s: string) => Number(/rgb\((\d+),/.exec(s)?.[1]);
+    expect(red(strokes[0].style)).toBeLessThan(red(strokes[strokes.length - 1].style));
+    for (let i = 1; i < strokes.length; i++) {
+      expect(red(strokes[i].style)).toBeGreaterThan(red(strokes[i - 1].style));
+    }
+  });
+
+  it('a no-drop body is one uniform colour, no banding', () => {
+    const { ctx, strokes } = mkCtx();
+    const gg = g(ctx, { showVoltageColor: true, voltages: [5, 5] });
+    gradientPolyline(gg, [{ x: 16, y: 0 }, { x: 48, y: 0 }]);
+    expect(new Set(strokes.map((s) => s.style)).size).toBe(1);
+    expect(strokes[0].style).toBe('rgb(0,255,0)');
+  });
+
+  it('swapping the posts reverses the colour order exactly', () => {
+    // The geometry is unchanged and mirrors about the body centre, so the
+    // sub-segment at fraction f under [0,10] meets the same voltage as the
+    // one at 1-f under [10,0]: an exact reversal, not an approximation.
+    const draw = (voltages: number[]): string[] => {
+      const { ctx, strokes } = mkCtx();
+      const gg = g(ctx, { showVoltageColor: true, voltages, euroResistors: false });
+      RESISTOR_DEF.draw(gg, element());
+      return strokes.map((s) => s.style).slice(2);  // drop the two leads
+    };
+    const forward = draw([10, 0]);
+    const backward = draw([0, 10]);
+    expect(backward[0]).toBe(forward[forward.length - 1]);
+    expect(backward[backward.length - 1]).toBe(forward[0]);
+    forward.forEach((c, k) => expect(backward[forward.length - 1 - k]).toBe(c));
+  });
+
+  it('a resistor with a drop strokes its first body segment positive and its last near neutral', () => {
+    const { ctx, strokes } = mkCtx();
+    const gg = g(ctx, { showVoltageColor: true, euroResistors: false });
+    RESISTOR_DEF.draw(gg, element());
+    // Two leads first, then the zigzag body: the ramp runs from the lead1 end
+    // (10 V, clamped positive) to the lead2 end (0 V, near neutral).
+    const body = strokes.slice(2).map((s) => s.style);
+    expect(body.length).toBeGreaterThan(2);
+    expect(body[0]).toBe('rgb(0,255,0)');
+    expect(body[body.length - 1]).not.toBe('rgb(0,255,0)');
+  });
+
+  it('a no-drop resistor body is one uniform colour', () => {
+    const { ctx, strokes } = mkCtx();
+    const gg = g(ctx, { showVoltageColor: true, voltages: [5, 5], euroResistors: false });
+    RESISTOR_DEF.draw(gg, element());
+    expect(new Set(strokes.map((s) => s.style)).size).toBe(1);
+  });
+
+  it('Show Power flattens the resistor body to the power colour', () => {
+    // Upstream's `else` branch: the body takes the flat power colour, no
+    // ramp, while the leads keep their plain node colours (drawLeads), so the
+    // two lead strokes are wire and only the body is uniform.
+    const { ctx, strokes } = mkCtx();
+    const gg = g(ctx, { showPowerColor: true, showVoltageColor: false, power: 1e6, euroResistors: false });
+    RESISTOR_DEF.draw(gg, element());
+    expect(strokes).toHaveLength(2 + 64);  // two leads plus the 64 zigzag cuts
+    const body = strokes.slice(2).map((s) => s.style);
+    expect(new Set(body).size).toBe(1);
+    expect(body[0]).toBe('rgb(255,0,0)');
+  });
+
+  it('gradientPolyline strokes coils with round caps', () => {
+    // drawCoil sets LineCap.ROUND upstream (CircuitElm.java:989); the helper
+    // passes the cap through to its per-segment strokes so the angled coil
+    // joints stay covered.
+    const { ctx, strokes } = mkCtx();
+    gradientPolyline(g(ctx, { showVoltageColor: true }), [{ x: 0, y: 0 }, { x: 32, y: 0 }], {
+      cap: 'round',
+    });
+    expect(strokes).toHaveLength(16);
+    expect(strokes[0].width).toBe(3);  // the body stroke weight
+    expect(ctx.lineCap).toBe('round');
+  });
+
+  it('a transformer winding shades across its own two posts', () => {
+    // The primary spans posts 0 and 2, the secondary posts 1 and 3: each coil
+    // must ramp between its own pair, not the element's posts 0/1. Four leads
+    // come first, then the primary coil (10 V -> 0 V), then the secondary
+    // (0 V -> 10 V), then the text-coloured core bars.
+    const { ctx, strokes } = mkCtx();
+    const gg = g(ctx, { showVoltageColor: true, voltages: [10, 0, 0, 10] });
+    TRANSFORMER_DEF.draw(gg, {
+      id: 1,
+      kind: 'transformer',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: {},
+    });
+    expect(strokes.length).toBeGreaterThan(6);
+    expect(strokes[4].style).toBe('rgb(0,255,0)');  // primary coil starts at its 10 V end
+    const coils = strokes.slice(4, strokes.length - 2);  // drop the leads and core bars
+    expect(new Set(coils.map((s) => s.style)).size).toBeGreaterThan(1);  // it ramps
   });
 });
 

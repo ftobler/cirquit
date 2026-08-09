@@ -1,14 +1,13 @@
 import {
-  bodyRect,
   calcLeads,
   currentDotsPath,
   drawLeads,
   endpoints,
   formatValue,
+  gradientPolyline,
   interp,
   label,
-  polyline,
-  voltageColor,
+  rectCorners,
   zigzagPoints,
 } from '../../../render/draw';
 import { readParams, twoPosts } from '../shared';
@@ -45,25 +44,37 @@ function thermistorResistance(e: CircuitElement): number {
 /**
  * A resistor box (this port's IEC-only convention, same as `drawResistorBody`
  * and `drawPotBody`) plus the diagonal accent line upstream adds to mark it
- * temperature-sensitive, drawn in the same voltage-gradient stroke and 3px
- * width as the box outline (ThermistorNTCElm.java:130-169). Upstream's local
- * coordinates run from `0` at `lead1` to `len` at `lead2` along the axis and
- * `hs` perpendicular to it; `interp`'s fraction/offset pair is that same local
- * frame, except `interp`'s `+g` is upstream's `-hs` (this port's perpendicular
- * unit vector is the negation of upstream's), so the offsets below are negated
- * relative to upstream's literal `moveTo`/`lineTo` triple to land on the same
- * pixels.
+ * temperature-sensitive, both shading along the voltage drop like the plain
+ * resistor (ThermistorNTCElm.java:130-169, whose gradient is this shape's
+ * model). The accent is a sub-shape of the body, so it samples the ramp at its
+ * own position along the `lead1`-`lead2` axis, which is also why the axis must
+ * be passed explicitly: the accent's own chord is parallel to, not on, the
+ * body axis. Upstream's local coordinates run from `0` at `lead1` to `len` at
+ * `lead2` along the axis and `hs` perpendicular to it; `interp`'s
+ * fraction/offset pair is that same local frame, except `interp`'s `+g` is
+ * upstream's `-hs` (this port's perpendicular unit vector is the negation of
+ * upstream's), so the offsets below are negated relative to upstream's literal
+ * `moveTo`/`lineTo` triple to land on the same pixels.
  */
 function drawThermistorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
-  const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
+  // Deliberate divergence from upstream: ThermistorNTCElm.java:144 sets its
+  // gradient unconditionally, no volts-check guard and no power `else`, so
+  // the body draws white under Show-Voltage-off. Here `axisColor` falls back
+  // to the flat power colour instead, matching `elementColor` everywhere else
+  // and the resistor's own upstream else branch. Do not "fix" it upstreamward.
   if (g.euroResistors) {
-    bodyRect(g, lead1, lead2, THERMISTOR_HS, color);
+    // The box axis must be given explicitly: a closed path's last point
+    // repeats the first, so its own chord is zero.
+    const corners = rectCorners(lead1, lead2, THERMISTOR_HS);
+    gradientPolyline(g, [corners[0], corners[1], corners[2], corners[3], corners[0]], {
+      axis: [lead1, lead2],
+    });
   } else {
     // The zigzag uses the same `hs` as the box, upstream's single hs=6
     // (ThermistorNTCElm.java:134).
-    polyline(g, zigzagPoints(lead1, lead2, THERMISTOR_HS), color);
+    gradientPolyline(g, zigzagPoints(lead1, lead2, THERMISTOR_HS));
   }
   const len = Math.hypot(lead2.x - lead1.x, lead2.y - lead1.y);
   if (len > 0) {
@@ -74,7 +85,7 @@ function drawThermistorBody(g: DrawContext, e: CircuitElement): void {
       interp(lead1, lead2, 1, hs * 2),
     ];
     // The temperature accent, thick like the body (ThermistorNTCElm.java:142).
-    polyline(g, accent, color);
+    gradientPolyline(g, accent, { axis: [lead1, lead2] });
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);

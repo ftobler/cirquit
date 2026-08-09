@@ -1,5 +1,5 @@
-import { calcLeads, interp2Precise, line, voltageColor } from '../../../render/draw';
-import { readParams, twoPosts } from '../shared';
+import { calcLeads, interp2Precise, line } from '../../../render/draw';
+import { elementColor, readParams, twoPosts } from '../shared';
 import { drawDiodeBody } from './diode';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
@@ -8,7 +8,10 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
  * the cathode bar, coloured by the anode's voltage. Upstream draws its own
  * cathode bar a second time at the same spot as `plate2`
  * (VaractorElm.java:57-68/78-90); that duplicate is skipped here since it
- * paints nothing a plain diode body has not already drawn.
+ * paints nothing a plain diode body has not already drawn. The plate is an
+ * anode-side sub-shape, so it samples post 0's colour through `elementColor`
+ * like the diode body it rides on, keeping the whole symbol on the flat
+ * power colour under Show Power.
  */
 function drawVaractorBody(g: DrawContext, e: CircuitElement): void {
   drawDiodeBody(g, e, false);
@@ -18,7 +21,7 @@ function drawVaractorBody(g: DrawContext, e: CircuitElement): void {
   const [p1, p2] = interp2Precise(lead1, lead2, 0.6, 7);
   // The extra plate is a drawThickLine stroke upstream (VaractorElm.java:87),
   // the 3-unit body weight.
-  line(g, p1, p2, voltageColor(g, g.voltages[0]));
+  line(g, p1, p2, elementColor(g, g.voltages[0], g.power));
 }
 
 export const VARACTOR_DEF: ElementDef = {

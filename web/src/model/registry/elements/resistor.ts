@@ -1,26 +1,32 @@
 import {
-  bodyRect,
   calcLeads,
   currentDotsPath,
   drawLeads,
   endpoints,
   formatValue,
+  gradientPolyline,
   label,
-  polyline,
+  rectCorners,
   ZIGZAG_HS,
   zigzagPoints,
 } from '../../../render/draw';
-import { elementColor, readParams, twoPosts, writeParams } from '../shared';
+import { readParams, twoPosts, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 function drawResistorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
-  const color = elementColor(g, (g.voltages[0] + g.voltages[1]) / 2, g.power);
+  // The body shades along the voltage drop, the axis from `lead1` at post 0
+  // to `lead2` at post 1 (ResistorElm.java:71-96's linear gradient).
   if (g.euroResistors) {
-    bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, 32 x 12 as upstream
+    // IEC rectangle, 32 x 12 as upstream. The axis must be given explicitly:
+    // a closed path's last point repeats the first, so its own chord is zero.
+    const corners = rectCorners(lead1, lead2, 6);
+    gradientPolyline(g, [corners[0], corners[1], corners[2], corners[3], corners[0]], {
+      axis: [lead1, lead2],
+    });
   } else {
-    polyline(g, zigzagPoints(lead1, lead2, ZIGZAG_HS), color);
+    gradientPolyline(g, zigzagPoints(lead1, lead2, ZIGZAG_HS));
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);

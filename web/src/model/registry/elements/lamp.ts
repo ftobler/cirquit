@@ -4,6 +4,7 @@ import {
   currentDotsPath,
   drawLeads,
   endpoints,
+  gradientPolyline,
   interp,
   line,
   voltageColor,
@@ -34,13 +35,17 @@ function drawLampBody(g: DrawContext, e: CircuitElement): void {
   const filament1 = interp(lead1, lead2, 1, LAMP_FILAMENT_OFFSET);
   const bulb = interp(filament0, filament1, 0.5);
   const midColor = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
+  // The bulb fill stays a single midpoint colour: it is a filled disc, which
+  // the per-segment stroke mechanism cannot shade, and the envelope is not
+  // the conducting path anyway. The filament is the conductor, so it shades
+  // along the drop from lead1's post to lead2's.
   circle(g, bulb, LAMP_BULB_RADIUS, midColor, true);
   // The bulb outline and filament are drawThickCircle/drawThickLine upstream
   // (LampElm.java:135-141), the 3-unit body weight.
   circle(g, bulb, LAMP_BULB_RADIUS, g.theme.wire, false);
   line(g, lead1, filament0, voltageColor(g, g.voltages[0]));
   line(g, lead2, filament1, voltageColor(g, g.voltages[1]));
-  line(g, filament0, filament1, midColor);
+  gradientPolyline(g, [filament0, filament1]);
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, filament0, filament1, lead2, p2], g.current);
 }

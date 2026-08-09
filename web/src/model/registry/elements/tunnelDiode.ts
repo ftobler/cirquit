@@ -6,7 +6,6 @@ import {
   interp2Precise,
   line,
   triangle,
-  voltageColor,
 } from '../../../render/draw';
 import { elementColor, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
@@ -16,7 +15,8 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
  * whose bar carries two wings swept back to 0.8 of the body (TunnelDiodeElm.
  * java:44-49). The triangle is filled with post 0's voltage colour and the
  * cathode marks with post 1's, matching the two `setVoltageColor` calls in
- * the upstream draw (TunnelDiodeElm.java:60-69).
+ * the upstream draw (TunnelDiodeElm.java:60-69). Both go through `elementColor`
+ * so the whole body takes the flat power colour under Show Power.
  */
 function drawTunnelDiodeBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 16);
@@ -25,7 +25,7 @@ function drawTunnelDiodeBody(g: DrawContext, e: CircuitElement): void {
   // interpolated without the grid rounding `interp` applies to posts.
   const [t1, t2] = interp2Precise(lead1, lead2, 0, 8);
   triangle(g, t1, t2, lead2, elementColor(g, g.voltages[0], g.power));
-  const color2 = voltageColor(g, g.voltages[1]);
+  const color2 = elementColor(g, g.voltages[1], g.power);
   const [b1, b2] = interp2Precise(lead1, lead2, 1, 8);
   const [w0, w1] = interp2Precise(lead1, lead2, 0.8, 8);
   // The cathode bar and wings are drawThickLine strokes upstream

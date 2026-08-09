@@ -243,6 +243,87 @@ export function closedPolyline(
   polyline(g, pts, color, width, cap, true);
 }
 
+/**
+ * Voltage at fraction `f` along a gradient axis, clamped to the post range:
+ * the linear interpolation upstream's gradient stops express, with the ends
+ * clamped so a sub-shape sitting past a post still takes the post's colour.
+ * `v0`/`v1` are the two posts of the gradient, the element's own 0 and 1 by
+ * default; a relay coil or transformer winding passes its winding's pair.
+ */
+export function axisVoltage(
+  g: DrawContext,
+  f: number,
+  v0 = g.voltages[0],
+  v1 = g.voltages[1],
+): number {
+  return v0 + (v1 - v0) * Math.max(0, Math.min(1, f));
+}
+
+/** Body colour at fraction `f` along a gradient axis: `elementColor`'s split
+ *  (the voltage colour when Show Voltage is on, the flat power colour under
+ *  Show Power), inlined here so draw.ts never imports from the registry
+ *  layer, which imports draw.ts. */
+export function axisColor(
+  g: DrawContext,
+  f: number,
+  v0 = g.voltages[0],
+  v1 = g.voltages[1],
+): string {
+  return g.showPowerColor ? powerColor(g, g.power) : voltageColor(g, axisVoltage(g, f, v0, v1));
+}
+
+/**
+ * Strokes a polyline segment by segment, each with the axis colour at its own
+ * midpoint fraction, so a two-terminal body shades along the voltage drop.
+ * Colour per segment, never a CanvasGradient: the SVG recorder stores
+ * strokeStyle as a string, so a gradient object would silently stringify into
+ * the export. A long straight edge (an IEC box side) is cut into short
+ * sub-segments so its ramp stays smooth instead of one band per side; every
+ * cut shares its endpoints exactly, so butt caps leave no seam along a straight
+ * run. Coils pass `cap: 'round'`, upstream's LineCap.ROUND in drawCoil, so
+ * their angled joints stay covered. The axis defaults to the first and last
+ * points; a closed polyline (whose last point repeats the first) must pass
+ * `axis` explicitly.
+ */
+export function gradientPolyline(
+  g: DrawContext,
+  pts: Point[],
+  opts: {
+    /** Colour ramp endpoints, the element's posts 0/1 by default. */
+    v0?: number;
+    v1?: number;
+    /** Cap for the per-segment strokes; coils pass 'round' (drawCoil's
+     *  LineCap.ROUND). Defaults butt. */
+    cap?: CanvasLineCap;
+    /** Body axis the fraction is measured along; defaults to `[pts[0],
+     *  pts[pts.length - 1]]`, which is right for every open body. */
+    axis?: [Point, Point];
+  } = {},
+): void {
+  if (pts.length < 2) return;
+  const axis = opts.axis ?? [pts[0], pts[pts.length - 1]];
+  const ax = axis[1].x - axis[0].x;
+  const ay = axis[1].y - axis[0].y;
+  const len2 = ax * ax + ay * ay;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    // A long straight edge is cut into sub-segments so the colour ramp along
+    // it stays smooth; short edges (coil loops, sine steps) pass through whole.
+    const steps = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.y - a.y) / 2));
+    for (let s = 0; s < steps; s++) {
+      const t0 = s / steps;
+      const t1 = (s + 1) / steps;
+      const p0 = { x: a.x + t0 * (b.x - a.x), y: a.y + t0 * (b.y - a.y) };
+      const p1 = { x: a.x + t1 * (b.x - a.x), y: a.y + t1 * (b.y - a.y) };
+      const mx = (p0.x + p1.x) / 2;
+      const my = (p0.y + p1.y) / 2;
+      const f = len2 > 0 ? ((mx - axis[0].x) * ax + (my - axis[0].y) * ay) / len2 : 0;
+      line(g, p0, p1, axisColor(g, f, opts.v0, opts.v1), 3, opts.cap);
+    }
+  }
+}
+
 export function circle(
   g: DrawContext,
   c: Point,

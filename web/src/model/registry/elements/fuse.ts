@@ -3,9 +3,8 @@ import {
   currentDotsPath,
   drawLeads,
   endpoints,
+  gradientPolyline,
   interp,
-  polyline,
-  voltageColor,
 } from '../../../render/draw';
 import { twoPosts, readParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
@@ -30,12 +29,14 @@ function drawFuseBody(g: DrawContext, e: CircuitElement): void {
   drawLeads(g, e, lead1, lead2);
   if ((e.params.blown ?? 0) === 0) {
     const segments = 16;
-    const color = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
     const pts: Point[] = [];
     for (let i = 0; i <= segments; i++) {
       pts.push(interp(lead1, lead2, i / segments, 6 * Math.sin((i * Math.PI * 2) / segments)));
     }
-    polyline(g, pts, color);
+    // The melting wire is the current path, so it shades along the voltage
+    // drop like the resistor body (the sweep's rule: a gradient belongs where
+    // current flows through continuous material).
+    gradientPolyline(g, pts);
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
