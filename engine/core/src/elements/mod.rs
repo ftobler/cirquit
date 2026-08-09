@@ -246,14 +246,14 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "relayCoil" => Box::new(relay::RelayCoil::new(spec)),
         "relayContact" => Box::new(relay::RelayContact::new(spec)),
         "opamp" => Box::new(opamp::OpAmp::new(spec)),
-        "ota" => match ota::from_spec(spec) {
-            Some(c) => Box::new(c),
-            None => return None,
-        },
-        "composite" => match composite::Composite::from_spec(spec) {
-            Some(c) => Box::new(c),
-            None => return None,
-        },
+        "ota" => {
+            let c = ota::from_spec(spec)?;
+            Box::new(c)
+        }
+        "composite" => {
+            let c = composite::Composite::from_spec(spec)?;
+            Box::new(c)
+        }
         "phaseComp" => Box::new(phase_comp::PhaseComp::new(spec)),
         "inverter" => Box::new(inverter::Inverter::new(spec)),
         "logicInput" => Box::new(logic_input::LogicInput::new(spec)),
