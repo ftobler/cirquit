@@ -269,7 +269,7 @@ lamp, thermistor, potentiometer, switch, SPDT switch, LDR, varactor.
 
 **Logic** — done: inverter, AND, NAND, OR, NOR, XOR, XNOR, tri-state buffer,
 Schmitt trigger (inverting and non-inverting), all behind the `euroGates` IEC
-symbol toggle.
+symbol toggle, which is on by default.
 
 - [x] Gates: AND, OR, NAND, NOR, XOR, XNOR, inverter, tri-state, Schmitt
 - [ ] Flip-flops: D, JK, T, latch, monostable

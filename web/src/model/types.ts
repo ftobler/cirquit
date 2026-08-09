@@ -359,11 +359,11 @@ export const DEFAULT_SETTINGS: SimSettings = {
   showGrid: true,
   conventional: true,
   // European symbols are the port's default, matching the upstream default
-  // outside the US and this app's IEC-only history.
+  // outside the US and this app's IEC-only history. The gates default IEC too,
+  // deliberately diverging from GateElm.useEuroGates so a default schematic is
+  // IEC throughout: a mixed-standard drawing is worse than either standard.
   euroResistors: true,
-  // The port keeps the American distinctive gate shapes by default, matching
-  // upstream's non-German locale default (GateElm.useEuroGates).
-  euroGates: false,
+  euroGates: true,
   editable: true,
   smallGrid: false,
   showCrosshair: false,

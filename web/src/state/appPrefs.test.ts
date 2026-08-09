@@ -48,7 +48,7 @@ describe('app prefs', () => {
     expect(back).toEqual({
       showCrosshair: false,
       euroResistors: true,
-      euroGates: false,
+      euroGates: true,
       positiveColor: '#123456',
       negativeColor: null,
       neutralColor: null,
@@ -74,8 +74,8 @@ describe('app prefs', () => {
 
   it('round-trips the euroGates symbol toggle as a boolean', () => {
     const { storage } = fakeStorage();
-    saveAppPrefs({ ...DEFAULT_SETTINGS, euroGates: true }, storage);
-    expect(loadAppPrefs(storage).euroGates).toBe(true);
+    saveAppPrefs({ ...DEFAULT_SETTINGS, euroGates: false }, storage);
+    expect(loadAppPrefs(storage).euroGates).toBe(false);
     // A wrong-typed stored value is dropped like any other invalid pref.
     storage.setItem(APP_PREF_STORAGE_KEY, JSON.stringify({ euroGates: 1 }));
     expect(loadAppPrefs(storage).euroGates).toBeUndefined();
