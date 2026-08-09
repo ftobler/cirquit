@@ -18,7 +18,7 @@ import {
   voltageColor,
 } from '../../render/draw';
 import { FLAG_ESCAPE } from './flags';
-import type { CircuitElement, DrawContext, Point } from '../types';
+import type { CircuitElement, DrawContext, Point, SwitchRect } from '../types';
 
 /** Perpendicular offset of switch throws and transistor collector/emitter. */
 export const OPEN_HS = 16;
@@ -38,6 +38,28 @@ export const twoPosts = (e: CircuitElement): Point[] => [
 ];
 
 export const onePost = (e: CircuitElement): Point[] => [{ x: e.x1, y: e.y1 }];
+
+/** Bounding box of the given points, upstream's `new Rectangle(p).union(...)`
+ *  switch-rect pattern (SwitchElm.java:166-169). */
+export function rectOfPoints(pts: Point[]): SwitchRect {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of pts) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+/** True when `p` lies on or inside the rect, with the edges inclusive. */
+export function rectContains(r: SwitchRect, p: Point): boolean {
+  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
 
 /** Reads numeric tokens into named params, skipping absent ones. */
 export function readParams(tokens: string[], e: CircuitElement, names: string[]): void {

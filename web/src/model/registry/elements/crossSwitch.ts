@@ -19,6 +19,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { SWITCH_IEC, SWITCH_LABEL } from '../flags';
+import { rectOfPoints } from '../shared';
 import { switchTokens, labelFlags } from './switch';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -176,6 +177,12 @@ export const CROSS_SWITCH_DEF: ElementDef = {
   postCount: 4,
   posts: crossSwitchPosts,
   interactive: true,
+  // The clickable bank: pole 0's lead plus the two extreme throw leads, at
+  // +openhs and -3*openhs-openhs of the axis (CrossSwitchElm.java:174-176).
+  switchRect: (e) => {
+    const geo = crossSwitchGeometry(e);
+    return rectOfPoints([geo.poleLeads[0], geo.throwLeads[1], geo.throwLeads[4]]);
+  },
   noDiagonal: true, // every CrossSwitchElm constructor sets it
   defaults: { position: 0, momentary: 0 },
   // The token layout is SwitchElm's: position (an int or a literal

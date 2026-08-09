@@ -8,6 +8,16 @@ export interface Point {
   y: number;
 }
 
+/** An axis-aligned rectangle in circuit coordinates. Distinct from the
+ *  `state/view` `Rect` (`minX/minY/width/height`): a switch-lever region, so
+ *  the field and helpers keep their own name rather than colliding. */
+export interface SwitchRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 /** One placed element. Coordinates are in circuit space, which is what the
  *  original file format stores, so they round-trip unchanged. */
 export interface CircuitElement {
@@ -114,6 +124,11 @@ export interface ElementDef {
   simulated?: boolean;
   /** Clicking the element in run mode toggles it (switches). */
   interactive?: boolean;
+  /** The clickable lever region of an interactive part, upstream's
+   *  `getSwitchRect`. A pointer inside toggles; anywhere else on the element
+   *  selects and drags. Absent means the whole element toggles, so the fallback
+   *  regresses nothing silently. */
+  switchRect?(e: CircuitElement): SwitchRect;
   /** Default length in grid units when dragged out from the toolbox. */
   defaultLength?: number;
   /** Elements upstream forces vertical on toolbar placement (ground, voltage). */

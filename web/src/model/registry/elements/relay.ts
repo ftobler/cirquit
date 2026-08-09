@@ -21,7 +21,7 @@ import {
   RELAY_SHOW_BOX,
   RELAY_SWAP_COIL,
 } from '../flags';
-import { OPEN_HS, readParams, twoPosts } from '../shared';
+import { OPEN_HS, readParams, rectOfPoints, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Coil placement encoded in the flags, upstream's `coilStyleFromFlags`
@@ -456,6 +456,16 @@ export const RELAY_CONTACT_DEF: ElementDef = {
   dumpCode: '426',
   postCount: 2,
   posts: twoPosts,
+  // The blade's region, from the same lead geometry the draw uses: the three
+  // poles it can rest on (RelayContactElm.java:172-174). Not gated today: the
+  // engine drives the blade from the linked coil, so this def stays
+  // non-interactive and the rect is inert.
+  switchRect: (e) => {
+    const [p1, p2] = endpoints(e);
+    const [lead1, lead2] = calcLeads(e, 32);
+    const openhs = dsign(p1, p2) * OPEN_HS;
+    return rectOfPoints([interp(lead1, lead2, 0, 0), interp(lead1, lead2, 1, 0), interp(lead1, lead2, 1, openhs)]);
+  },
   noDiagonal: true,  // RelayContactElm.java:59
   defaultFlags: 4,   // FLAG_IEC, RelayContactElm.java:63
   defaults: {

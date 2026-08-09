@@ -55,6 +55,10 @@ export const LOGIC_INPUT_DEF: ElementDef = {
   posts: onePost,
   draggablePosts: 2,  // the free end is a control point, not a terminal
   interactive: true,
+  // Upstream overrides getSwitchRect with a 20x20 square around the glyph, so
+  // clicking the L/H letter toggles while clicking the lead selects
+  // (LogicInputElm.java:92-94).
+  switchRect: (e) => ({ x: e.x2 - 10, y: e.y2 - 10, w: 20, h: 20 }),
   defaults: { hiV: 5, loV: 0, position: 0, momentary: 0 },
   parse: (t, e) => {
     // The position token is written as `true`/`false` by some versions, the

@@ -7,7 +7,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { SWITCH2_CENTER_OFF, SWITCH_LABEL } from '../flags';
-import { OPEN_HS } from '../shared';
+import { OPEN_HS, rectOfPoints } from '../shared';
 import { switchTokens, labelFlags } from './switch';
 import type { CircuitElement, ElementDef, Point } from '../../types';
 
@@ -56,6 +56,14 @@ export const SWITCH2_DEF: ElementDef = {
   postCount: 3,
   posts: switch2Posts,
   interactive: true,
+  // The clickable region spans the lever's fan: the pivot lead and the first
+  // and last throw poles (Switch2Elm.java:121-123). It is position-independent,
+  // so center-off still toggles back onto a throw from anywhere in the fan.
+  switchRect: (e) => {
+    const [lead1] = calcLeads(e, 32);
+    const poles = switch2Poles(e);
+    return rectOfPoints([lead1, poles[0], poles[poles.length - 1]]);
+  },
   noDiagonal: true,  // Switch2Elm.java:35,51
   defaults: { position: 0, throwCount: 2 },
   parse: (t, e) => {

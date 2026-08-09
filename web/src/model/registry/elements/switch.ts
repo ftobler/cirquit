@@ -1,6 +1,6 @@
-import { calcLeads, currentDotsPath, drawLeads, endpoints, line } from '../../../render/draw';
+import { calcLeads, currentDotsPath, drawLeads, endpoints, interp, line } from '../../../render/draw';
 import { SWITCH_IEC, SWITCH_LABEL } from '../flags';
-import { elementColor, switchIecPoints, switchLever, twoPosts } from '../shared';
+import { elementColor, OPEN_HS, rectOfPoints, switchIecPoints, switchLever, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The SPST tokens, which the SPDT writes first and then extends. The label
@@ -73,6 +73,14 @@ export const SWITCH_DEF: ElementDef = {
   postCount: 2,
   posts: twoPosts,
   interactive: true,
+  // The clickable lever: the body between the leads plus the open handle's
+  // swing, upstream's getSwitchRect union (SwitchElm.java:166-169). The handle
+  // is where the user aims, so the rect must cover it or a click on the open
+  // lever would stop toggling.
+  switchRect: (e) => {
+    const [lead1, lead2] = calcLeads(e, 32);
+    return rectOfPoints([lead1, lead2, interp(lead1, lead2, 0, OPEN_HS)]);
+  },
   defaults: { position: 0, momentary: 0 },
   parse: (t, e) => {
     // The position token is written as `true`/`false` by some versions.
