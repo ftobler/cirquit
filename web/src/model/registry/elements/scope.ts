@@ -11,7 +11,7 @@
  * line fidelity work.
  */
 
-import { canvasFont, endpoints, limbColor, polyline } from '../../../render/draw';
+import { canvasFont, closedPolyline, endpoints, limbColor } from '../../../render/draw';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The config a freshly placed scope writes: element -1 (nothing traced yet),
@@ -26,7 +26,9 @@ function drawScope(g: DrawContext, e: CircuitElement): void {
   const w = Math.abs(p2.x - p1.x);
   const h = Math.abs(p2.y - p1.y);
   // The frame is the element's axis-aligned bounding box, stroked as a closed
-  // loop so a degenerate zero-height box still reads as a scope.
+  // loop so a degenerate zero-height box still reads as a scope. The close
+  // joins the start corner; the explicit repeated point is kept so the four
+  // corners stay readable in the geometry.
   const frame: Point[] = [
     { x, y },
     { x: x + w, y },
@@ -34,7 +36,7 @@ function drawScope(g: DrawContext, e: CircuitElement): void {
     { x, y: y + h },
     { x, y },
   ];
-  polyline(g, frame, limbColor(g, g.theme.text));
+  closedPolyline(g, frame, limbColor(g, g.theme.text));
   // The "Scope" caption sits at the top edge, clear of the viewport centre.
   g.ctx.fillStyle = limbColor(g, g.theme.text);
   g.ctx.font = canvasFont(12);

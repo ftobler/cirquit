@@ -6,13 +6,13 @@
 
 import {
   calcLeads,
+  closedPolyline,
   currentDots,
   elementLength,
   endpoints,
   interp,
   interp2,
   line,
-  polyline,
   voltageColor,
 } from '../../../render/draw';
 import { TRI_STATE_FLIP } from '../flags';
@@ -70,7 +70,7 @@ function drawTriState(g: DrawContext, e: CircuitElement): void {
   line(g, lead2, p2, voltageColor(g, g.voltages[1]));
 
   const [t0, t1] = interp2(lead1, lead2, 0, HS + 2);
-  polyline(g, [t0, t1, apex, t0], g.theme.wire);
+  closedPolyline(g, [t0, t1, apex, t0], g.theme.wire);
   currentDots(g, lead2, p2, g.current);
 }
 

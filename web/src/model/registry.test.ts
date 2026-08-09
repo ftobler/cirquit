@@ -41,6 +41,7 @@ interface CtxStub {
   fill: ReturnType<typeof vi.fn>;
   closePath: ReturnType<typeof vi.fn>;
   fillText: ReturnType<typeof vi.fn>;
+  measureText: (text: string) => { width: number };
 }
 
 /** Minimal canvas stub, recording geometry calls so a draw can be asserted on. */
@@ -62,6 +63,7 @@ const mkCtx = (): CtxStub => {
     fill: vi.fn(),
     closePath: vi.fn(),
     fillText: vi.fn(),
+    measureText: (text: string) => ({ width: text.length * 6 }),
   };
 };
 
@@ -514,6 +516,23 @@ describe('European resistor symbol draw paths', () => {
       for (const p of corners) expect(drawn).toContainEqual(p);
     },
   );
+
+  it.each([
+    ['resistor', 1],
+    ['potentiometer', 2],
+    ['thermistor', 1],
+    ['ldr', 1],
+    ['dFlipFlop', 1],
+  ] as const)('%s strokes a genuinely closed body outline', (kind, closeCount) => {
+    // The euro box callers and the chip housing all repeat their first corner
+    // in the point list; closePath is what makes the corner where the loop
+    // starts and ends a real join instead of a nicked, butt-capped pair of
+    // stroke ends. The count is exact so the potentiometer's arrowhead
+    // triangle cannot mask an open body: its fill also calls closePath, so
+    // reverting the box to a plain polyline would drop the count to 1.
+    const ctx = draw(kind, true);
+    expect(ctx.closePath).toHaveBeenCalledTimes(closeCount);
+  });
 
   it('the resistor and pot zigzag is taller than the thermistor and ldr one', () => {
     // Pins the height split outright: the American resistor/pot peaks reach

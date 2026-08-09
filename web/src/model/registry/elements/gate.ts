@@ -10,6 +10,7 @@ import {
   calcLeads,
   canvasFont,
   circle,
+  closedPolyline,
   currentDots,
   elementLength,
   endpoints,
@@ -170,7 +171,7 @@ function drawGateShape(
     // AND/NAND: back edge plus the semicircular front (AndGateElm.java:67-71).
     const topLeft = interp(lead1, lead2, 0, hs2);
     const bottomLeft = interp(lead1, lead2, 0, -hs2);
-    polyline(g, [bottomLeft, topLeft, ...gateArc(lead1, lead2, hs2), bottomLeft], color);
+    closedPolyline(g, [bottomLeft, topLeft, ...gateArc(lead1, lead2, hs2), bottomLeft], color);
     return;
   }
   // OR/NOR/XOR/XNOR: the shield with quadratic-bezier curves
@@ -184,7 +185,7 @@ function drawGateShape(
   const p6 = interp(lead1, lead2, -0.05, -hs2);
   const p7 = interp(lead1, lead2, 0.08);
   const steps = 8;
-  polyline(
+  closedPolyline(
     g,
     [
       p0,
@@ -250,7 +251,7 @@ function drawGate(g: DrawContext, e: CircuitElement): void {
   if (g.euroGates) {
     // IEC rectangle spanning the body, with the function glyph centred just
     // above the axis (GateElm.java:178-183, :201-205).
-    polyline(
+    closedPolyline(
       g,
       [
         interp(lead1, lead2, 0, hs2),

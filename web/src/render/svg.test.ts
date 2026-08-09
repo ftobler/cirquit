@@ -294,6 +294,15 @@ describe('renderCircuitToSvg', () => {
     expect(svg.match(/stroke-linecap="butt"/g)).toHaveLength(3);
   });
 
+  it('closes the IEC resistor body path with a Z command', () => {
+    // The body is a genuinely closed subpath in the export, not a polyline
+    // that merely returns to its start: the Z gives the start corner a real
+    // miter join, fixing the nicked corner the open version had. The box spans
+    // the 32-unit body (80 to 112 for this element) at half-height 6.
+    const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
+    expect(svg).toContain('d="M80 -6L112 -6L112 6L80 6L80 -6Z"');
+  });
+
   it('fills the white background like the PNG export', () => {
     const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
     expect(svg).toContain('<rect x="0" y="0" width="396" height="100" fill="#ffffff"');

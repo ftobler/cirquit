@@ -25,6 +25,7 @@ import {
   arrowHead,
   canvasFont,
   circle,
+  closedPolyline,
   currentDots,
   dsign,
   elementLength,
@@ -32,7 +33,6 @@ import {
   interp,
   interp2,
   line,
-  polyline,
   powerColor,
   voltageColor,
 } from '../../../render/draw';
@@ -139,7 +139,7 @@ function drawOta(g: DrawContext, e: CircuitElement): void {
 
   // The triangle outline, the two filled arrows and their base bars, then the
   // two output circles (OTAElm.java:71-77).
-  polyline(g, [geo.triangle[0], geo.triangle[1], geo.triangle[2], geo.triangle[0]], body, 3);
+  closedPolyline(g, [geo.triangle[0], geo.triangle[1], geo.triangle[2], geo.triangle[0]], body, 3);
   const [a1, a2] = arrowSpan(geo.in3[1], geo.in1[1]);
   arrowHead(g, a1, a2, 8, body);
   line(g, geo.bar1[0], geo.bar1[1], body);

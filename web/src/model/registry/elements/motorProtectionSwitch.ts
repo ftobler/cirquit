@@ -10,7 +10,7 @@
  * (MotorProtectionSwitchElm.java:90-101).
  */
 
-import { canvasFont, currentDots, line, polyline, voltageColor } from '../../../render/draw';
+import { canvasFont, closedPolyline, currentDots, line, voltageColor } from '../../../render/draw';
 import { readParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -116,7 +116,7 @@ function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
   // The label terminal block on the left and the label text beside it
   // (MotorProtectionSwitchElm.java:141-146, :183-191).
   const square = { x: ax - CHANNEL_SPACING - 12, y: ay + 36 };
-  polyline(
+  closedPolyline(
     g,
     [
       square,

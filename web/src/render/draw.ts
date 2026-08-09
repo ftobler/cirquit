@@ -212,13 +212,33 @@ export function polyline(
   color: string,
   width = 2,
   cap: CanvasLineCap = 'butt',
+  closed = false,
 ): void {
   if (pts.length < 2) return;
   strokeStyle(g, color, width, cap);
   g.ctx.beginPath();
   g.ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) g.ctx.lineTo(pts[i].x, pts[i].y);
+  if (closed) g.ctx.closePath();
   g.ctx.stroke();
+}
+
+/**
+ * A stroked polyline whose last segment is joined back to its first point.
+ * A plain polyline that repeats the first corner is not a closed path: the
+ * corner where the path starts and ends is two stroke ends, not a join, so
+ * with butt caps the outer corner square is left unpainted. closePath makes
+ * that corner a real join like the others (upstream strokes these shapes as
+ * strokeRect or polygon primitives, closed by definition).
+ */
+export function closedPolyline(
+  g: DrawContext,
+  pts: Point[],
+  color: string,
+  width = 2,
+  cap: CanvasLineCap = 'butt',
+): void {
+  polyline(g, pts, color, width, cap, true);
 }
 
 export function circle(
@@ -288,11 +308,13 @@ export function rectCorners(a: Point, b: Point, halfHeight: number): [Point, Poi
  * Rectangle straddling the segment `a`-`b`, `halfHeight` to each side. Built
  * from interpolated points rather than `strokeRect` because the context is not
  * rotated per element; this keeps the box square to the element at any angle.
- * The loop is closed by repeating the first corner.
+ * The explicit corner list keeps the repeated first point, so the geometry
+ * tests can assert the four corners; `closedPolyline` makes the path a real
+ * closed subpath, which the repetition alone would not.
  */
 export function bodyRect(g: DrawContext, a: Point, b: Point, halfHeight: number, color: string): void {
   const [a1, b1, b2, a2] = rectCorners(a, b, halfHeight);
-  polyline(g, [a1, b1, b2, a2, a1], color);
+  closedPolyline(g, [a1, b1, b2, a2, a1], color);
 }
 
 /** Half-height of the American zigzag peaks for the plain resistor and the

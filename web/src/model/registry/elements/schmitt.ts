@@ -7,6 +7,7 @@
 
 import {
   circle,
+  closedPolyline,
   currentDots,
   elementLength,
   endpoints,
@@ -53,7 +54,7 @@ function drawSchmitt(g: DrawContext, e: CircuitElement, inverting: boolean): voi
 
   const [t0, t1] = interp2(lead1, lead2, 0, HS);
   const apex = interp(p1, p2, 0.5 + (ww - 5) / dn);
-  polyline(g, [t0, t1, apex, t0], g.theme.wire);
+  closedPolyline(g, [t0, t1, apex, t0], g.theme.wire);
   polyline(g, zSymbol(lead1, lead2), g.theme.wire, 2);
   if (inverting) {
     circle(g, interp(p1, p2, 0.5 + (ww - 2) / dn), 3, g.theme.wire, false, 3);

@@ -8,13 +8,13 @@
 import {
   canvasFont,
   circle,
+  closedPolyline,
   currentDots,
   elementLength,
   endpoints,
   interp,
   interp2,
   line,
-  polyline,
   voltageColor,
 } from '../../../render/draw';
 import { readParams, writeParams, twoPosts } from '../shared';
@@ -41,7 +41,7 @@ function drawInverter(g: DrawContext, e: CircuitElement): void {
     const l2 = interp(p1, p2, 0.5 + (ww - 5) / dn);
     const [top, bottom] = interp2(lead1, l2, 0, HS);
     const [bottom2, top2] = interp2(lead1, l2, 1, HS);
-    polyline(g, [top, bottom, bottom2, top2, top], color);
+    closedPolyline(g, [top, bottom, bottom2, top2, top], color);
     const center = interp(lead1, l2, 0.5);
     g.ctx.fillStyle = g.theme.text;
     g.ctx.font = canvasFont(12);
@@ -53,7 +53,7 @@ function drawInverter(g: DrawContext, e: CircuitElement): void {
     // bubble (InverterElm.java:104-107).
     const [t0, t1] = interp2(lead1, lead2, 0, HS);
     const apex = interp(p1, p2, 0.5 + (ww - 5) / dn);
-    polyline(g, [t0, t1, apex, t0], color);
+    closedPolyline(g, [t0, t1, apex, t0], color);
   }
   circle(g, pcircle, 3, g.theme.wire, false, 3);
   currentDots(g, lead2, p2, g.current);

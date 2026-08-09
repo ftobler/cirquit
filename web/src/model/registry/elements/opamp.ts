@@ -1,5 +1,6 @@
 import {
   canvasFont,
+  closedPolyline,
   currentDots,
   dsign,
   elementLength,
@@ -7,7 +8,6 @@ import {
   interp,
   interp2,
   line,
-  polyline,
   triangle,
   voltageColor,
 } from '../../../render/draw';
@@ -29,7 +29,7 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
 
   const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
   triangle(g, t1, t2, lead2, g.theme.panel);
-  polyline(g, [t1, t2, lead2, t1], g.theme.wire, 2);
+  closedPolyline(g, [t1, t2, lead2, t1], g.theme.wire, 2);
 
   // The minus glyph sits on the inverting input, the plus on the other. The
   // minus anchor is 2 above its lead, the plus exactly on it (OpAmpElm.java:

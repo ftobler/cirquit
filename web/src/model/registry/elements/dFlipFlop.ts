@@ -11,6 +11,7 @@
 import {
   canvasFont,
   circle,
+  closedPolyline,
   dsign,
   elementLength,
   endpoints,
@@ -208,7 +209,11 @@ export function drawChip(
 ): void {
   const frame = chipFrame(e);
   const body = chipBody(e, frame, sizeX, sizeY);
-  polyline(g, [body[0], body[1], body[2], body[3], body[0]], g.theme.wire, 2);
+  // The housing is a stroked polygon upstream (drawThickPolygon, ChipElm.java:
+  // 156). The corner list repeats body[0] to keep the four corners explicit;
+  // closePath is what actually closes the loop, so the start corner gets a
+  // real join instead of two butt-capped stroke ends.
+  closedPolyline(g, [body[0], body[1], body[2], body[3], body[0]], g.theme.wire, 2);
   pins.forEach((pin, i) => {
     const pt = chipPinPoints(e, frame, sizeX, sizeY, pin);
     line(g, pt.post, pt.stub, voltageColor(g, g.voltages[i]), 3);

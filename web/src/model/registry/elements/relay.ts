@@ -1,6 +1,7 @@
 import {
   calcLeads,
   canvasFont,
+  closedPolyline,
   coilPoints,
   currentDots,
   dsign,
@@ -160,7 +161,7 @@ function drawRelay(g: DrawContext, e: CircuitElement): void {
   polyline(g, coilPoints(coilLeads[x], coilLeads[1 - x], Math.max(1, Math.ceil(len / 11))), g.theme.text, 3);
 
   if ((e.flags & RELAY_SHOW_BOX) !== 0) {
-    polyline(g, [outline[0], outline[1], outline[2], outline[3], outline[0]], g.theme.text);
+    closedPolyline(g, [outline[0], outline[1], outline[2], outline[3], outline[0]], g.theme.text);
   }
 
   // Dashed lines running beside the switch bank, the only part of the symbol
@@ -300,7 +301,7 @@ function drawRelayCoil(g: DrawContext, e: CircuitElement): void {
 
   line(g, p1, coilLeads[0], voltageColor(g, g.voltages[0]));
   line(g, coilLeads[1], p2, voltageColor(g, g.voltages[1]));
-  polyline(g, [outline[0], outline[1], outline[2], outline[3], outline[0]], g.theme.text);
+  closedPolyline(g, [outline[0], outline[1], outline[2], outline[3], outline[0]], g.theme.text);
 
   if (type === 3 || type === 4 || type === 5) {
     for (let i = 0; i < 3; i++) line(g, extraPoints[i], extraPoints[i + 1], g.theme.text);

@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import {
   CANVAS_FONT_FAMILY,
+  bodyRect,
   canvasFont,
+  closedPolyline,
   currentDots,
   currentDotsPath,
   formatValue,
@@ -12,6 +14,7 @@ import {
   powerColor,
   powerColorT,
   powerMult,
+  rectCorners,
   strokeStyle,
   ZIGZAG_HS,
   zigzagPoints,
@@ -29,6 +32,7 @@ interface CtxStub {
   beginPath: ReturnType<typeof vi.fn>;
   moveTo: ReturnType<typeof vi.fn>;
   lineTo: ReturnType<typeof vi.fn>;
+  closePath: ReturnType<typeof vi.fn>;
   stroke: ReturnType<typeof vi.fn>;
   arc: ReturnType<typeof vi.fn>;
   fill: ReturnType<typeof vi.fn>;
@@ -38,6 +42,7 @@ interface CtxStub {
 
 const mkCtx = (): {
   ctx: CanvasRenderingContext2D;
+  stub: CtxStub;
   calls: string[];
   arcs: { x: number; y: number }[];
 } => {
@@ -54,6 +59,7 @@ const mkCtx = (): {
     beginPath: record('beginPath'),
     moveTo: record('moveTo'),
     lineTo: record('lineTo'),
+    closePath: record('closePath'),
     stroke: record('stroke'),
     arc: vi.fn((x: number, y: number) => {
       calls.push('arc');
@@ -63,7 +69,7 @@ const mkCtx = (): {
     save: record('save'),
     restore: record('restore'),
   };
-  return { ctx: stub as unknown as CanvasRenderingContext2D, calls, arcs };
+  return { ctx: stub as unknown as CanvasRenderingContext2D, stub, calls, arcs };
 };
 
 const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext => ({
@@ -277,6 +283,53 @@ describe('stroke caps', () => {
     polyline(context(ctx, 0), [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 32, y: 0 }], '#ffffff');
     expect(ctx.lineCap).toBe('butt');
     expect(ctx.lineJoin).toBe('miter');
+  });
+});
+
+describe('closed outlines', () => {
+  it('closedPolyline emits closePath before the stroke, so the start corner is a join', () => {
+    // With a wide stroke the missing corner of an open returning polyline is
+    // two butt-capped ends stopping flush: the outer corner square is simply
+    // unpainted. closePath must land between the last lineTo and the stroke.
+    const { ctx, calls } = mkCtx();
+    closedPolyline(
+      context(ctx, 0),
+      [{ x: 0, y: -6 }, { x: 32, y: -6 }, { x: 32, y: 6 }, { x: 0, y: 6 }, { x: 0, y: -6 }],
+      '#ffffff',
+      3,
+    );
+    expect(calls).toEqual([
+      'beginPath',
+      'moveTo',
+      'lineTo',
+      'lineTo',
+      'lineTo',
+      'lineTo',
+      'closePath',
+      'stroke',
+    ]);
+  });
+
+  it('a plain polyline stays open even when it repeats its first point', () => {
+    // Only the closed helper must close. A caller that deliberately retraces
+    // (the fuse sine, the XOR gate's second curve) must not gain a join.
+    const { ctx, calls } = mkCtx();
+    polyline(context(ctx, 0), [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 0, y: 0 }], '#ffffff');
+    expect(calls).not.toContain('closePath');
+  });
+
+  it('bodyRect paints the four distinct corners and closes the box', () => {
+    // The explicit repeated corner is kept so the geometry tests can assert
+    // the four corners; the close is what makes the loop genuinely closed.
+    const { ctx, stub, calls } = mkCtx();
+    bodyRect(context(ctx, 0), { x: 0, y: 0 }, { x: 32, y: 0 }, 6, '#ffffff');
+    const moves = stub.moveTo.mock.calls.map((a) => ({ x: a[0], y: a[1] }));
+    const lines = stub.lineTo.mock.calls.map((a) => ({ x: a[0], y: a[1] }));
+    const [a1, b1, b2, a2] = rectCorners({ x: 0, y: 0 }, { x: 32, y: 0 }, 6);
+    expect(moves).toEqual([a1]);
+    expect(lines).toEqual([b1, b2, a2, a1]);
+    expect(new Set([a1, b1, b2, a2].map((p) => `${p.x},${p.y}`)).size).toBe(4);
+    expect(calls.indexOf('closePath')).toBeLessThan(calls.indexOf('stroke'));
   });
 });
 
