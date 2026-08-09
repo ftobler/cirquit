@@ -5,6 +5,7 @@ import { openCircuit } from './io/fileIO';
 import { circuitFromUrl } from './io/urlShare';
 import { printCircuit } from './render/print';
 import { AboutDialog } from './ui/AboutDialog';
+import { CreateSubcircuitDialog } from './ui/CreateSubcircuitDialog';
 import { CircuitCanvas } from './ui/CircuitCanvas';
 import { ContextMenu } from './ui/ContextMenu';
 import { ExportAsLinkDialog } from './ui/ExportAsLinkDialog';
@@ -18,6 +19,7 @@ import { SaveAsImageDialog } from './ui/SaveAsImageDialog';
 import { ScopePanel } from './ui/ScopePanel';
 import { ShortcutsDialog } from './ui/ShortcutsDialog';
 import { SliderPanel } from './ui/SliderPanel';
+import { SubcircuitManagerDialog } from './ui/SubcircuitManagerDialog';
 import { Toolbox } from './ui/Toolbox';
 import { hasUnsavedChanges, useStore } from './state/store';
 import { startAutoSave } from './state/recovery';
@@ -293,6 +295,8 @@ export default function App() {
       {dialog === 'about' && <AboutDialog />}
       {dialog === 'shortcuts' && <ShortcutsDialog />}
       {dialog === 'findComponent' && <FindComponentDialog />}
+      {dialog === 'createSubcircuit' && <CreateSubcircuitDialog />}
+      {dialog === 'subcircuitManager' && <SubcircuitManagerDialog />}
       <div className="workspace">
         <aside className={partsOpen ? 'left open' : 'left'}>
           <Toolbox />

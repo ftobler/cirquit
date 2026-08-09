@@ -12,6 +12,7 @@ import type {
   TransistorModel,
 } from './types';
 import { unescapeToken } from './tokens';
+import { parseCompositeModelLine, registerSessionModel } from '../subcircuits';
 
 /** Thermal voltage the diode model's forward-drop derivation uses
  *  (DiodeModel.java:32). */
@@ -472,6 +473,23 @@ export function parseCircuit(text: string): ParsedCircuit {
           triState: parsed.triState,
         });
       }
+      passthrough.push(lineText);
+      order.push({ kind: 'other', line: rawLine });
+      continue;
+    }
+
+    if (head === '.') {
+      // Subcircuit-model library line (CustomCompositeModel.undump,
+      // CustomCompositeModel.java:208-225): `.<escaped name> <flags> <sizeX>
+      // <sizeY> <extCount> <name node pos side>... <escaped nodeList>
+      // <escaped elmDump>`. Like the `34`/`32`/`!` lines it rides through in
+      // passthrough so a save re-emits it in place, and it is not an element
+      // line upstream either, so it takes no scope index and is not reported
+      // unsupported. Its parameters are interpreted into the subcircuit model
+      // library the Subcircuit Manager reads. A partial line is preserved but
+      // never resolves, degrading like any other truncated model line.
+      const model = parseCompositeModelLine(lineText);
+      if (model !== null) registerSessionModel(model);
       passthrough.push(lineText);
       order.push({ kind: 'other', line: rawLine });
       continue;

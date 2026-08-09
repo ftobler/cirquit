@@ -113,6 +113,51 @@ export interface CustomLogicModel {
   triState: boolean;
 }
 
+/** One external pin of a subcircuit model, the ext-list entry of a `.` line
+ *  (ExtListEntry, CustomCompositeModel.java:18-25). The `node` is the pin's
+ *  id in the model's own node numbering, which is what the composite's post
+ *  order maps to. `pos` and `side` describe the pin's place on the chip
+ *  symbol when the subcircuit is drawn (ChipElm.java:603-606: side 0 north,
+ *  1 south, 2 west, 3 east). */
+export interface SubcircuitPin {
+  /** The pin's display name, the escaped ext token unescaped. */
+  name: string;
+  /** The model node id this pin exposes. */
+  node: number;
+  /** Position along the chip side, an index into the side's pin list. */
+  pos: number;
+  /** Chip side: 0 north, 1 south, 2 west, 3 east (ChipElm.java:603-606). */
+  side: number;
+}
+
+/**
+ * A subcircuit model parsed from a `.` line
+ * (`. <escaped name> <flags> <sizeX> <sizeY> <extCount> <name node pos side>...
+ * <escaped nodeList> <escaped elmDump>`, CustomCompositeModel.undump,
+ * CustomCompositeModel.java:208-225). `nodeList` is the `\r`-separated child
+ * model lines (`ClassName n1 n2 ...`) and `elmDump` the space-separated
+ * escaped child dumps, exactly the two strings the composite element rebuilds
+ * its children from (CompositeElm.loadComposite). The line rides through in
+ * passthrough so a save re-emits it in place; only its parameters are
+ * interpreted, into the library the Subcircuit Manager reads.
+ */
+export interface CompositeModel {
+  /** The model's name, the `.` line's first token. */
+  name: string;
+  /** The model's flag word (FLAG_SHOW_LABEL = 1), kept for round-tripping. */
+  flags: number;
+  /** Chip symbol width in grid cells. */
+  sizeX: number;
+  /** Chip symbol height in grid cells. */
+  sizeY: number;
+  /** The external pins, in the order the composite's posts are numbered. */
+  extList: SubcircuitPin[];
+  /** The `\r`-separated child model lines, e.g. `ResistorElm 1 2\rResistorElm 2 3`. */
+  nodeList: string;
+  /** The space-separated escaped child dumps, one per child model line. */
+  elmDump: string;
+}
+
 /**
  * A slider (`38` line, upstream's Adjustable) as stored in the file:
  * `38 <e> [F<flags>] <editItem> <minValue> <maxValue> [<sharedIndex>]

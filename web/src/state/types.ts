@@ -1,7 +1,7 @@
 /** Application state. Everything the UI reads or mutates lives here. */
 
 import type { Scope, ScopeTrigger, ScopeValue } from '../engine/simulator';
-import type { NetlistLine, ScopeConfig } from '../io/netlist';
+import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { ShortcutOverlay } from '../input/shortcuts';
 import type { CircuitElement, SimSettings } from '../model/types';
 
@@ -22,7 +22,9 @@ export type DialogName =
   | 'exportAsSvg'
   | 'about'
   | 'shortcuts'
-  | 'findComponent';
+  | 'findComponent'
+  | 'createSubcircuit'
+  | 'subcircuitManager';
 
 /** A point-in-time copy of everything undo needs to restore. Settings and view
  *  travel with it like the dump header and transform do upstream, so undoing a
@@ -87,6 +89,9 @@ export interface AppState {
   /** The dialog currently open over the workspace, or null. Lives in the store
    *  so the menubar, App's dialog host and the Ctrl+S path share one home. */
   dialog: DialogName | null;
+  /** The model Create Subcircuit built from the selection, awaiting its name
+   *  in the Create Subcircuit dialog. Null when no draft is pending. */
+  subcircuitDraft: CompositeModel | null;
   status: string;
   /** Element id under the pointer, for hover highlight; null when none. */
   hoveredId: number | null;
@@ -207,6 +212,18 @@ export interface AppState {
    *  is selected, in which case nothing is placed and the caller shows the
    *  "Select a single chip element first" alert. One undo entry on success. */
   createTest(): boolean;
+  /** Builds a subcircuit model from the selected elements (the Tools>Create
+   *  Subcircuit command, CommandManager.doCreateSubcircuit). On success the
+   *  model waits in `subcircuitDraft` for a name and the Create Subcircuit
+   *  dialog opens; returns false when the selection has nothing the composite
+   *  can build, so the caller can alert. */
+  createSubcircuit(): boolean;
+  /** Names the pending `subcircuitDraft`, stores it in the model library and
+   *  closes the dialog. A no-op with no draft pending. */
+  saveSubcircuitDraft(name: string): void;
+  /** Drops a pending `subcircuitDraft` without storing it (the dialog's
+   *  Cancel path). */
+  cancelSubcircuitDraft(): void;
   setParam(id: number, name: string, value: number): void;
   /** Writes a slider's position-converted value into its bound element's
    *  parameter through the live `set_param` fast path. A slider that cannot be

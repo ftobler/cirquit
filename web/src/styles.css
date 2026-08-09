@@ -324,6 +324,67 @@ button.active,
   font-size: 11px;
 }
 
+/* The Subcircuit Manager: a scrollable row list, one model per row with its
+   pin count and Edit/Delete buttons. */
+.subcircuit-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.subcircuit-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.subcircuit-list li:last-child {
+  border-bottom: none;
+}
+
+.subcircuit-list li.editing {
+  gap: 4px;
+}
+
+.subcircuit-list .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.subcircuit-list .meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.subcircuit-list li.editing input {
+  flex: 1;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.subcircuit-list button {
+  font-size: 12px;
+}
+
+.subcircuit-list button.danger {
+  color: var(--text);
+}
+
 .context-menu {
   position: fixed;
   width: 200px;

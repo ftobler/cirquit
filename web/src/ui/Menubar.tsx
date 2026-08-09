@@ -264,7 +264,19 @@ export function Menubar({ engine }: Props) {
     { label: 'Save As Image…', onClick: fire(() => openDialog('exportAsImage')) },
     { label: 'Copy Circuit Image to Clipboard', onClick: () => void copyImage() },
     { label: 'Save As SVG…', onClick: fire(() => openDialog('exportAsSvg')) },
-    deferred('Create Subcircuit…', 'Subcircuits are not implemented yet'),
+    {
+      label: 'Create Subcircuit…',
+      disabled: !editable,
+      onClick: fire(() => {
+        // The command aborts (with a browser alert from the caller) when the
+        // selection holds nothing the composite can build or has no external
+        // connection, like upstream's guards (EditCompositeModelDialog.java:
+        // 70-75).
+        if (!useStore.getState().createSubcircuit()) {
+          window.alert('Select part of a circuit that connects to the rest to turn into a subcircuit.');
+        }
+      }),
+    },
     deferred('Find DC Operating Point', 'The DC operating point runs on reset; the one-shot command is not ported'),
     // Enabled only while a recovery exists (UIManager.java:170); the flag is
     // set once at store init and cleared by the recover, so the row stays
@@ -320,7 +332,11 @@ export function Menubar({ engine }: Props) {
       disabled: !editable || !canConvertWires,
       onClick: fire(() => useStore.getState().convertWiresToRouted()),
     },
-    deferred('Subcircuit Manager', 'Subcircuits are not implemented yet'),
+    {
+      label: 'Subcircuit Manager',
+      disabled: !editable,
+      onClick: fire(() => openDialog('subcircuitManager')),
+    },
     {
       label: 'Create Test',
       disabled: !editable,

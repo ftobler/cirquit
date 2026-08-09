@@ -8,6 +8,7 @@ import {
   serializeCircuit,
   type ScopeConfig,
 } from '../io/netlist';
+import { buildModelFromSelection, saveModel } from '../io/subcircuits';
 import { pointOnWireInterior, splitWire } from '../render/geometry';
 import { convertWires } from '../render/wireConverter';
 import { lShapeRoute, routeWire, routingObstacles } from '../render/wireRouter';
@@ -228,6 +229,7 @@ export const useStore = create<AppState>((set, get) => ({
   view: { x: 0, y: 0, scale: 1 },
   viewSize: { w: 800, h: 600 },
   dialog: null,
+  subcircuitDraft: null,
   status: '',
   problem: null,
   hoveredId: null,
@@ -608,6 +610,35 @@ export const useStore = create<AppState>((set, get) => ({
       revision: st.revision + 1,
     }));
     return true;
+  },
+
+  createSubcircuit: () => {
+    // Builds the model from the selection and parks it in `subcircuitDraft`
+    // for the naming dialog, mirroring upstream's doCreateSubcircuit, which
+    // derives the model and then asks for a name (CommandManager.java:69-70,
+    // EditCompositeModelDialog.createModel). The derivation returns null when
+    // the selection holds nothing the composite can build, and a model with no
+    // external pins is refused too, exactly as upstream alerts on an empty
+    // extList (EditCompositeModelDialog.java:72-75); the caller reports both
+    // like TestCreator's abort.
+    const model = buildModelFromSelection(get().elements, get().selectedIds);
+    if (model === null || model.extList.length === 0) return false;
+    set({ subcircuitDraft: model, dialog: 'createSubcircuit' });
+    return true;
+  },
+
+  saveSubcircuitDraft: (name) => {
+    const draft = get().subcircuitDraft;
+    if (draft === null) return;
+    const model = { ...draft, name };
+    saveModel(model);
+    set({ subcircuitDraft: null, dialog: null });
+    get().setStatus(`Subcircuit "${name}" created`);
+  },
+
+  cancelSubcircuitDraft: () => {
+    if (get().subcircuitDraft === null) return;
+    set({ subcircuitDraft: null, dialog: null });
   },
 
   setParam: (id, name, value) => {
