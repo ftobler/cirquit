@@ -151,6 +151,11 @@ export interface Theme {
   background: string;
   grid: string;
   wire: string;
+  /** Upstream's `CircuitElm.whiteColor`: white in the normal theme, black in
+   *  the printable one (UIManager.java:578-583). The lamp bulb outline uses
+   *  it, so a printable export flips it with the background exactly like the
+   *  original. */
+  whiteColor: string;
   text: string;
   selection: string;
   highlight: string;

@@ -36,6 +36,7 @@ import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
 import { MOSFET_DEF } from '../model/registry/elements/mosfet';
 import { RAIL_DEF } from '../model/registry/elements/rail';
 import { VOLTAGE_DEF } from '../model/registry/elements/voltage';
+import { LAMP_DEF } from '../model/registry/elements/lamp';
 import { TOO_FAST, dotPhaseStep } from './dots';
 import {
   CHIP_FLIP_X,
@@ -223,7 +224,7 @@ describe('theme colour overrides', () => {
     expect(theme.neutral).toBe('#0000ff');
     expect(theme.selection).toBe('#ff00ff');
     expect(theme.currentDot).toBe('#00ffff');
-    // The other nine theme keys come from the palette, untouched.
+    // The other ten theme keys come from the palette, untouched.
     expect(theme.background).toBe('#ffffff');
     expect(theme.grid).toBe('#d0d7de');
     expect(theme.wire).toBe('#000000');
@@ -808,9 +809,10 @@ describe('incandescent temperature colour', () => {
   it('is black below the 800 K lower bound of the first band', () => {
     // LampElm.getTempColor's first band clamps its (temp-800)/400 ramp at 0,
     // so room temperature and anything below 800 K read black (LampElm.java:
-    // 102-107).
+    // 102-107). 801 K is 1 K into the ramp, which still truncates to 0.
     expect(tempColor(300)).toBe('rgb(0,0,0)');
     expect(tempColor(799)).toBe('rgb(0,0,0)');
+    expect(tempColor(801)).toBe('rgb(0,0,0)');
   });
 
   it('ramps pure red through the 800..1200 K band', () => {
@@ -834,6 +836,176 @@ describe('incandescent temperature colour', () => {
   it('is white at and above the 2400 K breakpoint', () => {
     expect(tempColor(2400)).toBe('rgb(255,255,255)');
     expect(tempColor(3000)).toBe('rgb(255,255,255)');
+  });
+});
+
+describe('lamp symbol colours', () => {
+  // The lamp bulb is a filled disc: the fill is the filament temperature via
+  // `tempColor(g.state)` (upstream getTempColor), the outline is the white
+  // constant (upstream whiteColor), and under Show Power the fill takes the
+  // power colour like any other dissipating body. The recorded draw calls pin
+  // all three against the helpers the symbol actually calls.
+
+  const lamp = (overrides: Partial<CircuitElement> = {}): CircuitElement => ({
+    id: 1,
+    kind: 'lamp',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    flags: 0,
+    params: { temp: 300, nomPower: 100, nomVoltage: 120, warmTime: 0.4, coolTime: 0.4 },
+    ...overrides,
+  });
+
+  /** Fills the stub's `fill` record with the fillStyle at each fill() call, so
+   *  the bulb colour is assertable against the recorded calls. */
+  const captureFills = (ctx: CtxStub): string[] => {
+    const fills: string[] = [];
+    const realFill = ctx.fill;
+    ctx.fill = vi.fn(() => {
+      fills.push(ctx.fillStyle);
+      realFill();
+    });
+    return fills;
+  };
+
+  const draw = (state: number, overrides: Partial<DrawContext> = {}) => {
+    const { ctx, stub, strokes } = mkCtx();
+    const fills = captureFills(stub);
+    // The colour assertions read only the bulb fill, so the current-dot fills
+    // (which would otherwise trail it) are switched off.
+    LAMP_DEF.draw({ ...context(ctx, 0), showCurrent: false, state, ...overrides }, lamp());
+    return { ctx, stub, fills, strokes };
+  };
+
+  it('fills the bulb in the temperature colour and outlines it in the white constant', () => {
+    // state 2000 K maps to the third band: rgb(255, 255, 109), the yellow
+    // toward white (LampElm.java:114-118).
+    const { fills, strokes } = draw(2000);
+    // The bulb is the only filled shape in the lamp symbol.
+    expect(fills).toEqual(['rgb(255,255,109)']);
+    // The outline is the white constant of the dark theme, upstream's
+    // whiteColor, not the wire grey. The filled circle helper strokes in its
+    // own colour too, so what singles the outline out is the white stroke.
+    const outline = strokes.find((s) => s.style === makeTheme().whiteColor);
+    expect(outline).toBeDefined();
+    expect(outline!.width).toBe(3);
+    expect(makeTheme().whiteColor).toBe('#ffffff');
+    expect(makeTheme().wire).toBe('#c9d1d9');
+  });
+
+  it('inverts the bulb outline with the printable theme', () => {
+    // Upstream flips whiteColor to black when printing (UIManager.java:578),
+    // and the port's light theme carries the same black whiteColor.
+    const { ctx, stub, strokes } = mkCtx();
+    const fills = captureFills(stub);
+    LAMP_DEF.draw(
+      { ...context(ctx, 0), showCurrent: false, theme: makeTheme(false), state: 2000 },
+      lamp(),
+    );
+    expect(fills).toEqual(['rgb(255,255,109)']);
+    const outline = strokes.find((s) => s.style === makeTheme(false).whiteColor);
+    expect(outline).toBeDefined();
+    expect(outline!.style).toBe('#000000');
+  });
+
+  it('takes the power colour for the bulb fill when Show Power is on', () => {
+    // A lamp dissipating a lot reads the saturated negative end of the power
+    // ramp, like a resistor body under Show Power (setPowerColor(g, true)
+    // before the fill, LampElm.java:131).
+    const { fills } = draw(2000, { showPowerColor: true, power: 1e6 });
+    expect(fills).toEqual(['rgb(255,0,0)']);
+  });
+
+  it('keeps the temperature fill when Show Power is off', () => {
+    // The power colour is only applied in power mode; the same hot filament
+    // stays the temperature yellow otherwise.
+    const { fills } = draw(2000, { showPowerColor: false, power: 1e6 });
+    expect(fills).toEqual(['rgb(255,255,109)']);
+  });
+
+  it('a cold lamp and a hot lamp draw visibly different fills', () => {
+    // Room temperature is black, 2500 K is white: the owner-visible promise
+    // of the plan.
+    const cold = draw(300);
+    const hot = draw(2500);
+    expect(cold.fills).toEqual(['rgb(0,0,0)']);
+    expect(hot.fills).toEqual(['rgb(255,255,255)']);
+    expect(cold.fills[0]).not.toBe(hot.fills[0]);
+  });
+});
+
+describe('lamp current-dot carry', () => {
+  // Upstream chains the dot phase through the leads and filament, then
+  // restarts the last run (lead2 -> point2) at the base curcount rather than
+  // continuing the chain (LampElm.java:143-152). A single continuous chain
+  // across all six points would drift the last run by the accumulated phase,
+  // which on a lamp whose length is a multiple of 32 puts its first dot half a
+  // spacing off the pattern on the first run.
+
+  const lamp = (): CircuitElement => ({
+    id: 1,
+    kind: 'lamp',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    flags: 0,
+    params: {},
+  });
+
+  interface Arc {
+    x: number;
+    y: number;
+    r: number;
+  }
+
+  const dotCtx = (): { ctx: CanvasRenderingContext2D; arcs: Arc[] } => {
+    const arcs: Arc[] = [];
+    const stub: CtxStub = {
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      lineCap: '',
+      lineJoin: '',
+      globalAlpha: 1,
+      font: '',
+      textAlign: '',
+      textBaseline: '',
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      stroke: vi.fn(),
+      arc: vi.fn((x: number, y: number, r: number) => {
+        arcs.push({ x, y, r });
+      }),
+      fill: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      setLineDash: vi.fn(),
+      fillText: vi.fn(),
+      measureText: (text: string) => ({ width: text.length * 6 }),
+    };
+    return { ctx: stub as unknown as CanvasRenderingContext2D, arcs };
+  };
+
+  const dots = (arcs: Arc[]): Point[] => arcs.filter((a) => a.r === 2);
+
+  const hasDot = (pts: Point[], p: Point): boolean =>
+    pts.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.01);
+
+  it('starts the last run at the base curcount, not the carried phase', () => {
+    // A 64-unit lamp: lead1 (24,0), lead2 (40,0), filament ends at (24,-24)
+    // and (40,-24). At phase 0 the last run (lead2 -> point2, 24 long) puts
+    // its first dot exactly on lead2; a continuous chain would have carried
+    // the phase 8 into it and started the first dot at (48,0) instead.
+    const { ctx, arcs } = dotCtx();
+    LAMP_DEF.draw({ ...context(ctx, 0), current: 0.01, state: 1000 }, lamp());
+    const pts = dots(arcs);
+    expect(hasDot(pts, { x: 40, y: 0 })).toBe(true);
+    expect(hasDot(pts, { x: 48, y: 0 })).toBe(false);
   });
 });
 

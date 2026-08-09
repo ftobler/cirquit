@@ -730,6 +730,8 @@ function lightTheme(): Theme {
     background: '#ffffff',
     grid: '#d0d7de',
     wire: '#000000',
+    // Upstream's printable mode sets whiteColor to black (UIManager.java:578).
+    whiteColor: '#000000',
     text: '#24292f',
     selection: '#0969da',
     highlight: '#d0782d',
@@ -752,6 +754,8 @@ function darkTheme(): Theme {
     background: '#0d1117',
     grid: '#1b2230',
     wire: '#c9d1d9',
+    // Upstream's normal theme sets whiteColor to white (UIManager.java:583).
+    whiteColor: '#ffffff',
     text: '#8b949e',
     selection: '#00ffff',
     highlight: '#f0883e',

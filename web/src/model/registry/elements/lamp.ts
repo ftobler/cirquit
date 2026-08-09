@@ -1,12 +1,15 @@
 import {
   calcLeads,
   circle,
-  currentDotsPath,
+  currentDotsFrom,
+  dotPhaseAfter,
   drawLeads,
+  elementLength,
   endpoints,
   gradientPolyline,
   interp,
   line,
+  powerColor,
   tempColor,
   voltageColor,
 } from '../../../render/draw';
@@ -15,7 +18,9 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** Lead gap, filament diagonal offset and bulb radius for the non-IEC lamp
  *  symbol (LampElm.java's `setPoints`: `llen` at :88, `filament_len` at :85,
- *  `bulbR` at :92). */
+ *  `bulbR` at :92). Upstream's `bulbLead` (:93-95) is not ported: it computes
+ *  `filament_len - sqrt(bulbR² - llen²)` in setPoints and no draw call reads
+ *  it, so it is dead upstream and its absence here is faithful. */
 const LAMP_LEAD_GAP = 16;
 const LAMP_FILAMENT_OFFSET = 24;
 const LAMP_BULB_RADIUS = 20;
@@ -33,19 +38,41 @@ function drawLampBody(g: DrawContext, e: CircuitElement): void {
   const filament0 = interp(lead1, lead2, 0, LAMP_FILAMENT_OFFSET);
   const filament1 = interp(lead1, lead2, 1, LAMP_FILAMENT_OFFSET);
   const bulb = interp(filament0, filament1, 0.5);
-  // The bulb fill is a single temperature colour, not a gradient: it is a
-  // filled disc, which the per-segment stroke mechanism cannot shade, and the
-  // envelope is not the conducting path anyway. The filament is the conductor,
-  // so it shades along the drop from lead1's post to lead2's.
-  circle(g, bulb, LAMP_BULB_RADIUS, tempColor(g.state), true);
+  // The bulb fill is a single colour, not a gradient: it is a filled disc,
+  // which the per-segment stroke mechanism cannot shade, and the envelope is
+  // not the conducting path anyway. The filament is the conductor, so it
+  // shades along the drop from lead1's post to lead2's. Under Show Power the
+  // disc takes the power colour like every other dissipating body, the
+  // intended reading of upstream's setPowerColor(g, true) before the fill
+  // (LampElm.java:131); upstream's next line overwrites it with getTempColor,
+  // which makes that call dead there, but the port keeps the participation.
+  const fill = g.showPowerColor ? powerColor(g, g.power) : tempColor(g.state);
+  circle(g, bulb, LAMP_BULB_RADIUS, fill, true);
   // The bulb outline and filament are drawThickCircle/drawThickLine upstream
-  // (LampElm.java:135-141), the 3-unit body weight.
-  circle(g, bulb, LAMP_BULB_RADIUS, g.theme.wire, false);
+  // (LampElm.java:135-141), the 3-unit body weight. The outline is upstream's
+  // whiteColor (LampElm.java:134): white in the normal theme, black in the
+  // printable one (UIManager.java:578-583), which is how a print stays legible
+  // on the white page.
+  circle(g, bulb, LAMP_BULB_RADIUS, g.theme.whiteColor, false);
   line(g, lead1, filament0, voltageColor(g, g.voltages[0]));
   line(g, lead2, filament1, voltageColor(g, g.voltages[1]));
   gradientPolyline(g, [filament0, filament1]);
   const [p1, p2] = endpoints(e);
-  currentDotsPath(g, [p1, lead1, filament0, filament1, lead2, p2], g.current);
+  // The five dot runs mirror LampElm.java:143-152, which chain the phase
+  // through the body and then restart the last lead at the base curcount. The
+  // restart is deliberate: a continuous chain across all six points would
+  // carry the whole body offset into lead2's run. That offset is
+  // (3/2)(dn-16), which wraps to zero modulo the 16-unit dot spacing only
+  // when the lead length (dn-16)/2 is a multiple of 16, so nearly every lamp
+  // drifts its last-run dots off the pattern on lead1.
+  currentDotsFrom(g, p1, lead1, g.current, g.dotPhase);
+  let cc = dotPhaseAfter(g.dotPhase, (elementLength(e) - LAMP_LEAD_GAP) / 2);
+  currentDotsFrom(g, lead1, filament0, g.current, cc);
+  cc = dotPhaseAfter(cc, LAMP_FILAMENT_OFFSET);
+  currentDotsFrom(g, filament0, filament1, g.current, cc);
+  cc = dotPhaseAfter(cc, LAMP_LEAD_GAP);
+  currentDotsFrom(g, filament1, lead2, g.current, cc);
+  currentDotsFrom(g, lead2, p2, g.current, g.dotPhase);
 }
 
 export const LAMP_DEF: ElementDef = {
