@@ -2,6 +2,7 @@
 
 import type { Scope, ScopeTrigger, ScopeValue } from '../engine/simulator';
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
+import type { RenameOutcome } from '../io/subcircuits';
 import type { ShortcutOverlay } from '../input/shortcuts';
 import type { CircuitElement, SimSettings } from '../model/types';
 
@@ -35,6 +36,11 @@ export interface Snapshot {
   sliders: Slider[];
   settings: SimSettings;
   view: ViewTransform;
+  /** The document's own lines, both copies of them. A subcircuit rename
+   *  rewrites the `.` line in each, which is the one edit that changes the
+   *  saved file without changing an element, so undo has to bring them back. */
+  passthrough: string[];
+  order: NetlistLine[];
 }
 
 /**
@@ -230,6 +236,13 @@ export interface AppState {
   /** Drops a pending `subcircuitDraft` without storing it (the dialog's
    *  Cancel path). */
   cancelSubcircuitDraft(): void;
+  /** Renames a subcircuit model for the Subcircuit Manager's Edit row. The
+   *  library half is `renameModel`; the document half is this action's own,
+   *  since renaming a model the open file's `.` line introduced has to rewrite
+   *  that line, as one undo step. A saved model has no line here, so its rename
+   *  leaves the circuit alone. The outcome is the library's, passed straight
+   *  through to the Manager. */
+  renameSubcircuit(oldName: string, newName: string): RenameOutcome;
   setParam(id: number, name: string, value: number): void;
   /** Writes a slider's position-converted value into its bound element's
    *  parameter through the live `set_param` fast path. A slider that cannot be

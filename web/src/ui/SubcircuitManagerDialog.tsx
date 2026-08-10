@@ -7,7 +7,7 @@
  *  where they are testable without a DOM. */
 
 import { useCallback, useReducer, useState } from 'react';
-import { listModels, nameTaken, removeModel, renameModel } from '../io/subcircuits';
+import { listModels, nameTaken, removeModel } from '../io/subcircuits';
 import { useStore } from '../state/store';
 import { Dialog } from './Dialog';
 import {
@@ -24,6 +24,7 @@ const RENAME_ERROR_ID = 'subcircuit-rename-error';
 
 export function SubcircuitManagerDialog() {
   const closeDialog = useStore((s) => s.closeDialog);
+  const renameSubcircuit = useStore((s) => s.renameSubcircuit);
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const [edit, setEdit] = useState(NO_SUBCIRCUIT_EDIT);
   /** What an action left behind that the list itself does not explain: the row
@@ -34,9 +35,12 @@ export function SubcircuitManagerDialog() {
   const models = listModels();
 
   const commitEdit = () => {
-    // `renameModel` speaks the outcome union the edit row decides on, so this
-    // is a pass-through and not a translation.
-    const result = commitSubcircuitEdit(edit, renameModel);
+    // The store action, not `renameModel` itself: renaming a model the open
+    // file's `.` line introduced is a document edit as well as a library one,
+    // and only the store can make the two one undo step. It answers with the
+    // library's own outcome union, so this is still a pass-through and not a
+    // translation.
+    const result = commitSubcircuitEdit(edit, renameSubcircuit);
     setEdit(result.state);
     setNotice(result.notice);
     if (result.refresh) bump();

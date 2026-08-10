@@ -23,6 +23,11 @@
  *  the parse result on every `loadNetlist`, so closing a file takes its models
  *  with it; `parseCircuit` itself registers nothing, or an import preview or a
  *  clipboard sniff would silently grow the library.
+ *
+ *  Because a session model is the file's, renaming one is half a document edit:
+ *  this module re-keys the map (`renameModel`) and offers the line rewrite
+ *  (`renameCompositeModelLine`) and the undo-time resync (`syncSessionModels`),
+ *  but the store owns the circuit and is what actually applies them.
  */
 
 import { escapeToken, unescapeToken } from './netlist/tokens';
@@ -111,6 +116,49 @@ export function registerSessionModel(model: CompositeModel): void {
   sessionModels.set(model.name, model);
 }
 
+/** Every model the given lines define, keyed by name. Only `.` lines that
+ *  parse contribute, so a truncated one is ignored here exactly as it is on
+ *  load. */
+function modelsInLines(lines: string[]): Map<string, CompositeModel> {
+  const out = new Map<string, CompositeModel>();
+  for (const line of lines) {
+    if (!line.trim().startsWith('.')) continue;
+    const model = parseCompositeModelLine(line.trim());
+    if (model !== null) out.set(model.name, model);
+  }
+  return out;
+}
+
+/** Moves the session map from one set of document lines to another, for undo
+ *  and redo of a subcircuit rename: the `.` lines come back, so the library
+ *  entries they stand for have to come back with them, or the Manager would
+ *  list the new name while the file says the old one.
+ *
+ *  The loops touch every name one of the two line sets alone defines,
+ *  whatever put its library entry there. The delete loop drops a name only the
+ *  before-lines carry, so a paste model whose name sits on a `.` line that
+ *  undo retracts goes with it; the `now` loop registers each model the
+ *  after-lines define, so the file's copy wins on a collision and a `.` line
+ *  coming back on undo overwrites any paste model sharing its name. Only a
+ *  name in neither set is provably left alone: a session model no `.` line
+ *  introduced (one storage refused, one a paste brought in) keeps its entry
+ *  exactly when no line in either set collides with it. A name both sets carry
+ *  is left alone too, and keeps whatever the library currently says about it:
+ *  it may since have been saved, and re-registering the file's copy would
+ *  resurrect a shadow the user's own save had cleared. This is deliberately
+ *  not the wholesale `clearSessionModels`-and-re-register a load performs,
+ *  because an undo is not a load and must not take those models with it. */
+export function syncSessionModels(before: string[], after: string[]): void {
+  const was = modelsInLines(before);
+  const now = modelsInLines(after);
+  for (const name of was.keys()) {
+    if (!now.has(name)) sessionModels.delete(name);
+  }
+  for (const [name, model] of now) {
+    if (!was.has(name)) sessionModels.set(name, model);
+  }
+}
+
 // ─── `.` line parsing and serialising ───
 
 /** Parses a `.` line into a model. Returns null for a line whose fields do not
@@ -175,6 +223,53 @@ export function compositeModelLine(model: CompositeModel): string {
     escapeToken(model.nodeList),
     escapeToken(model.elmDump),
   ].join(' ');
+}
+
+/** The same `.` line with the model renamed, or null when the line is not this
+ *  model's. Only the name token is rewritten, so every other field, the
+ *  escaping of the two opaque tokens and whatever spacing the file arrived
+ *  with all survive byte for byte: re-emitting the line through
+ *  `compositeModelLine` would instead normalise a hand-written one. A line that
+ *  does not parse never matches, so a truncated `.` line is preserved
+ *  untouched, as it is everywhere else. */
+export function renameCompositeModelLine(
+  line: string,
+  oldName: string,
+  newName: string,
+): string | null {
+  if (parseCompositeModelLine(line.trim())?.name !== oldName) return null;
+  // Group 1 is `.` with the whitespace around it, group 2 the name token, so
+  // only the name is replaced and the rest of the line is carried over.
+  const parts = /^(\s*\.\s+)(\S+)(.*)$/.exec(line);
+  if (parts === null) return null;
+  return parts[1] + escapeToken(newName) + parts[3];
+}
+
+/** Whether two models are the same model: same name and same body (flags,
+ *  size, pins, node list and child dumps). The store's rename writes a
+ *  document `.` line back only when this holds against the model about to
+ *  move, so a same-named saved model or paste cannot edit a line that is a
+ *  different model, while a model the file introduced under one name is still
+ *  matched however its entry reached storage. */
+export function sameCompositeModel(a: CompositeModel, b: CompositeModel): boolean {
+  if (
+    a.name !== b.name ||
+    a.flags !== b.flags ||
+    a.sizeX !== b.sizeX ||
+    a.sizeY !== b.sizeY ||
+    a.nodeList !== b.nodeList ||
+    a.elmDump !== b.elmDump ||
+    a.extList.length !== b.extList.length
+  ) {
+    return false;
+  }
+  return a.extList.every(
+    (p, i) =>
+      p.name === b.extList[i].name &&
+      p.node === b.extList[i].node &&
+      p.pos === b.extList[i].pos &&
+      p.side === b.extList[i].side,
+  );
 }
 
 /**
@@ -335,25 +430,32 @@ export type RenameOutcome =
  * name and a delete of the old, so without the check renaming `divider` onto
  * `amp` would delete `amp` and write `divider`'s body under its name, silently.
  *
- * The copy is written first and the original only dropped once storage has
- * taken it. `nameTaken` has just proved the new name is free, so writing first
- * can clobber nothing, while deleting first loses the model outright when the
- * write that follows is refused: it would live on in the session map alone,
- * which the next load clears. A refusal therefore leaves everything exactly
- * where it was and answers `refused`. A model that was only ever in the session
- * map is exempt, since storage never held it and the file's `.` line still
- * carries it.
+ * Only the copy the listed row came from moves, and it moves within the store
+ * it came from, the same two-store rule `removeModel` follows. A model the open
+ * file's `.` line introduced is re-keyed in the session map and written nowhere
+ * else: persisting it under the new name instead would promote a file-local
+ * model into the user's saved library while the file's line kept saying the old
+ * name, so the next load of that file listed both, one rename and two models.
+ * The `.` line is the other half of such a rename and belongs to the document,
+ * not to this module: the store's `renameSubcircuit` rewrites it, under
+ * `commit()` so it undoes.
  *
- * Only the copy the listed row came from moves. Renaming a row that shadows a
- * saved model of the same name (the open file's `.` line over the user's own
- * saved subcircuit) therefore leaves that saved model behind under the old
- * name and the list grows a second row. That is the same rule `removeModel`
- * follows, and the only non-destructive one available: the two are different
- * models that happen to share a name, and moving the saved one too would have
- * to overwrite it with the file's body. The old name still resolving after the
- * delete is what `uncovered` reports, which also covers a delete storage
- * refused: either way a model of the old name is still listed and the Manager
- * has to account for the extra row.
+ * For a saved model the copy is written first and the original only dropped
+ * once storage has taken it. `nameTaken` has just proved the new name is free,
+ * so writing first can clobber nothing, while deleting first loses the model
+ * outright when the write that follows is refused: it would live on in the
+ * session map alone, which the next load clears. A refusal therefore leaves
+ * everything exactly where it was and answers `refused`.
+ *
+ * Renaming a row that shadows a saved model of the same name (the open file's
+ * `.` line over the user's own saved subcircuit) leaves that saved model behind
+ * under the old name and the list grows a second row. That is the only
+ * non-destructive rule available: the two are different models that happen to
+ * share a name, and moving the saved one too would have to overwrite it with
+ * the file's body. The old name still resolving afterwards is what `uncovered`
+ * reports, which also covers a delete storage refused: either way a model of
+ * the old name is still listed and the Manager has to account for the extra
+ * row.
  */
 export function renameModel(
   oldName: string,
@@ -365,14 +467,23 @@ export function renameModel(
   if (newName === '') return 'blank';
   if (newName === oldName) return 'unchanged';
   if (nameTaken(newName, storage)) return 'taken';
-  const wasSaved = !sessionModels.has(oldName);
-  if (!saveModel({ ...model, name: newName }, storage) && wasSaved) {
+  if (sessionModels.has(oldName)) {
+    // The open file's own model: re-keyed in place, so storage neither gains
+    // the new name nor loses the old. Nothing can refuse an in-memory move,
+    // which is why this branch has no `refused` answer.
+    sessionModels.delete(oldName);
+    sessionModels.set(newName, { ...model, name: newName });
+    return nameTaken(oldName, storage) ? 'uncovered' : 'renamed';
+  }
+  if (!saveModel({ ...model, name: newName }, storage)) {
     // Storage refused the copy of a model it is holding. Undo the session-map
     // fallback `saveModel` left behind, or the library would list the model
     // twice until the next load and then lose the new name.
     sessionModels.delete(newName);
     return 'refused';
   }
+  // Only the saved copy moves: the session map cannot hold this name, or the
+  // branch above would have taken it.
   removeModel(oldName, storage);
   return nameTaken(oldName, storage) ? 'uncovered' : 'renamed';
 }

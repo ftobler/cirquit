@@ -12,8 +12,14 @@ import {
   buildModelFromSelection,
   clearSessionModels,
   describeBuildFailure,
+  getModel,
+  parseCompositeModelLine,
   registerSessionModel,
+  renameCompositeModelLine,
+  renameModel,
+  sameCompositeModel,
   saveModel,
+  syncSessionModels,
 } from '../io/subcircuits';
 import { pointOnWireInterior, splitWire } from '../render/geometry';
 import { convertWires } from '../render/wireConverter';
@@ -77,6 +83,11 @@ const clone = (s: Snapshot): Snapshot => ({
   sliders: s.sliders.map((x) => ({ ...x, raw: [...x.raw] })),
   settings: { ...s.settings },
   view: { ...s.view },
+  // The document's lines. A shallow copy is enough because the entries are
+  // strings and small immutable records that the one mutator (the subcircuit
+  // rename) replaces rather than edits in place.
+  passthrough: [...s.passthrough],
+  order: [...s.order],
 });
 
 /** Canonical fingerprint of the snapshot state, mirroring upstream's dump
@@ -91,6 +102,12 @@ const snapshotKey = (s: Snapshot): string =>
     sliders: s.sliders,
     settings: s.settings,
     view: s.view,
+    // The document's lines belong in the fingerprint too: a subcircuit rename
+    // changes nothing else, so without them a second rename would dedup
+    // against the first commit, the entry would never be pushed and undo would
+    // skip a step.
+    passthrough: s.passthrough,
+    order: s.order,
   });
 
 const UNDO_LIMIT = 100;
@@ -648,6 +665,55 @@ export const useStore = create<AppState>((set, get) => ({
   cancelSubcircuitDraft: () => {
     if (get().subcircuitDraft === null) return;
     set({ subcircuitDraft: null, dialog: null });
+  },
+
+  renameSubcircuit: (oldName, newName) => {
+    // The model about to move has to be captured before `renameModel` re-keys
+    // it, because the document write-back matches a line by body as well as by
+    // name. The session map wins the lookup, exactly as it wins the Manager's
+    // list, so a file's copy is matched against itself even while a saved
+    // model of the same name sits behind it.
+    const model = getModel(oldName);
+    const outcome = renameModel(oldName, newName);
+    // Everything else is a refusal or a no-op: the library did not move, so
+    // neither does the file.
+    if (outcome !== 'renamed' && outcome !== 'uncovered') return outcome;
+    // `renameModel` answers `missing` when the lookup missed, so the capture
+    // above cannot have come back empty here.
+    if (model === undefined) return outcome;
+    const s = get();
+    // Both copies of the line: `passthrough` is what a subset save writes, and
+    // `order` is what a loaded file writes, so a rename that missed either
+    // would come back on the next save. Every line that IS this model moves,
+    // since a file holding the same model twice must not be left half renamed;
+    // a line that is a different model under the same name (a saved model, a
+    // paste) is preserved, which is what keeps a saved model's rename from
+    // editing an unrelated open file.
+    const rename = (line: string) => {
+      const parsed = parseCompositeModelLine(line.trim());
+      if (parsed === null || !sameCompositeModel(parsed, model)) return null;
+      return renameCompositeModelLine(line, oldName, newName);
+    };
+    const passthrough = s.passthrough.map((line) => rename(line) ?? line);
+    const order = s.order.map((entry) => {
+      if (entry.kind !== 'other') return entry;
+      const renamed = rename(entry.line);
+      return renamed === null ? entry : { ...entry, line: renamed };
+    });
+    // A rename that matched no `.` line (a purely saved model, or a session
+    // model with nothing behind it) is a library-only rename: nothing to
+    // commit. Unchanged lines come back by identity, so this compares
+    // references.
+    const untouched =
+      order.every((entry, i) => entry === s.order[i]) &&
+      passthrough.every((line, i) => line === s.passthrough[i]);
+    if (untouched) return outcome;
+    // The document changed, so this is an edit like any other: one commit
+    // before it makes the rename one undo step. The revision bump is the
+    // engine's cue to reread a netlist that now names the model differently.
+    get().commit();
+    set((st) => ({ passthrough, order, revision: st.revision + 1 }));
+    return outcome;
   },
 
   setParam: (id, name, value) => {
@@ -1319,31 +1385,36 @@ export const useStore = create<AppState>((set, get) => ({
     }));
   },
 
-  undo: () =>
-    set((s) => {
-      const prev = s.undoStack[s.undoStack.length - 1];
-      if (!prev) return s;
-      return {
-        ...prev,
-        undoStack: s.undoStack.slice(0, -1),
-        redoStack: [...s.redoStack, clone(s)],
-        selectedIds: [],
-        revision: s.revision + 1,
-      };
-    }),
+  undo: () => {
+    const s = get();
+    const prev = s.undoStack[s.undoStack.length - 1];
+    if (!prev) return;
+    set({
+      ...prev,
+      undoStack: s.undoStack.slice(0, -1),
+      redoStack: [...s.redoStack, clone(s)],
+      selectedIds: [],
+      revision: s.revision + 1,
+    });
+    // The `.` lines that came back define library models, so the session half
+    // of the library follows them. Both line sets are read, so a step that did
+    // not touch a `.` line changes nothing here.
+    syncSessionModels(s.passthrough, prev.passthrough);
+  },
 
-  redo: () =>
-    set((s) => {
-      const next = s.redoStack[s.redoStack.length - 1];
-      if (!next) return s;
-      return {
-        ...next,
-        redoStack: s.redoStack.slice(0, -1),
-        undoStack: [...s.undoStack, clone(s)],
-        selectedIds: [],
-        revision: s.revision + 1,
-      };
-    }),
+  redo: () => {
+    const s = get();
+    const next = s.redoStack[s.redoStack.length - 1];
+    if (!next) return;
+    set({
+      ...next,
+      redoStack: s.redoStack.slice(0, -1),
+      undoStack: [...s.undoStack, clone(s)],
+      selectedIds: [],
+      revision: s.revision + 1,
+    });
+    syncSessionModels(s.passthrough, next.passthrough);
+  },
 
   openContextMenu: (x, y, target) =>
     set((s) => {

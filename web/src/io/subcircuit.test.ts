@@ -2,7 +2,7 @@
  *  Manager features: parse, round-trip, model building from a selection and
  *  the library's storage round-trip. */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildModelFromSelection,
   clearSessionModels,
@@ -15,6 +15,7 @@ import {
   parseCompositeModelLine,
   registerSessionModel,
   removeModel,
+  renameCompositeModelLine,
   renameModel,
   saveModel,
   type SubcircuitStorage,
@@ -213,6 +214,24 @@ describe('the `.` model line', () => {
       external: [1],
       dumps: ['0_0_40_-9_0_0_0.5', '0_1000'],
     });
+  });
+
+  it('renames the model in a `.` line and leaves every other byte alone', () => {
+    const renamed = renameCompositeModelLine(MODEL_LINE, 'myCirc', 'amp');
+    expect(renamed).toBe(MODEL_LINE.replace('. myCirc', '. amp'));
+    // A name needing escapes is escaped like the writer would, and comes back
+    // unescaped through the parser.
+    const spaced = renameCompositeModelLine(MODEL_LINE, 'myCirc', 'my amp')!;
+    expect(spaced).toContain('. my\\samp ');
+    expect(parseCompositeModelLine(spaced)!.name).toBe('my amp');
+  });
+
+  it('leaves a line that is not this model alone', () => {
+    // Another model's line, a non-`.` line and a truncated one all answer null,
+    // so the rename walk over the file passes them through untouched.
+    expect(renameCompositeModelLine(MODEL_LINE, 'other', 'amp')).toBeNull();
+    expect(renameCompositeModelLine('r 0 0 160 0 0 1000', 'myCirc', 'amp')).toBeNull();
+    expect(renameCompositeModelLine('. myCirc 0 2 2', 'myCirc', 'amp')).toBeNull();
   });
 
   it('an escaped name and pin name survive the round trip', () => {
@@ -920,5 +939,241 @@ describe('the store actions behind the menu rows', () => {
     expect(after.dialog).toBeNull();
     expect(after.subcircuitDraft).toBeNull();
     expect(listModels()).toEqual([]);
+  });
+});
+
+describe('renaming a subcircuit the open file introduced', () => {
+  /** The same `.` line under the name the bug report uses. */
+  const DIVIDER_LINE = MODEL_LINE.replace('. myCirc', '. divider');
+  const FILE = HEADER + DIVIDER_LINE + '\nr 0 0 160 0 0 1000\n';
+  /** What the file must look like once `divider` has become `amp`: one token
+   *  different and not a byte more. */
+  const RENAMED_FILE = FILE.replace('. divider', '. amp');
+
+  /** The library reads `globalThis.localStorage` through `defaultStorage`, and
+   *  the store's rename path has nowhere to inject a fake past it. These tests
+   *  therefore give it a real one, which is also what makes the doubling
+   *  reproducible: without persisted keys the old code's promotion of the
+   *  file's model into storage had nowhere to land. */
+  function installLocalStorage(): Map<string, string> {
+    const store = new Map<string, string>();
+    const fake = {
+      get length() {
+        return store.size;
+      },
+      key: (i: number) => [...store.keys()][i] ?? null,
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+      clear: () => store.clear(),
+    };
+    (globalThis as unknown as { localStorage?: unknown }).localStorage = fake;
+    return store;
+  }
+
+  let stored: Map<string, string>;
+  beforeEach(() => {
+    stored = installLocalStorage();
+  });
+  afterEach(() => {
+    delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
+  });
+
+  const load = () => useStore.getState().loadNetlist(FILE);
+  const rename = (from: string, to: string) => useStore.getState().renameSubcircuit(from, to);
+  const netlist = () => useStore.getState().toNetlist();
+  const names = () => listModels().map((m) => m.name);
+
+  it('rewrites the `.` line instead of leaving the file saying the old name', () => {
+    load();
+    expect(rename('divider', 'amp')).toBe('renamed');
+    // The whole file, byte for byte, with only the name token moved: the two
+    // opaque tokens and the resistor line are untouched.
+    expect(netlist()).toBe(RENAMED_FILE);
+    expect(netlist()).not.toContain('divider');
+    expect(names()).toEqual(['amp']);
+  });
+
+  it('saving and reloading finds exactly one model, under the new name', () => {
+    // The regression: the rename used to write `amp` into storage and leave the
+    // `.` line saying `divider`, so reloading the saved file listed both.
+    load();
+    rename('divider', 'amp');
+    useStore.getState().loadNetlist(netlist());
+    expect(names()).toEqual(['amp']);
+    // Nor did the file's model get promoted into the saved library on the way
+    // past, which is where the second copy used to come from.
+    expect([...stored.keys()]).toEqual([]);
+  });
+
+  it('is one undo step, and undo puts the line and the model back', () => {
+    load();
+    // A load clears the stacks, so the rename's own commit is the only entry.
+    expect(useStore.getState().undoStack).toHaveLength(0);
+    rename('divider', 'amp');
+    expect(useStore.getState().undoStack).toHaveLength(1);
+
+    useStore.getState().undo();
+    expect(netlist()).toBe(FILE);
+    expect(names()).toEqual(['divider']);
+
+    useStore.getState().redo();
+    expect(netlist()).toBe(RENAMED_FILE);
+    expect(names()).toEqual(['amp']);
+  });
+
+  it('a second rename is its own undo step', () => {
+    // Nothing but the `.` line changes, so the commit dedup has to see the
+    // document lines or the second rename would share the first one's entry.
+    load();
+    rename('divider', 'amp');
+    rename('amp', 'buffer');
+    expect(useStore.getState().undoStack).toHaveLength(2);
+    useStore.getState().undo();
+    expect(names()).toEqual(['amp']);
+    useStore.getState().undo();
+    expect(names()).toEqual(['divider']);
+    expect(netlist()).toBe(FILE);
+  });
+
+  it('a rename of a saved model leaves the open circuit alone', () => {
+    load();
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    stored.set('subcircuit:saved', compositeModelLine({ ...base, name: 'saved' }));
+    const before = useStore.getState().passthrough;
+
+    expect(rename('saved', 'renamed')).toBe('renamed');
+    // No document edit, so no undo entry and not a byte of the file moved.
+    expect(useStore.getState().passthrough).toBe(before);
+    expect(useStore.getState().undoStack).toHaveLength(0);
+    expect(netlist()).toBe(FILE);
+    expect(names()).toEqual(['divider', 'renamed']);
+  });
+
+  it('a rename with no circuit open still works', () => {
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    stored.set('subcircuit:saved', compositeModelLine({ ...base, name: 'saved' }));
+    expect(rename('saved', 'renamed')).toBe('renamed');
+    expect(names()).toEqual(['renamed']);
+    expect(useStore.getState().passthrough).toEqual([]);
+    expect(useStore.getState().undoStack).toHaveLength(0);
+  });
+
+  it('a refusal leaves the file exactly as it was', () => {
+    // `taken` and `missing` are the library's answers; what matters here is
+    // that neither reaches the document.
+    load();
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    stored.set('subcircuit:amp', compositeModelLine({ ...base, name: 'amp' }));
+
+    expect(rename('divider', 'amp')).toBe('taken');
+    expect(rename('nothing', 'amp')).toBe('missing');
+    expect(netlist()).toBe(FILE);
+    expect(useStore.getState().undoStack).toHaveLength(0);
+  });
+
+  it('renaming the copy from the file uncovers the saved model of that name', () => {
+    // The `uncovered` notice says the old name is still listed, and it still
+    // is: the saved model the file's copy was shadowing. Only the file's copy
+    // moved, and only the file's line was rewritten.
+    load();
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    stored.set('subcircuit:divider', compositeModelLine({ ...base, name: 'divider', sizeX: 9 }));
+
+    expect(rename('divider', 'amp')).toBe('uncovered');
+    expect(netlist()).toBe(RENAMED_FILE);
+    expect(names()).toEqual(['amp', 'divider']);
+    expect(getModel('divider')!.sizeX).toBe(9);  // the saved one, where it was
+    expect(getModel('amp')!.sizeX).toBe(2);  // the file's, under its new name
+  });
+
+  it('a session model with no `.` line behind it is a library-only rename', () => {
+    // A model a paste introduced: the library moves it, but there is no line in
+    // this document to rewrite and so nothing to undo.
+    load();
+    registerSessionModel({ ...parseCompositeModelLine(MODEL_LINE)!, name: 'pasted' });
+    expect(rename('pasted', 'moved')).toBe('renamed');
+    expect(names()).toEqual(['divider', 'moved']);
+    expect(netlist()).toBe(FILE);
+    expect(useStore.getState().undoStack).toHaveLength(0);
+  });
+
+  it('an undo of an unrelated edit leaves the library alone', () => {
+    // The session-map sync runs on every undo, so a step that touched no `.`
+    // line must be inert. Two models it could disturb: one with no line behind
+    // it at all, and one whose line is still there but whose library entry the
+    // user has since replaced with a save of their own, which drops the session
+    // copy on purpose (`saveModel`). Re-registering the file's copy would put
+    // that shadow back and change which `divider` the Manager lists.
+    load();
+    registerSessionModel({ ...parseCompositeModelLine(MODEL_LINE)!, name: 'pasted' });
+    saveModel({ ...parseCompositeModelLine(MODEL_LINE)!, name: 'divider', sizeX: 9 });
+    useStore.getState().addElement(makeElement('resistor', 0, 160, 160, 160));
+
+    useStore.getState().undo();
+    expect(names()).toEqual(['divider', 'pasted']);
+    expect(getModel('divider')!.sizeX).toBe(9);
+  });
+
+  it('an escaped name rides the whole rename, undo and re-save path escaped', () => {
+    // The file's `.` line names the model in escaped form, so each surface
+    // speaks a different dialect: the library and the rename take unescaped
+    // names, the file and the rewrite keep them escaped. An assertion on only
+    // one form would miss a rename that half-applied.
+    const escaped = MODEL_LINE.replace('. myCirc', '. my\\sdivider');
+    const escapedFile = HEADER + escaped + '\nr 0 0 160 0 0 1000\n';
+    useStore.getState().loadNetlist(escapedFile);
+    expect(names()).toEqual(['my divider']);
+
+    expect(rename('my divider', 'my amp')).toBe('renamed');
+    const saved = netlist();
+    expect(saved).toBe(escapedFile.replace('. my\\sdivider', '. my\\samp'));
+    expect(saved).toContain('. my\\samp ');
+    expect(saved).not.toContain('my\\sdivider');
+    // The rewritten line still parses to the unescaped new name.
+    const line = saved.split('\n').find((l) => l.trim().startsWith('.'))!;
+    expect(parseCompositeModelLine(line.trim())!.name).toBe('my amp');
+    expect(names()).toEqual(['my amp']);
+
+    useStore.getState().undo();
+    expect(netlist()).toBe(escapedFile);
+    expect(names()).toEqual(['my divider']);
+  });
+
+  it('a file carrying the same model twice rewrites both `.` lines', () => {
+    // The two lines parse to the same model, so the library lists the name
+    // once; a rename must move both lines or the reload would revive the old
+    // name from the untouched one.
+    const doubled = HEADER + DIVIDER_LINE + '\n' + DIVIDER_LINE + '\nr 0 0 160 0 0 1000\n';
+    useStore.getState().loadNetlist(doubled);
+    expect(names()).toEqual(['divider']);
+
+    expect(rename('divider', 'amp')).toBe('renamed');
+    const saved = netlist();
+    expect(saved).toBe(doubled.replaceAll('. divider', '. amp'));
+    expect(saved).not.toContain('. divider');
+    expect(saved.split('\n').filter((l) => l.trim().startsWith('.')).length).toBe(2);
+    expect(names()).toEqual(['amp']);
+  });
+
+  it('a rename after the file model was promoted into storage still reaches the `.` line', () => {
+    // The confirm-on-taken path of Create Subcircuit saves the file's own
+    // model under its name, which drops the session copy. Renaming it then
+    // used to take the saved branch, skip the write-back and leave the file
+    // saying the old name: one rename, two models after the next load. The
+    // body match is what reaches the line now, because the promoted model is
+    // that line's own body.
+    load();
+    saveModel(parseCompositeModelLine(DIVIDER_LINE)!);
+    expect([...stored.keys()]).toEqual(['subcircuit:divider']);
+
+    expect(rename('divider', 'amp')).toBe('renamed');
+    expect(netlist()).toBe(RENAMED_FILE);
+    expect(names()).toEqual(['amp']);
+    expect([...stored.keys()]).toEqual(['subcircuit:amp']);
   });
 });
