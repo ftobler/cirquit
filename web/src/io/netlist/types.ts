@@ -215,6 +215,12 @@ export interface ParsedCircuit {
   sliders: SliderConfig[];
   /** Lines this build does not interpret, re-emitted on save. */
   passthrough: string[];
+  /** The subcircuit models this file's `.` lines define, in file order. The
+   *  lines themselves still ride in passthrough; this is the interpreted copy.
+   *  Handing them back rather than registering them keeps `parseCircuit` pure:
+   *  only a caller that commits the text (a load, a paste) puts them in the
+   *  library. */
+  compositeModels: CompositeModel[];
   /** Types present in the file that this build cannot draw or simulate. */
   unsupported: string[];
   /** Every line of the file, for a save that reproduces its arrangement. */

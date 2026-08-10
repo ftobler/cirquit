@@ -1,6 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { parseCircuit } from '../io/netlist';
+import {
+  clearSessionModels,
+  getModel,
+  listModels,
+  saveModel,
+  type SubcircuitStorage,
+} from '../io/subcircuits';
 import { useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 
@@ -149,5 +157,90 @@ describe('scope lines index the file, not the elements this build can read', () 
     expect(s.problem).toBeNull();
     // The lines still come back in place.
     expect(s.toNetlist()).toContain('38 0 0 1 2 A\n38 0 1 1 2 B');
+  });
+});
+
+describe('the subcircuit library is scoped to the loaded file', () => {
+  /** Two files carrying different `. divider` models, plus one with none. */
+  const dividerLine = (sizeX: number) =>
+    `. divider 0 ${sizeX} 2 1 in 1 0 0 ResistorElm\\s1\\s2 0\\\\s1000`;
+  const FILE_A = `$ 1 0.000005 10 50 5 50 5e-11\n${dividerLine(2)}\nr 0 0 16 0 0 100\n`;
+  const FILE_B = '$ 1 0.000005 10 50 5 50 5e-11\nr 0 0 16 0 0 100\n';
+
+  const storage = (): SubcircuitStorage => {
+    const store = new Map<string, string>();
+    return {
+      getItem: (k) => store.get(k) ?? null,
+      setItem: (k, v) => {
+        store.set(k, v);
+      },
+      removeItem: (k) => {
+        store.delete(k);
+      },
+      listSubcircuitKeys: () => [...store.keys()].filter((k) => k.startsWith('subcircuit:')),
+    };
+  };
+
+  beforeEach(() => clearSessionModels());
+
+  it('a load registers the file models and the next load drops them', () => {
+    const store = storage();
+    useStore.getState().loadNetlist(FILE_A);
+    expect(listModels(store).map((m) => m.name)).toEqual(['divider']);
+    // Opening an unrelated file closes the first one, so its model goes with
+    // it instead of haunting the Subcircuit Manager.
+    useStore.getState().loadNetlist(FILE_B);
+    expect(listModels(store)).toEqual([]);
+  });
+
+  it('New drops the file models too', () => {
+    const store = storage();
+    useStore.getState().loadNetlist(FILE_A);
+    useStore.getState().newCircuit();
+    expect(listModels(store)).toEqual([]);
+  });
+
+  it('saved models survive both loads', () => {
+    const store = storage();
+    saveModel(
+      { name: 'amp', flags: 0, sizeX: 1, sizeY: 1, extList: [], nodeList: '', elmDump: '' },
+      store,
+    );
+    useStore.getState().loadNetlist(FILE_A);
+    expect(listModels(store).map((m) => m.name)).toEqual(['amp', 'divider']);
+    useStore.getState().loadNetlist(FILE_B);
+    expect(listModels(store).map((m) => m.name)).toEqual(['amp']);
+  });
+
+  it('a file model of a saved name never destroys the saved one', () => {
+    // The regression: file A's `divider` shadows the saved one, and before the
+    // per-load reset it stayed listed after file B, where a Delete on the ghost
+    // wiped the user's stored model of the same name.
+    const store = storage();
+    saveModel(
+      { name: 'divider', flags: 0, sizeX: 9, sizeY: 9, extList: [], nodeList: '', elmDump: '' },
+      store,
+    );
+    useStore.getState().loadNetlist(FILE_A);
+    expect(getModel('divider', store)!.sizeX).toBe(2);  // the file's copy shadows
+    useStore.getState().loadNetlist(FILE_B);
+    const saved = getModel('divider', store);
+    expect(saved).not.toBeUndefined();
+    expect(saved!.sizeX).toBe(9);
+    expect(store.getItem('subcircuit:divider')).not.toBeNull();
+  });
+
+  it('a paste adds its models without resetting the library', () => {
+    const store = storage();
+    useStore.getState().loadNetlist(FILE_A);
+    // Pasting is additive, so file A's model stays and the pasted one joins it.
+    // The clipboard probe behind the greyed-out menu row parses the same text
+    // and must leave the library alone.
+    const clip = `${dividerLine(2).replace('divider', 'pasted')}\nr 0 0 16 0 0 100\n`;
+    expect(parseCircuit(clip).elements).toHaveLength(1);
+    expect(listModels(store).map((m) => m.name)).toEqual(['divider']);
+    useStore.setState({ clipboard: clip });
+    useStore.getState().pasteFromClipboard();
+    expect(listModels(store).map((m) => m.name)).toEqual(['divider', 'pasted']);
   });
 });

@@ -2,6 +2,7 @@ import { defForDumpCode } from '../../model/registry';
 import type { CircuitElement, SimSettings } from '../../model/types';
 import type { ScopeValue } from '../../engine/simulator';
 import type {
+  CompositeModel,
   CustomLogicModel,
   DiodeModel,
   NetlistLine,
@@ -12,7 +13,7 @@ import type {
   TransistorModel,
 } from './types';
 import { unescapeToken } from './tokens';
-import { parseCompositeModelLine, registerSessionModel } from '../subcircuits';
+import { parseCompositeModelLine } from '../subcircuits';
 
 /** Thermal voltage the diode model's forward-drop derivation uses
  *  (DiodeModel.java:32). */
@@ -264,6 +265,7 @@ export function parseCircuit(text: string): ParsedCircuit {
   const passthrough: string[] = [];
   const unsupported: string[] = [];
   const order: NetlistLine[] = [];
+  const compositeModels: CompositeModel[] = [];
   const diodeModels = new Map<string, DiodeModel>();
   const transistorModels = new Map<string, TransistorModel>();
   const customLogicModels = new Map<string, CustomLogicModel>();
@@ -485,11 +487,13 @@ export function parseCircuit(text: string): ParsedCircuit {
       // <escaped elmDump>`. Like the `34`/`32`/`!` lines it rides through in
       // passthrough so a save re-emits it in place, and it is not an element
       // line upstream either, so it takes no scope index and is not reported
-      // unsupported. Its parameters are interpreted into the subcircuit model
-      // library the Subcircuit Manager reads. A partial line is preserved but
-      // never resolves, degrading like any other truncated model line.
+      // unsupported. Its parameters are interpreted and handed back in
+      // `compositeModels`; registering them in the library is the committing
+      // caller's job, so a preview or a clipboard sniff cannot introduce a
+      // model. A partial line is preserved but never resolves, degrading like
+      // any other truncated model line.
       const model = parseCompositeModelLine(lineText);
-      if (model !== null) registerSessionModel(model);
+      if (model !== null) compositeModels.push(model);
       passthrough.push(lineText);
       order.push({ kind: 'other', line: rawLine });
       continue;
@@ -648,7 +652,16 @@ export function parseCircuit(text: string): ParsedCircuit {
       model.emissionCoefficient * VT * Math.log(1 / model.saturationCurrent + 1);
   }
 
-  return { elements, settings, scopes, sliders, passthrough, unsupported, order };
+  return {
+    elements,
+    settings,
+    scopes,
+    sliders,
+    passthrough,
+    compositeModels,
+    unsupported,
+    order,
+  };
 }
 
 /**

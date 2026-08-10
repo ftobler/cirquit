@@ -173,6 +173,19 @@ describe('netlist parsing', () => {
     const parsed = parseCircuit('! model stuff\n% 1 2\n? 3 4\n. sub\n');
     expect(parsed.unsupported).toEqual(['%', '?']);
     expect(parsed.passthrough).toEqual(['! model stuff', '% 1 2', '? 3 4', '. sub']);
+    // A truncated `.` line yields no model either.
+    expect(parsed.compositeModels).toEqual([]);
+  });
+
+  it('returns the `.` line models in file order without registering them', () => {
+    const line = (name: string) =>
+      `. ${name} 0 2 2 1 in 1 0 0 ResistorElm\\s1\\s2 0\\\\s1000`;
+    const parsed = parseCircuit(`${line('first')}\nr 0 0 16 0 0 100\n${line('second')}\n`);
+    // Both lines still ride through verbatim; the interpreted copies come back
+    // alongside, for the caller that commits the text to register.
+    expect(parsed.passthrough).toEqual([line('first'), line('second')]);
+    expect(parsed.compositeModels.map((m) => m.name)).toEqual(['first', 'second']);
+    expect(parsed.compositeModels[0].extList).toEqual([{ name: 'in', node: 1, pos: 0, side: 0 }]);
   });
 });
 

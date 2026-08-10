@@ -8,7 +8,12 @@ import {
   serializeCircuit,
   type ScopeConfig,
 } from '../io/netlist';
-import { buildModelFromSelection, saveModel } from '../io/subcircuits';
+import {
+  buildModelFromSelection,
+  clearSessionModels,
+  registerSessionModel,
+  saveModel,
+} from '../io/subcircuits';
 import { pointOnWireInterior, splitWire } from '../render/geometry';
 import { convertWires } from '../render/wireConverter';
 import { lShapeRoute, routeWire, routingObstacles } from '../render/wireRouter';
@@ -1131,6 +1136,11 @@ export const useStore = create<AppState>((set, get) => ({
 
   loadNetlist: (text) => {
     const parsed = parseCircuit(text);
+    // The subcircuit library's session half belongs to the open file, so a load
+    // rebuilds it: the previous file's `.` lines go, this file's arrive. Saved
+    // models live in storage and are untouched by either half of this.
+    clearSessionModels();
+    for (const model of parsed.compositeModels) registerSessionModel(model);
     // The parser has already resolved each plot's element index, which counts
     // element lines this build cannot read. The parse-time ids and the
     // untouched display tokens all travel with the scope, so a save puts the
@@ -1232,6 +1242,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   newCircuit: () => {
+    // New drops the open file, and its `.` line models with it, the same reset
+    // a load performs. Saved models stay in storage.
+    clearSessionModels();
     set((s) => ({
       elements: [],
       scopes: [],
@@ -1398,6 +1411,12 @@ export function nextSwitchState(e: CircuitElement): number {
 function insertElementsFromText(text: string): void {
   const parsed = parseCircuit(text);
   if (parsed.elements.length === 0) return;
+  // A paste adds to the open circuit instead of replacing it, so its `.` line
+  // models join the library rather than resetting it, matching upstream's
+  // RC_RETAIN read, which undumps the models without clearing the local map.
+  // The parse alone registers nothing, so the `canPaste` probe that runs the
+  // same text through the parser leaves the library alone.
+  for (const model of parsed.compositeModels) registerSessionModel(model);
   const state = useStore.getState();
   state.commit();
   // A paste lands one square away, so the duplicate does not sit on top of

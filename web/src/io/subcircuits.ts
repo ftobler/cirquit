@@ -12,11 +12,16 @@
  *  deletes.
  *
  *  Two stores back the library, mirroring upstream's global/local split
- *  (CustomCompositeModel.java:29-30): an in-memory session map holds models a
- *  loaded file's `.` lines introduced and models created this session, and a
- *  `subcircuit:<name>` key per model in the (injectable) storage persists
- *  across reloads. The session map wins on a name collision, exactly as the
- *  local model map beats the global one upstream.
+ *  (CustomCompositeModel.java:29-30): an in-memory session map holds the models
+ *  the open file's `.` lines introduced, and a `subcircuit:<name>` key per
+ *  model in the (injectable) storage persists the ones the user saved. The
+ *  session map wins on a name collision, exactly as the local model map beats
+ *  the global one upstream.
+ *
+ *  The session map is scoped to one load. The store clears it and re-registers
+ *  the parse result on every `loadNetlist`, so closing a file takes its models
+ *  with it; `parseCircuit` itself registers nothing, or an import preview or a
+ *  clipboard sniff would silently grow the library.
  */
 
 import { escapeToken, unescapeToken } from './netlist/tokens';
@@ -80,18 +85,26 @@ function defaultStorage(): SubcircuitStorage | undefined {
   };
 }
 
-/** Models introduced by this session: parsed `.` lines and created models.
- *  Module state like the parse-time id counter, so tests reset it. */
+/** Models the loaded circuit introduced: the interpreted `.` lines of the file
+ *  currently open, plus anything created this session that storage could not
+ *  take. Scoped to one load, so it is cleared and rebuilt by the store on every
+ *  `loadNetlist`; without that, a model from a file the user already closed
+ *  would keep haunting the Subcircuit Manager. */
 const sessionModels = new Map<string, CompositeModel>();
 
-/** Drops every session model, leaving only what storage holds. Test seam. */
-export function resetSubcircuitSession(): void {
+/** Drops every session model, leaving only what storage holds. The store calls
+ *  this at the start of each load, so the file's `.` lines are the only
+ *  session entries: upstream keeps the same split between a per-circuit local
+ *  map and the persisted global one (CustomCompositeModel.java:29-30). */
+export function clearSessionModels(): void {
   sessionModels.clear();
 }
 
 /** Registers a model parsed from a `.` line into the session map. The line
  *  itself stays in passthrough, so the save re-emits it; the library entry is
- *  what a future `410` element resolves its model name against. */
+ *  what a future `410` element resolves its model name against. Only a caller
+ *  that commits the text calls this: `parseCircuit` merely returns the models
+ *  it read. */
 export function registerSessionModel(model: CompositeModel): void {
   sessionModels.set(model.name, model);
 }
@@ -187,6 +200,17 @@ export function modelToEngineSpec(model: CompositeModel): {
 
 // ─── the model library ───
 
+/** One storage key, or null when there is no storage or the read throws (a
+ *  disabled localStorage raises on access rather than returning null). */
+function readItem(storage: SubcircuitStorage | undefined, key: string): string | null {
+  if (!storage) return null;
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 /** Every stored and session model, session entries winning on a name
  *  collision (upstream's local-map-beats-global rule). Sorted by name so the
  *  Manager and the menu list them in a stable order. */
@@ -194,12 +218,7 @@ export function listModels(storage: SubcircuitStorage | undefined = defaultStora
   const byName = new Map<string, CompositeModel>();
   if (storage) {
     for (const key of storage.listSubcircuitKeys()) {
-      let raw: string | null = null;
-      try {
-        raw = storage.getItem(key);
-      } catch {
-        raw = null;
-      }
+      const raw = readItem(storage, key);
       if (raw === null) continue;
       const model = parseCompositeModelLine(raw.trim());
       if (model !== null) byName.set(model.name, model);
@@ -214,34 +233,46 @@ export function listModels(storage: SubcircuitStorage | undefined = defaultStora
 export function getModel(name: string, storage: SubcircuitStorage | undefined = defaultStorage()): CompositeModel | undefined {
   const session = sessionModels.get(name);
   if (session !== undefined) return session;
-  if (!storage) return undefined;
-  let raw: string | null = null;
-  try {
-    raw = storage.getItem(SUB_CIRCUIT_PREFIX + name);
-  } catch {
-    raw = null;
-  }
+  const raw = readItem(storage, SUB_CIRCUIT_PREFIX + name);
   return raw === null ? undefined : (parseCompositeModelLine(raw.trim()) ?? undefined);
 }
 
-/** Stores a model in the session map and, when storage is present, under its
- *  `subcircuit:<name>` key so it survives a reload (upstream's `setSaved(true)`,
- *  CustomCompositeModel.java:279-292). */
+/** Persists a model under its `subcircuit:<name>` key so it survives a reload
+ *  (upstream's `setSaved(true)`, CustomCompositeModel.java:279-292). A stored
+ *  model supersedes any session entry of that name, which is upstream moving a
+ *  model out of the local map and into the global one once storage owns it
+ *  (CustomCompositeModel.java:99-102). That single origin per name is what
+ *  lets `removeModel` know which store a Delete should clear. Only when the
+ *  write did not land (no storage, or a full or disabled one, which
+ *  `defaultStorage` swallows) does the model stay in the session map, so it is
+ *  at least usable until the next load. The read-back compares the value, not
+ *  merely the key's presence: overwriting an older model of the same name on a
+ *  storage that then refuses the write would otherwise read the *old* line
+ *  back, look like a success and drop the session copy of the model the user
+ *  had just built. */
 export function saveModel(model: CompositeModel, storage: SubcircuitStorage | undefined = defaultStorage()): void {
-  sessionModels.set(model.name, model);
+  const key = SUB_CIRCUIT_PREFIX + model.name;
+  const line = compositeModelLine(model);
   if (storage) {
     try {
-      storage.setItem(SUB_CIRCUIT_PREFIX + model.name, compositeModelLine(model));
+      storage.setItem(key, line);
     } catch {
-      // A storage failure is swallowed; the session copy survives.
+      // Reading the key back is the real test of whether the write landed.
     }
   }
+  if (readItem(storage, key) === line) sessionModels.delete(model.name);
+  else sessionModels.set(model.name, model);
 }
 
-/** Deletes a model from both the session map and storage (upstream's `remove`,
- *  CustomCompositeModel.java:513-518). */
+/** Deletes a model, upstream's `remove` (CustomCompositeModel.java:513-518),
+ *  but only from the store the listed model actually came from. A session
+ *  entry is a `.` line out of the open file, not something the user saved:
+ *  clearing the `subcircuit:<name>` key for it would destroy a persisted model
+ *  that merely shares the name, which is the one the shadowed row uncovers
+ *  once the file's copy is gone. A row with no session entry came from
+ *  storage, so that is what gets removed. */
 export function removeModel(name: string, storage: SubcircuitStorage | undefined = defaultStorage()): void {
-  sessionModels.delete(name);
+  if (sessionModels.delete(name)) return;
   if (storage) {
     try {
       storage.removeItem(SUB_CIRCUIT_PREFIX + name);

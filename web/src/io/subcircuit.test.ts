@@ -5,18 +5,20 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   buildModelFromSelection,
+  clearSessionModels,
   compositeModelLine,
   getModel,
   listModels,
   modelToEngineSpec,
   parseCompositeModelLine,
+  registerSessionModel,
   removeModel,
   renameModel,
-  resetSubcircuitSession,
   saveModel,
   type SubcircuitStorage,
 } from './subcircuits';
 import { parseCircuit, serializeCircuit } from './netlist';
+import { summarizeImport } from './importSummary';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
 import { makeElement, useStore } from '../state/store';
 import { fresh } from '../state/store.test-helpers';
@@ -49,8 +51,23 @@ function fakeStorage(): SubcircuitStorage {
   };
 }
 
+/** The same storage with a refusing writer, standing in for a quota-exceeded
+ *  or private-browsing localStorage. Reads keep working, which is what makes
+ *  the failure sneaky: an older key of the same name reads back fine. */
+function fullStorage(inner: SubcircuitStorage): SubcircuitStorage {
+  return {
+    ...inner,
+    setItem: () => {
+      throw new Error('QuotaExceededError');
+    },
+    getItem: (k) => inner.getItem(k),
+    removeItem: (k) => inner.removeItem(k),
+    listSubcircuitKeys: () => inner.listSubcircuitKeys(),
+  };
+}
+
 beforeEach(() => {
-  resetSubcircuitSession();
+  clearSessionModels();
   useStore.setState(fresh());
 });
 
@@ -110,8 +127,30 @@ describe('the `.` model line', () => {
     expect(out.trim()).toBe(line);
   });
 
-  it('registers the parsed model in the library for later resolution', () => {
+  it('hands the parsed model back instead of registering it', () => {
+    const storage = fakeStorage();
+    // Parsing is inspection, not a commit: the import preview and the paste
+    // probe both run this, so the library must not grow behind them, however
+    // many times the same text is parsed.
+    const parsed = parseCircuit(HEADER + MODEL_LINE + '\n');
     parseCircuit(HEADER + MODEL_LINE + '\n');
+    expect(listModels(storage)).toEqual([]);
+    expect(getModel('myCirc', storage)).toBeUndefined();
+    // The interpreted copy rides out with the parse result, for the caller
+    // that does commit the text.
+    expect(parsed.compositeModels).toHaveLength(1);
+    expect(parsed.compositeModels[0].name).toBe('myCirc');
+    expect(parsed.compositeModels[0].extList).toHaveLength(2);
+  });
+
+  it('summarising an import leaves the library empty', () => {
+    const storage = fakeStorage();
+    summarizeImport(HEADER + MODEL_LINE + '\nr 0 0 160 0 0 1000\n');
+    expect(listModels(storage)).toEqual([]);
+  });
+
+  it('a committed load registers the model for later resolution', () => {
+    useStore.getState().loadNetlist(HEADER + MODEL_LINE + '\n');
     const model = getModel('myCirc');
     expect(model).not.toBeUndefined();
     expect(model!.extList).toHaveLength(2);
@@ -298,13 +337,91 @@ describe('the model library and Subcircuit Manager store', () => {
   it('a session model from a loaded `.` line shadows the stored one', () => {
     const storage = fakeStorage();
     saveModel(parseCompositeModelLine(MODEL_LINE)!, storage);
-    resetSubcircuitSession();
-    // A file loaded over the stored model re-registers the same name in the
+    clearSessionModels();
+    // A file loaded over the stored model registers the same name in the
     // session map, which wins the merged list, like upstream's local map.
-    parseCircuit(HEADER + MODEL_LINE + '\n');
+    registerSessionModel(parseCompositeModelLine(MODEL_LINE)!);
     const listed = listModels(storage);
     expect(listed).toHaveLength(1);
     expect(listed[0].name).toBe('myCirc');
+  });
+
+  it('deleting a session model leaves the stored model of that name alone', () => {
+    const storage = fakeStorage();
+    // The user's own saved `myCirc`, and a different one of the same name that
+    // the open file's `.` line brought in and that shadows it in the list.
+    saveModel({ ...parseCompositeModelLine(MODEL_LINE)!, sizeX: 9 }, storage);
+    registerSessionModel(parseCompositeModelLine(MODEL_LINE)!);
+    expect(listModels(storage)).toHaveLength(1);
+    expect(getModel('myCirc', storage)!.sizeX).toBe(2);  // the file's copy wins
+
+    removeModel('myCirc', storage);
+    // Deleting the shadow uncovers the saved model instead of destroying it:
+    // the Manager still lists one `myCirc`, now the user's own.
+    expect(storage.getItem('subcircuit:myCirc')).not.toBeNull();
+    expect(getModel('myCirc', storage)!.sizeX).toBe(9);
+    const listed = listModels(storage);
+    expect(listed).toHaveLength(1);
+    expect(listed[0].sizeX).toBe(9);
+  });
+
+  it('a saved model is stored once, so one Delete removes it', () => {
+    const storage = fakeStorage();
+    // Saving supersedes the session entry the file's `.` line left, or the
+    // Manager's Delete would clear the session copy and leave the stored one
+    // behind, needing a second click to finish the job.
+    registerSessionModel(parseCompositeModelLine(MODEL_LINE)!);
+    saveModel({ ...parseCompositeModelLine(MODEL_LINE)!, sizeX: 9 }, storage);
+    expect(getModel('myCirc', storage)!.sizeX).toBe(9);
+    removeModel('myCirc', storage);
+    expect(listModels(storage)).toEqual([]);
+    expect(getModel('myCirc', storage)).toBeUndefined();
+  });
+
+  it('with no storage at all the saved model stays in the session map', () => {
+    // A disabled or absent localStorage must not swallow the model: it lives
+    // in the session map until the next load, and a Delete still removes it.
+    saveModel(parseCompositeModelLine(MODEL_LINE)!, undefined);
+    expect(getModel('myCirc', undefined)!.name).toBe('myCirc');
+    removeModel('myCirc', undefined);
+    expect(getModel('myCirc', undefined)).toBeUndefined();
+  });
+
+  it('a refused write keeps the model in the session map', () => {
+    // A full or private-mode localStorage throws from setItem. The model must
+    // not vanish: it stays in the session map, listed and deletable, until the
+    // next load.
+    const storage = fullStorage(fakeStorage());
+    saveModel(parseCompositeModelLine(MODEL_LINE)!, storage);
+    expect(storage.getItem('subcircuit:myCirc')).toBeNull();
+    expect(getModel('myCirc', storage)!.name).toBe('myCirc');
+    expect(listModels(storage)).toHaveLength(1);
+  });
+
+  it('a refused overwrite does not mistake the old model for the new one', () => {
+    // The regression the presence-only read-back had: the key already holds
+    // v1, the write of v2 is refused, and reading the key back finds v1. Taken
+    // as success that would drop the session copy and lose the model the user
+    // just built, while the UI reported it saved.
+    const inner = fakeStorage();
+    saveModel({ ...parseCompositeModelLine(MODEL_LINE)!, sizeX: 1 }, inner);
+    const storage = fullStorage(inner);
+    saveModel({ ...parseCompositeModelLine(MODEL_LINE)!, sizeX: 7 }, storage);
+    // Storage still holds v1, but the library hands out the v2 the user built.
+    expect(inner.getItem('subcircuit:myCirc')).toBe(
+      compositeModelLine({ ...parseCompositeModelLine(MODEL_LINE)!, sizeX: 1 }),
+    );
+    expect(getModel('myCirc', storage)!.sizeX).toBe(7);
+  });
+
+  it('a load drops a session model that storage refused to take', () => {
+    // The session map is scoped to one load whatever put a model there, so the
+    // stored v1 is what survives the next load, not the unsaveable v2.
+    const inner = fakeStorage();
+    saveModel({ ...parseCompositeModelLine(MODEL_LINE)!, sizeX: 1 }, inner);
+    saveModel({ ...parseCompositeModelLine(MODEL_LINE)!, sizeX: 7 }, fullStorage(inner));
+    useStore.getState().loadNetlist(HEADER + 'r 0 0 160 0 0 1000\n');
+    expect(getModel('myCirc', inner)!.sizeX).toBe(1);
   });
 });
 
