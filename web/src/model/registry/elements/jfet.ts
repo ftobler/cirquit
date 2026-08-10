@@ -6,7 +6,7 @@ import {
   endpoints,
   interp,
   interp2,
-  line,
+  lead,
   polygon,
   voltageColor,
 } from '../../../render/draw';
@@ -44,17 +44,17 @@ function drawJfet(g: DrawContext, e: CircuitElement): void {
   const drn1 = interp(p1, p2, 1, hs2 / 2);
   const src2 = interp(p1, p2, 1 - 10 / dn, -hs2 / 2);
   const drn2 = interp(p1, p2, 1 - 10 / dn, hs2 / 2);
-  line(g, posts[1], src1, voltageColor(g, g.voltages[1]));
-  line(g, src1, src2, voltageColor(g, g.voltages[1]));
-  line(g, posts[2], drn1, voltageColor(g, g.voltages[2]));
-  line(g, drn1, drn2, voltageColor(g, g.voltages[2]));
+  lead(g, posts[1], src1, voltageColor(g, g.voltages[1]));
+  lead(g, src1, src2, voltageColor(g, g.voltages[1]));
+  lead(g, posts[2], drn1, voltageColor(g, g.voltages[2]));
+  lead(g, drn1, drn2, voltageColor(g, g.voltages[2]));
 
   // Gate lead to the gate point, then the junction arrow on the axis: N
   // points from the gate toward the channel, P points back from the channel
   // toward the gate (JfetElm.java:60-62, setPoints at :104-108).
   const gatePt = interp(p1, p2, 1 - 14 / dn);
   const gateColor = voltageColor(g, g.voltages[0]);
-  line(g, p1, gatePt, gateColor);
+  lead(g, p1, gatePt, gateColor);
   if (pnp) {
     const x = interp(gatePt, p1, 18 / dn);
     arrowHead(g, gatePt, x, 8, gateColor);

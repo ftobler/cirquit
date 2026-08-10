@@ -1,4 +1,4 @@
-import { canvasFont, currentDots, endpoints, line, voltageColor } from '../../../render/draw';
+import { canvasFont, currentDots, endpoints, lead, voltageColor } from '../../../render/draw';
 import { VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
 import { onePost, readParams, writeParams } from '../shared';
 import { railLabelAnchor, railLead } from './rail';
@@ -46,7 +46,7 @@ export const ANTENNA_DEF: ElementDef = {
     const lead1 = railLead(p1, p2);
     // A single stem from the post to the symbol end, then the "Ant" label the
     // rail draws for the antenna (RailElm.java:50-64, AntennaElm.java:31-33).
-    line(g, p1, lead1, color);
+    lead(g, p1, lead1, color);
     drawAntennaLabel(g, e, lead1);
     // AntennaElm inherits RailElm.draw, whose stem dots run against the
     // reported current (RailElm.java:61-63), i.e. symbol-to-post here.

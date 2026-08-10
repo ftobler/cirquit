@@ -334,14 +334,15 @@ describe('renderCircuitToSvg', () => {
     expect(svg).toContain('height="100"');
   });
 
-  it('emits round caps on the wire stroke and butt on the resistor', () => {
-    // The recorder copies whatever strokeStyle sets, so the wire's round cap
-    // must reach the SVG while the resistor's leads and body keep butt. The
-    // circuit is one wire plus one IEC resistor: one round stroke, and three
-    // butt strokes (two leads plus the body's single gradient stroke).
+  it('emits round caps on the wire and the resistor leads, butt on its body', () => {
+    // The recorder copies whatever strokeStyle sets, so the wire's and the
+    // leads' round caps must reach the SVG while the resistor body keeps butt.
+    // The circuit is one wire plus one IEC resistor: three round strokes (the
+    // wire and the two leads) and one butt stroke (the body's single gradient
+    // stroke).
     const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
-    expect(svg.match(/stroke-linecap="round"/g)).toHaveLength(1);
-    expect(svg.match(/stroke-linecap="butt"/g)).toHaveLength(3);
+    expect(svg.match(/stroke-linecap="round"/g)).toHaveLength(3);
+    expect(svg.match(/stroke-linecap="butt"/g)).toHaveLength(1);
   });
 
   it('exports the coil with bevel joins and a resistor body with miter', () => {

@@ -7,7 +7,7 @@ import {
   endpoints,
   interp,
   interp2,
-  line,
+  lead,
   triangle,
   voltageColor,
 } from '../../../render/draw';
@@ -23,9 +23,9 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
 
   // Input leads run from the posts to the triangle base, so they never cross a
   // swapped body: the anchors carry the same flag-derived side as the posts.
-  line(g, posts[0], interp(lead1, lead2, 0, hs), voltageColor(g, g.voltages[0]));
-  line(g, posts[1], interp(lead1, lead2, 0, -hs), voltageColor(g, g.voltages[1]));
-  line(g, lead2, p2, voltageColor(g, g.voltages[2]));
+  lead(g, posts[0], interp(lead1, lead2, 0, hs), voltageColor(g, g.voltages[0]));
+  lead(g, posts[1], interp(lead1, lead2, 0, -hs), voltageColor(g, g.voltages[1]));
+  lead(g, lead2, p2, voltageColor(g, g.voltages[2]));
 
   const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
   triangle(g, t1, t2, lead2, g.theme.panel);

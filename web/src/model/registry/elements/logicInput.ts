@@ -3,8 +3,8 @@ import {
   currentDots,
   elementLength,
   interp,
+  lead,
   limbColor,
-  line,
   voltageColor,
 } from '../../../render/draw';
 import { LOGIC_INPUT_TERNARY, SWITCH_LABEL } from '../flags';
@@ -32,7 +32,7 @@ function drawLogicInput(g: DrawContext, e: CircuitElement): void {
   // The thick lead runs from the post to 12 units short of the label end
   // (LogicInputElm.java:70-73).
   const lead1 = interp(p1, p2, 1 - 12 / dn);
-  line(g, p1, lead1, voltageColor(g, g.voltages[0]));
+  lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
   // Stem dots flow label-to-post, reversed like the rail's: a one-post source
   // measures its current delivering out of the post (LogicInputElm.java:87,
   // `drawDots(g, point1, lead1, -curcount)`).

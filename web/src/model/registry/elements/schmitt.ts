@@ -13,7 +13,7 @@ import {
   endpoints,
   interp,
   interp2,
-  line,
+  lead,
   polyline,
   voltageColor,
 } from '../../../render/draw';
@@ -49,8 +49,8 @@ function drawSchmitt(g: DrawContext, e: CircuitElement, inverting: boolean): voi
   const lead1 = interp(p1, p2, 0.5 - ww / dn);
   const lead2 = interp(p1, p2, 0.5 + (inverting ? ww + 2 : ww - 3) / dn);
 
-  line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-  line(g, lead2, p2, voltageColor(g, g.voltages[1]));
+  lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
+  lead(g, lead2, p2, voltageColor(g, g.voltages[1]));
 
   const [t0, t1] = interp2(lead1, lead2, 0, HS);
   const apex = interp(p1, p2, 0.5 + (ww - 5) / dn);

@@ -8,7 +8,7 @@ import {
   endpoints,
   gradientPolyline,
   interp,
-  line,
+  lead,
   powerColor,
   tempColor,
   voltageColor,
@@ -54,8 +54,8 @@ function drawLampBody(g: DrawContext, e: CircuitElement): void {
   // printable one (UIManager.java:578-583), which is how a print stays legible
   // on the white page.
   circle(g, bulb, LAMP_BULB_RADIUS, g.theme.whiteColor, false);
-  line(g, lead1, filament0, voltageColor(g, g.voltages[0]));
-  line(g, lead2, filament1, voltageColor(g, g.voltages[1]));
+  lead(g, lead1, filament0, voltageColor(g, g.voltages[0]));
+  lead(g, lead2, filament1, voltageColor(g, g.voltages[1]));
   gradientPolyline(g, [filament0, filament1]);
   const [p1, p2] = endpoints(e);
   // The five dot runs mirror LampElm.java:143-152, which chain the phase

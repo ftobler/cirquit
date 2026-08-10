@@ -16,7 +16,7 @@ import {
   endpoints,
   interp,
   interpPrecise,
-  line,
+  lead,
   polyline,
   voltageColor,
 } from '../../../render/draw';
@@ -231,7 +231,7 @@ function drawGate(g: DrawContext, e: CircuitElement): void {
       (e.flags & GATE_INVERT_INPUTS) !== 0 ? -8 / (2 * ww) + adj : adj,
       hs * i0,
     );
-    line(g, posts[i], inGate, voltageColor(g, g.voltages[i]));
+    lead(g, posts[i], inGate, voltageColor(g, g.voltages[i]));
     if ((e.flags & GATE_INVERT_INPUTS) !== 0) {
       // Invert-input bubbles are drawThickCircle strokes upstream
       // (GateElm.java:216-218), the 3-unit body weight.
@@ -247,7 +247,7 @@ function drawGate(g: DrawContext, e: CircuitElement): void {
     outLead = interp(p1, p2, 0.5 + (ww + 8) / dn);
     circle(g, interp(p1, p2, 0.5 + (ww + 4) / dn), 3, g.theme.wire, false);
   }
-  line(g, outLead, p2, voltageColor(g, g.voltages[n]));
+  lead(g, outLead, p2, voltageColor(g, g.voltages[n]));
 
   const color = g.theme.wire;
   if (g.euroGates) {

@@ -13,6 +13,7 @@ import {
   formatValue,
   gradientPolyline,
   interp,
+  lead,
   line,
   makeTheme,
   polyline,
@@ -583,6 +584,16 @@ describe('stroke caps', () => {
     expect(ctx.lineJoin).toBe('miter');
   });
 
+  it('lead() draws the terminal wire at round caps, the wire cap', () => {
+    // A lead is a conductor from a post to the element body, so it ends round
+    // like the round-capped wires it meets rather than flush like a symbol.
+    const { ctx } = mkCtx();
+    lead(context(ctx, 0), { x: 0, y: 0 }, { x: 8, y: 0 }, '#ffffff');
+    expect(ctx.lineCap).toBe('round');
+    expect(ctx.lineJoin).toBe('miter');
+    expect(ctx.lineWidth).toBe(3);
+  });
+
   it('polyline() keeps butt caps and miter joins so polygon corners stay sharp', () => {
     // Regression guard for the crisp-line intent: a polygonal body (the zigzag
     // resistor, the bodyRect loop) must not soften its corners. The coil opts
@@ -747,7 +758,9 @@ describe('stroke widths', () => {
   });
 
   it('strokes a lead through drawLeads at 3, upstream draw2Leads/drawThickLine', () => {
-    // CircuitElm.java:460-467: both leads are drawThickLine at width 3.
+    // CircuitElm.java:460-467: both leads are drawThickLine at width 3. The
+    // round cap is the wire cap, so a lead end reads as a continuous
+    // conductor rather than a flush symbol end.
     const { ctx } = mkCtx();
     drawLeads(
       context(ctx, 0),
@@ -756,6 +769,7 @@ describe('stroke widths', () => {
       { x: 56, y: 0 },
     );
     expect(ctx.lineWidth).toBe(3);
+    expect(ctx.lineCap).toBe('round');
   });
 
   it('an explicit width argument still wins, so fine detail can pass 1', () => {

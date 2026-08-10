@@ -6,6 +6,7 @@ import {
   endpoints,
   gradientPolyline,
   interp,
+  lead,
   line,
   voltageColor,
 } from '../../../render/draw';
@@ -116,7 +117,7 @@ function drawBasicTransformer(g: DrawContext, e: CircuitElement): void {
   const polarity = (e.flags & TRANSFORMER_REVERSE) !== 0 ? -1 : 1;
 
   for (let i = 0; i < 4; i++) {
-    line(g, ptEnds[i], ptCoil[i], voltageColor(g, g.voltages[i]));
+    lead(g, ptEnds[i], ptCoil[i], voltageColor(g, g.voltages[i]));
   }
   for (let i = 0; i < 2; i++) {
     let csign = d * (i === 1 ? -6 * polarity : 6) * flip;
@@ -229,7 +230,7 @@ function drawTappedTransformer(g: DrawContext, e: CircuitElement): void {
   ];
 
   for (let i = 0; i < 5; i++) {
-    line(g, ptEnds[i], ptCoil[i], voltageColor(g, g.voltages[i]));
+    lead(g, ptEnds[i], ptCoil[i], voltageColor(g, g.voltages[i]));
   }
   for (let i = 0; i < 4; i++) {
     if (i === 1) continue;  // the tap has no coil of its own (TappedTransformerElm.java:102-103)
@@ -455,7 +456,7 @@ function drawCustomTransformer(g: DrawContext, e: CircuitElement): void {
   const { nodePoints, nodeTaps, ptCore, dots } = geo;
 
   for (let i = 0; i < nodePoints.length; i++) {
-    line(g, nodePoints[i], nodeTaps[i], voltageColor(g, g.voltages[i]));
+    lead(g, nodePoints[i], nodeTaps[i], voltageColor(g, g.voltages[i]));
   }
   for (let i = 0; i < geo.coils.length; i++) {
     const n = geo.coils[i].start;

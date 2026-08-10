@@ -1,4 +1,4 @@
-import { arrowHead, circle, currentDots, elementLength, endpoints, line, voltageColor } from '../../../render/draw';
+import { arrowHead, circle, currentDots, elementLength, endpoints, lead, voltageColor } from '../../../render/draw';
 import { drawWaveformGlyph, onePost, readParams, writeParams } from '../shared';
 import type { ElementDef } from '../../types';
 
@@ -42,7 +42,7 @@ export const SWEEP_DEF: ElementDef = {
       x: p2.x - (SWEEP_CIRCLE * (p2.x - p1.x)) / dn,
       y: p2.y - (SWEEP_CIRCLE * (p2.y - p1.y)) / dn,
     };
-    line(g, p1, lead1, color);
+    lead(g, p1, lead1, color);
     circle(g, p2, SWEEP_CIRCLE, g.theme.text, false);
     drawWaveformGlyph(g, p2, 1, SWEEP_CIRCLE);
     // An arrowhead on the glyph's high-frequency side marks the sweep

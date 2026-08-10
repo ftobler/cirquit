@@ -14,7 +14,7 @@ import {
   endpoints,
   interp,
   interp2,
-  line,
+  lead,
   voltageColor,
 } from '../../../render/draw';
 import { readParams, writeParams, twoPosts } from '../shared';
@@ -31,8 +31,8 @@ function drawInverter(g: DrawContext, e: CircuitElement): void {
   const lead2 = interp(p1, p2, 0.5 + (ww + 2) / dn);
   const pcircle = interp(p1, p2, 0.5 + (ww - 2) / dn);
 
-  line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-  line(g, lead2, p2, voltageColor(g, g.voltages[1]));
+  lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
+  lead(g, lead2, p2, voltageColor(g, g.voltages[1]));
 
   const color = g.theme.wire;
   if (g.euroGates) {

@@ -32,6 +32,7 @@ import {
   endpoints,
   interp,
   interp2,
+  lead,
   line,
   powerColor,
   voltageColor,
@@ -132,10 +133,10 @@ function drawOta(g: DrawContext, e: CircuitElement): void {
   const body = powerColor(g, g.power);
 
   // The four leads, post to body, each voltage-coloured (OTAElm.java:61-68).
-  line(g, geo.in1[0], geo.in1[1], voltageColor(g, g.voltages[0]));
-  line(g, geo.in2[0], geo.in2[1], voltageColor(g, g.voltages[1]));
-  line(g, geo.in3[0], geo.in3[1], voltageColor(g, g.voltages[2]));
-  line(g, geo.in4[0], geo.in4[1], voltageColor(g, g.voltages[3]));
+  lead(g, geo.in1[0], geo.in1[1], voltageColor(g, g.voltages[0]));
+  lead(g, geo.in2[0], geo.in2[1], voltageColor(g, g.voltages[1]));
+  lead(g, geo.in3[0], geo.in3[1], voltageColor(g, g.voltages[2]));
+  lead(g, geo.in4[0], geo.in4[1], voltageColor(g, g.voltages[3]));
 
   // The triangle outline, the two filled arrows and their base bars, then the
   // two output circles (OTAElm.java:71-77), all thick upstream.

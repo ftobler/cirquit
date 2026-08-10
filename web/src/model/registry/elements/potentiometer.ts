@@ -7,6 +7,7 @@ import {
   interpPrecise,
   interp2Precise,
   label,
+  lead,
   line,
   polyline,
   triangle,
@@ -29,8 +30,8 @@ function drawPotBody(g: DrawContext, e: CircuitElement): void {
   const f = dn >= 32 ? (dn - 32) / (2 * dn) : 0;
   const lead1 = interp(p1, end, f);
   const lead2 = interp(p1, end, 1 - f);
-  line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-  line(g, lead2, end, voltageColor(g, g.voltages[1]));
+  lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
+  lead(g, lead2, end, voltageColor(g, g.voltages[1]));
   if (g.euroResistors) {
     bodyRect(g, lead1, lead2, 6, color);  // IEC rectangle, hs 6 (PotElm.java:226)
   } else {
@@ -40,7 +41,7 @@ function drawPotBody(g: DrawContext, e: CircuitElement): void {
   const wiper = potPosts(e)[2];
   const { corner, arrowPoint, arrowBase } = potWiperGeometry(e);
   const wiperColor = voltageColor(g, g.voltages[2]);
-  line(g, wiper, corner, wiperColor);
+  lead(g, wiper, corner, wiperColor);
   line(g, corner, arrowPoint, wiperColor);
   // The arrowhead is a squat triangle: base half-width 8 a full `clen` back
   // (PotElm.java:213-216).

@@ -16,7 +16,7 @@ import {
   endpoints,
   interp,
   interp2,
-  line,
+  lead,
   polygon,
   powerColor,
   voltageColor,
@@ -76,12 +76,12 @@ function drawUjt(g: DrawContext, e: CircuitElement): void {
   const c0 = voltageColor(g, g.voltages[0]);
   // The base-one and base-two rails, then the emitter lead over them
   // (UnijunctionElm.java:72-79).
-  line(g, b1[0], b1[1], c1);
-  line(g, b1[1], b1[2], c1);
-  line(g, b2[0], b2[1], c2);
-  line(g, b2[1], b2[2], c2);
-  line(g, emitter[0], emitter[1], c0);
-  line(g, emitter[1], emitter[2], c0);
+  lead(g, b1[0], b1[1], c1);
+  lead(g, b1[1], b1[2], c1);
+  lead(g, b2[0], b2[1], c2);
+  lead(g, b2[1], b2[2], c2);
+  lead(g, emitter[0], emitter[1], c0);
+  lead(g, emitter[1], emitter[2], c0);
   arrowHead(g, emitter[1], emitter[2], 8, c0);
   // The filled emitter wedge and the power-coloured base region, the two
   // fillPolygon calls in draw (UnijunctionElm.java:80-82).

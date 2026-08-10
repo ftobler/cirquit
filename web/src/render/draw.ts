@@ -244,9 +244,10 @@ export function strokeStyle(
   g.ctx.lineWidth = width;
   // Butt is the ambient cap, miter the ambient join: the crisp-line decision
   // that symbol ends stay flush and polygon corners keep their sharp points.
-  // Wires opt into round through the cap argument, so a routed corner or a
-  // diagonal wire end reads as a continuous conductor (upstream's ambient
-  // round cap, UIManager.java:636). Miter is upstream's join too: it never
+  // Wires and terminal leads opt into round through the cap argument, so a
+  // routed corner, a diagonal wire end or a lead end reads as a continuous
+  // conductor (upstream's ambient round cap, UIManager.java:636). Miter is
+  // upstream's join too: it never
   // sets lineJoin, so the canvas default is what the original renders. That
   // default is right for polygons, whose corners miter into crisp points, and
   // wrong for the coil: its loop junctions drop back to the axis and turn at
@@ -693,12 +694,19 @@ export function currentDotsPath(g: DrawContext, pts: Point[], current: number): 
   }
 }
 
+/** A single terminal lead, post to body, with round caps so its ends read as
+ *  a continuous conductor like the wires it meets (upstream's ambient round
+ *  cap, UIManager.java:636). */
+export function lead(g: DrawContext, a: Point, b: Point, color: string): void {
+  line(g, a, b, color, 3, 'round');
+}
+
 /** Draws the two lead wires for a two-terminal element. The caller owns the
  *  dot run, so it can place it over the body for junction continuity. */
 export function drawLeads(g: DrawContext, e: CircuitElement, lead1: Point, lead2: Point): void {
   const [p1, p2] = endpoints(e);
-  line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-  line(g, lead2, p2, voltageColor(g, g.voltages[1]));
+  lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
+  lead(g, lead2, p2, voltageColor(g, g.voltages[1]));
 }
 
 const PREFIXES = [

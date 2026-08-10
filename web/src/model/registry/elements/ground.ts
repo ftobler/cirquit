@@ -1,4 +1,4 @@
-import { currentDots, line } from '../../../render/draw';
+import { currentDots, lead, line } from '../../../render/draw';
 import { elementColor, groundBars, onePost, readParams, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
@@ -8,7 +8,7 @@ function drawGroundSymbol(g: DrawContext, e: CircuitElement): void {
   const color = elementColor(g, 0, g.power);
   // The stem is the whole dragged span; the symbol hangs off the far end,
   // the end opposite the post (GroundElm.java:65).
-  line(g, p1, p2, color);
+  lead(g, p1, p2, color);
   for (const [a, b] of groundBars(p1, p2, e.params.symbolType ?? 0)) {
     line(g, a, b, color);
   }

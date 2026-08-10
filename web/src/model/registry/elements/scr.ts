@@ -3,6 +3,7 @@ import {
   endpoints,
   interp,
   interp2Precise,
+  lead,
   line,
   triangle,
   voltageColor,
@@ -74,8 +75,8 @@ function scrGeometry(e: CircuitElement): ScrGeometry {
  *  (SCRElm.java:147-178). */
 function drawScr(g: DrawContext, e: CircuitElement): void {
   const { p1, p2, lead1, lead2, gate0, gate1 } = scrGeometry(e);
-  line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-  line(g, lead2, p2, voltageColor(g, g.voltages[1]));
+  lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
+  lead(g, lead2, p2, voltageColor(g, g.voltages[1]));
   // Triangle base at the anode-side lead end, apex at the cathode-side end
   // (SCRElm.java:128-131). Body geometry, so the base and bar stay square to
   // the body without the grid rounding `interp` applies to posts.
@@ -87,8 +88,8 @@ function drawScr(g: DrawContext, e: CircuitElement): void {
   const [c1, c2] = interp2Precise(lead1, lead2, 1, HS);
   line(g, c1, c2, elementColor(g, g.voltages[1], g.power));
   const gateColor = voltageColor(g, g.voltages[2]);
-  line(g, lead2, gate0, gateColor);
-  line(g, gate0, gate1, gateColor);
+  lead(g, lead2, gate0, gateColor);
+  lead(g, gate0, gate1, gateColor);
   currentDots(g, p1, lead2, g.current);
   currentDots(g, p2, lead2, g.current);
 }

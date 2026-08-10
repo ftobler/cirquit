@@ -14,7 +14,7 @@ import {
   endpoints,
   interp,
   interp2,
-  line,
+  lead,
   polygon,
   voltageColor,
 } from '../../../render/draw';
@@ -76,16 +76,16 @@ function drawDarlington(g: DrawContext, e: CircuitElement): void {
   const coll1 = interp(p1, p2, front, 6 * side);
   const coll21 = interp(p1, p2, front, side);
   const c = voltageColor(g, g.voltages[1]);
-  line(g, coll0, coll1, c);
-  line(g, coll20, coll21, c);
-  line(g, coll0, coll20, c);
+  lead(g, coll0, coll1, c);
+  lead(g, coll20, coll21, c);
+  lead(g, coll0, coll20, c);
 
   // The emitter lead to the bar's front edge at 6 units, with its junction
   // arrow: NPN points out toward the terminal, PNP points back in
   // (DarlingtonElm.java:149-154).
   const emit1 = interp(p1, p2, front, -6 * side);
   const eColor = voltageColor(g, g.voltages[2]);
-  line(g, emit0, emit1, eColor);
+  lead(g, emit0, emit1, eColor);
   if ((e.params.pnp ?? 1) === -1) {
     const pt = interp(p1, p2, dn > 0 ? 1 - 11 / dn : 1, -5 * side);
     arrowHead(g, emit0, pt, 8, eColor);
@@ -95,7 +95,7 @@ function drawDarlington(g: DrawContext, e: CircuitElement): void {
 
   // The base lead meets the bar's back edge on the axis.
   const base = interp(p1, p2, back);
-  line(g, p1, base, voltageColor(g, g.voltages[0]));
+  lead(g, p1, base, voltageColor(g, g.voltages[0]));
 
   // Current dots with the sign choices of DarlingtonElm.java:84-89. Upstream
   // feeds each run the node current: `getCurrentIntoNode(0) = -ib` on the

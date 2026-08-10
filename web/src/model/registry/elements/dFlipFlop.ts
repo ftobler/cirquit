@@ -15,6 +15,7 @@ import {
   dsign,
   elementLength,
   endpoints,
+  lead,
   line,
   polyline,
   voltageColor,
@@ -221,7 +222,7 @@ export function drawChip(
   pins.forEach((pin, i) => {
     const pt = chipPinPoints(e, frame, sizeX, sizeY, pin);
     if (pt.side === 'N' || pt.side === 'S') hasVertical = true;
-    line(g, pt.post, pt.stub, voltageColor(g, g.voltages[i]));
+    lead(g, pt.post, pt.stub, voltageColor(g, g.voltages[i]));
     if (pin.bubble && pt.bubble) {
       // A bubble is a stroked ring over the stub, the port's usual bubble
       // (ChipElm.java:131-133, drawThickCircle at width 3).

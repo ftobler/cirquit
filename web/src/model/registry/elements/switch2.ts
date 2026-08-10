@@ -3,6 +3,7 @@ import {
   currentDots,
   endpoints,
   interp,
+  lead,
   line,
   voltageColor,
 } from '../../../render/draw';
@@ -88,12 +89,12 @@ export const SWITCH2_DEF: ElementDef = {
     const [p1] = endpoints(e);
     const [lead1, lead2] = calcLeads(e, 32);
     const poles = switch2Poles(e);
-    line(g, p1, lead1, voltageColor(g, g.voltages[0]));
+    lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
     // One lead per throw, from its fan point to its post (Switch2Elm.java:
     // 96-99). The fan point sits on the body, so the pole and post share the
     // offset but not the x.
     for (let i = 0; i < throws; i++) {
-      line(g, poles[i], posts[i + 1], voltageColor(g, g.voltages[i + 1]));
+      lead(g, poles[i], posts[i + 1], voltageColor(g, g.voltages[i + 1]));
     }
     // Center-off is the open middle position: the lever rests on the pole
     // where the throws fan out rather than on a throw, so `poles[sel]` would

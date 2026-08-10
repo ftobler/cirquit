@@ -1,4 +1,4 @@
-import { canvasFont, elementLength, interp, limbColor, line, voltageColor } from '../../../render/draw';
+import { canvasFont, elementLength, interp, lead, limbColor, voltageColor } from '../../../render/draw';
 import { onePost, readParams, writeParams } from '../shared';
 import type { ElementDef } from '../../types';
 
@@ -37,7 +37,7 @@ export const AUDIO_OUTPUT_DEF: ElementDef = {
     // (AudioOutputElm.java:115-121), like the logic output's short lead.
     const dn = Math.max(1, elementLength(e));
     const lead1 = interp(p1, p2, 1 - (textWidth / 2 + 8) / dn);
-    line(g, p1, lead1, voltageColor(g, g.voltages[0]));
+    lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
     g.ctx.fillStyle = limbColor(g, g.theme.text);
     g.ctx.textAlign = 'center';
     g.ctx.textBaseline = 'middle';

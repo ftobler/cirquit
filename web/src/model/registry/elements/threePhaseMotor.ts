@@ -12,6 +12,7 @@ import {
   currentDots,
   endpoints,
   interp,
+  lead,
   line,
   voltageColor,
 } from '../../../render/draw';
@@ -77,7 +78,7 @@ function drawMotor(g: DrawContext, e: CircuitElement): void {
   const posts = motorPosts(e);
   const leads = motorLeads(e);
   for (let i = 0; i < 6; i++) {
-    line(g, posts[i], leads[i], voltageColor(g, g.voltages[i]));
+    lead(g, posts[i], leads[i], voltageColor(g, g.voltages[i]));
   }
 
   const center = interp(p1, p2, 0.5);

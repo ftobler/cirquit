@@ -15,6 +15,7 @@ import {
   elementLength,
   endpoints,
   interp,
+  lead,
   line,
   voltageColor,
 } from '../../../render/draw';
@@ -74,9 +75,9 @@ function drawAnalogSwitch2(g: DrawContext, e: CircuitElement): void {
   // The common lead and the two throw leads, then the lever to the conducting
   // throw (AnalogSwitch2Elm.java:49-66). The control terminal has no stub
   // upstream; the dead-end post keeps its junction dot.
-  line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-  line(g, poles[0], posts[1], voltageColor(g, g.voltages[1]));
-  line(g, poles[1], posts[2], voltageColor(g, g.voltages[2]));
+  lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
+  lead(g, poles[0], posts[1], voltageColor(g, g.voltages[1]));
+  lead(g, poles[1], posts[2], voltageColor(g, g.voltages[2]));
   line(g, lead1, poles[position], voltageColor(g, g.voltages[0]));
 
   currentDots(g, p1, lead1, g.current);

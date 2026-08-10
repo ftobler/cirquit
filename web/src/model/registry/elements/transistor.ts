@@ -6,7 +6,7 @@ import {
   endpoints,
   interp,
   interp2,
-  line,
+  lead,
   polygon,
   voltageColor,
 } from '../../../render/draw';
@@ -27,13 +27,13 @@ function drawTransistorBody(g: DrawContext, e: CircuitElement): void {
   const base = interp(p1, p2, backFraction(dn));
   const [backTop, backBottom] = interp2(p1, p2, backFraction(dn), OPEN_HS);
   const [frontTop, frontBottom] = interp2(p1, p2, frontFraction(dn), OPEN_HS);
-  line(g, p1, base, baseColor);
+  lead(g, p1, base, baseColor);
 
   // The collector and emitter leads leave the bar's near edge just off the
   // axis and fan out to their posts (TransistorElm.java:230).
   const [c1, e1] = transistorBarContacts(e);
-  line(g, c1, posts[1], voltageColor(g, g.voltages[1]));
-  line(g, e1, posts[2], voltageColor(g, g.voltages[2]));
+  lead(g, c1, posts[1], voltageColor(g, g.voltages[1]));
+  lead(g, e1, posts[2], voltageColor(g, g.voltages[2]));
 
   // The arrow sits on the emitter: NPN points out toward the terminal, PNP
   // points in from it (TransistorElm.java:238-243).

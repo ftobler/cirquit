@@ -6,6 +6,7 @@ import {
   endpoints,
   interp,
   interp2,
+  lead,
   line,
   voltageColor,
 } from '../../../render/draw';
@@ -44,8 +45,8 @@ function drawMosfet(g: DrawContext, e: CircuitElement): void {
   // six segments below read as one body (MosfetElm.java:402-403).
   const src1 = interp(p1, p2, 1 - 22 / dn, -hs2);
   const drn1 = interp(p1, p2, 1 - 22 / dn, hs2);
-  line(g, posts[1], src1, voltageColor(g, g.voltages[1]));
-  line(g, posts[2], drn1, voltageColor(g, g.voltages[2]));
+  lead(g, posts[1], src1, voltageColor(g, g.voltages[1]));
+  lead(g, posts[2], drn1, voltageColor(g, g.voltages[2]));
 
   // The channel, split into six segments with the two middle ones left out:
   // the enhancement-gap gap. Each segment is coloured by the voltage at its
@@ -83,7 +84,7 @@ function drawMosfet(g: DrawContext, e: CircuitElement): void {
   const gate2 = interp(p1, p2, 1 - 28 / dn, -hs2 / 2);
   const gate1 = interp(gate0, gate2, 0.5);
   const gateColor = voltageColor(g, g.voltages[0]);
-  line(g, p1, gate1, gateColor);
+  lead(g, p1, gate1, gateColor);
   line(g, gate0, gate2, gateColor);
 
   // Current dots along the source rail, the channel and the drain rail. The

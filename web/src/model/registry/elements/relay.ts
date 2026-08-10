@@ -9,6 +9,7 @@ import {
   endpoints,
   gradientPolyline,
   interp,
+  lead,
   line,
   voltageColor,
 } from '../../../render/draw';
@@ -151,7 +152,7 @@ function drawRelay(g: DrawContext, e: CircuitElement): void {
   const pos = bladePosition(e);
 
   for (let i = 0; i < 2; i++) {
-    line(g, coilLeads[i], coilPosts[i], voltageColor(g, g.voltages[3 * poleCount + i]));
+    lead(g, coilLeads[i], coilPosts[i], voltageColor(g, g.voltages[3 * poleCount + i]));
   }
   const x = coilStyle === 2 ? 1 : 0;
   const len = Math.hypot(
@@ -193,7 +194,7 @@ function drawRelay(g: DrawContext, e: CircuitElement): void {
 
   for (let p = 0; p < poleCount; p++) {
     for (let j = 0; j < 3; j++) {
-      line(g, swposts[p][j], swpoles[p][j], voltageColor(g, g.voltages[p * 3 + j]));
+      lead(g, swposts[p][j], swpoles[p][j], voltageColor(g, g.voltages[p * 3 + j]));
     }
     const tip = interp(swpoles[p][1], swpoles[p][2], pos);
     line(g, swpoles[p][0], tip, g.theme.wire);
@@ -311,8 +312,8 @@ function drawRelayCoil(g: DrawContext, e: CircuitElement): void {
   const { p1, p2, coilLeads, outline, extraPoints } = relayCoilGeometry(e);
   const type = e.params.type ?? 0;
 
-  line(g, p1, coilLeads[0], voltageColor(g, g.voltages[0]));
-  line(g, coilLeads[1], p2, voltageColor(g, g.voltages[1]));
+  lead(g, p1, coilLeads[0], voltageColor(g, g.voltages[0]));
+  lead(g, coilLeads[1], p2, voltageColor(g, g.voltages[1]));
   closedPolyline(g, [outline[0], outline[1], outline[2], outline[3], outline[0]], g.theme.text);
 
   if (type === 3 || type === 4 || type === 5) {
@@ -430,8 +431,8 @@ function drawRelayContact(g: DrawContext, e: CircuitElement): void {
   const swposts = [interp(p1, p2, 0, 0), interp(p1, p2, 1, 0), interp(p1, p2, 1, openhs)];
   const pos = Math.max(0, Math.min(1, e.params.i_position ?? 0));
 
-  line(g, swposts[0], swpoles[0], voltageColor(g, g.voltages[0]));
-  line(g, swposts[1], swpoles[1], voltageColor(g, g.voltages[1]));
+  lead(g, swposts[0], swpoles[0], voltageColor(g, g.voltages[0]));
+  lead(g, swposts[1], swpoles[1], voltageColor(g, g.voltages[1]));
   const tip = interp(swpoles[1], swpoles[2], pos);
   line(g, swpoles[0], tip, g.theme.wire);
   currentDots(g, swposts[0], swpoles[0], g.current);

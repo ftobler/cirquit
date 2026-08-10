@@ -6,7 +6,7 @@ import {
   endpoints,
   formatValue,
   interp,
-  line,
+  lead,
   voltageColor,
 } from '../../../render/draw';
 import { RAIL_CLOCK, RAIL_SHOW_VOLTAGE, VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
@@ -160,7 +160,7 @@ export const RAIL_DEF: ElementDef = {
     // A single stem from the post to the symbol end; the symbol is either the
     // labeled node (DC, clock, noise) or the waveform circle (RailElm.java:
     // 50-64).
-    line(g, p1, lead1, color);
+    lead(g, p1, lead1, color);
     if (wf === 2 && (e.flags & RAIL_CLOCK) !== 0) {
       drawRailLabel(g, e, lead1, 'CLK');
     } else if (wf === 0) {

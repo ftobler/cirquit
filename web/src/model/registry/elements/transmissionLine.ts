@@ -1,4 +1,4 @@
-import { currentDotsFrom, interp, interpPrecise, line, voltageColor } from '../../../render/draw';
+import { currentDotsFrom, interp, interpPrecise, lead, line, voltageColor } from '../../../render/draw';
 import { readParams, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -52,7 +52,7 @@ function drawTransmissionLine(g: DrawContext, e: CircuitElement): void {
     inner[1].y - inner[2].y + 2,
   );
   for (let i = 0; i < 4; i++) {
-    line(g, posts[i], inner[i], voltageColor(g, g.voltages[i]));
+    lead(g, posts[i], inner[i], voltageColor(g, g.voltages[i]));
   }
   // The travelling wave: one strip per drawn segment, each coloured by the
   // delay-line voltage at that position, already averaged and resampled to the

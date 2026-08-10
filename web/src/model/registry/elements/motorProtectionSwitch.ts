@@ -10,7 +10,7 @@
  * (MotorProtectionSwitchElm.java:90-101).
  */
 
-import { canvasFont, closedPolyline, currentDots, line, voltageColor } from '../../../render/draw';
+import { canvasFont, closedPolyline, currentDots, lead, line, voltageColor } from '../../../render/draw';
 import { readParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -77,13 +77,13 @@ function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
 
     // Terminal, fuse mark, blade and body stub down to the heat element
     // (MotorProtectionSwitchElm.java:149-160).
-    line(g, topPost, { x, y: ay + 32 }, topColor(i));
+    lead(g, topPost, { x, y: ay + 32 }, topColor(i));
     if (blown) {
       line(g, { x: x - 4, y: ay + 32 }, { x: x + 4, y: ay + 32 }, topColor(i));
     }
     const bladeStart = { x: blown ? x - 16 : x, y: ay + 32 };
-    line(g, bladeStart, { x, y: ay + 64 }, topColor(i));
-    line(g, { x, y: ay + 64 }, { x, y: ay + 80 }, topColor(i));
+    lead(g, bladeStart, { x, y: ay + 64 }, topColor(i));
+    lead(g, { x, y: ay + 64 }, { x, y: ay + 80 }, topColor(i));
 
     // The fuse X just below the terminal (MotorProtectionSwitchElm.java:159-160),
     // a plain drawLine upstream and so drawn at fine width 1.
@@ -112,7 +112,7 @@ function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
     g.ctx.textBaseline = 'middle';
     g.ctx.fillText('I>', x, ay + 152);
 
-    line(g, { x, y: ay + 176 }, bottomPost, bottomColor(i));
+    lead(g, { x, y: ay + 176 }, bottomPost, bottomColor(i));
   }
 
   // The label terminal block on the left and the label text beside it

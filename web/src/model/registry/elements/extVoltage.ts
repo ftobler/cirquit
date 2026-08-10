@@ -1,4 +1,4 @@
-import { canvasFont, currentDots, endpoints, line, voltageColor } from '../../../render/draw';
+import { canvasFont, currentDots, endpoints, lead, voltageColor } from '../../../render/draw';
 import { railLabelAnchor, railLead } from './rail';
 import { VOLTAGE_SHOW_VOLTAGE } from '../flags';
 import { onePost, readParams } from '../shared';
@@ -73,7 +73,7 @@ export const EXT_VOLTAGE_DEF: ElementDef = {
     const lead1 = railLead(p1, p2);
     // A single stem from the post to the symbol end, with the name where a DC
     // rail would draw its voltage (ExtVoltageElm.java:47-49, drawRailText).
-    line(g, p1, lead1, color);
+    lead(g, p1, lead1, color);
     drawExtName(g, e, lead1, extName(e));
     // ExtVoltageElm inherits RailElm.draw, whose stem dots run against the
     // reported current (RailElm.java:61-63), i.e. symbol-to-post here.

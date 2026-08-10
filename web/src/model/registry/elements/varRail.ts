@@ -1,4 +1,4 @@
-import { canvasFont, currentDots, endpoints, line, voltageColor } from '../../../render/draw';
+import { canvasFont, currentDots, endpoints, lead, voltageColor } from '../../../render/draw';
 import { VOLTAGE_SHOW_VOLTAGE } from '../flags';
 import { onePost, readParams } from '../shared';
 import { railLabelAnchor, railLead, railText } from './rail';
@@ -56,7 +56,7 @@ export const VAR_RAIL_DEF: ElementDef = {
     const [p1, p2] = endpoints(e);
     const color = voltageColor(g, g.voltages[0]);
     const lead1 = railLead(p1, p2);
-    line(g, p1, lead1, color);
+    lead(g, p1, lead1, color);
     // A varRail always draws its current value like a DC rail (RailElm.java:
     // 69-81, WF_VAR is in the DC branch), never the waveform circle.
     const v = e.params.voltage ?? 5;

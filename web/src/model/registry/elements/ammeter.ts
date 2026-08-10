@@ -13,7 +13,7 @@ import {
   formatValue,
   interp,
   label,
-  line,
+  lead,
   voltageColor,
 } from '../../../render/draw';
 import { readParams, twoPosts, writeParams } from '../shared';
@@ -97,7 +97,7 @@ export const AMMETER_DEF: ElementDef = {
     } else {
       // A thick line with an arrow toward the current direction, the meter's
       // other symbol (AmmeterElm.java:162-164).
-      line(g, p1, p2, voltageColor(g, g.voltages[0]));
+      lead(g, p1, p2, voltageColor(g, g.voltages[0]));
       const mid = interp(p1, p2, 0.6);
       arrowHead(g, p1, mid, 14, voltageColor(g, g.voltages[0]));
       if ((e.flags & AMMETER_SHOW_CURRENT) !== 0) {

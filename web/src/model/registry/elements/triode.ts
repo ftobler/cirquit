@@ -6,6 +6,7 @@ import {
   endpoints,
   interp,
   interp2,
+  lead,
   line,
   voltageColor,
 } from '../../../render/draw';
@@ -94,18 +95,18 @@ function drawTriode(g: DrawContext, e: CircuitElement): void {
   circle(g, geo.p2, CIRCLER, g.theme.wire, false);
   // Plate: the lead to its post and the top bar (TriodeElm.java:106-110).
   const plateColor = elementColor(g, g.voltages[0], g.power);
-  line(g, geo.plate0, geo.plate1, plateColor);
+  lead(g, geo.plate0, geo.plate1, plateColor);
   line(g, geo.plate2, geo.plate3, plateColor);
   // Grid: the four wires through the tube plus the lead from the grid post
   // (TriodeElm.java:111-116).
   const gridColor = elementColor(g, g.voltages[1], g.power);
-  for (let i = 0; i < geo.grid.length; i += 2) line(g, geo.grid[i], geo.grid[i + 1], gridColor);
+  for (let i = 0; i < geo.grid.length; i += 2) lead(g, geo.grid[i], geo.grid[i + 1], gridColor);
   // Cathode: the three-segment basket, coloured with the cathode voltage only
   // (upstream's `setPowerColor(0)`, TriodeElm.java:117-121).
   const cathodeColor = voltageColor(g, g.voltages[2]);
-  line(g, geo.cath0, geo.cath1, cathodeColor);
-  line(g, geo.cath1, geo.cath2, cathodeColor);
-  line(g, geo.cath2, geo.cath3, cathodeColor);
+  lead(g, geo.cath0, geo.cath1, cathodeColor);
+  lead(g, geo.cath1, geo.cath2, cathodeColor);
+  lead(g, geo.cath2, geo.cath3, cathodeColor);
   // Current dots along the plate-to-cathode conduction path (TriodeElm.java:
   // 123-131). The grid-lead dots upstream draws for `curcountg` are omitted:
   // the engine boundary carries one current per element, the cathode current.

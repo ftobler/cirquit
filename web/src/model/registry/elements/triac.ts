@@ -4,6 +4,7 @@ import {
   interp,
   interpPrecise,
   interp2Precise,
+  lead,
   line,
   triangle,
   voltageColor,
@@ -75,8 +76,8 @@ function triacGeometry(e: CircuitElement): TriacGeometry {
  *  the gate branching off the MT1-side lead end (TriacElm.java:155-196). */
 function drawTriac(g: DrawContext, e: CircuitElement): void {
   const { p1, p2, lead1, lead2, gate0, gate1 } = triacGeometry(e);
-  line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-  line(g, lead2, p2, voltageColor(g, g.voltages[1]));
+  lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
+  lead(g, lead2, p2, voltageColor(g, g.voltages[1]));
   // The plates sit across the lead ends, one per main terminal
   // (TriacElm.java:126-130). Body geometry, so the plates and arrow triangles
   // are interpolated without the grid rounding `interp` applies to posts.
@@ -103,8 +104,8 @@ function drawTriac(g: DrawContext, e: CircuitElement): void {
     elementColor(g, g.voltages[0], g.power),
   );
   const gateColor = voltageColor(g, g.voltages[2]);
-  line(g, lead2, gate0, gateColor);
-  line(g, gate0, gate1, gateColor);
+  lead(g, lead2, gate0, gateColor);
+  lead(g, gate0, gate1, gateColor);
   currentDots(g, p1, lead2, g.current);
   currentDots(g, p2, lead2, g.current);
 }

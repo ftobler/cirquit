@@ -15,6 +15,7 @@ import {
   elementLength,
   endpoints,
   interp,
+  lead,
   line,
   voltageColor,
 } from '../../../render/draw';
@@ -105,30 +106,30 @@ function drawCrossSwitch(g: DrawContext, e: CircuitElement): void {
   // Post 1's network: the top-right post's lead runs down the right diagonal
   // to the pole-0 throw (CrossSwitchElm.java:97-101).
   const v1 = voltageColor(g, g.voltages[1]);
-  line(g, geo.cross[1], geo.cross[2], v1);
-  line(g, geo.cross[1], geo.cross[3], v1);
-  line(g, geo.cross[3], geo.throwPosts[0], v1);
-  line(g, geo.throwPosts[0], geo.throwPosts[3], v1);
+  lead(g, geo.cross[1], geo.cross[2], v1);
+  lead(g, geo.cross[1], geo.cross[3], v1);
+  lead(g, geo.cross[3], geo.throwPosts[0], v1);
+  lead(g, geo.throwPosts[0], geo.throwPosts[3], v1);
 
   // Post 3's network: the bottom-right post's lead up to the pole-1 throw
   // (CrossSwitchElm.java:102-105).
   const v3 = voltageColor(g, g.voltages[3]);
-  line(g, geo.throwPosts[2], geo.cross[5], v3);
-  line(g, geo.throwPosts[1], geo.cross[0], v3);
-  line(g, geo.cross[0], geo.cross[4], v3);
+  lead(g, geo.throwPosts[2], geo.cross[5], v3);
+  lead(g, geo.throwPosts[1], geo.cross[0], v3);
+  lead(g, geo.cross[0], geo.cross[4], v3);
 
   for (let i = 0; i < 2; i++) {
     // The terminal leads, each in its own terminal's voltage colour.
-    line(g, geo.polePosts[i], geo.poleLeads[i], voltageColor(g, g.voltages[2 * i]));
-    line(g, geo.throwPosts[2 * i], geo.throwLeads[i * 4], voltageColor(g, g.voltages[2 * i + 1]));
-    line(
+    lead(g, geo.polePosts[i], geo.poleLeads[i], voltageColor(g, g.voltages[2 * i]));
+    lead(g, geo.throwPosts[2 * i], geo.throwLeads[i * 4], voltageColor(g, g.voltages[2 * i + 1]));
+    lead(
       g,
       geo.throwPosts[2 * i + 1],
       geo.throwLeads[i * 4 + 1],
       voltageColor(g, g.voltages[3 - 2 * i]),
     );
     if (geo.iec) {
-      line(g, geo.throwLeads[i * 4], geo.throwLeads[i * 4 + 2], voltageColor(g, g.voltages[2 * i + 1]));
+      lead(g, geo.throwLeads[i * 4], geo.throwLeads[i * 4 + 2], voltageColor(g, g.voltages[2 * i + 1]));
     }
 
     // The dashed link between the levers, drawn once with the first pole

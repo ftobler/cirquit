@@ -5,7 +5,7 @@ import {
   formatValue,
   interp,
   label,
-  line,
+  lead,
   voltageColor,
 } from '../../../render/draw';
 import { PROBE_CIRCLE, PROBE_SHOW_VOLTAGE } from '../flags';
@@ -52,8 +52,8 @@ export const PROBE_DEF: ElementDef = {
   ],
   draw(g, e) {
     const [lead1, lead2] = calcLeads(e, 16);
-    line(g, { x: e.x1, y: e.y1 }, lead1, voltageColor(g, g.voltages[0]));
-    line(g, lead2, { x: e.x2, y: e.y2 }, voltageColor(g, g.voltages[1]));
+    lead(g, { x: e.x1, y: e.y1 }, lead1, voltageColor(g, g.voltages[0]));
+    lead(g, lead2, { x: e.x2, y: e.y2 }, voltageColor(g, g.voltages[1]));
     const mid = interp(lead1, lead2, 0.5);
     // The circle is a drawThickCircle upstream (ProbeElm.java:232), the
     // 3-unit body weight.

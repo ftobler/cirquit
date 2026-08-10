@@ -12,7 +12,7 @@ import {
   endpoints,
   interp,
   interp2,
-  line,
+  lead,
   voltageColor,
 } from '../../../render/draw';
 import { TRI_STATE_FLIP } from '../flags';
@@ -64,10 +64,10 @@ function drawTriState(g: DrawContext, e: CircuitElement): void {
 
   // The control stub hangs below the triangle, voltage-coloured by its own
   // node (TriStateElm.java:131-133).
-  line(g, point3, lead3, voltageColor(g, g.voltages[2]));
+  lead(g, point3, lead3, voltageColor(g, g.voltages[2]));
   // draw2Leads: the input and output wires (TriStateElm.java:141-143).
-  line(g, p1, lead1, voltageColor(g, g.voltages[0]));
-  line(g, lead2, p2, voltageColor(g, g.voltages[1]));
+  lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
+  lead(g, lead2, p2, voltageColor(g, g.voltages[1]));
 
   const [t0, t1] = interp2(lead1, lead2, 0, HS + 2);
   closedPolyline(g, [t0, t1, apex, t0], g.theme.wire);
