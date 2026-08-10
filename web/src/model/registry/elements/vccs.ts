@@ -11,7 +11,7 @@
  * engine as `e.text` (`spec.label`).
  */
 
-import { chipDumpFlags, chipPosts, drawChip } from './dFlipFlop';
+import { chipBodyRect, chipDumpFlags, chipPosts, drawChip } from './dFlipFlop';
 import { csDump, csParse, csPins, csSizeY, CS_FIELDS } from './vcvs';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
@@ -26,6 +26,7 @@ export const VCCS_DEF: ElementDef = {
   dumpCode: '213',
   postCount: 4, // two inputs + C+/C- at the default input count
   posts: (e) => chipPosts(e, 2, csSizeY(e), csPins(e, ['C+', 'C-'], false)),
+  bodyRect: (e) => chipBodyRect(e, 2, csSizeY(e)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { inputCount: 2 },

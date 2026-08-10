@@ -12,6 +12,7 @@
  */
 
 import {
+  chipBodyRect,
   chipCommonTokens,
   chipDump,
   chipDumpFlags,
@@ -79,6 +80,7 @@ export const MULTIPLEXER_DEF: ElementDef = {
   dumpCode: '184',
   postCount: 7, // the default 2-select-bit, 4-input layout: 4 + 2 + 1
   posts: (e) => chipPosts(e, muxBits(e) + 1, muxInputCount(e) + 1, muxPins(e)),
+  bodyRect: (e) => chipBodyRect(e, muxBits(e) + 1, muxInputCount(e) + 1),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 8, // the default 2-select-bit chip spans (sizeX + 1) * 32
   defaults: { bits: 2, highVoltage: 5 },

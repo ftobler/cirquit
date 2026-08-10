@@ -22,6 +22,7 @@ import {
   CHIP_FLIP_XY,
   CHIP_FLIP_Y,
   CHIP_SMALL,
+  chipBodyRect,
   chipDumpFlags,
   chipPosts,
   drawChip,
@@ -129,6 +130,7 @@ export const DECIMAL_DISPLAY_DEF: ElementDef = {
   dumpCode: '419',
   postCount: 4,
   posts: (e) => chipPosts(e, 3, decimalBits(e), decimalPins(e)),
+  bodyRect: (e) => chipBodyRect(e, 3, decimalBits(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 8,  // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, displayMode: 0, highVoltage: 5 },

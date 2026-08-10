@@ -11,6 +11,7 @@
  */
 
 import {
+  chipBodyRect,
   chipDumpFlags,
   chipPosts,
   drawChip,
@@ -75,6 +76,7 @@ export const CCVS_DEF: ElementDef = {
   dumpCode: '214',
   postCount: 4, // one input pair + V+/V- at the default input count
   posts: (e) => chipPosts(e, 2, ccsSizeY(e), ccsPairPins(e, ['V+', 'V-'], true)),
+  bodyRect: (e) => chipBodyRect(e, 2, ccsSizeY(e)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { inputCount: 2 },

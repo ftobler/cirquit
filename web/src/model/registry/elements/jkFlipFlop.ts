@@ -4,7 +4,15 @@
  * triggered, and an optional reset pin appears on the east under FLAG_RESET.
  */
 
-import { chipDump, chipDumpFlags, chipParse, chipPosts, drawChip, type ChipPinDef } from './dFlipFlop';
+import {
+  chipBodyRect,
+  chipDump,
+  chipDumpFlags,
+  chipParse,
+  chipPosts,
+  drawChip,
+  type ChipPinDef,
+} from './dFlipFlop';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 export const JK_RESET = 2;
@@ -39,6 +47,7 @@ export const JKFLIPFLOP_DEF: ElementDef = {
   dumpCode: '156',
   postCount: 5,
   posts: (e) => chipPosts(e, 2, 3, jkPins(e)),
+  bodyRect: (e) => chipBodyRect(e, 2, 3),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaults: { highVoltage: 5 },

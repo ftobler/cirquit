@@ -13,6 +13,7 @@
  */
 
 import {
+  chipBodyRect,
   chipDump,
   chipDumpFlags,
   chipParse,
@@ -53,6 +54,7 @@ export const DAC_DEF: ElementDef = {
   dumpCode: '166',
   postCount: 6,
   posts: (e) => chipPosts(e, 2, Math.max(dacBits(e), 2), dacPins(e)),
+  bodyRect: (e) => chipBodyRect(e, 2, Math.max(dacBits(e), 2)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, highVoltage: 5 },

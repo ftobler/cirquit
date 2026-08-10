@@ -6,6 +6,7 @@
  */
 
 import {
+  chipBodyRect,
   chipCommonTokens,
   chipDumpFlags,
   chipPosts,
@@ -55,6 +56,7 @@ export const COUNTER_DEF: ElementDef = {
   dumpCode: '164',
   postCount: 6,
   posts: (e) => chipPosts(e, 2, counterBits(e), counterPins(e)),
+  bodyRect: (e) => chipBodyRect(e, 2, counterBits(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, invertreset: 1, modulus: 0, highVoltage: 5 },

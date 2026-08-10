@@ -7,7 +7,7 @@
  * shared digital-family file.
  */
 
-import { chipPosts, chipParse, chipDump, chipDumpFlags, drawChip } from './dFlipFlop';
+import { chipBodyRect, chipPosts, chipParse, chipDump, chipDumpFlags, drawChip } from './dFlipFlop';
 import type { ChipPinDef } from './dFlipFlop';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
@@ -29,6 +29,7 @@ export const PHASE_COMP_DEF: ElementDef = {
   dumpCode: '161',
   postCount: 3,
   posts: (e) => chipPosts(e, 2, 2, phaseCompPins),
+  bodyRect: (e) => chipBodyRect(e, 2, 2),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaults: { highVoltage: 5 },

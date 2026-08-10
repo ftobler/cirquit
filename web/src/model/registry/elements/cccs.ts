@@ -10,7 +10,7 @@
  * CCVS.
  */
 
-import { chipDumpFlags, chipPosts, drawChip } from './dFlipFlop';
+import { chipBodyRect, chipDumpFlags, chipPosts, drawChip } from './dFlipFlop';
 import { ccsDump, ccsPairPins, ccsSizeY } from './ccvs';
 import { csParse, CS_FIELDS } from './vcvs';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
@@ -26,6 +26,7 @@ export const CCCS_DEF: ElementDef = {
   dumpCode: '215',
   postCount: 4, // one input pair + O+/O- at the default input count
   posts: (e) => chipPosts(e, 2, ccsSizeY(e), ccsPairPins(e, ['O+', 'O-'], false)),
+  bodyRect: (e) => chipBodyRect(e, 2, ccsSizeY(e)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { inputCount: 2 },

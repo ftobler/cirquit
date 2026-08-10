@@ -21,7 +21,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { readParams } from '../shared';
-import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
+import type { Box, CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** File-format flag bits shared by every chip (ChipElm.java:30-34). */
 export const CHIP_SMALL = 1;
@@ -202,6 +202,18 @@ function chipBody(
     chipPoint(frame, cspc + xs, -cspc + ys),
     chipPoint(frame, cspc, -cspc + ys),
   ];
+}
+
+/** The body rectangle as a hit-test box, `chipBody` collapsed to its bounds.
+ *  Chips are never diagonal, so the four corners span an exact axis-aligned
+ *  rect; every `drawChip` def hands this to `bodyRect`, the port of upstream's
+ *  `boundingBox.contains` gate, so the whole housing is grabbable rather than
+ *  just the central axis and the pins. */
+export function chipBodyRect(e: CircuitElement, sizeX: number, sizeY: number): Box {
+  const body = chipBody(e, chipFrame(e), sizeX, sizeY);
+  const xs = body.map((p) => p.x);
+  const ys = body.map((p) => p.y);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
 }
 
 /** The chip body, pin stubs, bubbles, clock markers and pin labels, ported
@@ -403,6 +415,7 @@ export const DFLIPFLOP_DEF: ElementDef = {
   dumpCode: '155',
   postCount: 4,
   posts: (e) => chipPosts(e, 2, 3, dffPins(e)),
+  bodyRect: (e) => chipBodyRect(e, 2, 3),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaults: { highVoltage: 5 },

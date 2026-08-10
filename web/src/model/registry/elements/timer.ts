@@ -11,7 +11,15 @@
  * dropping both leaves the minimal 6-post part (TimerElm.java:62-63, :129).
  */
 
-import { chipDump, chipDumpFlags, chipParse, chipPosts, drawChip, type ChipPinDef } from './dFlipFlop';
+import {
+  chipBodyRect,
+  chipDump,
+  chipDumpFlags,
+  chipParse,
+  chipPosts,
+  drawChip,
+  type ChipPinDef,
+} from './dFlipFlop';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 export const TIMER_RESET = 2;
@@ -60,6 +68,7 @@ export const TIMER_DEF: ElementDef = {
   dumpCode: '165',
   postCount: 8,
   posts: (e) => chipPosts(e, 3, 5, timerPins(e)),
+  bodyRect: (e) => chipBodyRect(e, 3, 5),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 8,  // the chip spans (sizeX + 1) * 32
   defaults: { highVoltage: 5 },

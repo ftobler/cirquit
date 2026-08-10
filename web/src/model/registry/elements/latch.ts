@@ -6,6 +6,7 @@
  */
 
 import {
+  chipBodyRect,
   chipCommonTokens,
   chipDump,
   chipDumpFlags,
@@ -87,6 +88,7 @@ export const LATCH_DEF: ElementDef = {
   dumpCode: '168',
   postCount: 9,
   posts: (e) => chipPosts(e, 2, latchSizeY(e), latchPins(e)),
+  bodyRect: (e) => chipBodyRect(e, 2, latchSizeY(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaultFlags: LATCH_STATE,  // LatchElm.java:47

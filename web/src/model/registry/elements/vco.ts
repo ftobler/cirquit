@@ -11,7 +11,15 @@
  * level to the file, so the token stream after the common fields is empty.
  */
 
-import { chipDump, chipDumpFlags, chipParse, chipPosts, drawChip, type ChipPinDef } from './dFlipFlop';
+import {
+  chipBodyRect,
+  chipDump,
+  chipDumpFlags,
+  chipParse,
+  chipPosts,
+  drawChip,
+  type ChipPinDef,
+} from './dFlipFlop';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** The pin table, from `setupPins` (VCOElm.java:29-42): Vi and the Vo output
@@ -39,6 +47,7 @@ export const VCO_DEF: ElementDef = {
   dumpCode: '158',
   postCount: 6,
   posts: (e) => chipPosts(e, 2, 4, vcoPins()),
+  bodyRect: (e) => chipBodyRect(e, 2, 4),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaults: {},

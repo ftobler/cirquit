@@ -13,6 +13,7 @@ import {
   CHIP_FLIP_XY,
   CHIP_FLIP_Y,
   CHIP_SMALL,
+  chipBodyRect,
   chipCommonTokens,
   chipDump,
   chipDumpFlags,
@@ -288,6 +289,10 @@ export const SEVEN_SEG_DEF: ElementDef = {
   posts: (e) => {
     const { sizeX, sizeY } = sevenSegSize(e);
     return chipPosts(e, sizeX, sizeY, sevenSegPins(e));
+  },
+  bodyRect: (e) => {
+    const { sizeX, sizeY } = sevenSegSize(e);
+    return chipBodyRect(e, sizeX, sizeY);
   },
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 10,  // the default 7-segment spans (sizeX + 1) * 32 with sizeX 4

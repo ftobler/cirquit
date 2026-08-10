@@ -18,7 +18,7 @@
  * reload because it can change the post count.
  */
 
-import { chipPosts, drawChip, type ChipPinDef } from './dFlipFlop';
+import { chipBodyRect, chipPosts, drawChip, type ChipPinDef } from './dFlipFlop';
 import type { CustomLogicModel } from '../../../io/netlist/types';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
@@ -91,6 +91,7 @@ export const CUSTOM_LOGIC_DEF: ElementDef = {
   dumpCode: '208',
   postCount: FALLBACK_INPUTS + FALLBACK_OUTPUTS, // 6 at the fallback width
   posts: (e) => chipPosts(e, 2, customLogicSizeY(e), customLogicPins(e)),
+  bodyRect: (e) => chipBodyRect(e, 2, customLogicSizeY(e)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   parse: (t, e) => {

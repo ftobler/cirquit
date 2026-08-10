@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { GRID_SIZE, type CircuitElement } from '../model/types';
+import { defFor, postsOf } from '../model/registry';
 import { snap } from '../state/store';
 import {
+  distanceToBox,
   distanceToElement,
   distanceToSegment,
   invalidDropPoint,
@@ -163,6 +165,103 @@ describe('distanceToElement', () => {
 
   it('measures against the body line for two-terminal elements', () => {
     expect(distanceToElement({ x: 80, y: 5 }, element(0, 0, 160, 0))).toBe(5);
+  });
+});
+
+describe('distanceToBox', () => {
+  const box = { x0: 16, y0: -16, x1: 80, y1: 80 };
+
+  it('is 0 anywhere inside the box, edges and corners included', () => {
+    expect(distanceToBox({ x: 48, y: 32 }, box)).toBe(0);
+    expect(distanceToBox({ x: 16, y: 0 }, box)).toBe(0);
+    expect(distanceToBox({ x: 80, y: 80 }, box)).toBe(0);
+  });
+
+  it('measures to the nearest edge beyond it, and does not care about corner order', () => {
+    expect(distanceToBox({ x: 48, y: 88 }, box)).toBe(8);
+    expect(distanceToBox({ x: 96, y: 32 }, box)).toBe(16);
+    expect(distanceToBox({ x: 48, y: 88 }, { x0: 80, y0: 80, x1: 16, y1: -16 })).toBe(8);
+  });
+
+  it('measures to the nearest corner outside the box diagonal', () => {
+    expect(distanceToBox({ x: 96, y: 96 }, box)).toBeCloseTo(Math.hypot(16, 16), 9);
+  });
+});
+
+describe('chip body hit-testing', () => {
+  // A default D flip-flop drawn left to right: the anchor sits at (0,0), the
+  // housing spans (16,-16)..(80,80), and the axis runs along y = 0.
+  const dff = (): CircuitElement => {
+    const e = element(0, 0, 96, 0);
+    e.kind = 'dFlipFlop';
+    return e;
+  };
+
+  it('hits a point inside the body but off the axis and off every pin', () => {
+    const e = dff();
+    // Both probes sit inside the housing and beyond the 8-unit hit tolerance
+    // from the axis and every post, so only the body rect can give a distance
+    // of 0. (48,32) is mid-body; (24,24) hugs the west edge above the D-pin
+    // row. Without the rect the axis alone reads 32 and 24 respectively, so
+    // the click misses and falls through to a box-select.
+    expect(distanceToElement({ x: 48, y: 32 }, e)).toBe(0);
+    expect(distanceToElement({ x: 24, y: 24 }, e)).toBe(0);
+  });
+
+  it('still measures the axis and posts outside the body', () => {
+    const e = dff();
+    // The east post hangs at (96,0), beyond the body's east edge (80,..); the
+    // anchor axis keeps it grabbable at distance 0 as before.
+    expect(distanceToElement({ x: 90, y: 0 }, e)).toBe(0);
+    // 8 units south of the body mid-span the axis is 88 away and the near
+    // post over 50, so the box edge distance decides.
+    expect(distanceToElement({ x: 48, y: 88 }, e)).toBe(8);
+  });
+
+  it('covers every drawChip kind', () => {
+    // Every chip housing must be grabbable. The probe is the mid-span of the
+    // top body edge: it sits a full cell (16) off the axis and clear of every
+    // post, so for each kind a missing or shrunken bodyRect leaves a distance
+    // well past the 8-unit hit tolerance instead of the 0 the box must yield.
+    const kinds = [
+      'adc',
+      'cc2',
+      'cccs',
+      'ccvs',
+      'counter',
+      'customLogic',
+      'dac',
+      'decimalDisplay',
+      'deMultiplexer',
+      'dFlipFlop',
+      'jkFlipFlop',
+      'latch',
+      'ledArray',
+      'multiplexer',
+      'phaseComp',
+      'ringCounter',
+      'sevenSeg',
+      'tFlipFlop',
+      'timer',
+      'vccs',
+      'vco',
+      'vcvs',
+    ];
+    for (const kind of kinds) {
+      const e = { ...element(0, 0, 160, 0), kind };
+      const rect = defFor(kind)?.bodyRect?.(e);
+      expect(rect, `${kind} declares a bodyRect`).toBeDefined();
+      const probe = { x: (rect!.x0 + rect!.x1) / 2, y: rect!.y0 };
+      // Guard that the probe is genuinely box-only: on the bare axis and posts
+      // it must read over the 8-unit tolerance, or the 0-hit assertion below
+      // would pass without the rect and the loop would go soft.
+      const bare = Math.min(
+        distanceToSegment(probe, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }),
+        ...postsOf(e).map((p) => Math.hypot(probe.x - p.x, probe.y - p.y)),
+      );
+      expect(bare, `${kind} probe is off-axis and clear of every post`).toBeGreaterThan(8);
+      expect(distanceToElement(probe, e), `${kind} body edge midpoint hits`).toBe(0);
+    }
   });
 });
 

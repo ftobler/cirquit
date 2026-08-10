@@ -10,6 +10,7 @@
  */
 
 import {
+  chipBodyRect,
   chipCommonTokens,
   chipDump,
   chipDumpFlags,
@@ -58,6 +59,7 @@ export const ADC_DEF: ElementDef = {
   dumpCode: '167',
   postCount: 6, // 4 bits + In + V+ at the default width
   posts: (e) => chipPosts(e, 2, adcSizeY(e), adcPins(e)),
+  bodyRect: (e) => chipBodyRect(e, 2, adcSizeY(e)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, highVoltage: 5 },

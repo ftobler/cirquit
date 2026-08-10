@@ -13,6 +13,7 @@
  */
 
 import {
+  chipBodyRect,
   chipDumpFlags,
   chipPosts,
   drawChip,
@@ -88,6 +89,7 @@ export const VCVS_DEF: ElementDef = {
   dumpCode: '212',
   postCount: 4, // two inputs + V+/V- at the default input count
   posts: (e) => chipPosts(e, 2, csSizeY(e), csPins(e, ['V+', 'V-'], true)),
+  bodyRect: (e) => chipBodyRect(e, 2, csSizeY(e)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { inputCount: 2 },

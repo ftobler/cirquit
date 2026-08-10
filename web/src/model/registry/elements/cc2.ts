@@ -10,6 +10,7 @@
  */
 
 import {
+  chipBodyRect,
   chipDumpFlags,
   chipPosts,
   drawChip,
@@ -39,6 +40,7 @@ export const CC2_DEF: ElementDef = {
   dumpCode: '179',
   postCount: 3,
   posts: (e) => chipPosts(e, 2, 3, cc2Pins()),
+  bodyRect: (e) => chipBodyRect(e, 2, 3),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { gain: 1 },

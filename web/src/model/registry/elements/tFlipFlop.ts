@@ -4,7 +4,15 @@
  * matching east reset post) appear under the flag bits.
  */
 
-import { chipDump, chipDumpFlags, chipParse, chipPosts, drawChip, type ChipPinDef } from './dFlipFlop';
+import {
+  chipBodyRect,
+  chipDump,
+  chipDumpFlags,
+  chipParse,
+  chipPosts,
+  drawChip,
+  type ChipPinDef,
+} from './dFlipFlop';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 export const TFF_RESET = 2;
@@ -43,6 +51,7 @@ export const TFLIPFLOP_DEF: ElementDef = {
   dumpCode: '193',
   postCount: 4,
   posts: (e) => chipPosts(e, 2, 3, tffPins(e)),
+  bodyRect: (e) => chipBodyRect(e, 2, 3),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaults: { highVoltage: 5 },

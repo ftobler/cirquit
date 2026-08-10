@@ -8,6 +8,18 @@ export interface Point {
   y: number;
 }
 
+/** An axis-aligned rectangle in circuit coordinates, normalised so
+ *  `x0 <= x1`, `y0 <= y1`. Distinct from the `state/view` `Rect`
+ *  (`minX/minY/width/height`) and the `SwitchRect` field/helper pair: this one
+ *  spans two corner points, the shape `elementBox` and a def's `bodyRect`
+ *  hand out. */
+export interface Box {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 /** An axis-aligned rectangle in circuit coordinates. Distinct from the
  *  `state/view` `Rect` (`minX/minY/width/height`): a switch-lever region, so
  *  the field and helpers keep their own name rather than colliding. */
@@ -151,6 +163,14 @@ export interface ElementDef {
    *  its own command. Rotation needs no flag, being defined for every element
    *  with two or more posts. */
   canMirror?: boolean;
+  /** A body rectangle for hit-testing, the port of upstream's `boundingBox`
+   *  gate (MouseManager.java:813): a point inside selects and drags the
+   *  element even when the axis and every post are far away. The chips hand
+   *  their full body rect here, so a click on the housing above or below the
+   *  axis grabs the chip instead of falling through to a box-select. Absent
+   *  means the axis/post geometry alone decides, as it does for two-terminal
+   *  parts. */
+  bodyRect?(e: CircuitElement): Box;
 }
 
 export interface Theme {

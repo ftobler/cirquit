@@ -17,6 +17,7 @@
 import {
   CHIP_FLIP_XY,
   CHIP_SMALL,
+  chipBodyRect,
   chipCommonTokens,
   chipDump,
   chipDumpFlags,
@@ -104,6 +105,10 @@ export const LED_ARRAY_DEF: ElementDef = {
   posts: (e) => {
     const { sizeX, sizeY } = ledArraySize(e);
     return chipPosts(e, sizeX, sizeY, ledArrayPins(e));
+  },
+  bodyRect: (e) => {
+    const { sizeX, sizeY } = ledArraySize(e);
+    return chipBodyRect(e, sizeX, sizeY);
   },
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 18,  // the default 8x8 spans (sizeX + 1) * 32

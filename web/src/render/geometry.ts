@@ -4,7 +4,7 @@
  * the logic).
  */
 
-import type { CircuitElement, Point } from '../model/types';
+import type { Box, CircuitElement, Point } from '../model/types';
 import { defFor, postsOf } from '../model/registry';
 
 /** Shortest distance from `p` to the segment `a`-`b`. */
@@ -235,7 +235,27 @@ export function distanceToElement(p: Point, e: CircuitElement): number {
   // Multi-terminal parts have limbs off the main axis, so also test each
   // terminal by its own distance; the nearer of the body line and a post wins.
   const nearPost = Math.min(...posts.map((q) => Math.hypot(p.x - q.x, p.y - q.y)));
-  return Math.min(body, nearPost);
+  // A chip's body rect is a solid pick zone: upstream gates the pick on
+  // `boundingBox.contains` (MouseManager.java:813), so the drawn housing must
+  // grab a click anywhere on it, not just on the thin axis and the pins. The
+  // box distance is 0 for an interior point, so it wins over the axis/post
+  // measures there while leaving them to decide outside.
+  const rect = defFor(e.kind)?.bodyRect?.(e);
+  return rect ? Math.min(body, nearPost, distanceToBox(p, rect)) : Math.min(body, nearPost);
+}
+
+/** Shortest distance from `p` to the axis-aligned box `box`: 0 when `p` is
+ *  inside, else the distance to the nearest edge or corner. The body hit-test
+ *  of a chip, whose whole rectangle is grabbable; normalises so a def can hand
+ *  out corners in any order. */
+export function distanceToBox(p: Point, box: Box): number {
+  const x0 = Math.min(box.x0, box.x1);
+  const x1 = Math.max(box.x0, box.x1);
+  const y0 = Math.min(box.y0, box.y1);
+  const y1 = Math.max(box.y0, box.y1);
+  const dx = Math.max(x0 - p.x, 0, p.x - x1);
+  const dy = Math.max(y0 - p.y, 0, p.y - y1);
+  return Math.hypot(dx, dy);
 }
 
 /**

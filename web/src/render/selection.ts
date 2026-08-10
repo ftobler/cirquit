@@ -2,15 +2,8 @@
  *  without a canvas: the box, the overlap test and the add/replace semantics
  *  (CircuitElm.selectRect, CircuitElm.java:1326-1331). */
 
-import type { CircuitElement, Point } from '../model/types';
+import type { Box, CircuitElement, Point } from '../model/types';
 import { defFor, postsOf } from '../model/registry';
-
-export interface Box {
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-}
 
 /** Normalised box spanning two drag corners, whatever direction the user drew. */
 export function boxFromPoints(a: Point, b: Point): Box {
