@@ -23,7 +23,6 @@ export function AboutDialog() {
         simulation engine (MNA solver, Newton-Raphson iteration, device models) is written in
         Rust and compiled to WebAssembly; the interface is React.
       </p>
-      <p>Version 0.1.0.</p>
       <p>
         This is a derivative work of{' '}
         <a href="https://github.com/pfalstad/circuitjs1" target="_blank" rel="noreferrer">
