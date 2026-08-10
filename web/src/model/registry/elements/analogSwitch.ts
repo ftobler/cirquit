@@ -76,7 +76,9 @@ function drawAnalogSwitch(g: DrawContext, e: CircuitElement): void {
   const hs1 = open ? 0 : 2;
   const hs2 = open ? openhs : 2;
   drawLeads(g, e, lead1, lead2);
-  line(g, interp(lead1, lead2, 0, hs1), interp(lead1, lead2, 1, hs2), g.theme.wire);
+  // The closing bar is the mechanical part, lightGray in upstream too
+  // (AnalogSwitchElm.java:120-123).
+  line(g, interp(lead1, lead2, 0, hs1), interp(lead1, lead2, 1, hs2), g.theme.lightGray);
   lead(g, point3, lead3, voltageColor(g, g.voltages[2]));
   if (!open) {
     currentDotsPath(g, [p1, lead1, lead2, p2], g.current);

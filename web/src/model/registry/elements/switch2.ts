@@ -104,7 +104,9 @@ export const SWITCH2_DEF: ElementDef = {
       throws === 2 &&
       (e.state ?? 0) === 2;
     const sel = Math.min(e.state ?? 0, poles.length - 1);
-    line(g, lead1, centerOff ? lead2 : poles[sel], voltageColor(g, g.voltages[0]));
+    // The lever rides whiteColor, not the throw it connects to, upstream's
+    // mechanical-part colour (Switch2Elm.java:101-104).
+    line(g, lead1, centerOff ? lead2 : poles[sel], g.theme.whiteColor);
     if (!centerOff) {
       currentDots(g, p1, lead1, g.current);
       currentDots(g, poles[sel], posts[sel + 1], g.current);

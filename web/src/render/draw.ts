@@ -814,6 +814,9 @@ function lightTheme(): Theme {
     // Upstream's Color.darkGray, same constant both themes: the transmission
     // line's body fill behind its voltage strips.
     darkGray: '#404040',
+    // Upstream's Color.lightGray, same constant both themes: the relay blade
+    // and the analog switch bar.
+    lightGray: '#c0c0c0',
     text: '#24292f',
     selection: '#0969da',
     highlight: '#d0782d',
@@ -841,6 +844,9 @@ function darkTheme(): Theme {
     // Upstream's Color.darkGray (Color.java:28), the exact constant the dark
     // theme carries: the transmission line's body fill.
     darkGray: '#404040',
+    // Upstream's Color.lightGray (Color.java:31), the exact constant the dark
+    // theme carries: the relay blade and the analog switch bar.
+    lightGray: '#c0c0c0',
     text: '#8b949e',
     selection: '#00ffff',
     highlight: '#f0883e',

@@ -142,8 +142,9 @@ function drawCrossSwitch(g: DrawContext, e: CircuitElement): void {
     }
 
     // The lever, at the straight throw in position 0 and the crossed throw in
-    // position 1 (CrossSwitchElm.java:134).
-    line(g, geo.poleLeads[i], geo.leverTips[i][position], voltageColor(g, g.voltages[2 * i]));
+    // position 1 (CrossSwitchElm.java:134), in the mechanical-part white
+    // (CrossSwitchElm.java:131-134) rather than the pole's voltage colour.
+    line(g, geo.poleLeads[i], geo.leverTips[i][position], g.theme.whiteColor);
 
     // Current dots along the active throw (CrossSwitchElm.java:137-139).
     currentDotsPath(

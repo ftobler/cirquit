@@ -33,7 +33,13 @@ import { MEMRISTOR_DEF } from '../model/registry/elements/memristor';
 import { GROUND_DEF } from '../model/registry/elements/ground';
 import { TRANSISTOR_DEF, transistorBarContacts } from '../model/registry/elements/transistor';
 import { INDUCTOR_DEF } from '../model/registry/elements/inductor';
-import { RELAY_DEF } from '../model/registry/elements/relay';
+import { RELAY_DEF, RELAY_CONTACT_DEF } from '../model/registry/elements/relay';
+import { SWITCH_DEF } from '../model/registry/elements/switch';
+import { SWITCH2_DEF } from '../model/registry/elements/switch2';
+import { CROSS_SWITCH_DEF } from '../model/registry/elements/crossSwitch';
+import { ANALOG_SWITCH_DEF } from '../model/registry/elements/analogSwitch';
+import { ANALOG_SWITCH2_DEF } from '../model/registry/elements/analogSwitch2';
+import { SWITCH_IEC } from '../model/registry/flags';
 import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
 import { MOSFET_DEF } from '../model/registry/elements/mosfet';
 import { RAIL_DEF } from '../model/registry/elements/rail';
@@ -50,7 +56,7 @@ import {
   drawChip,
   type ChipPinDef,
 } from '../model/registry/elements/dFlipFlop';
-import type { CircuitElement, DrawContext, Point } from '../model/types';
+import type { CircuitElement, DrawContext, ElementDef, Point } from '../model/types';
 
 interface CtxStub {
   fillStyle: string;
@@ -1056,6 +1062,95 @@ describe('lamp symbol colours', () => {
     expect(cold.fills).toEqual(['rgb(0,0,0)']);
     expect(hot.fills).toEqual(['rgb(255,255,255)']);
     expect(cold.fills[0]).not.toBe(hot.fills[0]);
+  });
+});
+
+describe('switch lever and relay blade colours', () => {
+  // The lever is the one mechanical part that does not carry a terminal
+  // voltage. Upstream strokes the switch levers with whiteColor (SwitchElm
+  // .java:127-132, Switch2Elm.java:101-104, CrossSwitchElm.java:131-134) and
+  // the relay and analog switch blades with Color.lightGray (RelayElm.java:
+  // 261-264, RelayContactElm.java:106-109, AnalogSwitchElm.java:120-123,
+  // AnalogSwitch2Elm.java:63-65). The port's line() applies the
+  // selection/hover swap on top of either role, so a highlighted lever reads
+  // as selected without losing its mechanical colour at rest.
+
+  const elm = (kind: string, params: Record<string, number> = {}, flags = 0): CircuitElement => ({
+    id: 1,
+    kind,
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    flags,
+    params,
+  });
+
+  const draw = (def: ElementDef, element: CircuitElement, overrides: Partial<DrawContext> = {}) => {
+    const { ctx, strokes } = mkCtx();
+    def.draw({ ...context(ctx, 0), voltages: [], ...overrides }, element);
+    return strokes;
+  };
+
+  const stroked = (
+    strokes: { style: string | CanvasGradient; width: number }[],
+    color: string,
+    width: number,
+  ): boolean => strokes.some((s) => s.style === color && s.width === width);
+
+  it('pins the lightGray constant in both themes', () => {
+    expect(makeTheme().lightGray).toBe('#c0c0c0'); // Color.lightGray
+    expect(makeTheme(false).lightGray).toBe('#c0c0c0');
+  });
+
+  it('strokes the SPST lever in whiteColor, at the 3-unit lever weight', () => {
+    const strokes = draw(SWITCH_DEF, elm('switch'));
+    expect(stroked(strokes, makeTheme().whiteColor, 3)).toBe(true);
+  });
+
+  it('strokes the SPDT lever in whiteColor', () => {
+    const strokes = draw(SWITCH2_DEF, elm('switch2', { position: 0, throwCount: 2 }));
+    expect(stroked(strokes, makeTheme().whiteColor, 3)).toBe(true);
+  });
+
+  it('strokes both cross switch levers in whiteColor', () => {
+    const strokes = draw(CROSS_SWITCH_DEF, elm('crossSwitch'));
+    expect(strokes.filter((s) => s.style === makeTheme().whiteColor && s.width === 3)).toHaveLength(2);
+  });
+
+  it('draws the IEC armature in the lever white, at fine width', () => {
+    // Upstream's IEC lines draw in the lever's whiteColor (SwitchElm.java:
+    // 147-159); here they follow the lever to fine width 1.
+    const strokes = draw(SWITCH_DEF, elm('switch', { position: 0 }, SWITCH_IEC));
+    expect(strokes.some((s) => s.style === makeTheme().whiteColor && s.width === 1)).toBe(true);
+  });
+
+  it('strokes the relay blade in lightGray', () => {
+    const strokes = draw(RELAY_DEF, elm('relay', { poleCount: 1 }), { voltages: [0, 0, 0, 0, 0] });
+    expect(stroked(strokes, makeTheme().lightGray, 3)).toBe(true);
+  });
+
+  it('strokes the relay contact blade in lightGray', () => {
+    const strokes = draw(RELAY_CONTACT_DEF, elm('relayContact', { i_position: 0 }));
+    expect(stroked(strokes, makeTheme().lightGray, 3)).toBe(true);
+  });
+
+  it('strokes the analog switch bar in lightGray', () => {
+    const strokes = draw(ANALOG_SWITCH_DEF, elm('analogSwitch', { threshold: 2.5 }));
+    expect(stroked(strokes, makeTheme().lightGray, 3)).toBe(true);
+  });
+
+  it('strokes the analog SPDT lever in lightGray', () => {
+    const strokes = draw(ANALOG_SWITCH2_DEF, elm('analogSwitch2', { threshold: 2.5 }));
+    expect(stroked(strokes, makeTheme().lightGray, 3)).toBe(true);
+  });
+
+  it('still swaps the lever colour to selection and hover', () => {
+    const selected = draw(SWITCH_DEF, elm('switch'), { selected: true });
+    expect(selected.some((s) => s.style === makeTheme().selection)).toBe(true);
+    expect(selected.some((s) => s.style === makeTheme().whiteColor)).toBe(false);
+    const hovered = draw(SWITCH_DEF, elm('switch'), { hovered: true });
+    expect(hovered.some((s) => s.style === makeTheme().highlight)).toBe(true);
   });
 });
 

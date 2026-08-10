@@ -1,6 +1,6 @@
 import { calcLeads, currentDotsPath, drawLeads, endpoints, interp, line } from '../../../render/draw';
 import { SWITCH_IEC, SWITCH_LABEL } from '../flags';
-import { elementColor, OPEN_HS, rectOfPoints, switchIecPoints, switchLever, twoPosts } from '../shared';
+import { OPEN_HS, rectOfPoints, switchIecPoints, switchLever, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The SPST tokens, which the SPDT writes first and then extends. The label
@@ -24,13 +24,13 @@ function drawSwitchBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
   const closed = (e.state ?? e.params.position ?? 0) === 0;
-  // The lever is always at the pivot's potential; it is connected to lead1
-  // whether it is closed or not.
-  const color = elementColor(g, g.voltages[0], g.power);
+  // The lever is the one mechanical part that does not carry a terminal
+  // voltage: upstream strokes it with whiteColor (SwitchElm.java:127-132),
+  // and the IEC armature follows it (SwitchElm.java:147-159).
   const [pivot, tip] = switchLever(lead1, lead2, closed);
-  line(g, pivot, tip, color);
+  line(g, pivot, tip, g.theme.whiteColor);
   if ((e.flags & SWITCH_IEC) !== 0) {
-    drawSwitchIec(g, lead1, lead2, closed, color, (e.params.momentary ?? 0) !== 0);
+    drawSwitchIec(g, lead1, lead2, closed, g.theme.whiteColor, (e.params.momentary ?? 0) !== 0);
   }
   if (closed) {
     const [p1, p2] = endpoints(e);

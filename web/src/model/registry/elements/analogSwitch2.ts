@@ -78,7 +78,9 @@ function drawAnalogSwitch2(g: DrawContext, e: CircuitElement): void {
   lead(g, p1, lead1, voltageColor(g, g.voltages[0]));
   lead(g, poles[0], posts[1], voltageColor(g, g.voltages[1]));
   lead(g, poles[1], posts[2], voltageColor(g, g.voltages[2]));
-  line(g, lead1, poles[position], voltageColor(g, g.voltages[0]));
+  // The lever points at the conducting throw but does not carry its voltage:
+  // upstream strokes it lightGray (AnalogSwitch2Elm.java:63-65).
+  line(g, lead1, poles[position], g.theme.lightGray);
 
   currentDots(g, p1, lead1, g.current);
   currentDots(g, poles[position], posts[position + 1], g.current);

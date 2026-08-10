@@ -197,7 +197,9 @@ function drawRelay(g: DrawContext, e: CircuitElement): void {
       lead(g, swposts[p][j], swpoles[p][j], voltageColor(g, g.voltages[p * 3 + j]));
     }
     const tip = interp(swpoles[p][1], swpoles[p][2], pos);
-    line(g, swpoles[p][0], tip, g.theme.wire);
+    // The blade is the mechanical part, lightGray in upstream too
+    // (RelayElm.java:261-264).
+    line(g, swpoles[p][0], tip, g.theme.lightGray);
   }
   currentDots(g, coilPosts[0], coilLeads[0], g.current);
   currentDots(g, coilLeads[1], coilPosts[1], g.current);
@@ -434,7 +436,9 @@ function drawRelayContact(g: DrawContext, e: CircuitElement): void {
   lead(g, swposts[0], swpoles[0], voltageColor(g, g.voltages[0]));
   lead(g, swposts[1], swpoles[1], voltageColor(g, g.voltages[1]));
   const tip = interp(swpoles[1], swpoles[2], pos);
-  line(g, swpoles[0], tip, g.theme.wire);
+  // The contact blade is lightGray in upstream too (RelayContactElm.java:
+  // 106-109).
+  line(g, swpoles[0], tip, g.theme.lightGray);
   currentDots(g, swposts[0], swpoles[0], g.current);
   if (pos === 0) currentDots(g, swpoles[1], swposts[1], g.current);
 

@@ -187,6 +187,10 @@ export interface Theme {
    *  (TransLineElm.java:130-132). A real dark grey rather than a borrowed
    *  text colour, so the strip margins read like the original. */
   darkGray: string;
+  /** Upstream's `Color.lightGray` (192,192,192): the relay blade and the
+   *  analog switch bar, the one mechanical part that does not carry a
+   *  terminal voltage (RelayElm.java:263-264, AnalogSwitchElm.java:120-123). */
+  lightGray: string;
   text: string;
   selection: string;
   highlight: string;
