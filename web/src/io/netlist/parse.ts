@@ -190,8 +190,6 @@ const UPSTREAM_ELEMENT_CODES = new Set([
   '207',
   '209',
   '210',
-  '214',
-  '215',
   '216',
   '350',
   '368',

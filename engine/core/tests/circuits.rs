@@ -11609,6 +11609,268 @@ fn vccs_with_no_dc_path_reports_zero_current() {
 }
 
 #[test]
+fn cccs_sense_current_drives_the_output_into_a_load() {
+    // 215 with one pair: the sense current is the expression variable, so
+    // expr "i*2" over the 0.01 A sense loop delivers 0.02 A into the 1 k load
+    // and the O+ node sits at 20 V (reference tests/cccs.txt:1).
+    let c = &mut build(
+        vec![
+            // The current source pushes 0.01 A into the A+ post.
+            elm(1, "current", &[[0, 0], [50, 0]], &[("current", 0.01)]),
+            // Posts: A+, A-, O+, O-.
+            elm_expr(
+                2,
+                "cccs",
+                &[[50, 0], [50, 100], [150, 0], [150, 100]],
+                2.0,
+                "i*2",
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[150, 0], [150, 200]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[150, 100], [150, 200]], &[]),
+            elm(5, "ground", &[[150, 200]], &[]),
+            elm(6, "ground", &[[50, 100]], &[]),
+            elm(7, "ground", &[[0, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    // The cccs is element index 1; its four posts start at flattened index
+    // 2 + 2*0 = 2.
+    let (nop, _nom) = (nodes[2 + 2] as usize, nodes[2 + 3] as usize);
+    assert!(
+        close(v[nop], 20.0, 1e-3),
+        "O+ was {} V, expected 20 V across the 1 k load",
+        v[nop]
+    );
+    assert!(
+        close(c.element_currents()[2], 0.02, 1e-5),
+        "load current was {} A, expected 20 mA",
+        c.element_currents()[2]
+    );
+}
+
+#[test]
+fn ccvs_sense_current_scales_into_the_output_pair() {
+    // 214 with one pair and expr "2*i": a 5 mA sense loop holds 10 mV across
+    // the V+/V- output source.
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 0], [50, 0]], &[("current", 0.005)]),
+            // Posts: A+, A-, V+, V-.
+            elm_expr(
+                2,
+                "ccvs",
+                &[[50, 0], [50, 100], [150, 0], [150, 100]],
+                2.0,
+                "2*i",
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[150, 0], [150, 200]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[150, 100], [150, 200]], &[]),
+            elm(5, "ground", &[[150, 200]], &[]),
+            elm(6, "ground", &[[50, 100]], &[]),
+            elm(7, "ground", &[[0, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    // The ccvs is element index 1; posts start at flattened index 2.
+    let (nvp, nvm) = (nodes[2 + 2] as usize, nodes[2 + 3] as usize);
+    assert!(
+        close(v[nvp] - v[nvm], 0.01, 1e-6),
+        "output was {}/{}, expected 10 mV",
+        v[nvp],
+        v[nvm]
+    );
+}
+
+#[test]
+fn ccvs_derivative_expression_stamps_the_squared_current() {
+    // expr "i*i" over a 0.01 A sense loop holds 1e-4 V across the output
+    // pair. The nonlinear expression is what exercises the `-dx` coupling and
+    // the right-hand side: the linearised row is rebuilt from the numerical
+    // derivative every iteration (CCVSElm.java:118-139).
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 0], [50, 0]], &[("current", 0.01)]),
+            elm_expr(
+                2,
+                "ccvs",
+                &[[50, 0], [50, 100], [150, 0], [150, 100]],
+                2.0,
+                "i*i",
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[150, 0], [150, 200]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[150, 100], [150, 200]], &[]),
+            elm(5, "ground", &[[150, 200]], &[]),
+            elm(6, "ground", &[[50, 100]], &[]),
+            elm(7, "ground", &[[0, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let (nvp, nvm) = (nodes[2 + 2] as usize, nodes[2 + 3] as usize);
+    assert!(
+        close(v[nvp] - v[nvm], 1e-4, 1e-6),
+        "output was {}/{}, expected 1e-4 V",
+        v[nvp],
+        v[nvm]
+    );
+}
+
+#[test]
+fn cccs_with_no_dc_path_reports_zero_current() {
+    // A cccs whose output pair has no DC path (O+/O- hang off nothing) is
+    // marked broken like the VCCS: it stamps a 1e8 ohm resistor and reports
+    // zero current, so every node stays near ground and the matrix stays
+    // solvable.
+    let c = &mut build(
+        vec![
+            // Posts: A+, A-, O+, O-; the output pair floats.
+            elm_expr(
+                2,
+                "cccs",
+                &[[50, 0], [50, 100], [150, 0], [150, 100]],
+                2.0,
+                "i*2",
+            ),
+            elm(1, "current", &[[0, 0], [50, 0]], &[("current", 0.01)]),
+            elm(3, "ground", &[[0, 0]], &[]),
+            elm(4, "ground", &[[50, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    for (i, v) in c.node_voltages().iter().enumerate() {
+        assert!(v.abs() < 1e3, "node {i} reached {} V", v);
+    }
+    assert!(
+        close(c.element_currents()[0], 0.0, 1e-9),
+        "broken cccs reported {} A",
+        c.element_currents()[0]
+    );
+}
+
+#[test]
+fn ccvs_i_alias_reads_the_first_sense_current() {
+    // A two-pair 214 (four input pins) with expr "i": the alias slot, not the
+    // fourth variable, is the first pair's current. The first pair senses the
+    // 0.01 A loop and the second sits open on its 0 V short, so the output
+    // holds 10 mV and a stray `d` (slot 3, the open pair) would read zero.
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 0], [50, 0]], &[("current", 0.01)]),
+            // Posts: A+, A-, B+, B-, V+, V-.
+            elm_expr(
+                2,
+                "ccvs",
+                &[
+                    [50, 0],
+                    [50, 100],
+                    [50, 200],
+                    [50, 300],
+                    [150, 0],
+                    [150, 100],
+                ],
+                4.0,
+                "i",
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[150, 0], [150, 200]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[150, 100], [150, 200]], &[]),
+            elm(5, "ground", &[[150, 200]], &[]),
+            elm(6, "ground", &[[50, 100]], &[]),
+            elm(7, "ground", &[[50, 300]], &[]),
+            elm(8, "ground", &[[0, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    // The ccvs is element index 1; its six posts start at flattened index
+    // 2 + 2*0 = 2.
+    let (nvp, nvm) = (nodes[2 + 4] as usize, nodes[2 + 5] as usize);
+    assert!(
+        close(v[nvp] - v[nvm], 0.01, 1e-6),
+        "output was {}/{}, expected 10 mV from the first sense current",
+        v[nvp],
+        v[nvm]
+    );
+}
+
+#[test]
+fn cccs_odd_input_count_truncates_to_even_pairs() {
+    // The inputs are pairs; an odd file count (3) is truncated to the even
+    // value below, so the element simulates as a single-pair source and never
+    // allocates a dangling half-pair pin (CCVSElm.setChipEditValue). The
+    // 0.01 A sense loop still drives 20 V into the 1 k load.
+    let c = &mut build(
+        vec![
+            elm(1, "current", &[[0, 0], [50, 0]], &[("current", 0.01)]),
+            // Posts: A+, A-, O+, O-.
+            elm_expr(
+                2,
+                "cccs",
+                &[[50, 0], [50, 100], [150, 0], [150, 100]],
+                3.0,
+                "i*2",
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[150, 0], [150, 200]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[150, 100], [150, 200]], &[]),
+            elm(5, "ground", &[[150, 200]], &[]),
+            elm(6, "ground", &[[50, 100]], &[]),
+            elm(7, "ground", &[[0, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let nop = nodes[2 + 2] as usize;
+    assert!(
+        close(v[nop], 20.0, 1e-3),
+        "O+ was {} V, expected 20 V across the 1 k load",
+        v[nop]
+    );
+}
+
+#[test]
 fn unijunction_fires_when_the_emitter_is_driven_high() {
     // The UJT's internal CCVS makes V(node6) = 1000 * I(emitter) and the VCCS
     // feedback is what fires the emitter-to-B1 path. B2 sits on a 10 V rail

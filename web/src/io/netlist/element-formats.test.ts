@@ -1598,6 +1598,51 @@ describe('controlled source file formats', () => {
     expect(out).toContain('212 0 0 32 0 0 2 .1*(a-b)');
   });
 
+  it('a fresh CCVS dumps the upstream constructor expression', () => {
+    const e = makeElement('ccvs', 0, 0, 32, 0);
+    expect(e.params.inputCount).toBe(2);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('214 0 0 32 0 0 2 2*a');
+  });
+
+  it('a fresh CCCS dumps the upstream constructor expression', () => {
+    const e = makeElement('cccs', 0, 0, 32, 0);
+    expect(e.params.inputCount).toBe(2);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('215 0 0 32 0 0 2 2*a');
+  });
+
+  it('a CCVS line round-trips byte-for-byte (cccs.txt:1)', () => {
+    // The current-controlled sources share the VCCS token layout: inputCount
+    // then the expression (VCCSElm.java:37-38).
+    const line = '214 416 272 432 272 0 2 i*2';
+    const { e, elementLine } = csLine(line, '214');
+    expect(e.params.inputCount).toBe(2);
+    expect(e.text).toBe('i*2');
+    expect(elementLine).toBe(line);
+  });
+
+  it('a CCCS line round-trips byte-for-byte (cccs.txt:1)', () => {
+    const line = '215 416 272 432 272 0 2 i*2';
+    const { e, elementLine } = csLine(line, '215');
+    expect(e.params.inputCount).toBe(2);
+    expect(e.text).toBe('i*2');
+    expect(elementLine).toBe(line);
+  });
+
+  it('a CCCS with one pair lands its posts where the cccs.txt wires connect', () => {
+    // reference tests/cccs.txt:1 spans (416,272)-(432,272): A+ at the first
+    // endpoint, A- below it, and the O+ output on the east at (512,272),
+    // where the file's `w 512 272 560 272` leads to the next source's A+.
+    const e = parseCircuit('215 416 272 432 272 0 2 i*2').elements[0];
+    expect(postsOf(e)).toEqual([
+      { x: 416, y: 272 },
+      { x: 416, y: 304 },
+      { x: 512, y: 272 },
+      { x: 512, y: 304 },
+    ]);
+  });
+
   it('a fresh CCII dumps gain 1', () => {
     const e = makeElement('cc2', 0, 0, 32, 0);
     const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();

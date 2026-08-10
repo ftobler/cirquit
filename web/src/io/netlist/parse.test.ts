@@ -162,6 +162,15 @@ describe('netlist parsing', () => {
     expect(parsed.unsupported).toContain('999');
   });
 
+  it('parses 214 and 215 as real controlled sources', () => {
+    // The CCVS (214) and CCCS (215) are no longer passthrough codes: they
+    // build real elements and take no unsupported or passthrough slot.
+    const parsed = parseCircuit('214 0 0 32 0 0 2 i*2\n215 0 0 32 0 0 2 i*2\n');
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['ccvs', 'cccs']);
+    expect(parsed.unsupported).toEqual([]);
+    expect(parsed.passthrough).toEqual([]);
+  });
+
   it('reports the non-element line types upstream dispatches on', () => {
     // `%`/`?` afilter lines are neither elements nor interpreted, so the load
     // has to admit them. A `!` custom-logic model line is now interpreted when
@@ -292,15 +301,14 @@ describe('scope o-line fidelity', () => {
     expect(plots[1]).toMatchObject({ elementIndex: 2, value: 'current' });
   });
 
-  it('resolves scope indices through file position, past an unmodelled element', () => {
-    // `214` (CCVS) is a code upstream creates but this build does not model,
-    // so it still takes the element-list slot and the scope's index 2 is the
-    // second resistor, not the first.
+  it('resolves scope indices through file position, past a modelled element', () => {
+    // `214` (CCVS) is now a real element, so it still takes the element-list
+    // slot and the scope's index 2 is the second resistor, not the first.
     const parsed = parseCircuit(
-      HEADER + 'r 0 0 16 0 0 100\n' + 'o 2 64 0 4099 20 0.05 0 1\n' + '214 1 2 3 4 0\n' + 'r 16 0 32 0 0 220\n',
+      HEADER + 'r 0 0 16 0 0 100\n' + 'o 2 64 0 4099 20 0.05 0 1\n' + '214 1 2 3 4 0 2 i\n' + 'r 16 0 32 0 0 220\n',
     );
     expect(parsed.scopes[0].plots[0].elementIndex).toBe(2);
-    expect(parsed.scopes[0].plots[0].elementId).toBe(parsed.elements[1].id);
+    expect(parsed.scopes[0].plots[0].elementId).toBe(parsed.elements[2].id);
   });
 
   it('an unrecognized code does not consume a scope index', () => {

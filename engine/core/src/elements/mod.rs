@@ -16,6 +16,8 @@ pub mod audio_output;
 pub mod r#box;
 pub mod capacitor;
 pub mod cc2;
+pub mod cccs;
+pub mod ccvs;
 pub mod chip;
 pub mod composite;
 pub mod controlled_source;
@@ -187,6 +189,8 @@ pub const KINDS: &[&str] = &[
     "cc2",
     "vcvs",
     "vccs",
+    "ccvs",
+    "cccs",
     "unijunction",
 ];
 
@@ -293,6 +297,8 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "cc2" => Box::new(cc2::Cc2::new(spec)),
         "vcvs" => Box::new(vcvs::Vcvs::new(spec)),
         "vccs" => Box::new(vccs::Vccs::new(spec)),
+        "ccvs" => Box::new(ccvs::Ccvs::new(spec)),
+        "cccs" => Box::new(cccs::Cccs::new(spec)),
         "unijunction" => Box::new(unijunction::Unijunction::new(spec)),
         _ => return None,
     };

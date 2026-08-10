@@ -58,6 +58,40 @@ pub fn input_derivative(expr: &Expr, state: &mut ExprState, last_volts: &[f64], 
     }
 }
 
+/// The current-controlled sources' expression input slot `n`, which aliases
+/// the first sense current into the `i` slot for backward compatibility
+/// (CCCSElm.java:153-158): upstream stores `i` at `values[8]` regardless of
+/// the input count, gated on `inputPairCount < 9`, which every legal count
+/// satisfies.
+pub fn set_current_value(state: &mut ExprState, n: usize, cur: f64) {
+    if n == 0 {
+        state.values[8] = cur;
+    }
+    state.values[n] = cur;
+}
+
+/// The numerical derivative `d(expr)/di` with respect to sense current `i`,
+/// perturbing `values[i]` and, for the first pair, the `i`-alias slot too, so
+/// an expression reading `i` differentiates like upstream's
+/// `setCurrentExprValue` in the derivative loop (CCVSElm.java:118-138).
+/// `dv` is the perturbation: the CCVS fixes it at 1e-9 (CCVSElm.java:124),
+/// the CCCS clamps the distance from the previous iterate (CCCSElm.java:
+/// 126-128). A vanished slope is clamped to `1e-6` magnitude like
+/// [`input_derivative`].
+pub fn current_derivative(expr: &Expr, state: &mut ExprState, i: usize, cur: f64, dv: f64) -> f64 {
+    set_current_value(state, i, cur);
+    let hi = expr.eval(state);
+    set_current_value(state, i, cur - dv);
+    let lo = expr.eval(state);
+    set_current_value(state, i, cur);
+    let dx = (hi - lo) / dv;
+    if dx.abs() < 1e-6 {
+        sign(dx, 1e-6)
+    } else {
+        dx
+    }
+}
+
 /// The parsed expression plus the evaluator's per-iteration state.
 ///
 /// `expr` sits next to `state` and `last_volts` as a sibling field so the
