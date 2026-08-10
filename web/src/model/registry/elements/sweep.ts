@@ -1,4 +1,4 @@
-import { arrowHead, circle, currentDots, elementLength, endpoints, lead, voltageColor } from '../../../render/draw';
+import { circle, currentDots, elementLength, endpoints, lead, voltageColor } from '../../../render/draw';
 import { drawWaveformGlyph, onePost, readParams, writeParams } from '../shared';
 import type { ElementDef } from '../../types';
 
@@ -45,15 +45,6 @@ export const SWEEP_DEF: ElementDef = {
     lead(g, p1, lead1, color);
     circle(g, p2, SWEEP_CIRCLE, g.theme.text, false);
     drawWaveformGlyph(g, p2, 1, SWEEP_CIRCLE);
-    // An arrowhead on the glyph's high-frequency side marks the sweep
-    // direction, telling the symbol apart from the plain AC source.
-    arrowHead(
-      g,
-      { x: p2.x + SWEEP_CIRCLE * 0.3, y: p2.y },
-      { x: p2.x + SWEEP_CIRCLE * 0.6, y: p2.y },
-      7,
-      g.theme.text,
-    );
     // Stem dots flow symbol-to-post, the same reversal the sweep's ancestor
     // RailElm applies to its stem (SweepElm.java:120, which calls
     // `updateDotCount(-current, ...)`).

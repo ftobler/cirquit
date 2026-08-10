@@ -50,6 +50,7 @@ import { CAPACITOR_DEF } from '../model/registry/elements/capacitor';
 import { LAMP_DEF } from '../model/registry/elements/lamp';
 import { TRANSMISSION_LINE_DEF } from '../model/registry/elements/transmissionLine';
 import { TOO_FAST, dotPhaseStep } from './dots';
+import { SWEEP_DEF } from '../model/registry/elements/sweep';
 import {
   CHIP_FLIP_X,
   CHIP_FLIP_Y,
@@ -2001,6 +2002,34 @@ describe('transmission line body wave', () => {
     // The four leads and the far edge only: no per-strip strokes appear.
     expect(calls.filter((c) => c === 'stroke').length).toBe(5);
     expect(strokes.length).toBe(5);
+  });
+});
+
+describe('sweep symbol', () => {
+  // Upstream SweepElm.draw strokes only the stem, the circle and the sine
+  // glyph (SweepElm.java:79-112); the glyph alone tells the sweep apart from
+  // the plain AC source. A direction arrowhead on the glyph's side would be
+  // the only filled shape in the draw, a `fill` with no stroke.
+
+  const sweep = (): CircuitElement => ({
+    id: 1,
+    kind: 'sweep',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    flags: 2, // FLAG_BIDIR (SweepElm.java:35)
+    params: { minF: 20, maxF: 4000, maxV: 5, sweepTime: 0.1 },
+  });
+
+  it('strokes the sine glyph but no direction arrowhead', () => {
+    const { ctx, calls, paths } = mkCtx();
+    SWEEP_DEF.draw({ ...context(ctx, 0), voltages: [0], showCurrent: false }, sweep());
+    // The waveform glyph is a 25-point sine polyline inside the circle
+    // (shared.ts:181-224): one moveTo then 24 lineTo.
+    expect(paths.some((p) => p.length === 25)).toBe(true);
+    // The arrowhead would fill a triangle, and nothing else in the draw fills.
+    expect(calls).not.toContain('fill');
   });
 });
 
