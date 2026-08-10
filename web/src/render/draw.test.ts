@@ -110,6 +110,7 @@ const mkCtx = (): {
   stub: CtxStub;
   calls: string[];
   arcs: { x: number; y: number }[];
+  rects: { x: number; y: number; w: number; h: number }[];
   texts: TextRecord[];
   paths: { x: number; y: number }[][];
   strokes: { style: string | CanvasGradient; width: number; join: string }[];
@@ -117,6 +118,7 @@ const mkCtx = (): {
 } => {
   const calls: string[] = [];
   const arcs: { x: number; y: number }[] = [];
+  const rects: { x: number; y: number; w: number; h: number }[] = [];
   const texts: TextRecord[] = [];
   const paths: { x: number; y: number }[][] = [];
   const strokes: { style: string | CanvasGradient; width: number; join: string }[] = [];
@@ -167,7 +169,10 @@ const mkCtx = (): {
       arcs.push({ x, y });
     }),
     fill: record('fill'),
-    fillRect: record('fillRect'),
+    fillRect: vi.fn((x: number, y: number, w: number, h: number) => {
+      calls.push('fillRect');
+      rects.push({ x, y, w, h });
+    }),
     save: record('save'),
     restore: record('restore'),
     setLineDash: record('setLineDash'),
@@ -195,6 +200,7 @@ const mkCtx = (): {
     stub,
     calls,
     arcs,
+    rects,
     texts,
     paths,
     strokes,
@@ -328,22 +334,35 @@ describe('current dots', () => {
     const { ctx, calls } = mkCtx();
     currentDots(context(ctx, TOO_FAST), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
     expect(calls).toContain('stroke');
-    expect(calls).toContain('arc');
+    expect(calls).toContain('fillRect');
   });
 
   it('keeps drawing dots for a finite phase', () => {
     const { ctx, calls } = mkCtx();
     currentDots(context(ctx, 2), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
-    expect(calls).toContain('arc');
+    expect(calls).toContain('fillRect');
     expect(calls).not.toContain('stroke');
+  });
+
+  it('draws each dot as a 4x4 square centred on the dot position', () => {
+    // Upstream's current dot is a filled 4x4 rect, `fillRect(x0-2, y0-2, 4, 4)`
+    // (CircuitElm.java:510), never a radius-2 disc.
+    const { ctx, rects } = mkCtx();
+    currentDots(context(ctx, 0), { x: 0, y: 0 }, { x: 48, y: 0 }, 1e-3);
+    expect(rects).toEqual([
+      { x: -2, y: -2, w: 4, h: 4 },
+      { x: 14, y: -2, w: 4, h: 4 },
+      { x: 30, y: -2, w: 4, h: 4 },
+    ]);
+    expect(rects).toHaveLength(3);
   });
 
   it('spaces dots 16 apart along a segment', () => {
     // One dot every DOT_SPACING from the phase offset; with spacing 8 there
     // would be 13 of them instead of the 7 here.
-    const { ctx, arcs } = mkCtx();
+    const { ctx, rects } = mkCtx();
     currentDots(context(ctx, 0), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
-    expect(arcs.map((a) => a.x)).toEqual([0, 16, 32, 48, 64, 80, 96]);
+    expect(rects.map((a) => a.x)).toEqual([-2, 14, 30, 46, 62, 78, 94]);
   });
 
   it('keeps the stream and shimmering dots on every segment of a too-fast path', () => {
@@ -351,7 +370,7 @@ describe('current dots', () => {
     // each segment. Before dotPhaseAfter passed the sentinel through, the
     // chained phase after the first segment became NaN, so only the first
     // segment drew anything.
-    const { ctx, arcs, calls } = mkCtx();
+    const { ctx, rects, calls } = mkCtx();
     currentDotsPath(
       context(ctx, TOO_FAST),
       [
@@ -365,15 +384,15 @@ describe('current dots', () => {
     expect(calls.filter((c) => c === 'stroke')).toHaveLength(2);
     // Each segment still gets its own shimmering dots; the segments span the
     // x-axis in order, so one dot must land in each half.
-    expect(arcs.some((a) => a.x < 100)).toBe(true);
-    expect(arcs.some((a) => a.x > 100)).toBe(true);
+    expect(rects.some((a) => a.x < 100)).toBe(true);
+    expect(rects.some((a) => a.x > 100)).toBe(true);
   });
 
   it('chains phase across segments so dots keep 16-unit spacing', () => {
     // A two-segment path with no dots at the joints: the phase carries over by
-    // segment length, so arcs land at path distances 0, 16 and 32. Drawing
-    // every segment from the same raw phase would add arcs at 8 and 24.
-    const { ctx, arcs } = mkCtx();
+    // segment length, so rects land at path distances 0, 16 and 32. Drawing
+    // every segment from the same raw phase would add rects at 8 and 24.
+    const { ctx, rects } = mkCtx();
     currentDotsPath(
       context(ctx, 0),
       [
@@ -383,7 +402,7 @@ describe('current dots', () => {
       ],
       1e-3,
     );
-    expect(arcs.map((a) => a.x)).toEqual([0, 16, 32]);
+    expect(rects.map((a) => a.x)).toEqual([-2, 14, 30]);
   });
 
   it('uses the electron colour when conventional motion is off', () => {
@@ -449,9 +468,9 @@ describe('dragpost handles', () => {
 
 describe('per-post current dots', () => {
   // The ground stem and the transistor's three leads are the two elements that
-  // draw per-post runs. The mkCtx stub records every arc, and neither symbol
-  // draws arcs of its own (the stem, bars, base rectangle and arrow are lines
-  // and polygons), so every recorded arc is a current dot.
+  // draw per-post runs. The mkCtx stub records every fillRect, and neither
+  // symbol draws rects of its own (the stem, bars, base rectangle and arrow
+  // are lines and polygons), so every recorded 4x4 rect is a current dot.
 
   const groundElement = (): CircuitElement => ({
     id: 1,
@@ -475,29 +494,34 @@ describe('per-post current dots', () => {
     params: { pnp: 1 },
   });
 
+  /** The current-dot rects as their centres, the point the dot sits on. */
+  const centres = (rects: { x: number; y: number; w: number; h: number }[]): Point[] =>
+    rects.filter((r) => r.w === 4 && r.h === 4).map((r) => ({ x: r.x + 2, y: r.y + 2 }));
+
   it('a ground draws a dot run down the stem only when current flows', () => {
-    const { ctx, arcs } = mkCtx();
+    const { ctx, rects } = mkCtx();
     GROUND_DEF.draw({ ...context(ctx, 2), voltages: [0], current: 5e-3 }, groundElement());
-    expect(arcs.length).toBeGreaterThan(0);
+    const dots = centres(rects);
+    expect(dots.length).toBeGreaterThan(0);
     // The run goes p1 -> p2, so every dot lies on the stem and the first one
     // sits a phase offset from the post.
-    expect(arcs[0]).toEqual({ x: 100, y: 2 });
-    expect(arcs.every((a) => a.x === 100 && a.y >= 0 && a.y <= 32)).toBe(true);
+    expect(dots[0]).toEqual({ x: 100, y: 2 });
+    expect(dots.every((a) => a.x === 100 && a.y >= 0 && a.y <= 32)).toBe(true);
   });
 
   it('a ground draws no dots when its current is zero', () => {
-    const { ctx, arcs } = mkCtx();
+    const { ctx, rects } = mkCtx();
     GROUND_DEF.draw({ ...context(ctx, 2), voltages: [0], current: 0 }, groundElement());
-    expect(arcs).toEqual([]);
+    expect(centres(rects)).toEqual([]);
   });
 
   it('a transistor draws one run per terminal along its own lead', () => {
-    // All three terminal currents non-zero: arcs appear on the base lead (the
+    // All three terminal currents non-zero: dots appear on the base lead (the
     // axis), the collector lead (-y side, the port's interp perpendicular is
     // the negation of upstream's) and the emitter lead (+y side), and the
     // counts follow the lead lengths (~84 and ~16 units each at one dot per
     // 16).
-    const { ctx, arcs } = mkCtx();
+    const { ctx, rects } = mkCtx();
     TRANSISTOR_DEF.draw(
       {
         ...context(ctx, 0),
@@ -507,9 +531,10 @@ describe('per-post current dots', () => {
       },
       transistorElement(),
     );
-    const onBase = arcs.filter((a) => Math.abs(a.y) < 1);
-    const onCollector = arcs.filter((a) => a.y < -2);
-    const onEmitter = arcs.filter((a) => a.y > 2);
+    const dots = centres(rects);
+    const onBase = dots.filter((a) => Math.abs(a.y) < 1);
+    const onCollector = dots.filter((a) => a.y < -2);
+    const onEmitter = dots.filter((a) => a.y > 2);
     expect(onBase.length).toBeGreaterThan(0);
     expect(onCollector.length).toBeGreaterThan(0);
     expect(onEmitter.length).toBeGreaterThan(0);
@@ -522,7 +547,7 @@ describe('per-post current dots', () => {
     // The reported defect: a saturated transistor drives ic to zero while ib
     // stays alive, and the collector must draw nothing while the base and
     // emitter keep their runs.
-    const { ctx, arcs } = mkCtx();
+    const { ctx, rects } = mkCtx();
     TRANSISTOR_DEF.draw(
       {
         ...context(ctx, 0),
@@ -532,20 +557,21 @@ describe('per-post current dots', () => {
       },
       transistorElement(),
     );
-    expect(arcs.filter((a) => Math.abs(a.y) < 1).length).toBeGreaterThan(0); // base
-    expect(arcs.filter((a) => a.y > 2).length).toBeGreaterThan(0); // emitter
-    expect(arcs.filter((a) => a.y < -2)).toEqual([]); // collector dead
+    const dots = centres(rects);
+    expect(dots.filter((a) => Math.abs(a.y) < 1).length).toBeGreaterThan(0); // base
+    expect(dots.filter((a) => a.y > 2).length).toBeGreaterThan(0); // emitter
+    expect(dots.filter((a) => a.y < -2)).toEqual([]); // collector dead
   });
 
   it('draws no dots for either element when showCurrent is off', () => {
-    const { ctx: c1, arcs: a1 } = mkCtx();
+    const { ctx: c1, rects: r1 } = mkCtx();
     GROUND_DEF.draw(
       { ...context(c1, 2), voltages: [0], current: 5e-3, showCurrent: false },
       groundElement(),
     );
-    expect(a1).toEqual([]);
+    expect(centres(r1)).toEqual([]);
 
-    const { ctx: c2, arcs: a2 } = mkCtx();
+    const { ctx: c2, rects: r2 } = mkCtx();
     TRANSISTOR_DEF.draw(
       {
         ...context(c2, 0),
@@ -556,7 +582,7 @@ describe('per-post current dots', () => {
       },
       transistorElement(),
     );
-    expect(a2).toEqual([]);
+    expect(centres(r2)).toEqual([]);
   });
 
   it('starts each transistor dot run at its bar contact, body outward', () => {
@@ -564,7 +590,7 @@ describe('per-post current dots', () => {
     // run at the bar's back edge and the collector and emitter runs at their
     // bar contacts, all three from the body outward to their posts. The
     // reordering of the base-bar fill must not move these anchors.
-    const { ctx, arcs } = mkCtx();
+    const { ctx, rects } = mkCtx();
     TRANSISTOR_DEF.draw(
       {
         ...context(ctx, 0),
@@ -580,9 +606,10 @@ describe('per-post current dots', () => {
     const dn = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     const base = interp(p1, p2, 1 - 16 / dn);
     const [c1, e1] = transistorBarContacts(t);
-    const onBase = arcs.filter((a) => Math.abs(a.y) < 1);
-    const onCollector = arcs.filter((a) => a.y < -2);
-    const onEmitter = arcs.filter((a) => a.y > 2);
+    const dots = centres(rects);
+    const onBase = dots.filter((a) => Math.abs(a.y) < 1);
+    const onCollector = dots.filter((a) => a.y < -2);
+    const onEmitter = dots.filter((a) => a.y > 2);
     expect(onBase[0]).toEqual(base);
     expect(onCollector[0]).toEqual(c1);
     expect(onEmitter[0]).toEqual(e1);
@@ -1223,14 +1250,15 @@ describe('lamp current-dot carry', () => {
     params: {},
   });
 
-  interface Arc {
+  interface Rect {
     x: number;
     y: number;
-    r: number;
+    w: number;
+    h: number;
   }
 
-  const dotCtx = (): { ctx: CanvasRenderingContext2D; arcs: Arc[] } => {
-    const arcs: Arc[] = [];
+  const dotCtx = (): { ctx: CanvasRenderingContext2D; rects: Rect[] } => {
+    const rects: Rect[] = [];
     const stub: CtxStub = {
       fillStyle: '',
       strokeStyle: '',
@@ -1247,21 +1275,22 @@ describe('lamp current-dot carry', () => {
       lineTo: vi.fn(),
       closePath: vi.fn(),
       stroke: vi.fn(),
-      arc: vi.fn((x: number, y: number, r: number) => {
-        arcs.push({ x, y, r });
-      }),
+      arc: vi.fn(),
       fill: vi.fn(),
-      fillRect: vi.fn(),
+      fillRect: vi.fn((x: number, y: number, w: number, h: number) => {
+        rects.push({ x, y, w, h });
+      }),
       save: vi.fn(),
       restore: vi.fn(),
       setLineDash: vi.fn(),
       fillText: vi.fn(),
       measureText: (text: string) => ({ width: text.length * 6 }),
     };
-    return { ctx: stub as unknown as CanvasRenderingContext2D, arcs };
+    return { ctx: stub as unknown as CanvasRenderingContext2D, rects };
   };
 
-  const dots = (arcs: Arc[]): Point[] => arcs.filter((a) => a.r === 2);
+  const dots = (rects: Rect[]): Point[] =>
+    rects.filter((r) => r.w === 4 && r.h === 4).map((r) => ({ x: r.x + 2, y: r.y + 2 }));
 
   const hasDot = (pts: Point[], p: Point): boolean =>
     pts.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.01);
@@ -1271,9 +1300,9 @@ describe('lamp current-dot carry', () => {
     // and (40,-24). At phase 0 the last run (lead2 -> point2, 24 long) puts
     // its first dot exactly on lead2; a continuous chain would have carried
     // the phase 8 into it and started the first dot at (48,0) instead.
-    const { ctx, arcs } = dotCtx();
+    const { ctx, rects } = dotCtx();
     LAMP_DEF.draw({ ...context(ctx, 0), current: 0.01, state: 1000 }, lamp());
-    const pts = dots(arcs);
+    const pts = dots(rects);
     expect(hasDot(pts, { x: 40, y: 0 })).toBe(true);
     expect(hasDot(pts, { x: 48, y: 0 })).toBe(false);
   });
@@ -1959,16 +1988,17 @@ describe('current dot direction', () => {
   // further along at phase 2, while a reversed run starts at the path tail
   // (or mid-path) and has no dot at the head at all.
 
-  interface Arc {
+  interface Rect {
     x: number;
     y: number;
-    r: number;
+    w: number;
+    h: number;
   }
 
-  /** A stub whose arcs record their radius, so the 2-unit current dots can be
-   *  told apart from the symbol circles (radius 12 or 17). */
-  const dotCtx = (): { ctx: CanvasRenderingContext2D; arcs: Arc[] } => {
-    const arcs: Arc[] = [];
+  /** A stub whose rects record their size, so the 4x4 current dots can be told
+   *  apart from the symbol fills (which never go through fillRect). */
+  const dotCtx = (): { ctx: CanvasRenderingContext2D; rects: Rect[] } => {
+    const rects: Rect[] = [];
     const stub: CtxStub = {
       fillStyle: '',
       strokeStyle: '',
@@ -1985,22 +2015,23 @@ describe('current dot direction', () => {
       lineTo: vi.fn(),
       closePath: vi.fn(),
       stroke: vi.fn(),
-      arc: vi.fn((x: number, y: number, r: number) => {
-        arcs.push({ x, y, r });
-      }),
+      arc: vi.fn(),
       fill: vi.fn(),
-      fillRect: vi.fn(),
+      fillRect: vi.fn((x: number, y: number, w: number, h: number) => {
+        rects.push({ x, y, w, h });
+      }),
       save: vi.fn(),
       restore: vi.fn(),
       setLineDash: vi.fn(),
       fillText: vi.fn(),
       measureText: (text: string) => ({ width: text.length * 6 }),
     };
-    return { ctx: stub as unknown as CanvasRenderingContext2D, arcs };
+    return { ctx: stub as unknown as CanvasRenderingContext2D, rects };
   };
 
-  /** The current-dot arcs (radius 2) a draw produced. */
-  const dots = (arcs: Arc[]): Point[] => arcs.filter((a) => a.r === 2);
+  /** The current-dot rects (4x4) a draw produced, as their centres. */
+  const dots = (rects: Rect[]): Point[] =>
+    rects.filter((r) => r.w === 4 && r.h === 4).map((r) => ({ x: r.x + 2, y: r.y + 2 }));
 
   /** Unit vector along `p`. */
   const unit = (p: Point): Point => {
@@ -2012,16 +2043,16 @@ describe('current dot direction', () => {
   const hasDot = (pts: Point[], p: Point): boolean =>
     pts.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.01);
 
-  /** Draw `def` at `phase`, returning the dot arcs. */
+  /** Draw `def` at `phase`, returning the dot rects. */
   const drawAt = (
     def: { draw(g: DrawContext, e: CircuitElement): void },
     e: CircuitElement,
     phase: number,
     conventional = true,
   ): Point[] => {
-    const { ctx, arcs } = dotCtx();
+    const { ctx, rects } = dotCtx();
     def.draw({ ...context(ctx, phase), current: 0.01, voltages: [5, 0, 0], conventional }, e);
-    return dots(arcs);
+    return dots(rects);
   };
 
   /** Asserts the dots advance along `path`: a dot sits exactly at the path
@@ -2147,7 +2178,7 @@ describe('current dot direction', () => {
     // heads sit at inner[0], posts[2], inner[1], posts[3], and every run
     // advances toward its far end (all four point downward here).
     const drawTl = (phase: number): Point[] => {
-      const { ctx, arcs } = dotCtx();
+      const { ctx, rects } = dotCtx();
       TRANSMISSION_LINE_DEF.draw(
         {
           ...context(ctx, 0),
@@ -2166,7 +2197,7 @@ describe('current dot direction', () => {
           params: { width: 32 },
         },
       );
-      return dots(arcs);
+      return dots(rects);
     };
     const heads = [
       { x: 0, y: 24 },
@@ -2286,7 +2317,7 @@ describe('current dot direction', () => {
       params: { pnp: 1 },
     };
     const drawAt = (phase: number): Point[] => {
-      const { ctx, arcs } = dotCtx();
+      const { ctx, rects } = dotCtx();
       TRANSISTOR_DEF.draw(
         {
           ...context(ctx, 0),
@@ -2297,7 +2328,7 @@ describe('current dot direction', () => {
         },
         e,
       );
-      return dots(arcs);
+      return dots(rects);
     };
     const post = TRANSISTOR_DEF.posts(e)[1];
     const [c1] = transistorBarContacts(e);

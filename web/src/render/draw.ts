@@ -673,12 +673,10 @@ export function currentDotsFrom(
   g.ctx.fillStyle = dotColor(g);
   for (let d = offset; d < len; d += DOT_SPACING) {
     const p = interpPrecise(a, b, d / len);
-    // Fixed size, never derived from the stroke width: a radius of 2 matches
-    // upstream's 4x4 fillRect (CircuitElm.java:510), so the dots stay visible
+    // Fixed size, never derived from the stroke width: a 4x4 square, exactly
+    // upstream's current dot (CircuitElm.java:510), so the dots stay visible
     // on the thicker 3-unit bodies without scaling with them.
-    g.ctx.beginPath();
-    g.ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-    g.ctx.fill();
+    g.ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
   }
 }
 

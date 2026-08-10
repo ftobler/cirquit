@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SvgRecorder, renderCircuitToSvg } from './svg';
-import { dragpostHandlesFrom, makeTheme, voltageColor } from './draw';
+import { currentDots, dragpostHandlesFrom, makeTheme, voltageColor } from './draw';
 import { RESISTOR_DEF } from '../model/registry/elements/resistor';
 import { INDUCTOR_DEF } from '../model/registry/elements/inductor';
 import { DEFAULT_SETTINGS, type CircuitElement, type DrawContext } from '../model/types';
@@ -105,6 +105,18 @@ describe('SvgRecorder paths', () => {
     const svg = r.toString(100, 100);
     expect(svg).toContain('<rect x="-4" y="-4" width="9" height="9" fill="#0969da"');
     expect(svg).toContain('<rect x="61" y="-3" width="7" height="7" fill="#0969da"');
+  });
+
+  it('emits each current dot as a 4x4 rect, not an arc path', () => {
+    // Current dots are upstream's filled 4x4 squares (CircuitElm.java:510),
+    // so the recorder must emit them as `<rect>`s and never as arc `A`
+    // segments: the live canvas paints fillRect, the SVG must match.
+    const r = rec();
+    const g = { ...drawCtx(r), showCurrent: true };
+    currentDots(g, { x: 0, y: 0 }, { x: 48, y: 0 }, 1e-3);
+    const svg = r.toString(100, 100);
+    expect(svg.match(/<rect x="(?:-2|14|30)" y="-2" width="4" height="4"/g)).toHaveLength(3);
+    expect(svg).not.toContain('A');
   });
 
   it('emits an arc path starting with M and containing A', () => {
