@@ -366,6 +366,23 @@ describe('theme colour overrides', () => {
     expect(theme.currentDot).toBe('#ffff00'); // Color.yellow
     expect(theme.selection).toBe('#00ffff'); // Color.cyan
   });
+
+  it('paints hover and selection in one blue family in both themes', () => {
+    // Upstream paints the hovered element, the selection and the highlighted
+    // net all in the single selectColor (CircuitElm.needsHighlight:1308-1313
+    // and getVoltageColor:1210-1212). The port keeps a separate highlight
+    // role so a hovered element still reads as not-yet-selected, but it must
+    // sit in the same family as selection instead of the old orange. The
+    // highlight role is not one of the dark theme's five upstream-pinned
+    // colour-scale roles, so no parity pin moves; the selection pins below
+    // re-state the family they pair with.
+    const light = makeTheme(false);
+    expect(light.highlight).toBe('#54aeff');
+    expect(light.selection).toBe('#0969da');
+    const dark = makeTheme();
+    expect(dark.highlight).toBe('#58a6ff');
+    expect(dark.selection).toBe('#00ffff'); // Color.cyan, parity-pinned
+  });
 });
 
 describe('current dots', () => {

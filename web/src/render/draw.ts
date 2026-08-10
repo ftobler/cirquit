@@ -226,7 +226,9 @@ export function powerColor(g: DrawContext, power: number): string {
  *  outranks the element's own colour. Hover and the shift-highlighted net
  *  share `theme.highlight`, exactly as upstream's needsHighlight covers the
  *  hovered element, the selection and the highlighted net from one flag pair
- *  (CircuitElm.java:1305-1313). */
+ *  (CircuitElm.java:1305-1313). Upstream paints all three in the single
+ *  selectColor, so the port keeps hover and selection in one blue family
+ *  rather than separate hues; the highlighted net follows hover. */
 export function limbColor(g: DrawContext, color: string): string {
   if (g.selected) return g.theme.selection;
   if (g.hovered || g.onHighlightedNet) return g.theme.highlight;
@@ -880,7 +882,11 @@ function lightTheme(): Theme {
     lightGray: '#c0c0c0',
     text: '#24292f',
     selection: '#0969da',
-    highlight: '#d0782d',
+    // The hover/net-highlight role is the port's own, deliberately outside
+    // the upstream-pinned colour-scale roles, so it is free to sit beside
+    // selection: the lighter GitHub accent, a blue one step from the
+    // selection blue so a hovered element still reads as not-yet-selected.
+    highlight: '#54aeff',
     negative: '#cf222e',
     noConnect: '#ff0000',
     neutral: '#6e7781',
@@ -910,7 +916,9 @@ function darkTheme(): Theme {
     lightGray: '#c0c0c0',
     text: '#8b949e',
     selection: '#00ffff',
-    highlight: '#f0883e',
+    // Same hover-family decision as the light theme: the app's accent blue
+    // (styles.css --accent), adjacent to the parity-pinned cyan selection.
+    highlight: '#58a6ff',
     negative: '#ff0000',
     // Upstream's no-connect marker is plain red (UIManager.java:710).
     noConnect: '#ff0000',
