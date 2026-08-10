@@ -5,7 +5,7 @@ import {
   currentDotsPath,
   drawLeads,
   endpoints,
-  formatValue,
+  formatValueShort,
   gradientPolyline,
   label,
 } from '../../../render/draw';
@@ -24,7 +24,7 @@ function drawInductorBody(g: DrawContext, e: CircuitElement): void {
   gradientPolyline(g, coilPoints(lead1, lead2, COIL_LOOPS), { cap: 'round', join: 'bevel' });
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
-  label(g, e, formatValue(e.params.inductance ?? 0, 'H', g.valueDigits));
+  label(g, e, formatValueShort(e.params.inductance ?? 0, 'H', g.valueDigits));
 }
 
 export const INDUCTOR_DEF: ElementDef = {

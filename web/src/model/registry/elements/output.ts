@@ -1,4 +1,4 @@
-import { canvasFont, circle, formatValue, voltageColor } from '../../../render/draw';
+import { canvasFont, circle, formatValueShort, voltageColor } from '../../../render/draw';
 import { onePost, readParams, writeParams } from '../shared';
 import type { ElementDef } from '../../types';
 
@@ -18,6 +18,6 @@ export const OUTPUT_DEF: ElementDef = {
     g.ctx.font = canvasFont(g.valueFontSize);
     g.ctx.textAlign = 'left';
     g.ctx.textBaseline = 'middle';
-    g.ctx.fillText(formatValue(g.voltages[0] ?? 0, 'V', g.valueDigits), p.x + 8, p.y);
+    g.ctx.fillText(formatValueShort(g.voltages[0] ?? 0, 'V', g.valueDigits), p.x + 8, p.y);
   },
 };

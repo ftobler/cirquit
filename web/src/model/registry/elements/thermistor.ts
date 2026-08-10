@@ -3,7 +3,7 @@ import {
   currentDotsPath,
   drawLeads,
   endpoints,
-  formatValue,
+  formatValueShort,
   gradientPolyline,
   interp,
   label,
@@ -92,7 +92,7 @@ function drawThermistorBody(g: DrawContext, e: CircuitElement): void {
   label(
     g,
     e,
-    `${thermistorTemperature(e)}°C = ${formatValue(thermistorResistance(e), 'Ω', g.valueDigits)}`,
+    `${thermistorTemperature(e)}°C = ${formatValueShort(thermistorResistance(e), 'Ω', g.valueDigits)}`,
   );
 }
 

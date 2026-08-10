@@ -12,6 +12,7 @@ import {
   dragpostHandlesFrom,
   drawLeads,
   formatValue,
+  formatValueShort,
   gradientPolyline,
   interp,
   lead,
@@ -270,6 +271,42 @@ describe('value formatting', () => {
     expect(formatValue(0.0555, 'V')).toBe('55.5m V');
     expect(formatValue(4700, 'Ω')).toBe('4.7k Ω');
     expect(formatValue(0.000001, 'F')).toBe('1µ F');
+  });
+});
+
+describe('canvas value formatting (short form)', () => {
+  // The on-canvas labels format with formatValueShort: no space between the
+  // number and its unit, and no ohm unit at all. The panel and scope keep
+  // formatValue, whose unit-space behaviour the block above pins.
+  it('keeps the engineering prefix', () => {
+    expect(formatValueShort(4700, 'Ω')).toBe('4.7k');
+    expect(formatValueShort(1e6, 'Ω')).toBe('1M');
+    expect(formatValueShort(0.05, 'A')).toBe('50mA');
+  });
+
+  it('drops the ohm unit entirely', () => {
+    expect(formatValueShort(4700, 'Ω')).toBe('4.7k');
+    expect(formatValueShort(0, 'Ω')).toBe('0');
+  });
+
+  it('keeps other units without the space', () => {
+    expect(formatValueShort(0.000001, 'F')).toBe('1µF');
+    expect(formatValueShort(0.01, 'H')).toBe('10mH');
+    expect(formatValueShort(5, 'V')).toBe('5V');
+  });
+
+  it('handles zero and non-finite values', () => {
+    expect(formatValueShort(0, 'V')).toBe('0V');
+    expect(formatValueShort(NaN)).toBe('--');
+  });
+
+  it('keeps the sign', () => {
+    expect(formatValueShort(-2.5, 'V')).toBe('-2.5V');
+  });
+
+  it('honours the fraction-digit count like formatValue', () => {
+    expect(formatValueShort(0.0555, 'V', 1)).toBe('55.5mV');
+    expect(formatValueShort(4700, 'Ω', 0)).toBe('5k');
   });
 });
 
@@ -2403,5 +2440,36 @@ describe('value label placement', () => {
     expect(t.text).toContain('V');
     expect(t.align).toBe('left');
     expect(t.x).toBeLessThan(0);
+  });
+});
+
+describe('value label text', () => {
+  // The on-canvas captions: a resistor draws `4.7k` with no ohm unit and no
+  // space, and the capacitor and inductor draw their unit tight against the
+  // number. The Properties panel and scopes keep `formatValue`'s spaced unit.
+  const valueText = (
+    def: { draw(g: DrawContext, e: CircuitElement): void },
+    params: Record<string, number>,
+  ): string => {
+    const { ctx, texts } = mkCtx();
+    def.draw(
+      { ...context(ctx, 0), showValues: true, voltages: [0, 0] },
+      { id: 1, kind: 'resistor', x1: 0, y1: 0, x2: 64, y2: 0, flags: 0, params },
+    );
+    // The value caption is the only fillText these bodies emit.
+    expect(texts).toHaveLength(1);
+    return texts[0].text;
+  };
+
+  it('draws a resistor value without the ohm unit or a space', () => {
+    expect(valueText(RESISTOR_DEF, { resistance: 4700 })).toBe('4.7k');
+  });
+
+  it('draws a capacitor value tight against its unit', () => {
+    expect(valueText(CAPACITOR_DEF, { capacitance: 1e-6 })).toBe('1µF');
+  });
+
+  it('draws an inductor value tight against its unit', () => {
+    expect(valueText(INDUCTOR_DEF, { inductance: 0.01 })).toBe('10mH');
   });
 });

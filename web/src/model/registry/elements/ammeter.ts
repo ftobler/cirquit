@@ -10,7 +10,7 @@ import {
   drawLeads,
   elementLength,
   endpoints,
-  formatValue,
+  formatValueShort,
   interp,
   label,
   lead,
@@ -110,10 +110,10 @@ export const AMMETER_DEF: ElementDef = {
     const unit = (e.params.meter ?? 0) === 1 ? 'A(rms)' : 'A';
     const scale = e.params.scale ?? 0;
     let text: string;
-    if (scale === 1) text = `${fixed(value, g.valueDigits)} ${unit}`;
-    else if (scale === 2) text = `${fixed(value * 1e3, g.valueDigits)} m${unit}`;
-    else if (scale === 3) text = `${fixed(value * 1e6, g.valueDigits)} µ${unit}`;
-    else text = formatValue(value, unit, g.valueDigits);
+    if (scale === 1) text = `${fixed(value, g.valueDigits)}${unit}`;
+    else if (scale === 2) text = `${fixed(value * 1e3, g.valueDigits)}m${unit}`;
+    else if (scale === 3) text = `${fixed(value * 1e6, g.valueDigits)}µ${unit}`;
+    else text = formatValueShort(value, unit, g.valueDigits);
     label(g, e, text, 18);
   },
 };

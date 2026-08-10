@@ -2,7 +2,7 @@ import {
   bodyRect,
   currentDotsPath,
   endpoints,
-  formatValue,
+  formatValueShort,
   interp,
   interpPrecise,
   interp2Precise,
@@ -47,7 +47,7 @@ function drawPotBody(g: DrawContext, e: CircuitElement): void {
   // (PotElm.java:213-216).
   triangle(g, arrowPoint, arrowBase[0], arrowBase[1], wiperColor);
   currentDotsPath(g, [p1, lead1, lead2, end], g.current);
-  label(g, e, formatValue(e.params.maxResistance ?? 0, 'Ω', g.valueDigits), 20);
+  label(g, e, formatValueShort(e.params.maxResistance ?? 0, 'Ω', g.valueDigits), 20);
 }
 
 /**

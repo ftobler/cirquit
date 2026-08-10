@@ -3,7 +3,7 @@ import {
   currentDotsPath,
   drawLeads,
   endpoints,
-  formatValue,
+  formatValueShort,
   gradientPolyline,
   interp,
   label,
@@ -83,7 +83,7 @@ function drawLdrBody(g: DrawContext, e: CircuitElement): void {
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
-  label(g, e, formatValue(ldrResistance(e), 'Ω', g.valueDigits));
+  label(g, e, formatValueShort(ldrResistance(e), 'Ω', g.valueDigits));
 }
 
 export const LDR_DEF: ElementDef = {

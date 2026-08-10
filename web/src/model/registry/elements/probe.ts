@@ -2,7 +2,7 @@ import {
   calcLeads,
   canvasFont,
   circle,
-  formatValue,
+  formatValueShort,
   interp,
   label,
   lead,
@@ -65,6 +65,6 @@ export const PROBE_DEF: ElementDef = {
     g.ctx.fillText('V', mid.x, mid.y);
     // The label shows the selected meter reading, not the instant differential:
     // for TP_VOL the engine's value is that differential anyway.
-  label(g, e, formatValue(g.value, 'V', g.valueDigits), 18);
+  label(g, e, formatValueShort(g.value, 'V', g.valueDigits), 18);
   },
 };

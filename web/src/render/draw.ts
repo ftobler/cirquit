@@ -740,17 +740,38 @@ const PREFIXES = [
  *  is the fraction-digit count, upstream's `####.#` pattern (`getUnitText`,
  *  CircuitElm.java:157-186): round to that many digits after the prefix, then
  *  trim trailing zeroes. `toPrecision` cannot express the pattern, which is
- *  why 55.5 with one digit must be "55.5m" and not "6e+1m". */
+ *  why 55.5 with one digit must be "55.5m" and not "6e+1m". This is the
+ *  spaced form, used by the Properties panel, the scopes and the netlist edit
+ *  box; the on-canvas labels use `formatValueShort`. */
 export function formatValue(v: number, unit = '', digits = 3): string {
   if (!Number.isFinite(v)) return '--';
   if (v === 0) return `0 ${unit}`.trim();
+  return `${formatScaled(v, digits)}${unit ? ` ${unit}` : ''}`.trim();
+}
+
+/** The number with its engineering prefix, trailing zeroes trimmed: the
+ *  `####.#` body the two formatters share. */
+function formatScaled(v: number, digits: number): string {
   const abs = Math.abs(v);
   const p = PREFIXES.find((x) => abs >= x.limit) ?? PREFIXES[PREFIXES.length - 1];
   const scaled = v / p.scale;
   const text = scaled.toFixed(digits);
   // Trim trailing zeroes left by toFixed, but keep integers intact.
   const trimmed = text.includes('.') ? text.replace(/\.?0+$/, '') : text;
-  return `${trimmed}${p.suffix}${unit ? ` ${unit}` : ''}`.trim();
+  return `${trimmed}${p.suffix}`;
+}
+
+/** The on-canvas value-label formatter, `formatValue`'s no-space sibling
+ *  (upstream's `getShortUnitText`, CircuitElm.java:1101-1127). A capacitor
+ *  draws `1µF` and an inductor `10mH` instead of `1µ F` / `10m H`; ohms are
+ *  dropped entirely, so a resistor draws `4.7k`, this port's deliberate
+ *  divergence from upstream's `4.7kΩ`. Only the canvas labels use this; the
+ *  panel and scopes keep `formatValue`'s spaced unit. */
+export function formatValueShort(v: number, unit = '', digits = 3): string {
+  if (!Number.isFinite(v)) return '--';
+  if (v === 0) return unit === 'Ω' ? '0' : `0${unit}`;
+  const body = formatScaled(v, digits);
+  return unit === 'Ω' ? body : `${body}${unit}`;
 }
 
 /** Value caption drawn alongside an element body, ported from upstream's

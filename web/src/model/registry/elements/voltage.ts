@@ -1,4 +1,4 @@
-import { formatValue, interp, label } from '../../../render/draw';
+import { formatValueShort, interp, label } from '../../../render/draw';
 import { VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
 import { drawSourceCircle, drawWaveformGlyph, readParams, twoPosts, writeParams } from '../shared';
 import type { ElementDef } from '../../types';
@@ -76,6 +76,6 @@ export const VOLTAGE_DEF: ElementDef = {
   draw(g, e) {
     const [lead1, lead2] = drawSourceCircle(g, e, 12);
     drawWaveformGlyph(g, interp(lead1, lead2, 0.5), e.params.waveform ?? 0, 12);
-  label(g, e, formatValue(e.params.maxVoltage ?? 0, 'V', g.valueDigits), 20);
+  label(g, e, formatValueShort(e.params.maxVoltage ?? 0, 'V', g.valueDigits), 20);
   },
 };

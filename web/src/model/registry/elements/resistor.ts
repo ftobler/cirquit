@@ -3,7 +3,7 @@ import {
   currentDotsPath,
   drawLeads,
   endpoints,
-  formatValue,
+  formatValueShort,
   gradientPolyline,
   label,
   rectCorners,
@@ -30,7 +30,7 @@ function drawResistorBody(g: DrawContext, e: CircuitElement): void {
   }
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
-  label(g, e, formatValue(e.params.resistance ?? 0, 'Ω', g.valueDigits));
+  label(g, e, formatValueShort(e.params.resistance ?? 0, 'Ω', g.valueDigits));
 }
 
 export const RESISTOR_DEF: ElementDef = {

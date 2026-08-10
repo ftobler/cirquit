@@ -1,4 +1,4 @@
-import { arrowHead, formatValue, interp, label, line } from '../../../render/draw';
+import { arrowHead, formatValueShort, interp, label, line } from '../../../render/draw';
 import { drawSourceCircle, readParams, twoPosts, writeParams } from '../shared';
 import type { ElementDef } from '../../types';
 
@@ -29,6 +29,6 @@ export const CURRENT_DEF: ElementDef = {
     // 3-unit body weight.
     line(g, a, b, g.theme.text);
     arrowHead(g, a, b, 7, g.theme.text);
-  label(g, e, formatValue(e.params.current ?? 0, 'A', g.valueDigits), 20);
+  label(g, e, formatValueShort(e.params.current ?? 0, 'A', g.valueDigits), 20);
   },
 };
