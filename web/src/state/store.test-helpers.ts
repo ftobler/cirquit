@@ -19,6 +19,7 @@ export const fresh = () => ({
   viewSize: { w: 800, h: 600 },
   dialog: null,
   subcircuitDraft: null,
+  subcircuitError: null,
   status: '',
   problem: null,
   hoveredId: null,

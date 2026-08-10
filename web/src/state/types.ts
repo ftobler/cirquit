@@ -92,6 +92,11 @@ export interface AppState {
   /** The model Create Subcircuit built from the selection, awaiting its name
    *  in the Create Subcircuit dialog. Null when no draft is pending. */
   subcircuitDraft: CompositeModel | null;
+  /** Why the last Create Subcircuit refused, for the caller's alert; null once
+   *  a build succeeds. The refusals differ (an unsupported kind, a labeled
+   *  node on ground or on an unused net, no labeled nodes at all), so the
+   *  reason has to travel out of the store with the false. */
+  subcircuitError: string | null;
   status: string;
   /** Element id under the pointer, for hover highlight; null when none. */
   hoveredId: number | null;
@@ -212,11 +217,12 @@ export interface AppState {
    *  is selected, in which case nothing is placed and the caller shows the
    *  "Select a single chip element first" alert. One undo entry on success. */
   createTest(): boolean;
-  /** Builds a subcircuit model from the selected elements (the Tools>Create
-   *  Subcircuit command, CommandManager.doCreateSubcircuit). On success the
-   *  model waits in `subcircuitDraft` for a name and the Create Subcircuit
-   *  dialog opens; returns false when the selection has nothing the composite
-   *  can build, so the caller can alert. */
+  /** Builds a subcircuit model from the selected elements, or from the whole
+   *  circuit when nothing is selected (the File>Create Subcircuit command,
+   *  CommandManager.doCreateSubcircuit). On success the model waits in
+   *  `subcircuitDraft` for a name and the Create Subcircuit dialog opens;
+   *  returns false with the reason in `subcircuitError` when the selection
+   *  cannot become a model, so the caller can alert. */
   createSubcircuit(): boolean;
   /** Names the pending `subcircuitDraft`, stores it in the model library and
    *  closes the dialog. A no-op with no draft pending. */

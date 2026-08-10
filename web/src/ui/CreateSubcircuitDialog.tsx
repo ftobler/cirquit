@@ -1,4 +1,4 @@
-/** Create Subcircuit: names the model the Tools>Create Subcircuit command
+/** Create Subcircuit: names the model the File>Create Subcircuit command
  *  derived from the selection, then stores it, mirroring upstream's
  *  EditCompositeModelDialog naming step (EditCompositeModelDialog.java:154-165,
  *  275-283). The model itself was already built into `subcircuitDraft` by the
@@ -45,9 +45,11 @@ export function CreateSubcircuitDialog() {
         </>
       }
     >
+      {/* The pins come from the labeled nodes, not from what the selection
+          touches, so the count has to say where to add more. */}
       <p className="hint">
-        {draft?.extList.length ?? 0} external pin{draft?.extList.length === 1 ? '' : 's'} from the
-        selection.
+        {draft?.extList.length ?? 0} pin{draft?.extList.length === 1 ? '' : 's'} from the labeled
+        nodes in the selection.
       </p>
       <label className="field" htmlFor="subcircuit-name">
         <span>Model Name</span>

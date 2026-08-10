@@ -70,6 +70,10 @@ export const TAPPED_FLIP = 1;
  *  form. Same bit and same meaning on both text-bearing types
  *  (TextElm.java:38, LabeledNodeElm.java:30); their writers always set it. */
 export const FLAG_ESCAPE = 4;
+/** A labeled node marked "Internal Node": its name is a private net of the
+ *  circuit, not a pin to expose when the circuit becomes a subcircuit
+ *  (LabeledNodeElm.java:31, :76). */
+export const LABELED_NODE_INTERNAL = 1;
 
 /** The gates share the three FlagBits from GateElm.java:26-28: small body
  *  (half-size geometry), hysteresis on the inputs, and a bubble on every

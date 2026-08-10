@@ -269,11 +269,14 @@ export function Menubar({ engine }: Props) {
       disabled: !editable,
       onClick: fire(() => {
         // The command aborts (with a browser alert from the caller) when the
-        // selection holds nothing the composite can build or has no external
-        // connection, like upstream's guards (EditCompositeModelDialog.java:
-        // 70-75).
+        // selection holds a kind the composite cannot represent, has no
+        // labeled nodes to expose as pins, or labels a net that is grounded or
+        // unused, like upstream's guards (EditCompositeModelDialog.java:70-75,
+        // SimulationManager.java:1588-1591, 1663-1668). The store leaves the
+        // reason behind, so the alert says which one it was; every false comes
+        // with one, so there is no second copy of the wording here to drift.
         if (!useStore.getState().createSubcircuit()) {
-          window.alert('Select part of a circuit that connects to the rest to turn into a subcircuit.');
+          window.alert(useStore.getState().subcircuitError);
         }
       }),
     },

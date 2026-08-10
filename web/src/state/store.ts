@@ -11,6 +11,7 @@ import {
 import {
   buildModelFromSelection,
   clearSessionModels,
+  describeBuildFailure,
   registerSessionModel,
   saveModel,
 } from '../io/subcircuits';
@@ -235,6 +236,7 @@ export const useStore = create<AppState>((set, get) => ({
   viewSize: { w: 800, h: 600 },
   dialog: null,
   subcircuitDraft: null,
+  subcircuitError: null,
   status: '',
   problem: null,
   hoveredId: null,
@@ -621,14 +623,16 @@ export const useStore = create<AppState>((set, get) => ({
     // Builds the model from the selection and parks it in `subcircuitDraft`
     // for the naming dialog, mirroring upstream's doCreateSubcircuit, which
     // derives the model and then asks for a name (CommandManager.java:69-70,
-    // EditCompositeModelDialog.createModel). The derivation returns null when
-    // the selection holds nothing the composite can build, and a model with no
-    // external pins is refused too, exactly as upstream alerts on an empty
-    // extList (EditCompositeModelDialog.java:72-75); the caller reports both
-    // like TestCreator's abort.
-    const model = buildModelFromSelection(get().elements, get().selectedIds);
-    if (model === null || model.extList.length === 0) return false;
-    set({ subcircuitDraft: model, dialog: 'createSubcircuit' });
+    // EditCompositeModelDialog.createModel). Every refusal carries its own
+    // text (an unsupported kind, a labeled node on ground or on an unused net,
+    // no labeled nodes at all), left in `subcircuitError` for the caller's
+    // alert instead of the one fixed string every failure used to share.
+    const built = buildModelFromSelection(get().elements, get().selectedIds);
+    if (built.model === null) {
+      set({ subcircuitError: describeBuildFailure(built) });
+      return false;
+    }
+    set({ subcircuitDraft: built.model, subcircuitError: null, dialog: 'createSubcircuit' });
     return true;
   },
 
@@ -1194,6 +1198,8 @@ export const useStore = create<AppState>((set, get) => ({
       undoStack: [],
       redoStack: [],
       problem: describeUnsupported(parsed.unsupported),
+      // A refusal from the previous circuit says nothing about this one.
+      subcircuitError: null,
       revision: s.revision + 1,
     }));
     // The loaded content is its own baseline: opening a file, a library
@@ -1279,6 +1285,7 @@ export const useStore = create<AppState>((set, get) => ({
       undoStack: [],
       redoStack: [],
       problem: null,
+      subcircuitError: null,
       revision: s.revision + 1,
     }));
     // An empty fresh circuit is clean.
