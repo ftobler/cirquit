@@ -44,7 +44,12 @@ function drawMemristorBody(g: DrawContext, e: CircuitElement): void {
     // 3-unit body weight.
     line(g, p1, p2, color);
     if (i === MEMRISTOR_SEGMENTS) break;
-    line(g, p1, interp(lead1, lead2, (i + 1) * segf, hs * nx), color);
+    // The run joins the current peak to the next peak at the SAME offset
+    // `hs*nx`, a horizontal flat top. Upstream overwrites its first point
+    // with the next fraction before the stroke and draws ps1-ps2
+    // (MemristorElm.java:103-104); starting from `p1` (the low vertex at
+    // `hs*ox`) instead would jump the axis back into the next peak.
+    line(g, p2, interp(lead1, lead2, (i + 1) * segf, hs * nx), color);
     ox = nx;
   }
   const [p1, p2] = endpoints(e);

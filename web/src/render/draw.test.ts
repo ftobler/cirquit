@@ -29,6 +29,7 @@ import {
   zigzagPoints,
 } from './draw';
 import { RESISTOR_DEF } from '../model/registry/elements/resistor';
+import { MEMRISTOR_DEF } from '../model/registry/elements/memristor';
 import { GROUND_DEF } from '../model/registry/elements/ground';
 import { TRANSISTOR_DEF, transistorBarContacts } from '../model/registry/elements/transistor';
 import { INDUCTOR_DEF } from '../model/registry/elements/inductor';
@@ -1211,6 +1212,49 @@ describe('zigzag resistor body', () => {
         .slice(1, -1)
         .map((p) => p.y),
     ).not.toContain(8);
+  });
+});
+
+describe('memristor zigzag body', () => {
+  const memristor = (): CircuitElement => ({
+    id: 1,
+    kind: 'memristor',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    flags: 0,
+    params: {},
+  });
+
+  it('joins each zigzag run peak to the next peak, a square wave of flat tops', () => {
+    // A horizontal undoped memristor: leads at (16,0) and (48,0), peak
+    // half-height hs = 10 (the default dopeWidth 0 collapses nothing). Every
+    // body segment must be axis-aligned: the verticals climb from the axis or
+    // a flat top to the next flat top, and each connecting segment spans two
+    // consecutive peaks at the SAME offset, a horizontal line. Before the fix
+    // the connecting segment started at the low vertex `hs*ox` instead of the
+    // peak `hs*nx`, so it read as a diagonal jumping from the axis back into
+    // the next peak (MemristorElm.java:98-104 strokes ps1-ps2, both at
+    // `hs*nx`).
+    const { ctx, paths } = mkCtx();
+    MEMRISTOR_DEF.draw(
+      { ...context(ctx, 0), voltages: [0, 0], showCurrent: false },
+      memristor(),
+    );
+    const body = paths.slice(2); // the two lead lines come first
+    expect(body.length).toBe(13); // 7 verticals plus 6 flat tops
+    const tops: number[] = [];
+    body.forEach(([a, b], i) => {
+      if (i % 2 === 0) {
+        expect(a.x).toBe(b.x); // the climb is straight up
+      } else {
+        expect(a.y).toBe(b.y); // the join runs level between two peaks
+        tops.push(a.y);
+      }
+    });
+    // The six flat tops alternate between the two hs rows.
+    expect(tops).toEqual([-10, 10, -10, 10, -10, 10]);
   });
 });
 
