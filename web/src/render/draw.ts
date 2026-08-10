@@ -818,6 +818,30 @@ export function label(g: DrawContext, e: CircuitElement, text: string, offset = 
   }
 }
 
+/** Value caption on one segment of a polyline, ported from upstream's
+ *  `RoutedWireElm.drawValuesOnLongestSegment` (RoutedWireElm.java:318-347):
+ *  centered above a horizontal segment and left-aligned to the right of a
+ *  vertical one. The routed wire finds its longest segment and labels that,
+ *  so the caption sits where the wire has the most room instead of crowding
+ *  a corner. */
+export function labelOnSegment(g: DrawContext, a: Point, b: Point, text: string): void {
+  if (!g.showValues || !text) return;
+  g.ctx.fillStyle = g.theme.text;
+  g.ctx.font = canvasFont(g.valueFontSize);
+  // Upstream never sets a baseline here either, so the canvas default applies
+  // exactly as `label` relies on it.
+  g.ctx.textBaseline = 'alphabetic';
+  const mx = Math.trunc((a.x + b.x) / 2);
+  const my = Math.trunc((a.y + b.y) / 2);
+  if (a.y === b.y) {
+    g.ctx.textAlign = 'center';
+    g.ctx.fillText(text, mx, my - 6);
+  } else {
+    g.ctx.textAlign = 'left';
+    g.ctx.fillText(text, mx + 4, my + g.valueFontSize / 2);
+  }
+}
+
 /** Builds a theme, overlaying the five user-settable colours over the palette
  *  for `dark`. A null entry keeps the palette's own value, so the argument
  *  shares the shape of the settings object and a plain `makeTheme(dark)` is

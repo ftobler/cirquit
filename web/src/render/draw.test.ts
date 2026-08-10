@@ -41,13 +41,14 @@ import { SWITCH2_DEF } from '../model/registry/elements/switch2';
 import { CROSS_SWITCH_DEF } from '../model/registry/elements/crossSwitch';
 import { ANALOG_SWITCH_DEF } from '../model/registry/elements/analogSwitch';
 import { ANALOG_SWITCH2_DEF } from '../model/registry/elements/analogSwitch2';
-import { SWITCH_IEC, VOLTAGE_CIRCLE_SYMBOL } from '../model/registry/flags';
+import { SWITCH_IEC, VOLTAGE_CIRCLE_SYMBOL, WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE } from '../model/registry/flags';
 import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
 import { MOSFET_DEF } from '../model/registry/elements/mosfet';
 import { RAIL_DEF } from '../model/registry/elements/rail';
 import { VOLTAGE_DEF } from '../model/registry/elements/voltage';
 import { CAPACITOR_DEF } from '../model/registry/elements/capacitor';
 import { LAMP_DEF } from '../model/registry/elements/lamp';
+import { WIRE_DEF } from '../model/registry/elements/wire';
 import { TRANSMISSION_LINE_DEF } from '../model/registry/elements/transmissionLine';
 import { TOO_FAST, dotPhaseStep } from './dots';
 import { SWEEP_DEF } from '../model/registry/elements/sweep';
@@ -2582,5 +2583,99 @@ describe('value label text', () => {
 
   it('draws an inductor value tight against its unit', () => {
     expect(valueText(INDUCTOR_DEF, { inductance: 0.01 })).toBe('10mH');
+  });
+});
+
+describe('wire value labels', () => {
+  // The Show Current and Show Voltage checkboxes draw the live values beside
+  // the wire, current as |I| in amps and voltage in volts, joined with a
+  // space (WireElm.java:90-102). Without either flag a wire emits no caption.
+
+  const wire = (flags: number, route?: [number, number][]): CircuitElement => ({
+    id: 1,
+    kind: 'wire',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    flags,
+    params: {},
+    ...(route !== undefined ? { route } : {}),
+  });
+
+  const draw = (e: CircuitElement, overrides: Partial<DrawContext> = {}) => {
+    const { ctx, texts } = mkCtx();
+    WIRE_DEF.draw(
+      { ...context(ctx, 0), showValues: true, voltages: [0, 0], current: 0.05, ...overrides },
+      e,
+    );
+    return texts;
+  };
+
+  it('draws no caption without either flag', () => {
+    expect(draw(wire(0))).toHaveLength(0);
+  });
+
+  it('draws the current as |I| in amps', () => {
+    const texts = draw(wire(WIRE_SHOW_CURRENT), { current: 0.05 });
+    expect(texts).toHaveLength(1);
+    expect(texts[0].text).toBe('50mA');
+  });
+
+  it('hides the wire direction with the absolute current', () => {
+    const texts = draw(wire(WIRE_SHOW_CURRENT), { current: -0.05 });
+    expect(texts[0].text).toBe('50mA');
+  });
+
+  it('draws the voltage in volts', () => {
+    const texts = draw(wire(WIRE_SHOW_VOLTAGE), { voltages: [5, 5] });
+    expect(texts).toHaveLength(1);
+    expect(texts[0].text).toBe('5V');
+  });
+
+  it('joins current and voltage with a space', () => {
+    const texts = draw(wire(WIRE_SHOW_CURRENT | WIRE_SHOW_VOLTAGE), {
+      current: 0.05,
+      voltages: [5, 5],
+    });
+    expect(texts).toHaveLength(1);
+    expect(texts[0].text).toBe('50mA 5V');
+  });
+
+  it('suppresses the caption when the global Show Values toggle is off', () => {
+    const { ctx, texts } = mkCtx();
+    WIRE_DEF.draw(
+      { ...context(ctx, 0), showValues: false, voltages: [0, 0], current: 0.05 },
+      wire(WIRE_SHOW_CURRENT | WIRE_SHOW_VOLTAGE),
+    );
+    expect(texts).toHaveLength(0);
+  });
+
+  it('a routed wire labels its longest segment', () => {
+    const texts = draw(
+      wire(WIRE_SHOW_CURRENT | WIRE_SHOW_VOLTAGE, [
+        [0, 0],
+        [64, 0],
+        [64, 64],
+      ]),
+      { current: 0.05, voltages: [5, 5] },
+    );
+    expect(texts).toHaveLength(1);
+    expect(texts[0].text).toBe('50mA 5V');
+    // The longest segment is the horizontal 0,0-64,0, so the caption centres
+    // above its midpoint, the RoutedWireElm placement (RoutedWireElm.java:
+    // 318-347).
+    expect(texts[0].align).toBe('center');
+  });
+
+  it('a routed wire draws no caption without either flag', () => {
+    const texts = draw(
+      wire(0, [
+        [0, 0],
+        [64, 0],
+        [64, 64],
+      ]),
+    );
+    expect(texts).toHaveLength(0);
   });
 });

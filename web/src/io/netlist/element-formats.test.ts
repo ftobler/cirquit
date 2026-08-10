@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseCircuit, serializeCircuit } from './index';
 import { makeElement, makeToolElement } from '../../state/store';
 import { postsOf } from '../../model/registry';
+import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE } from '../../model/registry/flags';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
 import type { CustomLogicModel } from './types';
 
@@ -43,6 +44,39 @@ describe('ground file format', () => {
   it('a ground without a symbol token saves as the earth symbol', () => {
     const { elementLine } = groundLine('g 176 352 176 384 0');
     expect(elementLine).toBe('g 176 352 176 384 0 0');
+  });
+});
+
+describe('wire file format', () => {
+  /** Parses a single `w` line and re-emits it, returning that line. */
+  const wireLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('w ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('a token-free w line round-trips byte-for-byte', () => {
+    const { elementLine } = wireLine('w 0 0 64 0 0');
+    expect(elementLine).toBe('w 0 0 64 0 0');
+  });
+
+  it('round-trips the Show Current flag', () => {
+    const { e, elementLine } = wireLine('w 0 0 64 0 1');
+    expect(e.flags & WIRE_SHOW_CURRENT).toBe(WIRE_SHOW_CURRENT);
+    expect(elementLine).toBe('w 0 0 64 0 1');
+  });
+
+  it('round-trips the Show Voltage flag', () => {
+    const { e, elementLine } = wireLine('w 0 0 64 0 2');
+    expect(e.flags & WIRE_SHOW_VOLTAGE).toBe(WIRE_SHOW_VOLTAGE);
+    expect(elementLine).toBe('w 0 0 64 0 2');
+  });
+
+  it('round-trips both flags together', () => {
+    const { e, elementLine } = wireLine('w 0 0 64 0 3');
+    expect(e.flags & (WIRE_SHOW_CURRENT | WIRE_SHOW_VOLTAGE)).toBe(3);
+    expect(elementLine).toBe('w 0 0 64 0 3');
   });
 });
 
