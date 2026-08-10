@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { openCircuit } from '../io/fileIO';
-import { loadLibraryCircuit, loadLibraryIndex, type LibraryGroup } from '../io/library';
+import { filterLibrary, loadLibraryCircuit, loadLibraryIndex, type LibraryGroup } from '../io/library';
 import { parseCircuit } from '../io/netlist';
 import { canMirror, canRotate } from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
@@ -142,6 +142,7 @@ export function Menubar({ engine }: Props) {
   const [library, setLibrary] = useState<LibraryGroup[] | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [libraryQuery, setLibraryQuery] = useState('');
   const [fullscreen, setFullscreen] = useState(() => document.fullscreenElement !== null);
 
   // The Full Screen row labels itself from the browser state both ways.
@@ -172,6 +173,7 @@ export function Menubar({ engine }: Props) {
       loadNetlist(await loadLibraryCircuit(file));
       setStatus(title);
       setLibraryOpen(false);
+      setLibraryQuery('');
     } catch (e) {
       setLibraryError(e instanceof Error ? e.message : String(e));
     }
@@ -401,24 +403,51 @@ export function Menubar({ engine }: Props) {
         {menu(toolsItems)}
       </Dropdown>
 
-      <Dropdown label="Circuits" open={libraryOpen} onToggle={() => setLibraryOpen((v) => !v)} onClose={() => setLibraryOpen(false)}>
+      <Dropdown
+        label="Circuits"
+        open={libraryOpen}
+        onToggle={() => setLibraryOpen((v) => !v)}
+        onClose={() => {
+          setLibraryOpen(false);
+          setLibraryQuery('');
+        }}
+      >
         {libraryError && <p className="problem">{libraryError}</p>}
         {!library && !libraryError && <p className="hint">Loading…</p>}
-        {library?.map((group) => (
-          <details key={group.title}>
-            <summary>{group.title}</summary>
-            {group.entries.map((entry) => (
-              <button
-                key={entry.file}
-                type="button"
-                className="menu-item"
-                onClick={() => void openLibraryCircuit(entry.file, entry.title)}
-              >
-                {entry.title}
-              </button>
-            ))}
-          </details>
-        ))}
+        {library && (
+          <>
+            <input
+              type="text"
+              className="library-search"
+              placeholder="Search circuits…"
+              value={libraryQuery}
+              onChange={(e) => setLibraryQuery(e.target.value)}
+              autoFocus
+            />
+            {(() => {
+              const filtered = filterLibrary(library, libraryQuery);
+              const searching = libraryQuery.trim() !== '';
+              if (searching && filtered.length === 0) {
+                return <p className="hint">No circuits match “{libraryQuery.trim()}”</p>;
+              }
+              return filtered.map((group) => (
+                <details key={group.title} open={searching}>
+                  <summary>{group.title}</summary>
+                  {group.entries.map((entry) => (
+                    <button
+                      key={entry.file}
+                      type="button"
+                      className="menu-item"
+                      onClick={() => void openLibraryCircuit(entry.file, entry.title)}
+                    >
+                      {entry.title}
+                    </button>
+                  ))}
+                </details>
+              ));
+            })()}
+          </>
+        )}
       </Dropdown>
 
       <div className="drawer-buttons">

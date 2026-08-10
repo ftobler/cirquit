@@ -65,3 +65,22 @@ export async function loadLibraryCircuit(file: string): Promise<string> {
   if (!res.ok) throw new Error(`could not load ${file} (${res.status})`);
   return res.text();
 }
+
+/** Filter the library for the Circuits menu search box: a case-insensitive
+ *  substring match on entry title or group title. A group whose own title
+ *  matches keeps every entry (the group is what the user meant); otherwise the
+ *  group keeps only its matching entries. Groups with nothing left are
+ *  dropped. An empty or whitespace-only query returns the groups unchanged. */
+export function filterLibrary(groups: LibraryGroup[], query: string): LibraryGroup[] {
+  const q = query.trim().toLowerCase();
+  if (q === '') return groups;
+  return groups
+    .map((g) => {
+      const groupHits = g.title.toLowerCase().includes(q);
+      const entries = groupHits
+        ? g.entries
+        : g.entries.filter((e) => e.title.toLowerCase().includes(q));
+      return { title: g.title, entries };
+    })
+    .filter((g) => g.entries.length > 0);
+}
