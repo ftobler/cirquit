@@ -10,18 +10,30 @@ interface DialogProps {
   children: ReactNode;
   /** The button row (OK/Cancel); rendered below the body. */
   actions?: ReactNode;
+  /** Takes over Escape while an inline editor inside the dialog owns the key,
+   *  so the press cancels that editor instead of closing the dialog (the
+   *  Subcircuit Manager's rename row). It has to be an override on this one
+   *  listener rather than a handler on the editor: the listener below is on
+   *  `window`, above the React root, so a child's `stopPropagation` cannot
+   *  reach it, and a handler on the child only fires while focus is still on
+   *  that child, which leaves Escape dead once focus moves to the editor's own
+   *  buttons or the panel. Routing the single listener through the override
+   *  also means exactly one thing happens per press, whenever React gets round
+   *  to re-subscribing after the state change. */
+  onEscape?: () => void;
 }
 
-export function Dialog({ title, onClose, children, actions }: DialogProps) {
+export function Dialog({ title, onClose, children, actions, onEscape }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const handleEscape = onEscape ?? onClose;
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') onClose();
+      if (ev.key === 'Escape') handleEscape();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, onEscape]);
 
   // No panel focus on mount: a child's `autoFocus` (the filename boxes, the
   // import textarea) must win, so keystrokes land in the dialog's controls.

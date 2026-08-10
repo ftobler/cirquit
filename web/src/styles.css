@@ -351,6 +351,14 @@ button.active,
 
 .subcircuit-list li.editing {
   gap: 4px;
+  /* The rejection message sits on its own line under the input rather than
+     squeezing the row's controls. */
+  flex-wrap: wrap;
+}
+
+.subcircuit-list li.editing .problem {
+  flex-basis: 100%;
+  margin: 4px 0 0;
 }
 
 .subcircuit-list .name {
