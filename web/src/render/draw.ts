@@ -737,17 +737,48 @@ export function formatValue(v: number, unit = '', digits = 3): string {
   return `${trimmed}${p.suffix}${unit ? ` ${unit}` : ''}`.trim();
 }
 
-/** Value caption drawn alongside an element body. */
+/** Value caption drawn alongside an element body, ported from upstream's
+ *  `drawValues` (CircuitElm.java:914-943). `offset` is the `hs` argument, the
+ *  perpendicular reach of the symbol the caption must clear. A near-horizontal
+ *  body (`dpx == 0`, upstream's truncated perpendicular x) gets its caption
+ *  centered above, its alphabetic baseline two units clear of that reach; a
+ *  vertical or diagonal body gets left-aligned text beside the axis, offset
+ *  plus two along the perpendicular and its baseline pulled back by half the
+ *  font height so the caption centres on the axis. Voltage sources and
+ *  up-right diagonals flip to the near side, so the caption never overruns
+ *  the far one. */
 export function label(g: DrawContext, e: CircuitElement, text: string, offset = 12): void {
   if (!g.showValues || !text) return;
   const [p1, p2] = endpoints(e);
-  const p = interp(p1, p2, 0.5, offset);
-  const horizontal = Math.abs(e.x2 - e.x1) >= Math.abs(e.y2 - e.y1);
+  const dn = elementLength(e);
+  const xc = Math.trunc((p1.x + p2.x) / 2);
+  const yc = Math.trunc((p1.y + p2.y) / 2);
+  // The perpendicular unit components times the offset, truncated like
+  // upstream's `(int)(dpx1*hs)` (CircuitElm.java:932-933): an exactly
+  // horizontal element gives dpx == 0 and a vertical one gives dpy == 0.
+  const dpx = dn === 0 ? 0 : Math.trunc(((p2.y - p1.y) / dn) * offset);
+  const dpy = dn === 0 ? 0 : Math.trunc((-(p2.x - p1.x) / dn) * offset);
   g.ctx.fillStyle = g.theme.text;
   g.ctx.font = canvasFont(g.valueFontSize);
-  g.ctx.textAlign = horizontal ? 'center' : 'left';
-  g.ctx.textBaseline = 'middle';
-  g.ctx.fillText(text, p.x, p.y);
+  const w = g.ctx.measureText(text).width;
+  // Upstream never sets a baseline here, so the canvas default applies: the
+  // y coordinate is the glyph baseline, and only descenders hang below it.
+  // That is what keeps the horizontal caption clear of the plate edge.
+  g.ctx.textBaseline = 'alphabetic';
+  if (dpx === 0) {
+    g.ctx.textAlign = 'center';
+    g.ctx.fillText(text, xc, yc - Math.abs(dpy) - 2);
+  } else {
+    // VoltageElm draws its value on the near side (CircuitElm.java:938-939);
+    // so does an up-right diagonal, which would otherwise let the caption
+    // overrun the top of the body.
+    let x = xc + Math.abs(dpx) + 2;
+    if (e.kind === 'voltage' || (p2.x > p1.x && p2.y < p1.y)) {
+      x = xc - (w + Math.abs(dpx) + 2);
+    }
+    g.ctx.textAlign = 'left';
+    g.ctx.fillText(text, x, yc + dpy + g.valueFontSize / 2);
+  }
 }
 
 /** Builds a theme, overlaying the five user-settable colours over the palette

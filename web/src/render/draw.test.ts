@@ -38,6 +38,7 @@ import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
 import { MOSFET_DEF } from '../model/registry/elements/mosfet';
 import { RAIL_DEF } from '../model/registry/elements/rail';
 import { VOLTAGE_DEF } from '../model/registry/elements/voltage';
+import { CAPACITOR_DEF } from '../model/registry/elements/capacitor';
 import { LAMP_DEF } from '../model/registry/elements/lamp';
 import { TRANSMISSION_LINE_DEF } from '../model/registry/elements/transmissionLine';
 import { TOO_FAST, dotPhaseStep } from './dots';
@@ -2163,5 +2164,68 @@ describe('current dot direction', () => {
     // two negated steps pull the whole train toward the body contact.
     expect(Math.max(...at0)).toBeGreaterThan(15);
     expect(Math.max(...atNeg)).toBeLessThan(Math.max(...at0));
+  });
+});
+
+describe('value label placement', () => {
+  const cap = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
+    id: 1,
+    kind: 'capacitor',
+    x1,
+    y1,
+    x2,
+    y2,
+    flags: 0,
+    params: { capacitance: 1e-5 },
+  });
+
+  const draw = (e: CircuitElement): TextRecord => {
+    const { ctx, texts } = mkCtx();
+    CAPACITOR_DEF.draw({ ...context(ctx, 0), showValues: true, voltages: [0, 0] }, e);
+    // The capacitor body emits exactly one fillText, its value caption.
+    expect(texts).toHaveLength(1);
+    return texts[0];
+  };
+
+  it('keeps a horizontal capacitor label above the plate, clear of it', () => {
+    // The plates span y = -12 to +12 (CAP_PLATE_HALF_WIDTH, capacitor.ts:23),
+    // and the caption's alphabetic baseline sits two units above the top
+    // plate edge at y = -12, so the glyphs (only descenders hang below the
+    // baseline) stay off the plate.
+    const t = draw(cap(0, 0, 160, 0));
+    expect(t.align).toBe('center');
+    expect(t.y).toBe(-14);
+    expect(t.y).toBeLessThan(-12);
+  });
+
+  it('keeps a vertical capacitor label beyond the plate, clear of it', () => {
+    // A vertical body gets left-aligned text beside it, starting at
+    // xc + 12 + 2: the right plate endpoint sits at xc + 12, so the caption
+    // is two units clear (CircuitElm.java:937-940).
+    const t = draw(cap(0, 0, 0, 160));
+    expect(t.align).toBe('left');
+    expect(t.x).toBe(14);
+    expect(t.x).toBeGreaterThan(12);
+  });
+
+  it('draws a voltage source value on the near side, not the far one', () => {
+    // Upstream special-cases VoltageElm to the near side of the body
+    // (CircuitElm.java:938-939); the port's `label` follows via kind.
+    const { ctx, texts } = mkCtx();
+    VOLTAGE_DEF.draw({ ...context(ctx, 0), showValues: true, voltages: [0, 0] }, {
+      id: 1,
+      kind: 'voltage',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 160,
+      flags: 0,
+      params: { waveform: 0, maxVoltage: 5 },
+    });
+    // The DC glyph's '+' and '−' come first; the value caption is last.
+    const t = texts[texts.length - 1];
+    expect(t.text).toContain('V');
+    expect(t.align).toBe('left');
+    expect(t.x).toBeLessThan(0);
   });
 });
