@@ -9,6 +9,7 @@ import {
   closedPolyline,
   currentDots,
   currentDotsPath,
+  dragpostHandlesFrom,
   drawLeads,
   formatValue,
   gradientPolyline,
@@ -394,6 +395,55 @@ describe('current dots', () => {
       1e-3,
     );
     expect(ctx.fillStyle).toBe(makeTheme().currentDotElectron);
+  });
+});
+
+describe('dragpost handles', () => {
+  // The selection-colour rects drawn on the dragged element's control points
+  // while a post drag is in flight, upstream's CircuitElm.drawHandles
+  // (CircuitElm.java:747-761): a 7x7 fill at each stored endpoint, the grabbed
+  // one at 9x9, so the moving control point reads distinctly.
+
+  it('fills the grabbed control point at 9x9 and the other at 7x7', () => {
+    const { ctx, stub } = mkCtx();
+    dragpostHandlesFrom(
+      context(ctx, 0),
+      [
+        { x: 0, y: 0 },
+        { x: 64, y: 0 },
+      ],
+      0,
+    );
+    expect(stub.fillRect).toHaveBeenCalledWith(-4, -4, 9, 9);
+    expect(stub.fillRect).toHaveBeenCalledWith(61, -3, 7, 7);
+  });
+
+  it('swaps the 9x9 to the other endpoint when that one is grabbed', () => {
+    const { ctx, stub } = mkCtx();
+    dragpostHandlesFrom(
+      context(ctx, 0),
+      [
+        { x: 0, y: 0 },
+        { x: 64, y: 0 },
+      ],
+      1,
+    );
+    expect(stub.fillRect).toHaveBeenCalledWith(-3, -3, 7, 7);
+    expect(stub.fillRect).toHaveBeenCalledWith(60, -4, 9, 9);
+  });
+
+  it('fills every rect in the selection colour', () => {
+    const { ctx, stub } = mkCtx();
+    dragpostHandlesFrom(
+      context(ctx, 0),
+      [
+        { x: 0, y: 0 },
+        { x: 64, y: 0 },
+      ],
+      0,
+    );
+    expect(stub.fillRect).toHaveBeenCalledTimes(2);
+    expect(ctx.fillStyle).toBe(makeTheme().selection);
   });
 });
 

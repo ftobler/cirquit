@@ -4,7 +4,7 @@ import { scopeParamsFingerprint } from '../../engine/simulator';
 import { defFor } from '../../model/registry';
 import type { DrawContext, Point } from '../../model/types';
 import { dotPhaseStep, stepPostPhases, TOO_FAST, wrapPhase } from '../../render/dots';
-import { elementLength, makeTheme } from '../../render/draw';
+import { dragpostHandlesFrom, elementLength, makeTheme } from '../../render/draw';
 import { drawGrid } from '../../render/grid';
 import { invalidDropPoint } from '../../render/geometry';
 import { postDotPoints, shouldDrawDot } from '../../render/junction';
@@ -343,13 +343,58 @@ export function useFrameLoop(
         ctx.fill();
       }
 
-      // Red no-connect marker: a dragged wire end over another wire's interior
-      // will not connect there, so show it as upstream's bad-connection dot.
-      // Drawn after the elements so it stays visible through the dragged wire.
+      // Control-point drag handles: a filled selection-colour rect at each of
+      // the dragged element's stored endpoints, the grabbed one at 9x9, so the
+      // moving control point keeps its highlight (CircuitElm.drawHandles,
+      // CircuitElm.java:747-761). Drawn after the elements, like upstream's
+      // overlay pass, so the rects sit on top of the symbol. The grey ovals at
+      // every other element's posts (UIManager.java:674-687) are deliberately
+      // not ported: they are draw-mode noise the user's complaint never asked
+      // for, and a per-frame pass over all elements buys nothing here.
       const drag = dragRef.current;
       if (drag.mode === 'dragpost') {
         const dragged = elements.find((e) => e.id === drag.id);
         if (dragged) {
+          dragpostHandlesFrom(
+            {
+              ctx,
+              theme,
+              voltages: [],
+              current: 0,
+              voltage: 0,
+              power: 0,
+              value: 0,
+              state: 0,
+              wave: [],
+              dotPhase: 0,
+              postCurrents: [],
+              postDotPhases: [],
+              showCurrent: settings.showCurrent,
+              showValues: settings.showValues,
+              showVoltageColor: settings.showVoltageColor,
+              showPowerColor: settings.showPowerColor,
+              conventional: settings.conventional,
+              euroResistors: settings.euroResistors,
+              euroGates: settings.euroGates,
+              selected: false,
+              hovered: false,
+              onHighlightedNet: false,
+              voltageRange: settings.voltageRange,
+              powerRange: settings.powerRange,
+              scale: view.scale,
+              valueDigits: settings.shortDecimalDigits,
+              valueFontSize: settings.valueFontSize,
+            },
+            [
+              { x: dragged.x1, y: dragged.y1 },
+              { x: dragged.x2, y: dragged.y2 },
+            ],
+            drag.post === 1 ? 0 : 1,
+          );
+          // Red no-connect marker: a dragged wire end over another wire's
+          // interior will not connect there, so show it as upstream's
+          // bad-connection dot. Drawn after the handles so it stays visible
+          // on top of the highlight.
           const pos =
             drag.post === 1 ? { x: dragged.x1, y: dragged.y1 } : { x: dragged.x2, y: dragged.y2 };
           const bad = invalidDropPoint(dragged, pos.x, pos.y, elements);

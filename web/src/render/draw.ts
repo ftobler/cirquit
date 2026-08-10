@@ -694,6 +694,24 @@ export function currentDotsPath(g: DrawContext, pts: Point[], current: number): 
   }
 }
 
+/**
+ * Handle rects for a control-point drag: a filled 7x7 selection-colour rect at
+ * each stored endpoint of the dragged element, the grabbed one at 9x9,
+ * upstream's `drawHandles` (`fillRect(pt-3, pt-3, 7, 7)` / `fillRect(pt-4,
+ * pt-4, 9, 9)`, CircuitElm.java:747-761). Only the two stored endpoints get handles,
+ * never the derived posts, so the caller passes exactly those; `grabbed` is the
+ * index of the moving control point. Drawn from the dragpost frame branch as
+ * one overlay call, never from inside an element draw.
+ */
+export function dragpostHandlesFrom(g: DrawContext, posts: Point[], grabbed: number): void {
+  if (posts.length === 0) return;
+  g.ctx.fillStyle = g.theme.selection;
+  posts.forEach((p, i) => {
+    const s = i === grabbed ? 9 : 7;
+    g.ctx.fillRect(p.x - (s >> 1), p.y - (s >> 1), s, s);
+  });
+}
+
 /** A single terminal lead, post to body, with round caps so its ends read as
  *  a continuous conductor like the wires it meets (upstream's ambient round
  *  cap, UIManager.java:636). */

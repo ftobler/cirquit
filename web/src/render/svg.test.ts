@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SvgRecorder, renderCircuitToSvg } from './svg';
-import { makeTheme, voltageColor } from './draw';
+import { dragpostHandlesFrom, makeTheme, voltageColor } from './draw';
 import { RESISTOR_DEF } from '../model/registry/elements/resistor';
 import { INDUCTOR_DEF } from '../model/registry/elements/inductor';
 import { DEFAULT_SETTINGS, type CircuitElement, type DrawContext } from '../model/types';
@@ -94,6 +94,17 @@ describe('SvgRecorder paths', () => {
     expect(r.toString(100, 100)).toContain(
       '<rect x="10" y="20" width="30" height="40" fill="#abcdef"',
     );
+  });
+
+  it('emits the dragpost handles as selection-coloured rects', () => {
+    // The dragpost overlay draws through g.ctx.fillRect, so a recorder must
+    // emit each handle as a plain rect: the grabbed control point at 9x9, the
+    // other at 7x7, both in the theme's selection colour.
+    const r = rec();
+    dragpostHandlesFrom(drawCtx(r), [{ x: 0, y: 0 }, { x: 64, y: 0 }], 0);
+    const svg = r.toString(100, 100);
+    expect(svg).toContain('<rect x="-4" y="-4" width="9" height="9" fill="#0969da"');
+    expect(svg).toContain('<rect x="61" y="-3" width="7" height="7" fill="#0969da"');
   });
 
   it('emits an arc path starting with M and containing A', () => {
