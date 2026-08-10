@@ -438,6 +438,8 @@ export function Menubar({ engine }: Props) {
         </button>
       </div>
 
+      <span className="status">{engine ? status || 'Ready' : 'Loading engine…'}</span>
+
       <div className="run-group">
         <button
           type="button"
@@ -471,8 +473,6 @@ export function Menubar({ engine }: Props) {
           </span>
         </button>
       </div>
-
-      <span className="status">{engine ? status || 'Ready' : 'Loading engine…'}</span>
     </header>
   );
 }
