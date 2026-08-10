@@ -313,6 +313,10 @@ impl Element for Latch {
         self.chip.base.current = 0.0;
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        self.chip.state_tokens()
+    }
+
     fn current_into_node(&self, post: usize) -> f64 {
         // With output enable the sources sit on internal nodes, not posts, so
         // no post current is reported, matching upstream's never-set pin

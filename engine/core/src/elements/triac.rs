@@ -193,6 +193,10 @@ impl Element for Triac {
         self.base.current = self.i2;
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        vec![("state".into(), if self.state { 1.0 } else { 0.0 })]
+    }
+
     /// Upstream reports each terminal's current into the device, negated for
     /// the node injection (TriacElm.java:202-208).
     fn current_into_node(&self, post: usize) -> f64 {

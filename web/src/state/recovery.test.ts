@@ -198,6 +198,41 @@ describe('startAutoSave', () => {
     expect(raw()).toBe('edited');
   });
 
+  it('the slot is written from writeNetlist while the clean check stays on the producer', () => {
+    vi.useFakeTimers();
+    // The producer is the non-live document (toNetlist); the slot gets the live
+    // overlay (saveNetlist). A dirty circuit writes the live bytes.
+    const store = fakeStore({ revision: 0, paramRevision: 0, text: 'doc', lastSaved: 'doc' });
+    const { storage, raw } = fakeStorage();
+    startAutoSave(
+      () => store,
+      () => store.getState().text,
+      { storage, delayMs: 1000, writeNetlist: () => 'doc + live charges' },
+    );
+    store.setState({ revision: 1, text: 'doc edited' });
+    vi.advanceTimersByTime(1000);
+    expect(raw()).toBe('doc + live charges');
+  });
+
+  it('a clean circuit does not write even when the live overlay differs', () => {
+    vi.useFakeTimers();
+    // The regression behind the two producers: the live write is never the
+    // non-live baseline, so if the clean check compared against it, a clean
+    // circuit (the starter-load case) would clobber the previous session's
+    // recovery.
+    const store = fakeStore({ revision: 0, paramRevision: 0, text: 'doc', lastSaved: 'doc' });
+    const { storage, raw } = fakeStorage();
+    writeRecovery('stale', storage);
+    startAutoSave(
+      () => store,
+      () => store.getState().text,
+      { storage, delayMs: 1000, writeNetlist: () => 'doc + live charges' },
+    );
+    store.setState({ revision: 1 });
+    vi.advanceTimersByTime(1000);
+    expect(raw()).toBe('stale');
+  });
+
   it('the clean check reads lastSaved at fire time, not schedule time', () => {
     vi.useFakeTimers();
     // loadNetlist bumps revision before it settles lastSaved: at schedule time

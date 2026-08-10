@@ -37,6 +37,8 @@ export const fresh = () => ({
   clipboard: null,
   lastSaved: null,
   hasRecovery: false,
+  liveStateProvider: null,
+  document: 0,
 });
 
 export const addResistor = () =>

@@ -384,6 +384,16 @@ impl Element for Diode {
         self.last_v = self.base.volts[0] - self.base.volts[self.diode_end];
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        // Only the varactor variant owns the persisted junction-voltage token
+        // (VaractorElm.java:16); a plain diode or Zener has no operating
+        // token in the format.
+        match &self.varactor {
+            Some(vc) => vec![("capVoltDiff".into(), vc.v_prev)],
+            None => vec![],
+        }
+    }
+
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         match name {
             "forwardVoltage" => {

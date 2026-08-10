@@ -308,6 +308,24 @@ impl Element for CustomLogic {
         self.chip.base.current = 0.0;
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        // The custom-logic row names its saved output voltages by output
+        // ordinal, `voltage{k}`, not by pin index: the restore reads them as
+        // `format!("voltage{}", k - input_count)` in `new`.
+        (0..self.output_count)
+            .map(|k| {
+                (
+                    format!("voltage{k}"),
+                    if self.chip.output_value(k) {
+                        self.chip.high_voltage
+                    } else {
+                        0.0
+                    },
+                )
+            })
+            .collect()
+    }
+
     fn current_into_node(&self, post: usize) -> f64 {
         self.chip.current_into_node(post)
     }

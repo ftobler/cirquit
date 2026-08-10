@@ -11,7 +11,7 @@ import { Dialog } from './Dialog';
 export function ExportAsLinkDialog() {
   // The dialog mounts fresh per open, so the URL is captured once; the circuit
   // cannot change while this overlay is up.
-  const [url] = useState(() => circuitToUrl(useStore.getState().toNetlist()));
+  const [url] = useState(() => circuitToUrl(useStore.getState().saveNetlist()));
   const setStatus = useStore((s) => s.setStatus);
   const closeDialog = useStore((s) => s.closeDialog);
 

@@ -76,6 +76,9 @@ export default function App() {
       .then((e) => {
         if (cancelled) return;
         setEngine(e);
+        // Point the store at the engine's token reader so saveNetlist and the
+        // rebuild path can overlay live state onto a copy of the elements.
+        useStore.getState().setLiveStateProvider(() => e.elementStateTokens());
         loadNetlist(circuitFromUrl() ?? STARTER_CIRCUIT);
       })
       .catch((e: unknown) => {
@@ -252,7 +255,13 @@ export default function App() {
   // subscription per app session, not per render; the cleanup unsubscribes and
   // cancels any pending write, so a strict-mode remount re-subscribes cleanly.
   useEffect(() => {
-    const stop = startAutoSave(() => useStore, () => useStore.getState().toNetlist());
+    const stop = startAutoSave(
+      () => useStore,
+      // The clean check compares against the non-live document; the slot is
+      // written live so a crash restores the current charge.
+      () => useStore.getState().toNetlist(),
+      { writeNetlist: () => useStore.getState().saveNetlist() },
+    );
     return stop;
   }, []);
 

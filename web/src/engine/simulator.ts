@@ -14,6 +14,7 @@ import init, {
 } from '../wasm/circuit_engine';
 import { postsOf } from '../model/registry';
 import type { CircuitElement, SimSettings } from '../model/types';
+import type { LiveState } from '../io/liveState';
 import { scopeColumnCount, scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 
 /** The quantity a scope trace samples. */
@@ -243,9 +244,7 @@ export class SimEngine {
           // Drop non-finite params: JSON.stringify turns them into null,
           // which serde rejects for an `f64`. The store guard makes this
           // unreachable today; it is a second, independent wall.
-          params: Object.fromEntries(
-            Object.entries(params).filter(([, v]) => Number.isFinite(v)),
-          ),
+          params: Object.fromEntries(Object.entries(params).filter(([, v]) => Number.isFinite(v))),
           label: e.text ?? null,
           // A resolved device model (the custom-logic `!`-line model) rides
           // the second string carrier: the label is that element's model
@@ -351,6 +350,33 @@ export class SimEngine {
    *  lamp's filament temperature in kelvin; everything else reads 0. */
   elementStates(): Float64Array {
     return this.sim.elementStates();
+  }
+
+  /**
+   * Live operating-point tokens per element, keyed by element id: the file
+   * tokens each element would write if it dumped its live state (a capacitor's
+   * `voltDiff`, an inductor's `current`, ...). Read at save and rebuild time
+   * only, never per frame; the ids zip with `this.order`, the ids the engine
+   * received in setCircuit order.
+   */
+  elementStateTokens(): LiveState {
+    const raw = this.sim.elementStateTokens();
+    if (!raw) return {};
+    let parsed: { id: number; tokens: Record<string, number> }[];
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // The engine is authoritative; a parse failure is safer read as "no live
+      // state" than as a corrupt document.
+      return {};
+    }
+    const out: LiveState = {};
+    for (let i = 0; i < parsed.length; i++) {
+      const id = this.order[i];
+      if (id === undefined) break;
+      out[id] = parsed[i].tokens ?? {};
+    }
+    return out;
   }
 
   /** Strip voltages for one transmission line's body wave, already averaged

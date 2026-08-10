@@ -2,6 +2,7 @@
 
 import type { Scope, ScopeTrigger, ScopeValue } from '../engine/simulator';
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
+import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
 import type { ShortcutOverlay } from '../input/shortcuts';
 import type { CircuitElement, SimSettings } from '../model/types';
@@ -151,6 +152,14 @@ export interface AppState {
    *  store init and cleared by `recoverAutoSave`, so it never enters the undo
    *  Snapshot, and later autosave writes do not re-enable the row. */
   hasRecovery: boolean;
+  /** Reads the engine's live operating-point tokens on demand, or null until
+   *  the engine is up. `saveNetlist` falls back to the non-live document
+   *  without it. A provider keeps the engine out of the store's data flow. */
+  liveStateProvider: (() => LiveState) | null;
+  /** Bumped by `loadNetlist` and `newCircuit` so the frame loop can refuse to
+   *  inject the previous document's live charges into the next one. Undo and
+   *  redo do not bump it. */
+  document: number;
   /** User-assigned shortcut overlay: assignable action -> chord signature,
    *  loaded from localStorage at init and edited by the Shortcuts dialog. A
    *  runtime overlay on the SHORTCUTS table, so matchShortcut consults it
@@ -305,9 +314,18 @@ export interface AppState {
 
   loadNetlist(text: string): void;
   toNetlist(): string;
+  /** Serialises the document the way `toNetlist` does, but overlaid with the
+   *  engine's live operating-point tokens where the provider reports them, so
+   *  a mid-transient save writes the charge the circuit actually holds. */
+  saveNetlist(): string;
   newCircuit(): void;
-  /** Records the serialised state the user last exported as the clean baseline. */
-  markSaved(text: string): void;
+  /** Points the store at the engine's token reader, or clears it. */
+  setLiveStateProvider(provider: (() => LiveState) | null): void;
+  /** Marks the current document clean: `lastSaved` is set to the non-live
+   *  `toNetlist`, the same baseline a load or New records, so the F5 and
+   *  autosave checks compare like against like. The live overlay a save wrote
+   *  is deliberately not the baseline. */
+  markSaved(): void;
   /** Loads the stored auto-save recovery, if any, as one undo entry, and marks
    *  the circuit unsaved (upstream's doRecover, UndoManager.java:83-88). A
    *  no-op when no recovery exists. */

@@ -127,6 +127,10 @@ impl Element for Lamp {
         self.base.current = two_terminal_current(&self.base, self.resistance);
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        vec![("temp".into(), self.temp)]
+    }
+
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         // Matches setEditValue's `ei.value > 0` guard on all four fields
         // (LampElm.java:207-215).

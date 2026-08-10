@@ -152,7 +152,7 @@ r 176 96 384 96 0 1000
 
   it('save then edit dirties', () => {
     loadSample();
-    useStore.getState().markSaved(useStore.getState().toNetlist());
+    useStore.getState().markSaved();
     addResistor();
     expect(dirty()).toBe(true);
   });
@@ -160,13 +160,13 @@ r 176 96 384 96 0 1000
   it('save after editing cleans', () => {
     loadSample();
     addResistor();
-    useStore.getState().markSaved(useStore.getState().toNetlist());
+    useStore.getState().markSaved();
     expect(dirty()).toBe(false);
   });
 
   it('undo to the saved state is clean', () => {
     loadSample();
-    useStore.getState().markSaved(useStore.getState().toNetlist());
+    useStore.getState().markSaved();
     addResistor();
     expect(dirty()).toBe(true);
     useStore.getState().undo();
@@ -175,10 +175,10 @@ r 176 96 384 96 0 1000
 
   it('serialised settings dirty, display-only ones do not', () => {
     loadSample();
-    useStore.getState().markSaved(useStore.getState().toNetlist());
+    useStore.getState().markSaved();
     useStore.getState().updateSettings({ timeStep: 1e-5 });
     expect(dirty()).toBe(true);
-    useStore.getState().markSaved(useStore.getState().toNetlist());
+    useStore.getState().markSaved();
     useStore.getState().updateSettings({ showGrid: false });
     expect(dirty()).toBe(false);
   });

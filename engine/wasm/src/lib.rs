@@ -234,6 +234,27 @@ impl Simulator {
         self.circuit.element_states()
     }
 
+    /// Live file-format operating-point tokens per element, as the JSON string
+    /// `[{ "id": <id>, "tokens": { name: value } }, ...]` in the order the
+    /// elements were supplied. Symmetric with `setCircuit`'s JSON-in: the
+    /// frontend overlays these onto copies of its `params` at save/rebuild
+    /// time, never per frame.
+    #[wasm_bindgen(js_name = elementStateTokens)]
+    pub fn element_state_tokens(&self) -> String {
+        let ids = self.circuit.element_ids();
+        let tokens = self.circuit.state_tokens();
+        let out: Vec<serde_json::Value> = ids
+            .iter()
+            .zip(tokens.iter())
+            .map(|(id, toks)| {
+                let map: std::collections::HashMap<&str, f64> =
+                    toks.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+                serde_json::json!({ "id": id, "tokens": map })
+            })
+            .collect();
+        serde_json::to_string(&out).unwrap_or_else(|_| "[]".into())
+    }
+
     /// Node index for every element terminal, flattened in element order, so
     /// the renderer can colour each terminal by node voltage.
     #[wasm_bindgen(js_name = elementNodes)]

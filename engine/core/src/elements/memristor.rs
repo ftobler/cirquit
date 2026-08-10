@@ -112,6 +112,10 @@ impl Element for Memristor {
         self.base.current = two_terminal_current(&self.base, self.resistance);
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        vec![("dopeWidth".into(), self.dope_width)]
+    }
+
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         match name {
             "r_on" if value > 0.0 => self.r_on = value,

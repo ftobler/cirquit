@@ -8,6 +8,7 @@ import {
   serializeCircuit,
   type ScopeConfig,
 } from '../io/netlist';
+import { overlayLiveState } from '../io/liveState';
 import {
   buildModelFromSelection,
   clearSessionModels,
@@ -47,7 +48,13 @@ import type { AppState, Slider, Snapshot, ViewTransform } from './types';
 import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
 import { readRecovery } from './recovery';
 import { loadShortcutOverlay, normalizeKey, saveShortcutOverlay } from '../input/shortcuts';
-import { hasUnsavedChanges, makeElement, makeToolElement, RECOVERED_UNSAVED, snap } from './helpers';
+import {
+  hasUnsavedChanges,
+  makeElement,
+  makeToolElement,
+  RECOVERED_UNSAVED,
+  snap,
+} from './helpers';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 
 const clone = (s: Snapshot): Snapshot => ({
@@ -111,6 +118,50 @@ const snapshotKey = (s: Snapshot): string =>
   });
 
 const UNDO_LIMIT = 100;
+
+/** The one serialization body shared by `toNetlist` (the non-live document)
+ *  and `saveNetlist` (the live overlay). Building the scope configs, the
+ *  passthrough walk and the header is the same either way; only the element
+ *  array differs. Reading the rest of the store here keeps `toNetlist`
+ *  byte-identical after the extraction. */
+function serializeDocument(elements: CircuitElement[]): string {
+  const s = useStore.getState();
+  const indexById = new Map(elements.map((e, i) => [e.id, i]));
+  const scopeConfigs: ScopeConfig[] = s.scopes.map((x) => {
+    const first = x.plots[0];
+    const speedToken = String(x.speed);
+    return {
+      id: x.id,
+      // Recomputed by the writer from where the element lands in the file;
+      // this is only the fallback for a plot with no element left.
+      elementIndex: indexById.get(first.elementId ?? -1) ?? -1,
+      elementId: first.elementId ?? undefined,
+      // A loaded line keeps every display field it came with, only the
+      // speed token tracks the live zoom. One created here gets a full
+      // new-style line (position 0, one or two plots) that upstream parses,
+      // replacing the old unloadable 4-token stub.
+      raw: x.raw
+        ? x.raw[0] === speedToken
+          ? x.raw
+          : [speedToken, ...x.raw.slice(1)]
+        : scopeUIRaw(x.speed, x.plots, (id) => indexById.get(id)),
+      plots: x.plots.map((p) => ({
+        id: p.id,
+        elementIndex: indexById.get(p.elementId ?? -1) ?? -1,
+        elementId: p.elementId ?? undefined,
+        value: p.value,
+      })),
+    };
+  });
+  return serializeCircuit(
+    elements,
+    s.settings,
+    [...scopeConfigs, ...s.unmatchedScopes],
+    s.passthrough,
+    s.order,
+    s.sliders,
+  );
+}
 
 /**
  * The load warning. The two failure modes are not the same severity and must
@@ -273,6 +324,8 @@ export const useStore = create<AppState>((set, get) => ({
   panelOpen: false,
   clipboard: null,
   lastSaved: null,
+  liveStateProvider: null,
+  document: 0,
 
   setRunning: (running) => set({ running }),
   toggleRunning: () => set((s) => ({ running: !s.running })),
@@ -508,7 +561,14 @@ export const useStore = create<AppState>((set, get) => ({
         const route = e.route
           ? e.route.map(([x, y]): [number, number] => [x + rdx, y + rdy])
           : undefined;
-        return { ...e, x1: e.x1 + rdx, y1: e.y1 + rdy, x2: e.x2 + rdx, y2: e.y2 + rdy, ...(route ? { route } : {}) };
+        return {
+          ...e,
+          x1: e.x1 + rdx,
+          y1: e.y1 + rdy,
+          x2: e.x2 + rdx,
+          y2: e.y2 + rdy,
+          ...(route ? { route } : {}),
+        };
       }),
       revision: s.revision + 1,
     }));
@@ -1267,6 +1327,9 @@ export const useStore = create<AppState>((set, get) => ({
       // A refusal from the previous circuit says nothing about this one.
       subcircuitError: null,
       revision: s.revision + 1,
+      // A load is a new document: the frame loop's rebuild gate must refuse to
+      // inject the previous circuit's live charges into it.
+      document: s.document + 1,
     }));
     // The loaded content is its own baseline: opening a file, a library
     // circuit or a share link is not "unsaved". `set` is synchronous, so this
@@ -1275,43 +1338,15 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   toNetlist: () => {
-    const s = get();
-    const indexById = new Map(s.elements.map((e, i) => [e.id, i]));
-    const scopeConfigs: ScopeConfig[] = s.scopes.map((x) => {
-      const first = x.plots[0];
-      const speedToken = String(x.speed);
-      return {
-        id: x.id,
-        // Recomputed by the writer from where the element lands in the file;
-        // this is only the fallback for a plot with no element left.
-        elementIndex: indexById.get(first.elementId ?? -1) ?? -1,
-        elementId: first.elementId ?? undefined,
-        // A loaded line keeps every display field it came with, only the
-        // speed token tracks the live zoom. One created here gets a full
-        // new-style line (position 0, one or two plots) that upstream parses,
-        // replacing the old unloadable 4-token stub.
-        raw: x.raw
-          ? x.raw[0] === speedToken
-            ? x.raw
-            : [speedToken, ...x.raw.slice(1)]
-          : scopeUIRaw(x.speed, x.plots, (id) => indexById.get(id)),
-        plots: x.plots.map((p) => ({
-          id: p.id,
-          elementIndex: indexById.get(p.elementId ?? -1) ?? -1,
-          elementId: p.elementId ?? undefined,
-          value: p.value,
-        })),
-      };
-    });
-    return serializeCircuit(
-      s.elements,
-      s.settings,
-      [...scopeConfigs, ...s.unmatchedScopes],
-      s.passthrough,
-      s.order,
-      s.sliders,
-    );
+    return serializeDocument(get().elements);
   },
+
+  saveNetlist: () => {
+    const live = get().liveStateProvider?.() ?? {};
+    return serializeDocument(overlayLiveState(get().elements, live));
+  },
+
+  setLiveStateProvider: (provider) => set({ liveStateProvider: provider }),
 
   newCircuit: () => {
     // New drops the open file, and its `.` line models with it, the same reset
@@ -1353,12 +1388,14 @@ export const useStore = create<AppState>((set, get) => ({
       problem: null,
       subcircuitError: null,
       revision: s.revision + 1,
+      // New is a fresh document, like a load: no live charges carry over.
+      document: s.document + 1,
     }));
     // An empty fresh circuit is clean.
     set({ lastSaved: get().toNetlist() });
   },
 
-  markSaved: (text) => set({ lastSaved: text }),
+  markSaved: () => set({ lastSaved: get().toNetlist() }),
 
   recoverAutoSave: () => {
     // Nothing stored: the row is greyed, and a stale click must not clear the

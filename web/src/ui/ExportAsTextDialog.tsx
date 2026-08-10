@@ -8,7 +8,7 @@ import { useStore } from '../state/store';
 import { Dialog } from './Dialog';
 
 export function ExportAsTextDialog() {
-  const [text, setText] = useState(() => useStore.getState().toNetlist());
+  const [text, setText] = useState(() => useStore.getState().saveNetlist());
   const loadNetlist = useStore((s) => s.loadNetlist);
   const setStatus = useStore((s) => s.setStatus);
   const closeDialog = useStore((s) => s.closeDialog);

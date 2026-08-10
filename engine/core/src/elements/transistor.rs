@@ -173,6 +173,18 @@ impl Element for BipolarTransistor {
         self.base.current = self.ic;
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        // The file tokens are node differences, not the internal fields: the
+        // constructor swaps and polarity-scales them (`last_vbe = p*lastVbc`,
+        // `last_vbc = p*lastVbe`), so the token named lastVbe must be
+        // V(base) - V(collector) and lastVbc V(base) - V(emitter) for a
+        // rebuild to reproduce the live junction state.
+        vec![
+            ("lastVbe".into(), self.base.volts[0] - self.base.volts[1]),
+            ("lastVbc".into(), self.base.volts[0] - self.base.volts[2]),
+        ]
+    }
+
     /// Give-up bookkeeping for the gmin ramp, mirroring
     /// TransistorElm.java:707-712,739: a timestep that needed ramping counts
     /// as a bad one, and five in a row retire the ramp for this transistor.

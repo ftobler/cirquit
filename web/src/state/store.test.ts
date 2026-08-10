@@ -6,8 +6,20 @@ import { parseCircuit, serializeCircuit } from '../io/netlist';
 import { SAMPLE } from '../io/netlist/fixtures';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 import { APP_PREF_STORAGE_KEY, loadAppPrefs, type StorageLike } from './appPrefs';
-import { RECOVERY_STORAGE_KEY, readRecovery, startAutoSave, type RecoveryStorage } from './recovery';
-import { hasUnsavedChanges, makeElement, makeToolElement, nextSwitchState, snap, useStore } from './store';
+import {
+  RECOVERY_STORAGE_KEY,
+  readRecovery,
+  startAutoSave,
+  type RecoveryStorage,
+} from './recovery';
+import {
+  hasUnsavedChanges,
+  makeElement,
+  makeToolElement,
+  nextSwitchState,
+  snap,
+  useStore,
+} from './store';
 import { addResistor, fresh } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
@@ -426,9 +438,9 @@ describe('momentary switch press-and-release', () => {
 
   it('toggles to closed on press and back to open on release', () => {
     const id = addMomentary();
-    useStore.getState().setElementState(id, 0);  // press: closed
+    useStore.getState().setElementState(id, 0); // press: closed
     expect(useStore.getState().elements[0].state).toBe(0);
-    useStore.getState().setElementState(id, 1);  // release: open
+    useStore.getState().setElementState(id, 1); // release: open
     expect(useStore.getState().elements[0].state).toBe(1);
   });
 
@@ -442,7 +454,10 @@ describe('momentary switch press-and-release', () => {
 });
 
 describe('switch keyboard shortcuts', () => {
-  const addSwitch = (params: { momentary?: number; position?: number } = {}, keyShortcut?: string) =>
+  const addSwitch = (
+    params: { momentary?: number; position?: number } = {},
+    keyShortcut?: string,
+  ) =>
     useStore.getState().addElement({
       kind: 'switch',
       x1: 0,
@@ -538,10 +553,10 @@ describe('switch keyboard shortcuts', () => {
       state: 1,
       keyShortcut: 'k',
     });
-    useStore.getState().toggleSwitchByKey('k');  // keydown closes both
+    useStore.getState().toggleSwitchByKey('k'); // keydown closes both
     expect(useStore.getState().elements.find((e) => e.id === first)?.state).toBe(0);
     expect(useStore.getState().elements.find((e) => e.id === second)?.state).toBe(0);
-    useStore.getState().releaseMomentaryByKey('k');  // keyup reopens both
+    useStore.getState().releaseMomentaryByKey('k'); // keyup reopens both
     expect(useStore.getState().elements.find((e) => e.id === first)?.state).toBe(1);
     expect(useStore.getState().elements.find((e) => e.id === second)?.state).toBe(1);
   });
@@ -618,7 +633,7 @@ describe('switch keyboard shortcuts', () => {
       y1: 0,
       x2: 160,
       y2: 0,
-      flags: 1,  // FLAG_TERNARY
+      flags: 1, // FLAG_TERNARY
       params: { position: 0, momentary: 0 },
       state: 0,
     };
@@ -644,8 +659,8 @@ describe('switch keyboard shortcuts', () => {
   });
 
   it('releaseMomentaryByKey lets a momentary switch back up on keyup', () => {
-    addSwitch({ momentary: 1, position: 1 }, 'k');  // rest open
-    useStore.getState().toggleSwitchByKey('k');  // keydown closes it
+    addSwitch({ momentary: 1, position: 1 }, 'k'); // rest open
+    useStore.getState().toggleSwitchByKey('k'); // keydown closes it
     expect(useStore.getState().elements[0].state).toBe(0);
     useStore.getState().releaseMomentaryByKey('k');
     expect(useStore.getState().elements[0].state).toBe(1);
@@ -809,7 +824,7 @@ r 0 0 16 0 0 100
   it('recoverAutoSave loads the recovery, pushes exactly one undo entry and disables the row', () => {
     try {
       withRecovery(RECOVERY);
-      addResistor();  // a pre-recovery circuit to undo back to
+      addResistor(); // a pre-recovery circuit to undo back to
       useStore.setState({ hasRecovery: true });
       useStore.getState().recoverAutoSave();
       const s = useStore.getState();
@@ -831,7 +846,7 @@ r 0 0 16 0 0 100
       useStore.getState().recoverAutoSave();
       const s = useStore.getState();
       expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(true);
-      s.markSaved(s.toNetlist());
+      s.markSaved();
       expect(hasUnsavedChanges(useStore.getState().lastSaved, s.toNetlist())).toBe(false);
     } finally {
       delete (globalThis as { localStorage?: StorageLike }).localStorage;
@@ -1194,13 +1209,13 @@ describe('the integer-coordinate invariant', () => {
     const id = addResistor();
     useStore.getState().updateElement(id, { x2: 80.5, y1: -3.4 });
     let e = useStore.getState().elements[0];
-    expect(e.x2).toBe(81);  // Math.round(80.5)
+    expect(e.x2).toBe(81); // Math.round(80.5)
     expect(e.y1).toBe(-3);
 
     useStore.getState().updateElement(id, { flags: 2 });
     e = useStore.getState().elements[0];
     expect(e.flags).toBe(2);
-    expect(e.x1).toBe(0);  // untouched geometry stays untouched
+    expect(e.x1).toBe(0); // untouched geometry stays untouched
   });
 
   it('setParam rejects NaN and Infinity outright', () => {
@@ -1545,7 +1560,7 @@ describe('scope speed', () => {
     const s = useStore.getState();
     expect(s.scopes[0].speed).toBe(128);
     expect(s.scopeRevision).toBe(beforeScope + 1);
-    expect(s.revision).toBe(beforeRevision);  // scopeRevision is the fast path
+    expect(s.revision).toBe(beforeRevision); // scopeRevision is the fast path
 
     // A no-op must not bump anything.
     useStore.getState().setScopeSpeed(scopeId, 128);
@@ -1644,8 +1659,8 @@ describe('scope panels', () => {
   it('separateScope keeps a V+I pair together and splits the rest', () => {
     const a = addResistor();
     const b = addResistor();
-    useStore.getState().addScope(a, 'voltage');  // V+I of a
-    useStore.getState().addScope(b, 'current');  // lone I of b
+    useStore.getState().addScope(a, 'voltage'); // V+I of a
+    useStore.getState().addScope(b, 'current'); // lone I of b
     const [sa, sb] = useStore.getState().scopes;
     useStore.getState().combineScopes(sa.id, sb.id);
 
@@ -1749,7 +1764,7 @@ describe('scope coupling fast path', () => {
 
   it('AC coupling is refused for current plots, matching canAcCouple', () => {
     const id = addResistor();
-    useStore.getState().addScope(id, 'voltage');  // V+I pair
+    useStore.getState().addScope(id, 'voltage'); // V+I pair
     const scope = useStore.getState().scopes[0];
     const currentPlot = scope.plots.find((p) => p.value === 'current');
     const voltagePlot = scope.plots.find((p) => p.value === 'voltage');
@@ -1925,6 +1940,68 @@ describe('white background and dialog state', () => {
   });
 });
 
+describe('saveNetlist overlays live state', () => {
+  const RC = '$ 1 0.000005 10.2 50 5 43 5e-11\nc 0 0 32 0 4 0.00001 5 0 0\n';
+
+  it('loadNetlist baselines lastSaved to the non-live toNetlist', () => {
+    useStore.getState().loadNetlist(RC);
+    const s = useStore.getState();
+    expect(s.lastSaved).toBe(s.toNetlist());
+    // toNetlist is the byte-identical round trip of the loaded file.
+    expect(s.toNetlist()).toBe(RC);
+  });
+
+  it('saveNetlist writes the live tokens while toNetlist stays stale', () => {
+    useStore.getState().loadNetlist(RC);
+    const capId = useStore.getState().elements[0].id;
+    useStore.getState().setLiveStateProvider(() => ({
+      [capId]: { voltDiff: 8.16, seriesResistance: 0.1 },
+    }));
+    const s = useStore.getState();
+    const live = s.saveNetlist();
+    // The saved bytes carry the live charge and the validate ESR...
+    expect(live).toContain('c 0 0 32 0 4 0.00001 8.16 0 0.1');
+    // ...while the non-live document keeps the load-time values, so the F5
+    // baseline and the corpus golden do not chase every charge change.
+    expect(s.toNetlist()).toContain('c 0 0 32 0 4 0.00001 5 0 0');
+    expect(s.toNetlist()).toBe(RC);
+  });
+
+  it('without a provider saveNetlist equals toNetlist', () => {
+    useStore.getState().loadNetlist(RC);
+    const s = useStore.getState();
+    expect(s.liveStateProvider).toBeNull();
+    expect(s.saveNetlist()).toBe(s.toNetlist());
+  });
+
+  it('markSaved baselines the non-live document, so a save stays clean', () => {
+    // The Save As flow computes the live bytes for the download and then marks
+    // saved. The baseline must be the non-live toNetlist, or the F5 and
+    // autosave clean checks, which compare against it, would report every
+    // saved circuit as dirty.
+    useStore.getState().loadNetlist(RC);
+    const capId = useStore.getState().elements[0].id;
+    useStore.getState().setLiveStateProvider(() => ({
+      [capId]: { voltDiff: 8.16, seriesResistance: 0.1 },
+    }));
+    const s = useStore.getState();
+    const written = s.saveNetlist();
+    expect(written).not.toBe(s.toNetlist());
+    s.markSaved();
+    expect(useStore.getState().lastSaved).toBe(s.toNetlist());
+    expect(hasUnsavedChanges(useStore.getState().lastSaved, useStore.getState().toNetlist())).toBe(
+      false,
+    );
+  });
+
+  it('setLiveStateProvider swaps the reader in and out', () => {
+    useStore.getState().setLiveStateProvider(() => ({}));
+    expect(useStore.getState().liveStateProvider).not.toBeNull();
+    useStore.getState().setLiveStateProvider(null);
+    expect(useStore.getState().liveStateProvider).toBeNull();
+  });
+});
+
 describe('import from text equals open', () => {
   it('loadNetlist from the dialog path produces the pinned SAMPLE counts', () => {
     useStore.getState().loadNetlist(SAMPLE);
@@ -1971,9 +2048,9 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
   it('a slider with no resolvable parameter does nothing', () => {
     // The slider targets element index 3, which does not exist: inert but
     // preserved, so nothing is queued and the element is untouched.
-    useStore.getState().loadNetlist(
-      '$ 0 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n38 3 0 1 101 Ghost\n',
-    );
+    useStore
+      .getState()
+      .loadNetlist('$ 0 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n38 3 0 1 101 Ghost\n');
     const s = useStore.getState();
     useStore.getState().setSliderValue(s.sliders[0].id, 50);
     const after = useStore.getState();
@@ -2033,7 +2110,7 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
     // bound resistor slid to index 0, so its slider line is rewritten.
     useStore.getState().loadNetlist(SLIDER_FIXTURE);
     const s = useStore.getState();
-    useStore.getState().select([s.elements[1].id]);  // the resistor ahead of the bound one
+    useStore.getState().select([s.elements[1].id]); // the resistor ahead of the bound one
     useStore.getState().deleteSelected();
     const out = useStore.getState().toNetlist();
     expect(out).toContain('38 0 0 1 101 Resistance');
@@ -2054,7 +2131,10 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
     const after = useStore.getState();
     expect(after.elements[0].params.dutyCycle).toBe(0.5);
     // A save keeps the duty token a fraction, not the percent the slider uses.
-    const vLine = after.toNetlist().split('\n').find((l) => l.startsWith('v '))!;
+    const vLine = after
+      .toNetlist()
+      .split('\n')
+      .find((l) => l.startsWith('v '))!;
     expect(vLine.split(' ').at(-1)).toBe('0.5');
   });
 
@@ -2311,7 +2391,10 @@ describe('convert wires to routed', () => {
     useStore.getState().convertWiresToRouted();
 
     const s = useStore.getState();
-    const wLine = s.toNetlist().split('\n').find((l) => l.startsWith('w '));
+    const wLine = s
+      .toNetlist()
+      .split('\n')
+      .find((l) => l.startsWith('w '));
     // The route never enters the file: a plain two-endpoint w line, exactly
     // what upstream's text format would write (RoutedWireElm has no text dump).
     expect(wLine).toBe('w 0 0 160 0 0');

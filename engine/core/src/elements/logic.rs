@@ -214,6 +214,19 @@ impl Element for Gate {
         self.base.current = self.base.vs_currents[0];
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        // The live output level as a voltage; the constructor restores the
+        // same `last_output` from the `> highVoltage/2` threshold.
+        vec![(
+            "lastOutputVoltage".into(),
+            if self.last_output {
+                self.high_voltage
+            } else {
+                0.0
+            },
+        )]
+    }
+
     fn current_into_node(&self, post: usize) -> f64 {
         if post == self.input_count {
             self.base.current

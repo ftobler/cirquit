@@ -271,6 +271,16 @@ impl Element for Relay {
         }
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        // `position` is the settled integer throw (0/1/2), which is exactly
+        // what the constructor's match reproduces; the fractional
+        // `d_position` mid-throw is not a file quantity.
+        vec![
+            ("coilCurrent".into(), self.coil_current),
+            ("position".into(), self.i_position as f64),
+        ]
+    }
+
     fn step_finished(&mut self, ctx: &SimCtx) {
         self.sync_ind();
         self.ind.step_finished(ctx);
@@ -567,6 +577,14 @@ impl Element for RelayCoil {
         self.base.current = self.coil_current;
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        vec![
+            ("coilCurrent".into(), self.coil_current),
+            ("state".into(), self.state as f64),
+            ("switchPosition".into(), self.switch_position as f64),
+        ]
+    }
+
     fn step_finished(&mut self, ctx: &SimCtx) {
         self.sync_ind();
         self.ind.step_finished(ctx);
@@ -704,6 +722,10 @@ impl Element for RelayContact {
         } else {
             0.0
         };
+    }
+
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        vec![("i_position".into(), self.i_position as f64)]
     }
 
     fn current_into_node(&self, post: usize) -> f64 {

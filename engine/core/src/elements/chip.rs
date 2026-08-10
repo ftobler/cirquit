@@ -214,6 +214,24 @@ impl Chip {
         0.0
     }
 
+    /// Live values of the saved `voltage{i}` tokens, one per state-carrying
+    /// pin, named by pin index exactly as `restore_state` reads them
+    /// (ChipElm.java:64-67). An output enable or a combinational chip that
+    /// never saves a pin level reports nothing.
+    pub fn state_tokens(&self) -> Vec<(String, f64)> {
+        self.pins
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.state)
+            .map(|(i, p)| {
+                (
+                    format!("voltage{i}"),
+                    if p.value { self.high_voltage } else { 0.0 },
+                )
+            })
+            .collect()
+    }
+
     /// The shared reset: every pin level cleared and the clock memory reset
     /// (ChipElm.java:346-354). Subclasses re-assert their default output state
     /// afterwards.

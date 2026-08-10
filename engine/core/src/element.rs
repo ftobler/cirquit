@@ -345,6 +345,19 @@ pub trait Element {
         0.0
     }
 
+    /// Live values of the file-format tokens this element owns, in the same
+    /// names the constructor's `spec.param` reads. Default: none. Called only
+    /// at save/rebuild time, never per step.
+    ///
+    /// The golden rule for every implementation: feeding the returned tokens
+    /// back through the constructor's `spec.param(name, default)` must
+    /// reproduce the live internal state. That rule is what decides the
+    /// base-relative conversions here, most noticeably the transistor, whose
+    /// file tokens are node differences, not its swapped internal fields.
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        vec![]
+    }
+
     /// Per-element sample array the renderer can pull on demand, one value per
     /// drawn segment of the element body. Default: nothing. The transmission
     /// line ships its delay-line wave here, already averaged from the two

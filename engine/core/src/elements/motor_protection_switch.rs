@@ -156,6 +156,10 @@ impl Element for MotorProtectionSwitch {
         self.base.current = self.currents.iter().sum();
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        vec![("blown".into(), if self.blown { 1.0 } else { 0.0 })]
+    }
+
     fn current_into_node(&self, post: usize) -> f64 {
         let channel = post / 2;
         if post % 2 == 1 {

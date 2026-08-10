@@ -14,6 +14,7 @@ import { GRID_SIZE } from '../../model/types';
 import { useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
+import { overlayLiveState, shouldInjectLiveState } from '../../io/liveState';
 
 /** Resolves each scope's measured canvas width, for engine ring sizing. */
 const widthOf = (id: number): number | undefined => scopeWidth(id);
@@ -30,6 +31,11 @@ export function useFrameLoop(
   const loadedRevision = useRef(-1);
   const appliedParamRevision = useRef(-1);
   const appliedScopeFp = useRef('');
+  // The document the engine currently holds. setCircuit records it, and the
+  // rebuild branches inject live state only when it matches the store's
+  // current document (a load or New bumps the counter, so their rebuilds seed
+  // from the new file's tokens instead).
+  const builtDocument = useRef(-1);
   const stateRef = useStoreRef();
 
   // ---- the frame loop -----------------------------------------------------
@@ -67,7 +73,14 @@ export function useFrameLoop(
         // clearing the maps stops them growing across circuit loads.
         dotPhaseRef.current.clear();
         postPhaseRef.current.clear();
-        const err = engine.setCircuit(elements, settings, scopes, widthOf);
+        // A mid-run rebuild keeps the live charges only when the engine still
+        // holds this document; the rebuild right after a load injects nothing,
+        // because the new file's tokens are already in the params.
+        const build = shouldInjectLiveState(builtDocument.current, state.document)
+          ? overlayLiveState(elements, engine.elementStateTokens())
+          : elements;
+        const err = engine.setCircuit(build, settings, scopes, widthOf);
+        builtDocument.current = state.document;
         const warnings = err ? [err] : engine.warnings();
         useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
         // The reload serialised the current elements, so any queued value
@@ -109,10 +122,17 @@ export function useFrameLoop(
         }
         if (forceReload) {
           // A param the engine cannot patch live (unknown id or name) would
-          // otherwise read as a dead slider; rebuild the whole circuit.
+          // otherwise read as a dead slider; rebuild the whole circuit. The
+          // rebuild keeps the live charges under the same document gate as
+          // the revision branch, so an undo or a param that forces a reload
+          // does not snap every reactive element back to its file charge.
           dotPhaseRef.current.clear();
           postPhaseRef.current.clear();
-          const err = engine.setCircuit(elements, settings, scopes, widthOf);
+          const build = shouldInjectLiveState(builtDocument.current, state.document)
+            ? overlayLiveState(elements, engine.elementStateTokens())
+            : elements;
+          const err = engine.setCircuit(build, settings, scopes, widthOf);
+          builtDocument.current = state.document;
           const warnings = err ? [err] : engine.warnings();
           useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
         }
@@ -139,9 +159,9 @@ export function useFrameLoop(
                 return e ? `${e.kind} (${id})` : `id ${id}`;
               })
               .join(', ');
-            useStore.getState().setProblem(
-              names ? `${stats.error}; not settled: ${names}` : stats.error,
-            );
+            useStore
+              .getState()
+              .setProblem(names ? `${stats.error}; not settled: ${names}` : stats.error);
           }
         }
         currents = engine.elementCurrents();
@@ -250,12 +270,7 @@ export function useFrameLoop(
         // Phase is integrated per element so changing the speed or the current
         // mid-run cannot teleport the dots. Only advance while running, so a
         // pause freezes them in place.
-        const step = dotPhaseStep(
-          current,
-          settings.currentSpeed,
-          elapsed,
-          settings.conventional,
-        );
+        const step = dotPhaseStep(current, settings.currentSpeed, elapsed, settings.conventional);
         const phase =
           step === TOO_FAST ? TOO_FAST : wrapPhase((dotPhaseRef.current.get(e.id) ?? 0) + step);
         if (running) dotPhaseRef.current.set(e.id, phase === TOO_FAST ? 0 : phase);
@@ -335,7 +350,8 @@ export function useFrameLoop(
       if (drag.mode === 'dragpost') {
         const dragged = elements.find((e) => e.id === drag.id);
         if (dragged) {
-          const pos = drag.post === 1 ? { x: dragged.x1, y: dragged.y1 } : { x: dragged.x2, y: dragged.y2 };
+          const pos =
+            drag.post === 1 ? { x: dragged.x1, y: dragged.y1 } : { x: dragged.x2, y: dragged.y2 };
           const bad = invalidDropPoint(dragged, pos.x, pos.y, elements);
           if (bad) {
             ctx.fillStyle = theme.noConnect;

@@ -152,6 +152,10 @@ impl Element for Inductor {
         };
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        vec![("current".into(), self.i_prev)]
+    }
+
     fn step_finished(&mut self, _ctx: &SimCtx) {
         // The operating-point step commits too, so an inductor carries the
         // DC steady-state current (`i_prev`, from `calculate_current` above)

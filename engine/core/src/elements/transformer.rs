@@ -409,6 +409,22 @@ impl Element for Transformer {
         sum
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        // The basic and tapped rows name their winding currents `current0`
+        // onward; the custom row, whose coil count is not fixed by the kind,
+        // names them `coilCurrent{i}` (CustomTransformerElm.java:357-360).
+        let prefix = if self.kind == "customTransformer" {
+            "coilCurrent"
+        } else {
+            "current"
+        };
+        self.currents
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| (format!("{prefix}{i}"), c))
+            .collect()
+    }
+
     fn reset(&mut self) {
         self.base.reset();
         self.currents.iter_mut().for_each(|c| *c = 0.0);

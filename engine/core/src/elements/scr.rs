@@ -172,6 +172,16 @@ impl Element for Scr {
         self.base.current = self.ia;
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        // The file tokens are the last anode-minus-terminal voltages, which
+        // the constructor reads directly and seeds the cathode and gate as
+        // their negatives.
+        vec![
+            ("lastvac".into(), self.base.volts[0] - self.base.volts[1]),
+            ("lastvag".into(), self.base.volts[0] - self.base.volts[2]),
+        ]
+    }
+
     /// Upstream reports each terminal's current into the device, negated for
     /// the node injection (SCRElm.java:191-197).
     fn current_into_node(&self, post: usize) -> f64 {

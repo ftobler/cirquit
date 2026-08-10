@@ -139,6 +139,13 @@ impl Element for Fuse {
         }
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        vec![
+            ("heat".into(), self.heat),
+            ("blown".into(), if self.blown { 1.0 } else { 0.0 }),
+        ]
+    }
+
     fn reset(&mut self) {
         self.base.reset();
         self.heat = 0.0;

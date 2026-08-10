@@ -99,6 +99,10 @@ impl Element for TFlipFlop {
         self.chip.base.current = 0.0;
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        self.chip.state_tokens()
+    }
+
     fn current_into_node(&self, post: usize) -> f64 {
         self.chip.current_into_node(post)
     }

@@ -1332,6 +1332,22 @@ impl Circuit {
         self.elements.iter().map(|e| e.display_state()).collect()
     }
 
+    /// Live file-format tokens per element, in element order, one vector per
+    /// element holding its `(name, value)` pairs. Only the operating-point
+    /// kinds report anything; everything else stays empty. Called only at
+    /// save/rebuild time, never per step, and consumed by the wasm façade's
+    /// `elementStateTokens`.
+    pub fn state_tokens(&self) -> Vec<Vec<(String, f64)>> {
+        self.elements.iter().map(|e| e.state_tokens()).collect()
+    }
+
+    /// UI-assigned ids in element order, parallel to
+    /// [`Circuit::element_states`], so the wasm façade can pair each token
+    /// vector with the id the frontend knows.
+    pub fn element_ids(&self) -> &[u32] {
+        &self.ids
+    }
+
     /// Node index per element terminal, flattened in element order. Lets the
     /// renderer colour each terminal by its node voltage.
     pub fn element_nodes(&self) -> Vec<u32> {

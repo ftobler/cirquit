@@ -85,6 +85,11 @@ export interface AutoSaveOptions {
   /** The clock, injected so tests can drive the trailing edge without real
    *  time. Defaults to the ambient Date.now. */
   now?: () => number;
+  /** The live-netlist producer the slot is written with; defaults to the clean
+   *  producer. The write is live so a crash restores the circuit at its
+   *  current charge, like upstream, while the clean check above stays on the
+   *  non-live document. */
+  writeNetlist?: () => string;
 }
 
 /** Watches the store and writes the current netlist to the recovery slot
@@ -101,7 +106,7 @@ export function startAutoSave(
   toNetlist: () => string,
   options: AutoSaveOptions = {},
 ): () => void {
-  const { storage, delayMs = 1000, now = () => Date.now() } = options;
+  const { storage, delayMs = 1000, now = () => Date.now(), writeNetlist = toNetlist } = options;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   const cancel = () => {
@@ -113,16 +118,14 @@ export function startAutoSave(
 
   const write = () => {
     timer = null;
-    const netlist = toNetlist();
-    // A clean circuit (never edited since the last load or export) must not
-    // overwrite the slot: a page load bumps revision via loadNetlist, and
-    // clobbering the previous session's recovery with the starter circuit
-    // would make File>Recover worthless. Checked at fire time, not schedule
-    // time, because loadNetlist sets lastSaved a tick after the revision
-    // bump. `lastSaved === null` is pre-load and never clean here.
+    // The clean check compares the non-live document against the baseline,
+    // which the store always sets from `toNetlist`: a live overlay would never
+    // equal it, and a clean circuit would clobber the previous session's
+    // recovery with the starter circuit. The slot is written live, so a crash
+    // mid-run restores the circuit at its current charge.
     const lastSaved = getStore().getState().lastSaved;
-    if (lastSaved !== null && lastSaved === netlist) return;
-    writeRecovery(netlist, storage);
+    if (lastSaved !== null && lastSaved === toNetlist()) return;
+    writeRecovery(writeNetlist(), storage);
   };
 
   const unsubscribe = getStore().subscribe((state, prevState) => {

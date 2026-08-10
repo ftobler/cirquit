@@ -159,6 +159,13 @@ impl Element for Capacitor {
         self.cap_node = if r > 0.0 { 2 } else { 1 };
     }
 
+    fn state_tokens(&self) -> Vec<(String, f64)> {
+        vec![
+            ("voltDiff".into(), self.v_prev),
+            ("seriesResistance".into(), self.series_resistance),
+        ]
+    }
+
     fn stamp(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         let (n0, n1) = (self.base.nodes[0], self.base.nodes[1]);
         let cn = self.base.nodes[self.cap_node];
