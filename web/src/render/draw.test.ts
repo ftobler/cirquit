@@ -41,7 +41,7 @@ import { SWITCH2_DEF } from '../model/registry/elements/switch2';
 import { CROSS_SWITCH_DEF } from '../model/registry/elements/crossSwitch';
 import { ANALOG_SWITCH_DEF } from '../model/registry/elements/analogSwitch';
 import { ANALOG_SWITCH2_DEF } from '../model/registry/elements/analogSwitch2';
-import { SWITCH_IEC } from '../model/registry/flags';
+import { SWITCH_IEC, VOLTAGE_CIRCLE_SYMBOL } from '../model/registry/flags';
 import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
 import { MOSFET_DEF } from '../model/registry/elements/mosfet';
 import { RAIL_DEF } from '../model/registry/elements/rail';
@@ -2159,9 +2159,10 @@ describe('current dot direction', () => {
   it('a DC source draws dots from the negative post toward the positive post', () => {
     // Delivering 10 mA, the dots enter the symbol on the negative side and
     // leave the symbol toward the positive post: the whole path advances from
-    // post 0 (negative, (0,100)) to post 1 (positive, (0,0)), matching
-    // VoltageElm.draw's `drawDots(point1, lead1, ...)` and
-    // `drawDots(point2, lead2, -curcount)` split (VoltageElm.java:328-330).
+    // post 0 (negative, (0,100)) to post 1 (positive, (0,0)). A plain DC
+    // battery draws a single run across the whole span, through the plate
+    // gap (`drawDots(point1, point2, curcount)`, VoltageElm.java:325-326);
+    // only the circled variant splits into two per-lead runs (:328-330).
     expectAdvances(
       VOLTAGE_DEF,
       { id: 1, kind: 'voltage', x1: 0, y1: 100, x2: 0, y2: 0, flags: 0, params: { waveform: 0 } },
@@ -2464,11 +2465,92 @@ describe('value label placement', () => {
       flags: 0,
       params: { waveform: 0, maxVoltage: 5 },
     });
-    // The DC glyph's '+' and '−' come first; the value caption is last.
+    // The battery draw emits a single fillText, its value caption.
+    expect(texts).toHaveLength(1);
     const t = texts[texts.length - 1];
     expect(t.text).toContain('V');
     expect(t.align).toBe('left');
     expect(t.x).toBeLessThan(0);
+  });
+});
+
+describe('DC voltage source battery symbol', () => {
+  // A plain DC `v` line (waveform 0, no FLAG_CIRCLE_SYMBOL) renders as the
+  // two-plate battery rather than the circled +/− symbol: a short plate at
+  // lead1 and a long one at lead2, with the leads 8 units long each side
+  // (VoltageElm.java:281-291, :252).
+
+  const voltage = (overrides: Partial<CircuitElement> = {}): CircuitElement => ({
+    id: 1,
+    kind: 'voltage',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    flags: 0,
+    params: { waveform: 0 },
+    ...overrides,
+  });
+
+  /** Every stroked path as its two endpoints. */
+  const segments = (paths: { x: number; y: number }[][]): { a: Point; b: Point }[] =>
+    paths.filter((p) => p.length === 2).map((p) => ({ a: p[0], b: p[1] }));
+
+  /** Whether a segment of these exact endpoints, in either order, was drawn. */
+  const hasSegment = (segs: { a: Point; b: Point }[], a: Point, b: Point): boolean =>
+    segs.some(
+      (s) =>
+        (s.a.x === a.x && s.a.y === a.y && s.b.x === b.x && s.b.y === b.y) ||
+        (s.a.x === b.x && s.a.y === b.y && s.b.x === a.x && s.b.y === a.y),
+    );
+
+  it('draws a short plate at lead1 and a long plate at lead2, with no circle', () => {
+    const { ctx, calls, paths } = mkCtx();
+    VOLTAGE_DEF.draw({ ...context(ctx, 0), voltages: [0, 0], showCurrent: false }, voltage());
+    // The battery body is two perpendicular bars, never the source circle.
+    expect(calls).not.toContain('arc');
+    const segs = segments(paths);
+    // For a 64-unit horizontal body, calcLeads(8) puts lead1 at (28,0) and
+    // lead2 at (36,0); the plates ride those points perpendicular to the axis
+    // at half-heights 10 and 16 (VoltageElm.java:284, :290).
+    expect(hasSegment(segs, { x: 28, y: -10 }, { x: 28, y: 10 })).toBe(true);
+    expect(hasSegment(segs, { x: 36, y: -16 }, { x: 36, y: 16 })).toBe(true);
+  });
+
+  it('renders the circled +/− symbol when FLAG_CIRCLE_SYMBOL is set', () => {
+    const { ctx, calls, paths } = mkCtx();
+    VOLTAGE_DEF.draw(
+      { ...context(ctx, 0), voltages: [0, 0], showCurrent: false },
+      voltage({ flags: VOLTAGE_CIRCLE_SYMBOL }),
+    );
+    // The circle is back, and no battery plates: the only paths are the two
+    // lead wires.
+    expect(calls).toContain('arc');
+    expect(paths).toHaveLength(2);
+  });
+
+  it('keeps the plates in the post voltage colours under Show Power', () => {
+    // Upstream forces the per-post voltage colours onto the plates and off
+    // the power ramp (setVoltageColor + setPowerColor(false), VoltageElm.java:
+    // 282-291), exactly like the capacitor's plates (capacitor.ts:59-60).
+    // With the voltage toggle off that colour is the wire colour; the red
+    // power ramp must never reach the plates.
+    const { ctx, strokes } = mkCtx();
+    VOLTAGE_DEF.draw(
+      {
+        ...context(ctx, 0),
+        voltages: [5, 0],
+        showCurrent: false,
+        showPowerColor: true,
+        power: 1e6,
+      },
+      voltage(),
+    );
+    const plates = strokes.slice(2, 4);  // the two lead wires come first
+    expect(plates).toHaveLength(2);
+    expect(plates.every((s) => s.style === makeTheme().wire)).toBe(true);
+    const ramp = powerColor({ ...context(mkCtx().ctx, 0), showPowerColor: true }, 1e6);
+    expect(plates.every((s) => s.style !== ramp)).toBe(true);
   });
 });
 

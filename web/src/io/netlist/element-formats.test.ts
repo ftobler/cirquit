@@ -785,6 +785,23 @@ describe('voltage source file format', () => {
     const { elementLine } = voltageLine('v 176 96 176 32 2 1 30.0 5.0 0.0');
     expect(elementLine).toBe('v 176 96 176 32 0 1 30 5 0 1.5707963267948966 0.5');
   });
+
+  it('preserves FLAG_CIRCLE_SYMBOL on save', () => {
+    // Bit 8 is part of the interchange format: it chooses the circled +/−
+    // symbol over the battery plates, and the load/save pair must keep it
+    // (VoltageElm.java:31).
+    const { e, elementLine } = voltageLine('v 1 2 3 4 8 0 40.0 5.0 0.0 0.0 0.5');
+    expect(e.flags & 8).toBe(8);
+    expect(elementLine).toBe('v 1 2 3 4 8 0 40 5 0 0 0.5');
+  });
+
+  it('keeps a plain DC line flag-free through the round trip', () => {
+    // The default DC symbol is the battery, so a fresh DC line carries no bit
+    // 8 and the save must not invent one.
+    const { e, elementLine } = voltageLine('v 1 2 3 4 0 0 40.0 5.0 0.0 0.0 0.5');
+    expect(e.flags & 8).toBe(0);
+    expect(elementLine).toBe('v 1 2 3 4 0 0 40 5 0 0 0.5');
+  });
 });
 
 describe('current source file format', () => {

@@ -55,6 +55,10 @@ export const VOLTAGE_COS = 2;
  *  (VoltageElm.java:30, 85-88). The writer sets it so an edited duty survives
  *  a reload. */
 export const VOLTAGE_PULSE_DUTY = 4;
+/** A DC source draws the circled +/− symbol instead of the two-plate battery
+ *  (VoltageElm.java:31). Meaningless on a non-DC waveform, where the circle
+ *  is always drawn. */
+export const VOLTAGE_CIRCLE_SYMBOL = 8;
 export const PROBE_SHOW_VOLTAGE = 1;   // ProbeElm.java:30
 export const PROBE_CIRCLE = 2;         // ProbeElm.java:31
 export const CAP_BACK_EULER = 2;       // CapacitorElm.java:32

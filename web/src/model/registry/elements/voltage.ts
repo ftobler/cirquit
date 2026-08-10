@@ -1,5 +1,16 @@
-import { formatValueShort, interp, label } from '../../../render/draw';
-import { VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
+import {
+  calcLeads,
+  currentDots,
+  drawLeads,
+  endpoints,
+  formatValueShort,
+  interp,
+  interp2,
+  label,
+  line,
+  voltageColor,
+} from '../../../render/draw';
+import { VOLTAGE_CIRCLE_SYMBOL, VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
 import { drawSourceCircle, drawWaveformGlyph, readParams, twoPosts, writeParams } from '../shared';
 import type { ElementDef } from '../../types';
 
@@ -66,6 +77,10 @@ export const VOLTAGE_DEF: ElementDef = {
         { value: 6, label: 'Noise' },
       ],
     },
+    // Upstream shows this only on the DC waveform (VoltageElm.java:547-550);
+    // the port's field list has no conditional row, so the checkbox is always
+    // there and only does anything for DC, which is what the flag means.
+    { name: 'circleSymbol', label: 'Circle Symbol', type: 'bool', flag: VOLTAGE_CIRCLE_SYMBOL },
     { name: 'maxVoltage', label: 'Amplitude', unit: 'V' },
     { name: 'frequency', label: 'Frequency', unit: 'Hz' },
     { name: 'bias', label: 'DC offset', unit: 'V' },
@@ -74,8 +89,30 @@ export const VOLTAGE_DEF: ElementDef = {
     { name: 'dutyCycle', label: 'Duty cycle', min: 0, max: 1 },
   ],
   draw(g, e) {
+    const wf = e.params.waveform ?? 0;
+    if (wf === 0 && (e.flags & VOLTAGE_CIRCLE_SYMBOL) === 0) {
+      // The two-plate battery: a short plate at lead1 and a long one at
+      // lead2, the leads 8 units long each side (VoltageElm.java:252,
+      // :281-291). Each plate takes its own post's colour; the current dots
+      // run the whole path, through the plate gap (VoltageElm.java:325-326).
+      const [p1, p2] = endpoints(e);
+      const [lead1, lead2] = calcLeads(e, 8);
+      drawLeads(g, e, lead1, lead2);
+      // Each plate takes its own post's voltage colour, like the capacitor
+      // plates (capacitor.ts:59-60), upstream's per-post setVoltageColor with
+      // power colouring forced off (VoltageElm.java:282-291).
+      const [s1, s2] = interp2(lead1, lead2, 0, 10);
+      line(g, s1, s2, voltageColor(g, g.voltages[0]));
+      const [l1, l2] = interp2(lead1, lead2, 1, 16);
+      line(g, l1, l2, voltageColor(g, g.voltages[1]));
+      currentDots(g, p1, p2, g.current);
+      // The value caption clears the long plate's reach (hs = 16,
+      // VoltageElm.java:319).
+      label(g, e, formatValueShort(e.params.maxVoltage ?? 0, 'V', g.valueDigits), 16);
+      return;
+    }
     const [lead1, lead2] = drawSourceCircle(g, e, 12);
-    drawWaveformGlyph(g, interp(lead1, lead2, 0.5), e.params.waveform ?? 0, 12);
-  label(g, e, formatValueShort(e.params.maxVoltage ?? 0, 'V', g.valueDigits), 20);
+    drawWaveformGlyph(g, interp(lead1, lead2, 0.5), wf, 12);
+    label(g, e, formatValueShort(e.params.maxVoltage ?? 0, 'V', g.valueDigits), 20);
   },
 };
