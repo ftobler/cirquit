@@ -484,13 +484,13 @@ button.active,
   cursor: crosshair;
 }
 
-.statusbar {
-  flex: 0 0 auto;
-  padding: 3px 10px;
-  border-top: 1px solid var(--border);
-  background: var(--panel);
+.menubar .status {
   color: var(--muted);
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40ch;
 }
 
 /* ---- panels ---- */

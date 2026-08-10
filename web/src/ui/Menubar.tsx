@@ -110,6 +110,7 @@ function Dropdown({
 export function Menubar({ engine }: Props) {
   const running = useStore((s) => s.running);
   const toggleRunning = useStore((s) => s.toggleRunning);
+  const status = useStore((s) => s.status);
   const newCircuit = useStore((s) => s.newCircuit);
   const loadNetlist = useStore((s) => s.loadNetlist);
   const undo = useStore((s) => s.undo);
@@ -470,6 +471,8 @@ export function Menubar({ engine }: Props) {
           </span>
         </button>
       </div>
+
+      <span className="status">{engine ? status || 'Ready' : 'Loading engine…'}</span>
     </header>
   );
 }

@@ -56,7 +56,6 @@ const EDIT_ACTIONS = new Set([
 export default function App() {
   const [engine, setEngine] = useState<SimEngine | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
-  const status = useStore((s) => s.status);
   const dialog = useStore((s) => s.dialog);
   const loadNetlist = useStore((s) => s.loadNetlist);
   const partsOpen = useStore((s) => s.partsOpen);
@@ -331,9 +330,6 @@ export default function App() {
           />
         )}
       </div>
-      <footer className="statusbar">
-        <span>{engine ? status || 'Ready' : 'Loading engine…'}</span>
-      </footer>
     </div>
   );
 }
