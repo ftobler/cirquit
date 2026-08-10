@@ -11,6 +11,7 @@ import {
   getModel,
   listModels,
   modelToEngineSpec,
+  nameTaken,
   parseCompositeModelLine,
   registerSessionModel,
   removeModel,
@@ -19,6 +20,13 @@ import {
   type SubcircuitStorage,
 } from './subcircuits';
 import { parseCircuit, serializeCircuit } from './netlist';
+import {
+  commitSubcircuitCreate,
+  commitSubcircuitEdit,
+  deleteSubcircuit,
+  setSubcircuitDraft,
+  startSubcircuitEdit,
+} from '../ui/subcircuitManager';
 import { summarizeImport } from './importSummary';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
 import { LABELED_NODE_INTERNAL } from '../model/registry/flags';
@@ -64,6 +72,22 @@ function fullStorage(inner: SubcircuitStorage): SubcircuitStorage {
     },
     getItem: (k) => inner.getItem(k),
     removeItem: (k) => inner.removeItem(k),
+    listSubcircuitKeys: () => inner.listSubcircuitKeys(),
+  };
+}
+
+/** The same storage with a refusing deleter, standing in for one that keeps a
+ *  key the user asked to drop. Nothing else changes, so the model stays
+ *  readable and listed, which is exactly what makes the failure worth
+ *  reporting. */
+function stickyStorage(inner: SubcircuitStorage): SubcircuitStorage {
+  return {
+    ...inner,
+    getItem: (k) => inner.getItem(k),
+    setItem: (k, v) => inner.setItem(k, v),
+    removeItem: () => {
+      throw new Error('SecurityError');
+    },
     listSubcircuitKeys: () => inner.listSubcircuitKeys(),
   };
 }
@@ -512,23 +536,79 @@ describe('the model library and Subcircuit Manager store', () => {
     expect(listed[0].extList).toEqual(model.extList);
     expect(storage.getItem('subcircuit:stored')).toBe(compositeModelLine({ ...model, name: 'stored' }));
 
-    removeModel('stored', storage);
+    expect(removeModel('stored', storage)).toBe('stored');
     expect(listModels(storage)).toEqual([]);
     expect(storage.getItem('subcircuit:stored')).toBeNull();
+    // Nothing left to remove, which is a stale row rather than a delete.
+    expect(removeModel('stored', storage)).toBe('none');
   });
 
   it('rename moves the stored model to its new name', () => {
     const storage = fakeStorage();
     saveModel(parseCompositeModelLine(MODEL_LINE)!, storage);
-    expect(renameModel('myCirc', 'renamed', storage)).toBe(true);
+    expect(renameModel('myCirc', 'renamed', storage)).toBe('renamed');
     const renamed = getModel('renamed', storage);
     expect(renamed).not.toBeUndefined();
     expect(renamed!.name).toBe('renamed');
     expect(renamed!.extList).toEqual(parseCompositeModelLine(MODEL_LINE)!.extList);
     expect(getModel('myCirc', storage)).toBeUndefined();
-    // A blank or missing name is refused.
-    expect(renameModel('renamed', '', storage)).toBe(false);
-    expect(renameModel('nope', 'x', storage)).toBe(false);
+    // The old key goes with it, or the model would be listed twice.
+    expect(storage.getItem('subcircuit:myCirc')).toBeNull();
+    // A blank, unchanged or missing name is refused, each in its own words so
+    // the Manager can tell a retypeable refusal from a vanished model.
+    expect(renameModel('renamed', '', storage)).toBe('blank');
+    expect(renameModel('renamed', 'renamed', storage)).toBe('unchanged');
+    expect(renameModel('nope', 'x', storage)).toBe('missing');
+  });
+
+  it('a rename onto a missing model writes nothing', () => {
+    const storage = fakeStorage();
+    expect(renameModel('nope', 'x', storage)).toBe('missing');
+    expect(listModels(storage)).toEqual([]);
+    expect(storage.getItem('subcircuit:x')).toBeNull();
+  });
+
+  it('nameTaken sees both stores and only the names that are there', () => {
+    const storage = fakeStorage();
+    saveModel({ ...parseCompositeModelLine(MODEL_LINE)!, name: 'stored' }, storage);
+    registerSessionModel({ ...parseCompositeModelLine(MODEL_LINE)!, name: 'fromFile' });
+    expect(nameTaken('stored', storage)).toBe(true);
+    expect(nameTaken('fromFile', storage)).toBe(true);
+    expect(nameTaken('free', storage)).toBe(false);
+    // Without storage only the session map can answer, the same way `getModel`
+    // degrades when localStorage is gone.
+    expect(nameTaken('stored', undefined)).toBe(false);
+    expect(nameTaken('fromFile', undefined)).toBe(true);
+  });
+
+  it('a rename onto a taken name refuses instead of destroying that model', () => {
+    // The regression: `divider` renamed onto `amp` used to delete `amp` and
+    // write `divider`'s body under its name, with nothing said and one row
+    // fewer in the list.
+    const storage = fakeStorage();
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    saveModel({ ...base, name: 'divider', nodeList: 'ResistorElm 1 2' }, storage);
+    saveModel({ ...base, name: 'amp', nodeList: 'ResistorElm 3 4' }, storage);
+
+    expect(renameModel('divider', 'amp', storage)).toBe('taken');
+    expect(getModel('amp', storage)!.nodeList).toBe('ResistorElm 3 4');
+    expect(getModel('divider', storage)!.nodeList).toBe('ResistorElm 1 2');
+    expect(listModels(storage)).toHaveLength(2);
+  });
+
+  it('renaming a row that shadows a saved model uncovers it rather than moving it', () => {
+    // The two are different models sharing a name: the file's copy is what the
+    // row showed, so that is what moves, and the saved one comes back into
+    // view under the old name. `uncovered` is what lets the Manager say so.
+    const storage = fakeStorage();
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    saveModel({ ...base, nodeList: 'ResistorElm 9 9' }, storage);  // the saved one
+    registerSessionModel({ ...base, nodeList: 'ResistorElm 1 2' });  // the file's
+
+    expect(renameModel('myCirc', 'renamed', storage)).toBe('uncovered');
+    expect(getModel('renamed', storage)!.nodeList).toBe('ResistorElm 1 2');
+    expect(getModel('myCirc', storage)!.nodeList).toBe('ResistorElm 9 9');
+    expect(listModels(storage).map((m) => m.name)).toEqual(['myCirc', 'renamed']);
   });
 
   it('a session model from a loaded `.` line shadows the stored one', () => {
@@ -552,7 +632,9 @@ describe('the model library and Subcircuit Manager store', () => {
     expect(listModels(storage)).toHaveLength(1);
     expect(getModel('myCirc', storage)!.sizeX).toBe(2);  // the file's copy wins
 
-    removeModel('myCirc', storage);
+    // The outcome names the store that was emptied, which is what tells the
+    // Manager a saved model of this name is still there to offer to delete.
+    expect(removeModel('myCirc', storage)).toBe('session');
     // Deleting the shadow uncovers the saved model instead of destroying it:
     // the Manager still lists one `myCirc`, now the user's own.
     expect(storage.getItem('subcircuit:myCirc')).not.toBeNull();
@@ -609,6 +691,112 @@ describe('the model library and Subcircuit Manager store', () => {
       compositeModelLine({ ...parseCompositeModelLine(MODEL_LINE)!, sizeX: 1 }),
     );
     expect(getModel('myCirc', storage)!.sizeX).toBe(7);
+  });
+
+  it('a rename storage refuses leaves the saved model exactly where it was', () => {
+    // The remaining destroy path: deleting the original first and only then
+    // writing the copy loses the model outright when the write is refused, as
+    // it survives in the session map alone and the next load clears that. The
+    // copy goes first, so a refusal is a no-op the user is told about.
+    const inner = fakeStorage();
+    saveModel(parseCompositeModelLine(MODEL_LINE)!, inner);
+    const storage = fullStorage(inner);
+
+    expect(renameModel('myCirc', 'renamed', storage)).toBe('refused');
+    expect(inner.getItem('subcircuit:myCirc')).not.toBeNull();
+    expect(getModel('myCirc', storage)!.name).toBe('myCirc');
+    // No half-renamed leftover in the session map either.
+    expect(getModel('renamed', storage)).toBeUndefined();
+    expect(listModels(storage).map((m) => m.name)).toEqual(['myCirc']);
+  });
+
+  it('a rename whose delete is refused reports the row left behind', () => {
+    // The copy landed, so the rename did happen, but the old key is still
+    // there and the Manager has two rows to account for.
+    const storage = stickyStorage(fakeStorage());
+    saveModel(parseCompositeModelLine(MODEL_LINE)!, storage);
+    expect(renameModel('myCirc', 'renamed', storage)).toBe('uncovered');
+    expect(getModel('renamed', storage)!.name).toBe('renamed');
+    expect(getModel('myCirc', storage)).not.toBeUndefined();
+  });
+
+  it('a delete storage refuses is not reported as a delete', () => {
+    const storage = stickyStorage(fakeStorage());
+    saveModel(parseCompositeModelLine(MODEL_LINE)!, storage);
+    expect(removeModel('myCirc', storage)).toBe('refused');
+    expect(getModel('myCirc', storage)!.name).toBe('myCirc');
+    // Still `none` for a name nothing holds: the two are different events.
+    expect(removeModel('ghost', storage)).toBe('none');
+  });
+
+  it('the Manager Delete clears both stores over the real library', () => {
+    // The delete-through path end to end, with `removeModel` and `nameTaken`
+    // themselves rather than a stub that only counts calls.
+    const storage = fakeStorage();
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    saveModel({ ...base, sizeX: 9 }, storage);  // the user's saved model
+    registerSessionModel({ ...base, sizeX: 2 });  // the open file's copy over it
+    const answering = (answers: boolean[]) => ({
+      remove: (name: string) => removeModel(name, storage),
+      exists: (name: string) => nameTaken(name, storage),
+      confirm: () => answers.shift() ?? false,
+    });
+
+    expect(deleteSubcircuit('myCirc', answering([true, true])).outcome).toBe('deleted');
+    expect(listModels(storage)).toEqual([]);
+    expect(storage.getItem('subcircuit:myCirc')).toBeNull();
+  });
+
+  it('the Manager Delete stops at the uncovered model when told to', () => {
+    const storage = fakeStorage();
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    saveModel({ ...base, sizeX: 9 }, storage);
+    registerSessionModel({ ...base, sizeX: 2 });
+    const answering = (answers: boolean[]) => ({
+      remove: (name: string) => removeModel(name, storage),
+      exists: (name: string) => nameTaken(name, storage),
+      confirm: () => answers.shift() ?? false,
+    });
+
+    // Declining the second prompt leaves the saved model listed, on purpose.
+    expect(deleteSubcircuit('myCirc', answering([true, false])).outcome).toBe('uncovered');
+    expect(listModels(storage).map((m) => m.sizeX)).toEqual([9]);
+    // The row is now a plain saved model, so one more Delete finishes it with
+    // a single prompt.
+    expect(deleteSubcircuit('myCirc', answering([true])).outcome).toBe('deleted');
+    expect(listModels(storage)).toEqual([]);
+  });
+
+  it('the Manager Delete reports a saved model storage would not drop', () => {
+    const storage = stickyStorage(fakeStorage());
+    saveModel(parseCompositeModelLine(MODEL_LINE)!, storage);
+    const result = deleteSubcircuit('myCirc', {
+      remove: (name) => removeModel(name, storage),
+      exists: (name) => nameTaken(name, storage),
+      confirm: () => true,
+    });
+    expect(result.outcome).toBe('refused');
+    expect(result.notice).toContain('"myCirc"');
+    expect(listModels(storage)).toHaveLength(1);
+  });
+
+  it('the Manager row reports a taken name and leaves both models listed', () => {
+    // Plan test 5 without a DOM: the row's state is what the dialog renders,
+    // so this is the same assertion one level down, and the library call is
+    // the real one rather than a stub.
+    const storage = fakeStorage();
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    saveModel({ ...base, name: 'divider' }, storage);
+    saveModel({ ...base, name: 'amp' }, storage);
+
+    const typed = setSubcircuitDraft(startSubcircuitEdit('divider'), 'amp');
+    const result = commitSubcircuitEdit(typed, (oldName, newName) =>
+      renameModel(oldName, newName, storage),
+    );
+    expect(result.outcome).toBe('taken');
+    expect(result.state.editing).toBe('divider');  // still in edit mode
+    expect(result.state.error).toContain('already exists');
+    expect(listModels(storage).map((m) => m.name)).toEqual(['amp', 'divider']);
   });
 
   it('a load drops a session model that storage refused to take', () => {
@@ -692,6 +880,34 @@ describe('the store actions behind the menu rows', () => {
     expect(stored).not.toBeUndefined();
     expect(stored!.nodeList).toBe('ResistorElm 1 2\rResistorElm 2 3');
     expect(stored!.extList).toHaveLength(2);
+  });
+
+  it('Create asks before replacing a model of the same name', () => {
+    // Plan test 6 without a DOM: the dialog's OK is `commitSubcircuitCreate`
+    // over the real library and store action, with only `window.confirm`
+    // stubbed, which is all the dialog itself supplies.
+    const s = useStore.getState();
+    const ids = addLabeledDivider();
+    expect(s.createSubcircuit()).toBe(true);
+    s.saveSubcircuitDraft('amp');
+    expect(getModel('amp')!.nodeList).toBe('ResistorElm 1 2\rResistorElm 2 3');
+
+    // A second, different model, headed for the same name.
+    s.select([ids[0], ids[2]]);
+    expect(s.createSubcircuit()).toBe(true);
+    const deps = (answer: boolean) => ({
+      taken: nameTaken,
+      confirm: () => answer,
+      save: (name: string) => useStore.getState().saveSubcircuitDraft(name),
+    });
+
+    expect(commitSubcircuitCreate('amp', deps(false)).outcome).toBe('cancelled');
+    expect(getModel('amp')!.nodeList).toBe('ResistorElm 1 2\rResistorElm 2 3');
+    expect(useStore.getState().subcircuitDraft).not.toBeNull();  // still open to retype
+
+    expect(commitSubcircuitCreate('amp', deps(true)).outcome).toBe('saved');
+    expect(getModel('amp')!.nodeList).toBe('ResistorElm 1 2');
+    expect(useStore.getState().subcircuitDraft).toBeNull();
   });
 
   it('cancelSubcircuitDraft drops the draft without storing it', () => {

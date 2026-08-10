@@ -7,15 +7,15 @@
  *  where they are testable without a DOM. */
 
 import { useCallback, useReducer, useState } from 'react';
-import { listModels, removeModel, renameModel } from '../io/subcircuits';
+import { listModels, nameTaken, removeModel, renameModel } from '../io/subcircuits';
 import { useStore } from '../state/store';
 import { Dialog } from './Dialog';
 import {
   commitSubcircuitEdit,
+  deleteSubcircuit,
   NO_SUBCIRCUIT_EDIT,
   setSubcircuitDraft,
   startSubcircuitEdit,
-  type RenameOutcome,
 } from './subcircuitManager';
 
 /** One row edits at a time, so the message under it can have a fixed id for
@@ -26,25 +26,43 @@ export function SubcircuitManagerDialog() {
   const closeDialog = useStore((s) => s.closeDialog);
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const [edit, setEdit] = useState(NO_SUBCIRCUIT_EDIT);
+  /** What an action left behind that the list itself does not explain: the row
+   *  a rename or a delete left under the old name. It sits above the list
+   *  rather than in a `window.alert`, which would be read against the list as
+   *  it was before this render flushed and so contradict the screen. */
+  const [notice, setNotice] = useState<string | null>(null);
   const models = listModels();
 
-  // `renameModel`'s boolean is only ever consulted for a name that is neither
-  // blank nor unchanged, so a false at this point means the model is gone.
-  const rename = (oldName: string, newName: string): RenameOutcome =>
-    renameModel(oldName, newName) ? 'renamed' : 'missing';
-
   const commitEdit = () => {
-    const result = commitSubcircuitEdit(edit, rename);
+    // `renameModel` speaks the outcome union the edit row decides on, so this
+    // is a pass-through and not a translation.
+    const result = commitSubcircuitEdit(edit, renameModel);
     setEdit(result.state);
+    setNotice(result.notice);
     if (result.refresh) bump();
   };
 
   // Kept stable so `Dialog`'s Escape listener is not re-subscribed per render.
-  const cancelEdit = useCallback(() => setEdit(NO_SUBCIRCUIT_EDIT), []);
+  const cancelEdit = useCallback(() => {
+    setEdit(NO_SUBCIRCUIT_EDIT);
+    setNotice(null);
+  }, []);
+
+  const startEdit = (name: string) => {
+    setEdit(startSubcircuitEdit(name));
+    // Starting over drops the last message, the same rule `setSubcircuitDraft`
+    // applies to the row's own error.
+    setNotice(null);
+  };
 
   const remove = (name: string) => {
-    if (!window.confirm(`Delete subcircuit "${name}"?`)) return;
-    removeModel(name);
+    const result = deleteSubcircuit(name, {
+      remove: removeModel,
+      exists: nameTaken,
+      confirm: (message) => window.confirm(message),
+    });
+    setNotice(result.notice);
+    if (!result.refresh) return;
     setEdit(NO_SUBCIRCUIT_EDIT);
     // `bump` is what puts the shortened list on screen: with no row being
     // edited `edit` is already this very object, so the setEdit above changes
@@ -70,6 +88,13 @@ export function SubcircuitManagerDialog() {
       {models.length === 0 && (
         <p className="hint">
           No subcircuits yet. Select part of a circuit and choose File &gt; Create Subcircuit.
+        </p>
+      )}
+      {/* `status`, not `alert`: this explains what happened, it does not
+          refuse anything, so it is announced politely. */}
+      {notice && (
+        <p className="problem" role="status">
+          {notice}
         </p>
       )}
       <ul className="subcircuit-list">
@@ -105,7 +130,7 @@ export function SubcircuitManagerDialog() {
               <span className="meta">
                 {m.extList.length} pin{m.extList.length === 1 ? '' : 's'}
               </span>
-              <button type="button" onClick={() => setEdit(startSubcircuitEdit(m.name))}>
+              <button type="button" onClick={() => startEdit(m.name)}>
                 Edit
               </button>
               <button type="button" className="danger" onClick={() => remove(m.name)}>

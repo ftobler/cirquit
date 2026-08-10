@@ -251,8 +251,12 @@ export function getModel(name: string, storage: SubcircuitStorage | undefined = 
  *  merely the key's presence: overwriting an older model of the same name on a
  *  storage that then refuses the write would otherwise read the *old* line
  *  back, look like a success and drop the session copy of the model the user
- *  had just built. */
-export function saveModel(model: CompositeModel, storage: SubcircuitStorage | undefined = defaultStorage()): void {
+ *  had just built. Returns whether storage took it, which `renameModel` needs
+ *  before it dares delete the original. */
+export function saveModel(
+  model: CompositeModel,
+  storage: SubcircuitStorage | undefined = defaultStorage(),
+): boolean {
   const key = SUB_CIRCUIT_PREFIX + model.name;
   const line = compositeModelLine(model);
   if (storage) {
@@ -262,9 +266,30 @@ export function saveModel(model: CompositeModel, storage: SubcircuitStorage | un
       // Reading the key back is the real test of whether the write landed.
     }
   }
-  if (readItem(storage, key) === line) sessionModels.delete(model.name);
-  else sessionModels.set(model.name, model);
+  if (readItem(storage, key) === line) {
+    sessionModels.delete(model.name);
+    return true;
+  }
+  sessionModels.set(model.name, model);
+  return false;
 }
+
+/** True when a model already holds this name, in either store. The rename and
+ *  the Create dialog both ask before clobbering one. Asked through `getModel`
+ *  on purpose: the answer then covers exactly what a later lookup will find,
+ *  session map first and storage behind it, so a name that reports free cannot
+ *  turn out to be occupied by the time it is written. */
+export function nameTaken(name: string, storage: SubcircuitStorage | undefined = defaultStorage()): boolean {
+  return getModel(name, storage) !== undefined;
+}
+
+/** Which store a delete actually emptied. `session` means the open file's copy
+ *  went and a saved model of that name may still be there, uncovered rather
+ *  than destroyed. `refused` and `none` both removed nothing, but they are not
+ *  the same event and the Manager says different things about them: `refused`
+ *  is a model that is still there because storage would not drop the key,
+ *  `none` is a name nothing held, so the row the user clicked was stale. */
+export type RemoveOutcome = 'session' | 'stored' | 'refused' | 'none';
 
 /** Deletes a model, upstream's `remove` (CustomCompositeModel.java:513-518),
  *  but only from the store the listed model actually came from. A session
@@ -273,29 +298,83 @@ export function saveModel(model: CompositeModel, storage: SubcircuitStorage | un
  *  that merely shares the name, which is the one the shadowed row uncovers
  *  once the file's copy is gone. A row with no session entry came from
  *  storage, so that is what gets removed. */
-export function removeModel(name: string, storage: SubcircuitStorage | undefined = defaultStorage()): void {
-  if (sessionModels.delete(name)) return;
-  if (storage) {
-    try {
-      storage.removeItem(SUB_CIRCUIT_PREFIX + name);
-    } catch {
-      // Swallow.
-    }
+export function removeModel(
+  name: string,
+  storage: SubcircuitStorage | undefined = defaultStorage(),
+): RemoveOutcome {
+  if (sessionModels.delete(name)) return 'session';
+  const key = SUB_CIRCUIT_PREFIX + name;
+  if (readItem(storage, key) === null) return 'none';
+  try {
+    storage?.removeItem(key);
+  } catch {
+    // Reading the key back is the real test of whether the delete landed, the
+    // same way `saveModel` checks its write.
   }
+  return readItem(storage, key) === null ? 'stored' : 'refused';
 }
 
-/** Renames a stored model, the Manager's Edit action. Returns false for a
- *  blank or unchanged name, or when no such model exists. */
+/** How a rename ended. `taken`, `missing` and `refused` are refusals the caller
+ *  has to report; `blank` and `unchanged` are the library being asked to do
+ *  nothing. `uncovered` is a rename that succeeded while leaving the old name
+ *  still listed, see `renameModel`. The Subcircuit Manager's edit row speaks
+ *  this same union, so its commit is a pass-through rather than a
+ *  translation. */
+export type RenameOutcome =
+  | 'renamed'
+  | 'uncovered'
+  | 'taken'
+  | 'missing'
+  | 'refused'
+  | 'blank'
+  | 'unchanged';
+
+/**
+ * Renames a model, the Manager's Edit action. Refuses a name another model
+ * already holds instead of clobbering it: the rename is a copy under the new
+ * name and a delete of the old, so without the check renaming `divider` onto
+ * `amp` would delete `amp` and write `divider`'s body under its name, silently.
+ *
+ * The copy is written first and the original only dropped once storage has
+ * taken it. `nameTaken` has just proved the new name is free, so writing first
+ * can clobber nothing, while deleting first loses the model outright when the
+ * write that follows is refused: it would live on in the session map alone,
+ * which the next load clears. A refusal therefore leaves everything exactly
+ * where it was and answers `refused`. A model that was only ever in the session
+ * map is exempt, since storage never held it and the file's `.` line still
+ * carries it.
+ *
+ * Only the copy the listed row came from moves. Renaming a row that shadows a
+ * saved model of the same name (the open file's `.` line over the user's own
+ * saved subcircuit) therefore leaves that saved model behind under the old
+ * name and the list grows a second row. That is the same rule `removeModel`
+ * follows, and the only non-destructive one available: the two are different
+ * models that happen to share a name, and moving the saved one too would have
+ * to overwrite it with the file's body. The old name still resolving after the
+ * delete is what `uncovered` reports, which also covers a delete storage
+ * refused: either way a model of the old name is still listed and the Manager
+ * has to account for the extra row.
+ */
 export function renameModel(
   oldName: string,
   newName: string,
   storage: SubcircuitStorage | undefined = defaultStorage(),
-): boolean {
+): RenameOutcome {
   const model = getModel(oldName, storage);
-  if (model === undefined || newName === '' || newName === oldName) return false;
+  if (model === undefined) return 'missing';
+  if (newName === '') return 'blank';
+  if (newName === oldName) return 'unchanged';
+  if (nameTaken(newName, storage)) return 'taken';
+  const wasSaved = !sessionModels.has(oldName);
+  if (!saveModel({ ...model, name: newName }, storage) && wasSaved) {
+    // Storage refused the copy of a model it is holding. Undo the session-map
+    // fallback `saveModel` left behind, or the library would list the model
+    // twice until the next load and then lose the new name.
+    sessionModels.delete(newName);
+    return 'refused';
+  }
   removeModel(oldName, storage);
-  saveModel({ ...model, name: newName }, storage);
-  return true;
+  return nameTaken(oldName, storage) ? 'uncovered' : 'renamed';
 }
 
 // ─── building a model from a selection ───

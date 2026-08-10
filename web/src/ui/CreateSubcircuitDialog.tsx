@@ -5,8 +5,10 @@
  *  store action; this dialog only collects the name. */
 
 import { useState } from 'react';
+import { nameTaken } from '../io/subcircuits';
 import { useStore } from '../state/store';
 import { Dialog } from './Dialog';
+import { commitSubcircuitCreate } from './subcircuitManager';
 
 export function CreateSubcircuitDialog() {
   const draft = useStore((s) => s.subcircuitDraft);
@@ -15,12 +17,14 @@ export function CreateSubcircuitDialog() {
   const [error, setError] = useState<string | null>(null);
 
   const save = () => {
-    const trimmed = name.trim();
-    if (trimmed.length === 0) {
-      setError('Enter a model name.');
-      return;
-    }
-    useStore.getState().saveSubcircuitDraft(trimmed);
+    // The blank check and the overwrite prompt are one decision in
+    // `subcircuitManager`, so what OK does is testable without this dialog.
+    const result = commitSubcircuitCreate(name, {
+      taken: nameTaken,
+      confirm: (message) => window.confirm(message),
+      save: (trimmed) => useStore.getState().saveSubcircuitDraft(trimmed),
+    });
+    setError(result.error);
   };
 
   const cancel = () => {
