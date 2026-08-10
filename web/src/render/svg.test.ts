@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SvgRecorder, renderCircuitToSvg } from './svg';
-import { makeTheme } from './draw';
+import { makeTheme, voltageColor } from './draw';
 import { RESISTOR_DEF } from '../model/registry/elements/resistor';
 import { INDUCTOR_DEF } from '../model/registry/elements/inductor';
 import { DEFAULT_SETTINGS, type CircuitElement, type DrawContext } from '../model/types';
@@ -287,9 +287,7 @@ describe('SvgRecorder text', () => {
     r.fillText('a<b&c', 4, 8);
     const svg = r.toString(64, 64);
     expect(svg).toContain('<text x="4" y="8" font-size="12"');
-    expect(svg).toContain(
-      'font-family="&#39;Roboto Variable&#39;, Roboto, system-ui, sans-serif"',
-    );
+    expect(svg).toContain('font-family="&#39;Roboto Variable&#39;, Roboto, system-ui, sans-serif"');
     expect(svg).toContain('text-anchor="middle"');
     expect(svg).toContain('dominant-baseline="central"');
     expect(svg).toContain('fill="#123456"');
@@ -339,12 +337,11 @@ describe('renderCircuitToSvg', () => {
   it('emits round caps on the wire stroke and butt on the resistor', () => {
     // The recorder copies whatever strokeStyle sets, so the wire's round cap
     // must reach the SVG while the resistor's leads and body keep butt. The
-    // circuit is one wire plus one IEC resistor: one round stroke, and 46
-    // butt strokes (two leads plus the body's 44 per-segment gradient
-    // strokes: 16+6+16+6 cuts of the 32x12 box edges).
+    // circuit is one wire plus one IEC resistor: one round stroke, and three
+    // butt strokes (two leads plus the body's single gradient stroke).
     const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
     expect(svg.match(/stroke-linecap="round"/g)).toHaveLength(1);
-    expect(svg.match(/stroke-linecap="butt"/g)).toHaveLength(46);
+    expect(svg.match(/stroke-linecap="butt"/g)).toHaveLength(3);
   });
 
   it('exports the coil with bevel joins and a resistor body with miter', () => {
@@ -389,23 +386,23 @@ describe('renderCircuitToSvg', () => {
     expect(svg).not.toContain('stroke-width="2"');
   });
 
-  it('strokes the IEC resistor body per segment instead of one closed box', () => {
-    // The body shades along the voltage drop, so it is no longer one closed
-    // path: each 2-unit edge cut is its own stroke. The first top-edge
-    // segment runs from the lead1 corner, the right and left edges are cut
-    // too, and no path carries the old single closed box `d`.
+  it('strokes the IEC resistor body as one closed path with a real gradient', () => {
+    // The body shades along the voltage drop, so it is no longer 44 per-segment
+    // strokes: one closed box path carries a `url(#g0)` linear gradient whose
+    // axis runs lead1 (80,0) to lead2 (112,0). The closePath join makes the
+    // start corner a real join like the other three, which the repeated-first-
+    // point alone would not.
     const svg = renderCircuitToSvg(circuit(), DEFAULT_SETTINGS, false, null);
-    expect(svg).toContain('d="M80 -6L82 -6"');
-    expect(svg).toContain('d="M112 -6L112 -4"');
-    expect(svg).toContain('d="M80 4L80 2"');
-    expect(svg).not.toContain('d="M80 -6L112 -6L112 6L80 6L80 -6Z"');
+    expect(svg).toContain('d="M80 -6L112 -6L112 6L80 6L80 -6Z"');
+    expect(svg).toContain('stroke="url(#g0)"');
+    expect(svg).toContain('gradientUnits="userSpaceOnUse" x1="80" y1="0" x2="112" y2="0"');
   });
 
-  it('exports a gradient body as plain per-segment strokes with distinct colours', () => {
-    // A body with 10 V across it must export as ordinary per-segment strokes,
-    // each carrying its own ramp colour, and no CanvasGradient may ever reach
-    // the recorder: the recorder stores strokeStyle as a string, so a gradient
-    // object would stringify into the export as garbage.
+  it('exports a gradient body as a linearGradient def with distinct stop colours', () => {
+    // A body with 10 V across it must export as a real `<linearGradient>`
+    // referenced by `stroke="url(#g0)"`, with stops at the exact breakpoints
+    // of the colour ramp: 0 and 0.5 at the clamped positive colour, 1 at the
+    // neutral 0 V end. The old per-segment export is gone entirely.
     const rec = new SvgRecorder();
     const g: DrawContext = {
       ctx: rec,
@@ -447,10 +444,17 @@ describe('renderCircuitToSvg', () => {
       params: { resistance: 1000 },
     });
     const svg = rec.toString(200, 100);
-    const strokes = [...svg.matchAll(/stroke="(#[0-9a-fA-F]{3,8}|rgb\([^)]*\))"/g)].map((m) => m[1]);
-    expect(new Set(strokes).size).toBeGreaterThan(1);
+    expect(svg).toContain('<defs>');
+    expect(svg).toContain('<linearGradient id="g0"');
+    expect(svg).toContain('stroke="url(#g0)"');
+    // The ramp colours are the printable theme's own, not the light palette's:
+    // 10 V clamps to the positive colour and 0 V is the neutral, with the
+    // v=5 kink also clamped positive at offset 0.5.
+    expect(svg).toContain(`<stop offset="0" stop-color="${voltageColor(g, 10)}"/>`);
+    expect(svg).toContain(`<stop offset="0.5" stop-color="${voltageColor(g, 10)}"/>`);
+    expect(svg).toContain(`<stop offset="1" stop-color="${voltageColor(g, 0)}"/>`);
+    // No CanvasGradient may ever reach the recorder's string form.
     expect(svg).not.toContain('[');
-    expect(svg).not.toContain('gradient');
   });
 
   it('fills the white background like the PNG export', () => {
@@ -512,8 +516,8 @@ describe('renderCircuitToSvg', () => {
       params: {},
     };
     const blown = renderCircuitToSvg([fuse], DEFAULT_SETTINGS, false, fakeEngine([2]));
-    expect(blown.match(/<path /g)).toHaveLength(2);  // two leads only
+    expect(blown.match(/<path /g)).toHaveLength(2); // two leads only
     const intact = renderCircuitToSvg([fuse], DEFAULT_SETTINGS, false, fakeEngine([0]));
-    expect(intact.match(/<path /g)).toHaveLength(3);  // leads plus the sine body
+    expect(intact.match(/<path /g)).toHaveLength(3); // leads plus the sine body
   });
 });

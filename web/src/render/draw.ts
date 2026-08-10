@@ -342,18 +342,45 @@ export function axisColor(
 }
 
 /**
- * Strokes a polyline segment by segment, each with the axis colour at its own
- * midpoint fraction, so a two-terminal body shades along the voltage drop.
- * Colour per segment, never a CanvasGradient: the SVG recorder stores
- * strokeStyle as a string, so a gradient object would silently stringify into
- * the export. A long straight edge (an IEC box side) is cut into short
- * sub-segments so its ramp stays smooth instead of one band per side; every
- * cut shares its endpoints exactly, so butt caps leave no seam along a straight
- * run. Coils pass `cap: 'round'`, upstream's LineCap.ROUND in drawCoil, so
- * their angled joints stay covered, and `join: 'bevel'` so the near-zero-angle
- * cusps where the loops return to the axis flatten instead of spiking under
- * miter. The axis defaults to the first and last points; a closed polyline
- * (whose last point repeats the first) must pass `axis` explicitly.
+ * Gradient stops that reproduce `axisColor(g, f)` exactly along the axis. The
+ * voltage ramp is piecewise linear in `f`: the theme's colour scale mixes
+ * linearly and its kinks sit where the interpolated voltage crosses 0 and
+ * ±`voltageRange`. Stops at exactly those breakpoints (plus the two ends) let
+ * a real CanvasGradient interpolate the ramp with no error, which is what the
+ * per-segment strokes only approximated. Power mode and a zero or non-finite
+ * drop are flat: two stops at the ends both in the one colour.
+ */
+function rampStops(g: DrawContext, v0: number, v1: number): [number, string][] {
+  const colorAt = (f: number): string => axisColor(g, f, v0, v1);
+  if (g.showPowerColor || !Number.isFinite(v0) || !Number.isFinite(v1) || v0 === v1) {
+    return [[0, colorAt(0)], [1, colorAt(1)]];
+  }
+  const range = g.voltageRange || 5;
+  const fs = new Set<number>([0, 1]);
+  for (const v of [0, range, -range]) {
+    const f = (v - v0) / (v1 - v0);
+    if (f > 0 && f < 1) fs.add(f);
+  }
+  return [...fs].sort((a, b) => a - b).map((f) => [f, colorAt(f)] as [number, string]);
+}
+
+/**
+ * Strokes a polyline once with a real linear gradient along the body axis, so
+ * a two-terminal body shades smoothly along the voltage drop at any zoom. The
+ * gradient runs from the axis start at post `v0` to the axis end at post
+ * `v1`, and every point projects onto that axis exactly as the old per-2-unit
+ * strokes did, only continuously. Stops sit at the exact breakpoints of the
+ * colour ramp, so the result matches the piecewise scale rather than a naive
+ * straight blend between the two end colours.
+ *
+ * Coils pass `cap: 'round'`, upstream's LineCap.ROUND in drawCoil, so the
+ * loop ends stay covered, and `join: 'bevel'` so the near-zero-angle cusps
+ * where the loops return to the axis flatten instead of spiking under miter.
+ * The axis defaults to the first and last points; a closed polyline (whose
+ * last point repeats the first) must pass `axis` explicitly, and is stroked
+ * as a closed path so the start corner joins like the others. Selection,
+ * hover and the shift-highlighted net override the ramp with one flat colour,
+ * the same precedence `limbColor` gives a solid stroke.
  */
 export function gradientPolyline(
   g: DrawContext,
@@ -362,39 +389,49 @@ export function gradientPolyline(
     /** Colour ramp endpoints, the element's posts 0/1 by default. */
     v0?: number;
     v1?: number;
-    /** Cap for the per-segment strokes; coils pass 'round' (drawCoil's
-     *  LineCap.ROUND). Defaults butt. */
+    /** Cap for the stroke; coils pass 'round' (drawCoil's LineCap.ROUND).
+     *  Defaults butt. */
     cap?: CanvasLineCap;
-    /** Join for the per-segment strokes; coils pass 'bevel' so their loop
-     *  junctions stay flat. Defaults miter. */
+    /** Join for the stroke; coils pass 'bevel' so their loop junctions stay
+     *  flat. Defaults miter. */
     join?: CanvasLineJoin;
-    /** Body axis the fraction is measured along; defaults to `[pts[0],
-     *  pts[pts.length - 1]]`, which is right for every open body. */
+    /** Body axis the ramp runs along; defaults to `[pts[0], pts[pts.length -
+     *  1]]`, which is right for every open body. */
     axis?: [Point, Point];
   } = {},
 ): void {
   if (pts.length < 2) return;
   const axis = opts.axis ?? [pts[0], pts[pts.length - 1]];
+  const v0 = opts.v0 ?? g.voltages[0];
+  const v1 = opts.v1 ?? g.voltages[1];
+
   const ax = axis[1].x - axis[0].x;
   const ay = axis[1].y - axis[0].y;
-  const len2 = ax * ax + ay * ay;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i];
-    const b = pts[i + 1];
-    // A long straight edge is cut into sub-segments so the colour ramp along
-    // it stays smooth; short edges (coil loops, sine steps) pass through whole.
-    const steps = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.y - a.y) / 2));
-    for (let s = 0; s < steps; s++) {
-      const t0 = s / steps;
-      const t1 = (s + 1) / steps;
-      const p0 = { x: a.x + t0 * (b.x - a.x), y: a.y + t0 * (b.y - a.y) };
-      const p1 = { x: a.x + t1 * (b.x - a.x), y: a.y + t1 * (b.y - a.y) };
-      const mx = (p0.x + p1.x) / 2;
-      const my = (p0.y + p1.y) / 2;
-      const f = len2 > 0 ? ((mx - axis[0].x) * ax + (my - axis[0].y) * ay) / len2 : 0;
-      line(g, p0, p1, axisColor(g, f, opts.v0, opts.v1), 3, opts.cap, opts.join);
-    }
+  let paint: string | CanvasGradient;
+  if (g.selected) paint = g.theme.selection;
+  else if (g.hovered || g.onHighlightedNet) paint = g.theme.highlight;
+  else if (ax * ax + ay * ay === 0) {
+    // A zero-length axis has no direction to ramp along; the old code took
+    // every point's fraction as 0, so keep the colour at the start.
+    paint = axisColor(g, 0, v0, v1);
+  } else {
+    const grad = g.ctx.createLinearGradient(axis[0].x, axis[0].y, axis[1].x, axis[1].y);
+    for (const [f, color] of rampStops(g, v0, v1)) grad.addColorStop(f, color);
+    paint = grad;
   }
+
+  g.ctx.strokeStyle = paint;
+  g.ctx.lineWidth = 3;
+  // Butt is the ambient cap, miter the ambient join, exactly like `line`.
+  g.ctx.lineCap = opts.cap ?? 'butt';
+  g.ctx.lineJoin = opts.join ?? 'miter';
+  g.ctx.beginPath();
+  g.ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) g.ctx.lineTo(pts[i].x, pts[i].y);
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  if (first.x === last.x && first.y === last.y) g.ctx.closePath();
+  g.ctx.stroke();
 }
 
 export function circle(
@@ -468,7 +505,13 @@ export function rectCorners(a: Point, b: Point, halfHeight: number): [Point, Poi
  * tests can assert the four corners; `closedPolyline` makes the path a real
  * closed subpath, which the repetition alone would not.
  */
-export function bodyRect(g: DrawContext, a: Point, b: Point, halfHeight: number, color: string): void {
+export function bodyRect(
+  g: DrawContext,
+  a: Point,
+  b: Point,
+  halfHeight: number,
+  color: string,
+): void {
   const [a1, b1, b2, a2] = rectCorners(a, b, halfHeight);
   closedPolyline(g, [a1, b1, b2, a2, a1], color);
 }
@@ -545,7 +588,7 @@ export function coilPoints(a: Point, b: Point, loops: number, steps = 12): Point
   const pts: Point[] = [];
   for (let k = 0; k < loops; k++) {
     for (let s = 0; s <= steps; s++) {
-      if (k > 0 && s === 0) continue;  // duplicates the previous loop's endpoint
+      if (k > 0 && s === 0) continue; // duplicates the previous loop's endpoint
       const theta = Math.PI * (s / steps);
       // The (1 - cos theta) / 2 mapping makes the loop a true semicircle: it
       // is at full radius at the midpoint and meets the axis vertically.
@@ -646,10 +689,7 @@ export function currentDotsPath(g: DrawContext, pts: Point[], current: number): 
   let phase = g.dotPhase;
   for (let i = 0; i < pts.length - 1; i++) {
     currentDotsFrom(g, pts[i], pts[i + 1], current, phase);
-    phase = dotPhaseAfter(
-      phase,
-      Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y),
-    );
+    phase = dotPhaseAfter(phase, Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y));
   }
 }
 

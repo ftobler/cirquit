@@ -35,6 +35,7 @@ interface CtxStub {
   font: string;
   textAlign: string;
   textBaseline: string;
+  createLinearGradient: ReturnType<typeof vi.fn>;
   beginPath: ReturnType<typeof vi.fn>;
   moveTo: ReturnType<typeof vi.fn>;
   lineTo: ReturnType<typeof vi.fn>;
@@ -46,15 +47,23 @@ interface CtxStub {
   measureText: (text: string) => { width: number };
 }
 
+/** A recorded gradient, mirroring the live CanvasGradient's axis and stops. */
+interface GradientRecord {
+  stops: { offset: number; color: string }[];
+  addColorStop(offset: number, color: string): void;
+}
+
 /** Minimal canvas stub, recording geometry calls so a draw can be asserted on.
  *  `strokes` captures the strokeStyle at each stroke and `fills` the fillStyle
- *  at each fill, in draw order, which is how a per-segment gradient body or a
- *  filled bulb is asserted on. The closures read the same object the draw
+ *  at each fill, in draw order, which is how a gradient body or a filled bulb
+ *  is asserted on. `grads` captures the gradients the draw created, so the
+ *  ramp stops can be checked. The closures read the same object the draw
  *  layer writes to (`context` hands this stub to `def.draw` unchanged), so a
  *  spread copy would never see the live colour. */
-const mkCtx = (): CtxStub & { strokes: string[]; fills: string[] } => {
-  const strokes: string[] = [];
+const mkCtx = (): CtxStub & { strokes: (string | CanvasGradient)[]; fills: string[]; grads: GradientRecord[] } => {
+  const strokes: (string | CanvasGradient)[] = [];
   const fills: string[] = [];
+  const grads: GradientRecord[] = [];
   const stub = {
     fillStyle: '',
     strokeStyle: '',
@@ -64,6 +73,12 @@ const mkCtx = (): CtxStub & { strokes: string[]; fills: string[] } => {
     font: '',
     textAlign: '',
     textBaseline: '',
+    createLinearGradient: vi.fn(() => {
+      const grad: GradientRecord = { stops: [], addColorStop: () => {} };
+      grad.addColorStop = (offset: number, color: string) => grad.stops.push({ offset, color });
+      grads.push(grad);
+      return grad;
+    }),
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
@@ -74,7 +89,7 @@ const mkCtx = (): CtxStub & { strokes: string[]; fills: string[] } => {
     fillText: vi.fn(),
     measureText: (text: string) => ({ width: text.length * 6 }),
   } as CtxStub;
-  return Object.assign(stub, { strokes, fills });
+  return Object.assign(stub, { strokes, fills, grads });
 };
 
 const context = (ctx: CtxStub, overrides: Partial<DrawContext> = {}): DrawContext => ({
@@ -111,7 +126,6 @@ const context = (ctx: CtxStub, overrides: Partial<DrawContext> = {}): DrawContex
 /** Signed distance of `p` from the element's axis; the sign is the side. */
 const axisSide = (e: CircuitElement, p: Point): number =>
   (e.x2 - e.x1) * (p.y - e.y1) - (e.y2 - e.y1) * (p.x - e.x1);
-
 
 /** Param names a parse or dump function reads or writes, whatever its shape. */
 function referencedParams(fn: unknown): Set<string> {
@@ -243,7 +257,7 @@ describe('mirrored drawing geometry', () => {
     const [inPost] = postsOf(m);
     const [inLead] = opAmpInputAnchors(m);
     const [minus] = opAmpLabelAnchors(m);
-    expect(axisSide(m, inPost)).toBeGreaterThan(0);  // sanity: post off the axis
+    expect(axisSide(m, inPost)).toBeGreaterThan(0); // sanity: post off the axis
     expect(axisSide(m, inLead) * axisSide(m, inPost)).toBeGreaterThan(0);
     expect(axisSide(m, minus) * axisSide(m, inPost)).toBeGreaterThan(0);
   });
@@ -253,7 +267,7 @@ describe('mirrored drawing geometry', () => {
     const m = mirrorElement(t);
     const posts = postsOf(m);
     const [collLead, emitLead] = transistorBarContacts(m);
-    expect(axisSide(m, posts[1])).toBeGreaterThan(0);  // sanity: collector off the axis
+    expect(axisSide(m, posts[1])).toBeGreaterThan(0); // sanity: collector off the axis
     expect(axisSide(m, collLead) * axisSide(m, posts[1])).toBeGreaterThan(0);
     expect(axisSide(m, emitLead) * axisSide(m, posts[2])).toBeGreaterThan(0);
   });
@@ -349,7 +363,6 @@ describe('mosfet posts', () => {
     draw(0, -1);
     draw(9, -1);
   });
-
 
   it('dsign mirrors the source onto the -x flank of an upward element', () => {
     expect(postsOf(m(0, 0, 0, -32))).toEqual([
@@ -550,19 +563,19 @@ describe('European resistor symbol draw paths', () => {
   it.each(['resistor', 'thermistor', 'ldr'])(
     '%s euro box shades from post 0 to post 1 along the body',
     (kind) => {
-      // The gradient box is no longer one closed outline: gradientPolyline
-      // cuts each edge into 2-unit sub-segments, each stroked in the ramp
-      // colour at its own midpoint. The ramp must reach post 0's colour at
-      // the lead1 edge (the box's left side and the first top-edge stroke)
-      // and post 1's at the lead2 edge (the right side), while the four
-      // corners are still all painted.
+      // The gradient box is one closed outline stroked once with a real
+      // gradient: the ramp reaches post 0's colour at the lead1 edge (the
+      // box's left side) and post 1's at the lead2 edge (the right side),
+      // while the four corners are still all painted.
       const ctx = mkCtx();
       const e = element(kind, 0, 0, 160, 0);
       defFor(kind)?.draw(context(ctx, { showVoltageColor: true, voltages: [10, 0, 0] }), e);
       expect(ctx.strokes.length).toBeGreaterThan(2);
-      expect(ctx.strokes[0]).toBe('rgb(0,255,0)');        // lead at post 0, clamped positive
-      expect(ctx.strokes).toContain('rgb(128,128,128)');  // neutral at 0 V, the box's lead2 edge
-      expect(new Set(ctx.strokes).size).toBeGreaterThan(1);
+      expect(ctx.strokes[0]).toBe('rgb(0,255,0)'); // lead at post 0, clamped positive
+      const body = ctx.grads[ctx.grads.length - 1];
+      const colors = body.stops.map((s) => s.color);
+      expect(colors).toContain('rgb(128,128,128)'); // neutral at 0 V, the box's lead2 edge
+      expect(new Set(colors).size).toBeGreaterThan(1);
       const [lead1, lead2] = calcLeads(e, 32);
       const drawn = lineTos(ctx);
       for (const p of rectCorners(lead1, lead2, 6)) expect(drawn).toContainEqual(p);
@@ -586,21 +599,18 @@ describe('European resistor symbol draw paths', () => {
 });
 
 describe('capacitor centering', () => {
-  it.each([32, 48, 64, 96, 160, 224])(
-    'keeps the plates centred for length %i',
-    (len) => {
-      const cap = element('capacitor', 0, 0, len, 0);
-      // 8 is the plate gap upstream's `f = (dn/2-4)/dn` produces
-      // (CapacitorElm.java:100), so the leads stop 4 short of the midpoint
-      // each side.
-      const [lead1, lead2] = calcLeads(cap, 8);
-      // The plate-gap centre is the element midpoint exactly, and both plates
-      // are equidistant from it: this pins the "not 100% centered" report
-      // against the interp rounding change.
-      expect((lead1.x + lead2.x) / 2).toBe(len / 2);
-      expect(lead2.x - len / 2).toBe(len / 2 - lead1.x);
-    },
-  );
+  it.each([32, 48, 64, 96, 160, 224])('keeps the plates centred for length %i', (len) => {
+    const cap = element('capacitor', 0, 0, len, 0);
+    // 8 is the plate gap upstream's `f = (dn/2-4)/dn` produces
+    // (CapacitorElm.java:100), so the leads stop 4 short of the midpoint
+    // each side.
+    const [lead1, lead2] = calcLeads(cap, 8);
+    // The plate-gap centre is the element midpoint exactly, and both plates
+    // are equidistant from it: this pins the "not 100% centered" report
+    // against the interp rounding change.
+    expect((lead1.x + lead2.x) / 2).toBe(len / 2);
+    expect(lead2.x - len / 2).toBe(len / 2 - lead1.x);
+  });
 });
 
 describe('op-amp swapped inputs', () => {
@@ -623,7 +633,7 @@ describe('op-amp swapped inputs', () => {
     const posts = postsOf(op);
     const moveTos = ctx.moveTo.mock.calls.map((a) => ({ x: a[0], y: a[1] }));
     const lineTos = ctx.lineTo.mock.calls.map((a) => ({ x: a[0], y: a[1] }));
-    expect(axisSide(op, posts[0])).not.toBe(0);  // sanity: post off the axis
+    expect(axisSide(op, posts[0])).not.toBe(0); // sanity: post off the axis
     expect(axisSide(op, moveTos[0]) * axisSide(op, posts[0])).toBeGreaterThan(0);
     expect(axisSide(op, lineTos[0]) * axisSide(op, posts[0])).toBeGreaterThan(0);
   });
@@ -851,7 +861,7 @@ describe('fuse draw and the live melt state', () => {
     // State 0.5 = half the i2t rating: still whole, warming toward the pop.
     FUSE_DEF.draw(context(ctx, { state: 0.5 }), element('fuse', 0, 0, 160, 0));
     expect(ctx.strokes).toHaveLength(3);
-    expect(ctx.lineTo.mock.calls).toHaveLength(18);  // 2 leads + 16 sine segments
+    expect(ctx.lineTo.mock.calls).toHaveLength(18); // 2 leads + 16 sine segments
     // The body is the flat heat colour of the second ramp band, not the wire
     // colour and not a per-segment gradient.
     expect(ctx.strokes[2]).toBe('rgb(255,127,0)');
@@ -868,7 +878,7 @@ describe('lamp draw and the live temperature state', () => {
   const fillOf = (state: number): string => {
     const ctx = mkCtx();
     LAMP_DEF.draw(context(ctx, { state }), element('lamp', 0, 0, 160, 0));
-    expect(ctx.fills).toHaveLength(1);  // only the bulb disc is filled
+    expect(ctx.fills).toHaveLength(1); // only the bulb disc is filled
     return ctx.fills[0];
   };
 

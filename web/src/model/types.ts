@@ -200,6 +200,7 @@ export interface Context2D {
   font: string;
   textAlign: string;
   textBaseline: string;
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient;
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
   scale(x: number, y: number): void;
   translate(x: number, y: number): void;

@@ -54,8 +54,8 @@ function escapeXml(s: string): string {
  *  not-restored context would leak opacity onto unrelated shapes. */
 interface SavedState {
   ctm: Matrix;
-  fillStyle: string;
-  strokeStyle: string;
+  fillStyle: string | CanvasGradient | CanvasPattern;
+  strokeStyle: string | CanvasGradient | CanvasPattern;
   lineWidth: number;
   lineCap: string;
   lineJoin: string;
@@ -66,16 +66,53 @@ interface SavedState {
   dash: number[] | null;
 }
 
+/** A recorder-held linear gradient: the canvas `CanvasGradient` shape, with
+ *  the stops and axis kept so `toString` can emit the `<linearGradient>` def.
+ *  The coordinates stay in the draw layer's own space, untransformed: the SVG
+ *  shape that references the gradient carries the `transform` attribute, and
+ *  per the spec a gradient is treated as part of the referencing element's
+ *  geometry, so the same matrix maps both (spec 13.2.1). The live canvas
+ *  applies its transform to the gradient coordinates at creation time and to
+ *  the path at stroke time, which agrees whenever a gradient is created and
+ *  used in one draw call, as gradientPolyline always does. */
+class RecLinearGradient implements CanvasGradient {
+  readonly stops: { offset: number; color: string }[] = [];
+
+  constructor(
+    readonly id: string,
+    readonly x0: number,
+    readonly y0: number,
+    readonly x1: number,
+    readonly y1: number,
+  ) {}
+
+  addColorStop(offset: number, color: string): void {
+    this.stops.push({ offset, color });
+    // The canvas spec sorts stops by offset, with the last stop winning ties;
+    // SVG requires ascending offsets, and a stable sort keeps the tie order.
+    this.stops.sort((a, b) => a.offset - b.offset);
+  }
+
+  /** The `<linearGradient>` element with `userSpaceOnUse` units, its vector in
+   *  the same coordinates the referencing path's `d` uses. */
+  toSvg(): string {
+    const stops = this.stops
+      .map((s) => `<stop offset="${fmt(s.offset)}" stop-color="${s.color}"/>`)
+      .join('');
+    return (
+      `<linearGradient id="${this.id}" gradientUnits="userSpaceOnUse" x1="${fmt(this.x0)}" y1="${fmt(this.y0)}"` +
+      ` x2="${fmt(this.x1)}" y2="${fmt(this.y1)}">${stops}</linearGradient>`
+    );
+  }
+}
+
 /** A 2D context that records every drawing call as SVG markup instead of
  *  painting pixels. Only the surface `Context2D` declares is implemented;
  *  anything else the draw layer needs must be added to both, and stays
  *  headless so the export keeps running under node. */
 export class SvgRecorder implements Context2D {
-  // `Context2D` types these as the full union because a real context can hold
-  // a gradient or pattern; the draw layer only ever assigns hex or rgb strings,
-  // which is all the recorder stores.
-  fillStyle: string = '#000000';
-  strokeStyle: string = '#000000';
+  fillStyle: string | CanvasGradient | CanvasPattern = '#000000';
+  strokeStyle: string | CanvasGradient | CanvasPattern = '#000000';
   lineWidth = 1;
   lineCap = 'butt';
   lineJoin = 'miter';
@@ -89,6 +126,12 @@ export class SvgRecorder implements Context2D {
   private ctm: Matrix = [...IDENTITY];
   private stack: SavedState[] = [];
   private shapes: string[] = [];
+  /** Every gradient `createLinearGradient` handed out, in creation order, so
+   *  the referenced ones can be emitted as defs. */
+  private grads: RecLinearGradient[] = [];
+  /** The subset of `grads` actually painted, the only defs worth emitting. */
+  private usedGrads = new Set<string>();
+  private gradSeq = 0;
   /** The current path's `d`, kept after stroke/fill like the canvas default
    *  path, so a filled circle can then be stroked with the same geometry. */
   private d = '';
@@ -101,6 +144,12 @@ export class SvgRecorder implements Context2D {
 
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void {
     this.ctm = [a, b, c, d, e, f];
+  }
+
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient {
+    const grad = new RecLinearGradient(`g${this.gradSeq++}`, x0, y0, x1, y1);
+    this.grads.push(grad);
+    return grad;
   }
 
   scale(x: number, y: number): void {
@@ -177,8 +226,7 @@ export class SvgRecorder implements Context2D {
     } else {
       this.d += `M${fmt(x)} ${fmt(y)}`;
     }
-    this.d +=
-      `L${fmt(x + w)} ${fmt(y)}L${fmt(x + w)} ${fmt(y + h)}L${fmt(x)} ${fmt(y + h)}Z`;
+    this.d += `L${fmt(x + w)} ${fmt(y)}L${fmt(x + w)} ${fmt(y + h)}L${fmt(x)} ${fmt(y + h)}Z`;
     this.hasSubpath = true;
     this.subpathStartX = x;
     this.subpathStartY = y;
@@ -253,27 +301,27 @@ export class SvgRecorder implements Context2D {
     if (!this.d) return;
     const dash = this.dash ? ` stroke-dasharray="${this.dash.join(',')}"` : '';
     this.shapes.push(
-      `<path d="${this.d}" fill="none" stroke="${this.strokeStyle}" stroke-width="${fmt(this.lineWidth)}"` +
+      `<path d="${this.d}" fill="none"${this.paintAttr('stroke', this.strokeStyle)} stroke-width="${fmt(this.lineWidth)}"` +
         ` stroke-linecap="${this.lineCap}" stroke-linejoin="${this.lineJoin}"${dash}${this.commonAttrs()}/>`,
     );
   }
 
   fill(): void {
     if (!this.d) return;
-    this.shapes.push(`<path d="${this.d}" fill="${this.fillStyle}"${this.commonAttrs()}/>`);
+    this.shapes.push(`<path d="${this.d}"${this.paintAttr('fill', this.fillStyle)}${this.commonAttrs()}/>`);
   }
 
   /** fillRect is a standalone fill, not part of the current path. */
   fillRect(x: number, y: number, w: number, h: number): void {
     this.shapes.push(
-      `<rect x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" fill="${this.fillStyle}"${this.commonAttrs()}></rect>`,
+      `<rect x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}"${this.paintAttr('fill', this.fillStyle)}${this.commonAttrs()}></rect>`,
     );
   }
 
   fillText(text: string, x: number, y: number): void {
     this.shapes.push(
       `<text x="${fmt(x)}" y="${fmt(y)}" font-size="${fmt(this.fontSize())}" font-family="${escapeXml(this.fontFamily())}"` +
-        ` text-anchor="${this.anchor()}" dominant-baseline="${this.baseline()}" fill="${this.fillStyle}"${this.commonAttrs()}>` +
+        ` text-anchor="${this.anchor()}" dominant-baseline="${this.baseline()}"${this.paintAttr('fill', this.fillStyle)}${this.commonAttrs()}>` +
         escapeXml(text) +
         '</text>',
     );
@@ -290,13 +338,35 @@ export class SvgRecorder implements Context2D {
     this.dash = segments.length > 0 ? [...segments] : null;
   }
 
-  /** Emits the whole SVG document for a `width` by `height` canvas. */
+  /** Emits the whole SVG document for a `width` by `height` canvas, with the
+   *  used gradients first as `<defs>` so a `stroke="url(#gN)"` resolves. */
   toString(width: number, height: number): string {
+    const defs =
+      this.usedGrads.size > 0
+        ? `<defs>${this.grads
+            .filter((g) => this.usedGrads.has(g.id))
+            .map((g) => g.toSvg())
+            .join('')}</defs>`
+        : '';
     return (
       `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(width)}" height="${fmt(height)}">` +
+      defs +
       this.shapes.join('') +
       '</svg>'
     );
+  }
+
+  /** A paint value as an SVG attribute: a plain colour passes through, a
+   *  recorder gradient becomes a `url(#id)` reference and is marked for the
+   *  defs. Any other object is a programmer error, so it falls through to the
+   *  string form the recorder would otherwise silently emit. The leading space
+   *  keeps the attribute joined onto whatever preceded it. */
+  private paintAttr(name: string, style: string | CanvasGradient | CanvasPattern): string {
+    if (style instanceof RecLinearGradient) {
+      this.usedGrads.add(style.id);
+      return ` ${name}="url(#${style.id})"`;
+    }
+    return ` ${name}="${style}"`;
   }
 
   /** The attributes every shape shares: the cumulative transform and the

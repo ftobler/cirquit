@@ -59,6 +59,7 @@ interface CtxStub {
   font: string;
   textAlign: string;
   textBaseline: string;
+  createLinearGradient: ReturnType<typeof vi.fn>;
   beginPath: ReturnType<typeof vi.fn>;
   moveTo: ReturnType<typeof vi.fn>;
   lineTo: ReturnType<typeof vi.fn>;
@@ -83,6 +84,17 @@ interface TextRecord {
   baseline: string;
 }
 
+/** A recorded gradient: the axis the body ramps along and the stops the draw
+ *  added, mirroring the real CanvasGradient the live context hands back. */
+interface GradientRecord {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  stops: { offset: number; color: string }[];
+  addColorStop(offset: number, color: string): void;
+}
+
 const mkCtx = (): {
   ctx: CanvasRenderingContext2D;
   stub: CtxStub;
@@ -90,13 +102,15 @@ const mkCtx = (): {
   arcs: { x: number; y: number }[];
   texts: TextRecord[];
   paths: { x: number; y: number }[][];
-  strokes: { style: string; width: number; join: string }[];
+  strokes: { style: string | CanvasGradient; width: number; join: string }[];
+  grads: GradientRecord[];
 } => {
   const calls: string[] = [];
   const arcs: { x: number; y: number }[] = [];
   const texts: TextRecord[] = [];
   const paths: { x: number; y: number }[][] = [];
-  const strokes: { style: string; width: number; join: string }[] = [];
+  const strokes: { style: string | CanvasGradient; width: number; join: string }[] = [];
+  const grads: GradientRecord[] = [];
   const record = (name: string) => vi.fn(() => calls.push(name));
   const stub: CtxStub = {
     fillStyle: '',
@@ -108,6 +122,19 @@ const mkCtx = (): {
     font: '',
     textAlign: '',
     textBaseline: '',
+    createLinearGradient: vi.fn((x0: number, y0: number, x1: number, y1: number) => {
+      calls.push('createLinearGradient');
+      const grad: GradientRecord = {
+        x0,
+        y0,
+        x1,
+        y1,
+        stops: [],
+        addColorStop: (offset, color) => grad.stops.push({ offset, color }),
+      };
+      grads.push(grad);
+      return grad;
+    }),
     beginPath: record('beginPath'),
     moveTo: vi.fn((x: number, y: number) => {
       calls.push('moveTo');
@@ -136,7 +163,14 @@ const mkCtx = (): {
     setLineDash: record('setLineDash'),
     fillText: vi.fn((text: string, x: number, y: number) => {
       calls.push('fillText');
-      texts.push({ text, x, y, font: stub.font, align: stub.textAlign, baseline: stub.textBaseline });
+      texts.push({
+        text,
+        x,
+        y,
+        font: stub.font,
+        align: stub.textAlign,
+        baseline: stub.textBaseline,
+      });
     }),
     // The same heuristic the SVG recorder uses, `length * size * 0.6`, so the
     // font-shrink loop terminates headlessly like it does on a real canvas.
@@ -146,7 +180,16 @@ const mkCtx = (): {
       return { width: text.length * size * 0.6 };
     },
   };
-  return { ctx: stub as unknown as CanvasRenderingContext2D, stub, calls, arcs, texts, paths, strokes };
+  return {
+    ctx: stub as unknown as CanvasRenderingContext2D,
+    stub,
+    calls,
+    arcs,
+    texts,
+    paths,
+    strokes,
+    grads,
+  };
 };
 
 const context = (ctx: CanvasRenderingContext2D, dotPhase: number): DrawContext => ({
@@ -262,11 +305,11 @@ describe('theme colour overrides', () => {
     // 26-37). A future palette tweak has to argue with this claim. The light
     // theme is a deliberate legibility divergence and is not covered here.
     const theme = makeTheme();
-    expect(theme.positive).toBe('#00ff00');  // Color.green
-    expect(theme.negative).toBe('#ff0000');  // Color.red
-    expect(theme.neutral).toBe('#808080');   // Color.gray
-    expect(theme.currentDot).toBe('#ffff00');  // Color.yellow
-    expect(theme.selection).toBe('#00ffff');  // Color.cyan
+    expect(theme.positive).toBe('#00ff00'); // Color.green
+    expect(theme.negative).toBe('#ff0000'); // Color.red
+    expect(theme.neutral).toBe('#808080'); // Color.gray
+    expect(theme.currentDot).toBe('#ffff00'); // Color.yellow
+    expect(theme.selection).toBe('#00ffff'); // Color.cyan
   });
 });
 
@@ -301,7 +344,11 @@ describe('current dots', () => {
     const { ctx, arcs, calls } = mkCtx();
     currentDotsPath(
       context(ctx, TOO_FAST),
-      [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }],
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 200, y: 0 },
+      ],
       1e-3,
     );
     // One flow line per segment, not just the first.
@@ -317,7 +364,15 @@ describe('current dots', () => {
     // segment length, so arcs land at path distances 0, 16 and 32. Drawing
     // every segment from the same raw phase would add arcs at 8 and 24.
     const { ctx, arcs } = mkCtx();
-    currentDotsPath(context(ctx, 0), [{ x: 0, y: 0 }, { x: 8, y: 0 }, { x: 40, y: 0 }], 1e-3);
+    currentDotsPath(
+      context(ctx, 0),
+      [
+        { x: 0, y: 0 },
+        { x: 8, y: 0 },
+        { x: 40, y: 0 },
+      ],
+      1e-3,
+    );
     expect(arcs.map((a) => a.x)).toEqual([0, 16, 32]);
   });
 
@@ -399,9 +454,9 @@ describe('per-post current dots', () => {
     expect(onBase.length).toBeGreaterThan(0);
     expect(onCollector.length).toBeGreaterThan(0);
     expect(onEmitter.length).toBeGreaterThan(0);
-    expect(onBase.length).toBe(6);  // 84 units of base lead
-    expect(onCollector.length).toBe(2);  // 16 units of collector lead
-    expect(onEmitter.length).toBe(2);  // 16 units of emitter lead
+    expect(onBase.length).toBe(6); // 84 units of base lead
+    expect(onCollector.length).toBe(2); // 16 units of collector lead
+    expect(onEmitter.length).toBe(2); // 16 units of emitter lead
   });
 
   it('a transistor with a dead collector draws no collector dots', () => {
@@ -418,9 +473,9 @@ describe('per-post current dots', () => {
       },
       transistorElement(),
     );
-    expect(arcs.filter((a) => Math.abs(a.y) < 1).length).toBeGreaterThan(0);  // base
-    expect(arcs.filter((a) => a.y > 2).length).toBeGreaterThan(0);  // emitter
-    expect(arcs.filter((a) => a.y < -2)).toEqual([]);  // collector dead
+    expect(arcs.filter((a) => Math.abs(a.y) < 1).length).toBeGreaterThan(0); // base
+    expect(arcs.filter((a) => a.y > 2).length).toBeGreaterThan(0); // emitter
+    expect(arcs.filter((a) => a.y < -2)).toEqual([]); // collector dead
   });
 
   it('draws no dots for either element when showCurrent is off', () => {
@@ -533,7 +588,15 @@ describe('stroke caps', () => {
     // resistor, the bodyRect loop) must not soften its corners. The coil opts
     // out through its own bevel join argument, asserted in the coil tests.
     const { ctx } = mkCtx();
-    polyline(context(ctx, 0), [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 32, y: 0 }], '#ffffff');
+    polyline(
+      context(ctx, 0),
+      [
+        { x: 0, y: 0 },
+        { x: 16, y: 8 },
+        { x: 32, y: 0 },
+      ],
+      '#ffffff',
+    );
     expect(ctx.lineCap).toBe('butt');
     expect(ctx.lineJoin).toBe('miter');
   });
@@ -549,14 +612,21 @@ describe('coil bevel joins', () => {
     voltages,
   });
 
-  it('gradientPolyline passes a bevel join through to its per-segment strokes', () => {
+  it('gradientPolyline passes a bevel join through to its single gradient stroke', () => {
     const { ctx, strokes } = mkCtx();
-    gradientPolyline(drawCtx(ctx, [10, 0]), [{ x: 0, y: 0 }, { x: 32, y: 0 }], {
-      cap: 'round',
-      join: 'bevel',
-    });
-    expect(strokes.length).toBeGreaterThan(0);
-    expect(strokes.every((s) => s.join === 'bevel')).toBe(true);
+    gradientPolyline(
+      drawCtx(ctx, [10, 0]),
+      [
+        { x: 0, y: 0 },
+        { x: 32, y: 0 },
+      ],
+      {
+        cap: 'round',
+        join: 'bevel',
+      },
+    );
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0].join).toBe('bevel');
   });
 
   it('the inductor body strokes bevel while its leads stay miter', () => {
@@ -592,7 +662,7 @@ describe('coil bevel joins', () => {
     });
     const bevels = strokes.filter((s) => s.join === 'bevel');
     expect(bevels.length).toBeGreaterThan(0);
-    expect(bevels.every((s) => s.width === 3)).toBe(true);  // the coil's body weight
+    expect(bevels.every((s) => s.width === 3)).toBe(true); // the coil's body weight
   });
 
   it('both transformer windings stroke bevel, not the leads or core bars', () => {
@@ -613,7 +683,7 @@ describe('coil bevel joins', () => {
     expect(strokes.slice(-2).every((s) => s.join === 'miter')).toBe(true);
     const bevels = strokes.filter((s) => s.join === 'bevel');
     expect(bevels.length).toBeGreaterThan(0);
-    expect(bevels.every((s) => s.width === 3)).toBe(true);  // the winding's body weight
+    expect(bevels.every((s) => s.width === 3)).toBe(true); // the winding's body weight
   });
 
   it('a resistor body keeps every stroke miter', () => {
@@ -645,11 +715,24 @@ describe('stroke widths', () => {
 
   it('polyline() and closedPolyline() default to the same 3-unit weight', () => {
     const { ctx } = mkCtx();
-    polyline(context(ctx, 0), [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 32, y: 0 }], '#ffffff');
+    polyline(
+      context(ctx, 0),
+      [
+        { x: 0, y: 0 },
+        { x: 16, y: 8 },
+        { x: 32, y: 0 },
+      ],
+      '#ffffff',
+    );
     expect(ctx.lineWidth).toBe(3);
     closedPolyline(
       context(ctx, 0),
-      [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 32, y: 0 }, { x: 0, y: 0 }],
+      [
+        { x: 0, y: 0 },
+        { x: 16, y: 8 },
+        { x: 32, y: 0 },
+        { x: 0, y: 0 },
+      ],
       '#ffffff',
     );
     expect(ctx.lineWidth).toBe(3);
@@ -691,7 +774,13 @@ describe('stroke widths', () => {
     const { ctx } = mkCtx();
     closedPolyline(
       context(ctx, 0),
-      [{ x: 0, y: 0 }, { x: 32, y: 0 }, { x: 32, y: 16 }, { x: 0, y: 16 }, { x: 0, y: 0 }],
+      [
+        { x: 0, y: 0 },
+        { x: 32, y: 0 },
+        { x: 32, y: 16 },
+        { x: 0, y: 16 },
+        { x: 0, y: 0 },
+      ],
       '#ffffff',
     );
     expect(ctx.lineWidth).toBe(3);
@@ -706,7 +795,13 @@ describe('closed outlines', () => {
     const { ctx, calls } = mkCtx();
     closedPolyline(
       context(ctx, 0),
-      [{ x: 0, y: -6 }, { x: 32, y: -6 }, { x: 32, y: 6 }, { x: 0, y: 6 }, { x: 0, y: -6 }],
+      [
+        { x: 0, y: -6 },
+        { x: 32, y: -6 },
+        { x: 32, y: 6 },
+        { x: 0, y: 6 },
+        { x: 0, y: -6 },
+      ],
       '#ffffff',
       3,
     );
@@ -726,7 +821,15 @@ describe('closed outlines', () => {
     // Only the closed helper must close. A caller that deliberately retraces
     // (the fuse sine, the XOR gate's second curve) must not gain a join.
     const { ctx, calls } = mkCtx();
-    polyline(context(ctx, 0), [{ x: 0, y: 0 }, { x: 16, y: 8 }, { x: 0, y: 0 }], '#ffffff');
+    polyline(
+      context(ctx, 0),
+      [
+        { x: 0, y: 0 },
+        { x: 16, y: 8 },
+        { x: 0, y: 0 },
+      ],
+      '#ffffff',
+    );
     expect(calls).not.toContain('closePath');
   });
 
@@ -977,6 +1080,7 @@ describe('lamp current-dot carry', () => {
       font: '',
       textAlign: '',
       textBaseline: '',
+      createLinearGradient: vi.fn(() => ({ stops: [], addColorStop: vi.fn() })),
       beginPath: vi.fn(),
       moveTo: vi.fn(),
       lineTo: vi.fn(),
@@ -1034,7 +1138,11 @@ describe('fuse melt colour', () => {
 
 describe('zigzag resistor body', () => {
   /** Signed perpendicular distance of `p` from the `a`-`b` axis. */
-  const signedDistance = (a: { x: number; y: number }, b: { x: number; y: number }, p: { x: number; y: number }): number =>
+  const signedDistance = (
+    a: { x: number; y: number },
+    b: { x: number; y: number },
+    p: { x: number; y: number },
+  ): number =>
     ((b.y - a.y) * (p.x - a.x) - (b.x - a.x) * (p.y - a.y)) /
     Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
 
@@ -1049,7 +1157,14 @@ describe('zigzag resistor body', () => {
       // (see the thermistor/LDR comments), so the first peak lands on the
       // -hs side; the alternating zigzag is symmetric, so the orientation
       // reads identically.
-      -ZIGZAG_HS, ZIGZAG_HS, -ZIGZAG_HS, ZIGZAG_HS, -ZIGZAG_HS, ZIGZAG_HS, -ZIGZAG_HS, ZIGZAG_HS,
+      -ZIGZAG_HS,
+      ZIGZAG_HS,
+      -ZIGZAG_HS,
+      ZIGZAG_HS,
+      -ZIGZAG_HS,
+      ZIGZAG_HS,
+      -ZIGZAG_HS,
+      ZIGZAG_HS,
     ]);
     // The peaks land on the odd 1/16 fractions upstream strokes (ResistorElm.
     // java:85-91): 2, 6, 10, ..., 30 for a 32-unit body.
@@ -1060,9 +1175,7 @@ describe('zigzag resistor body', () => {
     const pts = zigzagPoints({ x: 0, y: 0 }, { x: 16, y: 16 }, ZIGZAG_HS);
     const dists = pts.slice(1, -1).map((p) => signedDistance({ x: 0, y: 0 }, { x: 16, y: 16 }, p));
     // Exact float math: each excursion sits 8 off the axis, alternating sides.
-    expect(dists.map((d) => Math.round(d))).toEqual([
-      8, -8, 8, -8, 8, -8, 8, -8,
-    ]);
+    expect(dists.map((d) => Math.round(d))).toEqual([8, -8, 8, -8, 8, -8, 8, -8]);
   });
 
   it('degenerates to the endpoints when the leads coincide', () => {
@@ -1074,10 +1187,16 @@ describe('zigzag resistor body', () => {
     // The thermistor and LDR reuse their 6-unit box height for the zigzag,
     // while the resistor and pot pass ZIGZAG_HS (8): the half-height is the
     // caller's choice, so the helper must honour it exactly.
-    expect(zigzagPoints({ x: 0, y: 0 }, { x: 32, y: 0 }, 6).slice(1, -1).map((p) => p.y)).toEqual([
-      -6, 6, -6, 6, -6, 6, -6, 6,
-    ]);
-    expect(zigzagPoints({ x: 0, y: 0 }, { x: 32, y: 0 }, 6).slice(1, -1).map((p) => p.y)).not.toContain(8);
+    expect(
+      zigzagPoints({ x: 0, y: 0 }, { x: 32, y: 0 }, 6)
+        .slice(1, -1)
+        .map((p) => p.y),
+    ).toEqual([-6, 6, -6, 6, -6, 6, -6, 6]);
+    expect(
+      zigzagPoints({ x: 0, y: 0 }, { x: 32, y: 0 }, 6)
+        .slice(1, -1)
+        .map((p) => p.y),
+    ).not.toContain(8);
   });
 });
 
@@ -1119,7 +1238,7 @@ describe('body voltage gradient', () => {
   it('axisVoltage honours an explicit post pair', () => {
     const gg = g(mkCtx().ctx);
     expect(axisVoltage(gg, 0.5, 6, 4)).toBe(5);
-    expect(axisVoltage(gg, 1.5, 6, 4)).toBe(4);  // still clamped to the pair
+    expect(axisVoltage(gg, 1.5, 6, 4)).toBe(4); // still clamped to the pair
   });
 
   it('axisColor falls back to the flat power colour under Show Power', () => {
@@ -1127,7 +1246,7 @@ describe('body voltage gradient', () => {
     // the power colour and the ramp disappears entirely (ResistorElm.java:80).
     const gg = g(mkCtx().ctx, { showPowerColor: true, showVoltageColor: false, power: 1e6 });
     const colour = axisColor(gg, 0);
-    expect(colour).toBe('rgb(255,0,0)');  // dissipated power saturates the negative end
+    expect(colour).toBe('rgb(255,0,0)'); // dissipated power saturates the negative end
     expect(axisColor(gg, 1)).toBe(colour);
   });
 
@@ -1136,110 +1255,133 @@ describe('body voltage gradient', () => {
     expect(axisColor(gg, 0.5)).toBe(voltageColor(gg, 5));
   });
 
-  it('a v0=10, v1=0 body ramps its strokes from positive to neutral', () => {
-    const { ctx, strokes } = mkCtx();
+  it('a v0=10, v1=0 body ramps its gradient from positive to neutral', () => {
+    const { ctx, strokes, grads } = mkCtx();
     const gg = g(ctx, { showVoltageColor: true });
-    gradientPolyline(gg, [{ x: 16, y: 0 }, { x: 48, y: 0 }]);
-    // One 32-unit edge, cut into 16 two-unit sub-segments, each stroked in
-    // the ramp colour at its own midpoint fraction (k + 0.5) / 16.
-    expect(strokes).toHaveLength(16);
-    const expected = (k: number) => voltageColor(gg, 10 * (1 - (k + 0.5) / 16));
-    strokes.forEach((s, k) => expect(s.style).toBe(expected(k)));
-    expect(strokes[0].style).toBe('rgb(0,255,0)');  // clamped positive at the 10 V end
-    // The last segment is near the neutral 0 V end, so the ramp moved.
-    expect(strokes[strokes.length - 1].style).not.toBe('rgb(0,255,0)');
+    gradientPolyline(gg, [
+      { x: 16, y: 0 },
+      { x: 48, y: 0 },
+    ]);
+    // One 32-unit edge, stroked once with a real gradient: stops at the exact
+    // breakpoints of the ramp, 0 and 0.5 at the clamped positive colour (the
+    // 10 V end and the v=5 kink both saturate) and 1 at the neutral 0 V end.
+    expect(strokes).toHaveLength(1);
+    expect(grads[0].stops.map((s) => s.offset)).toEqual([0, 0.5, 1]);
+    expect(grads[0].stops[0].color).toBe('rgb(0,255,0)');
+    expect(grads[0].stops[1].color).toBe('rgb(0,255,0)');
+    expect(grads[0].stops[2].color).toBe(voltageColor(gg, 0));
   });
 
   it('the ramp is monotonic across the body', () => {
-    // A small drop inside the colour scale, so every segment is a distinct
+    // A small drop inside the colour scale, so every stop is a distinct
     // blend: the red channel must climb strictly from the positive end (low
     // red) to the negative end (high red) with no doubling back.
-    const { ctx, strokes } = mkCtx();
+    const { ctx, grads } = mkCtx();
     const gg = g(ctx, { showVoltageColor: true, voltages: [2, -2] });
-    gradientPolyline(gg, [{ x: 16, y: 0 }, { x: 48, y: 0 }]);
-    const red = (s: string) => Number(/rgb\((\d+),/.exec(s)?.[1]);
-    expect(red(strokes[0].style)).toBeLessThan(red(strokes[strokes.length - 1].style));
-    for (let i = 1; i < strokes.length; i++) {
-      expect(red(strokes[i].style)).toBeGreaterThan(red(strokes[i - 1].style));
+    gradientPolyline(gg, [
+      { x: 16, y: 0 },
+      { x: 48, y: 0 },
+    ]);
+    const red = (c: string) => Number(/rgb\((\d+),/.exec(c)?.[1]);
+    const colors = grads[0].stops.map((s) => s.color);
+    expect(red(colors[0])).toBeLessThan(red(colors[colors.length - 1]));
+    for (let i = 1; i < colors.length; i++) {
+      expect(red(colors[i])).toBeGreaterThan(red(colors[i - 1]));
     }
   });
 
   it('a no-drop body is one uniform colour, no banding', () => {
-    const { ctx, strokes } = mkCtx();
+    const { ctx, strokes, grads } = mkCtx();
     const gg = g(ctx, { showVoltageColor: true, voltages: [5, 5] });
-    gradientPolyline(gg, [{ x: 16, y: 0 }, { x: 48, y: 0 }]);
-    expect(new Set(strokes.map((s) => s.style)).size).toBe(1);
-    expect(strokes[0].style).toBe('rgb(0,255,0)');
+    gradientPolyline(gg, [
+      { x: 16, y: 0 },
+      { x: 48, y: 0 },
+    ]);
+    // A zero drop has no kinks to stop at, so the two end stops share the one
+    // colour and the whole body reads uniform at any zoom.
+    expect(strokes).toHaveLength(1);
+    expect(new Set(grads[0].stops.map((s) => s.color)).size).toBe(1);
+    expect(grads[0].stops[0].color).toBe('rgb(0,255,0)');
   });
 
   it('swapping the posts reverses the colour order exactly', () => {
-    // The geometry is unchanged and mirrors about the body centre, so the
-    // sub-segment at fraction f under [0,10] meets the same voltage as the
-    // one at 1-f under [10,0]: an exact reversal, not an approximation.
+    // The geometry is unchanged and mirrors about the body centre, so the stop
+    // at fraction f under [0,10] meets the same voltage as the one at 1-f under
+    // [10,0]: an exact reversal, not an approximation.
     const draw = (voltages: number[]): string[] => {
-      const { ctx, strokes } = mkCtx();
+      const { ctx, grads } = mkCtx();
       const gg = g(ctx, { showVoltageColor: true, voltages, euroResistors: false });
       RESISTOR_DEF.draw(gg, element());
-      return strokes.map((s) => s.style).slice(2);  // drop the two leads
+      return grads[0].stops.map((s) => s.color);
     };
     const forward = draw([10, 0]);
     const backward = draw([0, 10]);
-    expect(backward[0]).toBe(forward[forward.length - 1]);
-    expect(backward[backward.length - 1]).toBe(forward[0]);
-    forward.forEach((c, k) => expect(backward[forward.length - 1 - k]).toBe(c));
+    expect(backward).toEqual([...forward].reverse());
   });
 
-  it('a resistor with a drop strokes its first body segment positive and its last near neutral', () => {
-    const { ctx, strokes } = mkCtx();
+  it('a resistor with a drop ramps its body from positive to neutral', () => {
+    const { ctx, strokes, grads } = mkCtx();
     const gg = g(ctx, { showVoltageColor: true, euroResistors: false });
     RESISTOR_DEF.draw(gg, element());
-    // Two leads first, then the zigzag body: the ramp runs from the lead1 end
-    // (10 V, clamped positive) to the lead2 end (0 V, near neutral).
-    const body = strokes.slice(2).map((s) => s.style);
-    expect(body.length).toBeGreaterThan(2);
-    expect(body[0]).toBe('rgb(0,255,0)');
-    expect(body[body.length - 1]).not.toBe('rgb(0,255,0)');
+    // Two leads first, then the zigzag body stroked once with a gradient: the
+    // ramp runs from the lead1 end (10 V, clamped positive) to the lead2 end
+    // (0 V, neutral).
+    expect(strokes).toHaveLength(3);
+    expect(grads[0].stops[0].color).toBe('rgb(0,255,0)');
+    expect(grads[0].stops[grads[0].stops.length - 1].color).toBe('rgb(128,128,128)');
   });
 
   it('a no-drop resistor body is one uniform colour', () => {
-    const { ctx, strokes } = mkCtx();
+    const { ctx, grads } = mkCtx();
     const gg = g(ctx, { showVoltageColor: true, voltages: [5, 5], euroResistors: false });
     RESISTOR_DEF.draw(gg, element());
-    expect(new Set(strokes.map((s) => s.style)).size).toBe(1);
+    expect(new Set(grads[0].stops.map((s) => s.color)).size).toBe(1);
   });
 
   it('Show Power flattens the resistor body to the power colour', () => {
     // Upstream's `else` branch: the body takes the flat power colour, no
     // ramp, while the leads keep their plain node colours (drawLeads), so the
-    // two lead strokes are wire and only the body is uniform.
-    const { ctx, strokes } = mkCtx();
-    const gg = g(ctx, { showPowerColor: true, showVoltageColor: false, power: 1e6, euroResistors: false });
+    // two lead strokes are wire and only the body gradient is uniform.
+    const { ctx, strokes, grads } = mkCtx();
+    const gg = g(ctx, {
+      showPowerColor: true,
+      showVoltageColor: false,
+      power: 1e6,
+      euroResistors: false,
+    });
     RESISTOR_DEF.draw(gg, element());
-    expect(strokes).toHaveLength(2 + 64);  // two leads plus the 64 zigzag cuts
-    const body = strokes.slice(2).map((s) => s.style);
-    expect(new Set(body).size).toBe(1);
-    expect(body[0]).toBe('rgb(255,0,0)');
+    expect(strokes).toHaveLength(3); // two leads plus the one body gradient stroke
+    expect(new Set(grads[0].stops.map((s) => s.color)).size).toBe(1);
+    expect(grads[0].stops[0].color).toBe('rgb(255,0,0)');
   });
 
   it('gradientPolyline strokes coils with round caps', () => {
     // drawCoil sets LineCap.ROUND upstream (CircuitElm.java:989); the helper
-    // passes the cap through to its per-segment strokes so the angled coil
+    // passes the cap through to its single gradient stroke so the angled coil
     // joints stay covered.
     const { ctx, strokes } = mkCtx();
-    gradientPolyline(g(ctx, { showVoltageColor: true }), [{ x: 0, y: 0 }, { x: 32, y: 0 }], {
-      cap: 'round',
-    });
-    expect(strokes).toHaveLength(16);
-    expect(strokes[0].width).toBe(3);  // the body stroke weight
+    gradientPolyline(
+      g(ctx, { showVoltageColor: true }),
+      [
+        { x: 0, y: 0 },
+        { x: 32, y: 0 },
+      ],
+      {
+        cap: 'round',
+      },
+    );
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0].width).toBe(3); // the body stroke weight
     expect(ctx.lineCap).toBe('round');
   });
 
   it('a transformer winding shades across its own two posts', () => {
-    // The primary spans posts 0 and 2, the secondary posts 1 and 3: each coil
-    // must ramp between its own pair, not the element's posts 0/1. Four leads
-    // come first, then the primary coil (10 V -> 0 V), then the secondary
-    // (0 V -> 10 V), then the text-coloured core bars.
-    const { ctx, strokes } = mkCtx();
+    // Each winding spans its own post pair, not the element's posts 0/1, and
+    // the csign flip that reverses the coil direction swaps v0/v1 to match:
+    // both coils run from their 10 V end (green) to their 0 V end (neutral).
+    // Four leads come first, then the primary coil gradient, then the
+    // secondary, then the text-coloured core bars.
+    const { ctx, strokes, grads } = mkCtx();
     const gg = g(ctx, { showVoltageColor: true, voltages: [10, 0, 0, 10] });
     TRANSFORMER_DEF.draw(gg, {
       id: 1,
@@ -1252,9 +1394,11 @@ describe('body voltage gradient', () => {
       params: {},
     });
     expect(strokes.length).toBeGreaterThan(6);
-    expect(strokes[4].style).toBe('rgb(0,255,0)');  // primary coil starts at its 10 V end
-    const coils = strokes.slice(4, strokes.length - 2);  // drop the leads and core bars
-    expect(new Set(coils.map((s) => s.style)).size).toBeGreaterThan(1);  // it ramps
+    expect(grads).toHaveLength(2);
+    for (const stops of grads.map((grad) => grad.stops)) {
+      expect(stops[0].color).toBe('rgb(0,255,0)'); // each winding starts at its 10 V end
+      expect(stops[stops.length - 1].color).toBe('rgb(128,128,128)'); // and ends at 0 V
+    }
   });
 });
 
@@ -1283,10 +1427,15 @@ describe('canvas font', () => {
     };
     // The registry is one file per element type, so scan the whole directory.
     for (const f of await readdir(new URL('../model/registry', import.meta.url))) {
-      if (f.endsWith('.ts')) files[`registry/${f}`] = new URL(`../model/registry/${f}`, import.meta.url).pathname;
+      if (f.endsWith('.ts'))
+        files[`registry/${f}`] = new URL(`../model/registry/${f}`, import.meta.url).pathname;
     }
     for (const f of await readdir(new URL('../model/registry/elements', import.meta.url))) {
-      if (f.endsWith('.ts')) files[`registry/elements/${f}`] = new URL(`../model/registry/elements/${f}`, import.meta.url).pathname;
+      if (f.endsWith('.ts'))
+        files[`registry/elements/${f}`] = new URL(
+          `../model/registry/elements/${f}`,
+          import.meta.url,
+        ).pathname;
     }
     const offenders: string[] = [];
     for (const [name, path] of Object.entries(files)) {
@@ -1331,7 +1480,9 @@ describe('chip pin labels inside the housing', () => {
 
   /** The drawn body rectangle: drawChip strokes the housing last, so the last
    *  recorded path is the closed polyline of its four corners. */
-  const housingRect = (paths: { x: number; y: number }[][]): { minX: number; maxX: number; minY: number; maxY: number } => {
+  const housingRect = (
+    paths: { x: number; y: number }[][],
+  ): { minX: number; maxX: number; minY: number; maxY: number } => {
     const p = paths[paths.length - 1];
     return {
       minX: Math.min(...p.map((q) => q.x)),
@@ -1361,9 +1512,9 @@ describe('chip pin labels inside the housing', () => {
     // W reads inward from just inside the left edge, E from the right edge.
     const [w, e] = texts;
     expect(w.align).toBe('left');
-    expect(w.x).toBe(21);  // textloc.x (32) - (cspc - 5)
+    expect(w.x).toBe(21); // textloc.x (32) - (cspc - 5)
     expect(e.align).toBe('right');
-    expect(e.x).toBe(75);  // textloc.x (64) + (cspc - 5)
+    expect(e.x).toBe(75); // textloc.x (64) + (cspc - 5)
   });
 
   it('keeps labels inside on a FLAG_SMALL chip, where the margin is tightest', () => {
@@ -1378,16 +1529,16 @@ describe('chip pin labels inside the housing', () => {
       expect(box.max).toBeLessThan(body.maxX);
     }
     const [w, e] = texts;
-    expect(w.x).toBe(13);  // textloc.x (16) - (cspc - 5)
-    expect(e.x).toBe(35);  // textloc.x (32) + (cspc - 5)
+    expect(w.x).toBe(13); // textloc.x (16) - (cspc - 5)
+    expect(e.x).toBe(35); // textloc.x (32) + (cspc - 5)
   });
 
   it('shrinks a long label until it fits the space available', () => {
     const { texts } = draw(0, 2, 3, [{ side: 'W', pos: 0, text: 'ABCDEFG' }]);
     const [t] = texts;
     const box = labelBox(t);
-    expect(box.max - box.min).toBeLessThanOrEqual(24);  // cspc*2 - 8
-    expect(box.max - box.min).toBeLessThan(84);  // the unsqueezed width at font 20
+    expect(box.max - box.min).toBeLessThanOrEqual(24); // cspc*2 - 8
+    expect(box.max - box.min).toBeLessThan(84); // the unsqueezed width at font 20
   });
 
   it('grants a wider budget on a wide chip with no vertical pins', () => {
@@ -1395,7 +1546,7 @@ describe('chip pin labels inside the housing', () => {
     const wide = draw(0, 3, 3, [{ side: 'W', pos: 0, text: 'ABCDEFG' }]).texts[0];
     const fontPx = (font: string) => Number(/^(\d+)px/.exec(font)?.[1]);
     expect(fontPx(wide.font)).toBeGreaterThan(fontPx(narrow.font));
-    expect(labelBox(wide).max - labelBox(wide).min).toBeLessThanOrEqual(40);  // cspc*2.5 + cspc*(sizeX-3)
+    expect(labelBox(wide).max - labelBox(wide).min).toBeLessThanOrEqual(40); // cspc*2.5 + cspc*(sizeX-3)
   });
 
   it('keeps the narrow budget when a vertical pin could collide', () => {
@@ -1518,8 +1669,7 @@ describe('chip pin labels inside the housing', () => {
       const bars = paths.filter((p) => {
         if (p.length !== 2 || p[0].y !== p[1].y) return false;
         return (
-          Math.abs(p[0].y - (t.y - asc)) < 1e-9 &&
-          Math.abs(Math.abs(p[1].x - p[0].x) - sw) < 1e-9
+          Math.abs(p[0].y - (t.y - asc)) < 1e-9 && Math.abs(Math.abs(p[1].x - p[0].x) - sw) < 1e-9
         );
       });
       expect(bars).toHaveLength(1);
@@ -1577,10 +1727,7 @@ describe('transmission line body wave', () => {
 
   it('falls back to the flat body when the wave array is empty', () => {
     const { ctx, calls, strokes } = mkCtx();
-    TRANSMISSION_LINE_DEF.draw(
-      { ...context(ctx, 0), voltages: [0, 0, 0, 0], wave: [] },
-      tl(),
-    );
+    TRANSMISSION_LINE_DEF.draw({ ...context(ctx, 0), voltages: [0, 0, 0, 0], wave: [] }, tl());
     // The four leads and the far edge only: no per-strip strokes appear.
     expect(calls.filter((c) => c === 'stroke').length).toBe(5);
     expect(strokes.length).toBe(5);
@@ -1628,6 +1775,7 @@ describe('current dot direction', () => {
       font: '',
       textAlign: '',
       textBaseline: '',
+      createLinearGradient: vi.fn(() => ({ stops: [], addColorStop: vi.fn() })),
       beginPath: vi.fn(),
       moveTo: vi.fn(),
       lineTo: vi.fn(),
@@ -1661,7 +1809,12 @@ describe('current dot direction', () => {
     pts.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.01);
 
   /** Draw `def` at `phase`, returning the dot arcs. */
-  const drawAt = (def: { draw(g: DrawContext, e: CircuitElement): void }, e: CircuitElement, phase: number, conventional = true): Point[] => {
+  const drawAt = (
+    def: { draw(g: DrawContext, e: CircuitElement): void },
+    e: CircuitElement,
+    phase: number,
+    conventional = true,
+  ): Point[] => {
     const { ctx, arcs } = dotCtx();
     def.draw({ ...context(ctx, phase), current: 0.01, voltages: [5, 0, 0], conventional }, e);
     return dots(arcs);
@@ -1673,7 +1826,11 @@ describe('current dot direction', () => {
    *  mid-path), so no dot sits at the head and the first check fails; a run
    *  that starts at the head but points away fails the second. Both checks
    *  therefore fail on the mirrored draw. */
-  const expectAdvances = (def: { draw(g: DrawContext, e: CircuitElement): void }, e: CircuitElement, path: Point[]): void => {
+  const expectAdvances = (
+    def: { draw(g: DrawContext, e: CircuitElement): void },
+    e: CircuitElement,
+    path: Point[],
+  ): void => {
     const dir = unit({ x: path[1].x - path[0].x, y: path[1].y - path[0].y });
     expect(hasDot(drawAt(def, e, 0), path[0])).toBe(true);
     expect(
@@ -1691,7 +1848,10 @@ describe('current dot direction', () => {
     expectAdvances(
       RESISTOR_DEF,
       { id: 1, kind: 'resistor', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: {} },
-      [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
     );
   });
 
@@ -1704,7 +1864,10 @@ describe('current dot direction', () => {
     expectAdvances(
       VOLTAGE_DEF,
       { id: 1, kind: 'voltage', x1: 0, y1: 100, x2: 0, y2: 0, flags: 0, params: { waveform: 0 } },
-      [{ x: 0, y: 100 }, { x: 0, y: 0 }],
+      [
+        { x: 0, y: 100 },
+        { x: 0, y: 0 },
+      ],
     );
   });
 
@@ -1716,8 +1879,20 @@ describe('current dot direction', () => {
     // (railLead, RailElm.java:43), so the path head is (83,0).
     expectAdvances(
       RAIL_DEF,
-      { id: 1, kind: 'rail', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: { waveform: 0, maxVoltage: 5 } },
-      [{ x: 83, y: 0 }, { x: 0, y: 0 }],
+      {
+        id: 1,
+        kind: 'rail',
+        x1: 0,
+        y1: 0,
+        x2: 100,
+        y2: 0,
+        flags: 0,
+        params: { waveform: 0, maxVoltage: 5 },
+      },
+      [
+        { x: 83, y: 0 },
+        { x: 0, y: 0 },
+      ],
     );
   });
 
@@ -1824,21 +1999,45 @@ describe('current dot direction', () => {
     const stepE = dotPhaseStep(current, 50, dt, false);
     expect(stepC).toBeGreaterThan(0);
     expect(stepE).toBeCloseTo(-stepC, 12);
-    const cases: Array<{ def: { draw(g: DrawContext, e: CircuitElement): void }; e: CircuitElement; path: Point[] }> = [
+    const cases: Array<{
+      def: { draw(g: DrawContext, e: CircuitElement): void };
+      e: CircuitElement;
+      path: Point[];
+    }> = [
       {
         def: RESISTOR_DEF,
         e: { id: 1, kind: 'resistor', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: {} },
-        path: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+        path: [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+        ],
       },
       {
         def: RAIL_DEF,
-        e: { id: 1, kind: 'rail', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: { waveform: 0, maxVoltage: 5 } },
-        path: [{ x: 83, y: 0 }, { x: 0, y: 0 }],
+        e: {
+          id: 1,
+          kind: 'rail',
+          x1: 0,
+          y1: 0,
+          x2: 100,
+          y2: 0,
+          flags: 0,
+          params: { waveform: 0, maxVoltage: 5 },
+        },
+        path: [
+          { x: 83, y: 0 },
+          { x: 0, y: 0 },
+        ],
       },
       {
         def: MOSFET_DEF,
         e: mosfet(1),
-        path: [{ x: 100, y: -16 }, { x: 78, y: -16 }, { x: 78, y: 16 }, { x: 100, y: 16 }],
+        path: [
+          { x: 100, y: -16 },
+          { x: 78, y: -16 },
+          { x: 78, y: 16 },
+          { x: 100, y: 16 },
+        ],
       },
     ];
     for (const { def, e, path } of cases) {
