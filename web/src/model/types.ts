@@ -1,7 +1,7 @@
 /** Core data model. Geometry and presentation live here; the Rust engine only
  *  ever sees terminal coordinates and parameters. */
 
-import type { CustomLogicModel } from '../io/netlist/types';
+import type { CompositeEngineSpec, CustomLogicModel } from '../io/netlist/types';
 
 export interface Point {
   x: number;
@@ -56,11 +56,13 @@ export interface CircuitElement {
    *
    * The OTA reuses the same string carrier for a different payload: the raw
    * `_`-joined composite child-dump tokens from a saved `402` line, one string
-   * per child, which the engine parses itself. Distinct payload shapes are
-   * discriminated by the element kind; a string array never appears on a
-   * custom-logic element and a model object never on an OTA.
+   * per child, which the engine parses itself. A custom-composite `410`
+   * element uses it for the resolved `.`-line model converted to the engine's
+   * `CompositeEngineSpec` (`{model, external, dumps}`). Distinct payload
+   * shapes are discriminated by the element kind; a string array never appears
+   * on a custom-logic element and a model object never on an OTA.
    */
-  model?: CustomLogicModel | string[];
+  model?: CustomLogicModel | CompositeEngineSpec | string[];
   /** Keyboard shortcut that toggles this element (the switch keyShortcut).
    *  Session-only: upstream serializes it only in the XML format
    *  (SwitchElm.java:79-90), never the .txt netlist, so it is deliberately
@@ -115,6 +117,13 @@ export interface ElementDef {
    *  key. Absent means the element is not reachable from the keyboard. */
   shortcut?: string;
   postCount: number;
+  /** Per-element terminal count overriding the static `postCount`. Only the
+   *  custom composite defines it: its post count comes from the resolved model,
+   *  which is unknown when the def is written, so the rotate, drag-post and
+   *  collapsed-axis gates read this to treat a resolved multi-pin part as the
+   *  part it is rather than as its fallback stub. Absent (every other def)
+   *  means `postCount` is exact. */
+  postCountOf?(e: CircuitElement): number;
   /** How many stored endpoints (`x1,y1`, `x2,y2`) the user can drag
    *  independently. Differs from `postCount` only for parts whose free end is
    *  a control point rather than a terminal: a ground hangs its symbol off

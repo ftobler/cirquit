@@ -176,6 +176,19 @@ function ensureWasm(): Promise<void> {
   return wasmReady;
 }
 
+/** The engine kind an element builds as. The custom-composite `410` element
+ *  stores and draws under `customComposite`, but the engine only registers the
+ *  generic `composite` kind (mod.rs:152), so a resolved one (whose `e.model`
+ *  carries the `CompositeEngineSpec` `Composite::from_spec` parses) bridges to
+ *  it. An unresolved composite maps to a kind nothing supports instead:
+ *  `from_spec` returns None on a missing payload and `circuit.rs:259-260`
+ *  would fail the whole build, so the part is dropped from the spec the same
+ *  way any other unsupported element is. */
+function engineKindOf(e: CircuitElement): string {
+  if (e.kind !== 'customComposite') return e.kind;
+  return e.model !== undefined ? 'composite' : '';
+}
+
 export class SimEngine {
   private sim: WasmSimulator;
   private kinds: Set<string>;
@@ -212,7 +225,7 @@ export class SimEngine {
     scopes: Scope[],
     widthOf: WidthResolver = defaultWidth,
   ): string | null {
-    const usable = elements.filter((e) => this.supports(e.kind));
+    const usable = elements.filter((e) => this.supports(engineKindOf(e)));
     this.order = usable.map((e) => e.id);
     this.indexById = new Map(this.order.map((id, i) => [id, i]));
     this.postOffsetById = new Map();
@@ -236,7 +249,7 @@ export class SimEngine {
         if (e.state !== undefined) params[e.kind === 'fuse' ? 'blown' : 'position'] = e.state;
         return {
           id: e.id,
-          kind: e.kind,
+          kind: engineKindOf(e),
           // Round at the boundary as the last line of defence: the store keeps
           // endpoints integral, but a future writer that bypasses it must not
           // reach serde's `[i32; 2]` with a fraction.

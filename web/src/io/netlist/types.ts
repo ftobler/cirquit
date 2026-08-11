@@ -131,6 +131,25 @@ export interface SubcircuitPin {
 }
 
 /**
+ * The engine's `spec.model` JSON for a generic `composite` element, the
+ * payload a `410` element resolves its model name against
+ * (CompositeModel, composite.rs:123-129). Exactly the three fields the engine
+ * reads: the `\r`-separated child model lines, the external node ids in the
+ * model's `extList` post order, and the `_`-joined child dump tokens. The
+ * frontend never re-derives this from the `410` line; the referenced `.` line
+ * (or the library copy of it) is the model's source, so `e.model` and the
+ * model that defines the element's geometry stay in one place.
+ */
+export interface CompositeEngineSpec {
+  /** The `\r`-separated child model lines, e.g. `ResistorElm 1 2\rResistorElm 2 3`. */
+  model: string;
+  /** The external node ids in `extList` order, which is the post order. */
+  external: number[];
+  /** The `_`-joined child dump tokens, one per model line, in order. */
+  dumps: string[];
+}
+
+/**
  * A subcircuit model parsed from a `.` line
  * (`. <escaped name> <flags> <sizeX> <sizeY> <extCount> <name node pos side>...
  * <escaped nodeList> <escaped elmDump>`, CustomCompositeModel.undump,

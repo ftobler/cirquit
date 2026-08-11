@@ -14,6 +14,7 @@ import {
   clearSessionModels,
   describeBuildFailure,
   getModel,
+  modelToEngineSpec,
   parseCompositeModelLine,
   registerSessionModel,
   renameCompositeModelLine,
@@ -104,16 +105,21 @@ const clone = (s: Snapshot): Snapshot => ({
     // vectors inside it are arrays; clone them so a snapshot can never alias
     // the live element. The OTA's model is the same carrier holding a string
     // array (the composite child-dump tokens), which clones as a plain copy.
+    // The composite's own engine spec is the third payload shape: its external
+    // and dump vectors are arrays too, and the `external` key is what tells the
+    // two object payloads apart (a custom-logic model never carries one).
     if (e.model) {
       copy.model = Array.isArray(e.model)
         ? [...e.model]
-        : {
-            ...e.model,
-            inputs: [...e.model.inputs],
-            outputs: [...e.model.outputs],
-            rulesLeft: [...e.model.rulesLeft],
-            rulesRight: [...e.model.rulesRight],
-          };
+        : 'external' in e.model
+          ? { ...e.model, external: [...e.model.external], dumps: [...e.model.dumps] }
+          : {
+              ...e.model,
+              inputs: [...e.model.inputs],
+              outputs: [...e.model.outputs],
+              rulesLeft: [...e.model.rulesLeft],
+              rulesRight: [...e.model.rulesRight],
+            };
     }
     return copy;
   }),
@@ -939,13 +945,30 @@ function createAppStore() {
       const clean = text.replace(/[\r\n]/g, '');
       // A labeled node's text is structural, not display-only: the engine
       // merges nodes that share a label, so it must reload to learn the
-      // change. A custom-logic model name is structural too: the model fixes
-      // the post count, which only a rebuild can reallocate. Every other
-      // text-bearing element is display-only and can take the fast path
-      // without restarting the simulation.
-      const reload = target.kind === 'labeledNode' || target.kind === 'customLogic';
+      // change. A custom-logic or custom-composite model name is structural
+      // too: the model fixes the post count, which only a rebuild can
+      // reallocate. Every other text-bearing element is display-only and can
+      // take the fast path without restarting the simulation.
+      const reload =
+        target.kind === 'labeledNode' ||
+        target.kind === 'customLogic' ||
+        target.kind === 'customComposite';
       return {
-        elements: s.elements.map((e) => (e.id === id ? { ...e, text: clean } : e)),
+        elements: s.elements.map((e) => {
+          if (e.id !== id) return e;
+          const next = { ...e, text: clean };
+          // A composite rename changes which model the engine builds, so the
+          // resolved payload has to follow the name the way placement resolves
+          // it; leaving the old model would simulate the previous subcircuit
+          // under the new geometry. An unresolvable name clears the payload
+          // and the part falls back to its stub body.
+          if (target.kind === 'customComposite') {
+            const model = clean === '' ? undefined : getModel(clean);
+            if (model === undefined) delete next.model;
+            else next.model = modelToEngineSpec(model);
+          }
+          return next;
+        }),
         revision: reload ? s.revision + 1 : s.revision,
         paramRevision: reload ? s.paramRevision : s.paramRevision + 1,
       };

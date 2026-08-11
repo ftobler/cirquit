@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SimEngine } from '../../engine/simulator';
-import { defFor, toolDef } from '../../model/registry';
+import { defFor, postCountOf, toolDef } from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
 import {
   isZoomOnly,
@@ -99,7 +99,7 @@ export function useCanvasInteractions(
     if (drag.mode !== 'place') return;
     const e = state.elements.find((x) => x.id === drag.id);
     const def = e ? defFor(e.kind) : undefined;
-    if (e && def && def.postCount > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
+    if (e && def && postCountOf(e) > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
       state.select([e.id]);
       state.deleteSelected();
     } else if (e && e.kind === 'wire') {
@@ -492,7 +492,7 @@ export function useCanvasInteractions(
       // almost never meant. Do not delete mid-drag: the user may be passing
       // through on the way somewhere. On release, undo the whole drag and say
       // why.
-      if (drag.moved && e && def && def.postCount > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
+      if (drag.moved && e && def && postCountOf(e) > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
         state.undo();
         state.setStatus('Reverted: that drag would have collapsed the element to a point.');
       }
@@ -504,7 +504,7 @@ export function useCanvasInteractions(
     if (drag.mode === 'rowcol') {
       const collapsed = drag.captured.some((c) => {
         const e = state.elements.find((q) => q.id === c.id);
-        return e !== undefined && (defFor(e.kind)?.postCount ?? 0) > 1 && e.x1 === e.x2 && e.y1 === e.y2;
+        return e !== undefined && postCountOf(e) > 1 && e.x1 === e.x2 && e.y1 === e.y2;
       });
       if (collapsed) {
         state.undo();

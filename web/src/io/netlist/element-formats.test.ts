@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { postsOf } from '../../model/registry';
 import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE } from '../../model/registry/flags';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
 import type { CustomLogicModel } from './types';
+import { clearSessionModels, parseCompositeModelLine, registerSessionModel } from '../subcircuits';
 
 const CIRCUITS_DIR = fileURLToPath(new URL('../../../public/circuits', import.meta.url));
 
@@ -1939,6 +1940,73 @@ describe('custom logic file format', () => {
     const model = parsed.elements[0].model as CustomLogicModel;
     expect(model.rulesLeft).toEqual(['aA', '00']);
     expect(model.rulesRight).toEqual(['10', '00']);
+  });
+});
+
+describe('custom composite file format', () => {
+  const HEADER = '$ 1 0.000005 10 50 5 43 5e-11\n';
+  /** The subcircuit.test.ts divider fixture: `in` on node 1 north, `out` on
+   *  node 3 south, two 1k resistors. */
+  const MODEL_LINE =
+    '. myCirc 0 2 2 2 in 1 0 0 out 3 0 1 ' +
+    'ResistorElm\\s1\\s2\\rResistorElm\\s2\\s3 ' +
+    '0\\\\s1000\\s0\\\\s1000';
+  /** The port's own 410 shape: one escaped model-name token after the flags. */
+  const ELEMENT_LINE = '410 0 0 96 0 0 myCirc';
+
+  afterEach(() => clearSessionModels());
+
+  it('parses a `.` line and a 410 element into the engine payload', () => {
+    const parsed = parseCircuit(HEADER + MODEL_LINE + '\n' + ELEMENT_LINE + '\n');
+    // The `.` line is not an element: it rides in passthrough, in place.
+    expect(parsed.elements).toHaveLength(1);
+    expect(parsed.passthrough).toContain(MODEL_LINE);
+    const el = parsed.elements[0];
+    expect(el.kind).toBe('customComposite');
+    expect(el.text).toBe('myCirc');
+    // The payload shape `Composite::from_spec` parses (composite.rs): the
+    // model lines, the external node ids in extList order, the `_`-joined
+    // child dumps from the `.` line's elmDump.
+    expect(el.model).toEqual({
+      model: 'ResistorElm 1 2\rResistorElm 2 3',
+      external: [1, 3],
+      dumps: ['0_1000', '0_1000'],
+    });
+  });
+
+  it('re-emits the `.` line and 410 element byte-for-byte', () => {
+    const text = HEADER + MODEL_LINE + '\n' + ELEMENT_LINE + '\n';
+    const parsed = parseCircuit(text);
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toBe(text);
+    const again = parseCircuit(out);
+    expect(again.elements[0].model).toEqual(parsed.elements[0].model);
+    expect(again.elements[0].text).toEqual(parsed.elements[0].text);
+  });
+
+  it('draws the resolved model pin table once the load registers it', () => {
+    // parseCircuit is pure, so the geometry lookup needs the model registered
+    // the way loadNetlist registers a file's `.` lines before any drawing.
+    registerSessionModel(parseCompositeModelLine(MODEL_LINE)!);
+    const parsed = parseCircuit(HEADER + MODEL_LINE + '\n' + ELEMENT_LINE + '\n');
+    const el = parsed.elements[0];
+    // The two pins: `in` north and `out` south of the 2x2 body.
+    expect(postsOf(el)).toHaveLength(2);
+  });
+
+  it('a 410 line with an unresolvable name keeps the name and stays on the fallback', () => {
+    const parsed = parseCircuit(HEADER + ELEMENT_LINE + '\n');
+    const el = parsed.elements[0];
+    expect(el.text).toBe('myCirc');
+    expect(el.model).toBeUndefined();
+    // The fallback stub body, one west pin on a 1x1 chip.
+    expect(postsOf(el)).toHaveLength(1);
   });
 });
 

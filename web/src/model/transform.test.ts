@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { postsOf } from './registry';
 import { canMirror, canRotate, canSwap, mirrorElement, rotateElement, swapTerminalOrder } from './transform';
+import {
+  clearSessionModels,
+  modelToEngineSpec,
+  parseCompositeModelLine,
+  registerSessionModel,
+} from '../io/subcircuits';
 import type { CircuitElement } from './types';
 
 const element = (
@@ -56,6 +62,48 @@ describe('capability gates', () => {
     expect(canSwap(element('resistor', 0, 0, 160, 0))).toBe(true);
     expect(canSwap(element('transistor', 0, 0, 160, 0))).toBe(false);
     expect(canSwap(element('ground', 0, 0, 0, 0))).toBe(false);
+  });
+});
+
+describe('custom composite capability gates follow the resolved model', () => {
+  beforeEach(() => clearSessionModels());
+
+  /** A two-pin model: `in` on node 1 (west), `out` on node 3 (east). */
+  const MODEL_LINE =
+    '. myCirc 0 1 2 2 in 1 0 2 out 3 0 3 ' +
+    'ResistorElm\\s1\\s2\\rResistorElm\\s2\\s3 ' +
+    '0\\\\s1000\\s0\\\\s1000';
+
+  const resolved = () => {
+    const model = parseCompositeModelLine(MODEL_LINE)!;
+    registerSessionModel(model);
+    return {
+      ...element('customComposite', 0, 0, 64, 0),
+      text: 'myCirc',
+      model: modelToEngineSpec(model),
+    };
+  };
+
+  it('a resolved multi-pin composite rotates; the fallback stub stays put', () => {
+    const r = resolved();
+    expect(postsOf(r)).toHaveLength(2);
+    expect(canRotate(r)).toBe(true);
+    // The chip is a rigid body: a quarter turn about the midpoint stays a
+    // quarter turn, and the two posts ride it.
+    const turned = rotateElement(r);
+    expect(Math.abs(turned.y2 - turned.y1)).toBe(64);
+    expect(postsOf(turned)).toHaveLength(2);
+
+    const stub = element('customComposite', 0, 0, 64, 0);
+    expect(postsOf(stub)).toHaveLength(1);
+    expect(canRotate(stub)).toBe(false);
+    expect(rotateElement(stub)).toEqual(stub);
+  });
+
+  it('a resolved two-pin composite swaps terminals; a stub cannot', () => {
+    const r = resolved();
+    expect(canSwap(r)).toBe(true);
+    expect(canSwap(element('customComposite', 0, 0, 64, 0))).toBe(false);
   });
 });
 

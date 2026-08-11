@@ -5,7 +5,7 @@
  */
 
 import type { Box, CircuitElement, Point } from '../model/types';
-import { defFor, postsOf } from '../model/registry';
+import { defFor, postCountOf, postsOf } from '../model/registry';
 
 /** Shortest distance from `p` to the segment `a`-`b`. */
 export function distanceToSegment(p: Point, a: Point, b: Point): number {
@@ -226,7 +226,7 @@ export function distanceToElement(p: Point, e: CircuitElement): number {
     // be clicked to ctrl-drag it. Other single-post parts (text, readouts)
     // keep their stray `x2, y2` out of hit-testing.
     const def = defFor(e.kind);
-    if ((def?.draggablePosts ?? def?.postCount ?? 0) > 1) {
+    if ((def?.draggablePosts ?? postCountOf(e)) > 1) {
       return Math.min(near, distanceToSegment(p, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }));
     }
     return near;

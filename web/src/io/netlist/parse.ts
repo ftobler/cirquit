@@ -13,7 +13,7 @@ import type {
   TransistorModel,
 } from './types';
 import { unescapeToken } from './tokens';
-import { parseCompositeModelLine } from '../subcircuits';
+import { modelToEngineSpec, parseCompositeModelLine } from '../subcircuits';
 
 /** Thermal voltage the diode model's forward-drop derivation uses
  *  (DiodeModel.java:32). */
@@ -264,6 +264,10 @@ export function parseCircuit(text: string): ParsedCircuit {
   const unsupported: string[] = [];
   const order: NetlistLine[] = [];
   const compositeModels: CompositeModel[] = [];
+  // A `.` line repeated under the same name shadows its predecessors in the
+  // library, so the by-name map keeps the last one; the 410 resolution below
+  // must agree with the session map the store registers from this array.
+  const compositeModelsByName = new Map<string, CompositeModel>();
   const diodeModels = new Map<string, DiodeModel>();
   const transistorModels = new Map<string, TransistorModel>();
   const customLogicModels = new Map<string, CustomLogicModel>();
@@ -491,7 +495,10 @@ export function parseCircuit(text: string): ParsedCircuit {
       // model. A partial line is preserved but never resolves, degrading like
       // any other truncated model line.
       const model = parseCompositeModelLine(lineText);
-      if (model !== null) compositeModels.push(model);
+      if (model !== null) {
+        compositeModels.push(model);
+        compositeModelsByName.set(model.name, model);
+      }
       passthrough.push(lineText);
       order.push({ kind: 'other', line: rawLine });
       continue;
@@ -620,7 +627,16 @@ export function parseCircuit(text: string): ParsedCircuit {
   // custom-logic `208` element carries its model name in `text` (the Model
   // Name field), so it resolves against the `!` library into the structured
   // model the engine is handed; a miss leaves it on the defaults, exactly like
-  // upstream's `getModelWithNameOrCopy` returning the copied fallback.
+  // upstream's `getModelWithNameOrCopy` returning the copied fallback. A
+  // custom-composite `410` element resolves its `text` the same way, against
+  // the file's own `.` lines: on a hit `e.model` becomes the `CompositeEngineSpec`
+  // (`{model, external, dumps}`) the engine's `Composite::from_spec` parses,
+  // and a miss leaves it unset so the part draws the fallback body while the
+  // name still round-trips. Storage/session models are deliberately not
+  // resolved here: parseCircuit is pure, so the library resolves at placement
+  // time instead (helpers.ts). A name both the file and storage hold resolves
+  // to the file's copy, matching upstream's local-map-wins rule and the
+  // session map the load registers.
   for (const e of elements) {
     if (e.kind === 'transistor') {
       if (e.modelName === undefined) continue;
@@ -633,6 +649,14 @@ export function parseCircuit(text: string): ParsedCircuit {
     if (e.kind === 'customLogic') {
       const model = e.text === undefined ? undefined : customLogicModels.get(e.text);
       if (model !== undefined) e.model = model;
+      continue;
+    }
+    if (e.kind === 'customComposite') {
+      // The array is in file order and a repeated name shadows its
+      // predecessors, so the last line wins, matching the session map the
+      // store builds from the same array.
+      const model = e.text === undefined ? undefined : compositeModelsByName.get(e.text);
+      if (model !== undefined) e.model = modelToEngineSpec(model);
       continue;
     }
     if (!MODEL_KINDS.has(e.kind) || e.modelName === undefined) continue;

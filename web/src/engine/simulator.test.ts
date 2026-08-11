@@ -6,6 +6,12 @@ import { postsOf } from '../model/registry';
 import { useStore } from '../state/store';
 import { fresh } from '../state/store.test-helpers';
 import { overlayLiveState } from '../io/liveState';
+import {
+  clearSessionModels,
+  modelToEngineSpec,
+  parseCompositeModelLine,
+  registerSessionModel,
+} from '../io/subcircuits';
 
 describe('SimEngine per-post arrays', () => {
   it('postOffset indexes elementPostCurrents slices for mixed post counts', async () => {
@@ -306,4 +312,94 @@ describe('fractional chip bit-width edits rebuild cleanly', () => {
       expect(end - start).toBe(postsOf(e).length);
     },
   );
+});
+
+describe('custom composite reaches the engine', () => {
+  beforeEach(() => clearSessionModels());
+
+  /** A two-pin divider model: `in` on node 1 (west), `out` on node 3 (east),
+   *  whose chip geometry puts the posts at (0,0) and (64,0). */
+  const MODEL_LINE =
+    '. myCirc 0 1 2 2 in 1 0 2 out 3 0 3 ' +
+    'ResistorElm\\s1\\s2\\rResistorElm\\s2\\s3 ' +
+    '0\\\\s1000\\s0\\\\s1000';
+
+  it('a resolved customComposite builds as the composite kind and simulates', async () => {
+    // The engine registers `composite`, never `customComposite` (mod.rs:152),
+    // so the spec builder must bridge the resolved kind or the element is
+    // silently dropped and its wires float. Mirror the engine's analytic
+    // ground-model test: 10 V in, two 1k legs to ground, midpoint at 5 V.
+    const model = parseCompositeModelLine(MODEL_LINE)!;
+    registerSessionModel(model);
+    const composite: CircuitElement = {
+      id: 2,
+      kind: 'customComposite',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: {},
+      text: 'myCirc',
+      model: modelToEngineSpec(model),
+    };
+    expect(postsOf(composite)).toHaveLength(2);
+    const elements: CircuitElement[] = [
+      {
+        id: 1,
+        kind: 'voltage',
+        x1: 0,
+        y1: 200,
+        x2: 0,
+        y2: 0,
+        flags: 0,
+        params: { maxVoltage: 10 },
+      },
+      composite,
+      { id: 3, kind: 'ground', x1: 64, y1: 0, x2: 64, y2: 32, flags: 0, params: {} },
+      { id: 4, kind: 'ground', x1: 0, y1: 200, x2: 0, y2: 232, flags: 0, params: {} },
+    ];
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(elements, DEFAULT_SETTINGS, [])).toBeNull();
+    engine.run(20);
+    const idx = engine.indexOf(2);
+    expect(idx).toBeDefined();
+    const v = engine.elementVoltages()[idx!];
+    expect(v).toBeGreaterThan(9.9);  // post 0 at 10 V, post 1 grounded
+  });
+
+  it('an unresolved customComposite is dropped without failing the build', async () => {
+    // Bridging every composite to `composite` would fail the whole build
+    // (`from_spec` returns None on a missing payload, circuit.rs:259-260), so
+    // a part with no resolved model must be filtered out like any unsupported
+    // element, leaving the rest of the circuit to run.
+    const elements: CircuitElement[] = [
+      {
+        id: 1,
+        kind: 'customComposite',
+        x1: 0,
+        y1: 0,
+        x2: 64,
+        y2: 0,
+        flags: 0,
+        params: {},
+        text: 'nope',
+      },
+      {
+        id: 2,
+        kind: 'resistor',
+        x1: 0,
+        y1: 0,
+        x2: 100,
+        y2: 0,
+        flags: 0,
+        params: { resistance: 1000 },
+      },
+    ];
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(elements, DEFAULT_SETTINGS, [])).toBeNull();
+    expect(engine.indexOf(1)).toBeUndefined();
+    expect(engine.indexOf(2)).toBeDefined();
+    expect(engine.elementNodes().length).toBe(2);  // the resistor's two posts only
+  });
 });

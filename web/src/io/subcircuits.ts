@@ -31,7 +31,7 @@
  */
 
 import { escapeToken, unescapeToken } from './netlist/tokens';
-import type { CompositeModel, SubcircuitPin } from './netlist/types';
+import type { CompositeEngineSpec, CompositeModel, SubcircuitPin } from './netlist/types';
 import { defFor, postsOf } from '../model/registry';
 import { LABELED_NODE_INTERNAL } from '../model/registry/flags';
 import type { CircuitElement, Point } from '../model/types';
@@ -280,11 +280,7 @@ export function sameCompositeModel(a: CompositeModel, b: CompositeModel): boolea
  * escaped dumps; the engine wants `flags_field1_field2`, so each is split and
  * re-joined (CompositeElm.loadComposite's token walk over the escaped dump).
  */
-export function modelToEngineSpec(model: CompositeModel): {
-  model: string;
-  external: number[];
-  dumps: string[];
-} {
+export function modelToEngineSpec(model: CompositeModel): CompositeEngineSpec {
   return {
     model: model.nodeList,
     external: model.extList.map((p) => p.node),

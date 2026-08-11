@@ -12167,6 +12167,90 @@ fn composite_with_a_transistor_child_reports_nonlinear() {
     assert!(!divider.nonlinear(), "resistor composite was nonlinear");
 }
 
+#[test]
+fn composite_ground_model_and_tapped_divider_hit_analytic_voltages() {
+    // Two-pin case: the model references ground (node 0) directly and the
+    // external list names ground as the second post. `from_model` must route
+    // the child's node 0 to circuit ground (the GROUND_NODE sentinel), not to
+    // the composite's own post, and the phantom ground post still reads 0 V
+    // when its terminal is grounded. Two equal 1k resistors from the driven
+    // post to ground put the internal midpoint at exactly half the supply.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm_composite(
+                2,
+                &[[0, 0], [300, 0]],
+                "ResistorElm 1 2\rResistorElm 2 0",
+                &[1, 0],
+                &["0_1000", "0_1000"],
+            ),
+            elm(3, "ground", &[[300, 0]], &[]),
+            elm(4, "ground", &[[0, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    // The midpoint is the composite's single internal node, handed out after
+    // the posts: node 1 is the driven post, node 2 the midpoint. The composite
+    // reports no internal connectivity, so the floating-node walk pins the
+    // midpoint with a 100 M load, shifting 5 V by 25 uV.
+    assert!(
+        close(c.node_voltages()[2], 5.0, 1e-3),
+        "midpoint was {}",
+        c.node_voltages()[2]
+    );
+    assert!(
+        close(c.element_voltages()[1], 10.0, 1e-6),
+        "post drop was {}",
+        c.element_voltages()[1]
+    );
+    assert!(
+        close(c.element_currents()[1], 1e-2, 1e-6),
+        "divider current was {}",
+        c.element_currents()[1]
+    );
+
+    // Three-post case: a tapped divider whose tap post is left unloaded, so
+    // all three 1k legs share one current. The tap must read V/3 and the
+    // internal midpoint 2V/3, pinning that both the extra post and the
+    // internal node are remapped onto the right matrix rows.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm_composite(
+                2,
+                &[[0, 0], [150, 0], [300, 0]],
+                "ResistorElm 1 2\rResistorElm 2 3\rResistorElm 3 4",
+                &[1, 3, 4],
+                &["0_1000", "0_1000", "0_1000"],
+            ),
+            elm(3, "ground", &[[300, 0]], &[]),
+            elm(4, "ground", &[[0, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let v = c.node_voltages();
+    // First-seen node order: 0 ground, 1 the driven post, 2 the unloaded tap
+    // post, 3 the composite's internal midpoint. Both float under the walk, so
+    // the GMIN pins shift them by tens of uV.
+    assert!(
+        close(v[2], 10.0 / 3.0, 1e-3),
+        "tap was {}, expected {}",
+        v[2],
+        10.0 / 3.0
+    );
+    assert!(
+        close(v[3], 20.0 / 3.0, 1e-3),
+        "midpoint was {}, expected {}",
+        v[3],
+        20.0 / 3.0
+    );
+}
+
 /// The `_`-joined child dump tokens from the bundled ota-gain circuit's 402
 /// line: two rails then sixteen transistors, each carrying its saved flags,
 /// polarity, junction state and beta.

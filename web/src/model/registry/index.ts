@@ -89,6 +89,7 @@ import { CCVS_DEF } from './elements/ccvs';
 import { CCCS_DEF } from './elements/cccs';
 import { UNIJUNCTION_DEF } from './elements/unijunction';
 import { CUSTOM_LOGIC_DEF } from './elements/customLogic';
+import { CUSTOM_COMPOSITE_DEF } from './elements/customComposite';
 import { SPARK_GAP_DEF } from './elements/sparkGap';
 import { TRI_STATE_DEF } from './elements/triState';
 import { LABELED_NODE_DEF } from './elements/labeledNode';
@@ -193,6 +194,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   CCCS_DEF,
   UNIJUNCTION_DEF,
   CUSTOM_LOGIC_DEF,
+  CUSTOM_COMPOSITE_DEF,
   TRIAC_DEF,
   SPARK_GAP_DEF,
   TRI_STATE_DEF,
@@ -221,6 +223,16 @@ export function defForDumpCode(code: string): ElementDef | undefined {
 /** Terminal coordinates for an element, or an empty list for unknown types. */
 export function postsOf(e: CircuitElement): Point[] {
   return defFor(e.kind)?.posts(e) ?? [];
+}
+
+/** The terminal count a def actually has. Only the custom composite defines
+ *  `postCountOf`, because its post count is set by the resolved model rather
+ *  than by the def; every other def's static `postCount` is exact and is the
+ *  fallback. The rotate, drag-post and collapsed-axis gates read this so a
+ *  resolved composite is treated as the part it is instead of as its fallback
+ *  stub. */
+export function postCountOf(e: CircuitElement): number {
+  return defFor(e.kind)?.postCountOf?.(e) ?? defFor(e.kind)?.postCount ?? 0;
 }
 
 /** Toolbox groupings, in display order. */

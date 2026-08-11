@@ -6,7 +6,7 @@
  * a running interactive part, select, place, pan, sweep or arm a drag.
  */
 
-import { defFor, toolDef } from '../../model/registry';
+import { defFor, postCountOf, toolDef } from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
 import { GRID_SIZE } from '../../model/types';
 import type { CircuitElement, Point } from '../../model/types';
@@ -216,7 +216,7 @@ export function beginPointerGesture(
     // either way. The gate counts draggable endpoints, not posts: a ground
     // has one connectable post but its symbol hangs off a second control
     // point that must be stretchable too.
-    if (ev.ctrlKey && (def?.draggablePosts ?? def?.postCount ?? 0) > 1) {
+    if (ev.ctrlKey && (def?.draggablePosts ?? postCountOf(hit)) > 1) {
       dragRef.current = { mode: 'dragpost', id: hit.id, post: nearestPost(p, hit), moved: false, gated };
     } else {
       dragRef.current = { mode: 'move', last: p, moved: false, gated };

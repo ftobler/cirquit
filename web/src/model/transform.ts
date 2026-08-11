@@ -11,7 +11,7 @@
  * rotated or mirrored part's terminal coordinates match the original exactly.
  */
 
-import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP } from './registry';
+import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP, postCountOf } from './registry';
 import type { CircuitElement } from './types';
 
 /** Whether the element can turn a quarter turn. A stem-bearing one-post part
@@ -22,7 +22,7 @@ import type { CircuitElement } from './types';
  *  whose stray second point is meaningless, stay a single-point no-op. */
 export function canRotate(e: CircuitElement): boolean {
   const def = defFor(e.kind);
-  return (def?.draggablePosts ?? def?.postCount ?? 0) >= 2;
+  return (def?.draggablePosts ?? postCountOf(e)) >= 2;
 }
 
 /** Whether Mirror is offered. Only the asymmetric three-post bodies declare it;
@@ -35,7 +35,7 @@ export function canMirror(e: CircuitElement): boolean {
 /** Whether the element can swap posts 0 and 1. Meaningful only on two-terminal
  *  parts; on a three-post body it would swap the input side with the output. */
 export function canSwap(e: CircuitElement): boolean {
-  return (defFor(e.kind)?.postCount ?? 0) === 2;
+  return postCountOf(e) === 2;
 }
 
 const centre = (e: CircuitElement) => ({

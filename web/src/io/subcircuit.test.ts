@@ -31,7 +31,7 @@ import {
 import { summarizeImport } from './importSummary';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
 import { LABELED_NODE_INTERNAL } from '../model/registry/flags';
-import { makeElement, useStore } from '../state/store';
+import { makeElement, makeToolElement, useStore } from '../state/store';
 import { fresh } from '../state/store.test-helpers';
 
 /** A representative `.` line: a two-1k-resistor divider with `in` on node 1
@@ -1175,5 +1175,95 @@ describe('renaming a subcircuit the open file introduced', () => {
     expect(netlist()).toBe(RENAMED_FILE);
     expect(names()).toEqual(['amp']);
     expect([...stored.keys()]).toEqual(['subcircuit:amp']);
+  });
+});
+
+describe('placing a custom composite 410', () => {
+  it('resolves a session model the fresh part names', () => {
+    // The fresh part carries the def's default model name, so a library entry
+    // of that name is what the placement resolves (upstream's lastModelName
+    // or the builtin "default" stub).
+    registerSessionModel({ ...parseCompositeModelLine(MODEL_LINE)!, name: 'default' });
+    const el = makeElement('customComposite', 0, 0, 96, 0);
+    expect(el.kind).toBe('customComposite');
+    expect(el.text).toBe('default');
+    expect(el.model).toEqual({
+      model: 'ResistorElm 1 2\rResistorElm 2 3',
+      external: [1, 3],
+      dumps: ['0_1000', '0_1000'],
+    });
+  });
+
+  it('a fresh part whose name no library entry holds stays on the fallback', () => {
+    const el = makeElement('customComposite', 0, 0, 96, 0);
+    expect(el.text).toBe('default');
+    expect(el.model).toBeUndefined();
+  });
+
+  it('the toolbox path resolves the same way', () => {
+    registerSessionModel({ ...parseCompositeModelLine(MODEL_LINE)!, name: 'default' });
+    const el = makeToolElement('customComposite', 0, 0, 96, 0);
+    expect(el.text).toBe('default');
+    expect(el.model).toEqual({
+      model: 'ResistorElm 1 2\rResistorElm 2 3',
+      external: [1, 3],
+      dumps: ['0_1000', '0_1000'],
+    });
+  });
+
+  it('a stored model resolves at placement through the browser storage path', () => {
+    // The placement resolution reads the merged library via `getModel`, whose
+    // storage half is the browser localStorage. Point the default storage at a
+    // fake for this test, so a model that only storage holds resolves the same
+    // way it would in a real browser session.
+    const storage = fakeStorage();
+    saveModel({ ...parseCompositeModelLine(MODEL_LINE)!, name: 'default' }, storage);
+    const browserStorage: Storage = {
+      get length() {
+        return storage.listSubcircuitKeys().length;
+      },
+      key: (i) => storage.listSubcircuitKeys()[i] ?? null,
+      getItem: (k) => storage.getItem(k),
+      setItem: (k, v) => storage.setItem(k, v),
+      removeItem: (k) => storage.removeItem(k),
+      clear: () => {},
+    };
+    const prev = (globalThis as { localStorage?: Storage }).localStorage;
+    (globalThis as { localStorage?: Storage }).localStorage = browserStorage;
+    try {
+      const el = makeElement('customComposite', 0, 0, 96, 0);
+      expect(el.model).toEqual({
+        model: 'ResistorElm 1 2\rResistorElm 2 3',
+        external: [1, 3],
+        dumps: ['0_1000', '0_1000'],
+      });
+    } finally {
+      (globalThis as { localStorage?: Storage }).localStorage = prev;
+    }
+  });
+
+  it('renaming a placed part re-resolves the payload the way placement does', () => {
+    registerSessionModel(parseCompositeModelLine(MODEL_LINE)!);
+    const id = useStore.getState().addElement(makeElement('customComposite', 0, 0, 96, 0));
+    // The fresh part carries the default name, so it was placed unresolved;
+    // a Model Name edit to a library name must pick the model up.
+    useStore.getState().setText(id, 'myCirc');
+    const after = useStore.getState().elements.find((e) => e.id === id);
+    expect(after?.text).toBe('myCirc');
+    expect(after?.model).toEqual({
+      model: 'ResistorElm 1 2\rResistorElm 2 3',
+      external: [1, 3],
+      dumps: ['0_1000', '0_1000'],
+    });
+  });
+
+  it('renaming a part to an unresolvable name clears the payload', () => {
+    registerSessionModel({ ...parseCompositeModelLine(MODEL_LINE)!, name: 'default' });
+    const id = useStore.getState().addElement(makeElement('customComposite', 0, 0, 96, 0));
+    expect(useStore.getState().elements.find((e) => e.id === id)?.model).not.toBeUndefined();
+    useStore.getState().setText(id, 'nope');
+    const after = useStore.getState().elements.find((e) => e.id === id);
+    expect(after?.text).toBe('nope');
+    expect(after?.model).toBeUndefined();
   });
 });
