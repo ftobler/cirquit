@@ -151,3 +151,37 @@ describe('fractional controlled-source input counts rebuild cleanly', () => {
     expect(postsOf(e).length).toBe(engine.elementNodes().length);
   });
 });
+
+describe('fractional gate input counts rebuild cleanly', () => {
+  beforeEach(() => useStore.setState(fresh()));
+
+  it.each([
+    ['andGate', 2.5, 2],
+    ['nandGate', 2.5, 2],
+    ['orGate', 2.5, 2],
+    ['norGate', 2.5, 2],
+    ['xorGate', 2.5, 2],
+    ['xnorGate', 2.5, 2],
+  ])('editing %s to %s stores an integer and builds without the post-count guard', async (kind, given, n) => {
+    // The UI's "# of Inputs" slider can hand the store a fraction; setParam
+    // must write back the integer the engine truncates to, or the rebuild's
+    // post-count guard (circuit.rs:261-269) rejects the spec and the circuit
+    // never comes back.
+    const id = useStore.getState().addElement({
+      kind,
+      x1: 0,
+      y1: 0,
+      x2: 192,
+      y2: 0,
+      flags: 0,
+      params: { inputCount: 2 },
+    });
+    useStore.getState().setParam(id, 'inputCount', given);
+    const e = useStore.getState().elements.find((x) => x.id === id)!;
+    expect(e.params.inputCount).toBe(n);
+
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(useStore.getState().elements, DEFAULT_SETTINGS, [])).toBeNull();
+    expect(postsOf(e).length).toBe(engine.elementNodes().length);
+  });
+});

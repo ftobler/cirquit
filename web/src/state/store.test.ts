@@ -1281,6 +1281,47 @@ describe('controlled-source input count edits are normalised', () => {
   });
 });
 
+describe('gate input count edits are normalised', () => {
+  const addGate = (kind: string) =>
+    useStore.getState().addElement({
+      kind,
+      x1: 0,
+      y1: 0,
+      x2: 96,
+      y2: 0,
+      flags: 0,
+      params: { inputCount: 2 },
+    });
+
+  it.each([
+    ['andGate', 2.5, 2],
+    ['nandGate', 2.5, 2],
+    ['orGate', 2.5, 2],
+    ['norGate', 2.5, 2],
+    ['xorGate', 2.5, 2],
+    ['xnorGate', 2.5, 2],
+  ])('setParam truncates a fractional %s input count to the engine integer', (kind, given, expected) => {
+    // The "# of Inputs" range slider can land on a fraction. The engine
+    // truncates it to an integer post count (`(x as i64)` in logic.rs:76), so
+    // the store must write back the same integer or a rebuild trips the
+    // post-count guard and the circuit never comes back (circuit.rs:261-269).
+    const id = addGate(kind);
+    useStore.getState().setParam(id, 'inputCount', given);
+    const after = useStore.getState();
+    const e = after.elements.find((x) => x.id === id);
+    expect(e?.params.inputCount).toBe(expected);
+    expect(after.pendingParams.get(`${id}:inputCount`)?.value).toBe(expected);
+  });
+
+  it('clamps the boundary counts to the engine 1..8 range on edit', () => {
+    const id = addGate('andGate');
+    useStore.getState().setParam(id, 'inputCount', 0.5);
+    expect(useStore.getState().elements.find((e) => e.id === id)?.params.inputCount).toBe(1);
+    useStore.getState().setParam(id, 'inputCount', 9.5);
+    expect(useStore.getState().elements.find((e) => e.id === id)?.params.inputCount).toBe(8);
+  });
+});
+
 describe('undo parity', () => {
   const addSwitch = () =>
     useStore.getState().addElement({

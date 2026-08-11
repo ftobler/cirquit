@@ -36,7 +36,9 @@ import {
 import { LOGIC_INPUT_TERNARY, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import { postsOf } from '../model/registry';
 import { chipPinsOf } from '../model/registry/chips';
-import { CS_INPUT_COUNT_KINDS, csNormalizeInputCount } from '../model/registry/elements/vcvs';
+import { CS_INPUT_COUNT_KINDS } from '../model/registry/elements/vcvs';
+import { GATE_INPUT_COUNT_KINDS } from '../model/registry/elements/gate';
+import { normalizeInputCount } from '../model/registry/shared';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import { paramScale, resolveParam } from '../model/sliders';
 import {
@@ -57,6 +59,14 @@ import {
   snap,
 } from './helpers';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
+
+/** The element kinds whose `inputCount` `setParam` normalises on edit: the
+ *  controlled sources and the six basic gates, all of whose engines truncate
+ *  the value to an integer post count. */
+const INPUT_COUNT_KINDS: ReadonlySet<string> = new Set([
+  ...CS_INPUT_COUNT_KINDS,
+  ...GATE_INPUT_COUNT_KINDS,
+]);
 
 const clone = (s: Snapshot): Snapshot => ({
   elements: s.elements.map((e) => {
@@ -787,15 +797,15 @@ export const useStore = create<AppState>((set, get) => ({
     return set((s) => {
       // The "# of Inputs" slider can hand this a fraction. The engine
       // truncates it to a post count (`(x as i64)` in the controlled-source
-      // constructors); write the integer back into `params.inputCount` so the
-      // renderer and the engine agree and a rebuild never trips the post-count
-      // guard (circuit.rs:261-269). Truncation matches upstream's
-      // `(int) ei.value` (VCCSElm.java:202-205), the same clamp the parser
-      // applies on load.
+      // and gate constructors); write the integer back into
+      // `params.inputCount` so the renderer and the engine agree and a rebuild
+      // never trips the post-count guard (circuit.rs:261-269). Truncation
+      // matches upstream's `(int) ei.value` (VCCSElm.java:202-205,
+      // GateElm.java:59), the same clamp the parsers apply on load.
       let pending = value;
       const target = s.elements.find((e) => e.id === id);
-      if (name === 'inputCount' && target !== undefined && CS_INPUT_COUNT_KINDS.has(target.kind)) {
-        pending = csNormalizeInputCount(value);
+      if (name === 'inputCount' && target !== undefined && INPUT_COUNT_KINDS.has(target.kind)) {
+        pending = normalizeInputCount(value);
       }
       return {
         elements: s.elements.map((e) => {

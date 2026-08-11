@@ -23,6 +23,22 @@ import type { CircuitElement, DrawContext, Point, SwitchRect } from '../types';
 /** Perpendicular offset of switch throws and transistor collector/emitter. */
 export const OPEN_HS = 16;
 
+/**
+ * The integer input count the engine derives from a value: truncated and
+ * clamped to the 1..8 range, upstream's `(int) ei.value` guard
+ * (VCCSElm.java:202-205, GateElm.java:59). The store's `setParam` and the
+ * controlled-source and gate parsers normalise to this, so the frontend post
+ * list and the engine's `(x as i64)` build agree and a rebuild never trips the
+ * post-count guard (circuit.rs:261-269).
+ */
+export function normalizeInputCount(value: number): number {
+  if (!Number.isFinite(value)) return 2;
+  const n = Math.trunc(value);
+  if (n < 1) return 1;
+  if (n > 8) return 8;
+  return n;
+}
+
 /** Body colour for an element: the power colour when that mode is on, else the
  *  midpoint voltage colour. `v` is the element's colouring voltage and `power`
  *  the frame's per-element power, so in power mode bodies heat red as

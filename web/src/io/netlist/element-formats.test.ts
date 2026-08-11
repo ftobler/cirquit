@@ -1244,6 +1244,23 @@ describe('logic gate file formats', () => {
     ]);
   });
 
+  it('a fractional gate input count normalises on load to the engine integer', () => {
+    // A hand-edited 2.5 would draw 4 posts with `Math.round` but build 3 with
+    // the engine's `(2.5 as i64)` truncation, so the spec fails the post-count
+    // guard. Parse clamps to the integer the engine derives, the same clamp the
+    // controlled sources apply (csParse, vcvs.ts:70).
+    const { e, elementLine } = gateLine('150 0 0 96 0 0 2.5 0 5', '150');
+    expect(e.params.inputCount).toBe(2);
+    expect(elementLine).toBe('150 0 0 96 0 0 2 0 5');
+  });
+
+  it('a boundary gate input count clamps to the engine 1..8 range on load', () => {
+    const low = gateLine('150 0 0 96 0 0 0.5 0 5', '150');
+    expect(low.e.params.inputCount).toBe(1);
+    const high = gateLine('150 0 0 96 0 0 9.5 0 5', '150');
+    expect(high.e.params.inputCount).toBe(8);
+  });
+
   it('an inverter line round-trips byte-for-byte', () => {
     const line = 'I 272 208 352 208 0 0.5 5';
     const { e, elementLine } = gateLine(line, 'I');

@@ -21,8 +21,20 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { GATE_INVERT_INPUTS, GATE_SCHMITT, GATE_SMALL } from '../flags';
-import { readParams, writeParams } from '../shared';
+import { normalizeInputCount, readParams, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
+
+/** The six gate kinds whose `inputCount` the store normalises on edit, so the
+ *  renderer and the engine always agree on the post count. The inverter,
+ *  Schmitt triggers and tri-state buffer have no input-count field. */
+export const GATE_INPUT_COUNT_KINDS: ReadonlySet<string> = new Set([
+  'andGate',
+  'nandGate',
+  'orGate',
+  'norGate',
+  'xorGate',
+  'xnorGate',
+]);
 
 /** The IEC glyph for each gate; the inverting variants keep their parent's
  *  glyph and let the output bubble say "inverted" (AndGateElm.java:31,
@@ -51,17 +63,11 @@ function gateSize(e: CircuitElement): number {
   return (e.flags & GATE_SMALL) !== 0 ? 1 : 2;
 }
 
+/** The editable input count: the integer the engine truncates `inputCount`
+ *  to and clamps to 1..8 (logic.rs:76), so the post list always matches the
+ *  engine's build. */
 function gateInputCount(e: CircuitElement): number {
-  const n = Math.round(e.params.inputCount ?? 2);
-  return Math.max(1, Math.min(8, n));
-}
-
-/** The editable input count, clamped to upstream's 1..8 range. */
-function clampInputCount(_e: CircuitElement, value: number): number {
-  const n = Math.round(value);
-  if (n < 1) return 1;
-  if (n > 8) return 8;
-  return Number.isFinite(n) ? n : 2;
+  return normalizeInputCount(e.params.inputCount ?? 2);
 }
 
 /**
@@ -303,7 +309,7 @@ function gateDef(
     defaults,
     parse: (t, e) => {
       readParams(t, e, ['inputCount', 'lastOutputVoltage', 'highVoltage']);
-      if (e.params.inputCount !== undefined) e.params.inputCount = clampInputCount(e, e.params.inputCount);
+      if (e.params.inputCount !== undefined) e.params.inputCount = normalizeInputCount(e.params.inputCount);
     },
     dump: writeParams(['inputCount', 'lastOutputVoltage', 'highVoltage']),
     fields: [
