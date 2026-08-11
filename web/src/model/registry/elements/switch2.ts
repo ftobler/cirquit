@@ -59,12 +59,16 @@ export const SWITCH2_DEF: ElementDef = {
   posts: switch2Posts,
   interactive: true,
   // The clickable region spans the lever's fan: the pivot lead and the first
-  // and last throw poles (Switch2Elm.java:121-123). It is position-independent,
-  // so center-off still toggles back onto a throw from anywhere in the fan.
+  // and last throw poles (Switch2Elm.java:121-123), grown by one contact
+  // stroke width so the whole thick lever reads as clickable. It is
+  // position-independent, so center-off still toggles back onto a throw from
+  // anywhere in the fan.
   switchRect: (e) => {
     const [lead1] = calcLeads(e, 32);
     const poles = switch2Poles(e);
-    return rectOfPoints([lead1, poles[0], poles[poles.length - 1]]);
+    const rect = rectOfPoints([lead1, poles[0], poles[poles.length - 1]]);
+    const m = CONTACT_STROKE_WIDTH;
+    return { x: rect.x - m, y: rect.y - m, w: rect.w + 2 * m, h: rect.h + 2 * m };
   },
   noDiagonal: true,  // Switch2Elm.java:35,51
   defaults: { position: 0, throwCount: 2 },

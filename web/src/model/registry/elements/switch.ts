@@ -1,6 +1,6 @@
-import { calcLeads, currentDotsPath, drawLeads, endpoints, interp, line } from '../../../render/draw';
+import { calcLeads, currentDotsPath, drawLeads, endpoints, line } from '../../../render/draw';
 import { SWITCH_IEC, SWITCH_LABEL } from '../flags';
-import { CONTACT_STROKE_WIDTH, OPEN_HS, rectOfPoints, switchIecPoints, switchLever, twoPosts } from '../shared';
+import { CONTACT_STROKE_WIDTH, rectOfPoints, switchIecPoints, switchLever, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The SPST tokens, which the SPDT writes first and then extends. The label
@@ -74,13 +74,18 @@ export const SWITCH_DEF: ElementDef = {
   postCount: 2,
   posts: twoPosts,
   interactive: true,
-  // The clickable lever: the body between the leads plus the open handle's
-  // swing, upstream's getSwitchRect union (SwitchElm.java:166-169). The handle
-  // is where the user aims, so the rect must cover it or a click on the open
-  // lever would stop toggling.
+  // The clickable lever: the body between the leads plus the lever in both
+  // positions, the open swing and the closed ride 2 units on the lift side
+  // (SwitchElm.java:118-132, 166-169). A box that hugs the axis would miss the
+  // closed lever, and the handle is where the user aims, so the union is grown
+  // by one contact stroke width.
   switchRect: (e) => {
     const [lead1, lead2] = calcLeads(e, 32);
-    return rectOfPoints([lead1, lead2, interp(lead1, lead2, 0, OPEN_HS)]);
+    const open = switchLever(lead1, lead2, false);
+    const closed = switchLever(lead1, lead2, true);
+    const rect = rectOfPoints([lead1, lead2, open[0], open[1], closed[0], closed[1]]);
+    const m = CONTACT_STROKE_WIDTH;
+    return { x: rect.x - m, y: rect.y - m, w: rect.w + 2 * m, h: rect.h + 2 * m };
   },
   defaults: { position: 0, momentary: 0 },
   parse: (t, e) => {

@@ -58,24 +58,41 @@ const down = (patch: Partial<PointerDownInput> = {}): PointerDownInput => ({
 });
 
 describe('switchRect geometry', () => {
-  it('a plain switch covers the body and the open handle, not the leads', () => {
+  it('a plain switch covers the body, the open tip and the closed lever', () => {
     const rect = defFor('switch')!.switchRect!(baseEl('switch'));
-    expect(rect).toEqual({ x: 64, y: -16, w: 32, h: 16 });
+    // The union of the body and both lever positions, grown by one contact
+    // stroke width. The closed lever rides 2 units on the lift side, so the
+    // box must not hug the axis (SwitchElm.java:118-132).
+    expect(rect).toEqual({ x: 60, y: -20, w: 40, h: 24 });
+    expect(rectContains(rect, { x: 64, y: 0 })).toBe(true); // open pivot
+    expect(rectContains(rect, { x: 96, y: -16 })).toBe(true); // open tip
+    expect(rectContains(rect, { x: 64, y: -2 })).toBe(true); // closed pivot
+    expect(rectContains(rect, { x: 96, y: -2 })).toBe(true); // closed tip
     expect(rectContains(rect, { x: 80, y: -5 })).toBe(true);
-    expect(rectContains(rect, { x: 64, y: 0 })).toBe(true);
-    expect(rectContains(rect, { x: 64, y: -16 })).toBe(true);
     expect(rectContains(rect, { x: 30, y: 0 })).toBe(false); // left lead
     expect(rectContains(rect, { x: 120, y: 0 })).toBe(false); // right lead
-    expect(rectContains(rect, { x: 80, y: 4 })).toBe(false); // below the axis
+    expect(rectContains(rect, { x: 80, y: 5 })).toBe(false); // past the margin
   });
 
-  it('an SPDT covers the fan between its first and last throw poles', () => {
+  it('an SPDT covers the fan from the pivot to both throw poles', () => {
     const rect = defFor('switch2')!.switchRect!(baseEl('switch2'));
-    expect(rect).toEqual({ x: 64, y: -16, w: 32, h: 32 });
-    expect(rectContains(rect, { x: 96, y: -16 })).toBe(true);
-    expect(rectContains(rect, { x: 96, y: 16 })).toBe(true);
-    expect(rectContains(rect, { x: 80, y: 0 })).toBe(true);
+    // The fan of the pivot lead and the first and last throw poles, grown by
+    // one contact stroke width (Switch2Elm.java:121-123).
+    expect(rect).toEqual({ x: 60, y: -20, w: 40, h: 40 });
+    expect(rectContains(rect, { x: 64, y: 0 })).toBe(true); // pivot lead1
+    expect(rectContains(rect, { x: 96, y: -16 })).toBe(true); // throw pole 0
+    expect(rectContains(rect, { x: 96, y: 16 })).toBe(true); // last throw pole
+    expect(rectContains(rect, { x: 96, y: 0 })).toBe(true); // center-off rest, lead2
+    expect(rectContains(rect, { x: 96, y: -15 })).toBe(true); // the lever on a throw
     expect(rectContains(rect, { x: 30, y: 0 })).toBe(false);
+  });
+
+  it('an SPDT click box is position-independent for center-off', () => {
+    const rect = defFor('switch2')!.switchRect!(baseEl('switch2'));
+    const centered = defFor('switch2')!.switchRect!(
+      baseEl('switch2', { state: 2, params: { position: 2, momentary: 0, throwCount: 2 } }),
+    );
+    expect(centered).toEqual(rect);
   });
 
   it('a logic input covers the glyph, not the lead', () => {
