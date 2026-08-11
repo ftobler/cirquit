@@ -8,7 +8,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { SWITCH2_CENTER_OFF, SWITCH_LABEL } from '../flags';
-import { OPEN_HS, rectOfPoints } from '../shared';
+import { CONTACT_STROKE_WIDTH, OPEN_HS, rectOfPoints } from '../shared';
 import { switchTokens, labelFlags } from './switch';
 import type { CircuitElement, ElementDef, Point } from '../../types';
 
@@ -106,7 +106,7 @@ export const SWITCH2_DEF: ElementDef = {
     const sel = Math.min(e.state ?? 0, poles.length - 1);
     // The lever rides whiteColor, not the throw it connects to, upstream's
     // mechanical-part colour (Switch2Elm.java:101-104).
-    line(g, lead1, centerOff ? lead2 : poles[sel], g.theme.whiteColor);
+    line(g, lead1, centerOff ? lead2 : poles[sel], g.theme.whiteColor, CONTACT_STROKE_WIDTH);
     if (!centerOff) {
       currentDots(g, p1, lead1, g.current);
       currentDots(g, poles[sel], posts[sel + 1], g.current);

@@ -42,6 +42,7 @@ import { CROSS_SWITCH_DEF } from '../model/registry/elements/crossSwitch';
 import { ANALOG_SWITCH_DEF } from '../model/registry/elements/analogSwitch';
 import { ANALOG_SWITCH2_DEF } from '../model/registry/elements/analogSwitch2';
 import { SWITCH_IEC, VOLTAGE_CIRCLE_SYMBOL, WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE } from '../model/registry/flags';
+import { CONTACT_STROKE_WIDTH } from '../model/registry/shared';
 import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
 import { MOSFET_DEF } from '../model/registry/elements/mosfet';
 import { RAIL_DEF } from '../model/registry/elements/rail';
@@ -1265,14 +1266,16 @@ describe('switch lever and relay blade colours', () => {
     expect(makeTheme(false).lightGray).toBe('#c0c0c0');
   });
 
-  it('strokes the SPST lever in whiteColor, at the 3-unit lever weight', () => {
+  it('strokes the SPST lever in whiteColor, at the thicker contact weight', () => {
     const strokes = draw(SWITCH_DEF, elm('switch'));
-    expect(stroked(strokes, makeTheme().whiteColor, 3)).toBe(true);
+    expect(stroked(strokes, makeTheme().whiteColor, CONTACT_STROKE_WIDTH)).toBe(true);
+    expect(stroked(strokes, makeTheme().wire, 3)).toBe(true);  // the leads stay at body weight
   });
 
-  it('strokes the SPDT lever in whiteColor', () => {
+  it('strokes the SPDT lever in whiteColor, at the thicker contact weight', () => {
     const strokes = draw(SWITCH2_DEF, elm('switch2', { position: 0, throwCount: 2 }));
-    expect(stroked(strokes, makeTheme().whiteColor, 3)).toBe(true);
+    expect(stroked(strokes, makeTheme().whiteColor, CONTACT_STROKE_WIDTH)).toBe(true);
+    expect(stroked(strokes, makeTheme().wire, 3)).toBe(true);  // the throw leads stay at body weight
   });
 
   it('strokes both cross switch levers in whiteColor', () => {
@@ -1287,9 +1290,10 @@ describe('switch lever and relay blade colours', () => {
     expect(strokes.some((s) => s.style === makeTheme().whiteColor && s.width === 1)).toBe(true);
   });
 
-  it('strokes the relay blade in lightGray', () => {
+  it('strokes the relay blade in lightGray, at the thicker contact weight', () => {
     const strokes = draw(RELAY_DEF, elm('relay', { poleCount: 1 }), { voltages: [0, 0, 0, 0, 0] });
-    expect(stroked(strokes, makeTheme().lightGray, 3)).toBe(true);
+    expect(stroked(strokes, makeTheme().lightGray, CONTACT_STROKE_WIDTH)).toBe(true);
+    expect(stroked(strokes, makeTheme().wire, 3)).toBe(true);  // the pole leads stay at body weight
   });
 
   it('strokes the relay contact blade in lightGray', () => {

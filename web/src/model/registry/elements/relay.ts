@@ -22,7 +22,7 @@ import {
   RELAY_SHOW_BOX,
   RELAY_SWAP_COIL,
 } from '../flags';
-import { OPEN_HS, readParams, rectOfPoints, twoPosts } from '../shared';
+import { CONTACT_STROKE_WIDTH, OPEN_HS, readParams, rectOfPoints, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Coil placement encoded in the flags, upstream's `coilStyleFromFlags`
@@ -199,7 +199,7 @@ function drawRelay(g: DrawContext, e: CircuitElement): void {
     const tip = interp(swpoles[p][1], swpoles[p][2], pos);
     // The blade is the mechanical part, lightGray in upstream too
     // (RelayElm.java:261-264).
-    line(g, swpoles[p][0], tip, g.theme.lightGray);
+    line(g, swpoles[p][0], tip, g.theme.lightGray, CONTACT_STROKE_WIDTH);
   }
   currentDots(g, coilPosts[0], coilLeads[0], g.current);
   currentDots(g, coilLeads[1], coilPosts[1], g.current);

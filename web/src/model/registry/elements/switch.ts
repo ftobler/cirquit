@@ -1,6 +1,6 @@
 import { calcLeads, currentDotsPath, drawLeads, endpoints, interp, line } from '../../../render/draw';
 import { SWITCH_IEC, SWITCH_LABEL } from '../flags';
-import { OPEN_HS, rectOfPoints, switchIecPoints, switchLever, twoPosts } from '../shared';
+import { CONTACT_STROKE_WIDTH, OPEN_HS, rectOfPoints, switchIecPoints, switchLever, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The SPST tokens, which the SPDT writes first and then extends. The label
@@ -28,7 +28,7 @@ function drawSwitchBody(g: DrawContext, e: CircuitElement): void {
   // voltage: upstream strokes it with whiteColor (SwitchElm.java:127-132),
   // and the IEC armature follows it (SwitchElm.java:147-159).
   const [pivot, tip] = switchLever(lead1, lead2, closed);
-  line(g, pivot, tip, g.theme.whiteColor);
+  line(g, pivot, tip, g.theme.whiteColor, CONTACT_STROKE_WIDTH);
   if ((e.flags & SWITCH_IEC) !== 0) {
     drawSwitchIec(g, lead1, lead2, closed, g.theme.whiteColor, (e.params.momentary ?? 0) !== 0);
   }

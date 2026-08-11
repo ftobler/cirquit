@@ -23,6 +23,11 @@ import type { CircuitElement, DrawContext, Point, SwitchRect } from '../types';
 /** Perpendicular offset of switch throws and transistor collector/emitter. */
 export const OPEN_HS = 16;
 
+/** Stroke width of the moving contact (switch lever, SPDT lever, relay
+ *  blade): one unit above the 3-unit body weight, so the part that moves
+ *  reads as the contact rather than another body line. */
+export const CONTACT_STROKE_WIDTH = 4;
+
 /**
  * The integer input count the engine derives from a value: truncated and
  * clamped to the 1..8 range, upstream's `(int) ei.value` guard
