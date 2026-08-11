@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { SimEngine } from './simulator';
 import { DEFAULT_SETTINGS } from '../model/types';
 import type { CircuitElement } from '../model/types';
+import { postsOf } from '../model/registry';
+import { useStore } from '../state/store';
+import { fresh } from '../state/store.test-helpers';
 import { overlayLiveState } from '../io/liveState';
 
 describe('SimEngine per-post arrays', () => {
@@ -111,5 +114,40 @@ describe('SimEngine live state read-back', () => {
     engine.run(10);
     const live = engine.elementStateTokens();
     expect(live[1]).toEqual({});
+  });
+});
+
+describe('fractional controlled-source input counts rebuild cleanly', () => {
+  beforeEach(() => useStore.setState(fresh()));
+
+  it.each([
+    ['vcvs', 2.5, 2],
+    ['vccs', 2.5, 2],
+    ['ccvs', 2.5, 2],
+    ['cccs', 2.5, 2],
+  ])('editing %s to %s stores an integer and builds without the post-count guard', async (kind, given, n) => {
+    // The UI's "# of Inputs" slider can hand the store a fraction; setParam
+    // must write back the integer the engine truncates to, or the rebuild's
+    // post-count guard (circuit.rs:261-269) rejects the spec and the circuit
+    // never comes back.
+    const id = useStore.getState().addElement({
+      kind,
+      x1: 0,
+      y1: 0,
+      x2: 192,
+      y2: 0,
+      flags: 0,
+      params: { inputCount: 2 },
+    });
+    useStore.getState().setParam(id, 'inputCount', given);
+    const e = useStore.getState().elements.find((x) => x.id === id)!;
+    expect(e.params.inputCount).toBe(n);
+
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(useStore.getState().elements, DEFAULT_SETTINGS, [])).toBeNull();
+    // The engine's node array and the renderer's post list hold one entry per
+    // post, so equal lengths prove the two halves agree on the post count and
+    // the renderer's index cannot drift off the engine's elementNodes.
+    expect(postsOf(e).length).toBe(engine.elementNodes().length);
   });
 });

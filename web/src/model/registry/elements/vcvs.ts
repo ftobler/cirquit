@@ -26,11 +26,26 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
  *  (VCCSElm.java:45). */
 export const DEFAULT_EXPR = '.1*(a-b)';
 
-/** The editable input count, clamped to the engine's 1..8 range
- *  (VCCSElm.java:202-204). */
+/** The four controlled-source kinds whose `inputCount` the store normalises
+ *  on edit, so the renderer and the engine always agree on the post count. */
+export const CS_INPUT_COUNT_KINDS: ReadonlySet<string> = new Set(['vcvs', 'vccs', 'ccvs', 'cccs']);
+
+/** The integer input count the engine derives from a value: truncated and
+ *  clamped to the 1..8 range, upstream's `(int) ei.value` guard
+ *  (VCCSElm.java:202-205). The store and the parser normalise to this, so the
+ *  frontend post list and the engine's `(x as i64)` build agree. */
+export function csNormalizeInputCount(value: number): number {
+  if (!Number.isFinite(value)) return 2;
+  const n = Math.trunc(value);
+  if (n < 1) return 1;
+  if (n > 8) return 8;
+  return n;
+}
+
+/** The editable input count, the integer the engine truncates `inputCount`
+ *  to (VCCSElm.java:202-205). */
 export function csInputCount(e: CircuitElement): number {
-  const n = Math.round(e.params.inputCount ?? 2);
-  return Math.max(1, Math.min(8, n));
+  return csNormalizeInputCount(e.params.inputCount ?? 2);
 }
 
 /** The pin table, from `setupPins` (VCCSElm.java:65-77, VCVSElm.java:31-44):
@@ -59,9 +74,12 @@ export function csSizeY(e: CircuitElement): number {
 }
 
 /** The shared file-format parse: `inputCount` then the expression, which the
- *  netlist layer has already unescaped. */
+ *  netlist layer has already unescaped. A fractional count from a hand-edited
+ *  file is clamped to the integer the engine truncates to, the same guard the
+ *  gate applies on its own input count (gate.ts:306). */
 export function csParse(t: string[], e: CircuitElement): void {
   readParams(t, e, ['inputCount']);
+  if (e.params.inputCount !== undefined) e.params.inputCount = csNormalizeInputCount(e.params.inputCount);
   if (t[1] !== undefined) e.text = t[1];
 }
 

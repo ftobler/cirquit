@@ -1709,6 +1709,23 @@ describe('controlled source file formats', () => {
     expect(elementLine).toBe(line);
   });
 
+  it('a fractional VCVS input count normalises on load to the engine integer', () => {
+    // A hand-edited 2.5 would draw 5 posts with `Math.round` but build 4 with
+    // the engine's `(2.5 as i64)` truncation, so the spec fails the post-count
+    // guard. Parse clamps to the integer the engine derives, the same clamp
+    // the gate applies on its own input count (gate.ts:306).
+    const { e, elementLine } = csLine('212 0 0 96 0 0 2.5 a*2', '212');
+    expect(e.params.inputCount).toBe(2);
+    expect(elementLine).toBe('212 0 0 96 0 0 2 a*2');
+  });
+
+  it('a boundary VCVS input count clamps to the engine 1..8 range on load', () => {
+    const low = csLine('212 0 0 96 0 0 0.5 a*2', '212');
+    expect(low.e.params.inputCount).toBe(1);
+    const high = csLine('212 0 0 96 0 0 9.5 a*2', '212');
+    expect(high.e.params.inputCount).toBe(8);
+  });
+
   it('a CCCS with one pair lands its posts where the cccs.txt wires connect', () => {
     // reference tests/cccs.txt:1 spans (416,272)-(432,272): A+ at the first
     // endpoint, A- below it, and the O+ output on the east at (512,272),

@@ -11530,6 +11530,27 @@ fn vcvs_expression_drives_the_output() {
 }
 
 #[test]
+fn vcvs_fractional_input_count_truncates_to_the_post_count() {
+    // A 2.5 `inputCount` from a hand-edited file must build as 2 inputs
+    // (`(2.5 as i64)` truncates), so the post-count guard at build time sees
+    // four posts and cannot reject the spec. The frontend normalises the field
+    // to the same integer before it ever reaches the engine; this pins the
+    // engine's half of that contract.
+    let c = &mut build(
+        vec![elm_expr(
+            1,
+            "vcvs",
+            &[[0, 0], [50, 0], [50, 100], [100, 0]],
+            2.5,
+            "2*a",
+        )],
+        opts(1e-5, false),
+    );
+    // Four posts: 2 truncated inputs plus the output pair.
+    assert_eq!(c.element_nodes().len(), 4);
+}
+
+#[test]
 fn vcvs_two_input_linear_map() {
     // 212 with two inputs: expr "a+b" with A = 1 V and B = 0.5 V drives the
     // output to 1.5 V.

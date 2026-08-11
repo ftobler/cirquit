@@ -36,6 +36,7 @@ import {
 import { LOGIC_INPUT_TERNARY, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import { postsOf } from '../model/registry';
 import { chipPinsOf } from '../model/registry/chips';
+import { CS_INPUT_COUNT_KINDS, csNormalizeInputCount } from '../model/registry/elements/vcvs';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import { paramScale, resolveParam } from '../model/sliders';
 import {
@@ -783,39 +784,53 @@ export const useStore = create<AppState>((set, get) => ({
     // edit. The property panel's number field guards first, this is the store
     // choke point for any other input path.
     if (!Number.isFinite(value)) return;
-    return set((s) => ({
-      elements: s.elements.map((e) => {
-        if (e.id !== id) return e;
-        const next = { ...e, params: { ...e.params, [name]: value } };
-        // Editing a diode/zener/varactor model value makes the stored model
-        // name stale; drop it so the next save writes the value form, not the
-        // dead name. The varactor shares the diode machinery upstream, so a
-        // stale name there re-applies the model on the next reload and
-        // silently discards the edit.
-        if (
-          (e.kind === 'diode' || e.kind === 'zener' || e.kind === 'varactor') &&
-          DIODE_MODEL_PARAMS.includes(name)
-        ) {
-          delete next.modelName;
-        }
-        // A source's stored flags record whether its pulse duty is
-        // authoritative (bit 4), so a later rebuild does not re-apply the
-        // legacy 1/(2*pi) normalisation to an edited duty. The engine reads
-        // the bit only at build time, so keeping it in step here is free: no
-        // rebuild is forced and the live set_param path stays live.
-        if (name === 'waveform' && (e.kind === 'voltage' || e.kind === 'rail')) {
-          next.flags = e.flags & ~VOLTAGE_PULSE_DUTY;
-          if (value === 5) next.flags |= VOLTAGE_PULSE_DUTY;
-        }
-        return next;
-      }),
-      // Queue the edit for the engine's set_param fast path rather than
-      // bumping `revision` (which would trigger a full rebuild and rewind the
-      // clock). A Map keyed by id and name coalesces slider drags to the last
-      // value.
-      pendingParams: new Map(s.pendingParams).set(`${id}:${name}`, { id, name, value }),
-      paramRevision: s.paramRevision + 1,
-    }));
+    return set((s) => {
+      // The "# of Inputs" slider can hand this a fraction. The engine
+      // truncates it to a post count (`(x as i64)` in the controlled-source
+      // constructors); write the integer back into `params.inputCount` so the
+      // renderer and the engine agree and a rebuild never trips the post-count
+      // guard (circuit.rs:261-269). Truncation matches upstream's
+      // `(int) ei.value` (VCCSElm.java:202-205), the same clamp the parser
+      // applies on load.
+      let pending = value;
+      const target = s.elements.find((e) => e.id === id);
+      if (name === 'inputCount' && target !== undefined && CS_INPUT_COUNT_KINDS.has(target.kind)) {
+        pending = csNormalizeInputCount(value);
+      }
+      return {
+        elements: s.elements.map((e) => {
+          if (e.id !== id) return e;
+          const next = { ...e, params: { ...e.params, [name]: pending } };
+          // Editing a diode/zener/varactor model value makes the stored model
+          // name stale; drop it so the next save writes the value form, not the
+          // dead name. The varactor shares the diode machinery upstream, so a
+          // stale name there re-applies the model on the next reload and
+          // silently discards the edit.
+          if (
+            (e.kind === 'diode' || e.kind === 'zener' || e.kind === 'varactor') &&
+            DIODE_MODEL_PARAMS.includes(name)
+          ) {
+            delete next.modelName;
+          }
+          // A source's stored flags record whether its pulse duty is
+          // authoritative (bit 4), so a later rebuild does not re-apply the
+          // legacy 1/(2*pi) normalisation to an edited duty. The engine reads
+          // the bit only at build time, so keeping it in step here is free: no
+          // rebuild is forced and the live set_param path stays live.
+          if (name === 'waveform' && (e.kind === 'voltage' || e.kind === 'rail')) {
+            next.flags = e.flags & ~VOLTAGE_PULSE_DUTY;
+            if (value === 5) next.flags |= VOLTAGE_PULSE_DUTY;
+          }
+          return next;
+        }),
+        // Queue the edit for the engine's set_param fast path rather than
+        // bumping `revision` (which would trigger a full rebuild and rewind the
+        // clock). A Map keyed by id and name coalesces slider drags to the last
+        // value.
+        pendingParams: new Map(s.pendingParams).set(`${id}:${name}`, { id, name, value: pending }),
+        paramRevision: s.paramRevision + 1,
+      };
+    });
   },
 
   setSliderValue: (id, value) => {
