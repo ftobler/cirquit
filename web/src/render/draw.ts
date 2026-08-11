@@ -472,7 +472,7 @@ export function gradientCoil(
   g.ctx.lineWidth = 3;
   // Butt ends each arc flat; bevel stays from the single-path coil, where it
   // flattened the cusps where the loops meet the axis.
-  g.ctx.lineCap = 'butt';
+  g.ctx.lineCap = 'round';
   g.ctx.lineJoin = 'bevel';
   for (const run of coilLoopPoints(a, b, loops)) {
     g.ctx.beginPath();
