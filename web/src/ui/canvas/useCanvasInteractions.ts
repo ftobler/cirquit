@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SimEngine } from '../../engine/simulator';
-import { defFor, postCountOf, toolDef } from '../../model/registry';
+import { axisConstrained, constrainPostDrag, defFor, dominantAxisSnap, postCountOf } from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
 import {
   isZoomOnly,
@@ -355,12 +355,13 @@ export function useCanvasInteractions(
       case 'place': {
         let x2 = snap(p.x, grid);
         let y2 = snap(p.y, grid);
-        const def = state.tool ? toolDef(state.tool) : undefined;
-        if (def?.noDiagonal) {
-          // Upstream snaps the drag to the dominant axis, so a transistor,
+        const placed = state.elements.find((q) => q.id === drag.id);
+        if (placed !== undefined && axisConstrained(placed)) {
+          // A multi-post part snaps to the dominant axis, so a transistor,
           // op-amp or SPDT cannot end up diagonal (CircuitElm.java:560-566).
-          if (Math.abs(x2 - drag.start.x) < Math.abs(y2 - drag.start.y)) x2 = drag.start.x;
-          else y2 = drag.start.y;
+          const snapped = dominantAxisSnap(drag.start, x2, y2);
+          x2 = snapped.x;
+          y2 = snapped.y;
         }
         state.updateElement(drag.id, { x2, y2 });
         break;
@@ -384,15 +385,24 @@ export function useCanvasInteractions(
         // Snap to absolute grid coordinates, not to a delta: a group keeps
         // its internal spacing, a single post should land exactly on the grid
         // so the dragged end can connect to a wire that ends there.
-        const x = snap(p.x, grid);
-        const y = snap(p.y, grid);
+        let x = snap(p.x, grid);
+        let y = snap(p.y, grid);
         const e = state.elements.find((q) => q.id === drag.id);
-        // A no-op update would bump `revision` and make the engine reload
-        // mid-cell, so only touch the store when the endpoint actually moved.
-        // If the element vanished mid-drag there is nothing to write either.
-        if (e !== undefined && !postAt(e, drag.post, x, y)) {
-          state.updateElement(drag.id, postPatch(drag.post, x, y));
-          dragRef.current = { ...drag, moved: true };
+        if (e !== undefined) {
+          // A post drag of an axis-locked part can only stretch along the
+          // body, never rotate it (upstream's movePoint, CircuitElm.java:661-666).
+          if (axisConstrained(e)) {
+            const constrained = constrainPostDrag(e, drag.post, x, y);
+            x = constrained.x;
+            y = constrained.y;
+          }
+          // A no-op update would bump `revision` and make the engine reload
+          // mid-cell, so only touch the store when the endpoint actually moved.
+          // If the element vanished mid-drag there is nothing to write either.
+          if (!postAt(e, drag.post, x, y)) {
+            state.updateElement(drag.id, postPatch(drag.post, x, y));
+            dragRef.current = { ...drag, moved: true };
+          }
         }
         break;
       }

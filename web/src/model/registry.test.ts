@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { calcLeads, interp, makeTheme, rectCorners, ZIGZAG_HS, zigzagPoints } from '../render/draw';
 import {
+  axisConstrained,
+  constrainPostDrag,
+  dominantAxisSnap,
   ELEMENT_DEFS,
   PLACEMENT_BY_CHAR,
   TOOLBOX,
@@ -8,6 +11,7 @@ import {
   opAmpInputAnchors,
   opAmpLabelAnchors,
   opampInputSign,
+  postCountOf,
   postsOf,
   transistorBarContacts,
 } from './registry';
@@ -18,7 +22,9 @@ import { FUSE_DEF } from './registry/elements/fuse';
 import { LAMP_DEF } from './registry/elements/lamp';
 import { OPAMP_DEF } from './registry/elements/opamp';
 import { THREE_PHASE_MOTOR_DEF } from './registry/elements/threePhaseMotor';
-import type { CircuitElement, DrawContext, Point } from './types';
+import { snap } from '../state/helpers';
+import { GRID_SIZE } from './types';
+import type { CircuitElement, DrawContext, ElementDef, Point } from './types';
 
 const element = (
   kind: string,
@@ -1031,5 +1037,58 @@ describe('the switch placement chars', () => {
       [...ELEMENT_DEFS, ...TOOLBOX].filter((d) => d.shortcut === ch).length;
     expect(declared('s')).toBe(1);
     expect(declared('S')).toBe(1);
+  });
+});
+
+describe('multi-post elements stay on the 90-degree axis', () => {
+  // A fresh element with the def's defaults and flags, the state a toolbar
+  // placement hands the geometry, so posts() and postCountOf() see real
+  // params and not the empty default object.
+  const fresh = (def: ElementDef): CircuitElement =>
+    element(def.kind, 0, 0, 32, 0, def.defaultFlags ?? 0, { ...(def.defaults ?? {}) });
+
+  // The owner's rule covers every element with more than two connectable
+  // terminals. The one-post stems (ground, rail, logic inputs, antenna,
+  // audioOutput, noise, sweep, extVoltage, varRail, probe, box, line,
+  // decoration) hang their symbol off x2,y2 instead of a terminal, so they
+  // count two or fewer posts here and drop out of the sweep.
+  const MULTI_POST = ELEMENT_DEFS.filter((d) => postCountOf(fresh(d)) > 2);
+
+  it.each(MULTI_POST)('place %s diagonally snaps to the dominant axis', (def) => {
+    // The canvas place drag runs exactly this: the far end snaps to the grid,
+    // then an axis-locked element snaps to the dominant axis
+    // (useCanvasInteractions.ts, CircuitElm.java:560-566).
+    const e = fresh(def);
+    const anchor = { x: 0, y: 0 };
+    let x2 = snap(32, GRID_SIZE);
+    let y2 = snap(32, GRID_SIZE);
+    if (axisConstrained(e)) {
+      const snapped = dominantAxisSnap(anchor, x2, y2);
+      x2 = snapped.x;
+      y2 = snapped.y;
+    }
+    const placed = { ...e, x2, y2 };
+    expect(placed.x1 === placed.x2 || placed.y1 === placed.y2).toBe(true);
+  });
+
+  it.each(MULTI_POST)('moving a placed %s keeps it on the 90-degree axis', (def) => {
+    // Place axis-aligned, then drag the far endpoint to a diagonal grid point,
+    // the free-end move after placement that used to leave the element
+    // off-axis. The canvas dragpost constrains an axis-locked part to stretch
+    // only along its body (CircuitElm.java:661-666); the axis and the grid
+    // alignment of the posts must both survive.
+    const e = fresh(def);
+    let x = snap(32, GRID_SIZE);
+    let y = snap(32, GRID_SIZE);
+    if (axisConstrained(e)) {
+      const constrained = constrainPostDrag(e, 2, x, y);
+      x = constrained.x;
+      y = constrained.y;
+    }
+    const moved = { ...e, x2: x, y2: y };
+    expect(moved.x1 === moved.x2 || moved.y1 === moved.y2).toBe(true);
+    for (const p of postsOf(moved)) {
+      expect(Number.isInteger(p.x) && Number.isInteger(p.y), `${def.kind} post`).toBe(true);
+    }
   });
 });

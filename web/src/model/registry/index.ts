@@ -245,6 +245,34 @@ export function postCountOf(e: CircuitElement): number {
   return defFor(e.kind)?.postCountOf?.(e) ?? defFor(e.kind)?.postCount ?? 0;
 }
 
+/** True when an element must always sit on its dominant axis: it either
+ *  carries upstream's `noDiagonal` flag (CircuitElm.java:99) or has more than
+ *  two connectable terminals, the owner's rule. The OR keeps upstream's
+ *  two-post noDiagonal parts (inverter, Schmitt trigger) constrained without
+ *  declaring the flag on the multi-post parts upstream leaves unmarked, so
+ *  the def files stay truthful to upstream. */
+export function axisConstrained(e: CircuitElement): boolean {
+  const def = defFor(e.kind);
+  return (def?.noDiagonal ?? false) || postCountOf(e) > 2;
+}
+
+/** Snap a placement drag's far endpoint to the dominant axis: the stronger of
+ *  the drag's x and y deltas wins, so the element cannot land diagonal
+ *  (CircuitElm.java:560-566). */
+export function dominantAxisSnap(start: Point, x2: number, y2: number): Point {
+  if (Math.abs(x2 - start.x) < Math.abs(y2 - start.y)) return { x: start.x, y: y2 };
+  return { x: x2, y: start.y };
+}
+
+/** Constrain a single-endpoint drag so an axis-locked element can only stretch
+ *  along its existing axis: a horizontal body keeps the dragged post on its
+ *  row, a vertical one on its column (upstream's movePoint, CircuitElm.java:
+ *  661-666). Without this a post drag could rotate the element off the grid. */
+export function constrainPostDrag(e: CircuitElement, post: 1 | 2, x: number, y: number): Point {
+  if (e.x1 === e.x2) return { x: post === 1 ? e.x1 : e.x2, y };
+  return { x, y: post === 1 ? e.y1 : e.y2 };
+}
+
 /** Toolbox groupings, in display order. */
 export const CATEGORIES = ['Basics', 'Sources', 'Semiconductors', 'Active', 'Logic', 'Other'];
 
