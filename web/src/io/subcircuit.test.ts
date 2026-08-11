@@ -493,18 +493,107 @@ describe('building a model from a selection', () => {
     // nothing, so the stored subcircuit was quietly missing half the circuit.
     const elements = [
       resistor(0, 0, 160, 0),
-      { ...makeElement('capacitor', 160, 0, 320, 0), id: nextId++ } as CircuitElement,
-      { ...makeElement('diode', 320, 0, 480, 0), id: nextId++ } as CircuitElement,
+      { ...makeElement('transformer', 160, 0, 320, 0), id: nextId++ } as CircuitElement,
+      { ...makeElement('opamp', 320, 0, 480, 0), id: nextId++ } as CircuitElement,
       label('in', 0, 0, -32, 0),
       label('out', 480, 0, 32, 0),
     ];
     const built = buildModelFromSelection(elements, []);
     expect(built.model).toBeNull();
-    expect(built.unsupported).toEqual(['Capacitor', 'Diode']);
+    expect(built.unsupported).toEqual(['Transformer', 'Op-amp']);
     expect(describeBuildFailure(built)).toBe(
-      'Cannot build a subcircuit from this selection: it contains Capacitor, Diode, ' +
+      'Cannot build a subcircuit from this selection: it contains Transformer, Op-amp, ' +
         'which the subcircuit engine cannot represent yet.',
     );
+  });
+
+  it('builds a model carrying capacitor, diode and inductor children', () => {
+    // These kinds used to refuse the build outright; now they become child
+    // model lines and their numeric dump fields ride the `.` line round trip
+    // and the engine spec, so the engine can rebuild the children with their
+    // values.
+    const elements = [
+      resistor(0, 0, 160, 0),
+      { ...makeElement('capacitor', 160, 0, 320, 0), id: nextId++ } as CircuitElement,
+      { ...makeElement('diode', 320, 0, 480, 0), id: nextId++ } as CircuitElement,
+      { ...makeElement('inductor', 480, 0, 640, 0), id: nextId++ } as CircuitElement,
+      label('in', 0, 0, -32, 0),
+      label('out', 640, 0, 32, 0),
+    ];
+    const built = buildModelFromSelection(elements, []);
+    expect(built.unsupported).toEqual([]);
+    expect(built.model).not.toBeNull();
+    expect(built.model!.nodeList).toBe(
+      'ResistorElm 1 2\rCapacitorElm 2 3\rDiodeElm 3 4\rInductorElm 4 5',
+    );
+    expect(built.model!.extList.map((p) => [p.name, p.node])).toEqual([
+      ['in', 1],
+      ['out', 5],
+    ]);
+    // The child dumps carry each kind's flags and numeric fields in the
+    // registry dump order: the capacitor's FLAG_RESISTANCE (4) bit and its
+    // four tokens, the diode's FLAG_FWDROP (1) bit and forward drop, and the
+    // inductor's four tokens.
+    const engineSpec = modelToEngineSpec(built.model!);
+    expect(engineSpec.dumps).toEqual([
+      '0_1000',
+      '4_0.00001_0_0.001_0',
+      '1_0.805904783',
+      '0_0.001_0_0_0',
+    ]);
+    // The `.` line round trip needs a name, which only the save step assigns.
+    const reparsed = parseCompositeModelLine(
+      compositeModelLine({ ...built.model!, name: 'mixed' }),
+    );
+    expect(reparsed).toEqual({ ...built.model!, name: 'mixed' });
+  });
+
+  it('maps jfet and mosfet channel type onto the polarity-named class', () => {
+    // The channel type is not a dump token; it lives in the element's `pnp`
+    // param, which the class name carries to the engine (composite.rs
+    // `child_kind`). A P-channel part must become a PJfetElm/PMosfetElm line
+    // and its dump must set the MOSFET_PNP flag bit 1.
+    const elements = [
+      {
+        ...makeElement('jfet', 0, 0, 160, 0),
+        id: nextId++,
+        params: { pnp: -1, beta: 0.00125, threshold: -4 },
+      } as CircuitElement,
+      {
+        ...makeElement('mosfet', 160, 0, 320, 0),
+        id: nextId++,
+        params: { pnp: -1, beta: 0.02, threshold: 1.5 },
+      } as CircuitElement,
+      label('gate', 0, 0, -32, 0),
+      // A jfet/mosfet's gate is point 1 and the source/drain hang off point 2
+      // at ±16 perpendicular, so the labelled nets are the gate and the far
+      // perpendicular post.
+      label('drn', 320, -16, 32, 0),
+    ];
+    const built = buildModelFromSelection(elements, []);
+    expect(built.unsupported).toEqual([]);
+    const lines = built.model!.nodeList.split('\r');
+    expect(lines[0]).toMatch(/^PJfetElm /);
+    expect(lines[1]).toMatch(/^PMosfetElm /);
+    // The child dumps start with the channel-type flag bit, then the
+    // threshold/beta pair the engine reads.
+    const engineSpec = modelToEngineSpec(built.model!);
+    expect(engineSpec.dumps[0]).toBe('1_-4_0.00125');
+    expect(engineSpec.dumps[1]).toBe('1_1.5_0.02');
+    // And the N-channel form round-trips to the N-named class.
+    const n = buildModelFromSelection(
+      [
+        {
+          ...makeElement('jfet', 0, 0, 160, 0),
+          id: nextId++,
+          params: { pnp: 1, beta: 0.00125, threshold: -4 },
+        } as CircuitElement,
+        label('gate', 0, 0, -32, 0),
+        label('src', 160, 16, 32, 0),
+      ],
+      [],
+    );
+    expect(n.model!.nodeList).toMatch(/^NJfetElm /);
   });
 
   it('keeps the first label on a net and adds no second pin for it', () => {
@@ -860,18 +949,18 @@ describe('the store actions behind the menu rows', () => {
   });
 
   it('createSubcircuit leaves the refusal reason for the menubar to show', () => {
-    // A capacitor in the selection used to produce a resistor-only model with
-    // no warning; now the command refuses and says which kind stopped it.
+    // A transformer in the selection used to produce a resistor-only model
+    // with no warning; now the command refuses and says which kind stopped it.
     const s = useStore.getState();
     const ids = addLabeledDivider();
-    ids.push(s.addElement(makeElement('capacitor', 160, 0, 160, 160)));
+    ids.push(s.addElement(makeElement('transformer', 160, 0, 160, 160)));
     s.select(ids);
 
     expect(s.createSubcircuit()).toBe(false);
     const after = useStore.getState();
     expect(after.dialog).toBeNull();
     expect(after.subcircuitDraft).toBeNull();
-    expect(after.subcircuitError).toContain('Capacitor');
+    expect(after.subcircuitError).toContain('Transformer');
   });
 
   it('createSubcircuit fails when nothing is labeled', () => {

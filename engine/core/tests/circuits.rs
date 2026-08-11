@@ -12251,6 +12251,346 @@ fn composite_ground_model_and_tapped_divider_hit_analytic_voltages() {
     );
 }
 
+#[test]
+fn composite_with_a_capacitor_child_charges_the_divider_midpoint() {
+    // A capacitor across the low resistor of a divider is an open circuit at
+    // DC, so the steady-state ratio is the plain 5 V, but the transient shows
+    // the child is really there: without it the midpoint would sit at 5 V from
+    // the first step, while the child makes it charge from its 1e-3 initial
+    // voltage toward 5 V with time constant (R1||R2)*C = 5 ms. After 200 us
+    // (20 steps, 0.04 tau) the midpoint has only just begun to charge, and
+    // after 50 ms (10 tau) it has reached the same ratio as the
+    // capacitor-free divider.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm_composite(
+                2,
+                &[[0, 0], [300, 0]],
+                "ResistorElm 1 2\rResistorElm 2 3\rCapacitorElm 2 3",
+                &[1, 3],
+                &["0_1000", "0_1000", "0_1e-5"],
+            ),
+            elm(3, "ground", &[[300, 0]], &[]),
+            elm(4, "ground", &[[0, 200]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let v = c.node_voltages()[2];
+    assert!(
+        (0.1..0.4).contains(&v),
+        "midpoint was {v} after 200 us, expected it charging toward 5 V"
+    );
+    c.run(4980);
+    assert!(
+        close(c.node_voltages()[2], 5.0, 1e-3),
+        "midpoint was {} after 50 ms, expected the 5 V steady state",
+        c.node_voltages()[2]
+    );
+}
+
+#[test]
+fn composite_with_a_diode_child_clamps_its_output_post() {
+    // A diode child from the output post to ground, driven through a resistor
+    // from a rail, clamps the post at the diode's forward drop the same way a
+    // bare diode would, and the composite reports nonlinear through the child
+    // so the Newton loop has to converge around the junction stamp. Solving
+    // (10 - v)/1000 = Is*(exp(v/vscale) - 1) with Is derived from the 0.7 V
+    // rated drop (the `forwardVoltage` dump field) puts the clamp at about
+    // 0.456 V; the asserted window brackets that and is below the 0.565 V the
+    // default 0.806 V drop would give, so a dropped dump field fails the test.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 200]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 200], [0, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm_composite(3, &[[0, 100]], "DiodeElm 1 0", &[1], &["0_0.7"]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let vd = c.element_voltages()[2];
+    assert!((0.4..0.52).contains(&vd), "clamp was {vd}");
+    assert!(
+        close(c.element_currents()[1], (10.0 - vd) / 1000.0, 1e-5),
+        "drive current was {}",
+        c.element_currents()[1]
+    );
+}
+
+#[test]
+fn composite_with_an_inductor_child_shorts_at_dc() {
+    // An inductor behaves as a short at DC (its steady-state stamp is a
+    // 1e-6 ohm conductance), so a composite holding a resistor in series with
+    // an inductor reaches the analytic loop current and the junction between
+    // them sits at the grounded rail. Without the inductor child the junction
+    // would float and read nearly the full supply instead.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm_composite(
+                2,
+                &[[0, 0], [300, 0]],
+                "ResistorElm 1 2\rInductorElm 2 3",
+                &[1, 3],
+                &["0_1000", "0_1e-3"],
+            ),
+            elm(3, "ground", &[[300, 0]], &[]),
+            elm(4, "ground", &[[0, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.element_currents()[0], 1e-2, 1e-6),
+        "loop current was {}",
+        c.element_currents()[0]
+    );
+    assert!(
+        close(c.node_voltages()[2], 0.0, 1e-3),
+        "junction was {}",
+        c.node_voltages()[2]
+    );
+}
+
+#[test]
+fn composite_with_a_closed_switch_child_conducts() {
+    // A closed switch inside a composite cannot rely on wire merging, which
+    // only runs for top-level elements, so it must stamp its 1e-3 ohm closed
+    // resistance like upstream (SwitchElm.java:222-229). A 1k resistor in
+    // series with the switch between the posts carries I = 10/1001, and the
+    // junction between them sits at I*0.001, a near-short. Before the fix the
+    // switch stamped nothing and the floating walk read ~100 MOhm.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm_composite(
+                2,
+                &[[0, 0], [300, 0]],
+                "ResistorElm 1 2\rSwitchElm 2 3",
+                &[1, 3],
+                &["0_1000", "0_0"],
+            ),
+            elm(3, "ground", &[[300, 0]], &[]),
+            elm(4, "ground", &[[0, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.element_currents()[0], 10.0 / 1001.0, 1e-5),
+        "loop current was {}",
+        c.element_currents()[0]
+    );
+    assert!(
+        close(c.node_voltages()[2], 0.0, 1e-3),
+        "junction was {}",
+        c.node_voltages()[2]
+    );
+}
+
+#[test]
+fn composite_with_an_open_switch_child_blocks() {
+    // An open switch inside a composite stamps nothing, so the resistor's far
+    // end floats and the GMIN pin keeps the loop current near zero, unlike the
+    // closed-switch test above.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm_composite(
+                2,
+                &[[0, 0], [300, 0]],
+                "ResistorElm 1 2\rSwitchElm 2 3",
+                &[1, 3],
+                &["0_1000", "0_1"],
+            ),
+            elm(3, "ground", &[[300, 0]], &[]),
+            elm(4, "ground", &[[0, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        c.element_currents()[0] < 1e-4,
+        "open-switch current was {}",
+        c.element_currents()[0]
+    );
+}
+
+#[test]
+fn composite_with_a_zener_child_clamps_in_breakdown() {
+    // A zener child from the output post to ground, driven through a 1k
+    // internal resistor from a +12 V source with another 1k outside, clamps
+    // the output at the breakdown voltage. Solving the loop puts about 3.2 mA
+    // through the zener, just below its 5 mA rated point, so the clamp sits a
+    // little under the rated 5.6 V.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 12.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm_composite(
+                3,
+                &[[100, 0], [200, 0]],
+                "ResistorElm 1 2\rZenerElm 0 2",
+                &[1, 2],
+                &["0_1000", "0_0.805904783_5.6"],
+            ),
+            elm(4, "ground", &[[0, 200]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let out = c.node_voltages()[3];
+    assert!(
+        (5.5..5.65).contains(&out),
+        "zener clamped at {out}, expected the 5.6 V breakdown"
+    );
+}
+
+#[test]
+fn composite_with_a_current_child_delivers_its_rated_current() {
+    // A current child pushes its rated 10 mA from the rail post into the
+    // output post, so the 1k load resistor to ground must read 10 V while the
+    // rail holds the source side at 5 V.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm_composite(
+                2,
+                &[[0, 0], [100, 0]],
+                "CurrentElm 1 2",
+                &[1, 2],
+                &["0_0.01"],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    assert!(
+        close(c.node_voltages()[2], 10.0, 1e-3),
+        "load node was {}",
+        c.node_voltages()[2]
+    );
+    assert!(
+        close(c.element_currents()[2], 1e-2, 1e-6),
+        "composite current was {}",
+        c.element_currents()[2]
+    );
+}
+
+#[test]
+fn composite_with_an_led_child_drops_about_two_volts() {
+    // An LED child is the port's Shockley diode with the LED's 2.1 V rated
+    // drop, so a 5 V source through 1k into the composite reads just under
+    // 2 V across the LED, like the bare-element test.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm_composite(
+                3,
+                &[[100, 0], [200, 0]],
+                "LEDElm 1 2",
+                &[1, 2],
+                &["0_2.1024259_1_0_0_0.01"],
+            ),
+            elm(4, "ground", &[[0, 200]], &[]),
+            elm(5, "wire", &[[200, 0], [200, 100]], &[]),
+            elm(6, "ground", &[[200, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let vd = c.element_voltages()[2];
+    assert!((1.5..2.4).contains(&vd), "LED drop was {vd}");
+}
+
+/// A jfet gate driven 5 V above its post-1 terminal: the polarity decides
+/// whether the gate junction conducts and pulls that terminal up. The channel
+/// type is the `pnp` param the composite folds from the child's flags bit 1,
+/// so this pins that fold (jfet.rs:99).
+fn jfet_gate_pullup(model_type: &str, dump: &str) -> f64 {
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 200]], &[("maxVoltage", 5.0)]),
+            elm_composite(
+                2,
+                &[[0, 200], [100, 200]],
+                &format!("{model_type} 1 2 0"),
+                &[1, 2],
+                &[dump],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 200], [100, 300]],
+                &[("resistance", 10000.0)],
+            ),
+            elm(4, "ground", &[[100, 300]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    c.node_voltages()[2]
+}
+
+#[test]
+fn composite_jfet_polarity_fold_acts_on_the_child_flags() {
+    // The frontend emits the channel type as flags bit 1 of the child dump
+    // (MOSFET_PNP), not as a dump token, so `from_model` must fold that bit
+    // into the `pnp` param. A `JfetElm` line (N-channel by class default)
+    // carrying the bit must act P: its gate junction is anode-at-post-1, so a
+    // gate 5 V above post 1 reverse-biases it and the terminal stays at
+    // ground. The N-channel control forward-biases the junction and pulls the
+    // terminal up past 3 V.
+    let folded = jfet_gate_pullup("JfetElm", "1");
+    assert!(
+        folded < 0.5,
+        "JfetElm with the PNP bit pulled post 1 to {folded} V, expected P-channel"
+    );
+    let p_named = jfet_gate_pullup("PJfetElm", "1");
+    assert!(
+        p_named < 0.5,
+        "PJfetElm pulled post 1 to {p_named} V, expected P-channel"
+    );
+    let n_channel = jfet_gate_pullup("NJfetElm", "0");
+    assert!(
+        n_channel > 3.0,
+        "NJfetElm pulled post 1 to only {n_channel} V, expected N-channel"
+    );
+}
+
 /// The `_`-joined child dump tokens from the bundled ota-gain circuit's 402
 /// line: two rails then sixteen transistors, each carrying its saved flags,
 /// polarity, junction state and beta.

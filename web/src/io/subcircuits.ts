@@ -487,15 +487,25 @@ export function renameModel(
 // ─── building a model from a selection ───
 
 /** The composite child kinds the engine can build, keyed by the port's kind
- *  (composite.rs `child_kind`). The landed composite machinery simulates
- *  exactly rail, voltage, resistor and transistor children, so a selection
- *  holding anything else is refused rather than built without it: widening the
- *  set belongs with `child_kind`/`dump_fields` in the engine. */
+ *  (composite.rs `child_kind`/`dump_fields`). A selection holding anything
+ *  else is refused rather than built without it; widening the set belongs with
+ *  `child_kind`/`dump_fields` in the engine. The asymmetric parts map the
+ *  polarity param onto the polarity-named Java class, the same split the
+ *  engine's `child_kind` defaults express. */
 const KIND_TO_CLASS: Record<string, (e: CircuitElement) => string> = {
   rail: () => 'RailElm',
   voltage: () => 'VoltageElm',
   resistor: () => 'ResistorElm',
+  capacitor: () => 'CapacitorElm',
+  inductor: () => 'InductorElm',
+  diode: () => 'DiodeElm',
+  zener: () => 'ZenerElm',
+  led: () => 'LEDElm',
+  current: () => 'CurrentElm',
+  switch: () => 'SwitchElm',
   transistor: (e) => ((e.params.pnp ?? 1) < 0 ? 'PTransistorElm' : 'NTransistorElm'),
+  jfet: (e) => ((e.params.pnp ?? 1) < 0 ? 'PJfetElm' : 'NJfetElm'),
+  mosfet: (e) => ((e.params.pnp ?? 1) < 0 ? 'PMosfetElm' : 'NMosfetElm'),
 };
 
 /** Kinds that are not child model lines and are not gaps in the model either.

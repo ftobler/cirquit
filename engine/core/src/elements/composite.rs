@@ -34,10 +34,18 @@ use crate::stamp::{Stamper, GROUND};
 /// which has no entry in the composite's node list.
 const GROUND_NODE: usize = usize::MAX;
 
+/// Channel-type flag bit on a jfet/mosfet child, the frontend's `MOSFET_PNP`
+/// (web/src/model/registry/flags.ts). The channel type is not a dump token:
+/// it lives in the child's file flags, and the engine jfet/mosfet read it as
+/// the `pnp` param, so `apply_dump` stores the flags and `from_model` folds
+/// the bit into the param.
+const MOSFET_PNP: i64 = 1;
+
 /// The child kind a model line's type token maps to, plus the default params
-/// the type implies (the transistor's polarity is part of its class, so a
-/// fresh `PTransistorElm` must start as a PNP even with no dump token).
-/// Unknown types are skipped, matching upstream's "failed to create" path.
+/// the type implies (the transistor's and jfet/mosfet's polarity is part of
+/// its class, so a fresh `PTransistorElm` or `PJfetElm` must start as a PNP
+/// even with no dump token). Unknown types are skipped, matching upstream's
+/// "failed to create" path.
 fn child_kind(model_type: &str) -> Option<(&'static str, Vec<(&'static str, f64)>)> {
     match model_type {
         "RailElm" => Some(("rail", Vec::new())),
@@ -46,13 +54,25 @@ fn child_kind(model_type: &str) -> Option<(&'static str, Vec<(&'static str, f64)
         "TransistorElm" => Some(("transistor", Vec::new())),
         "NTransistorElm" => Some(("transistor", vec![("pnp", 1.0)])),
         "PTransistorElm" => Some(("transistor", vec![("pnp", -1.0)])),
+        "CapacitorElm" => Some(("capacitor", Vec::new())),
+        "InductorElm" => Some(("inductor", Vec::new())),
+        "CurrentElm" => Some(("current", Vec::new())),
+        "SwitchElm" => Some(("switch", Vec::new())),
+        "DiodeElm" => Some(("diode", Vec::new())),
+        "ZenerElm" => Some(("zener", Vec::new())),
+        "LEDElm" => Some(("led", Vec::new())),
+        "JfetElm" | "NJfetElm" => Some(("jfet", vec![("pnp", 1.0)])),
+        "PJfetElm" => Some(("jfet", vec![("pnp", -1.0)])),
+        "MosfetElm" | "NMosfetElm" => Some(("mosfet", vec![("pnp", 1.0)])),
+        "PMosfetElm" => Some(("mosfet", vec![("pnp", -1.0)])),
         _ => None,
     }
 }
 
-/// The param names a child kind's dump fields map to, in position order. The
-/// OTA's children are rails and transistors; the resistor table exists for the
-/// composite tests and the later `.` line.
+/// The param names a child kind's dump fields map to, in position order, the
+/// frontend registry's `dump` order. The OTA's children are rails and
+/// transistors; the rest of the tables exist for the `.` line and the
+/// composite tests.
 fn dump_fields(kind: &str) -> Option<&'static [&'static str]> {
     match kind {
         "rail" | "voltage" => Some(&[
@@ -65,12 +85,45 @@ fn dump_fields(kind: &str) -> Option<&'static [&'static str]> {
         ]),
         "transistor" => Some(&["pnp", "lastVbe", "lastVbc", "beta"]),
         "resistor" => Some(&["resistance"]),
+        "capacitor" => Some(&[
+            "capacitance",
+            "voltDiff",
+            "initialVoltage",
+            "seriesResistance",
+        ]),
+        "inductor" => Some(&[
+            "inductance",
+            "current",
+            "initialCurrent",
+            "saturationCurrent",
+        ]),
+        "diode" => Some(&["forwardVoltage"]),
+        "zener" => Some(&["forwardVoltage", "breakdownVoltage"]),
+        "led" => Some(&[
+            "forwardVoltage",
+            "colorR",
+            "colorG",
+            "colorB",
+            "maxBrightnessCurrent",
+        ]),
+        "current" => Some(&["current", "maxVoltage"]),
+        "switch" => Some(&["position"]),
+        "jfet" | "mosfet" => Some(&["threshold", "beta"]),
         _ => None,
     }
 }
 
 /// Applies one `_`-joined child dump token: the first field is the child's
 /// file flags, the rest overwrite the defaults by the kind's field order.
+///
+/// Only `f64` fields are parsed, so the string tokens a child dump can carry
+/// are dropped silently: a diode/zener/led's `modelName` (FLAG_MODEL form) and
+/// a switch's `true`/`false` momentary or label token are skipped and the
+/// child falls back to its value-form defaults. The position alignment holds
+/// because the fields are paired by order and a non-numeric token is just
+/// skipped, so the numeric fields that follow still land. The LED's colour and
+/// brightness, the switch's position and every other value-form field
+/// round-trip; only the named-model and momentary/label tokens do not.
 fn apply_dump(token: &str, kind: &str, params: &mut HashMap<String, f64>, flags: &mut i64) {
     let mut fields = token.split('_');
     if let Some(f) = fields.next() {
@@ -172,6 +225,21 @@ impl Composite {
                 if let Some(token) = dumps.get(i) {
                     apply_dump(token, child_kind, &mut params, &mut flags);
                 }
+            }
+            // The channel type of a jfet/mosfet child is not a dump token; it
+            // is file flag bit 1 (the frontend's `MOSFET_PNP`), which the
+            // engine models read as the `pnp` param. `child_kind` already
+            // carries the class's own polarity, so only the set bit needs to
+            // override it.
+            if (child_kind == "jfet" || child_kind == "mosfet") && flags & MOSFET_PNP != 0 {
+                params.insert("pnp".into(), -1.0);
+            }
+            // A switch child cannot rely on the top-level wire merging that
+            // shorts a closed switch's terminals, so it must know it is in a
+            // composite and stamp its 1e-3 ohm closed resistance instead
+            // (upstream's `inComposite`, SwitchElm.java:219-228).
+            if child_kind == "switch" {
+                params.insert("inComposite".into(), 1.0);
             }
             let spec = ElementSpec {
                 id: i as u32,
