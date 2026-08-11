@@ -8,6 +8,7 @@ import {
   endpoints,
   gradientPolyline,
   interp,
+  isHighlighted,
   lead,
   powerColor,
   tempColor,
@@ -47,7 +48,10 @@ function drawLampBody(g: DrawContext, e: CircuitElement): void {
   // (LampElm.java:131); upstream's next line overwrites it with getTempColor,
   // which makes that call dead there, but the port keeps the participation.
   const fill = g.showPowerColor ? powerColor(g, g.power) : tempColor(g.state);
-  circle(g, bulb, LAMP_BULB_RADIUS, fill, true);
+  // The disc fill is the idle body; a picked lamp would otherwise read as a
+  // solid block of the selection or hover colour, so the highlight keeps the
+  // white outline below and drops the fill.
+  if (!isHighlighted(g)) circle(g, bulb, LAMP_BULB_RADIUS, fill, true);
   // The bulb outline and filament are drawThickCircle/drawThickLine upstream
   // (LampElm.java:135-141), the 3-unit body weight. The outline is upstream's
   // whiteColor (LampElm.java:134): white in the normal theme, black in the

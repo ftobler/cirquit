@@ -7,6 +7,7 @@ import {
   endpoints,
   interp,
   interp2,
+  isHighlighted,
   lead,
   triangle,
   voltageColor,
@@ -28,7 +29,10 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
   lead(g, lead2, p2, voltageColor(g, g.voltages[2]));
 
   const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
-  triangle(g, t1, t2, lead2, g.theme.panel);
+  // The panel fill is a port addition, upstream only strokes the triangle
+  // (OpAmpElm.java:101), so it stays for the idle body but must not flood it
+  // with the selection or hover colour when the part is picked.
+  if (!isHighlighted(g)) triangle(g, t1, t2, lead2, g.theme.panel);
   // The triangle outline is a drawThickPolygon upstream (OpAmpElm.java:101),
   // the 3-unit body weight.
   closedPolyline(g, [t1, t2, lead2, t1], g.theme.wire);

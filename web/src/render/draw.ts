@@ -235,6 +235,14 @@ export function limbColor(g: DrawContext, color: string): string {
   return color;
 }
 
+/** True when `limbColor` would repaint the element: selection, hover or the
+ *  shift-highlighted net. Filled bodies gate their fill on this, so a
+ *  highlighted part reads as its outline rather than a solid block of the
+ *  selection or highlight colour. */
+export function isHighlighted(g: DrawContext): boolean {
+  return g.selected || g.hovered || g.onHighlightedNet;
+}
+
 export function strokeStyle(
   g: DrawContext,
   color: string,

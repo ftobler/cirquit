@@ -14,6 +14,8 @@ import { DIODE_DEF } from './registry/elements/diode';
 import { ZENER_DEF } from './registry/elements/zener';
 import { FUSE_DEF } from './registry/elements/fuse';
 import { LAMP_DEF } from './registry/elements/lamp';
+import { OPAMP_DEF } from './registry/elements/opamp';
+import { THREE_PHASE_MOTOR_DEF } from './registry/elements/threePhaseMotor';
 import type { CircuitElement, DrawContext, Point } from './types';
 
 const element = (
@@ -892,5 +894,97 @@ describe('lamp draw and the live temperature state', () => {
 
   it('fills the bulb white well above the top band breakpoint', () => {
     expect(fillOf(3000)).toBe('rgb(255,255,255)');
+  });
+});
+
+describe('op-amp body fill', () => {
+  // The triangle is filled with the panel colour only while idle: the fill is
+  // a port addition upstream never paints (OpAmpElm strokes the triangle),
+  // so on hover or selection it must drop out and leave the outline alone,
+  // instead of turning the whole body into a solid highlight block.
+
+  const opamp = () => element('opamp', 0, 0, 64, 0);
+  const draw = (overrides: Partial<DrawContext> = {}) => {
+    const ctx = mkCtx();
+    OPAMP_DEF.draw(context(ctx, overrides), opamp());
+    return ctx;
+  };
+
+  it('fills the triangle in the panel colour when idle', () => {
+    expect(draw().fills).toEqual([makeTheme().panel]);
+  });
+
+  it('drops the triangle fill on hover, keeping the highlighted outline', () => {
+    const ctx = draw({ hovered: true });
+    expect(ctx.fills).toEqual([]);
+    expect(ctx.strokes).toContain(makeTheme().highlight);
+  });
+
+  it('drops the triangle fill when selected, keeping the selection outline', () => {
+    const ctx = draw({ selected: true });
+    expect(ctx.fills).toEqual([]);
+    expect(ctx.strokes).toContain(makeTheme().selection);
+  });
+
+  it('drops the triangle fill on the shift-highlighted net', () => {
+    expect(draw({ onHighlightedNet: true }).fills).toEqual([]);
+  });
+});
+
+describe('lamp bulb fill on highlight', () => {
+  const lamp = () => element('lamp', 0, 0, 160, 0);
+  const draw = (overrides: Partial<DrawContext> = {}) => {
+    const ctx = mkCtx();
+    LAMP_DEF.draw(context(ctx, { state: 2000, ...overrides }), lamp());
+    return ctx;
+  };
+
+  it('keeps the temperature fill while idle', () => {
+    const ctx = draw();
+    expect(ctx.fills).toHaveLength(1); // only the bulb disc is filled
+    expect(ctx.fills[0]).toBe('rgb(255,255,109)');
+  });
+
+  it('drops the disc fill on hover, keeping the highlighted outline', () => {
+    const ctx = draw({ hovered: true });
+    expect(ctx.fills).toEqual([]);
+    expect(ctx.strokes).toContain(makeTheme().highlight);
+  });
+
+  it('drops the disc fill when selected, keeping the selection outline', () => {
+    const ctx = draw({ selected: true });
+    expect(ctx.fills).toEqual([]);
+    expect(ctx.strokes).toContain(makeTheme().selection);
+  });
+});
+
+describe('three-phase motor body fill', () => {
+  // The outer body and the hub are filled discs while idle; on hover or
+  // selection the fills drop out and the two circles read as outlines.
+
+  const motor = () => element('threePhaseMotor', 0, 0, 144, 0);
+  const draw = (overrides: Partial<DrawContext> = {}) => {
+    const ctx = mkCtx();
+    THREE_PHASE_MOTOR_DEF.draw(
+      context(ctx, { voltages: [0, 0, 0, 0, 0, 0], ...overrides }),
+      motor(),
+    );
+    return ctx;
+  };
+
+  it('fills the outer body and the hub while idle', () => {
+    expect(draw().fills).toHaveLength(2);
+  });
+
+  it('drops both fills on hover, keeping the highlighted outlines', () => {
+    const ctx = draw({ hovered: true });
+    expect(ctx.fills).toEqual([]);
+    expect(ctx.strokes).toContain(makeTheme().highlight);
+  });
+
+  it('drops both fills when selected, keeping the selection outlines', () => {
+    const ctx = draw({ selected: true });
+    expect(ctx.fills).toEqual([]);
+    expect(ctx.strokes).toContain(makeTheme().selection);
   });
 });

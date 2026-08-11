@@ -12,6 +12,7 @@ import {
   currentDots,
   endpoints,
   interp,
+  isHighlighted,
   lead,
   line,
   voltageColor,
@@ -83,8 +84,11 @@ function drawMotor(g: DrawContext, e: CircuitElement): void {
 
   const center = interp(p1, p2, 0.5);
   const bodyColor = elementColor(g, (g.voltages[0] + g.voltages[2] + g.voltages[4]) / 3, g.power);
-  circle(g, center, CR, bodyColor, true);
-  circle(g, center, Math.trunc(CR / 2.2), g.theme.text, true);
+  // The body and hub are filled discs; on hover or selection the fill drops
+  // out so the two circles read as outlines instead of a solid block.
+  const filled = !isHighlighted(g);
+  circle(g, center, CR, bodyColor, filled);
+  circle(g, center, Math.trunc(CR / 2.2), g.theme.text, filled);
 
   // The three rotor spoke lines. The port's draw context carries no rotor
   // angle (live state stays in the engine), so the spokes are drawn at a fixed
