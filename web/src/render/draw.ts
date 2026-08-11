@@ -889,11 +889,11 @@ function lightTheme(): Theme {
     // and the analog switch bar.
     lightGray: '#c0c0c0',
     text: '#24292f',
-    selection: '#0969da',
+    selection: '#54aeff',
     // The hover/net-highlight role is the port's own, deliberately outside
-    // the upstream-pinned colour-scale roles, so it is free to sit beside
-    // selection: the lighter GitHub accent, a blue one step from the
-    // selection blue so a hovered element still reads as not-yet-selected.
+    // the upstream-pinned colour-scale roles. Selection and highlight are the
+    // same GitHub accent, so a selected element and a hovered one read
+    // identically: the owner's call that the hover blue is the correct one.
     highlight: '#54aeff',
     negative: '#cf222e',
     noConnect: '#ff0000',
@@ -908,9 +908,11 @@ function lightTheme(): Theme {
 
 function darkTheme(): Theme {
   return {
-    // The five colour-scale roles are upstream's exact constants
+    // Four of the five colour-scale roles are upstream's exact constants
     // (CircuitElm.java:200-205, Color.java:26-37); draw.test.ts pins the
-    // parity, so a future palette tweak has to argue with the claim.
+    // parity, so a future palette tweak has to argue with the claim. Selection
+    // is the exception: it used to carry upstream's cyan but now matches the
+    // hover blue, the owner's call that the hover colour was the right one.
     background: '#0d1117',
     grid: '#1b2230',
     wire: '#c9d1d9',
@@ -923,9 +925,10 @@ function darkTheme(): Theme {
     // theme carries: the relay blade and the analog switch bar.
     lightGray: '#c0c0c0',
     text: '#8b949e',
-    selection: '#00ffff',
-    // Same hover-family decision as the light theme: the app's accent blue
-    // (styles.css --accent), adjacent to the parity-pinned cyan selection.
+    selection: '#58a6ff',
+    // Same hover-family decision as the light theme: selection and highlight
+    // are both the app's accent blue (styles.css --accent), so the selected
+    // and hovered states share one hue.
     highlight: '#58a6ff',
     negative: '#ff0000',
     // Upstream's no-connect marker is plain red (UIManager.java:710).

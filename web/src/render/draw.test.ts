@@ -344,7 +344,7 @@ describe('theme colour overrides', () => {
     expect(theme.positive).toBe('#1a7f37');
     expect(theme.negative).toBe('#cf222e');
     expect(theme.neutral).toBe('#6e7781');
-    expect(theme.selection).toBe('#0969da');
+    expect(theme.selection).toBe('#54aeff');
     expect(theme.currentDot).toBe('#9a6700');
     expect(theme.background).toBe('#ffffff');
   });
@@ -362,33 +362,33 @@ describe('theme colour overrides', () => {
   });
 
   it('dark theme colour-scale roles match upstream exactly', () => {
-    // The dark theme is the parity-exact palette: the five colour-scale roles
-    // are upstream's Color constants (CircuitElm.java:200-205, Color.java:
-    // 26-37). A future palette tweak has to argue with this claim. The light
-    // theme is a deliberate legibility divergence and is not covered here.
+    // The dark theme is the parity-exact palette: four of the five colour-scale
+    // roles are upstream's Color constants (CircuitElm.java:200-205, Color.java:
+    // 26-37). Selection is the deliberate exception: it used to carry upstream's
+    // cyan but now matches the hover blue (the owner's call that the hover
+    // colour was the right one), so it is pinned to highlight below rather than
+    // to cyan. A future palette tweak has to argue with this claim.
     const theme = makeTheme();
     expect(theme.positive).toBe('#00ff00'); // Color.green
     expect(theme.negative).toBe('#ff0000'); // Color.red
     expect(theme.neutral).toBe('#808080'); // Color.gray
     expect(theme.currentDot).toBe('#ffff00'); // Color.yellow
-    expect(theme.selection).toBe('#00ffff'); // Color.cyan
+    expect(theme.selection).toBe(theme.highlight); // not Color.cyan any more
   });
 
-  it('paints hover and selection in one blue family in both themes', () => {
+  it('paints hover and selection identically in both themes', () => {
     // Upstream paints the hovered element, the selection and the highlighted
     // net all in the single selectColor (CircuitElm.needsHighlight:1308-1313
-    // and getVoltageColor:1210-1212). The port keeps a separate highlight
-    // role so a hovered element still reads as not-yet-selected, but it must
-    // sit in the same family as selection instead of the old orange. The
-    // highlight role is not one of the dark theme's five upstream-pinned
-    // colour-scale roles, so no parity pin moves; the selection pins below
-    // re-state the family they pair with.
+    // and getVoltageColor:1210-1212). The port keeps a separate highlight role
+    // so the two can diverge again later, but the owner's call is that the
+    // hover blue is the correct one, so selection matches highlight in both
+    // themes: a selected element and a hovered one read the same.
     const light = makeTheme(false);
     expect(light.highlight).toBe('#54aeff');
-    expect(light.selection).toBe('#0969da');
+    expect(light.selection).toBe(light.highlight);
     const dark = makeTheme();
     expect(dark.highlight).toBe('#58a6ff');
-    expect(dark.selection).toBe('#00ffff'); // Color.cyan, parity-pinned
+    expect(dark.selection).toBe(dark.highlight);
   });
 });
 
