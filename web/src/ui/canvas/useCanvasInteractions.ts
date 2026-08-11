@@ -439,17 +439,17 @@ export function useCanvasInteractions(
           finishPlacement(drag, state);
           // Double-tap means edit this element, like upstream's onDoubleClick
           // (MouseManager.java:1024-1034): only when something is under the
-          // pointer, and never a running interactive part's lever, which is a
-          // control rather than something to edit. Empty canvas does nothing.
-          // The lever region is the same switchRect a single click toggles, so
-          // a double-tap on a lead selects like a single tap does and the edit
-          // dialog is fair game there.
+          // pointer, and never an interactive part's lever, which is a control
+          // rather than something to edit, whether the sim runs or not.
+          // Empty canvas does nothing. The lever region is the same switchRect
+          // a single click toggles, so a double-tap on a lead selects like a
+          // single tap does and the edit dialog is fair game there.
           const p = toCircuit(ev.clientX, ev.clientY);
           const hit = hitTest(p);
           if (hit) {
             const def = defFor(hit.kind);
             const rect = def?.switchRect?.(hit);
-            const onLever = def?.interactive && state.running && (rect === undefined || rectContains(rect, p));
+            const onLever = def?.interactive && (rect === undefined || rectContains(rect, p));
             if (!onLever) {
               if (!state.settings.editable) {
                 state.setStatus('Editing disabled. Re-enable from the Options menu.');
@@ -594,13 +594,13 @@ export function useCanvasInteractions(
     const hit = hitTest(p);
     if (!hit) return;
     // Upstream skips the edit dialog for switches; an interactive part's lever
-    // in run mode is a control, not something to edit (MouseManager.java:
-    // 1024-1034). The skip only covers the lever, the same switchRect a single
-    // click toggles: a double-click on a lead selects like a single click
-    // does, so the edit dialog is fair game there.
+    // is a control, not something to edit, whether the sim runs or not
+    // (MouseManager.java:1024-1034). The skip only covers the lever, the same
+    // switchRect a single click toggles: a double-click on a lead selects like
+    // a single click does, so the edit dialog is fair game there.
     const def = defFor(hit.kind);
     const rect = def?.switchRect?.(hit);
-    if (def?.interactive && state.running && (rect === undefined || rectContains(rect, p))) return;
+    if (def?.interactive && (rect === undefined || rectContains(rect, p))) return;
     // Editing disabled drops the edit dialog, like upstream's readOnly gate
     // (MouseManager.java:1032).
     if (!state.settings.editable) {

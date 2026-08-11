@@ -138,7 +138,9 @@ export function beginPointerGesture(
 
   // A switch is a run-mode control, not an edit: it must still throw when
   // editing is disabled, exactly as upstream's doSwitch runs before its
-  // read-only forcing (MouseManager.java:1101).
+  // read-only forcing (MouseManager.java:1101). No running gate: a paused
+  // circuit is still configured by throwing its switches, the keyboard path
+  // (toggleSwitchByKey) already works paused and this must match it.
   if (hit) {
     const def = defFor(hit.kind);
     // A switch toggles only when the pointer lands on its lever: the
@@ -149,7 +151,7 @@ export function beginPointerGesture(
     // Alt pans and is kept as a documented hatch; it costs nothing. A def
     // without a rect keeps the whole element clickable so nothing regresses
     // silently.
-    if (def?.interactive && state.running && !ev.altKey && !ev.ctrlKey) {
+    if (def?.interactive && !ev.altKey && !ev.ctrlKey) {
       const rect = def.switchRect?.(hit);
       if (rect === undefined || rectContains(rect, p)) {
         const momentary = hit.kind === 'switch' && (hit.params.momentary ?? 0) !== 0;

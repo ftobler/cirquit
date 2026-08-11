@@ -268,18 +268,31 @@ describe('touch gating', () => {
   });
 });
 
-describe('edit mode', () => {
-  it('a press inside the rect selects and arms move instead of toggling', () => {
+describe('pointer-down on a switch while paused', () => {
+  it('inside the rect toggles, matching the keyboard path', () => {
     const id = addEl('switch');
     useStore.getState().setRunning(false);
     const r = refs();
+    const before = useStore.getState().undoStack.length;
+    beginPointerGesture(down(), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+    expect(useStore.getState().undoStack.length).toBe(before + 1);
     beginPointerGesture(down(), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(0);
-    expect(useStore.getState().selectedIds).toEqual([id]);
-    expect(r.dragRef.current).toEqual({ mode: 'move', last: { x: 80, y: -5 }, moved: false, gated: false });
   });
 
-  it('ctrl in edit mode still arms dragpost', () => {
+  it('outside the rect on a lead still selects and arms move, without toggling', () => {
+    const id = addEl('switch');
+    useStore.getState().setRunning(false);
+    const r = refs();
+    beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(useStore.getState().elements[0].state).toBe(0);
+    expect(useStore.getState().selectedIds).toEqual([id]);
+    expect(r.dragRef.current).toEqual({ mode: 'move', last: { x: 30, y: 0 }, moved: false, gated: false });
+  });
+
+  it('ctrl while paused still arms dragpost', () => {
     const id = addEl('switch2');
     useStore.getState().setRunning(false);
     const r = refs();
