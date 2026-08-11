@@ -242,3 +242,68 @@ describe('fractional multiplexer select-bit counts rebuild cleanly', () => {
     expect(end - start).toBe(postsOf(e).length);
   });
 });
+
+describe('fractional chip bit-width edits rebuild cleanly', () => {
+  beforeEach(() => useStore.setState(fresh()));
+
+  it.each([
+    ['adc', 2.5, 2, true],
+    ['dac', 2.5, 2, false],
+    ['decimalDisplay', 2.5, 2, false],
+    ['latch', 2.5, 2, false],
+    ['counter', 2.5, 3, false],
+    ['ringCounter', 2.5, 2, false],
+  ])(
+    'editing %s to %s stores an integer and builds without the post-count guard',
+    async (kind, given, n, needsGround) => {
+      // The "# of Bits" number field can hand the store a fraction; setParam
+      // must write back the integer the engine's `(x as usize)` truncation and
+      // clamp derive (adc.rs:28, dac.rs:36, decimal_display.rs:24, latch.rs:40,
+      // counter.rs:27, ring_counter.rs:26), or the rebuild's post-count guard
+      // (circuit.rs:261-269) rejects the spec and the circuit never comes back.
+      const id = useStore.getState().addElement({
+        kind,
+        x1: 0,
+        y1: 0,
+        x2: 192,
+        y2: 0,
+        flags: 0,
+        params: { bits: 4 },
+      });
+      useStore.getState().setParam(id, 'bits', given);
+      let e = useStore.getState().elements.find((x) => x.id === id)!;
+      expect(e.params.bits).toBe(n);
+
+      // An adc's first post is an output voltage source; with no ground symbol
+      // the engine grounds the first node as its reference, shorting that
+      // source, so pin the V+ sense input down like the demultiplexer test
+      // does its data input. The other five chips build unloaded.
+      let groundId: number | undefined;
+      if (needsGround) {
+        const ref = postsOf(e)[postsOf(e).length - 1];
+        groundId = useStore.getState().addElement({
+          kind: 'ground',
+          x1: ref.x,
+          y1: ref.y,
+          x2: ref.x,
+          y2: ref.y + 32,
+          flags: 0,
+          params: {},
+        });
+        e = useStore.getState().elements.find((x) => x.id === id)!;
+      }
+
+      const engine = await SimEngine.create();
+      expect(engine.setCircuit(useStore.getState().elements, DEFAULT_SETTINGS, [])).toBeNull();
+      // The engine's node array and the renderer's post list hold one entry
+      // per post, so equal spans prove the two halves agree on the post count
+      // and the renderer's index cannot drift off the engine's elementNodes.
+      // The ground follows the chip in element order, so its offset ends the
+      // chip's span.
+      const nodes = engine.elementNodes();
+      const start = engine.postOffset(id)!;
+      const end = groundId === undefined ? nodes.length : engine.postOffset(groundId)!;
+      expect(end - start).toBe(postsOf(e).length);
+    },
+  );
+});

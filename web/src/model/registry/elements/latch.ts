@@ -13,6 +13,7 @@ import {
   chipPosts,
   chipStateNames,
   drawChip,
+  normalizeChipBits,
   type ChipPinDef,
 } from './dFlipFlop';
 import { readParams } from '../shared';
@@ -28,8 +29,14 @@ export const LATCH_ENABLE_ONE = 32;
 export const LATCH_ENABLE_TWO = 64;
 export const LATCH_RESET_INVERT = 128;
 
+/** The bits field, floored like the engine: truncated and held to the engine's
+ *  floor of 2, the edit dialog's minimum (latch.rs:40). */
+export function normalizeLatchBits(value: number): number {
+  return normalizeChipBits(value, 2);
+}
+
 function latchBits(e: CircuitElement): number {
-  return Math.max(2, Math.round(e.params.bits ?? 4));
+  return normalizeLatchBits(e.params.bits ?? 4);
 }
 
 /** The number of input (and output) enable pins, from bits 5-6. */
@@ -96,7 +103,7 @@ export const LATCH_DEF: ElementDef = {
   parse: (t, e) => {
     // `bits` must land first: the output pins (and their state tokens) sit at
     // posts `bits..2*bits`, so the state names depend on the loaded width.
-    const i = chipCommonTokens(t, e, true);
+    const i = chipCommonTokens(t, e, true, normalizeLatchBits);
     readParams(t.slice(i), e, chipStateNames(latchPins(e)));
     // Old latches predate FLAG_STATE; upstream adds it on load so the next
     // save carries the state tokens (LatchElm.java:54-58).

@@ -12,6 +12,7 @@ import {
   chipPosts,
   chipStateNames,
   drawChip,
+  normalizeChipBits,
   type ChipPinDef,
 } from './dFlipFlop';
 import { readParams } from '../shared';
@@ -20,8 +21,14 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 export const COUNTER_UP_DOWN = 4;
 export const COUNTER_NEGATIVE_EDGE = 8;
 
+/** The bits field, floored like the engine: truncated and held to the engine's
+ *  floor of 3, the edit dialog's minimum (counter.rs:27). */
+export function normalizeCounterBits(value: number): number {
+  return normalizeChipBits(value, 3);
+}
+
 function counterBits(e: CircuitElement): number {
-  return Math.max(3, Math.round(e.params.bits ?? 4));
+  return normalizeCounterBits(e.params.bits ?? 4);
 }
 
 /** The pin table, from `setupPins` (CounterElm.java:72-85). The output pins
@@ -61,7 +68,7 @@ export const COUNTER_DEF: ElementDef = {
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, invertreset: 1, modulus: 0, highVoltage: 5 },
   parse: (t, e) => {
-    const i = chipCommonTokens(t, e, true);
+    const i = chipCommonTokens(t, e, true, normalizeCounterBits);
     const names = chipStateNames(counterPins(e));
     readParams(t.slice(i, i + names.length), e, names);
     // The counter's own trailing tokens: the reset polarity as a Boolean, then

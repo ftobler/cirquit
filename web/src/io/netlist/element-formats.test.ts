@@ -1761,6 +1761,45 @@ describe('controlled source file formats', () => {
     expect(elementLine).toBe('185 0 0 128 0 0 3');
   });
 
+  it.each([
+    ['167', 'adc', 'adc', 2],
+    ['166', 'dac', 'dac', 2],
+    ['419', 'decimalDisplay', 'decimalDisplay', 2],
+    ['168', 'latch', 'latch', 2],
+    ['164', 'counter', 'counter', 3],
+    ['163', 'ringCounter', 'ringCounter', 2],
+  ])('a fractional %s %s bit count normalises on load to the engine integer', (code, kind, _name, n) => {
+    // A hand-edited fraction would draw `Math.round` pins but build the
+    // engine's `(x as usize)` truncation and floor (a counter's 2.5 round-trips
+    // as 3 both ways, so the probe token is 3.9, where round gives 4), so the
+    // spec fails the post-count guard. Parse clamps to the integer the engine
+    // derives, the same clamp the store applies on edit (store.ts:setParam).
+    const token = kind === 'counter' ? '3.9' : '2.5';
+    const { e } = csLine(`${code} 0 0 128 0 0 ${token}`, code);
+    expect(e.kind).toBe(kind);
+    expect(e.params.bits).toBe(n);
+  });
+
+  it('a fractional adc bit count re-emits the engine integer', () => {
+    // The ADC's token stream is just `bits` then the optional high voltage, so
+    // a save writes the normalised integer back in place (ADCElm.java:36).
+    const { elementLine } = csLine('167 0 0 128 0 0 2.5', '167');
+    expect(elementLine).toBe('167 0 0 128 0 0 2');
+  });
+
+  it('a fractional dac bit count re-emits the engine integer', () => {
+    const { elementLine } = csLine('166 0 0 128 0 0 2.5', '166');
+    expect(elementLine).toBe('166 0 0 128 0 0 2');
+  });
+
+  it('a fractional decimal display bit count re-emits the engine integer', () => {
+    // The decimal display reads its own `bitCount displayMode` after the
+    // optional high voltage, and the 2.5 lands on the bit count
+    // (DecimalDisplayElm.java:78).
+    const { elementLine } = csLine('419 0 0 128 0 0 2.5 0', '419');
+    expect(elementLine).toBe('419 0 0 128 0 0 2 0');
+  });
+
   it('a CCCS with one pair lands its posts where the cccs.txt wires connect', () => {
     // reference tests/cccs.txt:1 spans (416,272)-(432,272): A+ at the first
     // endpoint, A- below it, and the O+ output on the east at (512,272),

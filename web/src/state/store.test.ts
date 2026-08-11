@@ -1371,6 +1371,72 @@ describe('multiplexer select-bit edits are normalised', () => {
   });
 });
 
+describe('chip bit-width edits are normalised', () => {
+  const addChip = (kind: string) =>
+    useStore.getState().addElement({
+      kind,
+      x1: 0,
+      y1: 0,
+      x2: 192,
+      y2: 0,
+      flags: 0,
+      params: { bits: 4 },
+    });
+
+  it.each([
+    ['adc', 2],
+    ['dac', 2],
+    ['decimalDisplay', 2],
+    ['latch', 2],
+    ['counter', 3],
+    ['ringCounter', 2],
+  ])('setParam truncates a fractional %s bit count to the engine integer', (kind, expected) => {
+    // The "# of Bits" number field can land on a fraction. Every one of these
+    // engines derives its width with an `(x as usize)` cast, which truncates
+    // (adc.rs:28, dac.rs:36, decimal_display.rs:24, latch.rs:40,
+    // counter.rs:27, ring_counter.rs:26), so the store must write back the
+    // truncated integer or a rebuild trips the post-count guard and the
+    // circuit never comes back (circuit.rs:261-269).
+    const id = addChip(kind);
+    useStore.getState().setParam(id, 'bits', 2.5);
+    const after = useStore.getState();
+    const e = after.elements.find((x) => x.id === id);
+    expect(e?.params.bits).toBe(expected);
+    expect(after.pendingParams.get(`${id}:bits`)?.value).toBe(expected);
+  });
+
+  it('clamps the boundary bit counts to each engine range on edit', () => {
+    // The engines clamp the truncated width to their own floor and ceiling
+    // (`(x as usize).clamp/max`, the same lines as above): adc to 2..30,
+    // decimal display to 1..8, the rest to just a floor. A negative or
+    // non-finite value saturates to the floor through the usize cast to 0.
+    const cases: [string, number, number][] = [
+      ['adc', 1.5, 2],
+      ['adc', 30.5, 30],
+      ['adc', -1, 2],
+      ['dac', 0.5, 1],
+      ['dac', -1, 1],
+      ['decimalDisplay', 0.5, 1],
+      ['decimalDisplay', 8.5, 8],
+      ['decimalDisplay', -1, 1],
+      ['latch', 1.5, 2],
+      ['latch', -1, 2],
+      ['counter', 2.5, 3],
+      ['counter', -1, 3],
+      ['ringCounter', 1.5, 2],
+      ['ringCounter', -1, 2],
+    ];
+    for (const [kind, given, expected] of cases) {
+      const id = addChip(kind);
+      useStore.getState().setParam(id, 'bits', given);
+      expect(
+        useStore.getState().elements.find((e) => e.id === id)?.params.bits,
+        `${kind} bits ${given} should normalise to ${expected}`,
+      ).toBe(expected);
+    }
+  });
+});
+
 describe('undo parity', () => {
   const addSwitch = () =>
     useStore.getState().addElement({

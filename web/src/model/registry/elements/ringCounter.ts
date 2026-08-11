@@ -13,6 +13,7 @@ import {
   chipPosts,
   chipStateNames,
   drawChip,
+  normalizeChipBits,
   type ChipPinDef,
 } from './dFlipFlop';
 import { readParams } from '../shared';
@@ -21,8 +22,14 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 export const RING_CLOCK_INHIBIT = 2;
 export const RING_RESET_HIGH = 4;
 
+/** The bits field, floored like the engine: truncated and held to the engine's
+ *  floor of 2, the edit dialog's minimum (ring_counter.rs:26). */
+export function normalizeRingBits(value: number): number {
+  return normalizeChipBits(value, 2);
+}
+
 function ringBits(e: CircuitElement): number {
-  return Math.max(2, Math.round(e.params.bits ?? 10));
+  return normalizeRingBits(e.params.bits ?? 10);
 }
 
 function ringSizeX(e: CircuitElement): number {
@@ -72,7 +79,7 @@ export const RING_COUNTER_DEF: ElementDef = {
   defaults: { bits: 10, highVoltage: 5 },
   parse: (t, e) => {
     // `bits` must land first: it decides how many state tokens follow.
-    const i = chipCommonTokens(t, e, true);
+    const i = chipCommonTokens(t, e, true, normalizeRingBits);
     readParams(t.slice(i), e, chipStateNames(ringPins(e)));
   },
   dump: (e) => chipDump(e, ringPins(e), true, 10),

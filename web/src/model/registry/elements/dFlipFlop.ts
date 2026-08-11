@@ -325,15 +325,41 @@ export function chipStateNames(pins: ChipPinDef[]): string[] {
   return pins.flatMap((p, i) => (p.state ? [`voltage${i}`] : []));
 }
 
+/**
+ * The integer bit count the engine's `(x as usize)` cast derives from a value:
+ * non-finite values and negatives saturate to 0 (NaN and -1 cast to 0), a
+ * fraction truncates toward zero, and the result clamps to the engine's
+ * `floor..=ceiling` range (adc.rs:28, dac.rs:36, latch.rs:40, counter.rs:27,
+ * ring_counter.rs:26, decimal_display.rs:24). The store's `setParam`, the
+ * parsers and the geometry all normalise to this, so a fractional edit never
+ * draws a post list the engine's build rejects (circuit.rs:261-269).
+ */
+export function normalizeChipBits(value: number, floor: number, ceiling?: number): number {
+  if (!Number.isFinite(value)) return floor;
+  const n = Math.trunc(value);
+  if (n < floor) return floor;
+  if (ceiling !== undefined && n > ceiling) return ceiling;
+  return n;
+}
+
 /** Reads the common chip tokens that precede the state-pin voltages: the bit
  *  count for the variable-width chips and the high voltage when
  *  FLAG_CUSTOM_VOLTAGE says a token follows (ChipElm.java:51-56). Returns the
- *  index of the first state-voltage token. */
-export function chipCommonTokens(t: string[], e: CircuitElement, hasBits: boolean): number {
+ *  index of the first state-voltage token. `normalizeBits` mirrors the owning
+ *  element's engine cast on the bits token; the round fallback keeps any
+ *  future caller that skips it on the old behaviour. */
+export function chipCommonTokens(
+  t: string[],
+  e: CircuitElement,
+  hasBits: boolean,
+  normalizeBits?: (value: number) => number,
+): number {
   let i = 0;
   if (hasBits) {
-    const bits = Math.round(Number(t[i]));
-    if (t[i] !== undefined && Number.isFinite(bits)) e.params.bits = bits;
+    const bits = Number(t[i]);
+    if (t[i] !== undefined && Number.isFinite(bits)) {
+      e.params.bits = normalizeBits === undefined ? Math.round(bits) : normalizeBits(bits);
+    }
     i++;
   }
   if ((e.flags & CHIP_CUSTOM_VOLTAGE) !== 0) {
@@ -350,8 +376,9 @@ export function chipParse(
   e: CircuitElement,
   pins: ChipPinDef[],
   hasBits: boolean,
+  normalizeBits?: (value: number) => number,
 ): void {
-  const i = chipCommonTokens(t, e, hasBits);
+  const i = chipCommonTokens(t, e, hasBits, normalizeBits);
   readParams(t.slice(i), e, chipStateNames(pins));
 }
 

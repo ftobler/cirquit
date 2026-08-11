@@ -19,13 +19,20 @@ import {
   chipParse,
   chipPosts,
   drawChip,
+  normalizeChipBits,
   type ChipPinDef,
 } from './dFlipFlop';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
-/** The bits field, floored like the engine; the edit dialog rejects below 2. */
+/** The bits field, floored like the engine: truncated and held to the engine's
+ *  floor of 1 so a degenerate file cannot draw a zero-size chip (dac.rs:36).
+ *  The edit dialog rejects below 2, but the engine floor is 1. */
+export function normalizeDacBits(value: number): number {
+  return normalizeChipBits(value, 1);
+}
+
 function dacBits(e: CircuitElement): number {
-  return Math.max(1, Math.round(e.params.bits ?? 4));
+  return normalizeDacBits(e.params.bits ?? 4);
 }
 
 /** The pin table, from `setupPins` (DACElm.java:31-41): the bit inputs run
@@ -58,7 +65,7 @@ export const DAC_DEF: ElementDef = {
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, highVoltage: 5 },
-  parse: (t, e) => chipParse(t, e, dacPins(e), true),
+  parse: (t, e) => chipParse(t, e, dacPins(e), true, normalizeDacBits),
   dump: (e) => chipDump(e, dacPins(e), true),
   dumpFlags: chipDumpFlags,
   fields: [

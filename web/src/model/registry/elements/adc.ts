@@ -16,15 +16,20 @@ import {
   chipDumpFlags,
   chipPosts,
   drawChip,
+  normalizeChipBits,
   type ChipPinDef,
 } from './dFlipFlop';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
-/** The bits field, clamped like the engine. The edit dialog rejects fewer
- *  than 2 bits (ADCElm.java:64-69); the 30 cap mirrors the engine's so the
- *  post count stays in step with it. */
+/** The bits field, clamped like the engine: truncated and capped to the 2..30
+ *  the edit dialog allows, matching the engine's `(x as usize)` cast and clamp
+ *  (ADCElm.java:64-69, adc.rs:28). */
+export function normalizeAdcBits(value: number): number {
+  return normalizeChipBits(value, 2, 30);
+}
+
 function adcBits(e: CircuitElement): number {
-  return Math.max(2, Math.min(30, Math.round(e.params.bits ?? 4)));
+  return normalizeAdcBits(e.params.bits ?? 4);
 }
 
 /** The chip's cell height, `sizeY` from setupPins (ADCElm.java:33-34): the
@@ -66,7 +71,7 @@ export const ADC_DEF: ElementDef = {
   parse: (t, e) => {
     // `bits` must land first; nothing follows it but the optional high voltage
     // because the outputs carry no saved state (ADCElm.java:36).
-    chipCommonTokens(t, e, true);
+    chipCommonTokens(t, e, true, normalizeAdcBits);
   },
   dump: (e) => chipDump(e, adcPins(e), true, 4),
   dumpFlags: chipDumpFlags,

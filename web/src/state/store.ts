@@ -40,6 +40,12 @@ import { CS_INPUT_COUNT_KINDS } from '../model/registry/elements/vcvs';
 import { GATE_INPUT_COUNT_KINDS } from '../model/registry/elements/gate';
 import { normalizeMuxBits } from '../model/registry/elements/multiplexer';
 import { normalizeDemuxBits } from '../model/registry/elements/deMultiplexer';
+import { normalizeAdcBits } from '../model/registry/elements/adc';
+import { normalizeDacBits } from '../model/registry/elements/dac';
+import { normalizeDecimalBits } from '../model/registry/elements/decimalDisplay';
+import { normalizeLatchBits } from '../model/registry/elements/latch';
+import { normalizeCounterBits } from '../model/registry/elements/counter';
+import { normalizeRingBits } from '../model/registry/elements/ringCounter';
 import { normalizeInputCount } from '../model/registry/shared';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import { paramScale, resolveParam } from '../model/sliders';
@@ -69,6 +75,24 @@ const INPUT_COUNT_KINDS: ReadonlySet<string> = new Set([
   ...CS_INPUT_COUNT_KINDS,
   ...GATE_INPUT_COUNT_KINDS,
 ]);
+
+/**
+ * The bit-width chips whose `setParam` writes the engine-derived integer back
+ * on edit, keyed by `kind:paramName`. The multiplexer truncates, the
+ * demultiplexer rounds, and the six `(x as usize)` chips truncate and clamp to
+ * their engine's floor/ceiling, so the geometry and the rebuild read one post
+ * count and a rebuild never trips the post-count guard (circuit.rs:261-269).
+ */
+const BITS_NORMALIZERS: Readonly<Record<string, (value: number) => number>> = {
+  'multiplexer:bits': normalizeMuxBits,
+  'deMultiplexer:selectBits': normalizeDemuxBits,
+  'adc:bits': normalizeAdcBits,
+  'dac:bits': normalizeDacBits,
+  'decimalDisplay:bits': normalizeDecimalBits,
+  'latch:bits': normalizeLatchBits,
+  'counter:bits': normalizeCounterBits,
+  'ringCounter:bits': normalizeRingBits,
+};
 
 const clone = (s: Snapshot): Snapshot => ({
   elements: s.elements.map((e) => {
@@ -809,16 +833,13 @@ export const useStore = create<AppState>((set, get) => ({
       if (name === 'inputCount' && target !== undefined && INPUT_COUNT_KINDS.has(target.kind)) {
         pending = normalizeInputCount(value);
       } else if (target !== undefined) {
-        // The multiplexer's engine truncates its select-bit count and the
-        // demultiplexer's rounds its own, each capped at 6 (multiplexer.rs:41,
-        // de_multiplexer.rs:42-46). Write that same integer back so the
-        // geometry and the rebuild read one channel count and a rebuild never
-        // trips the post-count guard (circuit.rs:261-269).
-        if (target.kind === 'multiplexer' && name === 'bits') {
-          pending = normalizeMuxBits(value);
-        } else if (target.kind === 'deMultiplexer' && name === 'selectBits') {
-          pending = normalizeDemuxBits(value);
-        }
+        // The bit-width chips truncate or round their count to a post count
+        // (`(x as usize)` in each chip's Rust constructor, or `.round()` for
+        // the demultiplexer), each clamped to its own range. Write that same
+        // integer back so the geometry and the rebuild read one channel count
+        // and a rebuild never trips the post-count guard (circuit.rs:261-269).
+        const normalize = BITS_NORMALIZERS[`${target.kind}:${name}`];
+        if (normalize !== undefined) pending = normalize(value);
       }
       return {
         elements: s.elements.map((e) => {

@@ -26,13 +26,20 @@ import {
   chipDumpFlags,
   chipPosts,
   drawChip,
+  normalizeChipBits,
   type ChipPinDef,
 } from './dFlipFlop';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
-/** The bits field, clamped like the engine and the edit dialog. */
+/** The bits field, clamped like the engine: truncated and capped to the 1..8
+ *  the edit dialog allows, the engine's `(x as usize)` clamp to 8
+ *  (decimal_display.rs:24). */
+export function normalizeDecimalBits(value: number): number {
+  return normalizeChipBits(value, 1, 8);
+}
+
 function decimalBits(e: CircuitElement): number {
-  return Math.max(1, Math.min(8, Math.round(e.params.bits ?? 4)));
+  return normalizeDecimalBits(e.params.bits ?? 4);
 }
 
 /** The pin table, from `setupPins` (DecimalDisplayElm.java:96-102): one west
@@ -141,8 +148,8 @@ export const DECIMAL_DISPLAY_DEF: ElementDef = {
       if (t[i] !== undefined && Number.isFinite(hv)) e.params.highVoltage = hv;
       i++;
     }
-    const bits = Math.round(Number(t[i]));
-    if (t[i] !== undefined && Number.isFinite(bits)) e.params.bits = bits;
+    const bits = Number(t[i]);
+    if (t[i] !== undefined && Number.isFinite(bits)) e.params.bits = normalizeDecimalBits(bits);
     i++;
     const dm = Math.round(Number(t[i]));
     if (t[i] !== undefined && Number.isFinite(dm)) e.params.displayMode = dm;
