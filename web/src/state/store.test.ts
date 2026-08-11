@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { matchShortcut } from '../input/shortcuts';
 import { DEFAULT_SETTINGS, GRID_SIZE, type SimSettings } from '../model/types';
 import { postsOf } from '../model/registry';
 import { scopePlotsToSpecs } from '../engine/simulator';
@@ -688,6 +689,27 @@ describe('switch keyboard shortcuts', () => {
     useStore.getState().setShortcuts({ copy: 'Ctrl+z', toggleRunning: 'p' });
     expect(useStore.getState().shortcuts).toEqual({ copy: 'Ctrl+z', toggleRunning: 'p' });
     expect(useStore.getState().elements[0].id).toBe(id);
+  });
+});
+
+describe('the s key on an empty circuit', () => {
+  it('arms the switch tool for a plain s keydown', () => {
+    // The App.tsx keydown order: the switch keyShortcut path first (no switch
+    // here, so it no-ops), then matchShortcut resolves 's' to switch, which
+    // the place dispatch turns into setTool. The pure matcher test stops at
+    // the action; this pins the store half the component performs on a fresh
+    // circuit, so a duplicate shortcut that re-armed 's' to another kind
+    // would fail here.
+    const s = useStore.getState();
+    expect(s.tool).toBeNull();
+    expect(s.toggleSwitchByKey('s')).toBe(false);
+    const action = matchShortcut(
+      { key: 's', ctrlKey: false, metaKey: false, shiftKey: false, altKey: false },
+      s.shortcuts,
+    );
+    expect(action).toEqual({ type: 'place', kind: 'switch' });
+    if (action?.type === 'place') s.setTool(action.kind);
+    expect(useStore.getState().tool).toBe('switch');
   });
 });
 

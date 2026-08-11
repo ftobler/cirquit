@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { calcLeads, interp, makeTheme, rectCorners, ZIGZAG_HS, zigzagPoints } from '../render/draw';
 import {
   ELEMENT_DEFS,
+  PLACEMENT_BY_CHAR,
+  TOOLBOX,
   defFor,
   opAmpInputAnchors,
   opAmpLabelAnchors,
@@ -986,5 +988,21 @@ describe('three-phase motor body fill', () => {
     const ctx = draw({ selected: true });
     expect(ctx.fills).toEqual([]);
     expect(ctx.strokes).toContain(makeTheme().selection);
+  });
+});
+
+describe('the switch placement chars', () => {
+  it('s arms the SPST and S the SPDT, each bound exactly once', () => {
+    // The map is keyed by char and last write wins, so a duplicate shortcut
+    // would silently re-arm a key to the later def or toolbox entry. The
+    // s/S pair is the one the owner reported on, so pin both the binding and
+    // the declaration count; either failing would re-arm 's' behind the
+    // matcher's back.
+    expect(PLACEMENT_BY_CHAR.get('s')).toBe('switch');
+    expect(PLACEMENT_BY_CHAR.get('S')).toBe('switch2');
+    const declared = (ch: string): number =>
+      [...ELEMENT_DEFS, ...TOOLBOX].filter((d) => d.shortcut === ch).length;
+    expect(declared('s')).toBe(1);
+    expect(declared('S')).toBe(1);
   });
 });
