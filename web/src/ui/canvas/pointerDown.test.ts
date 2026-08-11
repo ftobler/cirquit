@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { defFor } from '../../model/registry';
+import { SWITCH_IEC } from '../../model/registry/flags';
 import { rectContains } from '../../model/registry/shared';
 import { GRID_SIZE } from '../../model/types';
 import type { CircuitElement } from '../../model/types';
@@ -93,6 +94,21 @@ describe('switchRect geometry', () => {
     expect(rectContains(rect, { x: 96, y: 32 })).toBe(true);
     expect(rectContains(rect, { x: 80, y: 40 })).toBe(true);
     expect(rectContains(rect, { x: 30, y: 0 })).toBe(false);
+  });
+
+  it('a cross switch click box reaches the second lever pivot and both tips', () => {
+    // The second lever hangs 48 below the axis (poleLeads[1]) and its throw
+    // tips sit at -32 and -64 perpendicular, so the pivot and both lever tip
+    // positions must read as clickable, not just pole 0's lead and the extreme
+    // throws (CrossSwitchElm.java:174-176). Under the IEC symbol the
+    // position-0 tip extends to fraction 1.2, past the throws, which is the
+    // case that actually widens the box.
+    const rect = defFor('crossSwitch')!.switchRect!(baseEl('crossSwitch'));
+    expect(rectContains(rect, { x: 64, y: 48 })).toBe(true); // poleLeads[1], the second lever's pivot
+    expect(rectContains(rect, { x: 96, y: 64 })).toBe(true); // throwLeads[7], the position-0 tip
+    expect(rectContains(rect, { x: 96, y: 32 })).toBe(true); // throwLeads[5], the position-1 tip
+    const iec = defFor('crossSwitch')!.switchRect!(baseEl('crossSwitch', { flags: SWITCH_IEC }));
+    expect(rectContains(iec, { x: 102, y: 53 })).toBe(true); // the IEC position-0 tip, fraction 1.2
   });
 
   it('a relay contact covers its three blade poles', () => {

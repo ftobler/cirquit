@@ -179,11 +179,22 @@ export const CROSS_SWITCH_DEF: ElementDef = {
   postCount: 4,
   posts: crossSwitchPosts,
   interactive: true,
-  // The clickable bank: pole 0's lead plus the two extreme throw leads, at
-  // +openhs and -3*openhs-openhs of the axis (CrossSwitchElm.java:174-176).
+  // The clickable bank spans both levers: each pole's lead plus both its lever
+  // tips, so the second lever's pivot and throws read as clickable. Upstream's
+  // union of pole 0's lead and the extreme throws (CrossSwitchElm.java:
+  // 174-176) already spans the second lever's envelope, but the IEC symbol's
+  // position-0 tips reach fraction 1.2, past the throws, so the lever tips
+  // widen the box where it genuinely missed.
   switchRect: (e) => {
     const geo = crossSwitchGeometry(e);
-    return rectOfPoints([geo.poleLeads[0], geo.throwLeads[1], geo.throwLeads[4]]);
+    return rectOfPoints([
+      geo.poleLeads[0],
+      geo.poleLeads[1],
+      geo.leverTips[0][0],
+      geo.leverTips[0][1],
+      geo.leverTips[1][0],
+      geo.leverTips[1][1],
+    ]);
   },
   noDiagonal: true, // every CrossSwitchElm constructor sets it
   defaults: { position: 0, momentary: 0 },
