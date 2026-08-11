@@ -315,7 +315,20 @@ function makeScope(
   };
 }
 
-export const useStore = create<AppState>((set, get) => ({
+/** The global slot that holds the one store instance across dev reloads.
+ *  store.ts imports the element registry, so a Vite HMR edit of any registry
+ *  module re-evaluates this file. A fresh `create` would spawn a second store
+ *  and strand the frame loop: useStoreRef subscribes to the instance it saw at
+ *  mount and never re-binds, so it would keep reading the old, now-frozen
+ *  store and a paused sim could never restart from the button. Caching the
+ *  instance here makes the re-evaluation hand back the existing store, so
+ *  every consumer, old and new, reads and writes one instance. */
+const STORE_INSTANCE_KEY = '__falstadCirquitStore';
+
+type AppStore = ReturnType<typeof createAppStore>;
+
+function createAppStore() {
+  return create<AppState>((set, get) => ({
   elements: [],
   selectedIds: [],
   scopes: [],
@@ -1559,7 +1572,11 @@ export const useStore = create<AppState>((set, get) => ({
     // clipboard, so Ctrl+D cannot clobber what the user copied.
     insertElementsFromText(serializeCircuit(selected, s.settings));
   },
-}));
+  }));
+}
+
+const globalScope = globalThis as { [STORE_INSTANCE_KEY]?: AppStore };
+export const useStore: AppStore = (globalScope[STORE_INSTANCE_KEY] ??= createAppStore());
 
 /** The view zoomed by `factor` about the current screen centre, which is the
  *  target upstream's keyboard zoom uses (zoomCircuit, MouseManager.java:1339). */
