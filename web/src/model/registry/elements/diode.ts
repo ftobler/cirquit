@@ -6,6 +6,7 @@ import {
   interpPrecise,
   interp2Precise,
   line,
+  polyline,
   triangle,
 } from '../../../render/draw';
 import { elementColor, twoPosts } from '../shared';
@@ -31,9 +32,7 @@ export function drawDiodeBody(g: DrawContext, e: CircuitElement, zener: boolean)
     const { bar, wing0, wing1 } = zenerMarks(lead1, lead2);
     // The cathode bar and wings are drawThickLine strokes upstream
     // (ZenerElm.java:71-78), the 3-unit body weight.
-    line(g, bar[0], bar[1], cathodeColor);
-    line(g, wing0, bar[0], cathodeColor);
-    line(g, wing1, bar[1], cathodeColor);
+    polyline(g, [wing0, bar[0], bar[1], wing1], cathodeColor);
   } else {
     const [b1, b2] = interp2Precise(lead1, lead2, 1, 8);
     line(g, b1, b2, cathodeColor);
