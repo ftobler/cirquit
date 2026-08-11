@@ -324,6 +324,26 @@ impl Element for VoltageSource {
         self.base.current = self.base.vs_currents[0];
     }
 
+    /// A two-terminal source drains post 0 and feeds post 1, the default
+    /// two-terminal behaviour. The rail is a one-post source to ground, so the
+    /// post is its delivery terminal: the current exits the source into the
+    /// node there (`+current`), the same reading the logic input uses. Without
+    /// this the wire-current recovery sees no injection at a rail's post and
+    /// reports zero (or a sign-flipped neighbour) on the wires it feeds.
+    fn current_into_node(&self, post: usize) -> f64 {
+        if self.rail {
+            if post == 0 {
+                self.base.current
+            } else {
+                0.0
+            }
+        } else if post == 0 {
+            -self.base.current
+        } else {
+            self.base.current
+        }
+    }
+
     fn reset(&mut self) {
         self.base_mut().reset();
         // Upstream's reset() also rewinds the phase reference (VoltageElm.java:

@@ -4139,6 +4139,145 @@ fn wire_into_a_pure_ground_reports_its_current() {
 }
 
 #[test]
+fn wires_off_a_rail_carry_the_rail_current() {
+    // The bundled 'Voltage Reference w/ Follower' (zenerreffollow.txt): a rail
+    // feeds a divider through two wires, and the emitter drives R500 through
+    // two more. The rail is a one-post source to ground whose post used to
+    // inject nothing into the wire-current recovery (the default
+    // `current_into_node` reads zero for a one-post element), so the first
+    // wire reported zero and the second resolved against a missing rail
+    // current and came out sign-flipped: no dots, or dots running the wrong
+    // way, fixed by reversing the wire. Each wire must instead report the
+    // branch current of the element it feeds.
+    let mut c = build(
+        vec![
+            elm(
+                1,
+                "rail",
+                &[[240, 128]],
+                &[
+                    ("waveform", 1.0),
+                    ("frequency", 40.0),
+                    ("maxVoltage", 2.0),
+                    ("bias", 8.8),
+                ],
+            ),
+            elm(2, "wire", &[[240, 128], [320, 128]], &[]),
+            elm(
+                3,
+                "resistor",
+                &[[320, 128], [320, 208]],
+                &[("resistance", 10000.0)],
+            ),
+            elm(
+                4,
+                "transistor",
+                &[[320, 208], [400, 192], [400, 224]],
+                &[("pnp", 1.0), ("beta", 100.0)],
+            ),
+            elm(
+                5,
+                "resistor",
+                &[[400, 128], [400, 192]],
+                &[("resistance", 100.0)],
+            ),
+            elm(6, "wire", &[[320, 128], [400, 128]], &[]),
+            elm(
+                7,
+                "zener",
+                &[[320, 320], [320, 208]],
+                &[("breakdownVoltage", 5.6)],
+            ),
+            elm(8, "wire", &[[400, 224], [400, 256]], &[]),
+            elm(9, "wire", &[[400, 256], [448, 256]], &[]),
+            elm(
+                10,
+                "resistor",
+                &[[448, 256], [448, 320]],
+                &[("resistance", 500.0)],
+            ),
+            elm(11, "ground", &[[448, 320]], &[]),
+            elm(12, "ground", &[[320, 320]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+
+    let i = c.element_currents();
+    // rail = wire1 = the whole feed; wire2 = the collector branch.
+    assert!(close(i[1], i[0], 1e-9), "wire off the rail took {}", i[1]);
+    assert!(i[1] > 1e-3, "wire off the rail carried {:.2e}", i[1]);
+    assert!(close(i[5], i[4], 1e-9), "second wire took {}", i[5]);
+    assert!(i[5] > 1e-3, "second wire carried {:.2e}", i[5]);
+    // emitter wire and the wire into R500 both carry the emitter current.
+    assert!(close(i[7], i[9], 1e-9), "emitter wire took {}", i[7]);
+    assert!(i[7] > 1e-3, "emitter wire carried {:.2e}", i[7]);
+    assert!(close(i[8], i[9], 1e-9), "wire into R500 took {}", i[8]);
+
+    // Reversing the first wire is the same circuit: the sign flips, the
+    // magnitude does not.
+    let mut c = build(
+        vec![
+            elm(
+                1,
+                "rail",
+                &[[240, 128]],
+                &[
+                    ("waveform", 1.0),
+                    ("frequency", 40.0),
+                    ("maxVoltage", 2.0),
+                    ("bias", 8.8),
+                ],
+            ),
+            elm(2, "wire", &[[320, 128], [240, 128]], &[]),
+            elm(
+                3,
+                "resistor",
+                &[[320, 128], [320, 208]],
+                &[("resistance", 10000.0)],
+            ),
+            elm(
+                4,
+                "transistor",
+                &[[320, 208], [400, 192], [400, 224]],
+                &[("pnp", 1.0), ("beta", 100.0)],
+            ),
+            elm(
+                5,
+                "resistor",
+                &[[400, 128], [400, 192]],
+                &[("resistance", 100.0)],
+            ),
+            elm(6, "wire", &[[320, 128], [400, 128]], &[]),
+            elm(
+                7,
+                "zener",
+                &[[320, 320], [320, 208]],
+                &[("breakdownVoltage", 5.6)],
+            ),
+            elm(8, "wire", &[[400, 224], [400, 256]], &[]),
+            elm(9, "wire", &[[400, 256], [448, 256]], &[]),
+            elm(
+                10,
+                "resistor",
+                &[[448, 256], [448, 320]],
+                &[("resistance", 500.0)],
+            ),
+            elm(11, "ground", &[[448, 320]], &[]),
+            elm(12, "ground", &[[320, 320]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(5);
+    let i = c.element_currents();
+    assert!(
+        close(i[1], -i[0], 1e-9),
+        "flipped wire off the rail took {}",
+        i[1]
+    );
+}
+
+#[test]
 fn wire_merge_shrinks_the_matrix() {
     // The divider's bottom rail was four nodes plus two voltage-source
     // unknowns. The wire merge folds the wire's two coordinates into the

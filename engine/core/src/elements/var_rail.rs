@@ -78,6 +78,17 @@ impl Element for VarRail {
         self.base.current = self.base.vs_currents[0];
     }
 
+    /// The post is the rail's delivery terminal, so the current exits the
+    /// source into the node there (see `voltage_source.rs`); without this the
+    /// wire-current recovery sees no injection at a rail's post.
+    fn current_into_node(&self, post: usize) -> f64 {
+        if post == 0 {
+            self.base.current
+        } else {
+            0.0
+        }
+    }
+
     fn voltage_diff(&self) -> f64 {
         // One terminal referenced to ground (RailElm.java:92).
         self.base.volts.first().copied().unwrap_or(0.0)
