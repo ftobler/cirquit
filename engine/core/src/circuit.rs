@@ -17,6 +17,34 @@ use crate::stamp::{Stamper, GROUND};
 /// through whatever tiny coupling its component happens to have.
 const GMIN: f64 = 1e-8;
 
+/// Below this stamped load conductance a current-source output terminal is
+/// effectively open: the only loads that small are an open analog switch's
+/// `r_off` (1e10 ohm = 1e-10 S) and genuinely floating structures. The
+/// threshold equals the GMIN pin exactly, and the check is a strict `<`, so a
+/// node whose diagonal is exactly GMIN (a gmin-pinned floating output) is
+/// deliberately excluded: a pinned node must carry a load smaller than the
+/// gmin floor. qam-256's runaway output sits at 2e-10 S, two orders of
+/// magnitude below the boundary; the corpus's smallest genuine current-source
+/// load is ~1e-2 S.
+const OPEN_LOAD_G: f64 = 1e-8;
+
+/// Conductance stamped from an effectively-open current-source output to
+/// ground. One ohm keeps the solved node voltage at roughly the source's own
+/// current (qam-256's 2.2 mA -> ~2 mV), deep inside an op-amp follower's rail
+/// window, while dominating every stray load by orders of magnitude. A smaller
+/// pin would let a larger source current push the node past the follower's
+/// ±15 V rails again.
+const OPEN_PIN_G: f64 = 1.0;
+
+/// The previous-iteration absolute node voltage an effectively-open
+/// current-source output must have reached before the pin engages. An open
+/// node legitimately sits at a plausible voltage (a transistor's off-junction
+/// base draws no current but sits near a volt, a just-opened sample-hold node
+/// holds its last value); only a node that has run away to megavolts needs the
+/// pin. No corpus circuit drives a current-source output past ~15 V; the
+/// qam-256 sample-hold runaway sits at ~7.3e6 V.
+const PIN_RUNAWAY_V: f64 = 1e4;
+
 #[derive(Default)]
 pub(crate) struct UnionFind {
     parent: Vec<usize>,
@@ -123,6 +151,12 @@ pub struct Circuit {
     /// a rejected attempt can restore it.
     last_x: Vec<Vec<f64>>,
     nonlinear: bool,
+    /// Nodes whose effectively-open current-source output is pinned to ground
+    /// this run, so the pin survives the iterations where the node's voltage
+    /// is back at a sane level. Re-derived every iteration from the load check
+    /// and dropped the first time the load becomes real (see
+    /// `pin_open_current_outputs`).
+    open_pinned: Vec<usize>,
     scopes: Vec<ScopeTrace>,
     warnings: Vec<String>,
     error: Option<String>,
@@ -156,6 +190,7 @@ impl Circuit {
             good_iterations: 0,
             last_x: Vec::new(),
             nonlinear: false,
+            open_pinned: Vec::new(),
             scopes: Vec::new(),
             warnings: Vec::new(),
             error: None,
@@ -239,6 +274,7 @@ impl Circuit {
         self.options = spec.options.clone().unwrap_or_default();
         self.warnings.clear();
         self.error = None;
+        self.open_pinned.clear();
         self.current_time_step = self.options.time_step;
         self.good_iterations = 0;
         // Rebuilding is the topology path: adding, deleting or moving an
@@ -887,6 +923,7 @@ impl Circuit {
                 last_failing = std::mem::take(&mut s.failing);
                 s.converged
             };
+            self.pin_open_current_outputs();
 
             for c in self.closures.iter_mut() {
                 if let Err(SolveError::Singular) = c.sys.solve() {
@@ -1137,6 +1174,73 @@ impl Circuit {
         }
     }
 
+    /// Grounds any current-source output terminal that has run away through
+    /// an effectively open load, by adding a conductance to the reference
+    /// node before the solve. An ideal current source whose output node is
+    /// held up only by an open analog switch's `r_off` = 1e10 ohm solves to
+    /// I/G ~ 2.2e7 V, and that megavolt couples straight into an op-amp
+    /// follower on the node (its constraint row tracks the runaway input), so
+    /// clamping the node after the solve still leaves the follower's output
+    /// stuck above its rail and the step never settles. Grounding the node
+    /// inside the matrix lets every iteration re-solve from a sane value.
+    ///
+    /// The pin is sticky: once a node has run away it stays pinned while its
+    /// load stays open, even on the iterations where the solved voltage is
+    /// back at a sane level (otherwise the pin would toggle on and off and the
+    /// node would run away again every other iteration). `open_pinned` holds
+    /// the current set, re-derived each iteration, and the load check drops a
+    /// node the first time its load becomes real again. The
+    /// [`OPEN_LOAD_G`] threshold equals the GMIN pin, so a gmin-pinned node is
+    /// excluded by the strict `<`, and the [`PIN_RUNAWAY_V`] gate clears any
+    /// node at a plausible voltage, so the pin never touches a transistor's
+    /// off-junction base (conductance JUNCTION_GMIN, a volt or so) or a held
+    /// sample-hold node. The
+    /// topology-based `check_broken_sources` above cannot see this case (an
+    /// open switch still `dc_connects`), and this load-based check is
+    /// per-iteration because the switch state, and therefore the load, changes
+    /// every step. For a nonlinear closure `restore` clears the pin before
+    /// each iteration re-adds it. For a linear closure the pin is stamped into
+    /// the cached matrix and `invalidate` forces the next solve to refactor
+    /// with it; the pin then stays in force until the next restamp, which is
+    /// also the only way a linear circuit's load can change. Composites do not
+    /// implement `current_output_nodes`, so a current source buried in one (an
+    /// OTA child, say) is never pinned, the same blind spot
+    /// `check_broken_sources` has.
+    fn pin_open_current_outputs(&mut self) {
+        let mut keep = Vec::new();
+        for elm in &self.elements {
+            let Some((n0, n1)) = elm.current_output_nodes() else {
+                continue;
+            };
+            for &node in &[n0, n1] {
+                if node == GROUND {
+                    continue;
+                }
+                if self.node_voltages[node].abs() <= PIN_RUNAWAY_V
+                    && !self.open_pinned.contains(&node)
+                {
+                    continue;
+                }
+                let c = self.node_closure[node];
+                let row = self.node_row[node];
+                // The row's diagonal is the sum of conductances stamped to the
+                // node, so it is the node's load to the rest of the circuit.
+                // A node's row always sits below the closure's vs rows.
+                if self.closures[c].sys.get(row, row) < OPEN_LOAD_G {
+                    self.closures[c].sys.add(row, row, OPEN_PIN_G);
+                    // A linear closure keeps its LU factors across the whole
+                    // run (`restore_rhs` never invalidates), so without this
+                    // the pin would sit in the matrix while the solve kept
+                    // using the stale unpinned factors. No-op for a nonlinear
+                    // closure, which already invalidates every subiteration.
+                    self.closures[c].sys.invalidate();
+                    keep.push(node);
+                }
+            }
+        }
+        self.open_pinned = keep;
+    }
+
     /// Copies each closure's solved vector into node voltages and per-element
     /// state.
     fn write_back(&mut self) {
@@ -1234,6 +1338,7 @@ impl Circuit {
         self.error = None;
         self.current_time_step = self.options.time_step;
         self.good_iterations = 0;
+        self.open_pinned.clear();
         for elm in self.elements.iter_mut() {
             elm.reset();
         }

@@ -2392,9 +2392,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "Newton iteration did not converge; try a smaller timestep.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "r2rladder.txt",

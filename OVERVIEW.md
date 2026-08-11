@@ -196,10 +196,11 @@ fetch it).
   current in one pass and carries it into the transient. A failed solve is
   guarded: every element is reset and the node voltages cleared, so the
   transient degrades to the uncharged start rather than committing the last
-  Newton iterate. `DIAGNOSED_SIM_FAILURES` is empty; the corpus report's
-  remaining `sim error` entries (diodeclip, mosfollower, transrectifier) are
-  genuine singular matrices, unrelated to the DC solve. The one-shot "Find DC
-  Operating Point" menu command is not ported; the toggle covers its use.
+  Newton iterate. `DIAGNOSED_SIM_FAILURES` is empty and the corpus report has
+  no `sim error` entries left: the last one, qam-256, fell to the solver
+  grounding an effectively-open current-source output that had run away, not
+  to the DC solve. The one-shot "Find DC Operating Point" menu command is not
+  ported; the toggle covers its use.
 - **A rebuild re-injects the file's saved charge.** The engine reads `voltDiff`
   out of the element spec on every build, and `setCircuit` re-serialises
   `e.params`, which still holds the value the file was loaded with. So any

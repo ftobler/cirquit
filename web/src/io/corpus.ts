@@ -63,19 +63,16 @@ export const SIM_TIMEOUT_MS = 60_000;
  * bit-128 clear, so under `autoDC` this build runs no DC solve at all and the
  * transient starts from the file's own charge.
  *
- * `qam-256.txt` is the one current entry. The corpus ran 319/319 clean before
- * the controlled-sources feature only because this file failed to load then
- * (its vcvs/vccs lines were unsupported) and never reached the sim stage. Now
- * that it loads, the sim stage catches the first-step problem the entry names.
+ * `qam-256.txt` lived here until the open-current-source pinning feature: a
+ * multiplier VCCS whose output node was left loaded only by an open analog
+ * switch's 1e10 ohm off-resistance solved to ~7.3e6 V, and the two op-amp
+ * followers on it could never settle. The engine now grounds an
+ * effectively-open current-source output that has run away, so the file
+ * converges and the entry is gone.
+ *
+ * The map is currently empty; add a new entry with the next diagnosed failure.
  */
-export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {
-  'qam-256.txt':
-    "first Newton step diverges at the file's fixed 2e-5 s step: a pre-existing " +
-    'op-amp (ids 159/160) + transformer + diode first-step convergence problem ' +
-    "with the file's capacitor initial conditions. Not a controlled-source " +
-    'defect and not a Newton-budget shortfall: 5000 subiterations fail ' +
-    'identically.',
-};
+export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {};
 
 /**
  * Device-model definitions: none left. The `32` transistor lines are parsed
