@@ -2095,6 +2095,43 @@ describe('keyboard zoom', () => {
 
     expect(useStore.getState().view.scale).toBe(0.15);
   });
+
+  it('setView refuses a non-finite view so a poisoned zoom cannot stick', () => {
+    useStore.getState().setView({ x: 40, y: -20, scale: 2.5 });
+    useStore.getState().setViewSize(800, 600);
+    // Every canvas zoomAbout output (wheel, pinch, keyboard) reaches the store
+    // through setView; a NaN view must not be written, or the next zoomAbout
+    // derives NaN from it forever.
+    useStore.getState().setView({ x: NaN, y: NaN, scale: 1 });
+
+    expect(useStore.getState().view).toEqual({ x: 40, y: -20, scale: 2.5 });
+
+    // A subsequent zoom step recovers instead of rewriting NaN.
+    useStore.getState().zoomIn();
+    const s = useStore.getState();
+    expect(Number.isFinite(s.view.x)).toBe(true);
+    expect(Number.isFinite(s.view.y)).toBe(true);
+    expect(s.view.scale).toBeCloseTo(2.5 * ZOOM_FACTOR);
+  });
+
+  it('setView refuses a zero or negative scale so zoomReset cannot divide by it', () => {
+    useStore.getState().setView({ x: 40, y: -20, scale: 2.5 });
+
+    // A finite but zero scale would make zoomReset's 1 / scale Infinity and
+    // Infinity * 0 NaN, re-poisoning the view after setView's write.
+    useStore.getState().setView({ x: 10, y: 20, scale: 0 });
+    useStore.getState().setView({ x: 10, y: 20, scale: -1 });
+
+    expect(useStore.getState().view).toEqual({ x: 40, y: -20, scale: 2.5 });
+  });
+
+  it('setViewSize refuses a non-finite size', () => {
+    useStore.getState().setViewSize(800, 600);
+
+    useStore.getState().setViewSize(NaN, NaN);
+
+    expect(useStore.getState().viewSize).toEqual({ w: 800, h: 600 });
+  });
 });
 
 describe('center circuit', () => {
@@ -2120,6 +2157,20 @@ describe('center circuit', () => {
     useStore.getState().centerCircuit();
 
     expect(useStore.getState().view).toEqual({ x: 5, y: 9, scale: 3 });
+  });
+
+  it('on a zero-sized canvas leaves the view finite', () => {
+    // The canvas a ResizeObserver measured while zero-sized: the fit must not
+    // return {scale: 0, x: NaN, y: NaN} and poison every later zoom step.
+    useStore.getState().loadNetlist(SAMPLE);
+    useStore.getState().setViewSize(0, 0);
+
+    useStore.getState().centerCircuit();
+
+    const v = useStore.getState().view;
+    expect(Number.isFinite(v.x)).toBe(true);
+    expect(Number.isFinite(v.y)).toBe(true);
+    expect(v.scale).toBeGreaterThan(0);
   });
 });
 

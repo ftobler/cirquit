@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CircuitElement } from '../model/types';
-import { CENTER_MARGIN_H, CENTER_MARGIN_W, circuitBounds, fitView } from './view';
+import { CENTER_MARGIN_H, CENTER_MARGIN_W, ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
 
 /** Minimal two-endpoint element: circuitBounds only reads the stored endpoints. */
 const el = (x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
@@ -79,5 +79,30 @@ describe('fitView', () => {
     // The bounds centre (80, 1000) still lands on the viewport centre.
     expect((80 - view.x) * view.scale).toBeCloseTo(400, 10);
     expect((1000 - view.y) * view.scale).toBeCloseTo(300, 10);
+  });
+
+  it('stays finite for a 0 by 0 viewport instead of returning NaN', () => {
+    // A canvas the ResizeObserver measured while zero-sized must not poison the
+    // view: the old division by a zero viewport returned scale 0 and NaN x/y,
+    // which every later zoomAbout then rewrote.
+    const view = fitView({ minX: 0, minY: 0, width: 400, height: 200 }, 0, 0);
+    expect(Number.isFinite(view.scale)).toBe(true);
+    expect(Number.isFinite(view.x)).toBe(true);
+    expect(Number.isFinite(view.y)).toBe(true);
+    expect(view.scale).toBeGreaterThan(0);
+  });
+});
+
+describe('zoomAbout', () => {
+  it('does not propagate a NaN view into new coordinates', () => {
+    // A poisoned view must be returned untouched: deriving x/y from NaN inputs
+    // rewrites NaN into every zoom step, freezing the canvas (view.ts:16-28).
+    const poisoned = { x: NaN, y: NaN, scale: 1 };
+    expect(zoomAbout(poisoned, 100, 50, ZOOM_FACTOR)).toBe(poisoned);
+    // A finite view still zooms, so a subsequent zoom step recovers.
+    const ok = zoomAbout({ x: 10, y: 20, scale: 2 }, 100, 50, ZOOM_FACTOR);
+    expect(Number.isFinite(ok.x)).toBe(true);
+    expect(Number.isFinite(ok.y)).toBe(true);
+    expect(ok.scale).toBeCloseTo(2 * ZOOM_FACTOR);
   });
 });

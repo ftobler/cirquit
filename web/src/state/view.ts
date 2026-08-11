@@ -19,6 +19,17 @@ export function zoomAbout(
   cy: number,
   factor: number,
 ): ViewTransform {
+  // A poisoned view must not propagate: x/y are derived from the input, so
+  // once either is NaN every step rewrites NaN and the canvas freezes. Return
+  // it untouched and let the store's setView guard drop the write; a later
+  // finite zoom recovers.
+  if (
+    !Number.isFinite(view.x) ||
+    !Number.isFinite(view.y) ||
+    !Number.isFinite(view.scale)
+  ) {
+    return view;
+  }
   const scale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, view.scale * factor));
   return {
     scale,
@@ -82,16 +93,22 @@ export function fitView(
   viewportH: number,
   maxScale = 1.5,
 ): ViewTransform {
+  // A zero-sized viewport (a canvas the ResizeObserver measured while hidden)
+  // divides the margins to a zero scale and pushes x/y to NaN, which then
+  // poisons every later zoom step. Floor the viewport so the fit stays finite;
+  // a later real resize replaces it (CircuitCanvas.tsx:30-38).
+  const w = Math.max(viewportW, 1);
+  const h = Math.max(viewportH, 1);
   const scale = Math.min(
     maxScale,
-    viewportW / (bounds.width + CENTER_MARGIN_W),
-    viewportH / (bounds.height + CENTER_MARGIN_H),
+    w / (bounds.width + CENTER_MARGIN_W),
+    h / (bounds.height + CENTER_MARGIN_H),
   );
   const cx = bounds.minX + bounds.width / 2;
   const cy = bounds.minY + bounds.height / 2;
   return {
     scale,
-    x: cx - viewportW / (2 * scale),
-    y: cy - viewportH / (2 * scale),
+    x: cx - w / (2 * scale),
+    y: cy - h / (2 * scale),
   };
 }

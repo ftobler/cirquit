@@ -380,8 +380,30 @@ function createAppStore() {
   setRunning: (running) => set({ running }),
   toggleRunning: () => set((s) => ({ running: !s.running })),
   setTool: (tool) => set({ tool }),
-  setView: (view) => set({ view }),
-  setViewSize: (w, h) => set({ viewSize: { w, h } }),
+  setView: (view) => {
+    // Reject a poisoned view outright: a NaN view written once would be
+    // rewritten by every later zoomAbout, which derives x/y from the stored
+    // view, until a reload. The canvas paths route through setView, so this is
+    // their last line; the store's own zoom and center actions never reach it
+    // because they build on the guarded zoomAbout and the floored fitView.
+    // Scale must be positive too, not just finite: a stored 0 makes zoomReset's
+    // 1 / scale Infinity and Infinity * 0 re-poisons the view outside this
+    // guard's reach.
+    if (
+      !Number.isFinite(view.x) ||
+      !Number.isFinite(view.y) ||
+      !(view.scale > 0)
+    ) {
+      return;
+    }
+    set({ view });
+  },
+  setViewSize: (w, h) => {
+    // A non-finite size (a broken ResizeObserver report) would push fitView's
+    // division and the keyboard centre both to NaN. Refuse the write.
+    if (!Number.isFinite(w) || !Number.isFinite(h)) return;
+    set({ viewSize: { w, h } });
+  },
   setStatus: (status) => set({ status }),
   setProblem: (problem) => set({ problem }),
   setDark: (dark) => set({ dark }),
