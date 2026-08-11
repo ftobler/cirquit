@@ -502,6 +502,33 @@ describe('ground symbol bars', () => {
     expect(groundBars(p1, p2, 3)).toEqual([[{ x: 32, y: -10 }, { x: 32, y: 10 }]]);
   });
 
+  it('places every symbolType on a vertical stem at the exact upstream endpoints', () => {
+    // The fixed 32-unit vertical ground the plan pins: earth bars at fractions
+    // 1, 1+5/32 and 1+10/32 past the far end with half-widths 10, 6 and 2
+    // (GroundElm.java:68-73), the chassis base bar plus three stubs each
+    // running 8 down the stem and 5 back across it (:74-81), the signal V to a
+    // point 10 past the far end (:82-88), and the common base bar alone (:90).
+    const v1: Point = { x: 0, y: 0 };
+    const v2: Point = { x: 0, y: 32 };
+    expect(groundBars(v1, v2, 0)).toEqual([
+      [{ x: 10, y: 32 }, { x: -10, y: 32 }],
+      [{ x: 6, y: 37 }, { x: -6, y: 37 }],
+      [{ x: 2, y: 42 }, { x: -2, y: 42 }],
+    ]);
+    expect(groundBars(v1, v2, 1)).toEqual([
+      [{ x: 10, y: 32 }, { x: -10, y: 32 }],
+      [{ x: 10, y: 32 }, { x: 5, y: 40 }],
+      [{ x: 0, y: 32 }, { x: -5, y: 40 }],
+      [{ x: -10, y: 32 }, { x: -15, y: 40 }],
+    ]);
+    expect(groundBars(v1, v2, 2)).toEqual([
+      [{ x: 10, y: 32 }, { x: -10, y: 32 }],
+      [{ x: 10, y: 32 }, { x: 0, y: 42 }],
+      [{ x: -10, y: 32 }, { x: 0, y: 42 }],
+    ]);
+    expect(groundBars(v1, v2, 3)).toEqual([[{ x: 10, y: 32 }, { x: -10, y: 32 }]]);
+  });
+
   it('a zero-length stem collapses onto the point instead of going NaN', () => {
     // A ground dragged onto itself keeps a legal degenerate symbol.
     const collapsed = groundBars({ x: 8, y: 8 }, { x: 8, y: 8 }, 0);

@@ -116,7 +116,7 @@ const mkCtx = (): {
   rects: { x: number; y: number; w: number; h: number }[];
   texts: TextRecord[];
   paths: { x: number; y: number }[][];
-  strokes: { style: string | CanvasGradient; width: number; join: string }[];
+  strokes: { style: string | CanvasGradient; width: number; join: string; cap: string }[];
   grads: GradientRecord[];
 } => {
   const calls: string[] = [];
@@ -124,7 +124,7 @@ const mkCtx = (): {
   const rects: { x: number; y: number; w: number; h: number }[] = [];
   const texts: TextRecord[] = [];
   const paths: { x: number; y: number }[][] = [];
-  const strokes: { style: string | CanvasGradient; width: number; join: string }[] = [];
+  const strokes: { style: string | CanvasGradient; width: number; join: string; cap: string }[] = [];
   const grads: GradientRecord[] = [];
   const record = (name: string) => vi.fn(() => calls.push(name));
   const stub: CtxStub = {
@@ -162,10 +162,16 @@ const mkCtx = (): {
     closePath: record('closePath'),
     stroke: vi.fn(() => {
       calls.push('stroke');
-      // The colour, width and join at stroke time, in draw order: how a
-      // per-segment gradient body is asserted on, and how the coil's bevel
-      // joins are told apart from a polygon's miter ones.
-      strokes.push({ style: stub.strokeStyle, width: stub.lineWidth, join: stub.lineJoin });
+      // The colour, width, cap and join at stroke time, in draw order: how a
+      // per-segment gradient body is asserted on, how the coil's bevel
+      // joins are told apart from a polygon's miter ones, and how a symbol's
+      // stem cap is pinned against the conductor round caps.
+      strokes.push({
+        style: stub.strokeStyle,
+        width: stub.lineWidth,
+        cap: stub.lineCap,
+        join: stub.lineJoin,
+      });
     }),
     arc: vi.fn((x: number, y: number) => {
       calls.push('arc');
@@ -733,6 +739,29 @@ describe('stroke caps', () => {
     expect(ctx.lineCap).toBe('round');
     expect(ctx.lineJoin).toBe('miter');
     expect(ctx.lineWidth).toBe(3);
+  });
+
+  it('ground draws its stem at butt caps, flush like a symbol body', () => {
+    // The stem is the whole symbol body, not a lead from a post to a separate
+    // body, so it strokes at the port's crisp butt cap like every other
+    // symbol body; upstream draws the stem and bars round (UIManager.java:636
+    // sets ROUND once per frame). The rectangular-short cap decision makes a
+    // floating ground's free end read square, and the base bar covers the far
+    // end either way. The first stroke is the stem, then one per bar.
+    const { ctx, strokes } = mkCtx();
+    GROUND_DEF.draw(
+      {
+        ...context(ctx, 0),
+        voltages: [0],
+        current: 0,
+        showCurrent: false,
+      },
+      { id: 1, kind: 'ground', x1: 100, y1: 0, x2: 100, y2: 32, flags: 0, params: {} },
+    );
+    expect(strokes[0].cap).toBe('butt');
+    expect(strokes[0].width).toBe(3);
+    // The bars hang off the same cap policy, so every stroke is butt.
+    expect(strokes.slice(1).every((s) => s.cap === 'butt')).toBe(true);
   });
 
   it('polyline() keeps butt caps and miter joins so polygon corners stay sharp', () => {
