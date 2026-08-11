@@ -1322,6 +1322,55 @@ describe('gate input count edits are normalised', () => {
   });
 });
 
+describe('multiplexer select-bit edits are normalised', () => {
+  const addChip = (kind: string) =>
+    useStore.getState().addElement({
+      kind,
+      x1: 0,
+      y1: 0,
+      x2: 192,
+      y2: 0,
+      flags: 0,
+      params: kind === 'deMultiplexer' ? { selectBits: 2 } : { bits: 2 },
+    });
+
+  it.each([
+    ['multiplexer', 'bits', 2.5, 2],
+    ['deMultiplexer', 'selectBits', 2.5, 3],
+  ])('setParam normalises a fractional %s select-bit count to the engine integer', (kind, name, given, expected) => {
+    // The "# of Select Bits" number field can land on a fraction. The engine
+    // truncates the multiplexer's count and rounds the demultiplexer's to a
+    // channel count, so the store must write back the same integer or a
+    // rebuild trips the post-count guard and the circuit never comes back
+    // (circuit.rs:261-269).
+    const id = addChip(kind);
+    useStore.getState().setParam(id, name, given);
+    const after = useStore.getState();
+    const e = after.elements.find((x) => x.id === id);
+    expect(e?.params[name]).toBe(expected);
+    expect(after.pendingParams.get(`${id}:${name}`)?.value).toBe(expected);
+  });
+
+  it('clamps the boundary select-bit counts to the engine range on edit', () => {
+    const mux = addChip('multiplexer');
+    useStore.getState().setParam(mux, 'bits', 0.5);
+    expect(useStore.getState().elements.find((e) => e.id === mux)?.params.bits).toBe(1);
+    useStore.getState().setParam(mux, 'bits', 6.5);
+    expect(useStore.getState().elements.find((e) => e.id === mux)?.params.bits).toBe(6);
+
+    const demux = addChip('deMultiplexer');
+    // 0.4 rounds to 0, which the engine turns into the default 2
+    // (de_multiplexer.rs:42-46); 0.5 rounds to 1. A negative count saturates
+    // through the same default.
+    useStore.getState().setParam(demux, 'selectBits', 0.4);
+    expect(useStore.getState().elements.find((e) => e.id === demux)?.params.selectBits).toBe(2);
+    useStore.getState().setParam(demux, 'selectBits', 7);
+    expect(useStore.getState().elements.find((e) => e.id === demux)?.params.selectBits).toBe(6);
+    useStore.getState().setParam(demux, 'selectBits', -1);
+    expect(useStore.getState().elements.find((e) => e.id === demux)?.params.selectBits).toBe(2);
+  });
+});
+
 describe('undo parity', () => {
   const addSwitch = () =>
     useStore.getState().addElement({

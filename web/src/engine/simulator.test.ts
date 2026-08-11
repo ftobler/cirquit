@@ -185,3 +185,60 @@ describe('fractional gate input counts rebuild cleanly', () => {
     expect(postsOf(e).length).toBe(engine.elementNodes().length);
   });
 });
+
+describe('fractional multiplexer select-bit counts rebuild cleanly', () => {
+  beforeEach(() => useStore.setState(fresh()));
+
+  it.each([
+    ['multiplexer', 'bits', 2.5, 2],
+    ['deMultiplexer', 'selectBits', 2.5, 3],
+  ])('editing %s to %s stores an integer and builds without the post-count guard', async (kind, name, given, n) => {
+    // The "# of Select Bits" number field can hand the store a fraction;
+    // setParam must write back the integer the engine derives or the rebuild's
+    // post-count guard (circuit.rs:261-269) rejects the spec and the circuit
+    // never comes back.
+    const id = useStore.getState().addElement({
+      kind,
+      x1: 0,
+      y1: 0,
+      x2: 192,
+      y2: 0,
+      flags: 0,
+      params: kind === 'deMultiplexer' ? { selectBits: 2 } : { bits: 2 },
+    });
+    useStore.getState().setParam(id, name, given);
+    let e = useStore.getState().elements.find((x) => x.id === id)!;
+    expect(e.params[name]).toBe(n);
+
+    // A demultiplexer alone is electrically singular: every output is a
+    // voltage source to ground and the floating data input leaves the matrix
+    // rank-deficient, so pin the data input down. The multiplexer's single
+    // output builds unloaded.
+    let groundId: number | undefined;
+    if (kind === 'deMultiplexer') {
+      const data = postsOf(e)[postsOf(e).length - 1];
+      groundId = useStore.getState().addElement({
+        kind: 'ground',
+        x1: data.x,
+        y1: data.y,
+        x2: data.x,
+        y2: data.y + 32,
+        flags: 0,
+        params: {},
+      });
+      e = useStore.getState().elements.find((x) => x.id === id)!;
+    }
+
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(useStore.getState().elements, DEFAULT_SETTINGS, [])).toBeNull();
+    // The engine's node array and the renderer's post list hold one entry per
+    // post, so equal spans prove the two halves agree on the post count and
+    // the renderer's index cannot drift off the engine's elementNodes. The
+    // ground follows the chip in element order, so its offset ends the chip's
+    // span.
+    const nodes = engine.elementNodes();
+    const start = engine.postOffset(id)!;
+    const end = groundId === undefined ? nodes.length : engine.postOffset(groundId)!;
+    expect(end - start).toBe(postsOf(e).length);
+  });
+});

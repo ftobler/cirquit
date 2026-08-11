@@ -38,6 +38,8 @@ import { postsOf } from '../model/registry';
 import { chipPinsOf } from '../model/registry/chips';
 import { CS_INPUT_COUNT_KINDS } from '../model/registry/elements/vcvs';
 import { GATE_INPUT_COUNT_KINDS } from '../model/registry/elements/gate';
+import { normalizeMuxBits } from '../model/registry/elements/multiplexer';
+import { normalizeDemuxBits } from '../model/registry/elements/deMultiplexer';
 import { normalizeInputCount } from '../model/registry/shared';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import { paramScale, resolveParam } from '../model/sliders';
@@ -806,6 +808,17 @@ export const useStore = create<AppState>((set, get) => ({
       const target = s.elements.find((e) => e.id === id);
       if (name === 'inputCount' && target !== undefined && INPUT_COUNT_KINDS.has(target.kind)) {
         pending = normalizeInputCount(value);
+      } else if (target !== undefined) {
+        // The multiplexer's engine truncates its select-bit count and the
+        // demultiplexer's rounds its own, each capped at 6 (multiplexer.rs:41,
+        // de_multiplexer.rs:42-46). Write that same integer back so the
+        // geometry and the rebuild read one channel count and a rebuild never
+        // trips the post-count guard (circuit.rs:261-269).
+        if (target.kind === 'multiplexer' && name === 'bits') {
+          pending = normalizeMuxBits(value);
+        } else if (target.kind === 'deMultiplexer' && name === 'selectBits') {
+          pending = normalizeDemuxBits(value);
+        }
       }
       return {
         elements: s.elements.map((e) => {

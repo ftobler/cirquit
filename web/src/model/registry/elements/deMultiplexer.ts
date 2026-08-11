@@ -25,11 +25,23 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 export const DEMUX_BUS_SELECT = 1 << 3;
 export const DEMUX_INVERT_OUTPUTS = 1 << 4;
 
+/**
+ * The integer select-bit count both halves derive from a value: the engine
+ * rounds it, turns any non-positive result into the default 2 and caps it at 6
+ * (de_multiplexer.rs:42-46), the edit dialog's 64-output ceiling. The store's
+ * `setParam`, the parser and the geometry all normalise to this, so a
+ * fractional edit never draws a post list the engine's build rejects
+ * (circuit.rs:261-269).
+ */
+export function normalizeDemuxBits(value: number): number {
+  if (!Number.isFinite(value)) return 2;
+  const b = Math.round(value);
+  if (b <= 0) return 2;
+  return Math.min(6, b);
+}
+
 function demuxSelectBits(e: CircuitElement): number {
-  // The token constructor turns 0 into 2 (DeMultiplexerElm.java:82-83), and
-  // the edit dialog caps the count at 6, which is 64 outputs.
-  const b = Math.round(e.params.selectBits ?? 2);
-  return Math.min(6, b === 0 ? 2 : b);
+  return normalizeDemuxBits(e.params.selectBits ?? 2);
 }
 
 function demuxOutputCount(e: CircuitElement): number {
@@ -79,7 +91,7 @@ export const DEMULTIPLEXER_DEF: ElementDef = {
     // (ChipElm.java:356-366, DeMultiplexerElm.java:61).
     const i = chipCommonTokens(t, e, false);
     const bits = Number(t[i]);
-    if (t[i] !== undefined && Number.isFinite(bits)) e.params.selectBits = bits;
+    if (t[i] !== undefined && Number.isFinite(bits)) e.params.selectBits = normalizeDemuxBits(bits);
   },
   dump: (e) => [...chipDump(e, demuxPins(e), false), e.params.selectBits ?? 2],
   dumpFlags: chipDumpFlags,

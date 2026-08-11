@@ -26,10 +26,25 @@ export const MUX_INVERTED_OUTPUT = 2;
 export const MUX_STROBE = 4;
 export const MUX_BUS_SELECT = 8;
 
+/**
+ * The integer select-bit count both halves derive from a value: truncated and
+ * clamped to the 1..6 range, the engine's `(x as usize)` cast and clamp
+ * (multiplexer.rs:41). The store's `setParam`, the parser and the geometry all
+ * normalise to this, so a fractional edit never draws a post list the engine's
+ * build rejects (circuit.rs:261-269).
+ */
+export function normalizeMuxBits(value: number): number {
+  if (!Number.isFinite(value)) return 2;
+  const n = Math.trunc(value);
+  if (n < 1) return 1;
+  if (n > 6) return 6;
+  return n;
+}
+
 /** The select-bit count, clamped to the 1..6 the edit dialog allows
  *  (MultiplexerElm.java:326-334). The text token, `selectBitCount`. */
 function muxBits(e: CircuitElement): number {
-  return Math.max(1, Math.min(6, Math.round(e.params.bits ?? 2)));
+  return normalizeMuxBits(e.params.bits ?? 2);
 }
 
 /** Number of data inputs, `1 << selectBitCount` (MultiplexerElm.java:84). */
@@ -90,8 +105,8 @@ export const MULTIPLEXER_DEF: ElementDef = {
     // (no `state` pins), so `chipCommonTokens` with `hasBits: false` walks the
     // right prefix (ChipElm.java:48-68, MultiplexerElm.java:55-63).
     const i = chipCommonTokens(t, e, false);
-    const bits = Math.round(Number(t[i]));
-    if (t[i] !== undefined && Number.isFinite(bits)) e.params.bits = bits;
+    const bits = Number(t[i]);
+    if (t[i] !== undefined && Number.isFinite(bits)) e.params.bits = normalizeMuxBits(bits);
   },
   dump: (e) => [...chipDump(e, muxPins(e), false), e.params.bits ?? 2],
   dumpFlags: chipDumpFlags,

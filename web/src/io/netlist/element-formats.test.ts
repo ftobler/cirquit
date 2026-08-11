@@ -1743,6 +1743,24 @@ describe('controlled source file formats', () => {
     expect(high.e.params.inputCount).toBe(8);
   });
 
+  it('a fractional multiplexer select count normalises on load to the engine integer', () => {
+    // A hand-edited 2.5 would draw 8 inputs with `Math.round` but build 4 with
+    // the engine's `(2.5 as usize)` truncation, so the spec fails the
+    // post-count guard. Parse clamps to the integer the engine derives, the
+    // same clamp the store applies on edit (store.ts:setParam).
+    const { e, elementLine } = csLine('184 0 0 128 0 0 2.5', '184');
+    expect(e.params.bits).toBe(2);
+    expect(elementLine).toBe('184 0 0 128 0 0 2');
+  });
+
+  it('a fractional demultiplexer select count normalises on load to the engine integer', () => {
+    // The engine rounds the demultiplexer's count (de_multiplexer.rs:42), so
+    // a 2.5 token loads as 3, the value a save re-emits.
+    const { e, elementLine } = csLine('185 0 0 128 0 0 2.5', '185');
+    expect(e.params.selectBits).toBe(3);
+    expect(elementLine).toBe('185 0 0 128 0 0 3');
+  });
+
   it('a CCCS with one pair lands its posts where the cccs.txt wires connect', () => {
     // reference tests/cccs.txt:1 spans (416,272)-(432,272): A+ at the first
     // endpoint, A- below it, and the O+ output on the east at (512,272),
