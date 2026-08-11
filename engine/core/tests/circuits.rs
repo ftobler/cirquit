@@ -4091,6 +4091,54 @@ fn wire_current_keeps_its_sign() {
 }
 
 #[test]
+fn wire_into_a_pure_ground_reports_its_current() {
+    // A wire whose post 0 sits at a node holding only a ground symbol used to
+    // recover zero: the ground is excluded from the KCL injection, and the
+    // chain resolver tried the post 0 end first and read an empty leaf. The
+    // reference plane spans several coordinates, so such a wire really carries
+    // the branch current; it must resolve from its driven end. Reversing the
+    // wire is the same circuit, so the magnitude must not change.
+    let make = |flipped: bool| {
+        let posts = if flipped {
+            [[128, 64], [64, 64]]
+        } else {
+            [[64, 64], [128, 64]]
+        };
+        build(
+            vec![
+                elm(1, "voltage", &[[0, 64], [0, 0]], &[("maxVoltage", 5.0)]),
+                elm(2, "ground", &[[0, 0]], &[]),
+                elm(
+                    3,
+                    "resistor",
+                    &[[0, 64], [64, 64]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(4, "wire", &posts, &[]),
+                elm(5, "ground", &[[128, 64]], &[]),
+            ],
+            opts(1e-5, true),
+        )
+    };
+
+    let mut c = make(false);
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], -5e-3, 1e-9),
+        "wire into a pure ground reported {}",
+        c.element_currents()[3]
+    );
+
+    let mut c = make(true);
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 5e-3, 1e-9),
+        "flipped wire into a pure ground reported {}",
+        c.element_currents()[3]
+    );
+}
+
+#[test]
 fn wire_merge_shrinks_the_matrix() {
     // The divider's bottom rail was four nodes plus two voltage-source
     // unknowns. The wire merge folds the wire's two coordinates into the

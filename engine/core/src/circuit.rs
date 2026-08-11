@@ -1103,6 +1103,32 @@ impl Circuit {
             let mut resolved = vec![false; edges.len()];
             let mut currents = vec![0.0; edges.len()];
 
+            // A coordinate whose only non-wire occupant is a ground symbol.
+            // Such a node sits inside the reference plane, which spans several
+            // raw coordinates, so the current it exchanges with a wire is not
+            // determined locally: the ground can sink or source any balance.
+            // A wire resolved from such an end would read a zero injection and
+            // report no current even when its other end is driven. The chain
+            // must therefore resolve such a wire from the far end instead,
+            // which is why `can_resolve` refuses these coordinates.
+            let mut has_ground = vec![false; coords.len()];
+            let mut has_non_ground = vec![false; coords.len()];
+            for elm in self.elements.iter() {
+                for pi in 0..elm.post_count() {
+                    let Some(&c) = coord_id.get(&elm.base().posts[pi]) else {
+                        continue;
+                    };
+                    if elm.is_ground() {
+                        has_ground[c] = true;
+                    } else if !(elm.removable_wire() && elm.post_count() >= 2) {
+                        has_non_ground[c] = true;
+                    }
+                }
+            }
+            let ground_only: Vec<bool> = (0..coords.len())
+                .map(|c| has_ground[c] && !has_non_ground[c])
+                .collect();
+
             // Resolve chains and trees in the natural order: a wire whose
             // other endpoint is fully determined derives its current from KCL
             // there.
@@ -1113,11 +1139,11 @@ impl Circuit {
                         continue;
                     }
                     let (c0, c1) = (edges[i][0], edges[i][1]);
-                    if can_resolve(&edges, &resolved, i, c0) {
+                    if can_resolve(&edges, &resolved, &ground_only, i, c0) {
                         currents[i] = kcl_sum(&edges, &resolved, &injection, c0, &currents);
                         resolved[i] = true;
                         progress = true;
-                    } else if c1 != c0 && can_resolve(&edges, &resolved, i, c1) {
+                    } else if c1 != c0 && can_resolve(&edges, &resolved, &ground_only, i, c1) {
                         currents[i] = -kcl_sum(&edges, &resolved, &injection, c1, &currents);
                         resolved[i] = true;
                         progress = true;
@@ -1490,8 +1516,20 @@ fn coord_of(
 /// True when every other unresolved wire touching `c` is resolved, so wire `i`
 /// is free to determine its current from KCL at `c`. Self-loops (both posts at
 /// one coordinate) never block: they neither draw nor deliver net current, so
-/// their own current is whatever the neighbours leave.
-fn can_resolve(edges: &[[usize; 2]], resolved: &[bool], i: usize, c: usize) -> bool {
+/// their own current is whatever the neighbours leave. A ground-only
+/// coordinate never resolves (see `recover_wire_currents`): its injection is
+/// zero by construction, so reading a wire's current from it would misreport a
+/// wire that actually feeds the reference plane through the ground.
+fn can_resolve(
+    edges: &[[usize; 2]],
+    resolved: &[bool],
+    ground_only: &[bool],
+    i: usize,
+    c: usize,
+) -> bool {
+    if ground_only[c] {
+        return false;
+    }
     for (j, e) in edges.iter().enumerate() {
         if j == i || resolved[j] || e[0] == e[1] {
             continue;
