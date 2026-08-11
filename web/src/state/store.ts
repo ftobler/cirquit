@@ -1389,6 +1389,14 @@ function createAppStore() {
     // models live in storage and are untouched by either half of this.
     clearSessionModels();
     for (const model of parsed.compositeModels) registerSessionModel(model);
+    // The parser is deliberately pure, so a 410 can only resolve its model
+    // name against the file's own `.` lines. Re-resolve every element against
+    // the merged library (session then storage) so a 410 whose model lives
+    // only in storage simulates at load, the way placement and paste do.
+    // A `.`-named 410 re-derives the identical spec, the file's copy winning
+    // over storage. A 410 serializes only its text, never the payload, so the
+    // saved output is unchanged.
+    const resolved = parsed.elements.map(resolveCompositeModel);
     // The parser has already resolved each plot's element index, which counts
     // element lines this build cannot read. The parse-time ids and the
     // untouched display tokens all travel with the scope, so a save puts the
@@ -1417,7 +1425,7 @@ function createAppStore() {
     }
 
     set((s) => ({
-      elements: parsed.elements,
+      elements: resolved,
       scopes,
       sliders: parsed.sliders.map((c): Slider => ({ ...c })),
       unmatchedScopes,

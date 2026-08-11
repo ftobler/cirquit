@@ -251,4 +251,134 @@ describe('the subcircuit library is scoped to the loaded file', () => {
     expect(chip?.text).toBe('pasted');
     expect(chip?.model).toEqual({ model: 'ResistorElm 1 2', external: [1], dumps: ['0_1000'] });
   });
+
+  it('a load resolves a 410 against a storage-only model', () => {
+    // The load path resolves the merged library through the default storage,
+    // which is `globalThis.localStorage` under vitest, so point it at the fake
+    // for this test the way subcircuit.test.ts's browser-storage test does.
+    const store = storage();
+    saveModel(
+      {
+        name: 'onlylib',
+        flags: 0,
+        sizeX: 2,
+        sizeY: 2,
+        extList: [{ name: 'in', node: 1, pos: 0, side: 2 }],
+        nodeList: 'ResistorElm 1 2',
+        // The escaped child dump form a built model and a `.` line both use.
+        elmDump: '0\\s1000',
+      },
+      store,
+    );
+    const prev = (globalThis as { localStorage?: Storage }).localStorage;
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: (k) => store.getItem(k),
+      setItem: (k, v) => store.setItem(k, v),
+      removeItem: (k) => store.removeItem(k),
+      clear: () => {},
+    } as Storage;
+    try {
+      useStore
+        .getState()
+        .loadNetlist('$ 1 0.000005 10 50 5 50 5e-11\n410 0 0 64 0 1 onlylib\n');
+      const chip = useStore.getState().elements[0];
+      expect(chip.kind).toBe('customComposite');
+      expect(chip.text).toBe('onlylib');
+      // The file has no `.` line, so only storage can supply the payload; an
+      // unresolved load would draw the fallback stub and never simulate.
+      expect(chip.model).toEqual({
+        model: 'ResistorElm 1 2',
+        external: [1],
+        dumps: ['0_1000'],
+      });
+    } finally {
+      (globalThis as { localStorage?: Storage }).localStorage = prev;
+    }
+  });
+
+  it('a file model wins over a stored model of the same name at load', () => {
+    // A `. line` in the file and a stored model share a name. The file's copy
+    // must feed the loaded 410, the same local-map-wins rule the session map
+    // applies, so re-resolving at load never swaps in the saved model.
+    const store = storage();
+    saveModel(
+      {
+        name: 'divider',
+        flags: 0,
+        sizeX: 9,
+        sizeY: 9,
+        extList: [{ name: 'in', node: 1, pos: 0, side: 2 }],
+        nodeList: 'ResistorElm 1 2',
+        // A different child dump from the file's, so the two are told apart.
+        elmDump: '0\\s2000',
+      },
+      store,
+    );
+    const prev = (globalThis as { localStorage?: Storage }).localStorage;
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: (k) => store.getItem(k),
+      setItem: (k, v) => store.setItem(k, v),
+      removeItem: (k) => store.removeItem(k),
+      clear: () => {},
+    } as Storage;
+    try {
+      const file = `$ 1 0.000005 10 50 5 50 5e-11\n${dividerLine(2)}\n410 0 0 64 0 1 divider\n`;
+      useStore.getState().loadNetlist(file);
+      const chip = useStore.getState().elements[0];
+      expect(chip.kind).toBe('customComposite');
+      // The file's divider carries 0\\s1000, so the resolved payload is the
+      // file's, not the stored model's 0\\s2000.
+      expect(chip.model).toEqual({
+        model: 'ResistorElm 1 2',
+        external: [1],
+        dumps: ['0_1000'],
+      });
+    } finally {
+      (globalThis as { localStorage?: Storage }).localStorage = prev;
+    }
+  });
+
+  it('a truncated `.` line falls back to a stored model of that name', () => {
+    // A `.` line too short to decode never joins the parsed models, but it is
+    // preserved in passthrough. A 410 naming it must still resolve, now from
+    // storage, the documented improvement the paste path already makes.
+    const store = storage();
+    saveModel(
+      {
+        name: 'stub',
+        flags: 0,
+        sizeX: 2,
+        sizeY: 2,
+        extList: [{ name: 'in', node: 1, pos: 0, side: 2 }],
+        nodeList: 'ResistorElm 1 2',
+        elmDump: '0\\s1000',
+      },
+      store,
+    );
+    const prev = (globalThis as { localStorage?: Storage }).localStorage;
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: (k) => store.getItem(k),
+      setItem: (k, v) => store.setItem(k, v),
+      removeItem: (k) => store.removeItem(k),
+      clear: () => {},
+    } as Storage;
+    try {
+      // The `.` line stops before its opaque tokens, so it cannot decode.
+      const file =
+        '$ 1 0.000005 10 50 5 50 5e-11\n. stub 0 2 2 1 in 1 0 0\n410 0 0 64 0 1 stub\n';
+      useStore.getState().loadNetlist(file);
+      const chip = useStore.getState().elements[0];
+      expect(chip.kind).toBe('customComposite');
+      expect(chip.text).toBe('stub');
+      expect(chip.model).toEqual({
+        model: 'ResistorElm 1 2',
+        external: [1],
+        dumps: ['0_1000'],
+      });
+      // The unparseable line still travels with the file, byte for byte.
+      expect(useStore.getState().toNetlist()).toContain('. stub 0 2 2 1 in 1 0 0');
+    } finally {
+      (globalThis as { localStorage?: Storage }).localStorage = prev;
+    }
+  });
 });

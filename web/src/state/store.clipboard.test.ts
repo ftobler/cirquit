@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { GRID_SIZE } from '../model/types';
 import { parseCircuit } from '../io/netlist';
-import { clearSessionModels, registerSessionModel } from '../io/subcircuits';
+import { clearSessionModels, saveModel } from '../io/subcircuits';
 import { useStore } from './store';
 import { addCapacitor, addResistor, dropId, fresh } from './store.test-helpers';
 
@@ -276,30 +276,66 @@ describe('subcircuit models ride the clipboard', () => {
     clearSessionModels();
     // A document whose 410 has no `.` line: the model lives only in the
     // library, so a copy has no `.` line to carry and the paste must resolve
-    // the name against the library instead.
-    useStore
-      .getState()
-      .loadNetlist(['$ 1 0.000005 10 50 5 50 5e-11', '410 0 0 64 0 1 onlylib'].join('\n'));
-    registerSessionModel({
-      name: 'onlylib',
-      flags: 0,
-      sizeX: 2,
-      sizeY: 2,
-      extList: [{ name: 'in', node: 1, pos: 0, side: 2 }],
-      nodeList: 'ResistorElm 1 2',
-      elmDump: '0 1000',
-    });
-    const chip = useStore.getState().elements[0];
-    useStore.getState().select([chip.id]);
-    useStore.getState().copySelection();
-    const clip = useStore.getState().clipboard ?? '';
-    expect(clip).not.toContain('. onlylib');
-    useStore.setState(fresh());
-    useStore.setState({ clipboard: clip });
-    useStore.getState().pasteFromClipboard();
-    const pasted = useStore.getState().elements[0];
-    expect(pasted.kind).toBe('customComposite');
-    expect(pasted.model).toBeDefined();
+    // the name against the library instead. A load rebuilds the session half
+    // of the library from the file, so the storage half has to hold the model
+    // for the loaded 410 to resolve against the merged library at load.
+    const store = new Map<string, string>();
+    saveModel(
+      {
+        name: 'onlylib',
+        flags: 0,
+        sizeX: 2,
+        sizeY: 2,
+        extList: [{ name: 'in', node: 1, pos: 0, side: 2 }],
+        nodeList: 'ResistorElm 1 2',
+        // The escaped child dump form a built model and a `.` line both use.
+        elmDump: '0\\s1000',
+      },
+      {
+        getItem: (k) => store.get(k) ?? null,
+        setItem: (k, v) => {
+          store.set(k, v);
+        },
+        removeItem: (k) => {
+          store.delete(k);
+        },
+        listSubcircuitKeys: () => [...store.keys()].filter((k) => k.startsWith('subcircuit:')),
+      },
+    );
+    // The store's load path reads storage through `globalThis.localStorage`;
+    // point it at the fake for this test, as store.load.test.ts does.
+    const prev = (globalThis as { localStorage?: Storage }).localStorage;
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: (k) => store.get(k) ?? null,
+      setItem: (k, v) => {
+        store.set(k, v);
+      },
+      removeItem: (k) => {
+        store.delete(k);
+      },
+      clear: () => {},
+    } as Storage;
+    try {
+      useStore
+        .getState()
+        .loadNetlist(['$ 1 0.000005 10 50 5 50 5e-11', '410 0 0 64 0 1 onlylib'].join('\n'));
+      const chip = useStore.getState().elements[0];
+      // The load resolves the name against the merged library, so the loaded
+      // part simulates immediately rather than only after the paste.
+      expect(chip.model).toBeDefined();
+      useStore.getState().select([chip.id]);
+      useStore.getState().copySelection();
+      const clip = useStore.getState().clipboard ?? '';
+      expect(clip).not.toContain('. onlylib');
+      useStore.setState(fresh());
+      useStore.setState({ clipboard: clip });
+      useStore.getState().pasteFromClipboard();
+      const pasted = useStore.getState().elements[0];
+      expect(pasted.kind).toBe('customComposite');
+      expect(pasted.model).toBeDefined();
+    } finally {
+      (globalThis as { localStorage?: Storage }).localStorage = prev;
+    }
   });
 
   it('undo of a subcircuit paste restores the prior document lines', () => {
