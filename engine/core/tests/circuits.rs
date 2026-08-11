@@ -5968,6 +5968,44 @@ fn relay_contact_pair_follows_its_coil_by_label() {
 }
 
 #[test]
+fn empty_relay_labels_do_not_pair() {
+    // An empty label is "no label": a coil and a contact that round-tripped
+    // an empty `\0` token must not pair, or every unlabelled relay in a file
+    // would drive every other. Both contacts stay closed here even though the
+    // coil picks up.
+    let c = &mut coil_contact_pair("", "", "");
+    c.run(200);
+    let i_a = c.element_currents()[7];
+    let i_b = c.element_currents()[10];
+    assert!(
+        close(i_a, 5.0 / 1000.05, 1e-6),
+        "unlabelled contact A should stay closed, got {i_a}"
+    );
+    assert!(
+        close(i_b, 5.0 / 1000.05, 1e-6),
+        "unlabelled contact B should stay closed, got {i_b}"
+    );
+}
+
+#[test]
+fn relay_label_string_still_pairs() {
+    // The upstream constructor default "label" is a real label and must keep
+    // driving its contact; only the empty string means unlabelled.
+    let c = &mut coil_contact_pair("label", "label", "");
+    c.run(200);
+    let i_a = c.element_currents()[7];
+    let i_b = c.element_currents()[10];
+    assert!(
+        i_a.abs() < 1e-5,
+        "matched contact should have opened when the coil picked up, got {i_a}"
+    );
+    assert!(
+        close(i_b, 5.0 / 1000.05, 1e-6),
+        "unmatched contact should stay closed, got {i_b}"
+    );
+}
+
+#[test]
 fn relay_polecount_expands_posts() {
     // poleCount = 2 needs 2 + 3*2 = 8 posts; the build itself would fail if
     // the engine counted differently, since the spec hands it exactly eight.

@@ -138,6 +138,10 @@ export interface ElementDef {
   draw(g: DrawContext, e: CircuitElement): void;
   fields?: FieldDef[];
   defaults?: Record<string, number>;
+  /** Text a freshly placed part carries, matching the upstream constructor
+   *  (e.g. the relay coil/contact `label = "label"`, RelayCoilElm.java:88).
+   *  Absent means no text. */
+  defaultText?: string;
   /** Elements the engine cannot solve yet are drawn but flagged in the UI. */
   simulated?: boolean;
   /** Clicking the element in run mode toggles it (switches). */

@@ -362,6 +362,10 @@ export const RELAY_COIL_DEF: ElementDef = {
   posts: twoPosts,
   noDiagonal: true,  // RelayCoilElm.java:84
   defaultFlags: 0,
+  // The label is the link key, and the no-args constructor defaults it to
+  // "label" (RelayCoilElm.java:88), so a fresh coil pairs with a fresh
+  // contact without a hand-typed label.
+  defaultText: 'label',
   defaults: {
     inductance: 0.2,
     coilCurrent: 0,
@@ -474,6 +478,9 @@ export const RELAY_CONTACT_DEF: ElementDef = {
   },
   noDiagonal: true,  // RelayContactElm.java:59
   defaultFlags: 4,   // FLAG_IEC, RelayContactElm.java:63
+  // The contact links to its coil by this label, and the constructor defaults
+  // it to "label" (RelayContactElm.java:62), matching the coil's own default.
+  defaultText: 'label',
   defaults: {
     r_on: 0.05,
     r_off: 1e6,

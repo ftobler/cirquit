@@ -1020,6 +1020,34 @@ describe('relay file formats', () => {
     expect(contact.elementLine).toBe(contactLine);
   });
 
+  it('a fresh coil and contact save the upstream "label" default', () => {
+    // The label is the link key, so a fresh pair must carry it or the pair
+    // never connects (RelayCoilElm.java:88, RelayContactElm.java:62).
+    const coil = makeElement('relayCoil', 0, 0, 0, 64);
+    expect(coil.text).toBe('label');
+    const coilOut = serializeCircuit([{ ...coil, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(coilOut.split('\n').find((l) => l.startsWith('425 '))).toBe(
+      '425 0 0 0 64 0 label 0.2 0 0.02 20 0.015 0.005 0 0 0',
+    );
+
+    const contact = makeElement('relayContact', 0, 0, 64, 0);
+    expect(contact.text).toBe('label');
+    const contactOut = serializeCircuit([{ ...contact, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(contactOut.split('\n').find((l) => l.startsWith('426 '))).toBe(
+      '426 0 0 64 0 4 label 0.05 1000000 0',
+    );
+  });
+
+  it('an empty relay label round-trips as the empty \\0 token, not the default', () => {
+    // Clearing the field saves the empty escape, and a reload must keep it
+    // empty: the engine treats an empty label as unlabelled, so restoring it
+    // to "label" would re-pair a coil the user deliberately unlinked.
+    const line = '425 0 0 0 64 0 \\0 0.2 0 0.02 20 0.015 0.005 0 0 0';
+    const { e, elementLine } = relayLine(line, '425');
+    expect(e.text).toBe('');
+    expect(elementLine).toBe(line);
+  });
+
   it('every relay line in the bundled corpus parses and round-trips', () => {
     let count = 0;
     for (const file of readdirSync(CIRCUITS_DIR).filter((f) => f.endsWith('.txt'))) {

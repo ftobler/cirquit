@@ -43,6 +43,14 @@ describe('creation defaults', () => {
   it('creates text at the upstream size of 24', () => {
     expect(makeElement('decoration', 0, 0, 0, 0).params.size).toBe(24);
   });
+
+  it('places a relay coil and contact already carrying the linking label', () => {
+    // Upstream's constructors default both labels to "label" (RelayCoilElm.java:
+    // 88, RelayContactElm.java:62), so a freshly placed pair links up without a
+    // hand-typed label.
+    expect(makeElement('relayCoil', 0, 0, 0, 64).text).toBe('label');
+    expect(makeElement('relayContact', 0, 0, 64, 0).text).toBe('label');
+  });
 });
 
 describe('value edits go through the fast path', () => {

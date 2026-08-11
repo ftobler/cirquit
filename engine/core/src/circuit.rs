@@ -453,9 +453,13 @@ impl Circuit {
     /// (RelayCoilElm.java:353-378). A coil with no matching contact simply
     /// drives nobody; a contact with no coil keeps its file position.
     fn link_relay_contacts(&mut self) {
+        // An empty label is no label: `escapeToken('')` round-trips as the
+        // `\0` token, so a saved unlabelled coil or contact loads with an
+        // empty string, not None, and without the filter would pair with every
+        // other unlabelled relay in the file.
         let mut contacts_by_label: HashMap<String, Vec<usize>> = HashMap::new();
         for (i, elm) in self.elements.iter().enumerate() {
-            if let Some(label) = elm.link_label() {
+            if let Some(label) = elm.link_label().filter(|l| !l.is_empty()) {
                 contacts_by_label
                     .entry(label.to_string())
                     .or_default()
@@ -463,7 +467,7 @@ impl Circuit {
             }
         }
         for elm in self.elements.iter_mut() {
-            if let Some(label) = elm.link_label() {
+            if let Some(label) = elm.link_label().filter(|l| !l.is_empty()) {
                 if let Some(contacts) = contacts_by_label.get(label) {
                     elm.set_relay_contacts(contacts.clone());
                 }
