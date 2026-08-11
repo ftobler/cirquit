@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseCircuit, serializeCircuit } from './index';
 import { makeElement, makeToolElement } from '../../state/store';
 import { postsOf } from '../../model/registry';
-import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE } from '../../model/registry/flags';
+import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE, OUTPUT_FIXED, OUTPUT_SHOW_VOLTAGE } from '../../model/registry/flags';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
 import type { CustomLogicModel } from './types';
 import { clearSessionModels, parseCompositeModelLine, registerSessionModel } from '../subcircuits';
@@ -911,6 +911,49 @@ describe('probe file format', () => {
     expect(e.params.scale).toBe(0);
     expect(e.params.resistance).toBe(1e7);
     expect(elementLine).toBe(line);
+  });
+});
+
+describe('output file format', () => {
+  const outputLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith('O ')) ?? '' };
+  };
+
+  it('round-trips the seven-token corpus shape byte-for-byte', () => {
+    // allpass1.txt's line: flags 0, scale 0 (auto). The output draws the
+    // literal `out` under these flags, the 116 flagless corpus lines' reading.
+    const { e, elementLine } = outputLine('O 416 224 480 224 0 0');
+    expect([e.x1, e.y1]).toEqual([416, 224]);
+    expect([e.x2, e.y2]).toEqual([480, 224]);
+    expect(e.flags).toBe(0);
+    expect(e.params.scale).toBe(0);
+    expect(elementLine).toBe('O 416 224 480 224 0 0');
+  });
+
+  it('keeps the FLAG_VALUE|FLAG_FIXED flags and the V scale', () => {
+    // The corpus's one fixed-scale output: flags 3 (show voltage and fixed
+    // precision), scale 1 (V).
+    const { e, elementLine } = outputLine('O 448 144 496 144 3 1');
+    expect(e.flags).toBe(OUTPUT_SHOW_VOLTAGE | OUTPUT_FIXED);
+    expect(e.params.scale).toBe(1);
+    expect(elementLine).toBe('O 448 144 496 144 3 1');
+  });
+
+  it('a six-token line defaults its scale to auto and writes it on save', () => {
+    // The corpus's dominant shape stops after the flags; the scale reads as
+    // absent and the draw falls back to auto. A save appends the scale token,
+    // the same always-write policy the probe's dump has.
+    const { e, elementLine } = outputLine('O 416 224 480 224 0');
+    expect(e.flags).toBe(0);
+    expect(e.params.scale).toBeUndefined();
+    expect(elementLine).toBe('O 416 224 480 224 0 0');
+  });
+
+  it('connects only at the first endpoint, never at the free end', () => {
+    const { e } = outputLine('O 416 224 480 224 0 0');
+    expect(postsOf(e)).toEqual([{ x: 416, y: 224 }]);
   });
 });
 

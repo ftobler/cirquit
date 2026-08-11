@@ -279,7 +279,7 @@ symbol toggle, which is on by default.
 - [ ] SRAM, ROM, delay buffer, bus splitter
 - [x] Custom logic (the `!` model line and the `208` element)
 
-**Instruments and annotation** — done: labeled node, voltage readout,
+**Instruments and annotation** — done: labeled node, output,
 voltmeter, text.
 
 - [ ] Ammeter, ohmmeter, wattmeter, test point, data recorder, stop trigger

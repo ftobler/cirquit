@@ -40,11 +40,12 @@ describe('capability gates', () => {
       'antenna',
       'audioOutput',
       'sweep',
+      'output',
     ]) {
       expect(canRotate(element(kind, 0, 0, 32, 0))).toBe(true);
     }
     // The post-only annotations keep their stray x2,y2 out of the turn.
-    for (const kind of ['labeledNode', 'decoration', 'output']) {
+    for (const kind of ['labeledNode', 'decoration']) {
       expect(canRotate(element(kind, 0, 0, 32, 0))).toBe(false);
     }
   });
@@ -171,6 +172,16 @@ describe('rotateElement', () => {
     // the same distance off the connection post.
     const stem = Math.hypot(r.x2 - r.x1, r.y2 - r.y1);
     expect(Math.hypot(turned.x2 - turned.x1, turned.y2 - turned.y1)).toBe(stem);
+  });
+
+  it('rotates an output about its midpoint, keeping the stem length', () => {
+    const o = element('output', 0, 0, 64, 0);
+    expect(canRotate(o)).toBe(true);
+    const turned = rotateElement(o);
+    // The post rides the rigid quarter turn to (32,32) and the free end to
+    // (32,-32), so the stored span turns about (32,0) unchanged in length.
+    expect([turned.x1, turned.y1, turned.x2, turned.y2]).toEqual([32, 32, 32, -32]);
+    expect(Math.hypot(turned.x2 - turned.x1, turned.y2 - turned.y1)).toBe(64);
   });
 });
 

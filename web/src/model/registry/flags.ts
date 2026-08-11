@@ -61,6 +61,8 @@ export const VOLTAGE_PULSE_DUTY = 4;
 export const VOLTAGE_CIRCLE_SYMBOL = 8;
 export const PROBE_SHOW_VOLTAGE = 1;   // ProbeElm.java:30
 export const PROBE_CIRCLE = 2;         // ProbeElm.java:31
+export const OUTPUT_SHOW_VOLTAGE = 1;  // OutputElm.java:28
+export const OUTPUT_FIXED = 2;         // OutputElm.java:29
 /** The Show Current and Show Voltage checkboxes of a wire (WireElm.java:35-36,
  *  :160-175): each draws the live value beside the wire, current as `|I|` in
  *  amps and voltage in volts, joined with a space. Upstream's bus-value

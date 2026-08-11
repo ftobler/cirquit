@@ -12,6 +12,7 @@ import {
   currentDotsPath,
   dragpostHandlesFrom,
   drawLeads,
+  elementLength,
   formatValue,
   formatValueShort,
   gradientPolyline,
@@ -42,7 +43,8 @@ import { SWITCH2_DEF } from '../model/registry/elements/switch2';
 import { CROSS_SWITCH_DEF } from '../model/registry/elements/crossSwitch';
 import { ANALOG_SWITCH_DEF } from '../model/registry/elements/analogSwitch';
 import { ANALOG_SWITCH2_DEF } from '../model/registry/elements/analogSwitch2';
-import { SWITCH_IEC, VOLTAGE_CIRCLE_SYMBOL, WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE } from '../model/registry/flags';
+import { SWEEP_DEF } from '../model/registry/elements/sweep';
+import { OUTPUT_DEF, outputText } from '../model/registry/elements/output';
 import { CONTACT_STROKE_WIDTH } from '../model/registry/shared';
 import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
 import { MOSFET_DEF } from '../model/registry/elements/mosfet';
@@ -53,7 +55,13 @@ import { LAMP_DEF } from '../model/registry/elements/lamp';
 import { WIRE_DEF } from '../model/registry/elements/wire';
 import { TRANSMISSION_LINE_DEF } from '../model/registry/elements/transmissionLine';
 import { TOO_FAST, dotPhaseStep } from './dots';
-import { SWEEP_DEF } from '../model/registry/elements/sweep';
+import {
+  OUTPUT_SHOW_VOLTAGE,
+  SWITCH_IEC,
+  VOLTAGE_CIRCLE_SYMBOL,
+  WIRE_SHOW_CURRENT,
+  WIRE_SHOW_VOLTAGE,
+} from '../model/registry/flags';
 import {
   CHIP_FLIP_X,
   CHIP_FLIP_Y,
@@ -782,6 +790,91 @@ describe('stroke caps', () => {
     );
     expect(ctx.lineCap).toBe('butt');
     expect(ctx.lineJoin).toBe('miter');
+  });
+});
+
+describe('output element readout', () => {
+  // The output (dump O) is a stem-plus-text part like upstream's OutputElm: a
+  // post at p1, the readout anchored at p2, and a lead between that stops half
+  // a text width plus 8 short of the anchor so the stem never runs under the
+  // label (OutputElm.java:71).
+  const outputElement = (x2 = 100, flags = 0, params: Record<string, number> = {}): CircuitElement => ({
+    id: 1,
+    kind: 'output',
+    x1: 0,
+    y1: 0,
+    x2,
+    y2: 0,
+    flags,
+    params,
+  });
+
+  it('connects only at the first endpoint, never at the free end', () => {
+    expect(OUTPUT_DEF.posts(outputElement(100))).toEqual([{ x: 0, y: 0 }]);
+  });
+
+  it('strokes a lead to the text margin and centres the voltage at the anchor', () => {
+    const e = outputElement(100, OUTPUT_SHOW_VOLTAGE, { scale: 0 });
+    const { ctx, paths, strokes, texts } = mkCtx();
+    OUTPUT_DEF.draw({ ...context(ctx, 0), voltages: [5] }, e);
+    const text = outputText(5, 0, false, 1);
+    // The width the draw itself measured, so the assertion survives a
+    // valueFontSize change.
+    const w = ctx.measureText(text).width;
+    const lead1 = interp({ x: 0, y: 0 }, { x: 100, y: 0 }, 1 - (w / 2 + 8) / elementLength(e));
+    expect(paths[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: lead1.x, y: 0 },
+    ]);
+    // The stem reads as a conductor, so it strokes round-capped at the lead
+    // weight like every terminal lead (draw.ts:784).
+    expect(strokes[0]).toMatchObject({ width: 3, cap: 'round' });
+    expect(texts[0]).toMatchObject({ text, x: 100, y: 0, align: 'center', baseline: 'middle' });
+  });
+
+  it('draws the literal out when the show-voltage flag is clear', () => {
+    const { ctx, texts } = mkCtx();
+    OUTPUT_DEF.draw({ ...context(ctx, 0), voltages: [5] }, outputElement(100, 0, { scale: 0 }));
+    expect(texts.map((t) => t.text)).toEqual(['out']);
+  });
+
+  it('a collapsed element draws without dividing by zero', () => {
+    // p2 === p1: the stem has no direction to stop along, so the draw must
+    // not divide by the zero length and no NaN may land in the stroke path.
+    const e = outputElement(0, OUTPUT_SHOW_VOLTAGE, { scale: 0 });
+    const { ctx, paths } = mkCtx();
+    expect(() => OUTPUT_DEF.draw({ ...context(ctx, 0), voltages: [5] }, e)).not.toThrow();
+    for (const seg of paths) {
+      for (const pt of seg) {
+        expect(Number.isFinite(pt.x)).toBe(true);
+        expect(Number.isFinite(pt.y)).toBe(true);
+      }
+    }
+  });
+});
+
+describe('output readout text', () => {
+  it('uses the engineering-prefix short form at auto scale', () => {
+    expect(outputText(0.0555, 0, false, 1)).toBe('55.5mV');
+    expect(outputText(5, 0, false, 1)).toBe('5V');
+  });
+
+  it('renders the fixed scales at the selected unit', () => {
+    expect(outputText(2.5, 1, false, 3)).toBe('2.5V');
+    expect(outputText(2.5, 2, false, 3)).toBe('2500mV');
+    expect(outputText(0.5, 3, false, 3)).toBe('500000µV');
+  });
+
+  it('keeps trailing zeros under fixed precision', () => {
+    expect(outputText(2.5, 1, true, 3)).toBe('2.500V');
+    expect(outputText(2.5, 2, true, 3)).toBe('2500.000mV');
+  });
+
+  it('handles zero and negative values', () => {
+    expect(outputText(0, 1, false, 3)).toBe('0V');
+    expect(outputText(0, 0, false, 3)).toBe('0V');
+    expect(outputText(-2.5, 1, false, 3)).toBe('-2.5V');
+    expect(outputText(-0.0555, 0, false, 1)).toBe('-55.5mV');
   });
 });
 
