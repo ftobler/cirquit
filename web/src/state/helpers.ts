@@ -28,8 +28,11 @@ export const RECOVERED_UNSAVED = '\u0000';
  *  session/storage library here, at placement: a name the merged library
  *  holds becomes the `CompositeEngineSpec` the engine parses, the same payload
  *  the netlist second pass fills for a loaded file's `.` line. A miss leaves
- *  the part on its fallback body with the name intact. */
-function resolveCompositeModel<T extends { kind: string; text?: string }>(
+ *  the part on its fallback body with the name intact. The paste and duplicate
+ *  paths map inserted elements through this too, so a part whose `.` line did
+ *  not travel with the text (a duplicate of a document-defined model, a copy
+ *  of a library-only one) still simulates. */
+export function resolveCompositeModel<T extends { kind: string; text?: string }>(
   e: T,
 ): T & { model?: CompositeEngineSpec } {
   if (e.kind !== 'customComposite' || e.text === undefined) return e;

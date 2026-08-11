@@ -236,11 +236,19 @@ describe('the subcircuit library is scoped to the loaded file', () => {
     // Pasting is additive, so file A's model stays and the pasted one joins it.
     // The clipboard probe behind the greyed-out menu row parses the same text
     // and must leave the library alone.
-    const clip = `${dividerLine(2).replace('divider', 'pasted')}\nr 0 0 16 0 0 100\n`;
+    const pastedLine = dividerLine(2).replace('divider', 'pasted');
+    const clip = `${pastedLine}\n410 0 0 64 0 1 pasted\n`;
     expect(parseCircuit(clip).elements).toHaveLength(1);
     expect(listModels(store).map((m) => m.name)).toEqual(['divider']);
     useStore.setState({ clipboard: clip });
     useStore.getState().pasteFromClipboard();
     expect(listModels(store).map((m) => m.name)).toEqual(['divider', 'pasted']);
+    // The document must carry the pasted `.` line, or a save drops the model
+    // the 410 references, and a save that carries it must still resolve.
+    const netlist = useStore.getState().toNetlist();
+    expect(netlist).toContain(pastedLine);
+    const chip = parseCircuit(netlist).elements.find((e) => e.kind === 'customComposite');
+    expect(chip?.text).toBe('pasted');
+    expect(chip?.model).toEqual({ model: 'ResistorElm 1 2', external: [1], dumps: ['0_1000'] });
   });
 });

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { GRID_SIZE } from '../model/types';
 import { parseCircuit } from '../io/netlist';
+import { clearSessionModels, registerSessionModel } from '../io/subcircuits';
 import { useStore } from './store';
 import { addCapacitor, addResistor, dropId, fresh } from './store.test-helpers';
 
@@ -171,5 +172,144 @@ describe('copy, paste and duplicate', () => {
     useStore.getState().select([a]);
     useStore.getState().pasteFromClipboard();
     expect(useStore.getState().elements).toHaveLength(1);
+  });
+});
+
+describe('subcircuit models ride the clipboard', () => {
+  /** A `.` line defining a one-pin resistor-divider model named `name`. */
+  const subLine = (name: string) => `. ${name} 0 2 2 1 in 1 0 0 ResistorElm\\s1\\s2 0\\\\s1000`;
+
+  /** A loadable document: the model line plus a 410 naming it. */
+  const subDoc = (name: string) =>
+    ['$ 1 0.000005 10 50 5 50 5e-11', subLine(name), `410 0 0 64 0 1 ${name}`].join('\n');
+
+  it('paste of a `.` line and a 410 re-emits the model in the saved document', () => {
+    useStore.setState({ clipboard: [subLine('amp'), '410 0 0 64 0 1 amp'].join('\n') });
+    useStore.getState().pasteFromClipboard();
+    const out = useStore.getState().toNetlist().split('\n');
+    expect(out).toContain(subLine('amp'));
+    expect(out).toContain('410 16 16 80 16 1 amp');
+  });
+
+  it('copy of a 410 carries the `.` line that defines its model', () => {
+    useStore.getState().loadNetlist(subDoc('amp'));
+    const chip = useStore.getState().elements[0];
+    useStore.getState().select([chip.id]);
+    useStore.getState().copySelection();
+    const clip = useStore.getState().clipboard ?? '';
+    expect(clip).toContain(subLine('amp'));
+
+    useStore.setState(fresh());
+    useStore.setState({ clipboard: clip });
+    useStore.getState().pasteFromClipboard();
+    const out = useStore.getState().toNetlist();
+    expect(out).toContain(subLine('amp'));
+    expect(out).toContain('410 16 16 80 16 1 amp');
+  });
+
+  it('same-document paste keeps one `.` line per model', () => {
+    useStore.getState().loadNetlist(subDoc('amp'));
+    const chip = useStore.getState().elements[0];
+    useStore.getState().select([chip.id]);
+    // The clipboard carries the `.` line, so pasting back into the same
+    // document must replace the loaded line instead of stacking a second one.
+    useStore.getState().copySelection();
+    useStore.getState().pasteFromClipboard();
+    const out = useStore.getState().toNetlist().split('\n');
+    expect(out.filter((l) => l.startsWith('. amp'))).toHaveLength(1);
+    expect(out.filter((l) => l.startsWith('410'))).toHaveLength(2);
+  });
+
+  it('a paste replaces a same-named model the document already defines', () => {
+    useStore.getState().loadNetlist(subDoc('amp'));
+    // Model B carries a different body under the same name, so pasting it must
+    // displace model A's `.` line, or a reload would re-bind the document's
+    // 410s to whichever `.` line parses last.
+    const modelB = '. amp 0 3 2 1 in 1 0 0 ResistorElm\\s1\\s2 0\\\\s2000';
+    useStore.setState({ clipboard: `${modelB}\n410 64 0 128 0 1 amp\n` });
+    useStore.getState().pasteFromClipboard();
+    const out = useStore.getState().toNetlist().split('\n');
+    const ampLines = out.filter((l) => l.startsWith('. amp'));
+    expect(ampLines).toHaveLength(1);
+    expect(ampLines[0]).toBe(modelB);
+    const chips = parseCircuit(useStore.getState().toNetlist()).elements.filter(
+      (e) => e.kind === 'customComposite',
+    );
+    expect(chips).toHaveLength(2);
+    for (const chip of chips) {
+      expect(chip.model).toEqual({ model: 'ResistorElm 1 2', external: [1], dumps: ['0_2000'] });
+    }
+  });
+
+  it('duplicate of a 410 keeps exactly one `.` line in the document', () => {
+    useStore.getState().loadNetlist(subDoc('amp'));
+    const chip = useStore.getState().elements[0];
+    useStore.getState().select([chip.id]);
+    useStore.getState().duplicateSelection();
+    const out = useStore.getState().toNetlist().split('\n');
+    expect(out.filter((l) => l.startsWith('. amp'))).toHaveLength(1);
+    expect(out.filter((l) => l.startsWith('410'))).toHaveLength(2);
+  });
+
+  it('duplicate of a 410 resolves its model from the library', () => {
+    useStore.getState().loadNetlist(subDoc('amp'));
+    const chip = useStore.getState().elements[0];
+    useStore.getState().select([chip.id]);
+    useStore.getState().duplicateSelection();
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(2);
+    const [original, dup] = s.elements;
+    // The duplicate serializes bare (its `.` line is already in the document),
+    // so the fresh part must resolve its payload the way placement does, or it
+    // draws the fallback stub and never simulates.
+    expect(dup.model).toEqual(original.model);
+    // Re-parsing the saved document resolves both instances, not just the one
+    // whose `.` line sits in the file.
+    const re = parseCircuit(s.toNetlist());
+    expect(re.elements).toHaveLength(2);
+    expect(re.elements.every((e) => e.kind === 'customComposite' && e.model !== undefined)).toBe(
+      true,
+    );
+  });
+
+  it('copy-paste of a 410 resolves a library-only model', () => {
+    clearSessionModels();
+    // A document whose 410 has no `.` line: the model lives only in the
+    // library, so a copy has no `.` line to carry and the paste must resolve
+    // the name against the library instead.
+    useStore
+      .getState()
+      .loadNetlist(['$ 1 0.000005 10 50 5 50 5e-11', '410 0 0 64 0 1 onlylib'].join('\n'));
+    registerSessionModel({
+      name: 'onlylib',
+      flags: 0,
+      sizeX: 2,
+      sizeY: 2,
+      extList: [{ name: 'in', node: 1, pos: 0, side: 2 }],
+      nodeList: 'ResistorElm 1 2',
+      elmDump: '0 1000',
+    });
+    const chip = useStore.getState().elements[0];
+    useStore.getState().select([chip.id]);
+    useStore.getState().copySelection();
+    const clip = useStore.getState().clipboard ?? '';
+    expect(clip).not.toContain('. onlylib');
+    useStore.setState(fresh());
+    useStore.setState({ clipboard: clip });
+    useStore.getState().pasteFromClipboard();
+    const pasted = useStore.getState().elements[0];
+    expect(pasted.kind).toBe('customComposite');
+    expect(pasted.model).toBeDefined();
+  });
+
+  it('undo of a subcircuit paste restores the prior document lines', () => {
+    const before = useStore.getState().passthrough;
+    useStore.setState({ clipboard: [subLine('amp'), '410 0 0 64 0 1 amp'].join('\n') });
+    useStore.getState().pasteFromClipboard();
+    expect(useStore.getState().passthrough).toContain(subLine('amp'));
+    expect(useStore.getState().order.length).toBeGreaterThan(0);
+    useStore.getState().undo();
+    expect(useStore.getState().passthrough).toEqual(before);
+    expect(useStore.getState().order).toEqual([]);
   });
 });

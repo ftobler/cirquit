@@ -65,6 +65,7 @@ import {
   makeElement,
   makeToolElement,
   RECOVERED_UNSAVED,
+  resolveCompositeModel,
   snap,
 } from './helpers';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
@@ -1593,7 +1594,11 @@ function createAppStore() {
     const s = get();
     if (s.selectedIds.length === 0) return;
     const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
-    set({ clipboard: serializeCircuit(selected, s.settings) });
+    // A selected 410 needs the `.` line that defines its model in the
+    // clipboard, or a paste loses the model. Only the lines backing the
+    // selection travel: copying a resistor must not drag the file's whole
+    // subcircuit library along.
+    set({ clipboard: serializeCircuit(selected, s.settings, [], modelLinesFor(s, selected)) });
   },
 
   cutSelection: () => {
@@ -1614,7 +1619,10 @@ function createAppStore() {
     if (s.selectedIds.length === 0) return;
     const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
     // The same serialise-then-insert path as paste, but without touching the
-    // clipboard, so Ctrl+D cannot clobber what the user copied.
+    // clipboard, so Ctrl+D cannot clobber what the user copied. A duplicated
+    // element's `.` line is already in the document (the part came from here),
+    // so the clipboard carries no passthrough lines; the insert path resolves
+    // the model from the library for the fresh id.
     insertElementsFromText(serializeCircuit(selected, s.settings));
   },
   }));
@@ -1657,19 +1665,70 @@ function insertElementsFromText(text: string): void {
   state.commit();
   // A paste lands one square away, so the duplicate does not sit on top of
   // the original (UIManager.java:1001).
-  const added = parsed.elements.map((e) => ({
-    ...e,
-    id: allocateId(),
-    x1: e.x1 + GRID_SIZE,
-    y1: e.y1 + GRID_SIZE,
-    x2: e.x2 + GRID_SIZE,
-    y2: e.y2 + GRID_SIZE,
-  }));
+  const added = parsed.elements
+    .map((e) => ({
+      ...e,
+      id: allocateId(),
+      x1: e.x1 + GRID_SIZE,
+      y1: e.y1 + GRID_SIZE,
+      x2: e.x2 + GRID_SIZE,
+      y2: e.y2 + GRID_SIZE,
+    }))
+    // A paste or duplicate can carry a 410 whose `.` line is not in the text
+    // (a duplicate of a part whose model the document already holds, a copy of
+    // one backed only by the library), and the parse resolves nothing without
+    // a `.` line. Resolve through the merged library like placement does, or
+    // the pasted part draws the fallback stub and never simulates.
+    .map(resolveCompositeModel);
+  // A pasted `.` line replaces every existing line of the same model name, or
+  // a same-document paste stacks duplicate `.` lines and a reload would
+  // re-bind the older 410s to the pasted model. The session map the paste just
+  // overwrote (registerSessionModel) is the source of truth, so both line
+  // stores converge to one line per name with it. The `34`/`32`/`!`/unknown
+  // lines still append unchanged.
+  const replacedNames = new Set(
+    parsed.passthrough
+      .map((line) => parseCompositeModelLine(line)?.name)
+      .filter((name): name is string => name !== undefined),
+  );
+  const isReplaced = (line: string): boolean => {
+    if (replacedNames.size === 0) return false;
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('.')) return false;
+    const model = parseCompositeModelLine(trimmed);
+    return model !== null && replacedNames.has(model.name);
+  };
   useStore.setState((s) => ({
     elements: [...s.elements, ...added],
     selectedIds: added.map((e) => e.id),
+    passthrough: [...s.passthrough.filter((line) => !isReplaced(line)), ...parsed.passthrough],
+    order: [
+      ...s.order.filter((l) => l.kind !== 'other' || !isReplaced(l.line)),
+      ...parsed.order.filter((l) => l.kind === 'other'),
+    ],
     revision: s.revision + 1,
   }));
+}
+
+/** The document `.` lines that define the models the given composite elements
+ *  reference. A 410 names its model in `text`; a `.` line whose parsed name
+ *  matches is the model's definition, and a copy or duplicate of the element
+ *  has to carry it or the model is lost. Lines backing no selected element are
+ *  left out, so copying a resistor does not pull the file's whole subcircuit
+ *  library into the clipboard. */
+function modelLinesFor(s: AppState, elements: CircuitElement[]): string[] {
+  const names = new Set<string>();
+  for (const e of elements) {
+    if (e.kind === 'customComposite' && e.text !== undefined) names.add(e.text);
+  }
+  if (names.size === 0) return [];
+  const lines: string[] = [];
+  for (const line of s.passthrough) {
+    if (!line.startsWith('.')) continue;
+    const model = parseCompositeModelLine(line);
+    if (model !== null && names.has(model.name)) lines.push(line);
+  }
+  return lines;
 }
 
 /**
