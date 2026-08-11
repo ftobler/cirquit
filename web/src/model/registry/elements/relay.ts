@@ -2,12 +2,11 @@ import {
   calcLeads,
   canvasFont,
   closedPolyline,
-  coilPoints,
   currentDots,
   dsign,
   elementLength,
   endpoints,
-  gradientPolyline,
+  gradientCoil,
   interp,
   lead,
   line,
@@ -161,12 +160,9 @@ function drawRelay(g: DrawContext, e: CircuitElement): void {
   );
   // The coil shades across its own two terminals, not the element's posts 0/1:
   // `coilLeads[i]` rides the perpendicular of `coilPosts[i]`, whose voltage is
-  // the i-th coil node (RelayElm.java:303-361). Round caps keep the coil's
-  // angled per-segment joints covered, upstream's LineCap.ROUND in drawCoil;
-  // bevel joins flatten the cusps where the loops return to the axis.
-  gradientPolyline(g, coilPoints(coilLeads[x], coilLeads[1 - x], Math.max(1, Math.ceil(len / 11))), {
-    cap: 'round',
-    join: 'bevel',
+  // the i-th coil node (RelayElm.java:303-361). Each loop strokes as its own
+  // arc with flat ends, so the semicircles read as distinct primitives.
+  gradientCoil(g, coilLeads[x], coilLeads[1 - x], Math.max(1, Math.ceil(len / 11)), {
     v0: g.voltages[3 * poleCount + x],
     v1: g.voltages[3 * poleCount + 1 - x],
   });

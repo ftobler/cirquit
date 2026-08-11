@@ -7,6 +7,7 @@ import {
   bodyRect,
   canvasFont,
   closedPolyline,
+  COIL_LOOPS,
   currentDots,
   currentDotsPath,
   dragpostHandlesFrom,
@@ -828,6 +829,28 @@ describe('coil bevel joins', () => {
     expect(strokes[1].join).toBe('miter');
     expect(strokes.length).toBeGreaterThan(2);
     expect(strokes.slice(2).every((s) => s.join === 'bevel')).toBe(true);
+  });
+
+  it('strokes the inductor coil as three separate butt-capped arcs', () => {
+    const { ctx, strokes } = mkCtx();
+    INDUCTOR_DEF.draw(drawCtx(ctx, [0, 0]), {
+      id: 1,
+      kind: 'inductor',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: {},
+    });
+    // Two lead lines first, then one stroke per loop: each arc is its own
+    // path primitive with a flat rectangular end, not one round-capped
+    // polyline.
+    const coil = strokes.slice(2);
+    expect(coil).toHaveLength(COIL_LOOPS);
+    expect(coil.every((s) => s.cap === 'butt')).toBe(true);
+    expect(coil.every((s) => s.join === 'bevel')).toBe(true);
+    expect(coil.every((s) => s.width === 3)).toBe(true);
   });
 
   it('the relay coil strokes bevel, at its own body weight', () => {
@@ -1677,10 +1700,9 @@ describe('body voltage gradient', () => {
     expect(grads[0].stops[0].color).toBe('rgb(255,0,0)');
   });
 
-  it('gradientPolyline strokes coils with round caps', () => {
-    // drawCoil sets LineCap.ROUND upstream (CircuitElm.java:989); the helper
-    // passes the cap through to its single gradient stroke so the angled coil
-    // joints stay covered.
+  it('gradientPolyline passes a round cap through to its stroke', () => {
+    // The cap option is generic passthrough, not just for coils: whatever the
+    // caller asks for reaches the single gradient stroke.
     const { ctx, strokes } = mkCtx();
     gradientPolyline(
       g(ctx, { showVoltageColor: true }),

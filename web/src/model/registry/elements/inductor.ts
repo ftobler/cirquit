@@ -1,12 +1,11 @@
 import {
   COIL_LOOPS,
   calcLeads,
-  coilPoints,
   currentDotsPath,
   drawLeads,
   endpoints,
   formatValueShort,
-  gradientPolyline,
+  gradientCoil,
   label,
 } from '../../../render/draw';
 import { IND_BACK_EULER } from '../flags';
@@ -17,11 +16,9 @@ function drawInductorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
   // The coil shades along the voltage drop (CircuitElm.drawCoil's gradient);
-  // the round caps are upstream's LineCap.ROUND for the coil, which also keeps
-  // the angled joints of the per-segment strokes covered. Bevel joins flatten
-  // the near-zero-angle cusps where each loop returns to the axis, which miter
-  // would spike at.
-  gradientPolyline(g, coilPoints(lead1, lead2, COIL_LOOPS), { cap: 'round', join: 'bevel' });
+  // each loop strokes as its own arc with flat ends, so the three semicircles
+  // read as distinct primitives instead of one round-capped polyline.
+  gradientCoil(g, lead1, lead2, COIL_LOOPS);
   const [p1, p2] = endpoints(e);
   currentDotsPath(g, [p1, lead1, lead2, p2], g.current);
   label(g, e, formatValueShort(e.params.inductance ?? 0, 'H', g.valueDigits));

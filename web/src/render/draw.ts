@@ -259,10 +259,9 @@ export function strokeStyle(
   // conductor (upstream's ambient round cap, UIManager.java:636). Miter is
   // upstream's join too: it never
   // sets lineJoin, so the canvas default is what the original renders. That
-  // default is right for polygons, whose corners miter into crisp points, and
-  // wrong for the coil: its loop junctions drop back to the axis and turn at
-  // near-zero angles, where miter spikes and the canvas silently clamps at
-  // miterLimit. The coil passes 'bevel' so those cusps flatten. The width
+  // default is right for polygons, whose corners miter into crisp points. The
+  // coil does not come through here: it strokes each loop as its own arc via
+  // `gradientCoil`, which picks its own join. The width
   // default of 3 is upstream's `drawThickLine` (CircuitElm.java:1007-1021);
   // fine detail sites that upstream strokes with a plain `g.drawLine` pass 1
   // explicitly.
@@ -375,6 +374,26 @@ function rampStops(g: DrawContext, v0: number, v1: number): [number, string][] {
   return [...fs].sort((a, b) => a - b).map((f) => [f, colorAt(f)] as [number, string]);
 }
 
+/** Body paint for a stroke along a gradient axis: the selection and highlight
+ *  overrides take the flat colour, a zero-length axis takes the colour at the
+ *  start fraction, and everything else ramps through `rampStops`. Shared by
+ *  `gradientPolyline` and `gradientCoil`, so a coil's loops reuse the one
+ *  gradient along the body axis instead of each loop creating its own. */
+function axisPaint(g: DrawContext, v0: number, v1: number, axis: [Point, Point]): string | CanvasGradient {
+  if (g.selected) return g.theme.selection;
+  if (g.hovered || g.onHighlightedNet) return g.theme.highlight;
+  const ax = axis[1].x - axis[0].x;
+  const ay = axis[1].y - axis[0].y;
+  if (ax * ax + ay * ay === 0) {
+    // A zero-length axis has no direction to ramp along; the old code took
+    // every point's fraction as 0, so keep the colour at the start.
+    return axisColor(g, 0, v0, v1);
+  }
+  const grad = g.ctx.createLinearGradient(axis[0].x, axis[0].y, axis[1].x, axis[1].y);
+  for (const [f, color] of rampStops(g, v0, v1)) grad.addColorStop(f, color);
+  return grad;
+}
+
 /**
  * Strokes a polyline once with a real linear gradient along the body axis, so
  * a two-terminal body shades smoothly along the voltage drop at any zoom. The
@@ -384,14 +403,12 @@ function rampStops(g: DrawContext, v0: number, v1: number): [number, string][] {
  * colour ramp, so the result matches the piecewise scale rather than a naive
  * straight blend between the two end colours.
  *
- * Coils pass `cap: 'round'`, upstream's LineCap.ROUND in drawCoil, so the
- * loop ends stay covered, and `join: 'bevel'` so the near-zero-angle cusps
- * where the loops return to the axis flatten instead of spiking under miter.
  * The axis defaults to the first and last points; a closed polyline (whose
  * last point repeats the first) must pass `axis` explicitly, and is stroked
  * as a closed path so the start corner joins like the others. Selection,
  * hover and the shift-highlighted net override the ramp with one flat colour,
- * the same precedence `limbColor` gives a solid stroke.
+ * the same precedence `limbColor` gives a solid stroke. Coils do not call
+ * this directly: they stroke each loop as its own arc through `gradientCoil`.
  */
 export function gradientPolyline(
   g: DrawContext,
@@ -400,11 +417,9 @@ export function gradientPolyline(
     /** Colour ramp endpoints, the element's posts 0/1 by default. */
     v0?: number;
     v1?: number;
-    /** Cap for the stroke; coils pass 'round' (drawCoil's LineCap.ROUND).
-     *  Defaults butt. */
+    /** Cap for the stroke; defaults butt, the ambient cap. */
     cap?: CanvasLineCap;
-    /** Join for the stroke; coils pass 'bevel' so their loop junctions stay
-     *  flat. Defaults miter. */
+    /** Join for the stroke; defaults miter, the ambient join. */
     join?: CanvasLineJoin;
     /** Body axis the ramp runs along; defaults to `[pts[0], pts[pts.length -
      *  1]]`, which is right for every open body. */
@@ -416,22 +431,7 @@ export function gradientPolyline(
   const v0 = opts.v0 ?? g.voltages[0];
   const v1 = opts.v1 ?? g.voltages[1];
 
-  const ax = axis[1].x - axis[0].x;
-  const ay = axis[1].y - axis[0].y;
-  let paint: string | CanvasGradient;
-  if (g.selected) paint = g.theme.selection;
-  else if (g.hovered || g.onHighlightedNet) paint = g.theme.highlight;
-  else if (ax * ax + ay * ay === 0) {
-    // A zero-length axis has no direction to ramp along; the old code took
-    // every point's fraction as 0, so keep the colour at the start.
-    paint = axisColor(g, 0, v0, v1);
-  } else {
-    const grad = g.ctx.createLinearGradient(axis[0].x, axis[0].y, axis[1].x, axis[1].y);
-    for (const [f, color] of rampStops(g, v0, v1)) grad.addColorStop(f, color);
-    paint = grad;
-  }
-
-  g.ctx.strokeStyle = paint;
+  g.ctx.strokeStyle = axisPaint(g, v0, v1, axis);
   g.ctx.lineWidth = 3;
   // Butt is the ambient cap, miter the ambient join, exactly like `line`.
   g.ctx.lineCap = opts.cap ?? 'butt';
@@ -443,6 +443,43 @@ export function gradientPolyline(
   const last = pts[pts.length - 1];
   if (first.x === last.x && first.y === last.y) g.ctx.closePath();
   g.ctx.stroke();
+}
+
+/**
+ * Strokes each loop of a coil as its own path, so the same-side semicircles
+ * read as three distinct arcs instead of one blending polyline. Each run is a
+ * full arc from the axis back to the axis, stroked with a butt cap: the flat,
+ * rectangular line end that keeps every arc's ends crisp. All the loops share
+ * the one gradient along the `a`-`b` axis, so the shade stays continuous
+ * across the arcs. Upstream draws the coil as one round-capped polyline
+ * (CircuitElm.drawCoil); the split and the flat ends are the deliberate
+ * deviation that makes the arcs read.
+ */
+export function gradientCoil(
+  g: DrawContext,
+  a: Point,
+  b: Point,
+  loops: number,
+  opts: {
+    /** Colour ramp endpoints, the element's posts 0/1 by default. */
+    v0?: number;
+    v1?: number;
+  } = {},
+): void {
+  const v0 = opts.v0 ?? g.voltages[0];
+  const v1 = opts.v1 ?? g.voltages[1];
+  g.ctx.strokeStyle = axisPaint(g, v0, v1, [a, b]);
+  g.ctx.lineWidth = 3;
+  // Butt ends each arc flat; bevel stays from the single-path coil, where it
+  // flattened the cusps where the loops meet the axis.
+  g.ctx.lineCap = 'butt';
+  g.ctx.lineJoin = 'bevel';
+  for (const run of coilLoopPoints(a, b, loops)) {
+    g.ctx.beginPath();
+    g.ctx.moveTo(run[0].x, run[0].y);
+    for (let i = 1; i < run.length; i++) g.ctx.lineTo(run[i].x, run[i].y);
+    g.ctx.stroke();
+  }
 }
 
 export function circle(
@@ -589,17 +626,37 @@ export const COIL_LOOPS = 3;
  * shrink the peak by up to a pixel and break the geometric tests.
  */
 export function coilPoints(a: Point, b: Point, loops: number, steps = 12): Point[] {
+  const runs = coilLoopPoints(a, b, loops, steps);
+  const pts: Point[] = [];
+  for (let k = 0; k < runs.length; k++) {
+    // The first point of every loop after the first is the previous loop's
+    // endpoint, the shared axis crossing; skip it so the polyline does not
+    // double back over it.
+    for (let s = k === 0 ? 0 : 1; s < runs[k].length; s++) pts.push(runs[k][s]);
+  }
+  return pts;
+}
+
+/**
+ * The same coil as `coilPoints`, split into one point run per loop. Each run
+ * is a full semicircle from the axis back to the axis: the first point of
+ * every loop after the first is the previous loop's last point, the shared
+ * axis crossing. Stroking each run as its own path (`gradientCoil`) is what
+ * makes the three arcs read as distinct primitives with flat ends instead of
+ * one blending polyline.
+ */
+export function coilLoopPoints(a: Point, b: Point, loops: number, steps = 12): Point[][] {
   let px = b.y - a.y;
   let py = a.x - b.x;
   const len = Math.hypot(px, py);
-  if (len === 0) return [a, b];
+  if (len === 0) return [[a, b]];
   px /= len;
   py /= len;
   const radius = len / (2 * loops);
-  const pts: Point[] = [];
+  const runs: Point[][] = [];
   for (let k = 0; k < loops; k++) {
+    const pts: Point[] = [];
     for (let s = 0; s <= steps; s++) {
-      if (k > 0 && s === 0) continue; // duplicates the previous loop's endpoint
       const theta = Math.PI * (s / steps);
       // The (1 - cos theta) / 2 mapping makes the loop a true semicircle: it
       // is at full radius at the midpoint and meets the axis vertically.
@@ -610,8 +667,9 @@ export function coilPoints(a: Point, b: Point, loops: number, steps = 12): Point
         y: a.y + f * (b.y - a.y) + offset * py,
       });
     }
+    runs.push(pts);
   }
-  return pts;
+  return runs;
 }
 
 /** Arrowhead at `tip`, pointing away from `from`. */
