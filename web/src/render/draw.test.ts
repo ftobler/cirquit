@@ -831,7 +831,7 @@ describe('coil bevel joins', () => {
     expect(strokes.slice(2).every((s) => s.join === 'bevel')).toBe(true);
   });
 
-  it('strokes the inductor coil as three separate butt-capped arcs', () => {
+  it('strokes the inductor coil as three separate round-round arcs', () => {
     const { ctx, strokes } = mkCtx();
     INDUCTOR_DEF.draw(drawCtx(ctx, [0, 0]), {
       id: 1,
@@ -844,11 +844,10 @@ describe('coil bevel joins', () => {
       params: {},
     });
     // Two lead lines first, then one stroke per loop: each arc is its own
-    // path primitive with a flat rectangular end, not one round-capped
-    // polyline.
+    // path primitive, round-capped like upstream's single coil polyline.
     const coil = strokes.slice(2);
     expect(coil).toHaveLength(COIL_LOOPS);
-    expect(coil.every((s) => s.cap === 'butt')).toBe(true);
+    expect(coil.every((s) => s.cap === 'round')).toBe(true);
     expect(coil.every((s) => s.join === 'bevel')).toBe(true);
     expect(coil.every((s) => s.width === 3)).toBe(true);
   });
