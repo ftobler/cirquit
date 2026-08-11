@@ -730,6 +730,33 @@ describe('transformer posts', () => {
   });
 });
 
+describe('counter2 posts', () => {
+  // Terminal coordinates must match upstream's setupPins/getPost exactly or
+  // wires in loaded circuits will not connect. For bits = 4 the chip is 7
+  // rows tall: CLR and LOAD sit at row bitsY+1 = 5, EnP and EnT at bitsY+2 = 6
+  // (Counter2Elm.java:70-94), so on a horizontal body the row offset is 32 px
+  // per row and all four land inside the 208 px bottom edge, never off-chip.
+  it('places the control pins one row inside the body bottom edge', () => {
+    const e = element('counter2', 0, 0, 96, 0, 0, { bits: 4 });
+    expect(postsOf(e)).toEqual([
+      { x: 96, y: 32 },  // Q3 (MSB)
+      { x: 96, y: 64 },  // Q2
+      { x: 96, y: 96 },  // Q1
+      { x: 96, y: 128 }, // Q0 (LSB)
+      { x: 0, y: 32 },   // I3
+      { x: 0, y: 64 },   // I2
+      { x: 0, y: 96 },   // I1
+      { x: 0, y: 128 },  // I0
+      { x: 0, y: 0 },    // clk
+      { x: 0, y: 160 },  // CLR, row sizeY-2
+      { x: 0, y: 192 },  // EnP, row sizeY-1
+      { x: 96, y: 0 },   // RCO
+      { x: 96, y: 160 }, // LOAD, row sizeY-2
+      { x: 96, y: 192 }, // EnT, row sizeY-1
+    ]);
+  });
+});
+
 describe('logic gate draw paths', () => {
   const draw = (kind: string, euro: boolean, params: Record<string, number> = {}, flags = 0) => {
     const ctx = mkCtx();

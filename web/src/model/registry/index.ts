@@ -77,6 +77,11 @@ import { TFLIPFLOP_DEF } from './elements/tFlipFlop';
 import { LATCH_DEF } from './elements/latch';
 import { RING_COUNTER_DEF } from './elements/ringCounter';
 import { COUNTER_DEF } from './elements/counter';
+import { COUNTER2_DEF } from './elements/counter2';
+import { PISO_SHIFT_DEF } from './elements/pisoShift';
+import { SIPO_SHIFT_DEF } from './elements/sipoShift';
+import { SEQ_GEN_DEF } from './elements/seqGen';
+import { MONOSTABLE_DEF } from './elements/monostable';
 import { INVERTER_DEF } from './elements/inverter';
 import { LOGIC_INPUT_DEF } from './elements/logicInput';
 import { SCHMITT_DEF, INVERTING_SCHMITT_DEF } from './elements/schmitt';
@@ -181,6 +186,11 @@ export const ELEMENT_DEFS: ElementDef[] = [
   LATCH_DEF,
   RING_COUNTER_DEF,
   COUNTER_DEF,
+  COUNTER2_DEF,
+  PISO_SHIFT_DEF,
+  SIPO_SHIFT_DEF,
+  SEQ_GEN_DEF,
+  MONOSTABLE_DEF,
   INVERTER_DEF,
   LOGIC_INPUT_DEF,
   SCHMITT_DEF,

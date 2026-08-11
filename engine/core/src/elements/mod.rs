@@ -22,6 +22,7 @@ pub mod chip;
 pub mod composite;
 pub mod controlled_source;
 pub mod counter;
+pub mod counter2;
 pub mod cross_switch;
 pub mod current_source;
 pub mod custom_logic;
@@ -53,6 +54,7 @@ pub mod logic_input;
 pub mod logic_output;
 pub mod memristor;
 pub mod meter;
+pub mod monostable;
 pub mod mosfet;
 pub mod motor_protection_switch;
 pub mod multi_throw_switch;
@@ -61,6 +63,7 @@ pub mod noise;
 pub mod opamp;
 pub mod ota;
 pub mod phase_comp;
+pub mod piso_shift;
 pub mod potentiometer;
 pub mod probe;
 pub mod relay;
@@ -69,7 +72,9 @@ pub mod ring_counter;
 pub mod schmitt;
 pub mod scope;
 pub mod scr;
+pub mod seq_gen;
 pub mod seven_seg;
+pub mod sipo_shift;
 pub mod spark_gap;
 pub mod sweep;
 pub mod switch;
@@ -167,6 +172,11 @@ pub const KINDS: &[&str] = &[
     "latch",
     "ringCounter",
     "counter",
+    "counter2",
+    "pisoShift",
+    "sipoShift",
+    "seqGen",
+    "monostable",
     "adc",
     "multiplexer",
     "customLogic",
@@ -275,6 +285,11 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "latch" => Box::new(latch::Latch::new(spec)),
         "ringCounter" => Box::new(ring_counter::RingCounter::new(spec)),
         "counter" => Box::new(counter::Counter::new(spec)),
+        "counter2" => Box::new(counter2::Counter2::new(spec)),
+        "pisoShift" => Box::new(piso_shift::PisoShift::new(spec)),
+        "sipoShift" => Box::new(sipo_shift::SipoShift::new(spec)),
+        "seqGen" => Box::new(seq_gen::SeqGen::new(spec)),
+        "monostable" => Box::new(monostable::Monostable::new(spec)),
         "adc" => Box::new(adc::Adc::new(spec)),
         "multiplexer" => Box::new(multiplexer::Multiplexer::new(spec)),
         "customLogic" => Box::new(custom_logic::CustomLogic::new(spec)),

@@ -46,6 +46,9 @@ import { normalizeDacBits } from '../model/registry/elements/dac';
 import { normalizeDecimalBits } from '../model/registry/elements/decimalDisplay';
 import { normalizeLatchBits } from '../model/registry/elements/latch';
 import { normalizeCounterBits } from '../model/registry/elements/counter';
+import { normalizeCounter2Bits } from '../model/registry/elements/counter2';
+import { normalizePisoBits } from '../model/registry/elements/pisoShift';
+import { normalizeSipoBits } from '../model/registry/elements/sipoShift';
 import { normalizeRingBits } from '../model/registry/elements/ringCounter';
 import { normalizeInputCount } from '../model/registry/shared';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
@@ -93,6 +96,9 @@ const BITS_NORMALIZERS: Readonly<Record<string, (value: number) => number>> = {
   'decimalDisplay:bits': normalizeDecimalBits,
   'latch:bits': normalizeLatchBits,
   'counter:bits': normalizeCounterBits,
+  'counter2:bits': normalizeCounter2Bits,
+  'pisoShift:bits': normalizePisoBits,
+  'sipoShift:bits': normalizeSipoBits,
   'ringCounter:bits': normalizeRingBits,
 };
 

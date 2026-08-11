@@ -79,13 +79,13 @@ describe('load and save keep the file arrangement', () => {
 });
 
 describe('scope lines index the file, not the elements this build can read', () => {
-  // `186` is a PISO shift register, which this build has no model for.
+  // `195` is a half-adder, which this build has no model for.
   // Upstream counts it in the element list all the same, so both scope indices
   // sit one past what the port's own element array would say.
   const FILE = [
     '$ 1 0.000005 10.20027730826997 50 5 43 5e-11',
     'r 0 0 16 0 0 100',
-    '186 32 0 48 0 0 20 0.1 1000 0',
+    '195 32 0 48 0 0 20 0.1 1000 0',
     'r 64 0 80 0 0 220',
     'o 0 64 0 4099 20 0.05 0 2 4 3',
     'o 1 8 0 34 6 0.00625 0 -1 sweep',
@@ -111,7 +111,7 @@ describe('scope lines index the file, not the elements this build can read', () 
   it('reports the missing element kind as missing, not as a preserved line', () => {
     useStore.getState().loadNetlist(FILE);
     const problem = useStore.getState().problem ?? '';
-    expect(problem).toContain('186');
+    expect(problem).toContain('195');
     expect(problem).toContain('missing from the drawing and the simulation');
   });
 

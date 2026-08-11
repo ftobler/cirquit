@@ -9426,6 +9426,477 @@ fn latch_outputs_follow_while_load_is_high_and_hold_after() {
 }
 
 #[test]
+fn piso_shift_loads_and_shifts_the_parallel_bits_out() {
+    // 3-bit PISO with the default new behavior (FLAG_NEW_BEHAVIOR = 2).
+    // Loading D0..D2 = 1,0,1 puts Q at D0 immediately, and each rising clock
+    // edge walks Q through the register, feeding the low SER pin in behind.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 96]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                4,
+                "logicInput",
+                &[[32, -32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                5,
+                "logicInput",
+                &[[64, -32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                6,
+                "logicInput",
+                &[[96, -32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm_flags(
+                7,
+                "pisoShift",
+                &[
+                    [0, 64],   // 0 LD
+                    [0, 96],   // 1 clock
+                    [160, 64], // 2 Q
+                    [0, 32],   // 3 SER
+                    [32, -32], // 4 D0
+                    [64, -32], // 5 D1
+                    [96, -32], // 6 D2
+                ],
+                &[("bits", 3.0), ("highVoltage", 5.0)],
+                2,
+            ),
+            elm(
+                8,
+                "resistor",
+                &[[160, 64], [160, 164]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[160, 164]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let q = |c: &Circuit| c.element_voltages()[7];
+    // Parallel data D0 = 1, D1 = 0, D2 = 1.
+    c.set_state(4, 1);
+    c.set_state(6, 1);
+    c.run(3);
+    assert!(close(q(c), 0.0, 1e-9), "fresh Q was not low");
+    // A rising LD edge latches the inputs; Q shows D0 immediately.
+    c.set_state(1, 1);
+    c.run(3);
+    c.set_state(1, 0);
+    c.run(3);
+    assert!(close(q(c), 5.0, 1e-9), "Q did not show D0 after the load");
+    // Each clock edge walks Q through the loaded pattern, then onto the low
+    // SER bits shifted in behind it.
+    clock_cycle(c, 2);
+    assert!(close(q(c), 0.0, 1e-9), "Q did not advance to D1");
+    clock_cycle(c, 2);
+    assert!(close(q(c), 5.0, 1e-9), "Q did not advance to D2");
+    clock_cycle(c, 2);
+    assert!(
+        close(q(c), 0.0, 1e-9),
+        "Q did not wrap onto the shifted-in low"
+    );
+    clock_cycle(c, 2);
+    assert!(close(q(c), 0.0, 1e-9), "Q did not wrap to the second low");
+}
+
+#[test]
+fn sipo_shift_shifts_the_serial_bit_into_the_outputs() {
+    // 3-bit SIPO. A rising clock edge loads D into Q0 and pushes every other
+    // bit one position toward Q2, so a single 1 walks across the outputs.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "sipoShift",
+                &[[0, 32], [0, 64], [96, 0], [96, 32], [96, 64]],
+                &[("bits", 3.0), ("highVoltage", 5.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[96, 100]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[96, 32], [96, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[96, 132]], &[]),
+            elm(
+                8,
+                "resistor",
+                &[[96, 64], [96, 164]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[96, 164]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let value = |c: &Circuit| -> i64 {
+        let v = c.element_voltages();
+        let bit = |i: usize| if v[i] > 2.5 { 1i64 } else { 0 };
+        bit(3) | (bit(5) << 1) | (bit(7) << 2)
+    };
+    c.run(3);
+    assert_eq!(value(c), 0, "fresh register did not start at zero");
+    // Feed a single 1 in on D, then clock it out.
+    c.set_state(1, 1);
+    clock_cycle(c, 2);
+    assert_eq!(value(c), 1, "the 1 did not land in Q0");
+    c.set_state(1, 0);
+    clock_cycle(c, 2);
+    assert_eq!(value(c), 2, "the 1 did not shift into Q1");
+    clock_cycle(c, 2);
+    assert_eq!(value(c), 4, "the 1 did not shift into Q2");
+    clock_cycle(c, 2);
+    assert_eq!(value(c), 0, "the 1 did not shift out");
+}
+
+#[test]
+fn seq_gen_emits_the_stored_bit_pattern() {
+    // A 4-bit sequence 1,0,1,0 (data0 = 0b0101, bit 0 first) with the reset
+    // pin held low. Each rising clock edge emits the next bit and wraps.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm_flags(
+                3,
+                "seqGen",
+                &[[0, 32], [96, 0], [0, 64]],
+                &[("bitCount", 4.0), ("data0", 5.0), ("highVoltage", 5.0)],
+                10, // FLAG_NEW_VERSION | FLAG_HAS_RESET
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[96, 100]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let q = |c: &Circuit| c.element_voltages()[3];
+    c.run(3);
+    assert!(close(q(c), 0.0, 1e-9), "fresh Q was not low");
+    for (step, expected) in [(1u32, 5.0), (2, 0.0), (3, 5.0), (4, 0.0), (5, 5.0)] {
+        clock_cycle(c, 1);
+        assert!(close(q(c), expected, 1e-9), "bit {step} was wrong");
+    }
+    // The reset pin rewinds to the first bit.
+    c.set_state(2, 1);
+    c.run(3);
+    assert!(close(q(c), 5.0, 1e-9), "reset did not rewind to bit 0");
+}
+
+#[test]
+fn counter2_counts_modulo_the_modulus_token() {
+    // 3-bit counter 2 with modulus 5, counting enabled (EnP = EnT = 1) and
+    // the clear and load pins held high (both active low). A 1 kHz square
+    // clock (100 steps per period) delivers one rising edge every 100 steps,
+    // so the count runs 1,2,3,4,0,... and RCO pulses high at count 4. The
+    // clock runs from a square source rather than a toggled logic input: a
+    // `set_state` re-analysis zeroes every node, which would make the
+    // active-low CLR pin read low for a step and spuriously clear.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                4,
+                "logicInput",
+                &[[0, 128]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                5,
+                "logicInput",
+                &[[0, 160]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                6,
+                "logicInput",
+                &[[160, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                7,
+                "logicInput",
+                &[[160, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                8,
+                "voltage",
+                &[[0, 224], [0, 96]],
+                &[
+                    ("waveform", 2.0),
+                    ("frequency", 1000.0),
+                    ("maxVoltage", 2.5),
+                    ("bias", 2.5),
+                    ("phaseShift", 0.0),
+                    ("dutyCycle", 0.5),
+                ],
+            ),
+            elm(9, "ground", &[[0, 224]], &[]),
+            elm(
+                10,
+                "counter2",
+                &[
+                    [96, 0],   // 0 Q2 (MSB)
+                    [96, 32],  // 1 Q1
+                    [96, 64],  // 2 Q0 (LSB)
+                    [0, 0],    // 3 I2
+                    [0, 32],   // 4 I1
+                    [0, 64],   // 5 I0
+                    [0, 96],   // 6 clk
+                    [0, 128],  // 7 clr
+                    [0, 160],  // 8 enp
+                    [160, 0],  // 9 rco
+                    [160, 32], // 10 load
+                    [160, 64], // 11 ent
+                ],
+                &[("bits", 3.0), ("modulus", 5.0), ("highVoltage", 5.0)],
+            ),
+            elm(
+                11,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(12, "ground", &[[96, 100]], &[]),
+            elm(
+                13,
+                "resistor",
+                &[[96, 32], [96, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(14, "ground", &[[96, 132]], &[]),
+            elm(
+                15,
+                "resistor",
+                &[[96, 64], [96, 164]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(16, "ground", &[[96, 164]], &[]),
+            elm(
+                17,
+                "resistor",
+                &[[160, 0], [160, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(18, "ground", &[[160, 100]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    // Enable counting and hold clear and load inactive (both active low).
+    c.set_state(4, 1);
+    c.set_state(5, 1);
+    c.set_state(6, 1);
+    c.set_state(7, 1);
+    let count = |c: &Circuit| -> i64 {
+        let v = c.element_voltages();
+        let bit = |i: usize| if v[i] > 2.5 { 1i64 } else { 0 };
+        bit(14) | (bit(12) << 1) | (bit(10) << 2)
+    };
+    let rco = |c: &Circuit| c.element_voltages()[16];
+    assert_eq!(count(c), 0, "fresh counter did not start at zero");
+    // One rising edge every 100 steps: 1, 2, 3, 4, then the wrap to 0.
+    for (expected, rco_want) in [(1i64, 0.0), (2, 0.0), (3, 0.0), (4, 5.0), (0, 0.0)] {
+        c.run(100);
+        assert_eq!(count(c), expected, "count after the next edge");
+        assert!(close(rco(c), rco_want, 1e-9), "RCO at count {expected}");
+    }
+    // The active-low load pin copies the I inputs on the next edge.
+    c.set_state(3, 1); // I0 = 1
+    c.set_state(2, 1); // I1 = 1
+    c.set_state(6, 0); // load = 0
+    c.run(100);
+    assert_eq!(count(c), 3, "load did not take the I pattern");
+    c.set_state(6, 1); // load = 1
+                       // The active-low clear is level-based and wins immediately.
+    c.set_state(4, 0); // clr = 0
+    c.run(3);
+    assert_eq!(count(c), 0, "clear did not zero the count");
+    c.set_state(4, 1);
+}
+
+#[test]
+fn monostable_pulse_width_matches_the_delay() {
+    // A retriggerable one-shot with a 0.01 s delay at dt = 1e-5 s: the pulse
+    // runs for 1000 steps and Qbar mirrors it low.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "monostable",
+                &[[0, 32], [96, 0], [96, 64]],
+                &[
+                    ("retriggerable", 1.0),
+                    ("delay", 0.01),
+                    ("highVoltage", 5.0),
+                ],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "ground", &[[96, 100]], &[]),
+            elm(
+                5,
+                "resistor",
+                &[[96, 64], [96, 164]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "ground", &[[96, 164]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let q = |c: &Circuit| c.element_voltages()[2];
+    let qbar = |c: &Circuit| c.element_voltages()[4];
+    c.run(3);
+    assert!(close(q(c), 0.0, 1e-9), "fresh Q was not low");
+    assert!(close(qbar(c), 5.0, 1e-9), "fresh Qbar was not high");
+    // The rising trigger starts the 1000-step pulse.
+    c.set_state(1, 1);
+    c.run(5);
+    assert!(close(q(c), 5.0, 1e-9), "trigger did not raise Q");
+    assert!(close(qbar(c), 0.0, 1e-9), "trigger did not drop Qbar");
+    // Well before the 0.01 s delay has passed the pulse is still running.
+    c.run(900);
+    assert!(close(q(c), 5.0, 1e-9), "pulse ended too early");
+    // Past the delay it has expired.
+    c.run(200);
+    assert!(close(q(c), 0.0, 1e-9), "pulse did not end after the delay");
+    assert!(close(qbar(c), 5.0, 1e-9), "Qbar did not return high");
+}
+
+#[test]
+fn monostable_retrigger_extends_the_pulse() {
+    // Same 0.01 s / 1000-step one-shot, but a second rising trigger halfway
+    // through the pulse restarts the delay, keeping Q high past the original
+    // expiry.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "monostable",
+                &[[0, 32], [96, 0], [96, 64]],
+                &[
+                    ("retriggerable", 1.0),
+                    ("delay", 0.01),
+                    ("highVoltage", 5.0),
+                ],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "ground", &[[96, 100]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let q = |c: &Circuit| c.element_voltages()[2];
+    c.set_state(1, 1);
+    c.run(5);
+    // Drop and re-raise the trigger 500 steps in, well inside the pulse.
+    c.run(500);
+    c.set_state(1, 0);
+    c.run(5);
+    c.set_state(1, 1);
+    c.run(5);
+    // Past the original 1000-step expiry, but still inside the restarted one.
+    c.run(700);
+    assert!(
+        close(q(c), 5.0, 1e-9),
+        "retriggered pulse ended at the old expiry"
+    );
+    // And it does end eventually.
+    c.run(400);
+    assert!(close(q(c), 0.0, 1e-9), "retriggered pulse never expired");
+}
+
+#[test]
 fn transmission_line_step_reaches_open_far_end_after_delay() {
     // A 10 V step drives the left port through a matched 75 ohm source
     // resistor; the right port is open. After exactly one delay the far-end

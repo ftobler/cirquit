@@ -2069,3 +2069,76 @@ describe('ota file format', () => {
     ]);
   });
 });
+
+describe('chip family file formats', () => {
+  /** Parses a single element line and re-emits it, returning that line. */
+  const chipLine = (line: string, code: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, elementLine: out.split('\n').find((l) => l.startsWith(`${code} `)) ?? '' };
+  };
+
+  it('186 PISO shift register line round-trips', () => {
+    // bits, then the packed data word after the common fields. Upstream's own
+    // dump() drops the data word, so this port's writer puts it back; the line
+    // below is the constructor stream (PisoShiftElm.java:42-47).
+    const line = '186 160 320 320 320 2 8 42';
+    const { e, elementLine } = chipLine(line, '186');
+    expect(e.params.bits).toBe(8);
+    expect(e.params.data0).toBe(42);
+    expect(e.flags).toBe(2);
+    expect(elementLine).toBe(line);
+  });
+
+  it('189 SIPO shift register line round-trips', () => {
+    const line = '189 160 320 320 320 0 8 85';
+    const { e, elementLine } = chipLine(line, '189');
+    expect(e.params.bits).toBe(8);
+    expect(e.params.data0).toBe(85);
+    expect(elementLine).toBe(line);
+  });
+
+  it('188 sequence generator line round-trips its bit count and data', () => {
+    // The new-format stream: bit count, then the packed words (SeqGenElm.java:
+    // 64-69). FLAG_NEW_VERSION and FLAG_HAS_RESET are both set.
+    const line = '188 160 320 320 320 10 8 5';
+    const { e, elementLine } = chipLine(line, '188');
+    expect(e.params.bitCount).toBe(8);
+    expect(e.params.data0).toBe(5);
+    expect(e.flags).toBe(10);
+    expect(elementLine).toBe(line);
+  });
+
+  it('188 legacy byte format upgrades to the new layout on load', () => {
+    // A pre-2009 file carries one byte and no bit count (SeqGenElm.java:56).
+    // Upstream upgrades it to bitCount 8 with FLAG_NEW_VERSION set, and the
+    // next save writes the new form.
+    const { e, elementLine } = chipLine('188 160 320 320 320 8 200', '188');
+    expect(e.params.bitCount).toBe(8);
+    expect(e.params.data0).toBe(200);
+    expect(e.flags & 2).toBe(2);
+    expect(elementLine).toBe('188 160 320 320 320 10 8 200');
+  });
+
+  it('421 counter 2 line round-trips its state levels and modulus', () => {
+    // 3 bits, three saved Q levels, then the modulus (Counter2Elm.java:34-44).
+    const line = '421 160 320 320 320 0 3 0 0 0 5';
+    const { e, elementLine } = chipLine(line, '421');
+    expect(e.params.bits).toBe(3);
+    expect(e.params.voltage0).toBe(0);
+    expect(e.params.voltage2).toBe(0);
+    expect(e.params.modulus).toBe(5);
+    expect(elementLine).toBe(line);
+  });
+
+  it('194 monostable line round-trips the retriggerable flag and delay', () => {
+    // The two own tokens follow the optional high voltage; upstream's own
+    // dump() drops them, so this port's writer puts them back
+    // (MonostableElm.java:40-44).
+    const line = '194 160 320 320 320 0 true 0.01';
+    const { e, elementLine } = chipLine(line, '194');
+    expect(e.params.retriggerable).toBe(1);
+    expect(e.params.delay).toBe(0.01);
+    expect(elementLine).toBe(line);
+  });
+});
