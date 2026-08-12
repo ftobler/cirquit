@@ -145,8 +145,8 @@ fetch it).
   edits, interactive switches.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
-- 179 Rust tests, of which 158 are the end-to-end circuit checks against analytic
-  results in `engine/core/tests/circuits.rs`, and 885 TypeScript tests. CI runs
+- 291 Rust tests, of which 270 are the end-to-end circuit checks against analytic
+  results in `engine/core/tests/circuits.rs`, and 1635 TypeScript tests. CI runs
   fmt, clippy, tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -242,52 +242,51 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **39 of ~200**.
+a test. Done so far: **112 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, transformer, tapped transformer, custom transformer, fuse,
-lamp, thermistor, potentiometer, switch, SPDT switch, LDR, varactor.
+lamp, thermistor, potentiometer, switch, SPDT switch, LDR, varactor, memristor,
+transmission line, spark gap, antenna, relay (coil/contact), crossover switch,
+motor-protection switch.
 
-- [ ] Memristor
-- [ ] Transmission line, crystal, spark gap, antenna
-- [ ] Relay coil / contact / relay, DPDT, crossover and motor-protection switches
+- [ ] Crystal
+- [ ] DPDT switch
 
 **Sources** — done: voltage source (all waveforms), rail, current source.
 
-- [ ] Variable rail, sweep, AM, FM, VCO, noise, audio input, external voltage
-- [ ] Controlled sources: VCVS, VCCS, CCVS, CCCS, CC2
+- [x] Variable rail, sweep, AM, FM, VCO, noise, audio input, external voltage
+- [x] Controlled sources: VCVS, VCCS, CCVS, CCCS, CC2
 
-**Semiconductors** — done: diode, Zener, BJT, MOSFET.
+**Semiconductors** — done: diode, Zener, BJT, MOSFET, JFET, Darlington, tunnel
+diode, LED, LED array, SCR, triac, diac, unijunction, triode.
 
-- [ ] JFET, Darlington, tunnel diode, LED, LED array
-- [ ] SCR, triac, diac, unijunction, optocoupler, triode
+- [ ] Optocoupler
 
-**Analog** — done: op-amp (saturating VCVS).
+**Analog** — done: op-amp (saturating VCVS), OTA, analog switch, analog mux,
+timer (555), phase comparator, ADC, DAC.
 
-- [ ] Realistic op-amp with gain-bandwidth, OTA, comparator
-- [ ] Analog switch, analog mux, timer (555), phase comparator
-- [ ] ADC, DAC, sample and hold
+- [ ] Realistic op-amp with gain-bandwidth, comparator
 
 **Logic** — done: inverter, AND, NAND, OR, NOR, XOR, XNOR, tri-state buffer,
 Schmitt trigger (inverting and non-inverting), all behind the `euroGates` IEC
 symbol toggle, which is on by default.
 
 - [x] Gates: AND, OR, NAND, NOR, XOR, XNOR, inverter, tri-state, Schmitt
-- [ ] Flip-flops: D, JK, T, latch, monostable
-- [ ] Counters, shift registers (SIPO/PISO), ring counter, sequence generator
-- [ ] Multiplexer, demultiplexer, adders, seven-segment and decoders
-- [ ] SRAM, ROM, delay buffer, bus splitter
+- [x] Flip-flops: D, JK, T, latch, monostable
+- [x] Counters, shift registers (SIPO/PISO), ring counter, sequence generator
+- [x] Multiplexer, demultiplexer, adders, seven-segment and decoders
+- [x] SRAM, ROM, delay buffer, bus splitter
 - [x] Custom logic (the `!` model line and the `208` element)
 
 **Instruments and annotation** — done: labeled node, output,
-voltmeter, text.
+voltmeter, text, ammeter, box, line, scope-as-element.
 
-- [ ] Ammeter, ohmmeter, wattmeter, test point, data recorder, stop trigger
-- [ ] Boxes, lines, scope-as-element
+- [ ] Ohmmeter, wattmeter, test point, data recorder, stop trigger
 
-**Electromechanical**
+**Electromechanical** — done: three-phase motor.
 
-- [ ] DC motor, three-phase motor, time-delay relay
+- [ ] DC motor, time-delay relay
 
 ### Milestone D — polish
 
