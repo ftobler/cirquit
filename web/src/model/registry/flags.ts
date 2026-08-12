@@ -46,6 +46,9 @@ export const SWITCH_IEC = 2;           // SwitchElm.java:32 FLAG_IEC
  *  input cycle 0..2 instead of flipping 0/1 (LogicInputElm.java:26). */
 export const LOGIC_INPUT_TERNARY = 1;  // LogicInputElm.java:26
 export const RAIL_CLOCK = 1;           // RailElm.java:37 FLAG_CLOCK
+/** The data input replays its sample buffer from the start once it runs past
+ *  the end (DataInputElm.java:43, :123-126). */
+export const DATA_INPUT_REPEAT = 256;  // DataInputElm.java:43 FLAG_REPEAT
 /** Voltage text beside an AC rail, inherited from VoltageElm (VoltageElm.java:36). */
 export const RAIL_SHOW_VOLTAGE = 64;   // FLAG_SHOW_VOLTAGE_RAIL
 export const VOLTAGE_SHOW_VOLTAGE = 16; // VoltageElm.java:32

@@ -38,7 +38,12 @@ describe('capability gates', () => {
       'logicInput',
       'logicOutput',
       'antenna',
+      'am',
+      'fm',
       'audioOutput',
+      'audioInput',
+      'dataInput',
+      'delayBuffer',
       'sweep',
       'output',
     ]) {

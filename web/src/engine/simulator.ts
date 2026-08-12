@@ -14,6 +14,7 @@ import init, {
 } from '../wasm/circuit_engine';
 import { postsOf } from '../model/registry';
 import type { CircuitElement, SimSettings } from '../model/types';
+import { modelJsonFor } from '../model/sampleCache';
 import type { LiveState } from '../io/liveState';
 import { scopeColumnCount, scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 
@@ -262,7 +263,17 @@ export class SimEngine {
           // A resolved device model (the custom-logic `!`-line model) rides
           // the second string carrier: the label is that element's model
           // name, so the definition has to travel separately, serialised.
-          model: e.model !== undefined ? JSON.stringify(e.model) : null,
+          // The audio/data inputs reuse the same carrier with a different
+          // payload: their samples live in a session cache keyed by
+          // `params.fileNum`, so the model is resolved here by kind rather
+          // than riding the element (which would make a copy/paste carry the
+          // whole buffer; see sampleCache.ts).
+          model:
+            e.model !== undefined
+              ? JSON.stringify(e.model)
+              : e.kind === 'audioInput' || e.kind === 'dataInput'
+                ? modelJsonFor(e)
+                : null,
           flags: e.flags,
         };
       }),

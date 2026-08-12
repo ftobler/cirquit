@@ -274,6 +274,14 @@ export interface AppState {
   /** Replaces the user-assigned shortcut overlay and persists it; the
    *  Shortcuts dialog's OK path. */
   setShortcuts(overlay: ShortcutOverlay): void;
+  /** Loads a decoded audio buffer into an audio-input element: assigns a fresh
+   *  `fileNum`, caches the samples against it and records the basename as the
+   *  element's rail label, as one undo entry. The previous `fileNum`'s cache
+   *  entry survives, so undo restores the old file. */
+  loadAudioFile(id: number, samples: number[], samplingRate: number, fileName: string): void;
+  /** Loads parsed data values into a data-input element, the same shape as
+   *  `loadAudioFile` but with no sampling rate. */
+  loadDataFile(id: number, samples: number[], fileName: string): void;
   /** Interactive state change (switch throw), routed through the live engine. */
   setElementState(id: number, state: number): void;
   /** Clears every fuse's live `state` and drops their queued pop-confirms, the

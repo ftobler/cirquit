@@ -84,7 +84,11 @@ export interface FieldDef {
   label: string;
   /** Unit suffix, formatted with engineering prefixes. */
   unit?: string;
-  type?: 'number' | 'choice' | 'bool' | 'text';
+  type?: 'number' | 'choice' | 'bool' | 'text' | 'file';
+  /** Which sample source a `type: 'file'` field loads: an audio buffer (via
+   *  the WebAudio decoder) or a data text file (one value per line). Absent
+   *  on every other field type. */
+  fileLoad?: 'audio' | 'data';
   choices?: { value: number; label: string }[];
   min?: number;
   max?: number;

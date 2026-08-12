@@ -288,7 +288,12 @@ describe('stem-bearing one-post family', () => {
     'logicInput',
     'logicOutput',
     'antenna',
+    'am',
+    'fm',
     'audioOutput',
+    'audioInput',
+    'dataInput',
+    'delayBuffer',
     'sweep',
   ];
 

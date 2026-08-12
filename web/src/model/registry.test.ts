@@ -1131,10 +1131,11 @@ describe('multi-post elements stay on the 90-degree axis', () => {
     element(def.kind, 0, 0, 32, 0, def.defaultFlags ?? 0, { ...(def.defaults ?? {}) });
 
   // The owner's rule covers every element with more than two connectable
-  // terminals. The one-post stems (ground, rail, logic inputs, antenna,
-  // audioOutput, noise, sweep, extVoltage, varRail, probe, box, line,
-  // decoration) hang their symbol off x2,y2 instead of a terminal, so they
-  // count two or fewer posts here and drop out of the sweep.
+  // terminals. The one-post stems (ground, rail, logic inputs, antenna, am,
+  // fm, audioOutput, audioInput, dataInput, noise, sweep, extVoltage,
+  // varRail, probe, box, line, decoration) hang their symbol off x2,y2
+  // instead of a terminal, so they count two or fewer posts here and drop out
+  // of the sweep.
   const MULTI_POST = ELEMENT_DEFS.filter((d) => postCountOf(fresh(d)) > 2);
 
   it.each(MULTI_POST)('place %s diagonally snaps to the dominant axis', (def) => {

@@ -44,6 +44,11 @@ import { CROSS_SWITCH_DEF } from '../model/registry/elements/crossSwitch';
 import { ANALOG_SWITCH_DEF } from '../model/registry/elements/analogSwitch';
 import { ANALOG_SWITCH2_DEF } from '../model/registry/elements/analogSwitch2';
 import { SWEEP_DEF } from '../model/registry/elements/sweep';
+import { AM_DEF } from '../model/registry/elements/am';
+import { FM_DEF } from '../model/registry/elements/fm';
+import { AUDIO_INPUT_DEF } from '../model/registry/elements/audioInput';
+import { DATA_INPUT_DEF } from '../model/registry/elements/dataInput';
+import { DELAY_BUFFER_DEF } from '../model/registry/elements/delayBuffer';
 import { OUTPUT_DEF, outputText } from '../model/registry/elements/output';
 import { CONTACT_STROKE_WIDTH } from '../model/registry/shared';
 import { TRANSFORMER_DEF } from '../model/registry/elements/transformer';
@@ -2196,6 +2201,105 @@ describe('sweep symbol', () => {
     // The arrowhead would fill a triangle, and nothing else in the draw fills.
     expect(calls).not.toContain('fill');
   });
+});
+
+describe('AM and FM source symbols', () => {
+  // Both sources draw one stem to a circled caption at the free end
+  // (AMElm.java:86-103, FMElm.java:96-113): the circle sits on x2,y2, the
+  // label names the modulation, and nothing else fills.
+  const source = (kind: 'am' | 'fm'): CircuitElement => ({
+    id: 1,
+    kind,
+    x1: 0,
+    y1: 0,
+    x2: 32,
+    y2: 32,
+    flags: 0,
+    params: {},
+  });
+
+  it('centres the circled AM caption on the free end', () => {
+    const { ctx, texts, arcs, calls } = mkCtx();
+    AM_DEF.draw({ ...context(ctx, 0), voltages: [0] }, source('am'));
+    expect(texts).toContainEqual(expect.objectContaining({ text: 'AM', x: 32, y: 32 }));
+    expect(arcs).toContainEqual({ x: 32, y: 32 });
+    expect(calls).not.toContain('fill');
+  });
+
+  it('centres the circled FM caption on the free end', () => {
+    const { ctx, texts, arcs } = mkCtx();
+    FM_DEF.draw({ ...context(ctx, 0), voltages: [0] }, source('fm'));
+    expect(texts).toContainEqual(expect.objectContaining({ text: 'FM', x: 32, y: 32 }));
+    expect(arcs).toContainEqual({ x: 32, y: 32 });
+  });
+});
+
+describe('delay buffer symbol', () => {
+  const buffer = (): CircuitElement => ({
+    id: 1,
+    kind: 'delayBuffer',
+    x1: 0,
+    y1: 0,
+    x2: 32,
+    y2: 0,
+    flags: 0,
+    params: { delay: 0.01, threshold: 2.5, highVoltage: 5 },
+  });
+
+  it('draws the IEC rectangle with the "1" glyph inside', () => {
+    // The euro body is a closed four-corner rectangle with the "1" text raised
+    // one glyph height (DelayBufferElm.java:70-73, :85-91); the two leads make
+    // the first two paths, so the third is the body.
+    const { ctx, texts, paths } = mkCtx();
+    DELAY_BUFFER_DEF.draw({ ...context(ctx, 0), euroGates: true }, buffer());
+    expect(texts).toContainEqual(expect.objectContaining({ text: '1', y: -6 }));
+    expect(paths[2]).toHaveLength(5);
+  });
+
+  it('draws the ANSI triangle without a glyph when euroGates is off', () => {
+    const { ctx, texts, paths } = mkCtx();
+    DELAY_BUFFER_DEF.draw(context(ctx, 0), buffer());
+    expect(texts).not.toContainEqual(expect.objectContaining({ text: '1' }));
+    expect(paths[2]).toHaveLength(4);
+  });
+});
+
+describe('audio and data input rail labels', () => {
+  const rail = (kind: 'audioInput' | 'dataInput', text?: string): CircuitElement => ({
+    id: 1,
+    kind,
+    x1: 0,
+    y1: 0,
+    x2: 32,
+    y2: 0,
+    flags: 0,
+    params: { maxVoltage: 5 },
+    text,
+  });
+
+  it.each(['audioInput', 'dataInput'] as const)(
+    '%s shows "No file" before any file is loaded',
+    (kind) => {
+      const { ctx, texts } = mkCtx();
+      (kind === 'audioInput' ? AUDIO_INPUT_DEF : DATA_INPUT_DEF).draw(
+        { ...context(ctx, 0), voltages: [0] },
+        rail(kind),
+      );
+      expect(texts).toContainEqual(expect.objectContaining({ text: 'No file' }));
+    },
+  );
+
+  it.each(['audioInput', 'dataInput'] as const)(
+    '%s labels the stem with the loaded filename',
+    (kind) => {
+      const { ctx, texts } = mkCtx();
+      (kind === 'audioInput' ? AUDIO_INPUT_DEF : DATA_INPUT_DEF).draw(
+        { ...context(ctx, 0), voltages: [0] },
+        rail(kind, 'mysong'),
+      );
+      expect(texts).toContainEqual(expect.objectContaining({ text: 'mysong' }));
+    },
+  );
 });
 
 describe('current dot direction', () => {

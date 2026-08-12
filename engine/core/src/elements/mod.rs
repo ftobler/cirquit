@@ -8,11 +8,13 @@
 //! Newton machinery shared by the diode and transistor families.
 
 pub mod adc;
+pub mod am;
 pub mod ammeter;
 pub mod analog_mux;
 pub mod analog_switch;
 pub mod analog_switch2;
 pub mod antenna;
+pub mod audio_input;
 pub mod audio_output;
 pub mod r#box;
 pub mod bus_splitter;
@@ -31,12 +33,15 @@ pub mod custom_logic;
 pub mod d_flip_flop;
 pub mod dac;
 pub mod darlington;
+pub mod data_input;
 pub mod de_multiplexer;
 pub mod decimal_display;
 pub mod decoration;
+pub mod delay_buffer;
 pub mod diac;
 pub mod diode;
 pub mod ext_voltage;
+pub mod fm;
 pub mod full_adder;
 pub mod fuse;
 pub mod ground;
@@ -127,6 +132,8 @@ pub const KINDS: &[&str] = &[
     "rail",
     "noise",
     "antenna",
+    "am",
+    "fm",
     "varRail",
     "extVoltage",
     "vco",
@@ -148,6 +155,8 @@ pub const KINDS: &[&str] = &[
     "sweep",
     "analogSwitch",
     "audioOutput",
+    "audioInput",
+    "dataInput",
     "switch2",
     "crossSwitch",
     "analogSwitch2",
@@ -164,6 +173,7 @@ pub const KINDS: &[&str] = &[
     "composite",
     "phaseComp",
     "inverter",
+    "delayBuffer",
     "logicInput",
     "andGate",
     "nandGate",
@@ -241,6 +251,8 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "rail" => Box::new(voltage_source::VoltageSource::new_rail(spec)),
         "noise" => Box::new(noise::Noise::new(spec)),
         "antenna" => Box::new(antenna::Antenna::new(spec)),
+        "am" => Box::new(am::AM::new(spec)),
+        "fm" => Box::new(fm::FM::new(spec)),
         "varRail" => Box::new(var_rail::VarRail::new(spec)),
         "extVoltage" => Box::new(ext_voltage::ExtVoltage::new(spec)),
         "vco" => Box::new(vco::Vco::new(spec)),
@@ -262,6 +274,8 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "sweep" => Box::new(sweep::Sweep::new(spec)),
         "analogSwitch" => Box::new(analog_switch::AnalogSwitch::new(spec)),
         "audioOutput" => Box::new(audio_output::AudioOutput::new(spec)),
+        "audioInput" => Box::new(audio_input::AudioInput::new(spec)),
+        "dataInput" => Box::new(data_input::DataInput::new(spec)),
         "switch2" => Box::new(multi_throw_switch::MultiThrowSwitch::new(spec)),
         "crossSwitch" => Box::new(cross_switch::CrossSwitch::new(spec)),
         "analogSwitch2" => Box::new(analog_switch2::AnalogSwitch2::new(spec)),
@@ -284,6 +298,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         }
         "phaseComp" => Box::new(phase_comp::PhaseComp::new(spec)),
         "inverter" => Box::new(inverter::Inverter::new(spec)),
+        "delayBuffer" => Box::new(delay_buffer::DelayBuffer::new(spec)),
         "logicInput" => Box::new(logic_input::LogicInput::new(spec)),
         "andGate" => Box::new(logic::Gate::new(spec, logic::GateKind::And)),
         "nandGate" => Box::new(logic::Gate::new(spec, logic::GateKind::Nand)),

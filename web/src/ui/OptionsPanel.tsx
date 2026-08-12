@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
 import { formatUnits, parseUnits } from '../model/units';
+import { parseDataFile } from '../model/dataFile';
 import { formatValue, makeTheme } from '../render/draw';
 import type { CircuitElement, FieldDef, Theme, ThemeColors } from '../model/types';
 import { useStore } from '../state/store';
@@ -96,9 +97,29 @@ function Field({
 }: {
   field: FieldDef;
   value: number | string;
-  onChange: (v: number | string) => void;
+  onChange: (v: number | string | FileList | null) => void;
   onBeginEdit: () => void;
 }) {
+  if (field.type === 'file') {
+    // The load itself is asynchronous (a FileReader plus, for audio, the
+    // WebAudio decoder); the change handler in the parent does the reading
+    // and calls the store action when the file is ready.
+    return (
+      <label className="field">
+        <span>{field.label}</span>
+        <input
+          type="file"
+          // Focus opens the edit session, so a file load is one undo entry,
+          // same as the number and text fields; the async decode still lands
+          // inside the session because commit's dedup only runs on the next
+          // commit.
+          onFocus={onBeginEdit}
+          onChange={(e) => onChange(e.target.files)}
+        />
+      </label>
+    );
+  }
+
   if (field.type === 'text') {
     return (
       <label className="field">
@@ -213,6 +234,55 @@ function Field({
   );
 }
 
+/**
+ * Reads a picked file into the element: data files go through the pure
+ * one-value-per-line parser and alert on the same "Expected format" message
+ * upstream shows (DataInputElm.java:185-216); audio files go through the
+ * WebAudio decoder, taking the first channel as the sample buffer. The
+ * basename (path and extension stripped, AudioInputElm.java:160) becomes the
+ * element's rail label, which is not part of the file format.
+ */
+function loadFileInto(
+  e: CircuitElement,
+  fileLoad: 'audio' | 'data',
+  files: FileList | null,
+  loadAudioFile: (id: number, samples: number[], samplingRate: number, fileName: string) => void,
+  loadDataFile: (id: number, samples: number[], fileName: string) => void,
+): void {
+  const file = files && files[0];
+  if (!file) return;
+  const fileName = file.name.replace(/^.*\\/, '').replace(/\.[^.]*$/, '');
+  if (fileLoad === 'data') {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const parsed = parseDataFile(String(reader.result));
+      if (parsed.error !== null) {
+        window.alert(parsed.error);
+        return;
+      }
+      loadDataFile(e.id, parsed.samples, fileName);
+    };
+    reader.readAsText(file);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const Ctx =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const context = new Ctx();
+    context
+      .decodeAudioData(reader.result as ArrayBuffer)
+      .then((buffer) => {
+        loadAudioFile(e.id, Array.from(buffer.getChannelData(0)), context.sampleRate, fileName);
+        context.close();
+      })
+      .catch(() => context.close());
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 /** The five mutable colour rows, and which theme key each overrides. */
 const COLOR_ROWS: { key: keyof ThemeColors; label: string; themeKey: keyof Theme }[] = [
   { key: 'positiveColor', label: 'Positive', themeKey: 'positive' },
@@ -271,6 +341,8 @@ export function OptionsPanel({ engine }: Props) {
   const beginEdit = useStore((s) => s.beginEdit);
   const updateElement = useStore((s) => s.updateElement);
   const updateSettings = useStore((s) => s.updateSettings);
+  const loadAudioFile = useStore((s) => s.loadAudioFile);
+  const loadDataFile = useStore((s) => s.loadDataFile);
   const addScope = useStore((s) => s.addScope);
   const problem = useStore((s) => s.problem);
 
@@ -324,7 +396,17 @@ export function OptionsPanel({ engine }: Props) {
               value={fieldValue(selected, f)}
               onBeginEdit={beginEdit}
               onChange={(v) => {
-                if (f.target === 'text') {
+                if (f.type === 'file' && f.fileLoad !== undefined) {
+                  // `v` is the FileList; the read and decode are asynchronous
+                  // and land through the store action once ready.
+                  loadFileInto(
+                    selected,
+                    f.fileLoad,
+                    v as FileList | null,
+                    loadAudioFile,
+                    loadDataFile,
+                  );
+                } else if (f.target === 'text') {
                   setText(selected.id, String(v));
                 } else if (f.target === 'keyShortcut') {
                   setKeyShortcut(selected.id, String(v));

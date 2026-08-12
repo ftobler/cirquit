@@ -56,6 +56,7 @@ import { normalizeSipoBits } from '../model/registry/elements/sipoShift';
 import { normalizeRingBits } from '../model/registry/elements/ringCounter';
 import { normalizeInputCount } from '../model/registry/shared';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
+import { nextFileNum, setAudioSamples, setDataSamples, clearSampleCache } from '../model/sampleCache';
 import { paramScale, resolveParam } from '../model/sliders';
 import {
   DEFAULT_SETTINGS,
@@ -1004,6 +1005,28 @@ function createAppStore() {
       paramRevision: s.paramRevision + 1,
     })),
 
+  loadAudioFile: (id, samples, samplingRate, fileName) => {
+    const s = get();
+    const target = s.elements.find((e) => e.id === id);
+    if (!target) return;
+    // A fresh number, never reused, so an undo of this load restores the
+    // element's previous fileNum whose cache entry still holds the old file.
+    const fileNum = nextFileNum();
+    setAudioSamples(fileNum, samples, samplingRate);
+    // One set: the fileNum and the rail label travel together, so the undo
+    // snapshot restores both. The old cache entry is deliberately kept.
+    s.updateElement(id, { params: { ...target.params, fileNum }, text: fileName });
+  },
+
+  loadDataFile: (id, samples, fileName) => {
+    const s = get();
+    const target = s.elements.find((e) => e.id === id);
+    if (!target) return;
+    const fileNum = nextFileNum();
+    setDataSamples(fileNum, samples);
+    s.updateElement(id, { params: { ...target.params, fileNum }, text: fileName });
+  },
+
   unblowFuses: () =>
     set((s) => {
       const fuseIds = new Set(s.elements.filter((e) => e.kind === 'fuse').map((e) => e.id));
@@ -1405,6 +1428,11 @@ function createAppStore() {
   },
 
   loadNetlist: (text) => {
+    // The sample cache belongs to the open file, like the session models: the
+    // previous file's buffers go, this file's fileNum tokens resolve to
+    // nothing until the user imports fresh files (upstream clears both caches
+    // on load, CircuitLoader.java:239-240).
+    clearSampleCache();
     const parsed = parseCircuit(text);
     // The subcircuit library's session half belongs to the open file, so a load
     // rebuilds it: the previous file's `.` lines go, this file's arrive. Saved
@@ -1500,6 +1528,7 @@ function createAppStore() {
     // New drops the open file, and its `.` line models with it, the same reset
     // a load performs. Saved models stay in storage.
     clearSessionModels();
+    clearSampleCache();
     set((s) => ({
       elements: [],
       scopes: [],

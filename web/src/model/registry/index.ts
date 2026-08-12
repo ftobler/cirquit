@@ -33,8 +33,13 @@ import { VAR_RAIL_DEF } from './elements/varRail';
 import { EXT_VOLTAGE_DEF } from './elements/extVoltage';
 import { SWEEP_DEF } from './elements/sweep';
 import { AUDIO_OUTPUT_DEF } from './elements/audioOutput';
+import { AUDIO_INPUT_DEF } from './elements/audioInput';
+import { DATA_INPUT_DEF } from './elements/dataInput';
+import { DELAY_BUFFER_DEF } from './elements/delayBuffer';
 import { AMMETER_DEF } from './elements/ammeter';
 import { ANTENNA_DEF } from './elements/antenna';
+import { AM_DEF } from './elements/am';
+import { FM_DEF } from './elements/fm';
 import { BOX_DEF } from './elements/box';
 import { LINE_DEF } from './elements/line';
 import { SCOPE_DEF } from './elements/scope';
@@ -157,10 +162,14 @@ export const ELEMENT_DEFS: ElementDef[] = [
   RAIL_DEF,
   NOISE_DEF,
   ANTENNA_DEF,
+  AM_DEF,
+  FM_DEF,
   VAR_RAIL_DEF,
   EXT_VOLTAGE_DEF,
   SWEEP_DEF,
   AUDIO_OUTPUT_DEF,
+  AUDIO_INPUT_DEF,
+  DATA_INPUT_DEF,
   VCO_DEF,
   DAC_DEF,
   ADC_DEF,
@@ -203,6 +212,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   SEQ_GEN_DEF,
   MONOSTABLE_DEF,
   INVERTER_DEF,
+  DELAY_BUFFER_DEF,
   LOGIC_INPUT_DEF,
   SCHMITT_DEF,
   INVERTING_SCHMITT_DEF,

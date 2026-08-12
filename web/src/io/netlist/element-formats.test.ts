@@ -1601,6 +1601,135 @@ describe('batch-3 source and chip file formats', () => {
     expect(out).toBe(line);
   });
 
+  it('an AM source line round-trips byte-for-byte', () => {
+    // carrierfreq signalfreq maxVoltage (AMElm.java:40-42).
+    const line = '200 240 160 208 160 0 1000 40 5';
+    const { e, elementLine: out } = elementLine(line, '200');
+    expect(e.params.carrierFreq).toBe(1000);
+    expect(e.params.signalFreq).toBe(40);
+    expect(e.params.maxVoltage).toBe(5);
+    expect(out).toBe(line);
+  });
+
+  it('an FM source line round-trips byte-for-byte', () => {
+    // carrierfreq signalfreq maxVoltage deviation (FMElm.java:43-46).
+    const line = '201 240 160 208 160 0 800 40 5 200';
+    const { e, elementLine: out } = elementLine(line, '201');
+    expect(e.params.carrierFreq).toBe(800);
+    expect(e.params.signalFreq).toBe(40);
+    expect(e.params.maxVoltage).toBe(5);
+    expect(e.params.deviation).toBe(200);
+    expect(out).toBe(line);
+  });
+
+  it('an AM line with FLAG_COS clears the bit, keeping the sine carrier', () => {
+    // The token constructor clears bit 2 without materialising any phase
+    // (AMElm.java:43-45), so a loaded cosine-flagged line saves without it.
+    const line = '200 240 160 208 160 2 1000 40 5';
+    const { e, elementLine: out } = elementLine(line, '200');
+    expect(e.flags & 2).toBe(0);
+    expect(out).toBe('200 240 160 208 160 0 1000 40 5');
+  });
+
+  it('a fresh AM source dumps the upstream constructor defaults', () => {
+    const e = makeElement('am', 0, 0, 64, 0);
+    expect(e.flags).toBe(0);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('200 0 0 64 0 0 1000 40 5');
+  });
+
+  it('a fresh FM source dumps the upstream constructor defaults', () => {
+    const e = makeElement('fm', 0, 0, 64, 0);
+    expect(e.flags).toBe(0);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('201 0 0 64 0 0 800 40 5 200');
+  });
+
+  it('an audio input line round-trips byte-for-byte', () => {
+    // The rail's six source tokens, then the element's own three; maxVoltage
+    // appears twice in the full 9-token form (AudioInputElm.java:57-66).
+    const line = '411 240 160 208 160 0 1 40 5 0 0 0.5 5 0 3';
+    const { e, elementLine: out } = elementLine(line, '411');
+    expect(e.params.waveform).toBe(1);
+    expect(e.params.maxVoltage).toBe(5);
+    expect(e.params.startPosition).toBe(0);
+    expect(e.params.fileNum).toBe(3);
+    expect(out).toBe(line);
+  });
+
+  it('a 3-token audio input line loads into the element own tokens', () => {
+    // Upstream's own dump() writes only the trailing three, because the base
+    // CircuitElm.dump carries no tokens (AudioInputElm.java:70-73); the
+    // canonical save restores the full nine.
+    const line = '411 240 160 208 160 0 5 0 3';
+    const { e, elementLine: out } = elementLine(line, '411');
+    expect(e.params.maxVoltage).toBe(5);
+    expect(e.params.startPosition).toBe(0);
+    expect(e.params.fileNum).toBe(3);
+    expect(out).toBe('411 240 160 208 160 0 1 60 5 0 0 0.5 5 0 3');
+  });
+
+  it('a fresh audio input dumps the upstream constructor defaults', () => {
+    const e = makeElement('audioInput', 0, 0, 64, 0);
+    expect(e.flags).toBe(16);  // VOLTAGE_SHOW_VOLTAGE, inherited from the rail
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('411 0 0 64 0 16 1 60 5 0 0 0.5 5 0 0');
+  });
+
+  it('a data input line round-trips byte-for-byte', () => {
+    // sampleLength scaleFactor fileNum after the rail's six
+    // (DataInputElm.java:55-68).
+    const line = '424 240 160 208 160 0 1 40 5 0 0 0.5 0.001 1 7';
+    const { e, elementLine: out } = elementLine(line, '424');
+    expect(e.params.sampleLength).toBe(0.001);
+    expect(e.params.scaleFactor).toBe(1);
+    expect(e.params.fileNum).toBe(7);
+    expect(out).toBe(line);
+  });
+
+  it('a data input line keeps the FLAG_REPEAT bit', () => {
+    const line = '424 240 160 208 160 256 1 40 5 0 0 0.5 0.001 1 7';
+    const { e, elementLine: out } = elementLine(line, '424');
+    expect(e.flags & 256).toBe(256);
+    expect(out).toBe(line);
+  });
+
+  it('a 3-token data input line loads into the element own tokens', () => {
+    const line = '424 240 160 208 160 0 0.001 1 7';
+    const { e, elementLine: out } = elementLine(line, '424');
+    expect(e.params.sampleLength).toBe(0.001);
+    expect(e.params.scaleFactor).toBe(1);
+    expect(e.params.fileNum).toBe(7);
+    expect(out).toBe('424 240 160 208 160 0 1 60 5 0 0 0.5 0.001 1 7');
+  });
+
+  it('a fresh data input dumps the upstream constructor defaults', () => {
+    const e = makeElement('dataInput', 0, 0, 64, 0);
+    expect(e.flags).toBe(16);  // VOLTAGE_SHOW_VOLTAGE, inherited from the rail
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('424 0 0 64 0 16 1 60 5 0 0 0.5 0.001 1 0');
+  });
+
+  it('a delay buffer line round-trips byte-for-byte', () => {
+    // delay, then the optional threshold highVoltage pair
+    // (DelayBufferElm.java:35-46).
+    const line = '422 240 160 304 160 0 0.01 2.5 5';
+    const { e, elementLine: out } = elementLine(line, '422');
+    expect(e.params.delay).toBe(0.01);
+    expect(e.params.threshold).toBe(2.5);
+    expect(e.params.highVoltage).toBe(5);
+    expect(out).toBe(line);
+  });
+
+  it('a fresh delay buffer dumps the upstream constructor defaults', () => {
+    // The no-arg constructor never sets delay, so a fresh part starts at 0
+    // (DelayBufferElm.java:29-34); the writer restores the two optional
+    // tokens the upstream dump would drop.
+    const e = makeElement('delayBuffer', 0, 0, 64, 0);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('422 0 0 64 0 0 0 2.5 5');
+  });
+
   it('an external voltage line round-trips its escaped name', () => {
     // The rail tokens, then the escaped name (ExtVoltageElm.java:28-33).
     const line = '418 304 80 256 80 0 1 40 5 0 0 0.5 pin\\s8';
