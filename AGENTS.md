@@ -189,5 +189,5 @@ Two files, both under `feature/`:
 
 ## Tmporary Directory
 
-- if something needs temporary files do not use system wide `/tmp` but the project internal `tmp/`.
+- if something needs temporary files, you must not use system wide `/tmp`. For temporary files use `tmp/` or `scratch/` inside the project.
 - do not access anything outside the project directory.
