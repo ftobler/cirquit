@@ -145,12 +145,14 @@ export const LED_DEF: ElementDef = {
   // bogus model name and misparse every token after it.
   dumpFlags: (e) => (e.modelName != null ? e.flags | 2 : (e.flags & ~2) | 1),
   // The LED's own edit fields come first (getEditInfo n = 0..3), then the
-  // diode model fields (n - 4, LEDElm.java:121-134).
+  // diode model fields (n - 4, LEDElm.java:121-134). The model choice is
+  // upstream's first diode edit item, so it leads the diode block.
   fields: [
     { name: 'colorR', label: 'Red (0-1)', min: 0, max: 1 },
     { name: 'colorG', label: 'Green (0-1)', min: 0, max: 1 },
     { name: 'colorB', label: 'Blue (0-1)', min: 0, max: 1 },
     { name: 'maxBrightnessCurrent', label: 'Max brightness current', unit: 'A', min: 0 },
+    { name: 'modelName', label: 'Model', type: 'modelChoice', target: 'modelName', modelFamily: 'diode' },
     { name: 'forwardVoltage', label: 'Forward drop', unit: 'V' },
     { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
     { name: 'emissionCoefficient', label: 'Emission coefficient' },

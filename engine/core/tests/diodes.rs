@@ -213,6 +213,49 @@ fn diode_knee_matches_upstream_default_model() {
 }
 
 #[test]
+fn diode_1n4148_forward_drop_is_above_the_default() {
+    // The spec the built-in table resolution writes for `d ... 2 1N4148`
+    // (DiodeModel.java:108): Is = 4.352e-9, n = 1.906, Rs = 0.6458. A current
+    // source forces 1 mA, so the terminal drop is analytic:
+    //   Vd = n*vt*ln(I/Is + 1) + I*Rs = 0.6092 V.
+    // The same circuit with the default model (Is = 1.7143528192808883e-7,
+    // n = 2, Rs = 0) reads 0.4486 V, so the named model visibly changes the
+    // result. The default's 0.4486 is also what the bare-diode knee test
+    // asserts at 1 mA, keeping the two models' points honest.
+    let drop = |params: &[(&str, f64)]| {
+        let c = &mut build(
+            vec![
+                elm(1, "current", &[[0, 0], [100, 0]], &[("current", 1e-3)]),
+                elm(2, "diode", &[[100, 0], [100, 100]], params),
+                elm(3, "wire", &[[100, 100], [0, 0]], &[]),
+                elm(4, "ground", &[[0, 0]], &[]),
+            ],
+            opts(1e-5, true),
+        );
+        c.run(20);
+        c.element_voltages()[1]
+    };
+
+    let one_n4148 = drop(&[
+        ("saturationCurrent", 4.352e-9),
+        ("emissionCoefficient", 1.906),
+        ("seriesResistance", 0.6458),
+        ("breakdownVoltage", 75.0),
+    ]);
+    assert!(
+        close(one_n4148, 0.6092, 5e-3),
+        "1N4148 drop was {one_n4148}"
+    );
+
+    let default = drop(&[]);
+    assert!(close(default, 0.4486, 5e-3), "default drop was {default}");
+    assert!(
+        one_n4148 > default + 0.1,
+        "1N4148 ({one_n4148}) must sit well above the default ({default})"
+    );
+}
+
+#[test]
 fn diode_series_resistance_drops_the_voltage() {
     // Same current-source loop with a 1 k series resistance inside the diode.
     // The junction still sits at 0.4486 V (1 mA through the default model), so

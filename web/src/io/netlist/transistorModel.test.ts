@@ -65,8 +65,8 @@ describe('transistor model line parsing', () => {
   it('a model name without a 32 line falls back to the element defaults', () => {
     // Upstream never dumps a `32` line for a built-in model, and an unknown
     // name falls back via getModelWithNameOrCopy (TransistorModel.java:
-    // 99-112). The engine's own defaults (sat 1e-13, betaR 1) are what an
-    // unresolved element keeps, so nothing is written into params.
+    // 99-112). `early` is not a built-in model, so it keeps the engine's own
+    // defaults (sat 1e-13, betaR 1) and the name round-trips.
     const [e] = parseCircuit(
       't 496 256 560 256 0 1 -3.1354863883836575 0.6928898087953951 100 early',
     ).elements;
@@ -74,6 +74,40 @@ describe('transistor model line parsing', () => {
     expect(e.params.beta).toBe(100);
     expect(e.params.saturationCurrent).toBeUndefined();
     expect(e.params.betaReverse).toBeUndefined();
+  });
+
+  it('a built-in model name without a 32 line resolves from the table', () => {
+    // The `default` transistor (TransistorModel.java:118) is exactly the
+    // engine's own fallback, so resolving it writes the same values a file
+    // line would.
+    const [d] = parseCircuit(
+      't 496 256 560 256 0 1 -3.1354863883836575 0.6928898087953951 100 default',
+    ).elements;
+    expect(d.modelName).toBe('default');
+    expect(d.params.saturationCurrent).toBe(1e-13);
+    expect(d.params.betaReverse).toBe(1);
+    expect(d.params.beta).toBe(100);
+
+    // spice-default (TransistorModel.java:119) has satCur 1e-16, the value
+    // that moves Vbe up by about 0.18 V against the default.
+    const [s] = parseCircuit(
+      't 496 256 560 256 0 1 -3.1354863883836575 0.6928898087953951 100 spice-default',
+    ).elements;
+    expect(s.modelName).toBe('spice-default');
+    expect(s.params.saturationCurrent).toBe(1e-16);
+    expect(s.params.betaReverse).toBe(1);
+  });
+
+  it('a 32 line wins over the built-in table for a name both hold', () => {
+    // The file's own model line takes precedence over the built-in row of the
+    // same name (getModelWithNameOrCopy, TransistorModel.java:99-112).
+    const text = [
+      't 496 256 560 256 0 1 -3.1354863883836575 0.6928898087953951 100 default',
+      '32 default 0 2e-12 0 0 1.5 0 0 2 1 1 0.02 0 1',
+    ].join('\n');
+    const [e] = parseCircuit(text).elements;
+    expect(e.params.saturationCurrent).toBe(2e-12);
+    expect(e.params.betaReverse).toBe(1);
   });
 
   it('escaped model names resolve across both lines', () => {

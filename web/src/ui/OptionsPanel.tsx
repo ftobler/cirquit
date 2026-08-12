@@ -8,6 +8,7 @@ import { parseDataFile } from '../model/dataFile';
 import { recorderDataText, recorderFilename } from '../model/recorder';
 import { formatValue, makeTheme } from '../render/draw';
 import { saveBlob } from '../io/fileIO';
+import { selectableModels } from '../model/deviceModels';
 import type { CircuitElement, FieldDef, Theme, ThemeColors } from '../model/types';
 import { useStore } from '../state/store';
 
@@ -15,11 +16,12 @@ interface Props {
   engine: SimEngine | null;
 }
 
-/** Where a field reads from: free text, a bit of `e.flags`, or a param. A flag
- *  field is a checkbox, so it is handed to `Field` as 0 or 1. */
+/** Where a field reads from: free text, a bit of `e.flags`, a named model, or
+ *  a param. A flag field is a checkbox, so it is handed to `Field` as 0 or 1. */
 function fieldValue(e: CircuitElement, f: FieldDef): number | string {
   if (f.target === 'text') return e.text ?? '';
   if (f.target === 'keyShortcut') return e.keyShortcut ?? '';
+  if (f.target === 'modelName') return e.modelName ?? '';
   if (f.flag !== undefined) return (e.flags & f.flag) !== 0 ? 1 : 0;
   return e.params[f.name] ?? 0;
 }
@@ -195,6 +197,41 @@ function Field({
     );
   }
 
+  if (field.type === 'modelChoice') {
+    // The built-in model picker, the port of the upstream model edit item
+    // (DiodeElm.java:197-210, MosfetElm.java:724-736). Options are the
+    // family's built-in models plus the name-free "(default)" row; the select
+    // posts a string, not a number. A loaded name outside the table (a
+    // file-defined `34` model, an unknown name) still displays as a disabled
+    // option so it is not silently lost, mirroring upstream's choice list
+    // which always contains the current model.
+    const current = String(value ?? '');
+    const options = selectableModels(field.modelFamily ?? 'diode');
+    const known = current === '' || options.includes(current);
+    return (
+      <label className="field">
+        <span>{field.label}</span>
+        <select
+          value={current}
+          onFocus={onBeginEdit}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          <option value="">(default)</option>
+          {options.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+          {!known && (
+            <option value={current} disabled>
+              {current}
+            </option>
+          )}
+        </select>
+      </label>
+    );
+  }
+
   if (field.min !== undefined && field.max !== undefined) {
     return (
       <label className="field">
@@ -356,6 +393,7 @@ export function OptionsPanel({ engine }: Props) {
   const setParam = useStore((s) => s.setParam);
   const setText = useStore((s) => s.setText);
   const setKeyShortcut = useStore((s) => s.setKeyShortcut);
+  const setModelName = useStore((s) => s.setModelName);
   const beginEdit = useStore((s) => s.beginEdit);
   const updateElement = useStore((s) => s.updateElement);
   const updateSettings = useStore((s) => s.updateSettings);
@@ -445,6 +483,8 @@ export function OptionsPanel({ engine }: Props) {
                   setText(selected.id, String(v));
                 } else if (f.target === 'keyShortcut') {
                   setKeyShortcut(selected.id, String(v));
+                } else if (f.target === 'modelName') {
+                  setModelName(selected.id, String(v));
                 } else if (f.flag !== undefined) {
                   // A file flag is read when the engine builds the circuit and
                   // can change the stamp or the node count, so it has to go

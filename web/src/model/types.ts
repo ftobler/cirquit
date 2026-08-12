@@ -84,11 +84,16 @@ export interface FieldDef {
   label: string;
   /** Unit suffix, formatted with engineering prefixes. */
   unit?: string;
-  type?: 'number' | 'choice' | 'bool' | 'text' | 'file' | 'download';
+  type?: 'number' | 'choice' | 'bool' | 'text' | 'file' | 'download' | 'modelChoice';
   /** Which sample source a `type: 'file'` field loads: an audio buffer (via
    *  the WebAudio decoder) or a data text file (one value per line). Absent
    *  on every other field type. */
   fileLoad?: 'audio' | 'data';
+  /** Which built-in model table a `type: 'modelChoice'` field draws its
+   *  options from. The diode family (diode/zener/varactor/led) shares one
+   *  table, the transistor, mosfet and jfet each have their own. Absent on
+   *  every other field type. */
+  modelFamily?: 'diode' | 'transistor' | 'mosfet' | 'jfet';
   choices?: { value: number; label: string }[];
   min?: number;
   max?: number;
@@ -98,8 +103,9 @@ export interface FieldDef {
    *  stamp or the node count, which the live `set_param` path cannot. */
   flag?: number;
   /** Reads `e.text` (the label), `e.keyShortcut` (a switch's keyboard
-   *  shortcut) or `e.params[name]`. Only meaningful for `text`. */
-  target?: 'param' | 'text' | 'keyShortcut';
+   *  shortcut), `e.modelName` (a named device model) or `e.params[name]`.
+   *  Only meaningful for `text` and `modelChoice`. */
+  target?: 'param' | 'text' | 'keyShortcut' | 'modelName';
 }
 
 /** Everything the app needs to know about an element type. */

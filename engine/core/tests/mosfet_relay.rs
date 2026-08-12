@@ -167,6 +167,47 @@ fn mosfet_off_uses_min_conductance() {
 }
 
 #[test]
+fn resolved_mosfet_default_cuts_off_while_resolved_jfet_default_conducts() {
+    // The frontend's built-in tables resolve a `default` mosfet to
+    // (threshold 1.5, beta 0.02) and a `default-jfet` to (threshold -4,
+    // beta 0.00125). With the gate tied to the source (vgs = 0) those are the
+    // params the engine honors: the mosfet's enhancement channel is below
+    // threshold and sits on its min conductance, while the jfet's depletion
+    // channel already conducts its full saturation current ids =
+    // .5*beta*(vgs-vt)^2 = 10 mA. This pins that the resolved params are the
+    // params the engine reads, even though the two families have no
+    // discriminating analytic difference beyond their table values.
+    let drain_current = |kind: &str, threshold: f64, beta: f64| {
+        let c = &mut build(
+            vec![
+                elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+                elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 50.0)]),
+                elm(
+                    3,
+                    kind,
+                    &[[200, 100], [100, 100], [100, 0]],
+                    &[("pnp", 1.0), ("threshold", threshold), ("beta", beta)],
+                ),
+                elm(4, "wire", &[[200, 100], [100, 100]], &[]),
+                elm(5, "ground", &[[0, 100]], &[]),
+                elm(6, "ground", &[[100, 100]], &[]),
+            ],
+            opts(1e-5, true),
+        );
+        let report = c.run(20);
+        assert!(report.converged, "did not converge: {:?}", report.error);
+        c.element_currents()[2]
+    };
+
+    // The jfet draws 10 mA into the 50 ohm load, the mosfet's channel leaks
+    // only through its 1e-8 S floor (Vd ~ 5 V through the 1e8 ohm channel).
+    let jfet = drain_current("jfet", -4.0, 0.00125);
+    assert!(close(jfet, 0.01, 1e-5), "jfet ids was {jfet}");
+    let mosfet = drain_current("mosfet", 1.5, 0.02);
+    assert!(mosfet < 1e-6, "mosfet ids was {mosfet}");
+}
+
+#[test]
 fn body_diode_conducts_when_reversed() {
     // N-channel with the source post on the 5 V rail and the drain post fed by
     // a 10 mA current source to ground. The gate is grounded (off), so the

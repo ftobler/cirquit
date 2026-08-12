@@ -705,6 +705,72 @@ fn transistor_model_line_resolves_saturation_current_into_the_engine() {
 }
 
 #[test]
+fn transistor_spice_default_raises_vbe_against_the_default() {
+    // The built-in `spice-default` transistor (TransistorModel.java:119) has
+    // satCur 1e-16 against the `default` 1e-13, so the same forced base
+    // current lands at a much higher Vbe. The stage is the
+    // transistor_model_line_resolves_saturation_current_into_the_engine
+    // harness: a current source forces 1e-6 A into the base, beta 100, betaR 1.
+    // In the active region the Ebers-Moll prediction is
+    //   Vbe = VT*ln(1 + bf*(ib + sat/br)/sat):
+    // 0.5360 V for the default satCur, 0.7145 V for spice-default, a shift of
+    // 0.1785 V. Asserting both pins the resolved saturation current the same
+    // way the `32`-line test does, for a name a file never carries a line for.
+    let stage = |sat: f64| {
+        build(
+            vec![
+                elm(1, "current", &[[0, 0], [100, 100]], &[("current", 1e-6)]),
+                elm(2, "rail", &[[300, 0]], &[("maxVoltage", 5.0)]),
+                elm(
+                    3,
+                    "resistor",
+                    &[[300, 0], [300, 100]],
+                    &[("resistance", 10_000.0)],
+                ),
+                // Posts: base, collector, emitter.
+                elm(
+                    4,
+                    "transistor",
+                    &[[100, 100], [300, 100], [100, 200]],
+                    &[
+                        ("saturationCurrent", sat),
+                        ("betaReverse", 1.0),
+                        ("beta", 100.0),
+                    ],
+                ),
+                elm(5, "ground", &[[100, 200]], &[]),
+                elm(6, "ground", &[[0, 0]], &[]),
+            ],
+            opts(1e-5, true),
+        )
+    };
+    let vbe_of = |sat: f64| {
+        let c = &mut stage(sat);
+        c.run(20);
+        let v = c.node_voltages();
+        let nodes = c.element_nodes();
+        let (nb, _nc, ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+        v[nb] - v[ne]
+    };
+
+    let vbe_default = vbe_of(1e-13);
+    assert!(
+        close(vbe_default, 0.5360, 5e-3),
+        "default Vbe was {vbe_default}"
+    );
+    let vbe_spice = vbe_of(1e-16);
+    assert!(
+        close(vbe_spice, 0.7145, 5e-3),
+        "spice-default Vbe was {vbe_spice}"
+    );
+    assert!(
+        close(vbe_spice - vbe_default, 0.1785, 1e-2),
+        "Vbe shift was {}",
+        vbe_spice - vbe_default
+    );
+}
+
+#[test]
 fn darlington_current_gain_is_the_product_of_the_two_betas() {
     // A darlington is two Ebers-Moll transistors in cascade: Q1's emitter
     // feeds Q2's base and the collectors share one post, so the current gain

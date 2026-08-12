@@ -173,6 +173,31 @@ describe('copy, paste and duplicate', () => {
     useStore.getState().pasteFromClipboard();
     expect(useStore.getState().elements).toHaveLength(1);
   });
+
+  it('paste and duplicate of a named-model diode keep its resolved params', () => {
+    // The paste path re-runs parseCircuit, which resolves the built-in name
+    // again, so a copied 1N4148 must arrive with the model's params, not the
+    // element defaults.
+    const [loaded] = parseCircuit('d 176 80 384 80 2 1N4148').elements;
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+    useStore.getState().select([id]);
+
+    useStore.getState().copySelection();
+    useStore.getState().pasteFromClipboard();
+    const pasted = useStore.getState().elements[1];
+    expect(pasted.modelName).toBe('1N4148');
+    expect(pasted.params.saturationCurrent).toBe(4.352e-9);
+    expect(pasted.params.seriesResistance).toBe(0.6458);
+    expect(pasted.params.forwardVoltage).toBeCloseTo(0.9491294544092825, 10);
+
+    useStore.getState().select([pasted.id]);
+    useStore.getState().duplicateSelection();
+    const duped = useStore.getState().elements[2];
+    expect(duped.modelName).toBe('1N4148');
+    expect(duped.params.saturationCurrent).toBe(4.352e-9);
+    expect(duped.params.forwardVoltage).toBeCloseTo(0.9491294544092825, 10);
+  });
 });
 
 describe('subcircuit models ride the clipboard', () => {

@@ -1322,6 +1322,83 @@ describe('diode model name', () => {
     expect(e.modelName).toBeUndefined();
     expect(e.params.forwardVoltage).toBe(0.65);
   });
+
+  it('editing an LED model value drops the model name', () => {
+    // Once LEDs resolve named models, a stale `default-led` name re-applies
+    // the model on the next reload and silently discards a forward-drop edit.
+    // This pins the LED's place in the store name-drop kind check.
+    const [loaded] = parseCircuit('162 0 0 100 0 2 default-led 1 0 0 0.01').elements;
+    expect(loaded.modelName).toBe('default-led');
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+
+    useStore.getState().setParam(id, 'forwardVoltage', 2.5);
+
+    const e = useStore.getState().elements[0];
+    expect(e.modelName).toBeUndefined();
+    expect(e.params.forwardVoltage).toBe(2.5);
+  });
+
+  it('setModelName sets the name, re-resolves params and bumps revision', () => {
+    // A model-name pick sets the name and writes the built-in table's params
+    // into the element, then bumps `revision` so the engine rebuilds: model
+    // params are read at build time and can change the stamp or the node
+    // count, so the live set_param path is not safe here.
+    const [loaded] = parseCircuit('d 176 80 384 80 0 0.805904783').elements;
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+    const before = useStore.getState();
+
+    useStore.getState().setModelName(id, '1N4148');
+
+    const e = useStore.getState().elements[0];
+    expect(e.modelName).toBe('1N4148');
+    expect(e.params.saturationCurrent).toBe(4.352e-9);
+    expect(e.params.seriesResistance).toBe(0.6458);
+    expect(e.params.emissionCoefficient).toBe(1.906);
+    expect(e.params.forwardVoltage).toBeCloseTo(0.9491294544092825, 10);
+    const after = useStore.getState();
+    expect(after.revision).toBe(before.revision + 1);
+    // A full rebuild, not a set_param patch.
+    expect(after.paramRevision).toBe(before.paramRevision);
+    expect(after.pendingParams.size).toBe(0);
+  });
+
+  it('setModelName with an empty string deletes the name and saves the value form', () => {
+    // The name-free value form: the derived forward drop the resolution wrote
+    // is what a save dumps once the name goes.
+    const [loaded] = parseCircuit('d 176 80 384 80 2 1N4148').elements;
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+    expect(useStore.getState().elements[0].params.forwardVoltage).toBeCloseTo(
+      0.9491294544092825,
+      10,
+    );
+
+    useStore.getState().setModelName(id, '');
+
+    const e = useStore.getState().elements[0];
+    expect(e.modelName).toBeUndefined();
+    const line =
+      serializeCircuit(useStore.getState().elements, { ...DEFAULT_SETTINGS })
+        .trim()
+        .split('\n')
+        .find((l) => l.startsWith('d ')) ?? '';
+    expect(line).toBe('d 176 80 384 80 1 0.9491294544092825');
+  });
+
+  it('setModelName with an unknown name keeps the current params', () => {
+    // A miss behaves like a load-time fallback: the name is stored (it
+    // round-trips) but the params stay untouched.
+    const [loaded] = parseCircuit('d 176 80 384 80 0 0.805904783').elements;
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+    useStore.getState().setModelName(id, 'not-a-model');
+    const e = useStore.getState().elements[0];
+    expect(e.modelName).toBe('not-a-model');
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    expect(e.params.saturationCurrent).toBeUndefined();
+  });
 });
 
 describe('the integer-coordinate invariant', () => {

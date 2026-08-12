@@ -158,9 +158,14 @@ fetch it).
   plain dense LU. This is the single biggest performance lever remaining.
 - **Sparse matrices.** Dense LU is `O(n³)`. Fine to a few hundred nodes;
   circuits in the thousands will need a sparse solver.
-- **Device model libraries.** Diodes, transistors and MOSFETs upstream carry
-  named model libraries. Here they take direct parameters; the model name in a
-  file is preserved but not looked up.
+- **Device model libraries.** The built-in diode, transistor and MOSFET/JFET
+  model tables are ported (`web/src/model/deviceModels.ts`): a named model
+  with no `34`/`32` line resolves from the table at load, the file's model
+  line wins over it, and unknown names fall back to defaults with the name
+  preserved. A model-name selector sits in the element options panel. The
+  zener selector shows zero-breakdown models too (upstream hides them), a
+  form-only divergence. Mosfet/JFET model names never appear in the text
+  format, so their picker choices are session-only, as upstream.
 - **Scope line fidelity.** `o` lines are parsed for their element attachment
   only; the remaining display fields are preserved verbatim but not
   interpreted. Hints (`h`) and subcircuit definitions are likewise preserved

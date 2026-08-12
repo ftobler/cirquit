@@ -253,6 +253,12 @@ export interface AppState {
    *  through to the Manager. */
   renameSubcircuit(oldName: string, newName: string): RenameOutcome;
   setParam(id: number, name: string, value: number): void;
+  /** Edits an element's named device model: `''` deletes the name (the
+   *  name-free value form), any other value sets it and re-runs the built-in
+   *  model resolution into `params`. The revision bump forces a full engine
+   *  rebuild, since model params are read at build time and can change the
+   *  stamp or the node count. */
+  setModelName(id: number, name: string): void;
   /** Writes a slider's position-converted value into its bound element's
    *  parameter through the live `set_param` fast path. A slider that cannot be
    *  resolved (element gone, no matching field) does nothing: it is

@@ -59,13 +59,18 @@ export function resolveParam(
   }
 
   // Fallback: index into the numeric edit items, the port's field order with
-  // the choice/checkbox/text rows skipped (upstream's getEditInfo mixes the
-  // same kinds of entries in; only the numeric ones carry a value a slider
-  // can set). A text row would resolve to a phantom param name and force a
-  // full engine rebuild on set_param, so it is excluded with the other
-  // non-numeric rows. An out-of-range index resolves to null.
+  // the choice/checkbox/text/modelChoice rows skipped (upstream's getEditInfo
+  // mixes the same kinds of entries in; only the numeric ones carry a value a
+  // slider can set). A text or modelChoice row would resolve to a phantom
+  // param name and force a full engine rebuild on set_param, so they are
+  // excluded with the other non-numeric rows. An out-of-range index resolves
+  // to null.
   const numeric = fields.filter(
-    (f) => f.type !== 'choice' && f.type !== 'bool' && f.type !== 'text',
+    (f) =>
+      f.type !== 'choice' &&
+      f.type !== 'bool' &&
+      f.type !== 'text' &&
+      f.type !== 'modelChoice',
   );
   const field = numeric[editItem];
   if (field) return { name: field.name, field };

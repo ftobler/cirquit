@@ -53,6 +53,18 @@ describe('slider parameter resolution', () => {
     // rebuild on set_param.
     expect(resolveParam('labeledNode', 0, '')).toBeNull();
   });
+
+  it('excludes the model-choice field from the numeric-index fallback', () => {
+    // A diode's first field is the model choice, a non-numeric row like a text
+    // or choice field. Without the exclusion the index fallback would resolve
+    // a slider to a phantom `modelName` param; the numeric list is what the
+    // caption-free index binds against, so index 0 is the forward drop.
+    expect(resolveParam('diode', 0, '')).toMatchObject({ name: 'forwardVoltage' });
+    // The name cannot resolve to a model param even with the caption matching
+    // nothing.
+    const byCaption = resolveParam('diode', 99, 'Forward drop');
+    expect(byCaption?.name).toBe('forwardVoltage');
+  });
 });
 
 describe('slider value/position conversion', () => {

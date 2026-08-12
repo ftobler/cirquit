@@ -1,4 +1,5 @@
 import { defForDumpCode } from '../../model/registry';
+import { modelFamilyFor, resolveModelParams } from '../../model/deviceModels';
 import type { CircuitElement, SimSettings } from '../../model/types';
 import type { ScopeValue } from '../../engine/simulator';
 import type {
@@ -15,14 +16,10 @@ import type {
 import { unescapeToken } from './tokens';
 import { modelToEngineSpec, parseCompositeModelLine } from '../subcircuits';
 
-/** Thermal voltage the diode model's forward-drop derivation uses
- *  (DiodeModel.java:32). */
-const VT = 0.025865;
-
-/** Kinds that resolve a `modelName` against the `34` model library. All three
- *  share the diode model machinery upstream (VaractorElm and ZenerElm extend
- *  DiodeElm), so one lookup serves them all. */
-const MODEL_KINDS = new Set(['diode', 'zener', 'varactor']);
+/** Kinds that resolve a `modelName` against the diode model library. All four
+ *  share the diode model machinery upstream (VaractorElm, ZenerElm and LEDElm
+ *  extend DiodeElm), so one lookup serves them all. */
+const MODEL_KINDS = new Set(['diode', 'zener', 'varactor', 'led']);
 
 /**
  * Splits a custom-logic `rules` string into the left/right table the engine
@@ -619,17 +616,18 @@ export function parseCircuit(text: string): ParsedCircuit {
   }
 
   // Model names resolve after the whole file is read too, for the same
-  // reason: a `34` line can sit below the element that names it. The library
-  // entry wins over the element defaults, matching upstream's
-  // `getModelWithNameOrCopy` (DiodeModel.java:62-76); an unknown name leaves
-  // the element on its defaults. The transistor resolves its own `32` table
-  // into satCur and betaR, the only Ebers-Moll params the port models. A
-  // custom-logic `208` element carries its model name in `text` (the Model
-  // Name field), so it resolves against the `!` library into the structured
-  // model the engine is handed; a miss leaves it on the defaults, exactly like
-  // upstream's `getModelWithNameOrCopy` returning the copied fallback. A
-  // custom-composite `410` element resolves its `text` the same way, against
-  // the file's own `.` lines: on a hit `e.model` becomes the `CompositeEngineSpec`
+  // reason: a `34`/`32` line can sit below the element that names it. The
+  // library entry wins over the element defaults, then the built-in table by
+  // exact name, then defaults, matching upstream's `getModelWithNameOrCopy`
+  // (DiodeModel.java:62-76); an unknown name leaves the element on its
+  // defaults. The transistor resolves its own `32` table into satCur and
+  // betaR, the only Ebers-Moll params the port models. A custom-logic `208`
+  // element carries its model name in `text` (the Model Name field), so it
+  // resolves against the `!` library into the structured model the engine is
+  // handed; a miss leaves it on the defaults, exactly like upstream's
+  // `getModelWithNameOrCopy` returning the copied fallback. A custom-composite
+  // `410` element resolves its `text` the same way, against the file's own
+  // `.` lines: on a hit `e.model` becomes the `CompositeEngineSpec`
   // (`{model, external, dumps}`) the engine's `Composite::from_spec` parses,
   // and a miss leaves it unset so the part draws the fallback body while the
   // name still round-trips. Storage/session models are deliberately not
@@ -640,10 +638,13 @@ export function parseCircuit(text: string): ParsedCircuit {
   for (const e of elements) {
     if (e.kind === 'transistor') {
       if (e.modelName === undefined) continue;
-      const model = transistorModels.get(e.modelName);
-      if (model === undefined) continue;
-      e.params.saturationCurrent = model.saturationCurrent;
-      e.params.betaReverse = model.betaReverse;
+      const params = resolveModelParams(
+        'transistor',
+        e.modelName,
+        transistorModels.get(e.modelName),
+      );
+      if (params === undefined) continue;
+      Object.assign(e.params, params);
       continue;
     }
     if (e.kind === 'customLogic') {
@@ -660,18 +661,15 @@ export function parseCircuit(text: string): ParsedCircuit {
       continue;
     }
     if (!MODEL_KINDS.has(e.kind) || e.modelName === undefined) continue;
-    const model = diodeModels.get(e.modelName);
-    if (model === undefined) continue;
-    e.params.saturationCurrent = model.saturationCurrent;
-    e.params.seriesResistance = model.seriesResistance;
-    e.params.emissionCoefficient = model.emissionCoefficient;
-    e.params.breakdownVoltage = model.breakdownVoltage;
+    const family = modelFamilyFor(e.kind);
+    if (family === undefined) continue;
+    const params = resolveModelParams(family, e.modelName, diodeModels.get(e.modelName));
+    if (params === undefined) continue;
     // The forward drop is derived from the saturation current, upstream's
-    // `updateModel` (DiodeModel.java:332-336). Deriving it matters: if the
-    // name is later dropped by an edit, the value-form dump writes the real
-    // drop instead of the 0.805904783 default.
-    e.params.forwardVoltage =
-      model.emissionCoefficient * VT * Math.log(1 / model.saturationCurrent + 1);
+    // `updateModel` (DiodeModel.java:332-336), inside the shared resolution.
+    // Deriving it matters: if the name is later dropped by an edit, the
+    // value-form dump writes the real drop instead of the 0.805904783 default.
+    Object.assign(e.params, params);
   }
 
   return {

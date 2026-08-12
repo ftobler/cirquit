@@ -370,16 +370,63 @@ describe('diode model line parsing', () => {
     expect(out).toBe(text + '\n');
   });
 
-  it('a model name without a 34 line falls back to the element defaults', () => {
-    // Upstream never dumps a `34` line for a built-in model, and an unknown
-    // name falls back via getModelWithNameOrCopy (DiodeModel.java:62-76).
-    const [e] = parseCircuit('z 100 100 100 0 2 default-zener').elements;
-    expect(e.modelName).toBe('default-zener');
-    expect(e.params.breakdownVoltage).toBe(5.6);
-    expect(e.params.forwardVoltage).toBe(0.805904783);
+  it('a model name without a 34 line resolves from the built-in table', () => {
+    // Upstream never dumps a `34` line for a built-in model, but the built-in
+    // table resolves the name at load (DiodeModel.java:62-76). The 1N4148 row
+    // (DiodeModel.java:108) writes its saturation current, series resistance
+    // and emission coefficient, and the derived forward drop, not the
+    // 0.805904783 default.
     const [d] = parseCircuit('d 1 2 3 4 2 1N4148').elements;
     expect(d.modelName).toBe('1N4148');
-    expect(d.params.forwardVoltage).toBe(0.805904783);
+    expect(d.params.forwardVoltage).toBeCloseTo(0.9491294544092825, 10);
+    expect(d.params.saturationCurrent).toBe(4.352e-9);
+    expect(d.params.emissionCoefficient).toBe(1.906);
+    expect(d.params.seriesResistance).toBe(0.6458);
+    // default-zener (DiodeModel.java:84) resolves its breakdown voltage and
+    // the default-model drop.
+    const [z] = parseCircuit('z 100 100 100 0 2 default-zener').elements;
+    expect(z.modelName).toBe('default-zener');
+    expect(z.params.breakdownVoltage).toBe(5.6);
+    expect(z.params.forwardVoltage).toBe(0.805904783);
+  });
+
+  it('a 34 line wins over the built-in table for a name both hold', () => {
+    // The file's own model line takes precedence over the built-in row of the
+    // same name, exactly as upstream's modelMap lookup returns the file entry
+    // first (getModelWithNameOrCopy, DiodeModel.java:62-76).
+    const text = ['d 1 2 3 4 2 1N4148', '34 1N4148 0 1e-9 0 2 0 0'].join('\n');
+    const [e] = parseCircuit(text).elements;
+    expect(e.params.saturationCurrent).toBe(1e-9);
+    expect(e.params.seriesResistance).toBe(0);
+    expect(e.params.emissionCoefficient).toBe(2);
+    // The derived drop follows the file's saturation current, not the built-in.
+    expect(e.params.forwardVoltage).toBeCloseTo(1.0720145417969678, 10);
+  });
+
+  it('an unknown model name keeps today\'s fallback: defaults, no throw', () => {
+    // A name in neither the file's `34` lines nor the built-in table falls
+    // back via getModelWithNameOrCopy's oldmodel == null branch: the element
+    // stays on its defaults and the name round-trips, never an error.
+    const [e] = parseCircuit('d 1 2 3 4 2 2N3906').elements;
+    expect(e.modelName).toBe('2N3906');
+    expect(e.params.forwardVoltage).toBe(0.805904783);
+    const [other] = parseCircuit('d 1 2 3 4 2 not-a-model').elements;
+    expect(other.modelName).toBe('not-a-model');
+    expect(other.params.forwardVoltage).toBe(0.805904783);
+  });
+
+  it('a resolved built-in name still saves FLAG_MODEL plus the name', () => {
+    // Resolution is a load-time param write only; the serialized line keeps
+    // the model name, so a named model round-trips byte-for-byte.
+    const [e] = parseCircuit('d 1 2 3 4 2 1N4148').elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const line = out.split('\n').find((l) => l.startsWith('d ')) ?? '';
+    expect(line).toBe('d 1 2 3 4 2 1N4148');
+    // Deleting the name writes the value form with the real derived drop.
+    delete e.modelName;
+    const after = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const valueLine = after.split('\n').find((l) => l.startsWith('d ')) ?? '';
+    expect(valueLine).toBe('d 1 2 3 4 1 0.9491294544092825');
   });
 
   it('series resistance and emission coefficient resolve from a 34 line', () => {
@@ -1496,6 +1543,26 @@ describe('LED file format', () => {
     expect(e.params.maxBrightnessCurrent).toBe(0.01);
     const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
     expect(out).toContain('162 0 0 32 0 1 2.1024259 1 0 0 0.01');
+  });
+
+  it('a default-led name resolves the built-in model while the colour tail round-trips', () => {
+    // avr8js-strobe.txt's five LEDs. The built-in `default-led` row
+    // (DiodeModel.java:90) resolves its saturation current, series resistance
+    // and emission coefficient; the colour and brightness tail stays untouched
+    // and the line round-trips byte-for-byte (resolution never mutates the
+    // serialized line).
+    const line = '162 0 0 100 0 2 default-led 1 0 0 0.01';
+    const { e, elementLine } = ledLine(line);
+    expect(e.modelName).toBe('default-led');
+    expect(e.params.saturationCurrent).toBe(93.2e-12);
+    expect(e.params.seriesResistance).toBe(0.042);
+    expect(e.params.emissionCoefficient).toBe(3.73);
+    expect(e.params.forwardVoltage).toBeCloseTo(2.2281, 3);
+    expect(e.params.colorR).toBe(1);
+    expect(e.params.colorG).toBe(0);
+    expect(e.params.colorB).toBe(0);
+    expect(e.params.maxBrightnessCurrent).toBe(0.01);
+    expect(elementLine).toBe(line);
   });
 });
 

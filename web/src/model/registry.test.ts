@@ -160,6 +160,7 @@ describe('zener fields', () => {
   it('exposes the diode model fields plus its own breakdown voltage', () => {
     const names = (ZENER_DEF.fields ?? []).map((f) => f.name);
     expect(names).toEqual([
+      'modelName',
       'forwardVoltage',
       'seriesResistance',
       'emissionCoefficient',
@@ -247,10 +248,15 @@ describe('text field metadata', () => {
         ...referencedParams(def.dump),
       ]);
       for (const f of def.fields ?? []) {
-        // A text or keyShortcut field is bound to a top-level field of
-        // `e` (e.text / e.keyShortcut), not to a param, so there is nothing
-        // in parse/dump/defaults for it to match.
-        if (f.target === 'text' || f.target === 'keyShortcut') continue;
+        // A text, keyShortcut or modelName field is bound to a top-level
+        // field of `e` (e.text / e.keyShortcut / e.modelName), not to a
+        // param, so there is nothing in parse/dump/defaults for it to match.
+        if (
+          f.target === 'text' ||
+          f.target === 'keyShortcut' ||
+          f.target === 'modelName'
+        )
+          continue;
         // A flag field is bound to a bit of `e.flags`, not to a param, so
         // there is nothing in parse/dump/defaults for it to match.
         if (f.flag !== undefined) continue;

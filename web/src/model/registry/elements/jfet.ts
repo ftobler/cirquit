@@ -109,6 +109,8 @@ export const JFET_DEF: ElementDef = {
   dumpFlags: (e) =>
     (e.params.pnp ?? 1) === -1 ? e.flags | MOSFET_PNP : e.flags & ~MOSFET_PNP,
   fields: [
+    // The model choice is upstream's edit item 0 (MosfetElm.java:724-736).
+    { name: 'modelName', label: 'Model', type: 'modelChoice', target: 'modelName', modelFamily: 'jfet' },
     {
       name: 'pnp',
       label: 'Type',

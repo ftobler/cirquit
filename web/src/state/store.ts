@@ -59,6 +59,7 @@ import { normalizeInputCount } from '../model/registry/shared';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import { nextFileNum, setAudioSamples, setDataSamples, clearSampleCache } from '../model/sampleCache';
 import { paramScale, resolveParam } from '../model/sliders';
+import { modelFamilyFor, resolveModelParams } from '../model/deviceModels';
 import {
   DEFAULT_SETTINGS,
   GRID_SIZE,
@@ -907,13 +908,16 @@ function createAppStore() {
         elements: s.elements.map((e) => {
           if (e.id !== id) return e;
           const next = { ...e, params: { ...e.params, [name]: pending } };
-          // Editing a diode/zener/varactor model value makes the stored model
-          // name stale; drop it so the next save writes the value form, not the
-          // dead name. The varactor shares the diode machinery upstream, so a
-          // stale name there re-applies the model on the next reload and
-          // silently discards the edit.
+          // Editing a diode-family model value makes the stored model name
+          // stale; drop it so the next save writes the value form, not the
+          // dead name. The varactor and LED share the diode machinery
+          // upstream, so a stale name there re-applies the model on the next
+          // reload and silently discards the edit.
           if (
-            (e.kind === 'diode' || e.kind === 'zener' || e.kind === 'varactor') &&
+            (e.kind === 'diode' ||
+              e.kind === 'zener' ||
+              e.kind === 'varactor' ||
+              e.kind === 'led') &&
             DIODE_MODEL_PARAMS.includes(name)
           ) {
             delete next.modelName;
@@ -943,6 +947,37 @@ function createAppStore() {
       };
     });
   },
+
+  setModelName: (id, name) =>
+    set((s) => ({
+      elements: s.elements.map((e) => {
+        if (e.id !== id) return e;
+        const next = { ...e };
+        // The name-free value form: deleting the name makes the next save
+        // write the element's derived forward drop (or the value-form tokens
+        // the element family carries).
+        if (name === '') {
+          delete next.modelName;
+          return next;
+        }
+        next.modelName = name;
+        // Re-run the built-in resolution into params, like the load-time
+        // second pass. File/session `34`/`32` lines are not in scope for a
+        // live edit, so this is the built-in table only; an unresolvable name
+        // keeps the current params, exactly like a load miss. The revision
+        // bump forces a full engine rebuild because model params are read at
+        // build time and several change the stamp or the node count (a
+        // diode's series resistance), the same rule the seriesResistance
+        // set_param decline uses.
+        const family = modelFamilyFor(e.kind);
+        if (family !== undefined) {
+          const params = resolveModelParams(family, name, undefined);
+          if (params !== undefined) next.params = { ...e.params, ...params };
+        }
+        return next;
+      }),
+      revision: s.revision + 1,
+    })),
 
   setSliderValue: (id, value) => {
     const s = get();

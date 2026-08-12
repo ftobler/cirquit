@@ -93,6 +93,8 @@ export const DIODE_DEF: ElementDef = {
   // bogus model name and silently lose the edit.
   dumpFlags: (e) => (e.modelName != null ? e.flags | 2 : (e.flags & ~2) | 1),
   fields: [
+    // The model choice is upstream's edit item 0 (DiodeElm.java:197-210).
+    { name: 'modelName', label: 'Model', type: 'modelChoice', target: 'modelName', modelFamily: 'diode' },
     { name: 'forwardVoltage', label: 'Forward drop', unit: 'V' },
     { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
     { name: 'emissionCoefficient', label: 'Emission coefficient' },

@@ -160,6 +160,8 @@ export const TRANSISTOR_DEF: ElementDef = {
       ],
     },
     { name: 'beta', label: 'Current gain (β)' },
+    // The model choice is upstream's edit item 3 (TransistorElm.java:619-631).
+    { name: 'modelName', label: 'Model', type: 'modelChoice', target: 'modelName', modelFamily: 'transistor' },
   ],
   draw: drawTransistorBody,
 };

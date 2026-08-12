@@ -78,6 +78,8 @@ export const VARACTOR_DEF: ElementDef = {
   // bogus model name and misparse everything after it.
   dumpFlags: (e) => (e.modelName != null ? e.flags | 2 : (e.flags & ~2) | 1),
   fields: [
+    // The model choice is upstream's edit item 0 (DiodeElm.java:197-210).
+    { name: 'modelName', label: 'Model', type: 'modelChoice', target: 'modelName', modelFamily: 'diode' },
     { name: 'baseCapacitance', label: 'Capacitance @ 0V', unit: 'F' },
     { name: 'forwardVoltage', label: 'Forward drop', unit: 'V' },
     { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
