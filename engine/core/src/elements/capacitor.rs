@@ -245,6 +245,12 @@ impl Element for Capacitor {
         match name {
             "capacitance" if value > 0.0 => self.capacitance = value,
             "initialVoltage" => self.initial_voltage = value,
+            // The saved `voltDiff` token is the stored charge, `v_prev`
+            // (state_tokens reports it as voltDiff). The opampReal composite
+            // restores its compensation capacitor's charge this way
+            // (OpAmpRealElm.java:106), which must land in the plate voltage,
+            // not the initial voltage, or the first reset would throw it away.
+            "voltDiff" => self.v_prev = value,
             // PolarCapacitorElm.setEditValue: rejects a negative rating (PolarCapacitorElm.java:69-73).
             "maxNegativeVoltage" if value >= 0.0 => self.max_negative_voltage = value,
             _ => return false,

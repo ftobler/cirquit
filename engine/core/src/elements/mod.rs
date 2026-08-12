@@ -23,11 +23,13 @@ pub mod cc2;
 pub mod cccs;
 pub mod ccvs;
 pub mod chip;
+pub mod comparator;
 pub mod composite;
 pub mod controlled_source;
 pub mod counter;
 pub mod counter2;
 pub mod cross_switch;
+pub mod crystal;
 pub mod current_source;
 pub mod custom_logic;
 pub mod d_flip_flop;
@@ -75,6 +77,8 @@ pub mod multiplexer;
 pub mod noise;
 pub mod ohmmeter;
 pub mod opamp;
+pub mod opamp_real;
+pub mod optocoupler;
 pub mod ota;
 pub mod phase_comp;
 pub mod piso_shift;
@@ -184,6 +188,10 @@ pub const KINDS: &[&str] = &[
     "opamp",
     "ota",
     "composite",
+    "comparator",
+    "opampReal",
+    "optocoupler",
+    "crystal",
     "phaseComp",
     "inverter",
     "delayBuffer",
@@ -316,6 +324,22 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         }
         "composite" => {
             let c = composite::Composite::from_spec(spec)?;
+            Box::new(c)
+        }
+        "comparator" => {
+            let c = comparator::from_spec(spec)?;
+            Box::new(c)
+        }
+        "opampReal" => {
+            let c = opamp_real::from_spec(spec)?;
+            Box::new(c)
+        }
+        "optocoupler" => {
+            let c = optocoupler::from_spec(spec)?;
+            Box::new(c)
+        }
+        "crystal" => {
+            let c = crystal::from_spec(spec)?;
             Box::new(c)
         }
         "phaseComp" => Box::new(phase_comp::PhaseComp::new(spec)),

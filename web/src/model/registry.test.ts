@@ -1402,3 +1402,122 @@ describe('batch E electromechanical draws', () => {
     ]);
   });
 });
+
+describe('batch C composite draws and posts', () => {
+  const draw = (kind: string, overrides: Partial<DrawContext> = {}, e?: CircuitElement) => {
+    const ctx = mkCtx();
+    defFor(kind)?.draw(context(ctx, overrides), e ?? element(kind, 0, 0, 96, 0));
+    return ctx;
+  };
+
+  it('the comparator posts put V- and V+ on the input sides and the output last', () => {
+    // Default size 2 gives the 16-unit half separation, plus signs negated by
+    // FLAG_SWAP (ComparatorElm.java:34-39, 77-79, 86-88).
+    const e = element('comparator', 0, 0, 96, 0);
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: -16 },
+      { x: 0, y: 16 },
+      { x: 96, y: 0 },
+    ]);
+    expect(postsOf(element('comparator', 0, 0, 96, 0, 2))).toEqual([
+      { x: 0, y: -8 },
+      { x: 0, y: 8 },
+      { x: 96, y: 0 },
+    ]);
+    // FLAG_SWAP (bit 4) swaps which input hangs where.
+    expect(postsOf(element('comparator', 0, 0, 96, 0, 4))).toEqual([
+      { x: 0, y: 16 },
+      { x: 0, y: -16 },
+      { x: 96, y: 0 },
+    ]);
+  });
+
+  it('the comparator draws its triangle, glyphs and ≥? caption', () => {
+    const ctx = draw('comparator');
+    const texts = ctx.fillText.mock.calls.map((c) => String(c[0]));
+    expect(texts).toContain('−');
+    expect(texts).toContain('+');
+    expect(texts).toContain('≥?');
+  });
+
+  it('the comparator minus glyph stays on the V- post side under FLAG_SWAP', () => {
+    // The glyphs sit at `interpPoint2(lead1, lead2, .2, hs*sgn)` where hs is
+    // already negated by the swap (ComparatorElm.java:77-80), so they must
+    // track the swapped V- post. The old extra `* sgn` cancelled the swap and
+    // drew the minus on the V+ side.
+    const minusGlyph = (flags: number): Point => {
+      const ctx = mkCtx();
+      const e = element('comparator', 0, 0, 96, 0, flags);
+      defFor('comparator')?.draw(context(ctx), e);
+      const call = ctx.fillText.mock.calls.find((c) => c[0] === '−');
+      expect(call).toBeDefined();
+      return { x: call![1] as number, y: call![2] as number };
+    };
+    const post = postsOf(element('comparator', 0, 0, 96, 0))[0];
+    const postSwapped = postsOf(element('comparator', 0, 0, 96, 0, 4))[0];
+    const glyph = minusGlyph(0);
+    const glyphSwapped = minusGlyph(4);
+    expect(axisSide(element('comparator', 0, 0, 96, 0), glyph) * axisSide(element('comparator', 0, 0, 96, 0), post)).toBeGreaterThan(0);
+    expect(axisSide(element('comparator', 0, 0, 96, 0), glyphSwapped) * axisSide(element('comparator', 0, 0, 96, 0), postSwapped)).toBeGreaterThan(0);
+    // The swap moved both the post and the glyph to the other side together.
+    expect(glyph.y * glyphSwapped.y).toBeLessThan(0);
+  });
+
+  it('the realistic op-amp rail posts sit at the far rail end, not the inner one', () => {
+    // Posts 3/4 are the outer rail ends, `rail1p[0] = interpPoint2(lead1,
+    // lead2, railPos, hs*2)` at 32 px from the axis; the inner point
+    // `hs*2*(1-railPos)` is only the lead target drawn inward from it
+    // (OpAmpRealElm.java:236-238, 247-248). On a 96 px body railPos = 0.5, so
+    // the rails land on the body midpoint at +/-32, the exact coordinates the
+    // old sign-only test could not distinguish from the +/-16 inner pair.
+    const e = element('opampReal', 0, 0, 96, 0);
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: -16 },  // V-
+      { x: 0, y: 16 },   // V+
+      { x: 96, y: 0 },   // out
+      { x: 48, y: -32 }, // V+ supply, the far outer rail end
+      { x: 48, y: 32 },  // V- supply
+    ]);
+    // FLAG_SWAP (bit 1) moves the minus side and with it the rail pair.
+    expect(postsOf(element('opampReal', 0, 0, 96, 0, 2))).toEqual([
+      { x: 0, y: 16 },
+      { x: 0, y: -16 },
+      { x: 96, y: 0 },
+      { x: 48, y: 32 },
+      { x: 48, y: -32 },
+    ]);
+  });
+
+  it('the optocoupler posts sit at the four fixed chip corners', () => {
+    // A fixed 2x2 body anchored at point1 (OptocouplerElm.java:125-148).
+    const e = element('optocoupler', 80, 64, 208, 64);
+    expect(postsOf(e)).toEqual([
+      { x: 80, y: 64 },
+      { x: 80, y: 96 },
+      { x: 176, y: 64 },
+      { x: 176, y: 96 },
+    ]);
+    // FLAG_FLIP_X (1<<10) mirrors the body about the point1+32 axis.
+    const flipped = element('optocoupler', 80, 64, 208, 64, 1 << 10);
+    expect(postsOf(flipped)).toEqual([
+      { x: 176, y: 64 },
+      { x: 176, y: 96 },
+      { x: 80, y: 64 },
+      { x: 80, y: 96 },
+    ]);
+  });
+
+  it('the crystal posts are exactly the two endpoints', () => {
+    const e = element('crystal', 80, 64, 208, 64);
+    expect(postsOf(e)).toEqual([
+      { x: 80, y: 64 },
+      { x: 208, y: 64 },
+    ]);
+  });
+
+  it('the four composites draw without throwing', () => {
+    for (const kind of ['comparator', 'opampReal', 'optocoupler', 'crystal']) {
+      expect(() => draw(kind)).not.toThrow();
+    }
+  });
+});

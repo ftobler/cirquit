@@ -12,6 +12,7 @@
  */
 
 import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP, postCountOf } from './registry';
+import { COMPARATOR_SWAP, OPAMPREAL_SWAP } from './registry/flags';
 import type { CircuitElement } from './types';
 
 /** Whether the element can turn a quarter turn. A stem-bearing one-post part
@@ -139,12 +140,20 @@ function rotateFlags(e: CircuitElement): number {
     if (e.x1 === e.x2) flags ^= UJT_FLIP;
     return flags;
   }
+  if (e.kind === 'comparator' || e.kind === 'opampReal') {
+    // The same flipXY-then-flipY sequence as the op-amp, with each type's own
+    // swap bit (ComparatorElm.java:109-112, OpAmpRealElm.java:319-320): a
+    // horizontal part toggles once, a vertical one twice, which cancels.
+    const bit = e.kind === 'comparator' ? COMPARATOR_SWAP : OPAMPREAL_SWAP;
+    let flags = e.flags ^ bit;
+    if (e.x1 === e.x2) flags ^= bit;
+    return flags;
+  }
   if (e.kind !== 'opamp' && e.kind !== 'transistor') return e.flags;
   let flags = e.flags ^ FLAG_SWAP;
   if (e.x1 === e.x2) flags ^= FLAG_SWAP;
   return flags;
 }
-
 /**
  * Reflect across the vertical axis through the element's midpoint. A mirror
  * reverses the axis direction, so for a horizontal part the `dsign` term alone
@@ -217,6 +226,8 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
   if (e.kind === 'mosfet' || e.kind === 'relay') flipBit = MOSFET_FLIP;
   else if (e.kind === 'transformer') flipBit = TRANSFORMER_FLIP;
   else if (e.kind === 'opamp' || e.kind === 'transistor') flipBit = FLAG_SWAP;
+  else if (e.kind === 'comparator') flipBit = COMPARATOR_SWAP;
+  else if (e.kind === 'opampReal') flipBit = OPAMPREAL_SWAP;
   else if (e.kind === 'tappedTransformer' || e.kind === 'customTransformer') flipBit = TAPPED_FLIP;
   else if (e.kind === 'unijunction') flipBit = UJT_FLIP;
   const flags = vertical && flipBit !== 0 ? e.flags ^ flipBit : e.flags;

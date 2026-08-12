@@ -16,6 +16,7 @@ use crate::element::{Base, Element, SimCtx};
 use crate::elements::controlled_source::{
     converge_limit, current_derivative, set_current_value, ExprSource,
 };
+use crate::expr::parse;
 use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
 
@@ -229,6 +230,21 @@ impl Element for Cccs {
         // post count, so every edit goes down the full-rebuild path rather
         // than the live `set_param` fast path.
         false
+    }
+
+    fn set_string_param(&mut self, name: &str, value: &str) -> bool {
+        // The optocoupler's parent hands its CCCS child the CTR curve after
+        // the composite is built (optocoupler.rs), the one place a CCCS
+        // expression is set from inside the engine. A bad expression stays
+        // `None`, exactly as `ExprSource::new` leaves a parse failure, so the
+        // child simulates as a passive stub rather than refusing to build.
+        if name == "expr" {
+            self.cs.expr = parse(value).ok();
+            self.cs.reset();
+            true
+        } else {
+            false
+        }
     }
 
     fn reset(&mut self) {

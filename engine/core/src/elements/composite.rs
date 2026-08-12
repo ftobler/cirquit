@@ -23,7 +23,7 @@
 //! so a freshly created composite with no dump tokens still builds a working
 //! child.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::build_element;
@@ -65,6 +65,15 @@ fn child_kind(model_type: &str) -> Option<(&'static str, Vec<(&'static str, f64)
         "PJfetElm" => Some(("jfet", vec![("pnp", -1.0)])),
         "MosfetElm" | "NMosfetElm" => Some(("mosfet", vec![("pnp", 1.0)])),
         "PMosfetElm" => Some(("mosfet", vec![("pnp", -1.0)])),
+        // The built-in composite elements' children. The comparator is an
+        // op-amp whose output drives an analog switch pulling the output post
+        // to a ground child's node; the optocoupler's light path is a CCCS
+        // whose expression the parent sets after build. A ground child pins
+        // its post's model node to the reference (see the node-mapping pass).
+        "OpAmpElm" => Some(("opamp", Vec::new())),
+        "AnalogSwitchElm" => Some(("analogSwitch", Vec::new())),
+        "GroundElm" => Some(("ground", Vec::new())),
+        "CCCSElm" => Some(("cccs", Vec::new())),
         _ => None,
     }
 }
@@ -109,6 +118,15 @@ fn dump_fields(kind: &str) -> Option<&'static [&'static str]> {
         "current" => Some(&["current", "maxVoltage"]),
         "switch" => Some(&["position"]),
         "jfet" | "mosfet" => Some(&["threshold", "beta"]),
+        // The op-amp child's fields follow OpAmpElm.java:51-56 (maxOut,
+        // minOut, gbw, the saved input voltages, gain); the analog switch's
+        // its r_on/r_off/threshold (AnalogSwitchElm.java:58-60). A ground
+        // child has nothing numeric to apply (the port's ground ignores all
+        // params), and the CCCS's expression is a string the parent sets
+        // directly, not a dump field.
+        "opamp" => Some(&["maxOut", "minOut", "gbw", "volts0", "volts1", "gain"]),
+        "analogSwitch" => Some(&["r_on", "r_off", "threshold"]),
+        "cccs" => Some(&["inputCount"]),
         _ => None,
     }
 }
@@ -264,7 +282,20 @@ impl Composite {
 
         // Map the model node ids onto composite-local indices: the external
         // ids are the posts, everything else is an internal node in first-seen
-        // order, then one fresh node per child internal node.
+        // order, then one fresh node per child internal node. Model node 0 is
+        // ground; so is any node a `GroundElm` child pins, mirroring upstream's
+        // old-style ground child, which stamps a 0 V source onto that node
+        // (CompositeElm.java:99-100). The comparator's switch output hangs off
+        // exactly such a node, so without this the comparator's low drive
+        // would float instead of pulling to the reference.
+        let mut ground_nodes: HashSet<usize> = [0].into();
+        for (nodes, child) in node_lines.iter().zip(children.iter()) {
+            if child.kind() == "ground" {
+                if let Some(&m) = nodes.first() {
+                    ground_nodes.insert(m);
+                }
+            }
+        }
         let mut ext_pos: HashMap<usize, usize> = HashMap::new();
         for (p, &e) in external.iter().enumerate() {
             ext_pos.insert(e, p);
@@ -275,7 +306,7 @@ impl Composite {
         for (nodes, child) in node_lines.iter().zip(children.iter()) {
             let mut cn = Vec::with_capacity(nodes.len() + child.internal_node_count());
             for &m in nodes.iter() {
-                let idx = if m == 0 {
+                let idx = if ground_nodes.contains(&m) {
                     GROUND_NODE
                 } else if let Some(&p) = ext_pos.get(&m) {
                     p
@@ -354,6 +385,17 @@ impl Composite {
     pub fn set_child_param(&mut self, index: usize, name: &str, value: f64) -> bool {
         match self.children.get_mut(index) {
             Some(child) => child.set_param(name, value),
+            None => false,
+        }
+    }
+
+    /// Sets a string-valued parameter on one child, for the children a parent
+    /// must configure after build. The optocoupler uses it to hand its CCCS
+    /// child the CTR expression, which is not a number and so cannot ride the
+    /// numeric `set_param` path.
+    pub fn set_child_string(&mut self, index: usize, name: &str, value: &str) -> bool {
+        match self.children.get_mut(index) {
+            Some(child) => child.set_string_param(name, value),
             None => false,
         }
     }
@@ -482,7 +524,19 @@ impl Element for Composite {
             }
             self.children[ci].calculate_current(ctx);
         }
-        self.base.current = self.children.iter().map(|c| c.base().current).sum();
+        self.base.current = match self.kind {
+            // A series-branch composite reports the one branch current, not
+            // the sum of every child's: the crystal's series capacitor,
+            // inductor and resistor all report the same current, and summing
+            // them would triple it (CrystalElm.java:151 reports
+            // `getCurrentIntoNode(1)` instead of summing).
+            "crystal" => -self.current_into_node(0),
+            // The op-amp reports the current leaving its output post; summing
+            // all thirty-two children would count every internal bias current
+            // (OpAmpRealElm.java:264 reports `getCurrentIntoNode(2)`).
+            "opampReal" => -self.current_into_node(2),
+            _ => self.children.iter().map(|c| c.base().current).sum(),
+        };
         self.power_accum = self.children.iter().map(|c| c.power()).sum();
     }
 
@@ -541,6 +595,22 @@ impl Element for Composite {
     }
 
     fn set_param(&mut self, name: &str, value: f64) -> bool {
+        // The crystal's four fields each own exactly one child, so a live edit
+        // must route to it alone: the composite's name fallback would hit
+        // every child that shares the name (both capacitor children answer to
+        // "capacitance"). The route is fixed for the kind, like the OTA's
+        // supply pair below.
+        match (self.kind, name) {
+            ("crystal", "parallelCapacitance") => {
+                return self.set_child_param(0, "capacitance", value)
+            }
+            ("crystal", "seriesCapacitance") => {
+                return self.set_child_param(1, "capacitance", value)
+            }
+            ("crystal", "inductance") => return self.set_child_param(2, "inductance", value),
+            ("crystal", "resistance") => return self.set_child_param(3, "resistance", value),
+            _ => {}
+        }
         match name {
             // The supply edits are the two rails, negative first
             // (OTAElm.java:41-42); a composite with a different layout can

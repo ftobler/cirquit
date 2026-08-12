@@ -85,6 +85,49 @@ fn capacitor_volt_diff_token_follows_the_live_charge() {
 }
 
 #[test]
+fn capacitor_volt_diff_param_restores_the_stored_charge() {
+    // The 409 composite charges its compensation capacitor through
+    // `set_child_param(20, "voltDiff", capValue)` (OpAmpRealElm.java:106), so
+    // `set_param("voltDiff", v)` must land in the stored charge (`v_prev`),
+    // not the initial voltage, or the first reset would throw the saved
+    // charge away. `state_tokens` reports `v_prev` as the voltDiff token, so
+    // the restored value must read straight back.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-6, false),
+    );
+    assert!(
+        c.set_param(3, "voltDiff", 7.0),
+        "capacitor refused the voltDiff param"
+    );
+    let volt = c.state_tokens()[2]
+        .iter()
+        .find(|(k, _)| k == "voltDiff")
+        .map(|(_, v)| *v)
+        .expect("capacitor reported no voltDiff token");
+    assert!(
+        close(volt, 7.0, 1e-12),
+        "stored charge read {volt}, expected the restored 7 V"
+    );
+}
+
+#[test]
 fn capacitor_round_trip_preserves_the_live_charge() {
     let specs = vec![
         elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),

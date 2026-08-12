@@ -2586,3 +2586,103 @@ describe('instrument file formats (batch I)', () => {
     expect(lineFor({ ...e, id: 1 })).toContain('408 0 0 32 0 0 1 0 0 1');
   });
 });
+
+describe('built-in composite file formats (batch C)', () => {
+  const lineFor = (e: CircuitElement) =>
+    serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim().split('\n').join('\n');
+
+  it('401 comparator round-trips its three child dump tokens', () => {
+    // One `_`-joined dump per composite child: the op-amp (flags, maxOut,
+    // minOut, gbw, volts0, volts1, gain), the analog switch (flags, r_on,
+    // r_off, threshold) and the old-style ground (flags, symbolType). The
+    // tokens are opaque and carried raw, exactly the OTA's shape.
+    const line =
+      '401 80 64 208 64 0 8_15_-15_1000000_0_0_100000 2_20_10000000000_2.5 1_0';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('comparator');
+    expect(e.model).toEqual(['8_15_-15_1000000_0_0_100000', '2_20_10000000000_2.5', '1_0']);
+    expect(lineFor(e)).toContain(line);
+  });
+
+  it('a fresh comparator dumps an empty child token list', () => {
+    const e = makeElement('comparator', 0, 0, 64, 0);
+    expect(lineFor({ ...e, id: 1 })).toContain('401 0 0 64 0 0');
+  });
+
+  it('409 realistic op-amp round-trips slew rate, cap value, limit and model', () => {
+    // OpAmpRealElm.java:79-86.
+    const line = '409 80 64 208 64 0 0.6 0 0.0231 0';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('opampReal');
+    expect(e.params.slewRate).toBe(0.6);
+    expect(e.params.capValue).toBe(0);
+    expect(e.params.currentLimit).toBe(0.0231);
+    expect(e.params.modelType).toBe(0);
+    expect(lineFor(e)).toContain(line);
+  });
+
+  it('a fresh realistic op-amp dumps the 741 constructor defaults', () => {
+    const e = makeElement('opampReal', 0, 0, 64, 0);
+    expect(e.params).toEqual({ slewRate: 0.6, capValue: 0, currentLimit: 0.0231, modelType: 0 });
+    expect(lineFor({ ...e, id: 1 })).toContain('409 0 0 64 0 0 0.6 0 0.0231 0');
+  });
+
+  it('407 optocoupler round-trips its child dumps and the appended ctr scale', () => {
+    // Three child dumps (the LED model, the CCCS, the phototransistor) then
+    // the port's appended ctr scale token. The children are rebuilt from
+    // defaults upstream (OptocouplerElm.java:29-34), so the dumps are opaque.
+    const line = '407 80 64 208 64 0 2_default-optocoupler-led 0 0_1_0_0_700 1.5';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('optocoupler');
+    expect(e.model).toEqual(['2_default-optocoupler-led', '0', '0_1_0_0_700']);
+    expect(e.params.ctr).toBe(1.5);
+    expect(lineFor(e)).toContain(line);
+  });
+
+  it('an upstream 407 line without ctr keeps the default and appends it on save', () => {
+    // Upstream's own text dump never writes the ctr scale, so the port reads
+    // a bare child-dump line with the default 1.0 and saves the scale back,
+    // the stop-trigger `count` precedent.
+    const line = '407 80 64 208 64 0 2_default-optocoupler-led 0 0_1_0_0_700';
+    const [e] = parseCircuit(line).elements;
+    expect(e.params.ctr).toBe(1);
+    expect(e.model).toEqual(['2_default-optocoupler-led', '0', '0_1_0_0_700']);
+    expect(lineFor(e)).toContain(`${line} 1`);
+  });
+
+  it('a tokenless 407 line keeps the default ctr instead of parsing 0', () => {
+    // No child dumps at all means there is no trailing token to read;
+    // `Number('')` is 0, which would have built a dead optocoupler with
+    // ctr 0. A missing token must fall through to the default 1.0.
+    const line = '407 80 64 208 64 0';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('optocoupler');
+    expect(e.params.ctr).toBe(1);
+    expect(e.model).toEqual([]);
+    expect(lineFor(e)).toContain(`${line} 1`);
+  });
+
+  it('412 crystal round-trips its four motional child dumps', () => {
+    // The four children in model order: parallel cap, series cap, inductor,
+    // resistor, each `_`-joined (flags first, then the value). The value
+    // tokens are re-derived from the params on save, so the loaded values
+    // land in the fields and the save stays byte-for-byte.
+    const line = '412 80 64 208 64 0 4_2.87e-11_0_0.001_0 4_1e-13_0_0.001_0 0_0.0025_0_0_0 0_6.4';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('crystal');
+    expect(e.params.parallelCapacitance).toBeCloseTo(28.7e-12, 20);
+    expect(e.params.seriesCapacitance).toBeCloseTo(1e-13, 25);
+    expect(e.params.inductance).toBe(0.0025);
+    expect(e.params.resistance).toBe(6.4);
+    expect(lineFor(e)).toContain(line);
+  });
+
+  it('a fresh crystal dumps the four default motional values', () => {
+    // The fresh constructor sets FLAG_SHOW_FREQ (CrystalElm.java:36), so the
+    // flags field is 2, not 0.
+    const e = makeElement('crystal', 0, 0, 64, 0);
+    expect(e.flags).toBe(2);
+    const out = lineFor({ ...e, id: 1 });
+    expect(out).toContain('412 0 0 64 0 2 4_2.87e-11_0_0.001_0 4_1e-13_0_0.001_0 0_0.0025_0_0_0 0_6.4');
+  });
+});

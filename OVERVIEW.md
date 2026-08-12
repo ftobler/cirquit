@@ -242,15 +242,15 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **121 of ~200**.
+a test. Done so far: **125 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, transformer, tapped transformer, custom transformer, fuse,
 lamp, thermistor, potentiometer, switch, SPDT switch, make-before-break switch,
 DPDT switch, LDR, varactor, memristor, transmission line, spark gap, antenna,
-relay (coil/contact), crossover switch, motor-protection switch.
+relay (coil/contact), crossover switch, motor-protection switch, crystal.
 
-- [ ] Crystal
+- [x] Crystal
 
 **Sources** — done: voltage source (all waveforms), rail, current source.
 
@@ -258,14 +258,15 @@ relay (coil/contact), crossover switch, motor-protection switch.
 - [x] Controlled sources: VCVS, VCCS, CCVS, CCCS, CC2
 
 **Semiconductors** — done: diode, Zener, BJT, MOSFET, JFET, Darlington, tunnel
-diode, LED, LED array, SCR, triac, diac, unijunction, triode.
+diode, LED, LED array, SCR, triac, diac, unijunction, triode, optocoupler.
 
-- [ ] Optocoupler
+- [x] Optocoupler
 
 **Analog** — done: op-amp (saturating VCVS), OTA, analog switch, analog mux,
-timer (555), phase comparator, ADC, DAC.
+timer (555), phase comparator, ADC, DAC, realistic op-amp with gain-bandwidth,
+comparator.
 
-- [ ] Realistic op-amp with gain-bandwidth, comparator
+- [x] Realistic op-amp with gain-bandwidth, comparator
 
 **Logic** — done: inverter, AND, NAND, OR, NOR, XOR, XNOR, tri-state buffer,
 Schmitt trigger (inverting and non-inverting), all behind the `euroGates` IEC
@@ -347,6 +348,10 @@ Dump codes implemented so far, with their trailing field order:
 | `426` | relay contact  | label, r_on, r_off, [i_position]                           |
 | `a`   | op-amp         | maxOut, minOut, gbw, volts0, volts1, gain                  |
 | `402` | OTA            | one raw `_`-joined child-dump token per composite child (2 rails + 16 transistors), carried verbatim |
+| `409` | realistic op-amp | slewRate, capValue, currentLimit, modelType              |
+| `407` | optocoupler    | three raw `_`-joined child-dump tokens (LED, CCCS, phototransistor), then ctr |
+| `401` | comparator     | one raw `_`-joined child-dump token per composite child (internal op-amp, analog switch, ground) |
+| `412` | crystal        | four raw `_`-joined child-dump tokens (parallel cap, series cap, inductor, resistor), re-derived from params on save |
 | `207` | labeled node   | text (FLAG_ESCAPE = 4, always set on save)                 |
 | `368` | test point      | meter, [label] (FLAG_LABEL = 1)                             |
 | `216` | ohmmeter        | current, maxVoltage (the CurrentElm tokens)                 |
@@ -412,6 +417,37 @@ string carrier the custom-logic model uses, and the engine maps each token onto
 the matching child spec (ota.rs). The five posts are the non-inverting input,
 the inverting input, the collector load, the Iabc bias pin and the output, in
 that order.
+
+For the `409` row the token stream is `slewRate capValue currentLimit modelType`
+(OpAmpRealElm.java:79-86); the 32 child dumps upstream's `dump()` writes are
+discarded on load and not regenerated, because the children are a pure function
+of the four parameters and upstream ignores them on load too. `modelType` 1
+(LM324) and 2 (324v2) round-trip but simulate the 741 netlist; the UI offers
+only the LM741 choice. The `capValue` token restores the compensation
+capacitor's stored charge on load (`set_param("voltDiff", …)`, upstream
+`getCapacitor().voltdiff`). The rail posts sit at the outer ends of the supply
+stubs, 32 px from the body axis (upstream `rail1p[0]`).
+
+For the `407` row the three tokens are the `_`-joined dumps of the LED model,
+the CCCS and the phototransistor; the port appends a `ctr` scale token after
+them because upstream's text save drops it (the stop-trigger precedent). A
+tokenless `407` line (no trailing ctr) keeps the default ctr of 1. The LED uses
+the port's default diode model, not upstream's `default-optocoupler-led`
+library entry.
+
+For the `401` row the token stream is the `_`-joined dumps of the internal
+op-amp, the analog switch and the ground child, carried raw like the OTA's. The
+three posts are V−, V+ and the output; the op-amp's inverting input is wired to
+the V+ post, so net behaviour is standard comparator logic. FLAG_SWAP (bit 4)
+swaps the V−/V+ post sides and the −/+ glyphs track it; FLAG_SMALL (bit 2)
+halves the body.
+
+For the `412` row the four tokens are the `_`-joined dumps of the parallel
+capacitor, the series capacitor, the inductor and the series resistor; the port
+re-derives them from the current params on save so parameter edits persist.
+Saved child voltDiff/current state tokens are dropped, part of the live-state
+write-back gap. FLAG_SHOW_FREQ (bit 2) is set on a fresh crystal and draws the
+series-resonance frequency caption.
 
 For the `f` row the channel type is FLAG_PNP (bit 1), not a token: `+1` is an
 N-channel and `-1` a P-channel, so flags 1 means P. The two trailing tokens are

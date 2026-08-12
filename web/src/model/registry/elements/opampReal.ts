@@ -1,0 +1,143 @@
+/**
+ * Realistic op-amp (OpAmpRealElm.java, dump 409): the transistor-level LM741,
+ * built as a composite inside the engine. The frontend draws the larger
+ * op-amp symbol with the two supply rails.
+ *
+ * Token layout after the common fields is the plain numeric pair
+ * `slewRate capValue currentLimit modelType` (OpAmpRealElm.java:79-86): the
+ * slew rate, the compensation capacitor's saved charge, the output current
+ * limit and the model selector. Only the LM741 (modelType 0) is modelled;
+ * the field offers it alone, and a loaded 324 keeps its token for the round
+ * trip while simulating the 741 netlist.
+ *
+ * The input-swap flag is bit 1 (OPAMPREAL_SWAP, OpAmpRealElm.java:65), the
+ * composite's escape flag being bit 0.
+ */
+
+import {
+  canvasFont,
+  closedPolyline,
+  currentDots,
+  dsign,
+  elementLength,
+  endpoints,
+  interp,
+  interp2,
+  isHighlighted,
+  lead,
+  triangle,
+  voltageColor,
+} from '../../../render/draw';
+import { GRID_SIZE } from '../../types';
+import { OPAMPREAL_SWAP } from '../flags';
+import { readParams, writeParams } from '../shared';
+import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
+
+/** Symbol geometry constants (OpAmpRealElm.java:58-59). */
+const OPHEIGHT = 16;
+const OPWIDTH = 32;
+
+function opBodyLeads(e: CircuitElement): [Point, Point] {
+  const [p1, p2] = endpoints(e);
+  const dn = elementLength(e);
+  const ww = Math.min(OPWIDTH, dn / 2);
+  const f = (dn - ww * 2) / (2 * dn);
+  return [interp(p1, p2, f), interp(p1, p2, 1 - f)];
+}
+
+/** Signed perpendicular of the inverting input, negated by FLAG_SWAP
+ *  (OpAmpRealElm.java:222-225). */
+function inputSide(e: CircuitElement): number {
+  const [p1, p2] = endpoints(e);
+  let hs = OPHEIGHT * dsign(p1, p2);
+  if ((e.flags & OPAMPREAL_SWAP) !== 0) hs = -hs;
+  return hs;
+}
+
+/** The rail attachment points, `railPos` nudged so the rails sit on the grid
+ *  (OpAmpRealElm.java:236-238). */
+function railAnchors(e: CircuitElement): [Point, Point, Point, Point] {
+  const [lead1, lead2] = opBodyLeads(e);
+  const dn = elementLength(e);
+  const ww = Math.min(OPWIDTH, dn / 2);
+  const hs = inputSide(e);
+  // `(dn/2) % gridSize` upstream's grid-fit nudge: the fraction of the
+  // half-length that does not land on the grid moves the rails off-centre.
+  const railPos = 0.5 - ((dn / 2) % GRID_SIZE) / (ww * 2);
+  const [rail1a, rail2a] = interp2(lead1, lead2, railPos, hs * 2);
+  const [rail1b, rail2b] = interp2(lead1, lead2, railPos, hs * 2 * (1 - railPos));
+  return [rail1a, rail2a, rail1b, rail2b];
+}
+
+function opAmpRealPosts(e: CircuitElement): Point[] {
+  const [p1, p2] = endpoints(e);
+  const hs = inputSide(e);
+  const [rail1, rail2] = railAnchors(e);
+  // Posts: V-, V+, out, V+ supply, V- supply (OpAmpRealElm.java:244-248).
+  return [interp(p1, p2, 0, hs), interp(p1, p2, 0, -hs), p2, rail1, rail2];
+}
+
+function drawOpAmpReal(g: DrawContext, e: CircuitElement): void {
+  const p2 = endpoints(e)[1];
+  const [lead1, lead2] = opBodyLeads(e);
+  const posts = opAmpRealPosts(e);
+  const hs = inputSide(e);
+  const [rail1, rail2, rail1b, rail2b] = railAnchors(e);
+
+  // The two input leads, the output lead and the two supply rails.
+  lead(g, posts[0], interp(lead1, lead2, 0, hs), voltageColor(g, g.voltages[0]));
+  lead(g, posts[1], interp(lead1, lead2, 0, -hs), voltageColor(g, g.voltages[1]));
+  lead(g, lead2, p2, voltageColor(g, g.voltages[2]));
+  lead(g, rail1, rail1b, voltageColor(g, g.voltages[3]));
+  lead(g, rail2, rail2b, voltageColor(g, g.voltages[4]));
+
+  // The triangle outline, panel-filled like the plain op-amp's
+  // (OpAmpRealElm.java:196, 240-242).
+  const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
+  if (!isHighlighted(g)) triangle(g, t1, t2, lead2, g.theme.panel);
+  closedPolyline(g, [t1, t2, lead2, t1], g.theme.wire);
+
+  const [minus, plus] = interp2(lead1, lead2, 0.2, hs);
+  g.ctx.fillStyle = g.theme.text;
+  g.ctx.font = canvasFont(14);  // plusFont, OpAmpRealElm.java:243
+  g.ctx.textAlign = 'center';
+  g.ctx.textBaseline = 'middle';
+  g.ctx.fillText('−', minus.x, minus.y - 2);
+  g.ctx.fillText('+', plus.x, plus.y);
+
+  currentDots(g, p2, lead2, -g.current);
+}
+
+export const OPAMP_REAL_DEF: ElementDef = {
+  kind: 'opampReal',
+  label: 'Realistic Op-Amp',
+  category: 'Active',
+  dumpCode: '409',
+  postCount: 5,
+  posts: opAmpRealPosts,
+  canMirror: true,  // OpAmpRealElm.java:319-320
+  noDiagonal: true,  // OpAmpRealElm.java:69, 78
+  defaults: { slewRate: 0.6, capValue: 0, currentLimit: 0.0231, modelType: 0 },
+  parse: (t, e) => readParams(t, e, ['slewRate', 'capValue', 'currentLimit', 'modelType']),
+  dump: writeParams(['slewRate', 'capValue', 'currentLimit', 'modelType']),
+  fields: [
+    {
+      name: 'modelType',
+      label: 'Model',
+      type: 'choice',
+      // Only the 741 is modelled; the LM324 options are hidden exactly like
+      // upstream hides them for a part that is not already a 324
+      // (OpAmpRealElm.java:270-280).
+      choices: [{ value: 0, label: 'LM741' }],
+    },
+    {
+      name: 'swap',
+      label: 'Swap Inputs',
+      type: 'bool',
+      flag: OPAMPREAL_SWAP,
+    },
+    { name: 'slewRate', label: 'Slew Rate', unit: 'V/us' },
+    { name: 'currentLimit', label: 'Output Current Limit', unit: 'A' },
+  ],
+  draw: drawOpAmpReal,
+};

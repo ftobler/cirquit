@@ -274,6 +274,14 @@ pub trait Element {
         false
     }
 
+    /// A string-valued parameter, for the composite children a parent must
+    /// configure after the child is built (the optocoupler hands its CCCS
+    /// child the CTR expression, which is not a number). The default declines;
+    /// only the expression-driven controlled sources accept one.
+    fn set_string_param(&mut self, _name: &str, _value: &str) -> bool {
+        false
+    }
+
     /// Live frequency edit. A source rewinds its phase reference so the
     /// waveform stays continuous at the edit instant, which no other element
     /// needs, so the default declines the name and the caller falls back to a

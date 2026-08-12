@@ -16,6 +16,18 @@ export const FLAG_SWAP = 1;
 export const OPAMP_SWAP = FLAG_SWAP;   // OpAmpElm.java:28
 export const OPAMP_SMALL = 2;          // OpAmpElm.java:29
 export const OPAMP_GAIN = 8;           // OpAmpElm.java:31
+/** The comparator's size bit (ComparatorElm.java:10) and its input-swap bit
+ *  (ComparatorElm.java:11). Unlike the op-amp's shared bit-1 swap, the
+ *  comparator's FLAG_SWAP lives at bit 4 because bit 1 is the composite
+ *  escape flag. */
+export const COMPARATOR_SMALL = 2;     // ComparatorElm.java:10
+export const COMPARATOR_SWAP = 4;      // ComparatorElm.java:11
+/** The realistic op-amp's input-swap bit, bit 1 after the composite's escape
+ *  flag (OpAmpRealElm.java:65). */
+export const OPAMPREAL_SWAP = 2;       // OpAmpRealElm.java:65
+/** The crystal draws its series-resonance frequency label under this bit
+ *  (CrystalElm.java:27). */
+export const CRYSTAL_SHOW_FREQ = 2;    // CrystalElm.java:27
 export const TRANSISTOR_FLIP = FLAG_SWAP; // TransistorElm.java:44
 /** The triode's electrode-side bit. Bit 1 like the shared FLAG_SWAP, but its
  *  own meaning (TriodeElm.java:26): it negates the `dsign`-derived electrode

@@ -76,7 +76,11 @@ import { TRANSMISSION_LINE_DEF } from './elements/transmissionLine';
 import { TIMER_DEF } from './elements/timer';
 import { RELAY_DEF, RELAY_COIL_DEF, RELAY_CONTACT_DEF } from './elements/relay';
 import { OPAMP_DEF } from './elements/opamp';
+import { OPAMP_REAL_DEF } from './elements/opampReal';
 import { OTA_DEF } from './elements/ota';
+import { COMPARATOR_DEF } from './elements/comparator';
+import { OPTOCOUPLER_DEF } from './elements/optocoupler';
+import { CRYSTAL_DEF } from './elements/crystal';
 import { PHASE_COMP_DEF } from './elements/phaseComp';
 import { AND_GATE_DEF, NAND_GATE_DEF, OR_GATE_DEF, NOR_GATE_DEF, XOR_GATE_DEF, XNOR_GATE_DEF } from './elements/gate';
 import { DFLIPFLOP_DEF } from './elements/dFlipFlop';
@@ -202,6 +206,10 @@ export const ELEMENT_DEFS: ElementDef[] = [
   MULTIPLEXER_DEF,
   OPAMP_DEF,
   OTA_DEF,
+  COMPARATOR_DEF,
+  OPAMP_REAL_DEF,
+  OPTOCOUPLER_DEF,
+  CRYSTAL_DEF,
   PHASE_COMP_DEF,
   AND_GATE_DEF,
   NAND_GATE_DEF,
