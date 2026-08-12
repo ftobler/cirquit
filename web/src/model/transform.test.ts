@@ -59,7 +59,7 @@ describe('capability gates', () => {
   });
 
   it('mirrors only the asymmetric three-post bodies', () => {
-    for (const kind of ['transistor', 'opamp', 'mosfet', 'potentiometer']) {
+    for (const kind of ['transistor', 'opamp', 'mosfet', 'potentiometer', 'dpdtSwitch']) {
       expect(canMirror(element(kind, 0, 0, 160, 0))).toBe(true);
     }
     expect(canMirror(element('resistor', 0, 0, 160, 0))).toBe(false);
@@ -190,6 +190,61 @@ describe('rotateElement', () => {
     // (32,-32), so the stored span turns about (32,0) unchanged in length.
     expect([turned.x1, turned.y1, turned.x2, turned.y2]).toEqual([32, 32, 32, -32]);
     expect(Math.hypot(turned.x2 - turned.x1, turned.y2 - turned.y1)).toBe(64);
+  });
+});
+
+describe('dpdt switch transforms', () => {
+  const dpdt = (position: number, x1 = 0, y1 = 0, x2 = 96, y2 = 0): CircuitElement => ({
+    ...element('dpdtSwitch', x1, y1, x2, y2, 0, { position, poleCount: 2 }),
+    state: position,
+  });
+
+  it('rotate flips the throw position, keeping both params in step', () => {
+    const r = rotateElement(dpdt(0));
+    expect(r.state).toBe(1);
+    expect(r.params.position).toBe(1);
+    // The throw pairing inverts with the position, so a position-1 turn throws
+    // to the other throw of every pole.
+    expect(postsOf(r).length).toBe(6);
+    const m = rotateElement(dpdt(1));
+    expect(m.state).toBe(0);
+    expect(m.params.position).toBe(0);
+  });
+
+  it('mirror flips the throw position', () => {
+    const m = mirrorElement(dpdt(0));
+    expect(m.state).toBe(1);
+    expect(m.params.position).toBe(1);
+  });
+
+  it('mirror shifts the pole fan so it stays on the same physical side', () => {
+    // A horizontal left-to-right DPDT hangs its fan below the axis (pole 1 at
+    // (0, 48)). Upstream flipX shifts the body one pole gap along the
+    // perpendicular before the reflection (DPDTSwitchElm.java:256-267), so
+    // the fan still hangs below the mirrored body instead of crossing over.
+    const m = mirrorElement(dpdt(0));
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([96, 48, 0, 48]);
+    expect(postsOf(m)).toEqual([
+      { x: 96, y: 48 },
+      { x: 0, y: 32 },
+      { x: 0, y: 64 },
+      { x: 96, y: 0 },
+      { x: 0, y: -16 },
+      { x: 0, y: 16 },
+    ]);
+  });
+
+  it('mirror of a vertical DPDT shifts along the perpendicular too', () => {
+    const m = mirrorElement(dpdt(0, 48, -48, 48, 48));
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([96, -48, 96, 48]);
+    expect(m.state).toBe(1);
+  });
+
+  it('four turns return the original element', () => {
+    const original = dpdt(0);
+    let e: CircuitElement = original;
+    for (let i = 0; i < 4; i++) e = rotateElement(e);
+    expect(e).toEqual(original);
   });
 });
 

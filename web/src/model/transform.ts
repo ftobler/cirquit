@@ -38,6 +38,21 @@ export function canSwap(e: CircuitElement): boolean {
   return postCountOf(e) === 2;
 }
 
+/** One DPDT pole's fan spacing, `OPEN_HS*3` (DPDTSwitchElm.java:89), the
+ *  distance upstream's `flip()` shifts the body along the perpendicular so the
+ *  pole fan stays on the same physical side of the axis after a mirror. */
+const DPDT_POLE_GAP = 48;
+
+/** A DPDT's throw pairing moves with its position, and every flip inverts it
+ *  (`position = 1-position`, DPDTSwitchElm.flip(), :256-262). The stored
+ *  `state` and `params.position` must stay in step: the draw reads
+ *  `state ?? params.position` and the engine handoff re-serialises `state`
+ *  into `params.position`. */
+function flipDpdtPosition(e: CircuitElement): CircuitElement {
+  const position = (e.state ?? e.params.position ?? 0) === 1 ? 0 : 1;
+  return { ...e, state: position, params: { ...e.params, position } };
+}
+
 const centre = (e: CircuitElement) => ({
   cx: (e.x1 + e.x2) / 2,
   cy: (e.y1 + e.y2) / 2,
@@ -69,7 +84,10 @@ export function rotateElement(e: CircuitElement): CircuitElement {
   ];
   const [x1, y1] = turn(e.x1, e.y1);
   const [x2, y2] = turn(e.x2, e.y2);
-  return { ...withoutRoute(e), x1, y1, x2, y2, flags: rotateFlags(e) };
+  const base = { ...withoutRoute(e), x1, y1, x2, y2, flags: rotateFlags(e) };
+  // The DPDT's flips invert the throw pairing (DPDTSwitchElm.java:256-277), so
+  // a turned DPDT throws to each pole's other throw, like every flip().
+  return e.kind === 'dpdtSwitch' ? flipDpdtPosition(base) : base;
 }
 
 /**
@@ -171,6 +189,29 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
       y2: e.y2,
       flags,
     };
+  }
+  if (e.kind === 'dpdtSwitch') {
+    // Upstream DPDTSwitchElm.flipX runs its own flip() first: the throw
+    // pairing inverts (`position = 1-position`) and the body shifts one pole
+    // gap along the perpendicular so the pole fan stays on the same physical
+    // side of the axis (DPDTSwitchElm.java:89, :256-267). The base mirror then
+    // reflects the shifted endpoints about the element's own midpoint.
+    const dx = e.x2 - e.x1;
+    const dy = e.y2 - e.y1;
+    const dn = Math.hypot(dx, dy);
+    let shiftX = 0;
+    let shiftY = 0;
+    if (dn > 0) {
+      if (dx === 0) shiftX = -((dy / dn) * DPDT_POLE_GAP); // dpx1*openhs*3
+      else shiftY = (dx / dn) * DPDT_POLE_GAP; // -dpy1*openhs*3
+    }
+    return flipDpdtPosition({
+      ...withoutRoute(e),
+      x1: e.x2 - shiftX,
+      y1: e.y1 + shiftY,
+      x2: e.x1 - shiftX,
+      y2: e.y2 + shiftY,
+    });
   }
   let flipBit = 0;
   if (e.kind === 'mosfet' || e.kind === 'relay') flipBit = MOSFET_FLIP;

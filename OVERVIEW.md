@@ -246,12 +246,11 @@ a test. Done so far: **117 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, transformer, tapped transformer, custom transformer, fuse,
-lamp, thermistor, potentiometer, switch, SPDT switch, LDR, varactor, memristor,
-transmission line, spark gap, antenna, relay (coil/contact), crossover switch,
-motor-protection switch.
+lamp, thermistor, potentiometer, switch, SPDT switch, make-before-break switch,
+DPDT switch, LDR, varactor, memristor, transmission line, spark gap, antenna,
+relay (coil/contact), crossover switch, motor-protection switch.
 
 - [ ] Crystal
-- [ ] DPDT switch
 
 **Sources** — done: voltage source (all waveforms), rail, current source.
 
@@ -283,9 +282,7 @@ symbol toggle, which is on by default.
 voltmeter, text, ammeter, box, line, scope-as-element, ohmmeter, test point,
 wattmeter, data recorder, stop trigger.
 
-**Electromechanical** — done: three-phase motor.
-
-- [ ] DC motor, time-delay relay
+**Electromechanical** — done: three-phase motor, DC motor, time-delay relay.
 
 ### Milestone D — polish
 

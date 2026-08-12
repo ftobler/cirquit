@@ -7777,6 +7777,529 @@ fn three_phase_motor_balanced_drive_reaches_v_over_rs() {
 }
 
 #[test]
+fn time_delay_relay_switches_after_the_on_delay_and_back_after_off_delay() {
+    // The relay's coil sense (posts 0-1) is a fixed 10 kOhm resistor; the
+    // switched path (posts 2-3) holds offResistance until onDelay after the
+    // coil powers, then onResistance, and returns after offDelay once the
+    // coil drops (TimeDelayRelayElm.java:92-100). The switched path is driven
+    // by its own 5 V source, so the relay's reported current reads 5/R and
+    // exposes which state it is in.
+    let dt = 1e-3;
+    let c = &mut build(
+        vec![
+            // Coil drive: post 0 at +5 V, post 1 grounded.
+            elm(1, "voltage", &[[0, -64], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "ground", &[[0, -64]], &[]),
+            elm(
+                3,
+                "timeDelayRelay",
+                &[[0, 0], [64, 0], [128, 0], [192, 0]],
+                &[
+                    ("onDelay", 0.5),
+                    ("offDelay", 0.3),
+                    ("onResistance", 10.0),
+                    ("offResistance", 1e6),
+                ],
+            ),
+            elm(4, "ground", &[[64, 0]], &[]),
+            // Switched path drive: post 2 at +5 V, post 3 grounded.
+            elm(
+                5,
+                "voltage",
+                &[[128, -64], [128, 0]],
+                &[("maxVoltage", 5.0)],
+            ),
+            elm(6, "ground", &[[128, -64]], &[]),
+            elm(7, "ground", &[[192, 0]], &[]),
+        ],
+        opts(dt, false),
+    );
+    // Before the on delay (0.1 s < 0.5 s) the path sits at offResistance:
+    // 5 V / 1 MOhm = 5 uA.
+    c.run(100);
+    assert!(
+        close(c.element_currents()[2], 5e-6, 5e-9),
+        "before onDelay the path carried {}, expected 5 uA",
+        c.element_currents()[2]
+    );
+
+    // Past the on delay the path closes to 10 ohm -> 0.5 A.
+    c.run(600); // total 0.7 s
+    assert!(
+        close(c.element_currents()[2], 0.5, 1e-6),
+        "after onDelay the path carried {}, expected 0.5 A",
+        c.element_currents()[2]
+    );
+
+    // Drop the coil drive; the path stays closed through offDelay (0.3 s),
+    // then reopens to offResistance.
+    assert!(c.set_param(1, "maxVoltage", 0.0), "coil drive edit refused");
+    c.run(100); // 0.1 s after the drop, still within offDelay
+    assert!(
+        close(c.element_currents()[2], 0.5, 1e-6),
+        "during offDelay the path carried {}, expected it to stay closed",
+        c.element_currents()[2]
+    );
+    c.run(300); // 0.4 s after the drop, past offDelay
+    assert!(
+        close(c.element_currents()[2], 5e-6, 5e-9),
+        "after offDelay the path carried {}, expected 5 uA again",
+        c.element_currents()[2]
+    );
+}
+
+#[test]
+fn dc_motor_reaches_the_analytic_steady_state_and_spins() {
+    // A DC motor under a fixed armature supply settles to the standard
+    // electromechanical operating point. With the constructor defaults
+    // L = 0.5, R = 1, K = Kb = 0.15, J = 0.02, b = 0.05 and a 10 V drive,
+    // the steady-state armature current is I = V*b/(K*Kb + b*R) and the shaft
+    // speed magnitude is |omega| = K*V/(K*Kb + b*R). The current comes out
+    // positive; the speed sign is upstream-faithful (the torque source drives
+    // the inertia loop as `voltage_source_value(+K*I)` with the friction on
+    // the return leg, DCMotorElm.java:152-155), so the assertion uses the
+    // magnitude.
+    let v = 10.0;
+    let r = 1.0;
+    let k = 0.15;
+    let kb = 0.15;
+    let b = 0.05;
+    let denom = k * kb + b * r;
+    let i_ss = v * b / denom;
+    let omega_ss = k * v / denom;
+    let dt = 1e-3;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, -64], [0, 0]], &[("maxVoltage", v)]),
+            elm(2, "ground", &[[0, -64]], &[]),
+            elm(
+                3,
+                "dcMotor",
+                &[[0, 0], [96, 0]],
+                &[
+                    ("inductance", 0.5),
+                    ("resistance", r),
+                    ("K", k),
+                    ("Kb", kb),
+                    ("J", 0.02),
+                    ("b", b),
+                    ("gearRatio", 1.0),
+                    ("tau", 0.0),
+                ],
+            ),
+            elm(4, "ground", &[[96, 0]], &[]),
+        ],
+        opts(dt, false),
+    );
+    // The electrical time constant is L/(R + K*Kb/b) ~ 0.34 s once the
+    // back-EMF feedback is in, the mechanical one J/b = 0.4 s, so 20 s is
+    // deep into steady state.
+    let report = c.run(20000);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let i = c.element_currents()[2];
+    assert!(
+        close(i, i_ss, i_ss * 0.03),
+        "armature current settled to {i}, expected {i_ss} within 3%"
+    );
+    assert!(i > 0.0, "armature current should be positive, was {i}");
+
+    // The rotor angle advances at the settled speed: measure the delta over a
+    // fresh batch of steps, long after the transient has settled.
+    let before = c.element_states()[2];
+    let n = 1000u32;
+    let report = c.run(n);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let after = c.element_states()[2];
+    let expected_delta = omega_ss * n as f64 * dt;
+    let delta = (after - before).abs();
+    assert!(
+        close(delta, expected_delta, expected_delta * 0.03),
+        "angle advanced {delta} over {n} steps, expected {expected_delta} within 3%"
+    );
+}
+
+#[test]
+fn dc_motor_starts_with_the_upstream_rotor_angle() {
+    // A fresh motor seeds `angle = pi/2` (DCMotorElm.java:29,37), so the
+    // drawn spokes start rotated instead of lying on the axis.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, -64], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "ground", &[[0, -64]], &[]),
+            elm(3, "dcMotor", &[[0, 0], [96, 0]], &[("resistance", 1.0)]),
+            elm(4, "ground", &[[96, 0]], &[]),
+        ],
+        opts(1e-3, false),
+    );
+    assert!(
+        close(c.element_states()[2], PI / 2.0, 1e-9),
+        "fresh motor angle should be pi/2, saw {}",
+        c.element_states()[2]
+    );
+}
+
+#[test]
+fn mbb_switch_closes_the_expected_throws_per_position() {
+    // Four positions: 0 closes pole A (posts 0-1) only, 1 closes both, 2
+    // closes pole B (posts 0-2) only, 3 closes both again. Each throw drives
+    // a load, so the position is read off the two load currents. The ideal
+    // path stamps one 0 V source per conducting throw, so the per-pole
+    // currents stay reportable and the element's own current is their sum.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, -64], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "ground", &[[0, -64]], &[]),
+            elm(
+                3,
+                "mbbSwitch",
+                &[[0, 0], [64, -16], [64, 16]],
+                &[("position", 0.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[64, -16], [64, -80]],
+                &[("resistance", 100.0)],
+            ),
+            elm(5, "ground", &[[64, -80]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[64, 16], [64, 80]],
+                &[("resistance", 200.0)],
+            ),
+            elm(7, "ground", &[[64, 80]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    let load_a = 3; // element index 3 = the load on throw A (100 ohm -> 0.1 A)
+    let load_b = 5; // element index 5 = the load on throw B (200 ohm -> 0.05 A)
+
+    let assert_loads = |c: &mut Circuit, a_amps: f64, b_amps: f64| {
+        let i = c.element_currents();
+        assert!(
+            close(i[load_a], a_amps, 1e-9),
+            "throw A load carried {}, expected {a_amps}",
+            i[load_a]
+        );
+        assert!(
+            close(i[load_b], b_amps, 1e-9),
+            "throw B load carried {}, expected {b_amps}",
+            i[load_b]
+        );
+    };
+
+    c.run(5);
+    assert_loads(c, 0.1, 0.0); // position 0: pole A only
+
+    assert!(c.set_state(3, 1), "mbb switch refused position 1");
+    c.run(5);
+    assert_loads(c, 0.1, 0.05); // position 1: both throws
+    assert!(
+        close(c.element_currents()[2], 0.15, 1e-9),
+        "both throws should draw {} A total, saw {}",
+        0.15,
+        c.element_currents()[2]
+    );
+
+    assert!(c.set_state(3, 2), "mbb switch refused position 2");
+    c.run(5);
+    assert_loads(c, 0.0, 0.05); // position 2: pole B only
+
+    assert!(c.set_state(3, 3), "mbb switch refused position 3");
+    c.run(5);
+    assert_loads(c, 0.1, 0.05); // position 3: both again
+
+    assert!(c.set_state(3, 4), "mbb switch refused a wrapped position");
+    c.run(5);
+    assert_loads(c, 0.1, 0.0); // position 4 wraps to 0
+}
+
+#[test]
+fn mbb_switch_resistance_edit_crossing_zero_rebuilds() {
+    // A resistance edit that crosses the ideal/resistor boundary changes the
+    // switch's `voltage_source_count` (0 with a resistance, 1 or 2 ideal),
+    // which a live restamp cannot reallocate: the closure builder would index
+    // the new vs slots past the end of the stale array. `set_param` refuses
+    // the crossing (returns false), so the caller rebuilds via `set_circuit`
+    // with the re-serialised params (which is how the edited resistance
+    // survives the rebuild), and the ideal path works again without
+    // panicking. The reverse 0 -> nonzero direction needs the same rebuild; a
+    // same-side edit stays on the live path.
+    let spec = |resistance: f64| CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, -64], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "ground", &[[0, -64]], &[]),
+            elm(
+                3,
+                "mbbSwitch",
+                &[[0, 0], [64, -16], [64, 16]],
+                &[("position", 0.0), ("resistance", resistance)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[64, -16], [64, -80]],
+                &[("resistance", 100.0)],
+            ),
+            elm(5, "ground", &[[64, -80]], &[]),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    c.set_circuit(&spec(25.0)).unwrap();
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 10.0 / 125.0, 1e-9),
+        "resistor path should give {} A, saw {}",
+        10.0 / 125.0,
+        c.element_currents()[3]
+    );
+
+    // >0 -> 0 crosses the boundary: the live edit is refused, the caller
+    // rebuilds with the edited params, and the ideal 0 V source path conducts.
+    assert!(
+        !c.set_param(3, "resistance", 0.0),
+        "boundary crossing must refuse the live path"
+    );
+    c.set_circuit(&spec(0.0)).unwrap();
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 0.1, 1e-9),
+        "ideal path should short the load to 0.1 A, saw {}",
+        c.element_currents()[3]
+    );
+
+    // Reverse 0 -> >0: refused too, and the rebuilt switch reads Ohm's law
+    // through the new resistance.
+    assert!(
+        !c.set_param(3, "resistance", 25.0),
+        "boundary crossing must refuse the live path"
+    );
+    c.set_circuit(&spec(25.0)).unwrap();
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 10.0 / 125.0, 1e-9),
+        "resistor path should give {} A, saw {}",
+        10.0 / 125.0,
+        c.element_currents()[3]
+    );
+
+    // A same-side edit (both > 0) stays live: accepted, restamped, no rebuild.
+    assert!(c.set_param(3, "resistance", 30.0), "same-side edit refused");
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 10.0 / 130.0, 1e-9),
+        "same-side edit should give {} A, saw {}",
+        10.0 / 130.0,
+        c.element_currents()[3]
+    );
+}
+
+#[test]
+fn dpdt_switch_throws_both_poles_together_and_clamps_pole_count() {
+    // poleCount 2 (the default) gives six posts: poles 0 and 3, each with two
+    // throws. Position 0 ties each pole to its first throw, position 1 to its
+    // second. The poles are driven at different voltages so the load currents
+    // identify which throw conducted.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, -64], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "ground", &[[0, -64]], &[]),
+            elm(3, "voltage", &[[0, -96], [0, -48]], &[("maxVoltage", 5.0)]),
+            elm(4, "ground", &[[0, -96]], &[]),
+            elm(
+                5,
+                "dpdtSwitch",
+                &[[0, 0], [64, -48], [64, 48], [0, -48], [64, -96], [64, 0]],
+                &[("position", 0.0), ("poleCount", 2.0)],
+            ),
+            // Pole 0's throws: post 1 -> load1, post 2 -> load2.
+            elm(
+                6,
+                "resistor",
+                &[[64, -48], [64, -128]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[64, -128]], &[]),
+            elm(
+                8,
+                "resistor",
+                &[[64, 48], [64, 128]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[64, 128]], &[]),
+            // Pole 1's throws: post 4 -> load3, post 5 -> load4.
+            elm(
+                10,
+                "resistor",
+                &[[64, -96], [64, -176]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(11, "ground", &[[64, -176]], &[]),
+            elm(
+                12,
+                "resistor",
+                &[[64, 0], [64, 80]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(13, "ground", &[[64, 80]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    // Element indices: load1 = 5, load2 = 7, load3 = 9, load4 = 11.
+    let assert_loads = |c: &mut Circuit, l1: f64, l2: f64, l3: f64, l4: f64| {
+        let i = c.element_currents();
+        assert!(
+            close(i[5], l1, 1e-9),
+            "load1 carried {}, expected {l1}",
+            i[5]
+        );
+        assert!(
+            close(i[7], l2, 1e-9),
+            "load2 carried {}, expected {l2}",
+            i[7]
+        );
+        assert!(
+            close(i[9], l3, 1e-9),
+            "load3 carried {}, expected {l3}",
+            i[9]
+        );
+        assert!(
+            close(i[11], l4, 1e-9),
+            "load4 carried {}, expected {l4}",
+            i[11]
+        );
+    };
+
+    c.run(5);
+    assert_loads(c, 0.01, 0.0, 0.005, 0.0); // position 0: first throws
+
+    assert!(c.set_state(5, 1), "dpdt switch refused position 1");
+    c.run(5);
+    assert_loads(c, 0.0, 0.01, 0.0, 0.005); // position 1: second throws
+
+    assert!(c.set_state(5, 0), "dpdt switch refused position 0 again");
+    c.run(5);
+    assert_loads(c, 0.01, 0.0, 0.005, 0.0);
+}
+
+#[test]
+fn dpdt_switch_resistance_edit_crossing_zero_rebuilds() {
+    // Same live source-count flip as the MBB: a resistance edit that crosses
+    // the ideal/resistor boundary changes `voltage_source_count` from 0 to
+    // `pole_count`, which the live restamp cannot reallocate. `set_param`
+    // refuses the crossing, the caller rebuilds via `set_circuit` with the
+    // re-serialised params, and the ideal and resistor paths each work again
+    // without panicking. A same-side edit stays live.
+    let spec = |resistance: f64| CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, -64], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "ground", &[[0, -64]], &[]),
+            elm(
+                5,
+                "dpdtSwitch",
+                &[[0, 0], [64, -48], [64, 48], [0, -48], [64, -96], [64, 0]],
+                &[
+                    ("position", 0.0),
+                    ("poleCount", 2.0),
+                    ("resistance", resistance),
+                ],
+            ),
+            elm(
+                6,
+                "resistor",
+                &[[64, -48], [64, -128]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[64, -128]], &[]),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    c.set_circuit(&spec(15.0)).unwrap();
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 10.0 / 1015.0, 1e-9),
+        "resistor path should give {} A, saw {}",
+        10.0 / 1015.0,
+        c.element_currents()[3]
+    );
+
+    // >0 -> 0 crosses the boundary: refused, then rebuilt to the ideal path.
+    assert!(
+        !c.set_param(5, "resistance", 0.0),
+        "boundary crossing must refuse the live path"
+    );
+    c.set_circuit(&spec(0.0)).unwrap();
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 0.01, 1e-9),
+        "ideal path should short pole 0's load to 0.01 A, saw {}",
+        c.element_currents()[3]
+    );
+
+    // Reverse 0 -> >0: refused, and the rebuilt resistor path conducts.
+    assert!(
+        !c.set_param(5, "resistance", 15.0),
+        "boundary crossing must refuse the live path"
+    );
+    c.set_circuit(&spec(15.0)).unwrap();
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 10.0 / 1015.0, 1e-9),
+        "resistor path should give {} A, saw {}",
+        10.0 / 1015.0,
+        c.element_currents()[3]
+    );
+
+    // A same-side edit (both > 0) stays live.
+    assert!(c.set_param(5, "resistance", 20.0), "same-side edit refused");
+    c.run(5);
+    assert!(
+        close(c.element_currents()[3], 10.0 / 1020.0, 1e-9),
+        "same-side edit should give {} A, saw {}",
+        10.0 / 1020.0,
+        c.element_currents()[3]
+    );
+}
+
+#[test]
+fn dpdt_switch_clamps_pole_count_to_two_through_ten() {
+    // The file can carry any poleCount; the frontend normalizes it to 2..=10
+    // and derives 3*poleCount posts from the clamped value, and the engine
+    // clamps independently so the two halves can never disagree. The post
+    // count shows up in the flat per-terminal node array.
+    let c = &mut build(
+        vec![elm(
+            1,
+            "dpdtSwitch",
+            &[[0, 0], [0, 64], [0, 128], [0, 192], [0, 256], [0, 320]],
+            &[("position", 0.0), ("poleCount", 1.0)],
+        )],
+        opts(1e-5, false),
+    );
+    assert_eq!(c.element_nodes().len(), 6, "poleCount 1 clamps to 2 poles");
+
+    let c = &mut build(
+        vec![elm(
+            1,
+            "dpdtSwitch",
+            &(0..30).map(|i| [i * 8, 0]).collect::<Vec<_>>(),
+            &[("position", 0.0), ("poleCount", 12.0)],
+        )],
+        opts(1e-5, false),
+    );
+    assert_eq!(
+        c.element_nodes().len(),
+        30,
+        "poleCount 12 clamps to 10 poles"
+    );
+}
+
+#[test]
 fn wye_motor_on_rails_without_a_ground_symbol_runs() {
     // The bundled 3motor.txt: three 220 V sine rails, 120 degrees apart, feed
     // the phase-1 posts and the phase-2 posts are wired into a floating wye

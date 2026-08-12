@@ -54,6 +54,7 @@ import { normalizeSramBits } from '../model/registry/elements/sram';
 import { normalizeAnalogMuxSelects } from '../model/registry/elements/analogMux';
 import { normalizeSipoBits } from '../model/registry/elements/sipoShift';
 import { normalizeRingBits } from '../model/registry/elements/ringCounter';
+import { normalizePoleCount } from '../model/registry/elements/dpdtSwitch';
 import { normalizeInputCount } from '../model/registry/shared';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import { nextFileNum, setAudioSamples, setDataSamples, clearSampleCache } from '../model/sampleCache';
@@ -112,6 +113,7 @@ const BITS_NORMALIZERS: Readonly<Record<string, (value: number) => number>> = {
   'rom:addressBits': normalizeSramBits,
   'rom:dataBits': normalizeSramBits,
   'analogMux:selectBitCount': normalizeAnalogMuxSelects,
+  'dpdtSwitch:poleCount': normalizePoleCount,
 };
 
 const clone = (s: Snapshot): Snapshot => ({
@@ -1005,6 +1007,38 @@ function createAppStore() {
       paramRevision: s.paramRevision + 1,
     })),
 
+  toggleSwitch: (id) => {
+    const s = get();
+    const target = s.elements.find((e) => e.id === id);
+    if (!target) return;
+    const next = nextSwitchState(target);
+    // A linked make-before-break switch carries every MBB in the same nonzero
+    // Switch Group to the same position in one set, the elmList scan upstream
+    // runs inside toggle() (MBBSwitchElm.java:182-195).
+    const link = target.kind === 'mbbSwitch' ? (target.params.link ?? 0) : 0;
+    const linked = new Set(
+      link !== 0
+        ? s.elements
+            .filter(
+              (e) => e.kind === 'mbbSwitch' && e.id !== id && (e.params.link ?? 0) === link,
+            )
+            .map((e) => e.id)
+        : [],
+    );
+    set((st) => ({
+      elements: st.elements.map((e) =>
+        e.id === id || linked.has(e.id) ? { ...e, state: next } : e,
+      ),
+      pendingStates: (() => {
+        const m = new Map(st.pendingStates);
+        m.set(id, next);
+        for (const lid of linked) m.set(lid, next);
+        return m;
+      })(),
+      paramRevision: st.paramRevision + 1,
+    }));
+  },
+
   loadAudioFile: (id, samples, samplingRate, fileName) => {
     const s = get();
     const target = s.elements.find((e) => e.id === id);
@@ -1089,8 +1123,11 @@ function createAppStore() {
     const k = normalizeKey(key);
     let toggled = false;
     for (const e of s.elements) {
-      if ((e.kind === 'switch' || e.kind === 'switch2') && e.keyShortcut === k) {
-        s.setElementState(e.id, nextSwitchState(e));
+      if (
+        (e.kind === 'switch' || e.kind === 'switch2' || e.kind === 'mbbSwitch' || e.kind === 'dpdtSwitch') &&
+        e.keyShortcut === k
+      ) {
+        s.toggleSwitch(e.id);
         toggled = true;
       }
     }
@@ -1105,11 +1142,11 @@ function createAppStore() {
     const k = normalizeKey(key);
     for (const e of s.elements) {
       if (
-        (e.kind === 'switch' || e.kind === 'switch2') &&
+        (e.kind === 'switch' || e.kind === 'switch2' || e.kind === 'mbbSwitch' || e.kind === 'dpdtSwitch') &&
         (e.params.momentary ?? 0) !== 0 &&
         e.keyShortcut === k
       ) {
-        s.setElementState(e.id, nextSwitchState(e));
+        s.toggleSwitch(e.id);
       }
     }
   },
@@ -1699,15 +1736,16 @@ function zoomAroundCentre(s: AppState, factor: number): ViewTransform {
 }
 
 /** The next throw after a toggle, matching the canvas pointer path: an SPST
- *  flips between its two positions, an SPDT cycles its throws, and a ternary
+ *  flips between its two positions, an SPDT cycles its throws, a ternary
  *  logic input cycles its three positions (SwitchElm.simpleToggle,
- *  SwitchElm.java:185-189). */
+ *  SwitchElm.java:185-189), an MBB cycles its four, a DPDT its two. */
 export function nextSwitchState(e: CircuitElement): number {
   const throwCount = Math.max(2, e.params.throwCount ?? 2);
   if (e.kind === 'logicInput' && (e.flags & LOGIC_INPUT_TERNARY) !== 0) {
     return ((e.state ?? 0) + 1) % 3;
   }
-  return ((e.state ?? 0) + 1) % (e.kind === 'switch' ? 2 : throwCount);
+  if (e.kind === 'mbbSwitch') return ((e.state ?? 0) + 1) % 4;
+  return ((e.state ?? 0) + 1) % (e.kind === 'switch' || e.kind === 'dpdtSwitch' ? 2 : throwCount);
 }
 
 /** Shared insert path for paste and duplicate: parse, re-id, offset a grid step. */

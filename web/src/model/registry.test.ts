@@ -55,6 +55,7 @@ interface CtxStub {
   fill: ReturnType<typeof vi.fn>;
   closePath: ReturnType<typeof vi.fn>;
   fillText: ReturnType<typeof vi.fn>;
+  setLineDash: ReturnType<typeof vi.fn>;
   measureText: (text: string) => { width: number };
 }
 
@@ -98,6 +99,7 @@ const mkCtx = (): CtxStub & { strokes: (string | CanvasGradient)[]; fills: strin
     fill: vi.fn(() => fills.push(stub.fillStyle)),
     closePath: vi.fn(),
     fillText: vi.fn(),
+    setLineDash: vi.fn(),
     measureText: (text: string) => ({ width: text.length * 6 }),
   } as CtxStub;
   return Object.assign(stub, { strokes, fills, grads });
@@ -1311,5 +1313,92 @@ describe('batch I instrument draws', () => {
     expect(texts(idle)).toContain('trigger');
     const stopped = draw('stopTrigger', { state: 1 });
     expect(stopped.strokes).toContain(makeTheme().selection);
+  });
+});
+
+describe('batch E electromechanical draws', () => {
+  const draw = (kind: string, overrides: Partial<DrawContext> = {}, e?: CircuitElement) => {
+    const ctx = mkCtx();
+    defFor(kind)?.draw(
+      context(ctx, overrides),
+      e ?? element(kind, 0, 0, 96, 0, 0, kind === 'timeDelayRelay' ? {} : { position: 0 }),
+    );
+    return ctx;
+  };
+
+  const lineTos = (ctx: CtxStub): { x: number; y: number }[] =>
+    ctx.lineTo.mock.calls.map((a) => ({ x: a[0], y: a[1] }));
+
+  it('the DC motor draws a grey body, a dark hub and three spokes', () => {
+    const ctx = draw('dcMotor', { voltages: [0, 0] }, element('dcMotor', 0, 0, 96, 0, 0, { K: 0.15 }));
+    // Two filled discs (body and hub) when idle, plus the three spoke lines
+    // and the two leads.
+    expect(ctx.fills).toHaveLength(2);
+    expect(ctx.lineTo.mock.calls.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('the DC motor drops its fills on hover like the three-phase motor', () => {
+    const ctx = draw('dcMotor', { hovered: true });
+    expect(ctx.fills).toEqual([]);
+  });
+
+  it('the DC motor rotates its spokes with the live angle', () => {
+    // The spoke lines move with the engine's display_state (the angle); two
+    // different angles must paint different spoke endpoints.
+    const a = draw('dcMotor', { state: 0 });
+    const b = draw('dcMotor', { state: 1.5 });
+    expect(lineTos(a)).not.toEqual(lineTos(b));
+  });
+
+  it('the time delay relay draws the chip housing and its four pin labels', () => {
+    const ctx = draw('timeDelayRelay', {}, element('timeDelayRelay', 0, 0, 96, 0, 0, {}));
+    const texts = ctx.fillText.mock.calls.map((c) => String(c[0]));
+    expect(texts).toContain('Vin');
+    expect(texts).toContain('gnd');
+    expect(texts).toContain('in');
+    expect(texts).toContain('out');
+    // The housing is a stroked closed quad plus the four pin stubs.
+    expect(ctx.strokes.length).toBeGreaterThan(4);
+  });
+
+  it('the MBB draws both levers in the make-before-break positions', () => {
+    // Position 1 (both) paints the lever to both throws; position 0 (pole A
+    // only) paints only the first.
+    const both = draw('mbbSwitch', {}, element('mbbSwitch', 0, 0, 96, 0, 0, { position: 1 }));
+    const single = draw('mbbSwitch', {}, element('mbbSwitch', 0, 0, 96, 0, 0, { position: 0 }));
+    // The contact stroke is one line per lever: both has one more thick lever
+    // stroke than single.
+    expect(both.strokes.length).toBe(single.strokes.length + 1);
+  });
+
+  it('the DPDT draws a lever per pole and the ganged line between poles', () => {
+    const ctx = draw('dpdtSwitch', {}, element('dpdtSwitch', 0, 0, 96, 0, 0, { poleCount: 2 }));
+    // Two poles each draw their own lever and leads; the ganged line uses the
+    // dashed setLineDash call, so that path ran.
+    expect(ctx.setLineDash).toHaveBeenCalled();
+  });
+
+  it('the DPDT pole posts sit at 48-unit offsets with throws at ±16', () => {
+    const e = element('dpdtSwitch', 0, 0, 96, 0, 0, { poleCount: 2 });
+    // Positive perpendicular is up on screen, so the poles stack downward at
+    // (0,0) and (0,48) and pole 1's throws at +64/+32, the upstream offsets
+    // `-i*48` and `offset ± 16` (DPDTSwitchElm.java:89-95).
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: 0 }, // pole 0
+      { x: 96, y: 16 },
+      { x: 96, y: -16 },
+      { x: 0, y: 48 }, // pole 1
+      { x: 96, y: 64 },
+      { x: 96, y: 32 },
+    ]);
+  });
+
+  it('the MBB posts put the common pole first and throws at ±16', () => {
+    const e = element('mbbSwitch', 0, 0, 96, 0);
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: 0 },
+      { x: 96, y: -16 },
+      { x: 96, y: 16 },
+    ]);
   });
 });

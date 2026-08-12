@@ -737,6 +737,81 @@ describe('switch and SPDT labels', () => {
   });
 });
 
+describe('electromechanical batch E file formats', () => {
+  /** Parses a single line and re-emits it, returning the element and its line. */
+  const elementLine = (text: string, code: string) => {
+    const [e] = parseCircuit(text).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return { e, line: out.split('\n').find((l) => l.startsWith(`${code} `)) ?? '' };
+  };
+
+  it('round-trips the DC motor eight tokens', () => {
+    // DCMotorElm.java:40-47: inductance resistance K Kb J b gearRatio tau.
+    const { e, line } = elementLine('415 0 0 96 0 0 0.5 1 0.15 0.15 0.02 0.05 1 0', '415');
+    expect(e.params.inductance).toBe(0.5);
+    expect(e.params.resistance).toBe(1);
+    expect(e.params.K).toBe(0.15);
+    expect(e.params.Kb).toBe(0.15);
+    expect(e.params.J).toBe(0.02);
+    expect(e.params.b).toBe(0.05);
+    expect(e.params.gearRatio).toBe(1);
+    expect(e.params.tau).toBe(0);
+    expect(line).toBe('415 0 0 96 0 0 0.5 1 0.15 0.15 0.02 0.05 1 0');
+  });
+
+  it('the time delay relay round-trips its four tokens', () => {
+    // TimeDelayRelayElm.java:44-47: onDelay offDelay onResistance offResistance.
+    const { e, line } = elementLine('414 0 0 96 0 0 0.5 0.2 10 1000000', '414');
+    expect(e.params.onDelay).toBe(0.5);
+    expect(e.params.offDelay).toBe(0.2);
+    expect(e.params.onResistance).toBe(10);
+    expect(e.params.offResistance).toBe(1000000);
+    expect(line).toBe('414 0 0 96 0 0 0.5 0.2 10 1000000');
+  });
+
+  it('the MBB switch round-trips the SwitchElm base plus the link', () => {
+    // MBBSwitchElm.java:44-49: position momentary [label] link.
+    const { e, line } = elementLine('416 0 0 64 0 0 0 false 2', '416');
+    expect(e.params.position).toBe(0);
+    expect(e.params.link).toBe(2);
+    expect(e.state).toBe(0);
+    expect(line).toBe('416 0 0 64 0 0 0 false 2');
+  });
+
+  it('an MBB label shifts the link one token along', () => {
+    const { e, line } = elementLine('416 0 0 64 0 4 1 false A 3', '416');
+    expect(e.text).toBe('A');
+    expect(e.params.link).toBe(3);
+    expect(line).toBe('416 0 0 64 0 4 1 false A 3');
+  });
+
+  it('the DPDT switch round-trips the SwitchElm base plus the pole count', () => {
+    // DPDTSwitchElm.java:38-45: position momentary [label] poleCount.
+    const { e, line } = elementLine('429 0 0 64 0 0 1 false 3', '429');
+    expect(e.params.position).toBe(1);
+    expect(e.params.poleCount).toBe(3);
+    expect(postsOf(e)).toHaveLength(9);
+    expect(line).toBe('429 0 0 64 0 0 1 false 3');
+  });
+
+  it('a DPDT label shifts the pole count one token along', () => {
+    const { e, line } = elementLine('429 0 0 64 0 4 0 false B 2', '429');
+    expect(e.text).toBe('B');
+    expect(e.params.poleCount).toBe(2);
+    expect(postsOf(e)).toHaveLength(6);
+    expect(line).toBe('429 0 0 64 0 4 0 false B 2');
+  });
+
+  it('a DPDT pole count out of the engine range clamps to 2..10', () => {
+    const low = parseCircuit('429 0 0 64 0 0 0 false 1').elements[0];
+    expect(low.params.poleCount).toBe(2);
+    expect(postsOf(low)).toHaveLength(6);
+    const high = parseCircuit('429 0 0 64 0 0 0 false 12').elements[0];
+    expect(high.params.poleCount).toBe(10);
+    expect(postsOf(high)).toHaveLength(30);
+  });
+});
+
 describe('fuse file format', () => {
   /** Parses a single `404` line and re-emits it, returning that line. */
   const fuseLine = (line: string) => {

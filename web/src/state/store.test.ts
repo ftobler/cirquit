@@ -684,6 +684,155 @@ describe('switch keyboard shortcuts', () => {
     expect(useStore.getState().elements[0].state).toBe(1);
   });
 
+  it('the MBB cycles its four positions and the DPDT its two', () => {
+    const mbb = {
+      id: 1,
+      kind: 'mbbSwitch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, link: 0 },
+      state: 0,
+    };
+    expect(nextSwitchState(mbb)).toBe(1);
+    expect(nextSwitchState({ ...mbb, state: 1 })).toBe(2);
+    expect(nextSwitchState({ ...mbb, state: 2 })).toBe(3);
+    expect(nextSwitchState({ ...mbb, state: 3 })).toBe(0);
+
+    const dpdt = {
+      id: 2,
+      kind: 'dpdtSwitch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, poleCount: 2 },
+      state: 0,
+    };
+    expect(nextSwitchState(dpdt)).toBe(1);
+    expect(nextSwitchState({ ...dpdt, state: 1 })).toBe(0);
+  });
+
+  it('toggleSwitchByKey throws an MBB and DPDT by their shortcut', () => {
+    useStore.getState().addElement({
+      kind: 'mbbSwitch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, link: 0 },
+      state: 0,
+      keyShortcut: 'm',
+    });
+    useStore.getState().addElement({
+      kind: 'dpdtSwitch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, poleCount: 2 },
+      state: 0,
+      keyShortcut: 'd',
+    });
+    useStore.getState().toggleSwitchByKey('m');
+    expect(useStore.getState().elements[0].state).toBe(1);
+    useStore.getState().toggleSwitchByKey('m');
+    expect(useStore.getState().elements[0].state).toBe(2);
+    useStore.getState().toggleSwitchByKey('d');
+    expect(useStore.getState().elements[1].state).toBe(1);
+    useStore.getState().toggleSwitchByKey('d');
+    expect(useStore.getState().elements[1].state).toBe(0);
+  });
+
+  it('a linked MBB carries every switch in its group along', () => {
+    // Upstream's toggle() scans the whole element list and copies its position
+    // into every MBB with the same link (MBBSwitchElm.java:182-195); the store
+    // toggle fans the throw out in one set so the engine sees one edit.
+    const add = (link: number, position: number) =>
+      useStore.getState().addElement({
+        kind: 'mbbSwitch',
+        x1: 0,
+        y1: 0,
+        x2: 160,
+        y2: 0,
+        flags: 0,
+        params: { position, momentary: 0, link },
+        state: position,
+      });
+    add(0, 0); // unlinked: must not move
+    add(7, 0); // group 7
+    add(7, 2); // group 7
+    add(0, 3); // unlinked
+    const [unlinkedA, linkedA, linkedB, unlinkedB] = useStore.getState().elements;
+
+    useStore.getState().toggleSwitch(linkedA.id);
+
+    const els = useStore.getState().elements;
+    expect(els[0].state).toBe(0); // unlinked stays
+    expect(els[1].state).toBe(1); // group member threw
+    expect(els[2].state).toBe(1); // group member threw to the same position
+    expect(els[3].state).toBe(3); // other unlinked stays
+    // One toggle is one engine edit entry per affected element, queued in the
+    // same set().
+    expect(useStore.getState().pendingStates.get(linkedA.id)).toBe(1);
+    expect(useStore.getState().pendingStates.get(linkedB.id)).toBe(1);
+    expect(useStore.getState().pendingStates.get(unlinkedA.id)).toBeUndefined();
+    expect(useStore.getState().pendingStates.get(unlinkedB.id)).toBeUndefined();
+  });
+
+  it('a linked MBB keyboard toggle fans out too', () => {
+    useStore.getState().addElement({
+      kind: 'mbbSwitch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, link: 4 },
+      state: 0,
+      keyShortcut: 'm',
+    });
+    useStore.getState().addElement({
+      kind: 'mbbSwitch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 2, momentary: 0, link: 4 },
+      state: 2,
+    });
+    useStore.getState().toggleSwitchByKey('m');
+    const els = useStore.getState().elements;
+    expect(els[0].state).toBe(1);
+    expect(els[1].state).toBe(1);
+  });
+
+  it('a DPDT poleCount edit normalizes to the engine integer range', () => {
+    useStore.getState().addElement({
+      kind: 'dpdtSwitch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, poleCount: 2 },
+      state: 0,
+    });
+    const id = useStore.getState().elements[0].id;
+    useStore.getState().setParam(id, 'poleCount', 2.5);
+    expect(useStore.getState().elements[0].params.poleCount).toBe(2);
+    useStore.getState().setParam(id, 'poleCount', 11);
+    expect(useStore.getState().elements[0].params.poleCount).toBe(10);
+    useStore.getState().setParam(id, 'poleCount', 1);
+    expect(useStore.getState().elements[0].params.poleCount).toBe(2);
+  });
+
   it('setShortcuts replaces the overlay without touching the circuit', () => {
     const id = addSwitch();
     useStore.getState().setShortcuts({ copy: 'Ctrl+z', toggleRunning: 'p' });

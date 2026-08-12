@@ -284,6 +284,11 @@ export interface AppState {
   loadDataFile(id: number, samples: number[], fileName: string): void;
   /** Interactive state change (switch throw), routed through the live engine. */
   setElementState(id: number, state: number): void;
+  /** Throws the switch at `id` to its next position, carrying every MBB in the
+   *  same nonzero Switch Group along in one set (MBBSwitchElm.java:182-195).
+   *  The keyboard and canvas pointer toggle paths both route through this, so
+   *  the fan-out cannot be skipped by one of them. */
+  toggleSwitch(id: number): void;
   /** Clears every fuse's live `state` and drops their queued pop-confirms, the
    *  store half of the Reset command: the engine half (`engine.reset`) already
    *  un-blows the models, and this keeps the serialized copies from re-injecting

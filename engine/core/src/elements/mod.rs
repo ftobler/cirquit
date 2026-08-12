@@ -35,12 +35,14 @@ pub mod dac;
 pub mod darlington;
 pub mod data_input;
 pub mod data_recorder;
+pub mod dc_motor;
 pub mod de_multiplexer;
 pub mod decimal_display;
 pub mod decoration;
 pub mod delay_buffer;
 pub mod diac;
 pub mod diode;
+pub mod dpdt_switch;
 pub mod ext_voltage;
 pub mod fm;
 pub mod full_adder;
@@ -62,6 +64,7 @@ pub mod line;
 pub mod logic;
 pub mod logic_input;
 pub mod logic_output;
+pub mod mbb_switch;
 pub mod memristor;
 pub mod meter;
 pub mod monostable;
@@ -96,6 +99,7 @@ pub mod t_flip_flop;
 pub mod test_point;
 pub mod thermistor;
 pub mod three_phase_motor;
+pub mod time_delay_relay;
 pub mod timer;
 pub mod transformer;
 pub mod transistor;
@@ -133,6 +137,10 @@ pub const KINDS: &[&str] = &[
     "ldr",
     "memristor",
     "motorProtectionSwitch",
+    "dcMotor",
+    "timeDelayRelay",
+    "mbbSwitch",
+    "dpdtSwitch",
     "voltage",
     "rail",
     "noise",
@@ -255,6 +263,10 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "motorProtectionSwitch" => {
             Box::new(motor_protection_switch::MotorProtectionSwitch::new(spec))
         }
+        "dcMotor" => Box::new(dc_motor::DcMotor::new(spec)),
+        "timeDelayRelay" => Box::new(time_delay_relay::TimeDelayRelay::new(spec)),
+        "mbbSwitch" => Box::new(mbb_switch::MbbSwitch::new(spec)),
+        "dpdtSwitch" => Box::new(dpdt_switch::DpdtSwitch::new(spec)),
         "potentiometer" => Box::new(potentiometer::Potentiometer::new(spec)),
         "ldr" => Box::new(ldr::Ldr::new(spec)),
         "voltage" => Box::new(voltage_source::VoltageSource::new(spec)),

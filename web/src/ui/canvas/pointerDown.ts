@@ -179,7 +179,14 @@ export function beginPointerGesture(
           heldMomentaryRef.current = hit.id;
           heldMomentaryPointerRef.current = ev.pointerId;
         }
-        state.setElementState(hit.id, next);
+        // A make-before-break switch fans its throw out to every switch in the
+        // same Switch Group through the link-aware toggle; every other switch
+        // is a plain single-element throw (MBBSwitchElm.java:182-195).
+        if (hit.kind === 'mbbSwitch') {
+          state.toggleSwitch(hit.id);
+        } else {
+          state.setElementState(hit.id, next);
+        }
         dragRef.current = { mode: 'none' };
         return;
       }

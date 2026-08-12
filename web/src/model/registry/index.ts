@@ -27,6 +27,10 @@ import { LDR_DEF } from './elements/ldr';
 import { MEMRISTOR_DEF } from './elements/memristor';
 import { MOTOR_PROTECTION_SWITCH_DEF } from './elements/motorProtectionSwitch';
 import { THREE_PHASE_MOTOR_DEF } from './elements/threePhaseMotor';
+import { DC_MOTOR_DEF } from './elements/dcMotor';
+import { TIME_DELAY_RELAY_DEF } from './elements/timeDelayRelay';
+import { MBB_SWITCH_DEF } from './elements/mbbSwitch';
+import { DPDT_SWITCH_DEF } from './elements/dpdtSwitch';
 import { VOLTAGE_DEF } from './elements/voltage';
 import { RAIL_DEF } from './elements/rail';
 import { VAR_RAIL_DEF } from './elements/varRail';
@@ -148,9 +152,13 @@ export const ELEMENT_DEFS: ElementDef[] = [
   MEMRISTOR_DEF,
   THREE_PHASE_MOTOR_DEF,
   MOTOR_PROTECTION_SWITCH_DEF,
+  DC_MOTOR_DEF,
+  TIME_DELAY_RELAY_DEF,
   SWITCH_DEF,
   SWITCH2_DEF,
   CROSS_SWITCH_DEF,
+  MBB_SWITCH_DEF,
+  DPDT_SWITCH_DEF,
   ANALOG_SWITCH_DEF,
   ANALOG_SWITCH2_DEF,
   ANALOG_MUX_DEF,
