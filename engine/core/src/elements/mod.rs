@@ -9,11 +9,13 @@
 
 pub mod adc;
 pub mod ammeter;
+pub mod analog_mux;
 pub mod analog_switch;
 pub mod analog_switch2;
 pub mod antenna;
 pub mod audio_output;
 pub mod r#box;
+pub mod bus_splitter;
 pub mod capacitor;
 pub mod cc2;
 pub mod cccs;
@@ -35,8 +37,10 @@ pub mod decoration;
 pub mod diac;
 pub mod diode;
 pub mod ext_voltage;
+pub mod full_adder;
 pub mod fuse;
 pub mod ground;
+pub mod half_adder;
 pub mod inductor;
 pub mod inverter;
 pub mod jfet;
@@ -74,8 +78,10 @@ pub mod scope;
 pub mod scr;
 pub mod seq_gen;
 pub mod seven_seg;
+pub mod seven_seg_decoder;
 pub mod sipo_shift;
 pub mod spark_gap;
+pub mod sram;
 pub mod sweep;
 pub mod switch;
 pub mod t_flip_flop;
@@ -145,6 +151,7 @@ pub const KINDS: &[&str] = &[
     "switch2",
     "crossSwitch",
     "analogSwitch2",
+    "analogMux",
     "transformer",
     "tappedTransformer",
     "customTransformer",
@@ -173,6 +180,8 @@ pub const KINDS: &[&str] = &[
     "ringCounter",
     "counter",
     "counter2",
+    "halfAdder",
+    "fullAdder",
     "pisoShift",
     "sipoShift",
     "seqGen",
@@ -187,6 +196,10 @@ pub const KINDS: &[&str] = &[
     "scr",
     "triac",
     "sevenSeg",
+    "sevenSegDecoder",
+    "sram",
+    "rom",
+    "busSplitter",
     "labeledNode",
     "output",
     "logicOutput",
@@ -252,6 +265,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "switch2" => Box::new(multi_throw_switch::MultiThrowSwitch::new(spec)),
         "crossSwitch" => Box::new(cross_switch::CrossSwitch::new(spec)),
         "analogSwitch2" => Box::new(analog_switch2::AnalogSwitch2::new(spec)),
+        "analogMux" => Box::new(analog_mux::AnalogMux::new(spec)),
         "transformer" => Box::new(transformer::Transformer::new_basic(spec)),
         "tappedTransformer" => Box::new(transformer::Transformer::new_tapped(spec)),
         "customTransformer" => Box::new(transformer::Transformer::new_custom(spec)),
@@ -286,6 +300,8 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "ringCounter" => Box::new(ring_counter::RingCounter::new(spec)),
         "counter" => Box::new(counter::Counter::new(spec)),
         "counter2" => Box::new(counter2::Counter2::new(spec)),
+        "halfAdder" => Box::new(half_adder::HalfAdder::new(spec)),
+        "fullAdder" => Box::new(full_adder::FullAdder::new(spec)),
         "pisoShift" => Box::new(piso_shift::PisoShift::new(spec)),
         "sipoShift" => Box::new(sipo_shift::SipoShift::new(spec)),
         "seqGen" => Box::new(seq_gen::SeqGen::new(spec)),
@@ -300,6 +316,10 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "scr" => Box::new(scr::Scr::new(spec)),
         "triac" => Box::new(triac::Triac::new(spec)),
         "sevenSeg" => Box::new(seven_seg::SevenSeg::new(spec)),
+        "sevenSegDecoder" => Box::new(seven_seg_decoder::SevenSegDecoder::new(spec)),
+        "sram" => Box::new(sram::Sram::new(spec, true)),
+        "rom" => Box::new(sram::Sram::new(spec, false)),
+        "busSplitter" => Box::new(bus_splitter::BusSplitter::new(spec)),
         "labeledNode" => Box::new(labeled_node::LabeledNode::new(spec)),
         "output" => Box::new(meter::Meter::new_output(spec)),
         "logicOutput" => Box::new(logic_output::LogicOutput::new(spec)),

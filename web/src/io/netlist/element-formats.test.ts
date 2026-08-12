@@ -2184,4 +2184,104 @@ describe('chip family file formats', () => {
     expect(e.params.delay).toBe(0.01);
     expect(elementLine).toBe(line);
   });
+
+  it('195 half adder line round-trips, the high voltage included', () => {
+    // The half adder has no tokens of its own: the optional high voltage is
+    // the only token after the flags (ChipElm.java:48-56, HalfAdderElm.java).
+    const { e, elementLine } = chipLine('195 160 320 320 320 0', '195');
+    expect(e.params.highVoltage).toBe(5);
+    expect(elementLine).toBe('195 160 320 320 320 0');
+    const { elementLine: custom } = chipLine('195 160 320 320 320 8192 6', '195');
+    expect(custom).toBe('195 160 320 320 320 8192 6');
+  });
+
+  it('196 full adder line round-trips its bits and high voltage', () => {
+    // The bits token exists only under FLAG_BITS (bit 1); a flagless line is
+    // the 1-bit adder and keeps its byte-exact form (FullAdderElm.java:30-35).
+    const { e, elementLine } = chipLine('196 160 320 320 320 2 4', '196');
+    expect(e.params.bits).toBe(4);
+    expect(elementLine).toBe('196 160 320 320 320 2 4');
+    const { elementLine: flagless } = chipLine('196 160 320 320 320 0', '196');
+    expect(flagless).toBe('196 160 320 320 320 0');
+    const { elementLine: custom } = chipLine('196 160 320 320 320 8194 8 6', '196');
+    expect(custom).toBe('196 160 320 320 320 8194 8 6');
+  });
+
+  it('197 seven-segment decoder line round-trips the segment type', () => {
+    // The segmentType token follows the optional high voltage and there are no
+    // saved output levels. Upstream's own dump() drops it, so this port's
+    // writer puts it back (SevenSegDecoderElm.java:97-105).
+    const { e, elementLine } = chipLine('197 160 320 320 320 0 1', '197');
+    expect(e.params.segmentType).toBe(1);
+    expect(elementLine).toBe('197 160 320 320 320 0 1');
+    const { elementLine: custom } = chipLine('197 160 320 320 320 8192 6 2', '197');
+    expect(custom).toBe('197 160 320 320 320 8192 6 2');
+  });
+
+  it('433 bus splitter line round-trips its bit count', () => {
+    // The bits token, the standard needsBits chip stream; no state pins
+    // follow (ChipElm.java:51-55, BusSplitterElm.java).
+    const { e, elementLine } = chipLine('433 160 320 320 320 0 4', '433');
+    expect(e.params.bits).toBe(4);
+    expect(elementLine).toBe('433 160 320 320 320 0 4');
+    const { elementLine: custom } = chipLine('433 160 320 320 320 8192 8 6', '433');
+    expect(custom).toBe('433 160 320 320 320 8192 8 6');
+  });
+
+  it('413 SRAM line round-trips the widths and contents runs', () => {
+    // addressBits, dataBits, then the stored contents as runs of consecutive
+    // addresses, each run closed by -1 and the stream by -2 (SRAMElm.java:
+    // 55-70). Upstream's own dump() drops both the sizes and the contents, so
+    // this port's writer restores them.
+    const { e, elementLine } = chipLine(
+      '413 160 320 320 320 0 2 2 0 1 2 3 -1 2 4 -1 -2',
+      '413',
+    );
+    expect(e.params.addressBits).toBe(2);
+    expect(e.params.dataBits).toBe(2);
+    // The runs flatten to address-value pairs; the overlapping second run's
+    // address 2 wins on the engine's last-wins insert.
+    expect(e.params.addr0).toBe(0);
+    expect(e.params.val0).toBe(1);
+    expect(e.params.addr1).toBe(1);
+    expect(e.params.val1).toBe(2);
+    expect(e.params.addr2).toBe(2);
+    expect(e.params.val2).toBe(3);
+    expect(e.params.addr3).toBe(2);
+    expect(e.params.val3).toBe(4);
+    expect(elementLine).toBe('413 160 320 320 320 0 2 2 0 1 2 3 -1 2 4 -1 -2');
+  });
+
+  it('413 SRAM round-trips the display and reload flags', () => {
+    // Bit 2 is FLAG_RELOAD_ON_RESET and bit 4 FLAG_HEX_DISPLAY
+    // (SRAMElm.java:30-36); both ride the flags verbatim.
+    const { elementLine } = chipLine('413 160 320 320 320 6 2 2 1 5 -1 -2', '413');
+    expect(elementLine).toBe('413 160 320 320 320 6 2 2 1 5 -1 -2');
+    const { elementLine: bare } = chipLine('413 160 320 320 320 0 4 4', '413');
+    expect(bare).toBe('413 160 320 320 320 0 4 4');
+  });
+
+  it('436 ROM line round-trips the widths and contents runs', () => {
+    // The ROM shares the SRAM token stream; only the pin layout differs
+    // (ROMElm.java:28-31).
+    const { e, elementLine } = chipLine('436 160 320 320 320 0 2 2 1 2 -1 -2', '436');
+    expect(e.params.addressBits).toBe(2);
+    expect(e.params.dataBits).toBe(2);
+    expect(e.params.addr0).toBe(1);
+    expect(e.params.val0).toBe(2);
+    expect(elementLine).toBe('436 160 320 320 320 0 2 2 1 2 -1 -2');
+  });
+
+  it('432 analog mux line round-trips its four tokens', () => {
+    // selectBitCount r_on r_off threshold after the optional high voltage,
+    // always written like upstream's own dump() (AnalogMuxElm.java:63-65).
+    const { e, elementLine } = chipLine('432 160 320 320 320 2 2 20 10000000000 2.5', '432');
+    expect(e.params.selectBitCount).toBe(2);
+    expect(e.params.r_on).toBe(20);
+    expect(e.params.r_off).toBe(1e10);
+    expect(e.params.threshold).toBe(2.5);
+    expect(elementLine).toBe('432 160 320 320 320 2 2 20 10000000000 2.5');
+    const { elementLine: custom } = chipLine('432 160 320 320 320 8192 6 4 1000000 1.5 3', '432');
+    expect(custom).toBe('432 160 320 320 320 8192 6 4 1000000 1.5 3');
+  });
 });

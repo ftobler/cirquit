@@ -17,6 +17,7 @@ import {
 } from './registry';
 import { mirrorElement } from './transform';
 import { DIODE_DEF } from './registry/elements/diode';
+import { FULL_ADDER_BITS } from './registry/elements/fullAdder';
 import { ZENER_DEF } from './registry/elements/zener';
 import { FUSE_DEF } from './registry/elements/fuse';
 import { LAMP_DEF } from './registry/elements/lamp';
@@ -759,6 +760,88 @@ describe('counter2 posts', () => {
       { x: 96, y: 0 },   // RCO
       { x: 96, y: 160 }, // LOAD, row sizeY-2
       { x: 96, y: 192 }, // EnT, row sizeY-1
+    ]);
+  });
+});
+
+describe('full adder posts', () => {
+  // Terminal coordinates must match upstream's setupPins/getPost exactly or
+  // wires in loaded circuits will not connect. For bits = 2 the chip is 5
+  // rows tall: A0 and B0 sit at the bottom of their west rows, the S outputs
+  // two rows inside the east edge, and the carry pair closes the table as Cin
+  // on the west bottom row and C on the east top row (FullAdderElm.java:
+  // 47-54), so on a horizontal body the row offset is 32 px per row.
+  it('orders the carry-in before the carry-out like upstream setupPins', () => {
+    // The bits token only exists under FLAG_BITS (FullAdderElm.java:36), so
+    // the test part must set it for the geometry to see bits = 2.
+    const e = element('fullAdder', 0, 0, 96, 0, FULL_ADDER_BITS, { bits: 2 });
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: 32 },   // A0
+      { x: 0, y: 0 },    // A1
+      { x: 0, y: 96 },   // B0
+      { x: 0, y: 64 },   // B1
+      { x: 96, y: 96 },  // S0
+      { x: 96, y: 64 },  // S1
+      { x: 0, y: 128 },  // Cin, post 3*bits
+      { x: 96, y: 0 },   // C, post 3*bits+1
+    ]);
+  });
+});
+
+describe('memory chip posts', () => {
+  // The address and data banks run MSB first (makeBitPins reversed), so the
+  // MSB sits on the top row of its bank and A0/D0 on the bottom
+  // (SRAMElm.java:120-121). For 2 bits sizeY is 3 rows.
+  it('puts the SRAM WE and OE at the top and the MSBs above the LSBs', () => {
+    const e = element('sram', 0, 0, 96, 0, 0, { addressBits: 2, dataBits: 2 });
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: 0 },   // WE
+      { x: 96, y: 0 },  // OE
+      { x: 0, y: 32 },  // A1 (MSB)
+      { x: 0, y: 64 },  // A0 (LSB)
+      { x: 96, y: 32 }, // D1 (MSB)
+      { x: 96, y: 64 }, // D0 (LSB)
+    ]);
+  });
+
+  it('gives the ROM the single OE pin at the top-left', () => {
+    const e = element('rom', 0, 0, 96, 0, 0, { addressBits: 2, dataBits: 2 });
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: 0 },   // OE
+      { x: 0, y: 32 },  // A1 (MSB)
+      { x: 0, y: 64 },  // A0 (LSB)
+      { x: 96, y: 32 }, // D1 (MSB)
+      { x: 96, y: 64 }, // D0 (LSB)
+    ]);
+  });
+});
+
+describe('bus splitter posts', () => {
+  it('shares one bus node and fans the individual pins down the east', () => {
+    const e = element('busSplitter', 0, 0, 96, 0, 0, { bits: 2 });
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: 0 },  // bus bit 0
+      { x: 0, y: 0 },  // bus bit 1 shares the node
+      { x: 96, y: 32 }, // individual 0, row bits-1
+      { x: 96, y: 0 },  // individual 1, row 0
+    ]);
+  });
+});
+
+describe('analog mux posts', () => {
+  it('places the select pins across the south and Z at the east top', () => {
+    // 2 select bits means 4 inputs and a 5-row body: the selects sit at rows
+    // 1 and 2 on the south edge (AnalogMuxElm.java:94), 32 px below the body
+    // bottom (AnalogMuxElm.java:88).
+    const e = element('analogMux', 0, 0, 96, 0, 0, { selectBitCount: 2 });
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: 0 },   // I0
+      { x: 0, y: 32 },  // I1
+      { x: 0, y: 64 },  // I2
+      { x: 0, y: 96 },  // I3
+      { x: 64, y: 160 }, // S0
+      { x: 96, y: 160 }, // S1
+      { x: 128, y: 0 }, // Z
     ]);
   });
 });

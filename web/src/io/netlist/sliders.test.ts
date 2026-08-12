@@ -87,13 +87,12 @@ describe('slider round trips', () => {
     expect(out).toContain('38 1 0 0.000001 0.000101 Capacitance');
   });
 
-  it('an element line this build cannot read keeps the loaded e token', () => {
-    // slider-unknown.txt's `38 2` points past an unread `195` half-adder: there
-    // is no session element to renumber, so the token stays exactly as the
-    // file had it. (`214` is a real CCVS now, so it can no longer play the
-    // unreadable slot.)
+  it('a slider past the last element line keeps the loaded e token', () => {
+    // slider-unknown.txt's `38 2` points one past the resistor and the lamp:
+    // there is no session element to renumber, so the token stays exactly as
+    // the file had it.
     const parsed = parseCircuit(
-      '$ 0 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n195 32 0 48 0 0 20\n38 2 0 1 100 Text\n',
+      '$ 0 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n181 32 0 48 0 0 20\n38 2 0 1 100 Text\n',
     );
     expect(parsed.sliders[0].elementId).toBeUndefined();
     expect(save(parsed)).toContain('38 2 0 1 100 Text');

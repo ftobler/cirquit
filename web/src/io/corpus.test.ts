@@ -79,24 +79,26 @@ describe('corpus fixtures', () => {
     expect(result.finite).toBe(true);
   });
 
-  it('reports an upstream dump code as missing but keeps the slider out of missing', () => {
+  it('reads every element line and keeps an out-of-range slider out of missing', () => {
+    // The fixture's lamp (`181`) is a modelled element now, so the scan has no
+    // missing codes; the `38 2` slider still points one past the last element
+    // line and stays out of the missing list.
     const entries = scanCorpus(FIXTURES_DIR);
     const slider = entries.find((e) => e.file === 'slider-unknown.txt');
-    expect(slider?.load).toBe('missing');
-    expect(slider?.missing).toEqual(['195']);
+    expect(slider?.load).toBe('ok');
+    expect(slider?.missing).toEqual([]);
     expect(slider?.sliderLines).toBe(1);
 
     const parsed = parseCircuit(readFileSync(join(FIXTURES_DIR, 'slider-unknown.txt'), 'utf8'));
-    // The slider parses into state; only the `195` half-adder element is
-    // missing. (`214` is a real CCVS now, so it can no longer play the
-    // unreadable slot.)
+    // The lamp and the resistor parse; the slider is state, never missing.
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['resistor', 'lamp']);
     expect(parsed.unsupported).not.toContain('38');
     expect(parsed.sliders).toHaveLength(1);
-    // It points past the unread `195` line, so it binds to nothing but still
-    // round-trips.
+    // The slider points one past the two element lines, so it binds to nothing
+    // but still round-trips.
     expect(parsed.sliders[0].elementId).toBeUndefined();
     const { missing, sliderLines } = plainLoad(parsed);
-    expect(missing).toEqual(['195']);
+    expect(missing).toEqual([]);
     expect(sliderLines).toBe(1);
   });
 

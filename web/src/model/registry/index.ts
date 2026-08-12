@@ -60,6 +60,8 @@ import { SWITCH2_DEF } from './elements/switch2';
 import { CROSS_SWITCH_DEF } from './elements/crossSwitch';
 import { ANALOG_SWITCH_DEF } from './elements/analogSwitch';
 import { ANALOG_SWITCH2_DEF } from './elements/analogSwitch2';
+import { ANALOG_MUX_DEF } from './elements/analogMux';
+import { BUS_SPLITTER_DEF } from './elements/busSplitter';
 import { TRANSFORMER_DEF, TAPPED_TRANSFORMER_DEF, CUSTOM_TRANSFORMER_DEF } from './elements/transformer';
 import { TRANSMISSION_LINE_DEF } from './elements/transmissionLine';
 import { TIMER_DEF } from './elements/timer';
@@ -78,6 +80,8 @@ import { LATCH_DEF } from './elements/latch';
 import { RING_COUNTER_DEF } from './elements/ringCounter';
 import { COUNTER_DEF } from './elements/counter';
 import { COUNTER2_DEF } from './elements/counter2';
+import { HALF_ADDER_DEF } from './elements/halfAdder';
+import { FULL_ADDER_DEF } from './elements/fullAdder';
 import { PISO_SHIFT_DEF } from './elements/pisoShift';
 import { SIPO_SHIFT_DEF } from './elements/sipoShift';
 import { SEQ_GEN_DEF } from './elements/seqGen';
@@ -86,6 +90,9 @@ import { INVERTER_DEF } from './elements/inverter';
 import { LOGIC_INPUT_DEF } from './elements/logicInput';
 import { SCHMITT_DEF, INVERTING_SCHMITT_DEF } from './elements/schmitt';
 import { SEVEN_SEG_DEF } from './elements/sevenSeg';
+import { SEVEN_SEG_DECODER_DEF } from './elements/sevenSegDecoder';
+import { SRAM_DEF } from './elements/sram';
+import { ROM_DEF } from './elements/rom';
 import { SCR_DEF } from './elements/scr';
 import { CC2_DEF } from './elements/cc2';
 import { VCVS_DEF } from './elements/vcvs';
@@ -136,6 +143,8 @@ export const ELEMENT_DEFS: ElementDef[] = [
   CROSS_SWITCH_DEF,
   ANALOG_SWITCH_DEF,
   ANALOG_SWITCH2_DEF,
+  ANALOG_MUX_DEF,
+  BUS_SPLITTER_DEF,
   TRANSFORMER_DEF,
   TAPPED_TRANSFORMER_DEF,
   CUSTOM_TRANSFORMER_DEF,
@@ -187,6 +196,8 @@ export const ELEMENT_DEFS: ElementDef[] = [
   RING_COUNTER_DEF,
   COUNTER_DEF,
   COUNTER2_DEF,
+  HALF_ADDER_DEF,
+  FULL_ADDER_DEF,
   PISO_SHIFT_DEF,
   SIPO_SHIFT_DEF,
   SEQ_GEN_DEF,
@@ -196,6 +207,9 @@ export const ELEMENT_DEFS: ElementDef[] = [
   SCHMITT_DEF,
   INVERTING_SCHMITT_DEF,
   SEVEN_SEG_DEF,
+  SEVEN_SEG_DECODER_DEF,
+  SRAM_DEF,
+  ROM_DEF,
   SCR_DEF,
   CC2_DEF,
   VCVS_DEF,

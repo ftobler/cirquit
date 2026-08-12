@@ -47,7 +47,11 @@ import { normalizeDecimalBits } from '../model/registry/elements/decimalDisplay'
 import { normalizeLatchBits } from '../model/registry/elements/latch';
 import { normalizeCounterBits } from '../model/registry/elements/counter';
 import { normalizeCounter2Bits } from '../model/registry/elements/counter2';
+import { FULL_ADDER_BITS, normalizeFullAdderBits } from '../model/registry/elements/fullAdder';
 import { normalizePisoBits } from '../model/registry/elements/pisoShift';
+import { normalizeBusSplitterBits } from '../model/registry/elements/busSplitter';
+import { normalizeSramBits } from '../model/registry/elements/sram';
+import { normalizeAnalogMuxSelects } from '../model/registry/elements/analogMux';
 import { normalizeSipoBits } from '../model/registry/elements/sipoShift';
 import { normalizeRingBits } from '../model/registry/elements/ringCounter';
 import { normalizeInputCount } from '../model/registry/shared';
@@ -97,9 +101,16 @@ const BITS_NORMALIZERS: Readonly<Record<string, (value: number) => number>> = {
   'latch:bits': normalizeLatchBits,
   'counter:bits': normalizeCounterBits,
   'counter2:bits': normalizeCounter2Bits,
+  'fullAdder:bits': normalizeFullAdderBits,
   'pisoShift:bits': normalizePisoBits,
   'sipoShift:bits': normalizeSipoBits,
   'ringCounter:bits': normalizeRingBits,
+  'busSplitter:bits': normalizeBusSplitterBits,
+  'sram:addressBits': normalizeSramBits,
+  'sram:dataBits': normalizeSramBits,
+  'rom:addressBits': normalizeSramBits,
+  'rom:dataBits': normalizeSramBits,
+  'analogMux:selectBitCount': normalizeAnalogMuxSelects,
 };
 
 const clone = (s: Snapshot): Snapshot => ({
@@ -913,6 +924,11 @@ function createAppStore() {
             next.flags = e.flags & ~VOLTAGE_PULSE_DUTY;
             if (value === 5) next.flags |= VOLTAGE_PULSE_DUTY;
           }
+          // A flagless full adder loaded from a file reads its width from the
+          // flag, not the token; setting FLAG_BITS on edit makes the width
+          // take effect and the next save write the `bits` token, exactly what
+          // upstream's setChipEditValue does (FullAdderElm.java:82-90).
+          if (e.kind === 'fullAdder' && name === 'bits') next.flags |= FULL_ADDER_BITS;
           return next;
         }),
         // Queue the edit for the engine's set_param fast path rather than
