@@ -22,7 +22,16 @@ export type Drag =
   | { mode: 'none' }
   | { mode: 'place'; start: Point; id: number }
   | { mode: 'move'; last: Point; moved: boolean; gated?: boolean }
-  | { mode: 'dragpost'; id: number; post: 1 | 2; moved: boolean; gated?: boolean }
+  | {
+      mode: 'dragpost';
+      id: number;
+      post: 1 | 2;
+      moved: boolean;
+      gated?: boolean;
+      /** The fixed endpoint, the one not being dragged. The drag-derived
+       *  params (a wattmeter's width) are computed against it. */
+      start: Point;
+    }
   | { mode: 'select'; start: Point; current: Point; shift: boolean }
   | {
       mode: 'rowcol';
@@ -217,7 +226,17 @@ export function beginPointerGesture(
     // has one connectable post but its symbol hangs off a second control
     // point that must be stretchable too.
     if (ev.ctrlKey && (def?.draggablePosts ?? postCountOf(hit)) > 1) {
-      dragRef.current = { mode: 'dragpost', id: hit.id, post: nearestPost(p, hit), moved: false, gated };
+      const post = nearestPost(p, hit);
+      dragRef.current = {
+        mode: 'dragpost',
+        id: hit.id,
+        post,
+        moved: false,
+        gated,
+        // The fixed endpoint, the one not being dragged: drag-derived params
+        // (a wattmeter's width) are computed against it.
+        start: post === 1 ? { x: hit.x2, y: hit.y2 } : { x: hit.x1, y: hit.y1 },
+      };
     } else {
       dragRef.current = { mode: 'move', last: p, moved: false, gated };
     }

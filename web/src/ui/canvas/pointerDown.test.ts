@@ -178,7 +178,14 @@ describe('pointer-down on a switch while running', () => {
     const r = refs();
     beginPointerGesture(down({ ctrlKey: true }), { x: 100, y: -5 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(0);
-    expect(r.dragRef.current).toEqual({ mode: 'dragpost', id, post: 2, moved: false, gated: false });
+    expect(r.dragRef.current).toEqual({
+      mode: 'dragpost',
+      id,
+      post: 2,
+      moved: false,
+      gated: false,
+      start: { x: 0, y: 0 },
+    });
   });
 
   it('alt still pans instead of toggling', () => {
@@ -215,7 +222,14 @@ describe('pointer-down on an SPDT while running', () => {
     const r = refs();
     beginPointerGesture(down({ ctrlKey: true }), { x: 80, y: 0 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(0);
-    expect(r.dragRef.current).toEqual({ mode: 'dragpost', id, post: 1, moved: false, gated: false });
+    expect(r.dragRef.current).toEqual({
+      mode: 'dragpost',
+      id,
+      post: 1,
+      moved: false,
+      gated: false,
+      start: { x: 160, y: 0 },
+    });
   });
 });
 

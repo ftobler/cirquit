@@ -2414,3 +2414,100 @@ describe('chip family file formats', () => {
     expect(custom).toBe('432 160 320 320 320 8192 6 4 1000000 1.5 3');
   });
 });
+
+describe('instrument file formats (batch I)', () => {
+  const lineFor = (e: CircuitElement) =>
+    serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim().split('\n').join('\n');
+
+  it('216 ohmmeter round-trips the current-source tokens', () => {
+    const line = '216 80 64 80 288 0 0.01 0';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('ohmmeter');
+    expect(e.params.current).toBe(0.01);
+    expect(e.params.maxVoltage).toBe(0);
+    const out = lineFor(e);
+    expect(out).toContain(line);
+  });
+
+  it('a fresh ohmmeter dumps the current-source defaults', () => {
+    const e = makeElement('ohmmeter', 0, 0, 32, 0);
+    expect(e.params).toEqual({ current: 0.01, maxVoltage: 0 });
+    expect(lineFor({ ...e, id: 1 })).toContain('216 0 0 32 0 0 0.01 0');
+  });
+
+  it('368 test point round-trips the meter and an escaped label', () => {
+    const line = '368 80 64 80 288 1 3 my\\sLabel';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('testPoint');
+    expect(e.flags).toBe(1);
+    expect(e.params.meter).toBe(3);
+    expect(e.text).toBe('my Label');
+    expect(lineFor(e)).toContain(line);
+  });
+
+  it('a fresh test point dumps the default TP without a label token', () => {
+    const e = makeElement('testPoint', 0, 0, 32, 0);
+    expect(e.text).toBe('TP');
+    expect(e.params).toEqual({ meter: 0 });
+    const out = lineFor({ ...e, id: 1 });
+    // The default label is not dumped and FLAG_LABEL (bit 1) is cleared, so a
+    // save never invents a label the file did not carry.
+    expect(out).toContain('368 0 0 32 0 0 0');
+  });
+
+  it('a tokenless 368 test point keeps the TP default and the meter', () => {
+    // Upstream's own dump() never writes the meter or label, so a bare line is
+    // legal; the meter token is the only thing that may follow the flags.
+    const line = '368 80 64 80 288 0 2';
+    const [e] = parseCircuit(line).elements;
+    expect(e.params.meter).toBe(2);
+    expect(e.text).toBe('TP');
+    expect(lineFor(e)).toContain(line);
+  });
+
+  it('420 wattmeter round-trips width and meter', () => {
+    const line = '420 80 64 80 288 0 32 1';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('wattmeter');
+    expect(e.params.width).toBe(32);
+    expect(e.params.meter).toBe(1);
+    expect(lineFor(e)).toContain(line);
+  });
+
+  it('a fresh wattmeter dumps the grid default width', () => {
+    const e = makeElement('wattmeter', 0, 0, 32, 0);
+    expect(e.params).toEqual({ width: 16, meter: 0 });
+    expect(lineFor({ ...e, id: 1 })).toContain('420 0 0 32 0 0 16 0');
+  });
+
+  it('210 data recorder round-trips dataCount', () => {
+    const line = '210 80 64 80 288 0 2048';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('dataRecorder');
+    expect(e.params.dataCount).toBe(2048);
+    expect(lineFor(e)).toContain(line);
+  });
+
+  it('a fresh data recorder dumps the upstream 10240 default', () => {
+    const e = makeElement('dataRecorder', 0, 0, 32, 0);
+    expect(e.params).toEqual({ dataCount: 10240 });
+    expect(lineFor({ ...e, id: 1 })).toContain('210 0 0 32 0 0 10240');
+  });
+
+  it('408 stop trigger round-trips its four tokens', () => {
+    const line = '408 80 64 80 288 0 2.5 1 0.01 3';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('stopTrigger');
+    expect(e.params.triggerVoltage).toBe(2.5);
+    expect(e.params.type).toBe(1);
+    expect(e.params.delay).toBe(0.01);
+    expect(e.params.count).toBe(3);
+    expect(lineFor(e)).toContain(line);
+  });
+
+  it('a fresh stop trigger dumps the four constructor defaults', () => {
+    const e = makeElement('stopTrigger', 0, 0, 32, 0);
+    expect(e.params).toEqual({ triggerVoltage: 1, type: 0, delay: 0, count: 1 });
+    expect(lineFor({ ...e, id: 1 })).toContain('408 0 0 32 0 0 1 0 0 1');
+  });
+});

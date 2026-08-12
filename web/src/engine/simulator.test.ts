@@ -403,3 +403,120 @@ describe('custom composite reaches the engine', () => {
     expect(engine.elementNodes().length).toBe(2);  // the resistor's two posts only
   });
 });
+
+describe('SimEngine recordedData facade', () => {
+  const RECORDER: CircuitElement[] = [
+    {
+      id: 1,
+      kind: 'voltage',
+      x1: 0,
+      y1: 100,
+      x2: 0,
+      y2: 0,
+      flags: 0,
+      params: { maxVoltage: 5 },
+    },
+    {
+      id: 2,
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 100,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    },
+    {
+      id: 3,
+      kind: 'dataRecorder',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: { dataCount: 8 },
+    },
+    { id: 4, kind: 'ground', x1: 0, y1: 100, x2: 0, y2: 132, flags: 0, params: {} },
+    { id: 5, kind: 'ground', x1: 100, y1: 0, x2: 100, y2: 32, flags: 0, params: {} },
+  ];
+
+  it('returns the recorded samples oldest-first and wraps the ring', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(RECORDER, DEFAULT_SETTINGS, [])).toBeNull();
+    expect(engine.recordedData(3).length).toBe(0);  // nothing recorded yet
+
+    engine.run(5);
+    const first = Array.from(engine.recordedData(3));
+    expect(first.length).toBe(5);
+    expect(first.every((v) => Math.abs(v - 5) < 1e-9)).toBe(true);
+
+    // Drop the source to 1 V and run past the 8-sample ring: ten samples into
+    // an eight-slot ring keep the three oldest 5 V samples, then the newest
+    // 1 V ones, oldest-first (DataRecorderElm.java:108-114).
+    engine.setParam(1, 'maxVoltage', 1);
+    engine.run(5);
+    const wrapped = Array.from(engine.recordedData(3));
+    expect(wrapped.length).toBe(8);
+    expect(wrapped.slice(0, 3).every((v) => Math.abs(v - 5) < 1e-9)).toBe(true);
+    expect(wrapped.slice(3).every((v) => Math.abs(v - 1) < 1e-9)).toBe(true);
+
+    // A non-recorder element reports nothing.
+    expect(engine.recordedData(2).length).toBe(0);
+    expect(engine.recordedData(99).length).toBe(0);
+  });
+});
+
+describe('SimEngine clearStops facade', () => {
+  const STOP: CircuitElement[] = [
+    {
+      id: 1,
+      kind: 'voltage',
+      x1: 0,
+      y1: 100,
+      x2: 0,
+      y2: 0,
+      flags: 0,
+      params: { maxVoltage: 0 },
+    },
+    {
+      id: 2,
+      kind: 'stopTrigger',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+      flags: 0,
+      params: { triggerVoltage: 1, type: 0, delay: 0, count: 1 },
+    },
+    { id: 3, kind: 'ground', x1: 0, y1: 100, x2: 0, y2: 132, flags: 0, params: {} },
+  ];
+
+  it('clearStops re-arms a fired stop trigger without rewinding time', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(STOP, DEFAULT_SETTINGS, [])).toBeNull();
+
+    engine.run(2);
+    expect(engine.elementStates()[engine.indexOf(2)!]).toBe(0);
+
+    // Crossing the 1 V threshold with a 0-delay trigger fires on the first
+    // step after the edit and latches stopped.
+    engine.setParam(1, 'maxVoltage', 2);
+    engine.run(2);
+    expect(engine.elementStates()[engine.indexOf(2)!]).toBe(1);
+
+    // clearStops re-arms the latch without rewinding time: dropping below the
+    // threshold first, then clearing, the circuit keeps stepping and reports 0
+    // until the threshold is crossed again.
+    engine.setParam(1, 'maxVoltage', 0);
+    engine.run(2);
+    engine.clearStops();
+    expect(engine.elementStates()[engine.indexOf(2)!]).toBe(0);
+    engine.run(2);
+    expect(engine.elementStates()[engine.indexOf(2)!]).toBe(0);
+
+    // The next crossing fires the re-armed trigger.
+    engine.setParam(1, 'maxVoltage', 2);
+    engine.run(2);
+    expect(engine.elementStates()[engine.indexOf(2)!]).toBe(1);
+  });
+});

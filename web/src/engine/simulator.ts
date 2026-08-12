@@ -325,6 +325,13 @@ export class SimEngine {
     this.sim.reset();
   }
 
+  /** Re-arms the stop triggers without rewinding time, so a simulation paused
+   *  by a stop trigger can resume. The frame loop calls this when `running`
+   *  goes false -> true; the latches clear only here and on reset. */
+  clearStops(): void {
+    this.sim.clearStops();
+  }
+
   get time(): number {
     return this.sim.time;
   }
@@ -409,6 +416,14 @@ export class SimEngine {
    *  falls back to the flat body. */
   transmissionLineWave(id: number, segments: number): Float32Array {
     return this.sim.transmissionLineWave(id, segments);
+  }
+
+  /** A data recorder's recorded samples, oldest first, for the frontend's
+   *  export button. Empty before the first step and for ids that are not data
+   *  recorders. An on-demand channel like `transmissionLineWave`, so no other
+   *  element pays for the crossing. */
+  recordedData(id: number): Float64Array {
+    return this.sim.dataRecorderData(id);
   }
 
   /** Dissipated power per element, using the scope Power-trace convention

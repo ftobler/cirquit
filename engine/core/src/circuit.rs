@@ -259,6 +259,18 @@ impl Circuit {
         self.elements[ei].body_samples(segments)
     }
 
+    /// A data recorder's recorded samples, oldest first, for the frontend's
+    /// export button. An unknown id and every other element return empty, so
+    /// the frontend can call this for a single kind without a per-element tag
+    /// on the other side. An on-demand channel like [`Circuit::body_samples`];
+    /// no per-frame call.
+    pub fn data_recorder_data(&self, id: u32) -> Vec<f64> {
+        let Some(&ei) = self.id_index.get(&id) else {
+            return Vec::new();
+        };
+        self.elements[ei].data_recorder_data()
+    }
+
     /// Trigger display anchor for one scope trace.
     pub fn trigger_info(&self, index: usize, width: usize) -> Option<crate::scope::TriggerInfo> {
         self.scopes.get(index).map(|s| s.trigger_info(width))
@@ -1354,6 +1366,16 @@ impl Circuit {
         };
         scope.set_ac_coupled(ac_coupled);
         true
+    }
+
+    /// Re-arms every stop trigger without rewinding time, so a simulation
+    /// paused by one can resume. The frame loop calls this when the user
+    /// presses Run; stepping alone must never clear the latches, or the pause
+    /// would never register.
+    pub fn clear_stops(&mut self) {
+        for elm in self.elements.iter_mut() {
+            elm.clear_stop();
+        }
     }
 
     /// Returns the circuit to time zero.

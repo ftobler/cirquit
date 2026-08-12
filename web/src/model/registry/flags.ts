@@ -42,6 +42,9 @@ export const POT_FLIP_OFFSET = 4;      // PotElm.java:34
 export const SWITCH2_CENTER_OFF = 1;   // Switch2Elm.java:30
 export const SWITCH_LABEL = 4;         // SwitchElm.java:33, inherited by Switch2Elm
 export const SWITCH_IEC = 2;           // SwitchElm.java:32 FLAG_IEC
+/** A test point carries a saved label token under this bit
+ *  (TestPointElm.java:41). Distinct from the switch's FLAG_LABEL (bit 4). */
+export const TESTPOINT_LABEL = 1;      // TestPointElm.java:41
 /** Bit 1 of a logic input turns the third (mid) position on, making the
  *  input cycle 0..2 instead of flipping 0/1 (LogicInputElm.java:26). */
 export const LOGIC_INPUT_TERNARY = 1;  // LogicInputElm.java:26

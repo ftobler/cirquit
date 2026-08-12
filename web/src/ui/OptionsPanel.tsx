@@ -5,7 +5,9 @@ import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
 import { formatUnits, parseUnits } from '../model/units';
 import { parseDataFile } from '../model/dataFile';
+import { recorderDataText, recorderFilename } from '../model/recorder';
 import { formatValue, makeTheme } from '../render/draw';
+import { saveBlob } from '../io/fileIO';
 import type { CircuitElement, FieldDef, Theme, ThemeColors } from '../model/types';
 import { useStore } from '../state/store';
 
@@ -94,12 +96,28 @@ function Field({
   value,
   onChange,
   onBeginEdit,
+  onDownload,
 }: {
   field: FieldDef;
   value: number | string;
   onChange: (v: number | string | FileList | null) => void;
   onBeginEdit: () => void;
+  onDownload?: () => void;
 }) {
+  if (field.type === 'download') {
+    // A one-shot button, the data recorder's export: the recorded samples
+    // come from the engine on demand and land as a Blob download
+    // (DataRecorderElm.java:99-125).
+    return (
+      <label className="field">
+        <span>{field.label}</span>
+        <button type="button" onClick={() => onDownload?.()}>
+          Export
+        </button>
+      </label>
+    );
+  }
+
   if (field.type === 'file') {
     // The load itself is asynchronous (a FileReader plus, for audio, the
     // WebAudio decoder); the change handler in the parent does the reading
@@ -395,6 +413,23 @@ export function OptionsPanel({ engine }: Props) {
               field={f}
               value={fieldValue(selected, f)}
               onBeginEdit={beginEdit}
+              onDownload={
+                f.type === 'download'
+                  ? () => {
+                      // The engine holds the ring; the samples are pulled on
+                      // demand and downloaded with upstream's filename and
+                      // header (DataRecorderElm.java:106-118).
+                      if (!engine) return;
+                      const data = engine.recordedData(selected.id);
+                      saveBlob(
+                        recorderFilename(),
+                        new Blob([recorderDataText(data, settings.timeStep)], {
+                          type: 'text/plain',
+                        }),
+                      );
+                    }
+                  : undefined
+              }
               onChange={(v) => {
                 if (f.type === 'file' && f.fileLoad !== undefined) {
                   // `v` is the FileList; the read and decode are asynchronous

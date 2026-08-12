@@ -46,6 +46,9 @@ describe('capability gates', () => {
       'delayBuffer',
       'sweep',
       'output',
+      'testPoint',
+      'dataRecorder',
+      'stopTrigger',
     ]) {
       expect(canRotate(element(kind, 0, 0, 32, 0))).toBe(true);
     }

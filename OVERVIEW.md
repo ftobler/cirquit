@@ -280,9 +280,8 @@ symbol toggle, which is on by default.
 - [x] Custom logic (the `!` model line and the `208` element)
 
 **Instruments and annotation** — done: labeled node, output,
-voltmeter, text, ammeter, box, line, scope-as-element.
-
-- [ ] Ohmmeter, wattmeter, test point, data recorder, stop trigger
+voltmeter, text, ammeter, box, line, scope-as-element, ohmmeter, test point,
+wattmeter, data recorder, stop trigger.
 
 **Electromechanical** — done: three-phase motor.
 
@@ -352,7 +351,12 @@ Dump codes implemented so far, with their trailing field order:
 | `a`   | op-amp         | maxOut, minOut, gbw, volts0, volts1, gain                  |
 | `402` | OTA            | one raw `_`-joined child-dump token per composite child (2 rails + 16 transistors), carried verbatim |
 | `207` | labeled node   | text (FLAG_ESCAPE = 4, always set on save)                 |
-| `O`   | output         | scale                                                      |
+| `368` | test point      | meter, [label] (FLAG_LABEL = 1)                             |
+| `216` | ohmmeter        | current, maxVoltage (the CurrentElm tokens)                 |
+| `420` | wattmeter       | width, meter                                                |
+| `210` | data recorder   | dataCount                                                   |
+| `408` | stop trigger    | triggerVoltage, type, delay, count                          |
+| `O`   | output          | scale                                                      |
 | `p`   | probe          | meter, scale, resistance                                   |
 | `x`   | text           | size, text (FLAG_ESCAPE = 4, always set on save)           |
 | `I`   | inverter       | slewRate, highVoltage                                      |

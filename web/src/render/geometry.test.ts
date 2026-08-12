@@ -295,6 +295,9 @@ describe('stem-bearing one-post family', () => {
     'dataInput',
     'delayBuffer',
     'sweep',
+    'testPoint',
+    'dataRecorder',
+    'stopTrigger',
   ];
 
   it.each(STEM)(

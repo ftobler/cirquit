@@ -34,6 +34,7 @@ pub mod d_flip_flop;
 pub mod dac;
 pub mod darlington;
 pub mod data_input;
+pub mod data_recorder;
 pub mod de_multiplexer;
 pub mod decimal_display;
 pub mod decoration;
@@ -69,6 +70,7 @@ pub mod motor_protection_switch;
 pub mod multi_throw_switch;
 pub mod multiplexer;
 pub mod noise;
+pub mod ohmmeter;
 pub mod opamp;
 pub mod ota;
 pub mod phase_comp;
@@ -87,9 +89,11 @@ pub mod seven_seg_decoder;
 pub mod sipo_shift;
 pub mod spark_gap;
 pub mod sram;
+pub mod stop_trigger;
 pub mod sweep;
 pub mod switch;
 pub mod t_flip_flop;
+pub mod test_point;
 pub mod thermistor;
 pub mod three_phase_motor;
 pub mod timer;
@@ -106,6 +110,7 @@ pub mod vccs;
 pub mod vco;
 pub mod vcvs;
 pub mod voltage_source;
+pub mod wattmeter;
 pub mod wire;
 
 use crate::element::Element;
@@ -215,6 +220,11 @@ pub const KINDS: &[&str] = &[
     "logicOutput",
     "probe",
     "ammeter",
+    "ohmmeter",
+    "testPoint",
+    "wattmeter",
+    "dataRecorder",
+    "stopTrigger",
     "decoration",
     "box",
     "line",
@@ -340,6 +350,11 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "logicOutput" => Box::new(logic_output::LogicOutput::new(spec)),
         "probe" => Box::new(probe::Probe::new(spec)),
         "ammeter" => Box::new(ammeter::Ammeter::new(spec)),
+        "ohmmeter" => Box::new(ohmmeter::Ohmmeter::new(spec)),
+        "testPoint" => Box::new(test_point::TestPoint::new(spec)),
+        "wattmeter" => Box::new(wattmeter::Wattmeter::new(spec)),
+        "dataRecorder" => Box::new(data_recorder::DataRecorder::new(spec)),
+        "stopTrigger" => Box::new(stop_trigger::StopTrigger::new(spec)),
         "decoration" => Box::new(decoration::Decoration::new(spec)),
         "box" => Box::new(r#box::Box::new(spec)),
         "line" => Box::new(line::Line::new(spec)),

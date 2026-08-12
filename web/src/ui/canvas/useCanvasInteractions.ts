@@ -356,14 +356,23 @@ export function useCanvasInteractions(
         let x2 = snap(p.x, grid);
         let y2 = snap(p.y, grid);
         const placed = state.elements.find((q) => q.id === drag.id);
-        if (placed !== undefined && axisConstrained(placed)) {
-          // A multi-post part snaps to the dominant axis, so a transistor,
-          // op-amp or SPDT cannot end up diagonal (CircuitElm.java:560-566).
-          const snapped = dominantAxisSnap(drag.start, x2, y2);
-          x2 = snapped.x;
-          y2 = snapped.y;
+        if (placed !== undefined) {
+          const def = defFor(placed.kind);
+          // A drag-derived parameter (the wattmeter's width) is the weaker
+          // drag component; the axis snap below discards it, so capture it
+          // from the snapped pointer first (WattmeterElm.java:75-89).
+          const extra = def?.dragParams?.(drag.start, { x: x2, y: y2 });
+          if (axisConstrained(placed)) {
+            // A multi-post part snaps to the dominant axis, so a transistor,
+            // op-amp or SPDT cannot end up diagonal (CircuitElm.java:560-566).
+            const snapped = dominantAxisSnap(drag.start, x2, y2);
+            x2 = snapped.x;
+            y2 = snapped.y;
+          }
+          const patch: { x2: number; y2: number; params?: Record<string, number> } = { x2, y2 };
+          if (extra !== undefined) patch.params = { ...placed.params, ...extra };
+          state.updateElement(drag.id, patch);
         }
-        state.updateElement(drag.id, { x2, y2 });
         break;
       }
       case 'move': {
@@ -389,6 +398,11 @@ export function useCanvasInteractions(
         let y = snap(p.y, grid);
         const e = state.elements.find((q) => q.id === drag.id);
         if (e !== undefined) {
+          const def = defFor(e.kind);
+          // A drag-derived parameter (the wattmeter's width) is the weaker
+          // drag component against the fixed endpoint; the axis lock below
+          // discards it, so capture it first (WattmeterElm.java:75-89).
+          const extra = def?.dragParams?.(drag.start, { x, y });
           // A post drag of an axis-locked part can only stretch along the
           // body, never rotate it (upstream's movePoint, CircuitElm.java:661-666).
           if (axisConstrained(e)) {
@@ -397,11 +411,25 @@ export function useCanvasInteractions(
             y = constrained.y;
           }
           // A no-op update would bump `revision` and make the engine reload
-          // mid-cell, so only touch the store when the endpoint actually moved.
-          // If the element vanished mid-drag there is nothing to write either.
-          if (!postAt(e, drag.post, x, y)) {
-            state.updateElement(drag.id, postPatch(drag.post, x, y));
-            dragRef.current = { ...drag, moved: true };
+          // mid-cell, so only touch the store when the endpoint actually moved
+          // or a drag-derived parameter (the wattmeter's width) really changed
+          // while the axis lock held the endpoint still. If the element
+          // vanished mid-drag there is nothing to write either.
+          const movedPost = !postAt(e, drag.post, x, y);
+          const paramsChanged =
+            extra !== undefined &&
+            Object.entries(extra).some(([k, v]) => e.params[k] !== v);
+          if (movedPost || paramsChanged) {
+            const patch: {
+              x1?: number;
+              y1?: number;
+              x2?: number;
+              y2?: number;
+              params?: Record<string, number>;
+            } = postPatch(drag.post, x, y);
+            if (extra !== undefined) patch.params = { ...e.params, ...extra };
+            state.updateElement(drag.id, patch);
+            dragRef.current = { ...drag, moved: movedPost || drag.moved };
           }
         }
         break;

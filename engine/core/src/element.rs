@@ -295,6 +295,11 @@ pub trait Element {
         self.base_mut().reset();
     }
 
+    /// Re-arms an element that can pause the simulation (the stop trigger)
+    /// without rewinding time. Default is a no-op; only elements that latch a
+    /// pause state override it, and the frontend calls it when a run resumes.
+    fn clear_stop(&mut self) {}
+
     /// The voltage this element plots on a voltage scope and shows in the
     /// readout. The default is `V(post0) - V(post1)`, with a guard for the
     /// one-post elements (ground, rail, labeled node) that have no second
@@ -365,6 +370,13 @@ pub trait Element {
     /// element reports empty, so the frontend only pays for the call on kinds
     /// that ask.
     fn body_samples(&self, _segments: usize) -> Vec<f32> {
+        Vec::new()
+    }
+
+    /// A data recorder's recorded samples, oldest first, for the frontend's
+    /// export button. Default: nothing; only the data recorder reports, so
+    /// the frontend only pays for the call on that kind.
+    fn data_recorder_data(&self) -> Vec<f64> {
         Vec::new()
     }
 }

@@ -84,7 +84,7 @@ export interface FieldDef {
   label: string;
   /** Unit suffix, formatted with engineering prefixes. */
   unit?: string;
-  type?: 'number' | 'choice' | 'bool' | 'text' | 'file';
+  type?: 'number' | 'choice' | 'bool' | 'text' | 'file' | 'download';
   /** Which sample source a `type: 'file'` field loads: an audio buffer (via
    *  the WebAudio decoder) or a data text file (one value per line). Absent
    *  on every other field type. */
@@ -139,6 +139,12 @@ export interface ElementDef {
   parse?(tokens: string[], e: CircuitElement): void;
   /** Writes the tokens that follow `flags` on a netlist line. */
   dump?(e: CircuitElement): (string | number)[];
+  /** Live parameters a placement or single-endpoint drag derives from its
+   *  geometry. Called by the canvas with the drag start and the snapped
+   *  pointer, so an element whose width is a perpendicular drag component (the
+   *  wattmeter) captures it before the axis snap discards it. Returns the
+   *  params to merge into the element; absent means no derivation. */
+  dragParams?(start: Point, pointer: Point): Record<string, number>;
   /** Replaces `e.flags` in the saved line, for formats whose token layout is
    *  conditional on a flag bit the parse already consumed (e.g. a diode's
    *  FLAG_MODEL). Absent means the element's own flags are written. */

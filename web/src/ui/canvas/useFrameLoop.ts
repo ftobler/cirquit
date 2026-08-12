@@ -31,6 +31,10 @@ export function useFrameLoop(
   const loadedRevision = useRef(-1);
   const appliedParamRevision = useRef(-1);
   const appliedScopeFp = useRef('');
+  // Whether the simulation was running at the end of the last frame. The stop
+  // trigger latch clears only on the pause -> run edge (or reset), so the edge
+  // must be detected here rather than re-armed per step.
+  const wasRunningRef = useRef(false);
   // The document the engine currently holds. setCircuit records it, and the
   // rebuild branches inject live state only when it matches the store's
   // current document (a load or New bumps the counter, so their rebuilds seed
@@ -147,6 +151,17 @@ export function useFrameLoop(
       let values: Float64Array | null = null;
       let states: Float64Array | null = null;
       if (engine) {
+        // A stop trigger latches `stopped` in engine state and the pause check
+        // below keeps the loop stopped until the latch clears. The latch keeps
+        // the element highlighted, and pressing Run would run one frame, see
+        // the still-set latch and re-pause immediately, making the button look
+        // dead until Reset. So on the pause -> run edge, clear the latches
+        // first: the trigger re-arms in the waiting state and the next crossing
+        // fires it again, the re-arm upstream's next stepFinished performs when
+        // the sim resumes.
+        if (running && !wasRunningRef.current) {
+          engine.clearStops();
+        }
         if (running) {
           const stats = engine.run(settings.stepsPerFrame);
           if (!stats.converged && stats.error) {
@@ -170,6 +185,30 @@ export function useFrameLoop(
         elementNodes = engine.elementNodes();
         values = engine.elementValues();
         states = engine.elementStates();
+
+        // A stop trigger cannot pause the engine from inside (the engine has
+        // no UI), so it latches `stopped` and this loop pauses the run when it
+        // sees the latch, the same one-shot pattern as the fuse's blown check.
+        // The latch stays set until the next Run edge clears it via
+        // `clearStops` above, so the draw highlight stays live while the
+        // repeated pause call is a harmless no-op guarded by `running` having
+        // already flipped false.
+        if (running && states) {
+          for (const e of elements) {
+            if (e.kind === 'stopTrigger') {
+              const idx = engine.indexOf(e.id);
+              if (idx !== undefined && (states[idx] ?? 0) >= 1) {
+                useStore.getState().setRunning(false);
+                break;
+              }
+            }
+          }
+        }
+
+        // Remember the running state for the next frame's pause -> run edge
+        // detection. `running` is this frame's snapshot, so the frame that
+        // pauses below still records true; the pause is seen next frame.
+        wasRunningRef.current = running;
       }
 
       // ---- render ----

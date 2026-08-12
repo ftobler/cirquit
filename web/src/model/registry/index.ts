@@ -113,6 +113,11 @@ import { LABELED_NODE_DEF } from './elements/labeledNode';
 import { OUTPUT_DEF } from './elements/output';
 import { LOGIC_OUTPUT_DEF } from './elements/logicOutput';
 import { PROBE_DEF } from './elements/probe';
+import { OHMMETER_DEF } from './elements/ohmmeter';
+import { TEST_POINT_DEF } from './elements/testPoint';
+import { WATTMETER_DEF } from './elements/wattmeter';
+import { DATA_RECORDER_DEF } from './elements/dataRecorder';
+import { STOP_TRIGGER_DEF } from './elements/stopTrigger';
 import { DECORATION_DEF } from './elements/decoration';
 import type { CircuitElement, ElementDef, Point } from '../types';
 
@@ -237,6 +242,11 @@ export const ELEMENT_DEFS: ElementDef[] = [
   LOGIC_OUTPUT_DEF,
   PROBE_DEF,
   AMMETER_DEF,
+  OHMMETER_DEF,
+  TEST_POINT_DEF,
+  WATTMETER_DEF,
+  DATA_RECORDER_DEF,
+  STOP_TRIGGER_DEF,
   DECORATION_DEF,
   BOX_DEF,
   LINE_DEF,

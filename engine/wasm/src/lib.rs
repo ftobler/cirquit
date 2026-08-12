@@ -180,6 +180,14 @@ impl Simulator {
         self.circuit.reset();
     }
 
+    /// Re-arms the stop triggers so a simulation paused by one can resume
+    /// without rewinding time. The frame loop calls it on the pause -> run
+    /// transition; stepping alone must not clear the latches.
+    #[wasm_bindgen(js_name = clearStops)]
+    pub fn clear_stops(&mut self) {
+        self.circuit.clear_stops();
+    }
+
     #[wasm_bindgen(getter)]
     pub fn time(&self) -> f64 {
         self.circuit.time()
@@ -298,6 +306,15 @@ impl Simulator {
     #[wasm_bindgen(js_name = transmissionLineWave)]
     pub fn transmission_line_wave(&self, id: u32, segments: usize) -> Vec<f32> {
         self.circuit.body_samples(id, segments)
+    }
+
+    /// A data recorder's recorded samples, oldest first, for the frontend's
+    /// export button. Empty for ids that are not data recorders. An on-demand
+    /// per-element array like `transmissionLineWave`, so no other element pays
+    /// for the crossing.
+    #[wasm_bindgen(js_name = dataRecorderData)]
+    pub fn data_recorder_data(&self, id: u32) -> Vec<f64> {
+        self.circuit.data_recorder_data(id)
     }
 
     /// Trigger display info for a scope. `width` is the display width in

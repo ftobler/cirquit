@@ -101,6 +101,39 @@ export function escapeFlags(e: CircuitElement): number {
 }
 
 /**
+ * Label text drawn past a stem's free end, the port of `drawLabeledNode`
+ * (CircuitElm.java:945-973): a horizontal stem puts the text right of the end
+ * (left when the stem runs right-to-left), a vertical one centers it past the
+ * end, `h` units along the stem's direction (down when it runs downward).
+ * `color` is the caller's text colour (whiteColor, or selection when the part
+ * is highlighted); the font is the caller's, which the width measurement uses.
+ */
+export function labeledNodeText(
+  g: DrawContext,
+  text: string,
+  pt1: Point,
+  pt2: Point,
+  color: string,
+): void {
+  const w = g.ctx.measureText(text).width;
+  const h = g.valueFontSize;
+  g.ctx.fillStyle = color;
+  g.ctx.textBaseline = 'middle';
+  let x = pt2.x;
+  let y = pt2.y;
+  if (pt1.y !== pt2.y) {
+    x -= w / 2;
+    y += Math.sign(pt2.y - pt1.y) * h;
+  } else if (pt2.x > pt1.x) {
+    x += 4;
+  } else {
+    x -= 4 + w;
+  }
+  g.ctx.textAlign = 'left';
+  g.ctx.fillText(text, x, y);
+}
+
+/**
  * The switch lever as a segment. Upstream draws it from `interpPoint(lead1,
  * lead2, 0, hs1)` to `interpPoint(lead1, lead2, 1, hs2)`, where open means
  * `hs1 = 0, hs2 = openhs` and closed means both `hs = 2` (SwitchElm.java:

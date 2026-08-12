@@ -252,6 +252,10 @@ describe('text field metadata', () => {
         // A flag field is bound to a bit of `e.flags`, not to a param, so
         // there is nothing in parse/dump/defaults for it to match.
         if (f.flag !== undefined) continue;
+        // A download field binds no value at all: it is a button that pulls
+        // the recorded samples from the engine on demand (the data recorder's
+        // export), never a param the element reads or writes.
+        if (f.type === 'download') continue;
         expect(bound.has(f.name), `${def.kind} field '${f.name}' is bound to nothing`).toBe(true);
       }
     }
@@ -1174,5 +1178,138 @@ describe('multi-post elements stay on the 90-degree axis', () => {
     for (const p of postsOf(moved)) {
       expect(Number.isInteger(p.x) && Number.isInteger(p.y), `${def.kind} post`).toBe(true);
     }
+  });
+});
+
+describe('wattmeter geometry', () => {
+  const watt = (width: number, flags = 0): CircuitElement =>
+    element('wattmeter', 0, 0, 64, 0, flags, { width, meter: 0 });
+
+  it('posts match upstream setPoints for a horizontal body', () => {
+    // ds = sign(dx) = +1 for a left-to-right body, so the bottom stubs are
+    // -width below the axis and the posts order is p3, p4, point1, point2
+    // (WattmeterElm.java:95-114).
+    expect(postsOf(watt(32))).toEqual([
+      { x: 0, y: 32 },
+      { x: 64, y: 32 },
+      { x: 0, y: 0 },
+      { x: 64, y: 0 },
+    ]);
+  });
+
+  it('posts keep the stored width for a vertical body', () => {
+    // ds = -sign(dy) = -1 for a body drawn downward, so the stubs sit at
+    // +width to the right of the axis.
+    const e = element('wattmeter', 0, 0, 0, 64, 0, { width: 16, meter: 0 });
+    expect(postsOf(e)).toEqual([
+      { x: 16, y: 0 },
+      { x: 16, y: 64 },
+      { x: 0, y: 0 },
+      { x: 0, y: 64 },
+    ]);
+  });
+
+  it('dragParams takes the weaker drag component as the width', () => {
+    const def = defFor('wattmeter');
+    // A mostly-horizontal drag: the horizontal component is the axis, the
+    // vertical one the width.
+    expect(def?.dragParams?.({ x: 0, y: 0 }, { x: 160, y: 32 })).toEqual({ width: 32 });
+    // A mostly-vertical drag: the vertical component is the axis.
+    expect(def?.dragParams?.({ x: 0, y: 0 }, { x: 32, y: 160 })).toEqual({ width: 32 });
+    // A pure axis drag has no perpendicular component; the grid-size floor
+    // applies (WattmeterElm.java:78-79).
+    expect(def?.dragParams?.({ x: 0, y: 0 }, { x: 0, y: 160 })).toEqual({ width: 16 });
+  });
+});
+
+describe('batch I instrument draws', () => {
+  const draw = (kind: string, overrides: Partial<DrawContext> = {}, e?: CircuitElement) => {
+    const ctx = mkCtx();
+    defFor(kind)?.draw(
+      context(ctx, overrides),
+      e ?? element(kind, 0, 0, 64, 0, 0, kind === 'wattmeter' ? { width: 16, meter: 0 } : {}),
+    );
+    return ctx;
+  };
+
+  const texts = (ctx: CtxStub): string[] => ctx.fillText.mock.calls.map((c) => String(c[0]));
+
+  it('ohmmeter draws the Ω circle and the reading caption only under current', () => {
+    const running = draw('ohmmeter', { current: 0.01, value: 4700, showValues: true });
+    expect(running.arc).toHaveBeenCalled();
+    expect(texts(running)).toContain('Ω');
+    expect(texts(running)).toContain('4.7k');
+    const idle = draw('ohmmeter', { current: 0, value: Number.POSITIVE_INFINITY, showValues: true });
+    expect(texts(idle)).not.toContain('4.7k');
+  });
+
+  it('test point draws the label and the selected value', () => {
+    const ctx = draw(
+      'testPoint',
+      { value: 7.07 },
+      element('testPoint', 0, 0, 64, 0, 0, { meter: 1 }),
+    );
+    expect(texts(ctx)).toContain('TP');
+    expect(texts(ctx)).toContain('7.1V(rms)');
+  });
+
+  it('test point with a custom label draws it', () => {
+    const ctx = draw(
+      'testPoint',
+      { value: 0 },
+      { ...element('testPoint', 0, 0, 64, 0, 1, { meter: 3 }), text: 'SIG' },
+    );
+    expect(texts(ctx)).toContain('SIG');
+  });
+
+  it('test point file-only meter modes draw their upstream units', () => {
+    // The UI only offers meters 0,1,10,2,3,4,5, but a loaded file can carry
+    // 6 (FRQ), 7 (PER), 8 (PWI) or 9 (DUT). Upstream draws Hz, seconds and a
+    // bare duty-cycle number; TP_PER leaves the value string unset
+    // (TestPointElm.java:201-213), so it keeps the plain V fallback.
+    const frq = draw(
+      'testPoint',
+      { value: 1000 },
+      element('testPoint', 0, 0, 64, 0, 0, { meter: 6 }),
+    );
+    expect(texts(frq)).toContain('1kHz');
+    const pwi = draw(
+      'testPoint',
+      { value: 0.002 },
+      element('testPoint', 0, 0, 64, 0, 0, { meter: 8 }),
+    );
+    expect(texts(pwi)).toContain('2ms');
+    const dut = draw(
+      'testPoint',
+      { value: 0.5 },
+      element('testPoint', 0, 0, 64, 0, 0, { meter: 9 }),
+    );
+    expect(texts(dut)).toContain('500m');
+    const per = draw(
+      'testPoint',
+      { value: 0.002 },
+      element('testPoint', 0, 0, 64, 0, 0, { meter: 7 }),
+    );
+    expect(texts(per)).toContain('2mV');
+  });
+
+  it('wattmeter draws its rectangle body and the power text', () => {
+    const ctx = draw('wattmeter', { value: 0.5 });
+    expect(texts(ctx)).toContain('500mW');
+    // The rectangle body is a stroked closed quad: four stub leads plus the
+    // four-segment body polyline.
+    expect(ctx.strokes.length).toBeGreaterThan(4);
+  });
+
+  it('data recorder draws the export label at the free end', () => {
+    const ctx = draw('dataRecorder', {});
+    expect(texts(ctx)).toContain('export');
+  });
+
+  it('stop trigger draws the trigger label and highlights while stopped', () => {
+    const idle = draw('stopTrigger', {});
+    expect(texts(idle)).toContain('trigger');
+    const stopped = draw('stopTrigger', { state: 1 });
+    expect(stopped.strokes).toContain(makeTheme().selection);
   });
 });
