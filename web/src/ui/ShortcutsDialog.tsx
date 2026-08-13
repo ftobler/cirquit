@@ -82,7 +82,8 @@ export function ShortcutsDialog() {
           <tr>
             <th>Command</th>
             <th>Shortcut</th>
-            <th />
+            {/* An empty spacer column for the Clear buttons; nothing to announce. */}
+            <th aria-hidden="true" />
           </tr>
         </thead>
         <tbody>

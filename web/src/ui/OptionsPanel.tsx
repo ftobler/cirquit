@@ -1,6 +1,6 @@
 /** Properties of the selected element, plus global simulation settings. */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
 import { formatUnits, parseUnits } from '../model/units';
@@ -50,6 +50,9 @@ function UnitInput({
   const [draft, setDraft] = useState(() => formatUnits(value));
   const [focused, setFocused] = useState(false);
   const [error, setError] = useState(false);
+  // The error message needs a stable id so the input can point its
+  // aria-describedby at it and a screen reader hears what is wrong.
+  const errorId = useId();
 
   // An outside change (undo, selection switch, file load) must refresh the
   // box, but the value flowing back from our own commit must not fight the
@@ -66,6 +69,7 @@ function UnitInput({
           type="text"
           value={draft}
           aria-invalid={error}
+          aria-describedby={error ? errorId : undefined}
           onFocus={() => {
             setFocused(true);
             setError(false);
@@ -88,7 +92,11 @@ function UnitInput({
           }}
         />
       </label>
-      {error && <div className="problem">Invalid value</div>}
+      {error && (
+        <div id={errorId} className="problem" role="alert">
+          Invalid value
+        </div>
+      )}
     </>
   );
 }
@@ -425,7 +433,11 @@ export function OptionsPanel({ engine }: Props) {
 
   return (
     <div className="options" tabIndex={-1}>
-      {problem && <div className="problem">{problem}</div>}
+      {problem && (
+        <div className="problem" role="alert">
+          {problem}
+        </div>
+      )}
 
       {selected && def ? (
         <section ref={fieldsRef}>

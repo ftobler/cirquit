@@ -44,6 +44,7 @@ export function FindComponentDialog() {
       <input
         autoFocus
         type="text"
+        aria-label="Search components"
         placeholder="Type a component name"
         value={query}
         onChange={(ev) => {

@@ -42,7 +42,7 @@ export function ExportAsTextDialog() {
         </>
       }
     >
-      <textarea spellCheck={false} value={text} onChange={(ev) => setText(ev.target.value)} />
+      <textarea aria-label="Circuit text" spellCheck={false} value={text} onChange={(ev) => setText(ev.target.value)} />
     </Dialog>
   );
 }

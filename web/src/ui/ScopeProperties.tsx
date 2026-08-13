@@ -6,11 +6,12 @@
  * to a store field the other stages defined.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { seedManScale, barToSpeed, speedToBar, gridStepX, scaleStateFor } from '../scope/scale';
 import { formatValue } from '../render/draw';
 import { MAN_DIVISIONS } from '../scope/draw';
 import { useStore } from '../state/store';
+import { useFocusTrap } from './useFocusTrap';
 
 interface Props {
   scopeId: number;
@@ -24,6 +25,19 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
   const [labelText, setLabelText] = useState(scope?.label ?? '');
   const [levelText, setLevelText] = useState(String(scope?.trigger.level ?? 0));
   const [divisions, setDivisions] = useState(String(MAN_DIVISIONS));
+  // Modal focus handling like the Dialog shell: Trap Tab, return focus to the
+  // opener on close. The opener (a scope-menu row) is usually gone by then,
+  // so the trap's restore guards against a detached element.
+  const panelRef = useFocusTrap<HTMLDivElement>({ returnFocus: true });
+
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   if (!scope) return null;
 
   const setFlags = (patch: Parameters<ReturnType<typeof useStore.getState>['setScopeFlags']>[1]) =>
@@ -68,7 +82,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
   );
 
   return (
-    <div className="scope-props" role="dialog" aria-label="Scope properties">
+    <div className="scope-props" role="dialog" aria-modal="true" aria-label="Scope properties" tabIndex={-1} ref={panelRef}>
       <h3>Scope Properties</h3>
 
       <fieldset>
@@ -139,6 +153,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
                 <input
                   className="scalebox"
                   type="text"
+                  aria-label="Scale per division"
                   defaultValue={plot.manScale?.toString() ?? ''}
                   onBlur={(e) => setManScaleText(plot.id, e.target.value)}
                   style={{ width: 64 }}
@@ -171,6 +186,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
         <div className="row">
           <input
             type="range"
+            aria-label="Horizontal scale"
             min={0}
             max={10}
             value={speedToBar(scope.speed)}
@@ -212,6 +228,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
           <input
             className="scalebox"
             type="text"
+            aria-label="Trigger level"
             value={levelText}
             onChange={(e) => setLevelText(e.target.value)}
             style={{ width: 64 }}
@@ -244,6 +261,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
         <input
           className="scalebox"
           type="text"
+          aria-label="Scope label"
           value={labelText}
           onChange={(e) => setLabelText(e.target.value)}
           onBlur={() => setFlags({ label: labelText })}

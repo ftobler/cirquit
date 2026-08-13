@@ -123,7 +123,9 @@ export default function App() {
       // While a dialog is open the dialog owns the keyboard: no shortcut may
       // reach the app, or Ctrl+V would paste into the circuit instead of the
       // dialog's textarea and Delete would edit the circuit behind the modal.
-      if (s.dialog !== null) return;
+      // The scope-properties modal is a store dialog of its own, so the same
+      // guard covers it.
+      if (s.dialog !== null || s.scopeProperties !== null) return;
       const evLike = {
         key: ev.key,
         ctrlKey: ev.ctrlKey,
@@ -260,7 +262,7 @@ export default function App() {
       const target = ev.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
       const s = useStore.getState();
-      if (s.dialog !== null) return;
+      if (s.dialog !== null || s.scopeProperties !== null) return;
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
       if (!isPrintableKey(ev.key)) return;
       s.releaseMomentaryByKey(ev.key);
@@ -330,7 +332,7 @@ export default function App() {
       {dialog === 'createSubcircuit' && <CreateSubcircuitDialog />}
       {dialog === 'subcircuitManager' && <SubcircuitManagerDialog />}
       <div className="workspace">
-        <aside className={partsOpen ? 'left open' : 'left'}>
+        <aside id="parts-drawer" className={partsOpen ? 'left open' : 'left'}>
           <Toolbox />
         </aside>
         <main className="centre">
@@ -338,7 +340,7 @@ export default function App() {
           <ScopePanel engine={engine} />
           <ContextMenu />
         </main>
-        <aside className={panelOpen ? 'right open' : 'right'}>
+        <aside id="options-drawer" className={panelOpen ? 'right open' : 'right'}>
           <OptionsPanel engine={engine} />
           <SliderPanel />
         </aside>

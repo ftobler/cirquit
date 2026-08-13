@@ -95,6 +95,7 @@ export function ContextMenu() {
       key={m.label}
       type="button"
       className="menu-item"
+      role="menuitem"
       disabled={m.disabled}
       onClick={() => run(m.action)}
     >
@@ -211,12 +212,13 @@ export function ContextMenu() {
     <div
       ref={ref}
       className="dropdown-menu context-menu"
+      role="menu"
       style={{ left: contextMenu.x, top: contextMenu.y }}
     >
       {scopeItems.length > 0 && (
         <>
           {scopeItems.map(item)}
-          <div className="menu-sep" />
+          <div className="menu-sep" role="separator" />
         </>
       )}
       {(isElementMenu ? selectionItems : canvasItems).map(item)}

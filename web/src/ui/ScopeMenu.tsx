@@ -90,6 +90,7 @@ export function ScopeMenu({ engine, nameOf }: Props) {
       key={m.label}
       type="button"
       className="menu-item"
+      role="menuitem"
       disabled={m.disabled}
       onClick={() => run(m.action)}
     >
@@ -161,7 +162,12 @@ export function ScopeMenu({ engine, nameOf }: Props) {
   ];
 
   return (
-    <div ref={ref} className="dropdown-menu context-menu" style={{ left: scopeMenu.x, top: scopeMenu.y }}>
+    <div
+      ref={ref}
+      className="dropdown-menu context-menu"
+      role="menu"
+      style={{ left: scopeMenu.x, top: scopeMenu.y }}
+    >
       {items.map(item)}
     </div>
   );

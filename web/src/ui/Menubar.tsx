@@ -3,7 +3,7 @@
  *  the context menu and the keyboard cannot diverge. Rows whose commands other
  *  features still own render disabled with a tooltip, never live-looking. */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { DOC_PAGES } from '../docs/pages';
 import { openCircuit } from '../io/fileIO';
@@ -13,6 +13,7 @@ import { canMirror, canRotate } from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
 import { useStore } from '../state/store';
+import { useMenuKeyboard } from './menuKeyboard';
 
 interface Props {
   engine: SimEngine | null;
@@ -32,6 +33,7 @@ function MenuItem({ label, shortcut, disabled, disabledTitle, title, onClick }: 
     <button
       type="button"
       className="menu-item"
+      role="menuitem"
       disabled={disabled}
       title={disabled ? disabledTitle : title}
       onClick={onClick}
@@ -62,16 +64,31 @@ function Dropdown({
   label,
   open,
   onToggle,
+  onOpen,
   onClose,
+  menu = false,
   children,
 }: {
   label: string;
   open: boolean;
   onToggle: () => void;
+  /** Force-opens the menu from the keyboard; only wired when `menu` is true. */
+  onOpen?: () => void;
   onClose: () => void;
+  /** True for the flat command menus, which get `role="menu"` and arrow-key
+   *  navigation. False for the Circuits dropdown: it is a search region with
+   *  an input and `<details>` groups, so it keeps native controls and a
+   *  group role instead of pretending to be a flat menu. */
+  menu?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // The opening key asks for the first or last item; the hook consumes it the
+  // render after the menu opens, once the items exist.
+  const [focusOnOpen, setFocusOnOpen] = useState<'first' | 'last' | null>(null);
+  // The Circuits popup has no menu role, so the trigger names what it expands
+  // through aria-controls instead of aria-haspopup.
+  const popupId = useId();
 
   // Dismissal: a pointerdown outside, Escape, or losing focus. One listener
   // per open dropdown, the same pattern as the context menu.
@@ -92,18 +109,38 @@ function Dropdown({
     };
   }, [open, onClose]);
 
+  useMenuKeyboard({
+    enabled: menu,
+    open,
+    onOpen: () => onOpen?.(),
+    onClose,
+    containerRef: ref,
+    focusOnOpen,
+    setFocusOnOpen,
+  });
+
   return (
     <div ref={ref} className="dropdown">
       <button
         type="button"
         className={open ? 'active' : ''}
-        aria-haspopup="menu"
+        aria-haspopup={menu ? 'menu' : undefined}
+        aria-controls={menu ? undefined : popupId}
         aria-expanded={open}
         onClick={onToggle}
       >
         {label} ▾
       </button>
-      {open && <div className="dropdown-menu">{children}</div>}
+      {open && (
+        <div
+          id={menu ? undefined : popupId}
+          className="dropdown-menu"
+          role={menu ? 'menu' : 'group'}
+          aria-label={menu ? label : 'Circuit library'}
+        >
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -390,35 +427,77 @@ export function Menubar({ engine }: Props) {
     <header className="menubar">
       <strong className="brand">Circuit Simulator</strong>
 
-      <Dropdown label="File" open={openMenu === 'file'} onToggle={() => toggleMenu('file')} onClose={closeMenus}>
+      <Dropdown
+        label="File"
+        menu
+        open={openMenu === 'file'}
+        onToggle={() => toggleMenu('file')}
+        onOpen={() => setOpenMenu('file')}
+        onClose={closeMenus}
+      >
         {menu(fileItems)}
       </Dropdown>
 
-      <Dropdown label="Edit" open={openMenu === 'edit'} onToggle={() => toggleMenu('edit')} onClose={closeMenus}>
+      <Dropdown
+        label="Edit"
+        menu
+        open={openMenu === 'edit'}
+        onToggle={() => toggleMenu('edit')}
+        onOpen={() => setOpenMenu('edit')}
+        onClose={closeMenus}
+      >
         {menu(editItems)}
       </Dropdown>
 
-      <Dropdown label="Scopes" open={openMenu === 'scopes'} onToggle={() => toggleMenu('scopes')} onClose={closeMenus}>
+      <Dropdown
+        label="Scopes"
+        menu
+        open={openMenu === 'scopes'}
+        onToggle={() => toggleMenu('scopes')}
+        onOpen={() => setOpenMenu('scopes')}
+        onClose={closeMenus}
+      >
         {menu(scopesItems)}
       </Dropdown>
 
-      <Dropdown label="Options" open={openMenu === 'options'} onToggle={() => toggleMenu('options')} onClose={closeMenus}>
+      <Dropdown
+        label="Options"
+        menu
+        open={openMenu === 'options'}
+        onToggle={() => toggleMenu('options')}
+        onOpen={() => setOpenMenu('options')}
+        onClose={closeMenus}
+      >
         <CheckItem label="White Background" checked={!dark} onClick={fire(() => setDark(!dark))} />
         <CheckItem label="European Resistors" checked={euroResistors} onClick={fire(() => updateSettings({ euroResistors: !euroResistors }))} />
         <CheckItem label="IEC Gates" checked={euroGates} onClick={fire(() => updateSettings({ euroGates: !euroGates }))} />
         <CheckItem label="Conventional Current Motion" checked={conventional} onClick={fire(() => updateSettings({ conventional: !conventional }))} />
         <CheckItem label="Disable Editing" checked={!editable} onClick={fire(() => updateSettings({ editable: !editable }))} />
-        <div className="menu-sep" />
+        <div className="menu-sep" role="separator" />
         {menu([
           { label: 'Shortcuts…', onClick: fire(() => openDialog('shortcuts')) },
         ])}
       </Dropdown>
 
-      <Dropdown label="Tools" open={openMenu === 'tools'} onToggle={() => toggleMenu('tools')} onClose={closeMenus}>
+      <Dropdown
+        label="Tools"
+        menu
+        open={openMenu === 'tools'}
+        onToggle={() => toggleMenu('tools')}
+        onOpen={() => setOpenMenu('tools')}
+        onClose={closeMenus}
+      >
         {menu(toolsItems)}
       </Dropdown>
 
-      <Dropdown label="Help" open={openMenu === 'help'} onToggle={() => toggleMenu('help')} onClose={closeMenus}>
+      <Dropdown
+        label="Help"
+        menu
+        open={openMenu === 'help'}
+        onToggle={() => toggleMenu('help')}
+        onOpen={() => setOpenMenu('help')}
+        onClose={closeMenus}
+      >
         {menu(helpItems)}
       </Dropdown>
 
@@ -438,6 +517,7 @@ export function Menubar({ engine }: Props) {
             <input
               type="text"
               className="library-search"
+              aria-label="Search circuits"
               placeholder="Search circuits…"
               value={libraryQuery}
               onChange={(e) => setLibraryQuery(e.target.value)}
@@ -473,6 +553,8 @@ export function Menubar({ engine }: Props) {
         <button
           type="button"
           className={partsOpen ? 'active' : ''}
+          aria-expanded={partsOpen}
+          aria-controls="parts-drawer"
           onClick={() => setPartsOpen(!partsOpen)}
         >
           Parts
@@ -480,13 +562,17 @@ export function Menubar({ engine }: Props) {
         <button
           type="button"
           className={panelOpen ? 'active' : ''}
+          aria-expanded={panelOpen}
+          aria-controls="options-drawer"
           onClick={() => setPanelOpen(!panelOpen)}
         >
           Options
         </button>
       </div>
 
-      <span className="status">{engine ? status || 'Ready' : 'Loading engine…'}</span>
+      <span className="status" role="status">
+        {engine ? status || 'Ready' : 'Loading engine…'}
+      </span>
 
       <div className="run-group">
         <button

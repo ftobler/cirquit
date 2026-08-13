@@ -299,7 +299,7 @@ wattmeter, data recorder, stop trigger.
 - [x] Mobile / touch layout
 - [x] Keyboard shortcut parity
 - [x] Import upstream's `subcircuits.html` and other side pages
-- [ ] Accessibility pass on the panels
+- [x] Accessibility pass on the panels
 
 ---
 

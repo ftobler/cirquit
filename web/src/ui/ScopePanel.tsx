@@ -205,6 +205,7 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
       <button
         type="button"
         className="scope-close"
+        aria-label="Remove scope"
         onClick={() => useStore.getState().removeScope(scope.id)}
         title="Remove scope"
       >

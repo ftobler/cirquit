@@ -36,7 +36,7 @@ export function ExportAsLinkDialog() {
         </>
       }
     >
-      <textarea readOnly spellCheck={false} value={url} />
+      <textarea readOnly spellCheck={false} aria-label="Share link" value={url} />
       {isLongUrl(url) && (
         <p className="problem">
           This link is over 2000 characters and may be rejected by some services.

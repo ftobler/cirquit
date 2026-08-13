@@ -36,6 +36,7 @@ export function ImportFromTextDialog() {
       <textarea
         autoFocus
         spellCheck={false}
+        aria-label="Circuit text"
         placeholder="Paste a circuit here"
         value={text}
         onChange={(ev) => setText(ev.target.value)}
