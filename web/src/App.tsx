@@ -23,6 +23,7 @@ import { ShortcutsDialog } from './ui/ShortcutsDialog';
 import { SliderDialog } from './ui/SliderDialog';
 import { SubcircuitManagerDialog } from './ui/SubcircuitManagerDialog';
 import { Toolbox } from './ui/Toolbox';
+import { useAutoPause } from './ui/useAutoPause';
 import { hasUnsavedChanges, useStore } from './state/store';
 import { startAutoSave } from './state/recovery';
 import { GRID_SIZE } from './model/types';
@@ -67,6 +68,10 @@ export default function App() {
   // without re-registering on every engine load.
   const engineRef = useRef<SimEngine | null>(null);
   engineRef.current = engine;
+
+  // Pause an unattended tab after 10 s of no meaningful input, once, at
+  // startup, so an opened-but-ignored page stops burning background CPU.
+  useAutoPause();
 
   // Bring up the wasm engine once, then load whatever circuit was requested.
   useEffect(() => {
