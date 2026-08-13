@@ -82,9 +82,12 @@ function colorOf(plot: ScopePlot, dark: boolean, colors?: ThemeColors): string {
 
 /** Which columns of a trace's snapshot to draw, given the trigger anchor or
  *  the plain visible window. `posOf(k)` maps drawn column `k` to a snapshot
- *  slot, or -1 when that ring slot holds no valid data. */
+ *  slot, or -1 when that ring slot holds no valid data. `xOffset` is the
+ *  pixel of drawn column 0, so a right-anchored pre-wrap trace can grow from
+ *  the right edge while the trigger window stays left-aligned. */
 interface Window {
   count: number;
+  xOffset: number;
   posOf: (k: number) => number;
 }
 
@@ -92,7 +95,10 @@ function plainWindow(data: Float32Array, w: number): Window {
   const columns = data.length / 2;
   const count = Math.min(columns, w);
   const start = columns > w ? columns - w : 0;
-  return { count, posOf: (k) => start + k };
+  // Right-anchor before the ring wraps: the newest column draws at pixel
+  // w - 1, matching the grid's timeToX (right edge is sim time). Once the
+  // ring is full the newest w columns fill the canvas and xOffset is 0.
+  return { count, xOffset: w - count, posOf: (k) => start + k };
 }
 
 interface TriggerInfoLike {
@@ -113,6 +119,7 @@ function triggerWindow(data: Float32Array, info: TriggerInfoLike, w: number): Wi
   const cap = info.columns;
   return {
     count,
+    xOffset: 0,
     posOf: (k) => {
       const ring = (info.start_index + k) % cap;
       const pos = (ring + cap - info.snapshot_start) % cap;
@@ -225,7 +232,7 @@ function drawTrace(
     if (pos < 0) continue;
     const lo = yOf(t, maxy, data[pos * 2]);
     const hi = yOf(t, maxy, data[pos * 2 + 1]);
-    const x = k + 0.5;
+    const x = win.xOffset + k + 0.5;
     if (hi === lo) {
       ctx.moveTo(x, lo);
       ctx.lineTo(x, lo + 0.5);
@@ -475,7 +482,7 @@ function drawCursor(
 
   const lines: InfoLine[] = [];
   let y = -10;
-  const k = Math.round(x);
+  const k = Math.round(x) - selected.win.xOffset;
   const cursorValue = k >= 0 && k < selected.count ? selected.max[k] : null;
   if (cursorValue !== null) {
     const dotY = yOf(selected.transform, maxy, cursorValue);
@@ -498,7 +505,7 @@ function drawCursor(
       ctx.moveTo(dragX, 0);
       ctx.lineTo(dragX, h);
       ctx.stroke();
-      const dragK = Math.round(dragX);
+      const dragK = Math.round(dragX) - selected.win.xOffset;
       const startValue = dragK >= 0 && dragK < selected.count ? selected.max[dragK] : null;
       const deltaT = cursor.cursorTime - cursor.dragStartTime;
       lines.push({ text: `Δt=${formatValue(Math.abs(deltaT), 's', decimalDigits)}`, y: (y += 15) });
@@ -902,7 +909,7 @@ export function selectPlotAt(
   if (plots.length === 0) return -1;
   const data = engine.scopeData(plots[0].index);
   const win = plainWindow(data, w);
-  const k = Math.round(x);
+  const k = Math.round(x) - win.xOffset;
   let best = -1;
   let bestDist = Infinity;
   for (let i = 0; i < plots.length; i++) {
@@ -938,13 +945,16 @@ export function exportScopeCsv(
     if (index === undefined) continue;
     const data = engine.scopeData(index);
     const win = plainWindow(data, w);
-    const min = new Float32Array(win.count);
-    const max = new Float32Array(win.count);
+    // Index by pixel, so buildCsv row i lines up with pixel i: the right
+    // anchor shifts drawn column k to pixel xOffset + k. Pixels left of the
+    // oldest drawn column stay undefined and export as 0.
+    const min = new Float32Array(win.count + win.xOffset);
+    const max = new Float32Array(win.count + win.xOffset);
     for (let k = 0; k < win.count; k++) {
       const pos = win.posOf(k);
       if (pos < 0) continue;
-      min[k] = data[pos * 2];
-      max[k] = data[pos * 2 + 1];
+      min[k + win.xOffset] = data[pos * 2];
+      max[k + win.xOffset] = data[pos * 2 + 1];
     }
     rows.push({ name: nameOf(plot), unit: UNIT[plot.value], min, max });
   }

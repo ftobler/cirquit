@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { tracePolyline, type TracePoint } from './trace';
 
 /** A window over the first `count` snapshot slots, oldest first. */
-function plainWindow(count: number) {
-  return { count, posOf: (k: number) => k };
+function plainWindow(count: number, xOffset = 0) {
+  return { count, xOffset, posOf: (k: number) => k };
 }
 
 /** The points of a polyline, dropping the null gaps. */
@@ -53,10 +53,21 @@ describe('scope trace polyline', () => {
 
   it('a column with no data yields a null gap, breaking the line', () => {
     const data = new Float32Array([0, 0, 1, 1]);
-    const win = { count: 3, posOf: (k: number) => (k === 1 ? -1 : k < 2 ? k : 0) };
+    const win = { count: 3, xOffset: 0, posOf: (k: number) => (k === 1 ? -1 : k < 2 ? k : 0) };
     const points = tracePolyline(data, win, { gridMid: 0, gridMult: 10, positionOffset: 0 }, 50);
     expect(points[0]).not.toBeNull();
     expect(points[1]).toBeNull();
     expect(points[2]).not.toBeNull();
+  });
+
+  it('a right-anchored pre-wrap window places the newest column at the right edge', () => {
+    // 3 written columns on a 4 pixel canvas: the offset pushes drawn column k
+    // to pixel xOffset + k, so the newest column (k = 2) sits at pixel 3.
+    const data = new Float32Array([0, 1, 1, 3, -2, 2]);
+    const win = { count: 3, xOffset: 1, posOf: (k: number) => k };
+    const points = tracePolyline(data, win, { gridMid: 0, gridMult: 10, positionOffset: 0 }, 50);
+    expect(points).toHaveLength(3);
+    expect(points[0]).toEqual({ x: 1.5, y: 45 });
+    expect(points[2]).toEqual({ x: 3.5, y: 50 });
   });
 });

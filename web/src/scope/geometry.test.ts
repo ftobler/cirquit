@@ -68,10 +68,15 @@ describe('scope geometry', () => {
     }
   });
 
-  it('maps columns to pixels: left-aligned until the ring wraps, then the most recent width one per pixel', () => {
+  it('maps columns to pixels: right-anchored until the ring wraps, then the most recent width one per pixel', () => {
     const widthPx = 4;
-    // Not wrapped: fewer columns than pixels draw left-aligned.
-    expect(visibleColumnRange(3, widthPx)).toEqual({ start: 0, count: 3 });
+    // Not wrapped: the newest column sits at the right edge, so the range
+    // starts at pixel widthPx - writtenColumns and older columns extend left.
+    expect(visibleColumnRange(3, widthPx)).toEqual({ start: 1, count: 3 });
+    expect(visibleColumnRange(2, widthPx)).toEqual({ start: 2, count: 2 });
+    // The newest column maps to pixel widthPx - 1 in the pre-wrap case.
+    const { start, count } = visibleColumnRange(3, widthPx);
+    expect(start + count - 1).toBe(widthPx - 1);
     // Wrapped: the most recent widthPx columns fill the canvas.
     expect(visibleColumnRange(8, widthPx)).toEqual({ start: 4, count: 4 });
     expect(visibleColumnRange(6, widthPx)).toEqual({ start: 2, count: 4 });

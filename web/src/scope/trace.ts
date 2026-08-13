@@ -12,6 +12,10 @@ export interface TracePoint {
 /** The drawn window over a snapshot's columns (`draw.ts`'s `Window`). */
 export interface TraceWindow {
   count: number;
+  /** Pixel offset of drawn column 0; 0 when the window fills the canvas or is
+   *  trigger-anchored, positive before the ring wraps so the newest column
+   *  sits at the right edge. */
+  xOffset: number;
   posOf: (k: number) => number;
 }
 
@@ -41,7 +45,10 @@ export function tracePolyline(
       continue;
     }
     const mid = (data[pos * 2] + data[pos * 2 + 1]) / 2;
-    points.push({ x: k + 0.5, y: maxy - t.gridMult * (mid - t.gridMid + t.positionOffset) });
+    points.push({
+      x: win.xOffset + k + 0.5,
+      y: maxy - t.gridMult * (mid - t.gridMid + t.positionOffset),
+    });
   }
   return points;
 }

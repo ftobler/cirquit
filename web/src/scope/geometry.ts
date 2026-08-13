@@ -81,9 +81,13 @@ export function timeToX(
 
 /**
  * Which columns of a scope snapshot to draw on a `widthPx` canvas, one column
- * per pixel. Before the ring fills, the written columns draw left-aligned from
- * the origin; once it wraps, the most recent `widthPx` columns fill the
- * canvas. `writtenColumns` is the snapshot's column count (`data.length / 2`).
+ * per pixel, right-anchored like the time grid: the newest written column
+ * always draws at the right edge, pixel `widthPx - 1`. Before the ring wraps
+ * the newest column starts at pixel `widthPx - 1` and older columns extend
+ * left, so the trace grows from the right; once it wraps, the most recent
+ * `widthPx` columns fill the canvas. `writtenColumns` is the snapshot's column
+ * count (`data.length / 2`). In the pre-wrap case `start` is the pixel of the
+ * oldest visible column; after wrapping it is that column's snapshot slot.
  */
 export function visibleColumnRange(
   writtenColumns: number,
@@ -91,6 +95,6 @@ export function visibleColumnRange(
 ): { start: number; count: number } {
   if (writtenColumns <= 0 || widthPx <= 0) return { start: 0, count: 0 };
   const count = Math.min(writtenColumns, widthPx);
-  const start = writtenColumns > widthPx ? writtenColumns - widthPx : 0;
+  const start = writtenColumns > widthPx ? writtenColumns - widthPx : widthPx - writtenColumns;
   return { start, count };
 }
