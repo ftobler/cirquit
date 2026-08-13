@@ -3,6 +3,7 @@
  *  form difference with the same function. */
 
 import { useStore } from '../state/store';
+import { staticDeploymentUrl } from './about';
 import { Dialog } from './Dialog';
 
 export function AboutDialog() {
@@ -34,6 +35,14 @@ export function AboutDialog() {
         </a>
         . It is licensed under the GNU General Public License version 2.0 or later, and the bundled
         example circuits keep their upstream attribution.
+      </p>
+      <p>
+        {/* The zip is built with no base path so it hosts at any domain root;
+         * on the dev server BASE_URL is `/` and no zip exists, so the link
+         * 404s until the site is deployed. */}
+        <a href={staticDeploymentUrl(import.meta.env.BASE_URL)} download>
+          Download the static deployment
+        </a>
       </p>
     </Dialog>
   );

@@ -43,6 +43,28 @@ jobs:
           # Site is served under the repo path, see web/vite.config.ts.
           BASE_PATH: /cirquit/
 
+      - name: Build the root-deployment zip
+        env:
+          # Explicit, so this step never inherits BASE_PATH from the build
+          # above. The root build's asset paths must be /assets/... absolute
+          # for the zip to work at a domain root. The wasm and typecheck come
+          # from the preceding `just build` step, so only vite runs here.
+          BASE_PATH: /
+        run: |
+          # The About dialog offers a root-deployment download: the same app
+          # built with no base path, zipped so unzipping at a domain root works
+          # (the root build's asset paths are /assets/... absolute). The pages
+          # build above is moved aside so the second vite build cannot clobber
+          # it, and restored, with the zip inside, before the artifact upload.
+          # The cd-based commands run in subshells so the working directory
+          # stays at the repo root throughout the step.
+          mv web/dist web/dist-pages
+          (cd web && npx vite build)
+          (cd web/dist && zip -r static-deployment.zip .)
+          mv web/dist/static-deployment.zip web/dist-pages/static-deployment.zip
+          rm -rf web/dist
+          mv web/dist-pages web/dist
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist
