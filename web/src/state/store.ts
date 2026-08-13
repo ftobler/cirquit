@@ -381,6 +381,7 @@ function createAppStore() {
   scopeMenu: null,
   scopeProperties: null,
   partsOpen: false,
+  sliderElementId: null,
   clipboard: null,
   lastSaved: null,
   liveStateProvider: null,
@@ -611,6 +612,26 @@ function createAppStore() {
         .filter((e) => e.id !== crossed.id)
         .map((e) => (e.id === id ? { ...e, x2: px, y2: py } : e))
         .concat(halves),
+      revision: st.revision + 1,
+    }));
+  },
+
+  splitWireAt: (id, point) => {
+    const s = get();
+    const target = s.elements.find((e) => e.id === id);
+    if (!target || target.kind !== 'wire') return;
+    // Snap each axis to the grid like upstream's doSplit (MouseManager.java:
+    // 586-593); the wire's stored coordinates are grid aligned, so a snapped
+    // point on the span stays on it. splitWire rejects endpoints and off-span
+    // points for a plain wire; a routed wire instead projects the point onto
+    // its nearest segment, refusing only its own endpoints (geometry.ts
+    // splitRoutedWire).
+    const p = { x: snap(point.x), y: snap(point.y) };
+    const halves = splitWire(target, p, allocateId);
+    if (!halves) return;
+    s.commit();
+    set((st) => ({
+      elements: st.elements.filter((e) => e.id !== id).concat(halves),
       revision: st.revision + 1,
     }));
   },
@@ -988,6 +1009,59 @@ function createAppStore() {
     s.setParam(slider.elementId, resolved.name, value * paramScale(resolved.name));
   },
 
+  addSlider: (elementId, editItem, caption) => {
+    const s = get();
+    const element = s.elements.find((e) => e.id === elementId);
+    if (!element) return;
+    // One slider per (element, resolved field), the dialog's checkbox: the
+    // resolution prefers the caption over the index (sliders.ts resolveParam),
+    // so a corpus slider whose editItem drifted from its caption still shares
+    // the field with a dialog-created one, and a repeat click on an
+    // already-checked row is a no-op, matching upstream's per-edit-item
+    // Adjustable (Adjustable.java:33-44). A caption that resolves to no field
+    // keeps the index-only match, the only key it has.
+    const resolved = resolveParam(element.kind, editItem, caption ?? '');
+    if (resolved) {
+      const dup = s.sliders.some(
+        (x) =>
+          x.elementId === elementId &&
+          resolveParam(element.kind, x.editItem, x.text)?.name === resolved.name,
+      );
+      if (dup) return;
+    } else if (s.sliders.some((x) => x.elementId === elementId && x.editItem === editItem)) {
+      return;
+    }
+    s.commit();
+    set((st) => ({
+      // raw stays empty so the writer emits upstream's canonical fresh line
+      // (`e F0 editItem min max ano text step`, serialize.ts sliderLineFor);
+      // the min/max are upstream's Adjustable defaults (Adjustable.java:34-35).
+      sliders: [
+        ...st.sliders,
+        {
+          id: allocateId(),
+          elementId,
+          editItem,
+          min: 1,
+          max: 1000,
+          step: 0,
+          text: caption ?? '',
+          logarithmic: false,
+          shared: null,
+          raw: [],
+        },
+      ],
+    }));
+  },
+
+  removeSlider: (id) => {
+    if (!get().sliders.some((x) => x.id === id)) return;
+    get().commit();
+    set((st) => ({ sliders: st.sliders.filter((x) => x.id !== id) }));
+  },
+
+  setSliderElement: (id) => set({ sliderElementId: id }),
+
   setText: (id, text) =>
     set((s) => {
       const target = s.elements.find((e) => e.id === id);
@@ -1213,6 +1287,40 @@ function createAppStore() {
       return {
         scopes: [...s.scopes, makeScope(id, null, plots, 64, s.scopes.length)],
         revision: s.revision + 1,
+      };
+    });
+  },
+
+  addToScope: (elementId, scopeId, value) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.id === scopeId);
+    if (!scope) return;
+    // Dedup is scope-local, unlike addScope's global one: the command's point
+    // is reaching a specific panel, and showing the same quantity twice there
+    // is the misclick addScope guards against. Another scope may already show
+    // it and that is fine.
+    if (scope.plots.some((p) => p.elementId === elementId && p.value === value)) return;
+    s.commit();
+    set((st) => {
+      const target = st.scopes.find((x) => x.id === scopeId);
+      if (!target) return st;
+      const plots = [...target.plots, makePlot(allocateId(), elementId, value)];
+      // The voltage plot drags its current companion along like addScope and
+      // upstream's addValue (Scope.java:360-367), unless this scope already
+      // shows the current.
+      const kind = st.elements.find((e) => e.id === elementId)?.kind;
+      if (
+        value === 'voltage' &&
+        st.settings.showCurrent &&
+        kind !== undefined &&
+        !OUTPUT_LIKE.has(kind) &&
+        !plots.some((p) => p.elementId === elementId && p.value === 'current')
+      ) {
+        plots.push(makePlot(allocateId(), elementId, 'current'));
+      }
+      return {
+        scopes: st.scopes.map((x) => (x.id === scopeId ? { ...x, plots } : x)),
+        revision: st.revision + 1,
       };
     });
   },
@@ -1705,14 +1813,14 @@ function createAppStore() {
     syncSessionModels(s.passthrough, next.passthrough);
   },
 
-  openContextMenu: (x, y, target) =>
+  openContextMenu: (x, y, target, circuit) =>
     set((s) => {
       // Right-clicking an element outside the selection selects it alone so
       // the menu's copy and delete act on it; one already selected keeps the
       // whole group. Empty canvas leaves the selection untouched.
       const selectedIds =
         target !== null && !s.selectedIds.includes(target) ? [target] : s.selectedIds;
-      return { contextMenu: { x, y, target }, selectedIds };
+      return { contextMenu: { x, y, target, circuit }, selectedIds };
     }),
 
   closeContextMenu: () => set({ contextMenu: null }),

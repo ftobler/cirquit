@@ -1,41 +1,11 @@
 /** Element picker, grouped by category, with a search bar, a live icon per
  *  tool drawn from its own element definition, and the placement shortcut. */
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { CATEGORIES } from '../model/registry';
 import { filterTools, toolShortcut } from '../model/search';
-import type { SimSettings } from '../model/types';
-import { renderToolIcon, TOOL_ICON_SIZE } from '../render/toolIcon';
 import { useStore } from '../state/store';
-
-/** One button's static icon. The draw runs once per mount, theme flip or
- *  settings change (the custom colours and IEC symbols flow in), so ~130
- *  canvases paint once each, never on every React render. */
-function ToolIcon({
-  toolId,
-  dark,
-  settings,
-}: {
-  toolId: string;
-  dark: boolean;
-  settings: SimSettings;
-}) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    renderToolIcon(toolId, canvas, dark, settings);
-  }, [toolId, dark, settings]);
-  return (
-    <canvas
-      ref={ref}
-      width={TOOL_ICON_SIZE}
-      height={TOOL_ICON_SIZE}
-      className="tool-icon"
-      aria-hidden="true"
-    />
-  );
-}
+import { ToolIcon } from './ToolIcon';
 
 export function Toolbox() {
   const tool = useStore((s) => s.tool);

@@ -1,20 +1,31 @@
 /**
  * Right-click context menu. Over an element it offers element commands; over
- * empty canvas, circuit commands. Position, clamping and dismissal live here;
- * every command is a store action, so the menu, menubar and keyboard cannot
- * diverge.
+ * empty canvas, the element palette and circuit commands. Position, clamping
+ * and dismissal live here; every command is a store action, so the menu,
+ * menubar and keyboard cannot diverge. The empty-canvas palette is the port's
+ * modernized form of upstream's Draw menu (Menus.java:271-483): the toolbox
+ * entries with real icons and a search box, instead of category submenus.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { parseCircuit } from '../io/netlist';
-import { defFor } from '../model/registry';
+import { defFor, type ToolboxEntry } from '../model/registry';
+import { toolShortcut } from '../model/search';
+import type { SimSettings } from '../model/types';
 import { canMirror, canRotate, canSwap } from '../model/transform';
 import { useStore } from '../state/store';
+import { canCreateSlider, canSplitWire, paletteGroups } from './contextMenuRows';
+import { ToolIcon } from './ToolIcon';
 
 interface MenuItem {
   label: string;
   shortcut?: string;
   disabled?: boolean;
+  disabledTitle?: string;
+  /** A row upstream has but the port does not implement: disabled with the
+   *  reason as a tooltip and the red strikethrough, the same treatment the
+   *  menubar's `deferred()` rows get (menuRows.ts). */
+  deferred?: boolean;
   action: () => void;
 }
 
@@ -24,7 +35,11 @@ export function ContextMenu() {
   const closeContextMenu = useStore((s) => s.closeContextMenu);
   const selectedIds = useStore((s) => s.selectedIds);
   const elements = useStore((s) => s.elements);
+  const scopes = useStore((s) => s.scopes);
   const editable = useStore((s) => s.settings.editable);
+  const dark = useStore((s) => s.dark);
+  const settings = useStore((s) => s.settings);
+  const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
 
   // The menu mounts only while contextMenu is set. Measure it before paint and
@@ -41,7 +56,8 @@ export function ContextMenu() {
   }, [contextMenu]);
 
   // Dismissal: a pointerdown anywhere outside the menu, Escape, and losing
-  // focus or scrolling (a menu that scrolled away is worse than no menu).
+  // focus or scrolling. A scroll inside the menu (the palette is long) is the
+  // user reading it, not the page moving away, so inner scrolls are ignored.
   useEffect(() => {
     if (!contextMenu) return;
     const onPointerDown = (ev: PointerEvent) => {
@@ -52,7 +68,10 @@ export function ContextMenu() {
       if (ev.key === 'Escape') closeContextMenu();
     };
     const onBlur = () => closeContextMenu();
-    const onScroll = () => closeContextMenu();
+    const onScroll = (ev: Event) => {
+      if (ref.current && ev.target instanceof Node && ref.current.contains(ev.target)) return;
+      closeContextMenu();
+    };
     window.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('blur', onBlur);
@@ -74,7 +93,7 @@ export function ContextMenu() {
 
   if (!contextMenu) return null;
 
-  const { target } = contextMenu;
+  const { target, circuit } = contextMenu;
   const targetElement = target !== null ? elements.find((e) => e.id === target) : undefined;
   const targetDef = targetElement ? defFor(targetElement.kind) : undefined;
   const hasSelection = selectedIds.length > 0;
@@ -94,9 +113,10 @@ export function ContextMenu() {
     <button
       key={m.label}
       type="button"
-      className="menu-item"
+      className={m.deferred ? 'menu-item deferred' : 'menu-item'}
       role="menuitem"
       disabled={m.disabled}
+      title={m.disabled ? m.disabledTitle : undefined}
       onClick={() => run(m.action)}
     >
       <span>{m.label}</span>
@@ -105,6 +125,9 @@ export function ContextMenu() {
   );
 
   const isElementMenu = target !== null;
+
+  // ---- element menu rows (upstream elmMenuBar, Menus.java:255-267) ----
+
   const scopeItems: MenuItem[] = [];
   if (isElementMenu && targetDef) {
     scopeItems.push({
@@ -120,6 +143,35 @@ export function ContextMenu() {
       disabled: !editable,
       action: () => useStore.getState().addScope(target, 'voltage'),
     });
+    // The port has no undocked (floating) scope windows; a scoped trace cannot
+    // leave the panel. Same red-strikethrough treatment the menubar gives its
+    // unported rows, so the absent feature reads as absent.
+    scopeItems.push({
+      label: 'View in New Undocked Scope',
+      deferred: true,
+      disabled: true,
+      disabledTitle: 'The port has no undocked scope windows; scopes stay docked',
+      action: () => undefined,
+    });
+    // Add to Existing Scope, upstream's addToScope submenu flattened inline
+    // (MouseManager.java:944-954). Each entry adds a voltage plot to that
+    // scope; with no scope yet there is nothing to add to.
+    if (scopes.length === 0) {
+      scopeItems.push({
+        label: 'Add to Existing Scope',
+        disabled: true,
+        disabledTitle: 'There are no existing scopes yet',
+        action: () => undefined,
+      });
+    } else {
+      scopes.forEach((scope, i) => {
+        scopeItems.push({
+          label: `Add to Existing Scope: Scope ${i + 1}`,
+          disabled: !editable,
+          action: () => useStore.getState().addToScope(target, scope.id, 'voltage'),
+        });
+      });
+    }
     scopeItems.push({
       label: 'Add Current Scope',
       disabled: !editable,
@@ -147,16 +199,16 @@ export function ContextMenu() {
       action: () => useStore.getState().pasteFromClipboard(),
     },
     {
-      label: 'Duplicate',
-      shortcut: 'Ctrl+D',
-      disabled: !editable || !hasSelection,
-      action: () => useStore.getState().duplicateSelection(),
-    },
-    {
       label: 'Delete',
       shortcut: 'Delete',
       disabled: !editable || !hasSelection,
       action: () => useStore.getState().deleteSelected(),
+    },
+    {
+      label: 'Duplicate',
+      shortcut: 'Ctrl+D',
+      disabled: !editable || !hasSelection,
+      action: () => useStore.getState().duplicateSelection(),
     },
     {
       label: 'Swap Terminals',
@@ -178,7 +230,54 @@ export function ContextMenu() {
     },
   ];
 
+  // The element-only tail: the wire split (wires only, upstream enables it on
+  // `instanceof WireElm`, MouseManager.java:956) and the element-scoped
+  // Sliders dialog.
+  const wireItems: MenuItem[] = [];
+  if (isElementMenu && canSplitWire(targetElement?.kind)) {
+    wireItems.push({
+      label: 'Split Wire Manually',
+      // No shortcut hint: upstream's Ctrl+click on a wire is the dragpost
+      // gesture here (pointerDown.ts:235), not a split, so advertising it
+      // would claim a key that does the wrong thing.
+      disabled: !editable,
+      // The menu opened over the wire, so the click point is the split point;
+      // the store action snaps it to the grid (MouseManager.java:586-593).
+      action: () => useStore.getState().splitWireAt(target, circuit),
+    });
+  }
+  if (isElementMenu) {
+    wireItems.push({
+      label: 'Sliders...',
+      // Kinds with their own built-in slider, and elements with no adjustable
+      // field, have nothing to bind (MouseManager.java:994-1007).
+      disabled: !editable || !canCreateSlider(targetElement?.kind),
+      disabledTitle:
+        targetElement && !canCreateSlider(targetElement.kind)
+          ? 'This element has no adjustable parameters'
+          : undefined,
+      action: () => {
+        useStore.getState().setSliderElement(target);
+        useStore.getState().openDialog('sliders');
+      },
+    });
+  }
+
+  // ---- empty-canvas menu (upstream's Draw menu, modernized) ----
+
   const canvasItems: MenuItem[] = [
+    {
+      label: 'Undo',
+      shortcut: 'Ctrl+Z',
+      disabled: !editable,
+      action: () => useStore.getState().undo(),
+    },
+    {
+      label: 'Redo',
+      shortcut: 'Ctrl+Shift+Z',
+      disabled: !editable,
+      action: () => useStore.getState().redo(),
+    },
     {
       label: 'Paste',
       shortcut: 'Ctrl+V',
@@ -194,19 +293,44 @@ export function ContextMenu() {
       label: 'New',
       action: () => useStore.getState().newCircuit(),
     },
+    // Upstream's Select/Drag Sel mode (space). The port's select mode is
+    // `tool === null`; the other Drag modes (All/Row/Column/Post) are
+    // keyboard-modifier gestures with no store mode to select, so they are
+    // deliberately omitted rather than offered as dead rows.
     {
-      label: 'Undo',
-      shortcut: 'Ctrl+Z',
+      label: 'Select/Drag Sel',
+      shortcut: 'Space',
       disabled: !editable,
-      action: () => useStore.getState().undo(),
-    },
-    {
-      label: 'Redo',
-      shortcut: 'Ctrl+Shift+Z',
-      disabled: !editable,
-      action: () => useStore.getState().redo(),
+      action: () => useStore.getState().setTool(null),
     },
   ];
+
+  const paletteItem = (t: ToolboxEntry, dark: boolean, settings: SimSettings) => {
+    const shortcut = toolShortcut(t);
+    return (
+      <button
+        key={t.id}
+        type="button"
+        className="menu-item palette-item"
+        role="menuitem"
+        // A locked circuit cannot place, so its palette rows are disabled like
+        // the toolbox's (Toolbox.tsx), and choosing one is impossible.
+        disabled={!editable}
+        onClick={() => run(() => useStore.getState().setTool(t.id))}
+      >
+        <ToolIcon toolId={t.id} dark={dark} settings={settings} />
+        <span className="tool-label">{t.label}</span>
+        {shortcut && (
+          <kbd className="tool-shortcut" aria-hidden="true">
+            {shortcut}
+          </kbd>
+        )}
+      </button>
+    );
+  };
+
+  const groups = paletteGroups(query);
+  const searching = query.trim() !== '';
 
   return (
     <div
@@ -222,6 +346,34 @@ export function ContextMenu() {
         </>
       )}
       {(isElementMenu ? selectionItems : canvasItems).map(item)}
+      {isElementMenu && wireItems.length > 0 && (
+        <>
+          <div className="menu-sep" role="separator" />
+          {wireItems.map(item)}
+        </>
+      )}
+      {!isElementMenu && (
+        <>
+          <div className="menu-sep" role="separator" />
+          <input
+            type="text"
+            className="tool-search"
+            aria-label="Search tools"
+            placeholder="Search tools…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {groups.map((group) => (
+            <section key={group.category}>
+              <h3>{group.category}</h3>
+              {group.entries.map((t) => paletteItem(t, dark, settings))}
+            </section>
+          ))}
+          {searching && groups.length === 0 && (
+            <p className="hint">No tools match “{query.trim()}”</p>
+          )}
+        </>
+      )}
     </div>
   );
 }

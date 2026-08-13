@@ -33,6 +33,31 @@ function normalize(s: string): string {
 }
 
 /**
+ * The numeric fields an element can host a slider on: the `getEditInfo` rows
+ * that carry a value a slider can set, in field order. The choice, checkbox,
+ * text, model-choice, file and download rows are excluded (upstream's
+ * `canCreateAdjustable`, EditInfo.java:103): `choice`/`checkbox`/`textArea`
+ * have no numeric value, the model picker is a choice by another name, and the
+ * widget/button rows are the file and download fields, whose only "value" is
+ * the loaded-file index a slider drag would silently overwrite on save. The
+ * editItem index a slider line carries is the index into this list, so the
+ * list is the shared source of truth for both resolving a slider line and
+ * creating one from the Sliders dialog.
+ */
+export function adjustableFields(kind: string): FieldDef[] {
+  const def = defFor(kind);
+  return (def?.fields ?? []).filter(
+    (f) =>
+      f.type !== 'choice' &&
+      f.type !== 'bool' &&
+      f.type !== 'text' &&
+      f.type !== 'modelChoice' &&
+      f.type !== 'file' &&
+      f.type !== 'download',
+  );
+}
+
+/**
  * The `set_param` name and field a slider drives, or null when the target
  * element has no field this caption or index can name. A null means the slider
  * stays inert-but-preserved: it round-trips and simply does not render.
@@ -65,14 +90,7 @@ export function resolveParam(
   // param name and force a full engine rebuild on set_param, so they are
   // excluded with the other non-numeric rows. An out-of-range index resolves
   // to null.
-  const numeric = fields.filter(
-    (f) =>
-      f.type !== 'choice' &&
-      f.type !== 'bool' &&
-      f.type !== 'text' &&
-      f.type !== 'modelChoice',
-  );
-  const field = numeric[editItem];
+  const field = adjustableFields(kind)[editItem];
   if (field) return { name: field.name, field };
   return null;
 }

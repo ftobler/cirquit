@@ -388,7 +388,12 @@ export function Menubar({ engine }: Props) {
     },
     {
       label: 'Sliders…',
-      onClick: fire(() => openDialog('sliders')),
+      onClick: fire(() => {
+        // The menubar dialog is circuit-wide; the context menu scopes the same
+        // dialog to one element via setSliderElement.
+        useStore.getState().setSliderElement(null);
+        useStore.getState().openDialog('sliders');
+      }),
     },
     {
       label: 'Create Test',

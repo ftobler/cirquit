@@ -6,16 +6,18 @@ import { useStore } from '../state/store';
 import { resolveParam, sliderPositionToValue, sliderValueToPosition } from '../model/sliders';
 import { formatValue } from '../render/draw';
 
-export function SliderPanel() {
+export function SliderPanel({ elementId }: { elementId?: number }) {
   const sliders = useStore((s) => s.sliders);
   const elements = useStore((s) => s.elements);
   const beginEdit = useStore((s) => s.beginEdit);
   const setSliderValue = useStore((s) => s.setSliderValue);
 
   // File order is the store order; a slider whose element is gone or whose
-  // parameter cannot be resolved renders nothing but still round-trips.
+  // parameter cannot be resolved renders nothing but still round-trips. The
+  // scoped Sliders dialog (context-menu path) filters to one element's rows.
   const rows = sliders.flatMap((slider) => {
     if (slider.elementId === undefined) return [];
+    if (elementId !== undefined && slider.elementId !== elementId) return [];
     const element = elements.find((e) => e.id === slider.elementId);
     if (!element) return [];
     const resolved = resolveParam(element.kind, slider.editItem, slider.text);

@@ -2081,6 +2081,51 @@ describe('scope panels', () => {
     expect(useStore.getState().scopes[0].plots).toHaveLength(1);
   });
 
+  it('addToScope adds the plot to the right scope, deduping per scope', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    useStore.getState().addScope(addResistor(), 'current');
+    const [first, second] = useStore.getState().scopes;
+    // The target element: a second resistor not yet scoped.
+    const other = addResistor();
+    const before = useStore.getState().undoStack.length;
+    const rev = useStore.getState().revision;
+
+    useStore.getState().addToScope(other, first.id, 'voltage');
+
+    const s = useStore.getState();
+    const updated = s.scopes.find((x) => x.id === first.id)!;
+    const untouched = s.scopes.find((x) => x.id === second.id)!;
+    expect(updated.plots.some((p) => p.elementId === other && p.value === 'voltage')).toBe(true);
+    expect(untouched.plots.some((p) => p.elementId === other)).toBe(false);
+    expect(s.undoStack.length).toBe(before + 1);
+    expect(s.revision).toBe(rev + 1);
+
+    // Adding the same plot again is a no-op, no second undo entry.
+    useStore.getState().addToScope(other, first.id, 'voltage');
+    const after = useStore.getState();
+    expect(after.scopes.find((x) => x.id === first.id)!.plots).toHaveLength(updated.plots.length);
+    expect(after.undoStack.length).toBe(before + 1);
+  });
+
+  it('addToScope is a no-op for an unknown scope and does not dedup across scopes', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    useStore.getState().addScope(addResistor(), 'current');
+    const [first] = useStore.getState().scopes;
+    const other = addResistor();
+    // The same element is already scoped elsewhere; that must not block adding
+    // it to a specific scope (unlike addScope's global dedup).
+    useStore.getState().addToScope(other, first.id, 'voltage');
+    expect(
+      useStore.getState().scopes.some((x) => x.plots.some((p) => p.elementId === other)),
+    ).toBe(true);
+
+    const before = useStore.getState().undoStack.length;
+    useStore.getState().addToScope(other, 999, 'voltage');
+    expect(useStore.getState().undoStack.length).toBe(before);
+  });
+
   it('combineScopes merges plot lists and drops the emptied scope', () => {
     const a = addResistor();
     const b = addResistor();
@@ -2667,6 +2712,119 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
     expect(useStore.getState().sliders).toHaveLength(0);
     expect(useStore.getState().toNetlist()).not.toContain('38');
   });
+
+  it('addSlider creates a slider bound to the element param, serialized canonically', () => {
+    const id = addResistor();
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().addSlider(id, 0, 'Resistance');
+
+    const s = useStore.getState();
+    expect(s.sliders).toHaveLength(1);
+    expect(s.sliders[0]).toMatchObject({
+      elementId: id,
+      editItem: 0,
+      min: 1,
+      max: 1000,
+      step: 0,
+      text: 'Resistance',
+      logarithmic: false,
+      shared: null,
+    });
+    // raw stays empty so the line is upstream's canonical fresh form, and the
+    // caption resolves the param on reload (resolveParam matches by label).
+    expect(s.sliders[0].raw).toEqual([]);
+    expect(s.toNetlist().split('\n').find((l) => l.startsWith('38 '))).toBe(
+      '38 0 F0 0 1 1000 -1 Resistance 0',
+    );
+    // One undo step: the dialog's create is an edit like any other.
+    expect(s.undoStack.length).toBe(baseline + 1);
+
+    s.undo();
+    expect(useStore.getState().sliders).toHaveLength(0);
+  });
+
+  it('addSlider dedupes on the (element, edit item) pair', () => {
+    const id = addResistor();
+    useStore.getState().addSlider(id, 0, 'Resistance');
+    useStore.getState().addSlider(id, 0, 'Resistance');
+    expect(useStore.getState().sliders).toHaveLength(1);
+    // A second field still creates a second slider.
+    const voltage = useStore.getState().addElement({
+      kind: 'voltage',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 64,
+      flags: 16,
+      params: { waveform: 0, frequency: 1000, maxVoltage: 5, bias: 0, phaseShift: 0, dutyCycle: 0.5 },
+    });
+    useStore.getState().addSlider(voltage, 0, 'Max voltage');
+    expect(useStore.getState().sliders).toHaveLength(2);
+  });
+
+  it('addSlider dedupes on the resolved field, not the raw editItem', () => {
+    // A corpus slider whose editItem drifted from its caption (the `38 6 6 0
+    // 100 Duty\sCycle` fixture): index 6 is out of range for the voltage
+    // source's six adjustable fields, but the caption binds it to dutyCycle.
+    const voltage = useStore.getState().addElement({
+      kind: 'voltage',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 64,
+      flags: 16,
+      params: { waveform: 0, frequency: 1000, maxVoltage: 5, bias: 0, phaseShift: 0, dutyCycle: 0.5 },
+    });
+    useStore.getState().addSlider(voltage, 6, 'Duty Cycle');
+    expect(useStore.getState().sliders).toHaveLength(1);
+    // The dialog offers the duty cycle field at index 5; a check there must
+    // recognise the loaded slider and not create a duplicate.
+    useStore.getState().addSlider(voltage, 5, 'Duty Cycle');
+    expect(useStore.getState().sliders).toHaveLength(1);
+    expect(useStore.getState().sliders[0]).toMatchObject({ elementId: voltage, editItem: 6 });
+  });
+
+  it('addSlider refuses a missing element', () => {
+    useStore.getState().addSlider(999, 0, 'Ghost');
+    expect(useStore.getState().sliders).toHaveLength(0);
+    expect(useStore.getState().undoStack.length).toBe(0);
+  });
+
+  it('removeSlider drops the slider and its line, one undo step', () => {
+    const id = addResistor();
+    useStore.getState().addSlider(id, 0, 'Resistance');
+    const sliderId = useStore.getState().sliders[0].id;
+    expect(useStore.getState().toNetlist()).toContain('38 ');
+
+    useStore.getState().removeSlider(sliderId);
+
+    const s = useStore.getState();
+    expect(s.sliders).toHaveLength(0);
+    expect(s.toNetlist()).not.toContain('38 ');
+
+    s.undo();
+    expect(useStore.getState().sliders).toHaveLength(1);
+  });
+
+  it('removeSlider is a no-op for an unknown id', () => {
+    const id = addResistor();
+    useStore.getState().addSlider(id, 0, 'Resistance');
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().removeSlider(999);
+
+    expect(useStore.getState().sliders).toHaveLength(1);
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+  });
+
+  it('setSliderElement records the scoped dialog target and can clear it', () => {
+    const id = addResistor();
+    useStore.getState().setSliderElement(id);
+    expect(useStore.getState().sliderElementId).toBe(id);
+    useStore.getState().setSliderElement(null);
+    expect(useStore.getState().sliderElementId).toBeNull();
+  });
 });
 
 describe('convert wires to routed', () => {
@@ -2928,6 +3086,122 @@ describe('convert wires to routed', () => {
     expect(JSON.stringify(spec)).not.toContain('route');
     expect(spec[0].posts).toEqual([
       [0, 0],
+      [160, 0],
+    ]);
+  });
+});
+
+describe('manual wire split (Split Wire Manually)', () => {
+  const addWire = (x1: number, y1: number, x2: number, y2: number) =>
+    useStore.getState().addElement({
+      kind: 'wire',
+      x1,
+      y1,
+      x2,
+      y2,
+      flags: 0,
+      params: {},
+    });
+
+  it('splits a wire at the snapped interior point into two halves, one undo step', () => {
+    const id = addWire(0, 0, 64, 0);
+    const baseline = useStore.getState().undoStack.length;
+    const rev = useStore.getState().revision;
+
+    useStore.getState().splitWireAt(id, { x: 33, y: 1 });
+
+    const s = useStore.getState();
+    expect(s.elements.some((e) => e.id === id)).toBe(false);
+    const wires = s.elements.filter((e) => e.kind === 'wire');
+    expect(wires).toHaveLength(2);
+    // The off-grid click snaps to (32, 0) and splits there, like upstream's
+    // doSplit snapGrid (MouseManager.java:586-593).
+    const sorted = [...wires].sort((p, q) => p.x1 - q.x1);
+    expect(sorted[0]).toMatchObject({ x1: 0, y1: 0, x2: 32, y2: 0 });
+    expect(sorted[1]).toMatchObject({ x1: 32, y1: 0, x2: 64, y2: 0 });
+    expect(s.undoStack.length).toBe(baseline + 1);
+    expect(s.revision).toBe(rev + 1);
+
+    s.undo();
+    expect(useStore.getState().elements.find((e) => e.id === id)).toMatchObject({
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 0,
+    });
+  });
+
+  it('refuses a non-wire target', () => {
+    const id = addWire(0, 0, 64, 0);
+    const resistor = useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 32,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    const before = useStore.getState().elements.length;
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().splitWireAt(resistor, { x: 16, y: 0 });
+
+    const s = useStore.getState();
+    expect(s.elements.length).toBe(before);
+    expect(s.elements.some((e) => e.id === id)).toBe(true);
+    expect(s.undoStack.length).toBe(baseline);
+  });
+
+  it('refuses an endpoint, which is an ordinary connection not a split', () => {
+    const id = addWire(0, 0, 64, 0);
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().splitWireAt(id, { x: 0, y: 0 });
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(1);
+    expect(s.elements[0].id).toBe(id);
+    expect(s.elements[0].x2).toBe(64);
+    expect(s.undoStack.length).toBe(baseline);
+  });
+
+  it('refuses a point off the span', () => {
+    const id = addWire(0, 0, 64, 0);
+
+    // Snaps to (80, 0), past the far end.
+    useStore.getState().splitWireAt(id, { x: 81, y: 0 });
+
+    expect(useStore.getState().elements).toHaveLength(1);
+  });
+
+  it('splits a routed wire at its bend vertex into two routed halves', () => {
+    const id = useStore.getState().addElement({
+      kind: 'wire',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: {},
+      route: [
+        [0, 0],
+        [80, 80],
+        [160, 0],
+      ],
+    });
+
+    useStore.getState().splitWireAt(id, { x: 80, y: 80 });
+
+    const wires = useStore.getState().elements.filter((e) => e.kind === 'wire');
+    expect(wires).toHaveLength(2);
+    const sorted = [...wires].sort((p, q) => p.x1 - q.x1);
+    expect(sorted[0].route).toEqual([
+      [0, 0],
+      [80, 80],
+    ]);
+    expect(sorted[1].route).toEqual([
+      [80, 80],
       [160, 0],
     ]);
   });

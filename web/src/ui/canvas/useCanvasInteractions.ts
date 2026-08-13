@@ -128,7 +128,10 @@ export function useCanvasInteractions(
           // the finger (MouseManager.java:139-141). The drag it armed is
           // abandoned: the finger is a menu trigger, not a drag.
           const target = touchTargetRef.current;
-          useStore.getState().openContextMenu(touchDownClientRef.current.x, touchDownClientRef.current.y, target);
+          const down = touchDownClientRef.current;
+          useStore
+            .getState()
+            .openContextMenu(down.x, down.y, target, toCircuit(down.x, down.y));
           touchArmedRef.current = false;
           dragRef.current = { mode: 'none' };
           pinchPrevMidRef.current = null;
@@ -620,10 +623,12 @@ export function useCanvasInteractions(
 
   const onContextMenu = (ev: React.MouseEvent<HTMLCanvasElement>) => {
     ev.preventDefault();
-    const hit = hitTest(toCircuit(ev.clientX, ev.clientY));
+    const p = toCircuit(ev.clientX, ev.clientY);
+    const hit = hitTest(p);
     // The store applies the selection-on-right-click rule; only the hit test
-    // (which needs circuit coordinates) stays here.
-    useStore.getState().openContextMenu(ev.clientX, ev.clientY, hit?.id ?? null);
+    // (which needs circuit coordinates) stays here. The circuit point travels
+    // too, so Split Wire Manually can act at the click location.
+    useStore.getState().openContextMenu(ev.clientX, ev.clientY, hit?.id ?? null, p);
   };
 
   const onDoubleClick = (ev: React.MouseEvent<HTMLCanvasElement>) => {

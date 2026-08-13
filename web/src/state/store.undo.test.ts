@@ -77,33 +77,33 @@ describe('ctrl-drag post movement undo', () => {
 });
 
 describe('context menu state', () => {
-  it('openContextMenu stores coordinates and an element target', () => {
-    useStore.getState().openContextMenu(10, 20, 7);
-    expect(useStore.getState().contextMenu).toEqual({ x: 10, y: 20, target: 7 });
+  it('openContextMenu stores coordinates, the circuit point and an element target', () => {
+    useStore.getState().openContextMenu(10, 20, 7, { x: 3, y: 4 });
+    expect(useStore.getState().contextMenu).toEqual({ x: 10, y: 20, target: 7, circuit: { x: 3, y: 4 } });
   });
 
   it('openContextMenu over empty canvas stores a null target', () => {
-    useStore.getState().openContextMenu(5, 6, null);
-    expect(useStore.getState().contextMenu).toEqual({ x: 5, y: 6, target: null });
+    useStore.getState().openContextMenu(5, 6, null, { x: 0, y: 0 });
+    expect(useStore.getState().contextMenu).toEqual({ x: 5, y: 6, target: null, circuit: { x: 0, y: 0 } });
   });
 
   it('closeContextMenu clears it', () => {
-    useStore.getState().openContextMenu(10, 20, 7);
+    useStore.getState().openContextMenu(10, 20, 7, { x: 3, y: 4 });
     useStore.getState().closeContextMenu();
     expect(useStore.getState().contextMenu).toBeNull();
   });
 
   it('opening twice replaces rather than stacks', () => {
-    useStore.getState().openContextMenu(10, 20, 1);
-    useStore.getState().openContextMenu(30, 40, null);
-    expect(useStore.getState().contextMenu).toEqual({ x: 30, y: 40, target: null });
+    useStore.getState().openContextMenu(10, 20, 1, { x: 0, y: 0 });
+    useStore.getState().openContextMenu(30, 40, null, { x: 9, y: 8 });
+    expect(useStore.getState().contextMenu).toEqual({ x: 30, y: 40, target: null, circuit: { x: 9, y: 8 } });
   });
 
   it('right-clicking an element outside the selection selects it alone', () => {
     const a = addResistor();
     const b = addCapacitor();
     useStore.getState().select([b]);
-    useStore.getState().openContextMenu(10, 20, a);
+    useStore.getState().openContextMenu(10, 20, a, { x: 0, y: 0 });
     expect(useStore.getState().selectedIds).toEqual([a]);
     expect(useStore.getState().contextMenu?.target).toBe(a);
   });
@@ -112,14 +112,14 @@ describe('context menu state', () => {
     const a = addResistor();
     const b = addCapacitor();
     useStore.getState().select([a, b]);
-    useStore.getState().openContextMenu(10, 20, a);
+    useStore.getState().openContextMenu(10, 20, a, { x: 0, y: 0 });
     expect(useStore.getState().selectedIds).toEqual([a, b]);
   });
 
   it('right-clicking empty canvas leaves the selection untouched', () => {
     const a = addResistor();
     useStore.getState().select([a]);
-    useStore.getState().openContextMenu(10, 20, null);
+    useStore.getState().openContextMenu(10, 20, null, { x: 0, y: 0 });
     expect(useStore.getState().selectedIds).toEqual([a]);
     expect(useStore.getState().contextMenu?.target).toBeNull();
   });

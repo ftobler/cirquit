@@ -5,7 +5,7 @@ import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
 import type { ShortcutOverlay } from '../input/shortcuts';
-import type { CircuitElement, SimSettings } from '../model/types';
+import type { CircuitElement, Point, SimSettings } from '../model/types';
 
 export interface ViewTransform {
   /** Circuit-space coordinate at the canvas origin. */
@@ -128,12 +128,20 @@ export interface AppState {
   pendingParams: Map<string, { id: number; name: string; value: number }>;
   /** Switch state edits not yet pushed to the engine, keyed by element id. */
   pendingStates: Map<number, number>;
-  /** Menu shown by a right-click, or null when closed. */
-  contextMenu: { x: number; y: number; target: number | null } | null;
+  /** Menu shown by a right-click, or null when closed. `circuit` is the
+   *  screen point projected into circuit space at open time, so commands that
+   *  act on the click location (Split Wire Manually) do not need the canvas. */
+  contextMenu:
+    | { x: number; y: number; target: number | null; circuit: Point }
+    | null;
   /** Whether the toolbox drawer is open. Only the mobile layout renders it as
    *  an overlay; on desktop the flag is inert because the aside is a flex
    *  sibling. */
   partsOpen: boolean;
+  /** The element the Sliders dialog is scoped to, from the context menu's
+   *  Sliders... row, or null for the circuit-wide menubar dialog. The dialog
+   *  shows create/remove checkboxes for this element's adjustable fields. */
+  sliderElementId: number | null;
   /** Scope popup menu (right-click over a scope canvas), or null when closed.
    *  `plotId` is the plot under the cursor, for the Remove Plot command. */
   scopeMenu: { x: number; y: number; scopeId: number; plotId: number } | null;
@@ -184,6 +192,11 @@ export interface AppState {
   /** Finishes a wire placement: records the snapped end and, when it lands on
    *  another wire's interior, splits that wire so the two connect. */
   placeWireEnd(id: number, x: number, y: number): void;
+  /** Splits the wire at `id` at `point` (circuit coordinates, snapped to the
+   *  grid here like upstream's doSplit), replacing it with the two halves. The
+   *  manual Split Wire Manually context-menu command; refuses non-wires and
+   *  points off the span or on an endpoint. */
+  splitWireAt(id: number, point: Point): void;
   /** Moves elements without pushing a separate undo entry per frame. */
   moveElements(ids: number[], dx: number, dy: number): void;
   /** Moves the selection by dx/dy with exactly one undo entry per call: the
@@ -259,6 +272,16 @@ export interface AppState {
    *  inert-but-preserved. The undo bracketing (one entry per drag) belongs to
    *  the caller's `beginEdit` on pointer-down, like the edit dialog's range. */
   setSliderValue(id: number, value: number): void;
+  /** Creates a slider bound to `elementId`'s `editItem`-th adjustable field,
+   *  one per (element, field). A caption that resolves to a different field
+   *  than the index (caption wins in resolveParam) is the caller's choice. */
+  addSlider(elementId: number, editItem: number, caption?: string): void;
+  /** Removes a slider; the Sliders dialog's uncheck row and the store-level
+   *  delete path both land here. */
+  removeSlider(id: number): void;
+  /** The element the Sliders dialog is scoped to; null opens the
+   *  circuit-wide dialog from the menubar. */
+  setSliderElement(id: number | null): void;
   /** Edits the element's free text (annotations, labels). */
   setText(id: number, text: string): void;
   /** Edits a switch's keyboard shortcut, session-only (never serialized).
@@ -298,6 +321,10 @@ export interface AppState {
   clearPending(): void;
 
   addScope(elementId: number, value: ScopeValue): void;
+  /** Adds a plot of `value` for `elementId` to an existing scope, the "Add to
+   *  Existing Scope" context-menu command (Scope.addElm). Dedup is per scope:
+   *  the command's point is reaching a specific panel, not creating one. */
+  addToScope(elementId: number, scopeId: number, value: ScopeValue): void;
   removeScope(id: number): void;
   /** Clears a scope's capture buffer (the Reset command). */
   resetScope(id: number): void;
@@ -353,7 +380,7 @@ export interface AppState {
   undo(): void;
   redo(): void;
 
-  openContextMenu(x: number, y: number, target: number | null): void;
+  openContextMenu(x: number, y: number, target: number | null, circuit: Point): void;
   closeContextMenu(): void;
   openScopeMenu(x: number, y: number, scopeId: number, plotId: number): void;
   closeScopeMenu(): void;

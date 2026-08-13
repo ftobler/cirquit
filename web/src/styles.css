@@ -467,8 +467,27 @@ button.active,
 
 .context-menu {
   position: fixed;
-  width: 200px;
+  width: 240px;
+  max-height: 82vh;
+  overflow-y: auto;
   padding: 4px;
+}
+
+/* The palette section of the empty-canvas context menu: category headers and
+   rows with the tool's real icon, label and placement key. The label flexes
+   between icon and key, mirroring the toolbox grid rows. */
+.context-menu h3 {
+  margin: 6px 2px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.context-menu .palette-item {
+  gap: 10px;
+  padding: 3px 8px;
 }
 
 /* The mouse-wheel value stepper over a resistor/capacitor/inductor: a small
@@ -671,6 +690,25 @@ h3 {
 
 .field input[type='range'] {
   width: 100%;
+}
+
+/* The create/remove rows of the element-scoped Sliders dialog: a checkbox with
+   its field label on the same line, unlike the stacked `.field` form rows. */
+.slider-options {
+  margin-bottom: 10px;
+}
+
+.slider-options .field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.slider-options .field > span {
+  display: inline;
+  margin: 0;
+  color: var(--text);
 }
 
 .check {

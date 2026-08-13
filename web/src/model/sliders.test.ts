@@ -1,10 +1,54 @@
 import { describe, expect, it } from 'vitest';
 import {
+  adjustableFields,
   paramScale,
   resolveParam,
   sliderPositionToValue,
   sliderValueToPosition,
 } from './sliders';
+
+describe('adjustable fields', () => {
+  it('lists only the numeric fields a slider can drive, in field order', () => {
+    // The voltage source's fields: waveform (choice), maxVoltage, frequency,
+    // bias, phaseShift, riseTime, dutyCycle. The choice is excluded, so the
+    // adjustable list is the numeric ones in order.
+    expect(adjustableFields('voltage').map((f) => f.name)).toEqual([
+      'maxVoltage',
+      'frequency',
+      'bias',
+      'phaseShift',
+      'riseTime',
+      'dutyCycle',
+    ]);
+    // A labeled node's only field is text: nothing to bind a slider to.
+    expect(adjustableFields('labeledNode')).toEqual([]);
+    // A kind with no definition has no fields either.
+    expect(adjustableFields('unijunction')).toEqual([]);
+  });
+
+  it('excludes the file and download rows upstream rejects as widget/button', () => {
+    // EditInfo.java:103 also rejects `widget` and `button` rows, which are the
+    // port's `type: 'file'` (audio/data input) and `type: 'download'` (data
+    // recorder) fields. A slider on them would drag params.fileNum and
+    // silently overwrite the loaded-file index on save.
+    expect(adjustableFields('audioInput').some((f) => f.type === 'file')).toBe(false);
+    expect(adjustableFields('dataInput').some((f) => f.type === 'file')).toBe(false);
+    expect(adjustableFields('dataRecorder').some((f) => f.type === 'download')).toBe(false);
+    // The numeric fields beside the widget still stay adjustable.
+    expect(adjustableFields('audioInput').map((f) => f.name)).toEqual([
+      'maxVoltage',
+      'startPosition',
+    ]);
+    expect(adjustableFields('dataRecorder').map((f) => f.name)).toEqual(['dataCount']);
+  });
+
+  it('editItem indexes the adjustable list the same way resolveParam binds', () => {
+    // resolveParam's caption-free fallback indexes into this exact list, so a
+    // dialog creating a slider at index 1 saves a line that resolves back.
+    const fields = adjustableFields('voltage');
+    expect(resolveParam('voltage', 1, '')).toMatchObject({ name: fields[1].name });
+  });
+});
 
 describe('slider parameter resolution', () => {
   it('pins the corpus bindings by caption and alias', () => {
