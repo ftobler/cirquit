@@ -1,7 +1,7 @@
 /** Physical-unit parsing for input fields, ported from upstream's
  *  EditDialog.parseUnits (EditDialog.java:404-441). */
 
-import { formatValue } from '../render/draw';
+import { formatValue, formatValueAscii } from '../render/draw';
 
 /**
  * Parses a value typed into a physical field, so "4k7", "1M", "10m",
@@ -63,4 +63,12 @@ export function parseUnits(s: string): number {
  *  the canvas readouts use, so "4700" comes back as "4.7k". */
 export function formatUnits(v: number, unit = ''): string {
   return formatValue(v, unit);
+}
+
+/** The ASCII edit-box sibling: same prefixes, but micro renders as `u`, so the
+ *  shown value round-trips parseUnits. formatUnits above stays as the µ-glyph
+ *  formatter, kept for its test coverage; the canvas and scopes render the
+ *  glyph through formatValue and formatValueShort in render/draw.ts. */
+export function formatUnitsAscii(v: number, unit = '', digits = 3): string {
+  return formatValueAscii(v, unit, digits);
 }

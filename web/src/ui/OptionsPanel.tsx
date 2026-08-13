@@ -1,9 +1,8 @@
 /** Properties of the selected element, plus global simulation settings. */
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
-import { formatUnits, parseUnits } from '../model/units';
 import { parseDataFile } from '../model/dataFile';
 import { recorderDataText, recorderFilename } from '../model/recorder';
 import { formatValue, makeTheme } from '../render/draw';
@@ -11,6 +10,7 @@ import { saveBlob } from '../io/fileIO';
 import { selectableModels } from '../model/deviceModels';
 import type { CircuitElement, FieldDef, Theme, ThemeColors } from '../model/types';
 import { useStore } from '../state/store';
+import { UnitNumberInput } from './UnitNumberInput';
 
 interface Props {
   engine: SimEngine | null;
@@ -24,81 +24,6 @@ function fieldValue(e: CircuitElement, f: FieldDef): number | string {
   if (f.target === 'modelName') return e.modelName ?? '';
   if (f.flag !== undefined) return (e.flags & f.flag) !== 0 ? 1 : 0;
   return e.params[f.name] ?? 0;
-}
-
-/** Text input for a physical value. Accepts unit suffixes, shorthand and
- *  scientific notation through parseUnits, keeps an invalid draft on screen
- *  with an error instead of dropping the edit, and re-formats to the stored
- *  value once the user blurs. */
-function UnitInput({
-  label,
-  value,
-  positive,
-  onCommit,
-  onFocus,
-}: {
-  label: string;
-  value: number;
-  /** Reject zero or negative parsed values (the timestep must stay positive). */
-  positive?: boolean;
-  onCommit: (n: number) => void;
-  onFocus?: () => void;
-}) {
-  // The box shows just the value, unit-less ("4.7k"), with the unit carried by
-  // the field label, exactly like upstream's edit dialog. parseUnits would
-  // reject a rendered "4.7k Ω" anyway (space before unit, Ω not a suffix).
-  const [draft, setDraft] = useState(() => formatUnits(value));
-  const [focused, setFocused] = useState(false);
-  const [error, setError] = useState(false);
-  // The error message needs a stable id so the input can point its
-  // aria-describedby at it and a screen reader hears what is wrong.
-  const errorId = useId();
-
-  // An outside change (undo, selection switch, file load) must refresh the
-  // box, but the value flowing back from our own commit must not fight the
-  // keystroke the user is mid-way through, so the sync only runs while blurred.
-  useEffect(() => {
-    if (!focused) setDraft(formatUnits(value));
-  }, [value, focused]);
-
-  return (
-    <>
-      <label className="field">
-        <span>{label}</span>
-        <input
-          type="text"
-          value={draft}
-          aria-invalid={error}
-          aria-describedby={error ? errorId : undefined}
-          onFocus={() => {
-            setFocused(true);
-            setError(false);
-            onFocus?.();
-          }}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            const n = parseUnits(e.target.value);
-            if (Number.isFinite(n) && (!positive || n > 0)) {
-              setError(false);
-              onCommit(n);
-            } else {
-              setError(true);
-            }
-          }}
-          onBlur={() => {
-            setFocused(false);
-            setError(false);
-            setDraft(formatUnits(value));
-          }}
-        />
-      </label>
-      {error && (
-        <div id={errorId} className="problem" role="alert">
-          Invalid value
-        </div>
-      )}
-    </>
-  );
 }
 
 function Field({
@@ -271,7 +196,7 @@ function Field({
     // scientific notation and the rest, writing the plain parsed number into
     // params exactly as the old number input did.
     return (
-      <UnitInput
+      <UnitNumberInput
         label={`${field.label} (${field.unit})`}
         value={v}
         onFocus={onBeginEdit}
@@ -356,44 +281,6 @@ const COLOR_ROWS: { key: keyof ThemeColors; label: string; themeKey: keyof Theme
   { key: 'selectionColor', label: 'Selection', themeKey: 'selection' },
   { key: 'currentColor', label: 'Current', themeKey: 'currentDot' },
 ];
-
-/** A settings number field with a clamp, e.g. the digit counts. `step` is the
- *  input's step attribute: 1 for the integer digit/font fields so a fractional
- *  digit count cannot be typed or spun, a fraction for wheel sensitivity. */
-function NumberSetting({
-  label,
-  value,
-  min,
-  max,
-  step = 'any',
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number | 'any';
-  onChange: (n: number) => void;
-}) {
-  return (
-    <label className="field">
-      <span>
-        {label} <em>{value}</em>
-      </span>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          if (Number.isFinite(n)) onChange(Math.max(min, Math.min(max, n)));
-        }}
-      />
-    </label>
-  );
-}
 
 export function OptionsPanel({ engine }: Props) {
   const elements = useStore((s) => s.elements);
@@ -581,7 +468,7 @@ export function OptionsPanel({ engine }: Props) {
             onChange={(e) => updateSettings({ voltageRange: Number(e.target.value) })}
           />
         </label>
-        <UnitInput
+        <UnitNumberInput
           label="Timestep (s)"
           value={settings.timeStep}
           positive
@@ -704,41 +591,40 @@ export function OptionsPanel({ engine }: Props) {
 
       <section>
         <h3>Format</h3>
-        <NumberSetting
+        <UnitNumberInput
           label="Decimal digits (short format)"
           value={settings.shortDecimalDigits}
           min={0}
           max={6}
-          step={1}
-          onChange={(n) => updateSettings({ shortDecimalDigits: n })}
+          integer
+          onCommit={(n) => updateSettings({ shortDecimalDigits: n })}
         />
-        <NumberSetting
+        <UnitNumberInput
           label="Decimal digits (long format)"
           value={settings.decimalDigits}
           min={0}
           max={6}
-          step={1}
-          onChange={(n) => updateSettings({ decimalDigits: n })}
+          integer
+          onCommit={(n) => updateSettings({ decimalDigits: n })}
         />
-        <NumberSetting
+        <UnitNumberInput
           label="Value label font size"
           value={settings.valueFontSize}
           min={8}
           max={40}
-          step={1}
-          onChange={(n) => updateSettings({ valueFontSize: n })}
+          integer
+          onCommit={(n) => updateSettings({ valueFontSize: n })}
         />
       </section>
 
       <section>
         <h3>Input</h3>
-        <NumberSetting
+        <UnitNumberInput
           label="Mouse wheel sensitivity"
           value={settings.wheelSensitivity}
           min={0.1}
           max={10}
-          step={0.1}
-          onChange={(n) => updateSettings({ wheelSensitivity: n })}
+          onCommit={(n) => updateSettings({ wheelSensitivity: n })}
         />
       </section>
     </div>

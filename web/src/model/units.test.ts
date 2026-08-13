@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatUnits, parseUnits } from './units';
+import { formatUnits, formatUnitsAscii, parseUnits } from './units';
 
 describe('parseUnits', () => {
   it('parses the SI suffix table', () => {
@@ -73,5 +73,32 @@ describe('formatUnits', () => {
 
   it('shows a placeholder for non-finite values', () => {
     expect(formatUnits(NaN, 'V')).toBe('--');
+  });
+});
+
+describe('formatUnitsAscii', () => {
+  it('renders micro as ASCII u, never µ, so the shown value round-trips parseUnits', () => {
+    expect(formatUnitsAscii(5e-6)).toBe('5u');
+    expect(formatUnitsAscii(5e-6, 's')).toBe('5u s');
+    expect(formatUnitsAscii(0.000001, 'F')).toBe('1u F');
+  });
+
+  it('keeps the other prefixes and the unit spacing unchanged', () => {
+    expect(formatUnitsAscii(4700, 'Ω')).toBe('4.7k Ω');
+    expect(formatUnitsAscii(1e6, 'Ω')).toBe('1M Ω');
+    expect(formatUnitsAscii(0.05, 'A')).toBe('50m A');
+    expect(formatUnitsAscii(0.001)).toBe('1m');
+    expect(formatUnitsAscii(2.5e-9)).toBe('2.5n');
+    expect(formatUnitsAscii(100)).toBe('100');
+  });
+
+  it('round-trips through parseUnits, the reverse of the parseUnits tests above', () => {
+    for (const x of [1e-6, 5e-6, 4.7e3, 0.001, 1, 2.5e-9, 1e8]) {
+      expect(parseUnits(formatUnitsAscii(x))).toBeCloseTo(x, 10);
+    }
+  });
+
+  it('shows a placeholder for non-finite values', () => {
+    expect(formatUnitsAscii(NaN, 'V')).toBe('--');
   });
 });
