@@ -465,7 +465,7 @@ export const DEFAULT_SETTINGS: SimSettings = {
   showValues: true,
   showVoltageColor: true,
   showPowerColor: false,
-  showGrid: true,
+  showGrid: false,
   conventional: true,
   // European symbols are the port's default, matching the upstream default
   // outside the US and this app's IEC-only history. The gates default IEC too,
