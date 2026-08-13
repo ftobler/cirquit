@@ -4,4 +4,4 @@ A port of [Falstad's CircuitJS1](https://github.com/pfalstad/circuitjs1) to Reac
 
 Build and run with [`just`](https://github.com/casey/just): `just setup`, `just wasm`, then `just dev`. See [OVERVIEW.md](OVERVIEW.md) for architecture and the porting roadmap.
 
-Licensed GPL-2.0-or-later, matching upstream — see [COPYING](COPYING).
+Licensed GPL-2.0-or-later, matching upstream.
