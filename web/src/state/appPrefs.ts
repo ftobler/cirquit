@@ -1,4 +1,4 @@
-/** App-preference persistence. The options panel keys that are neither
+/** App-preference persistence. The Other Options keys that are neither
  *  header-borne circuit settings nor plain UI settings survive a page reload,
  *  stored as one JSON blob under a single localStorage key. Upstream scatters
  *  keys (`decimalDigits`, `valueFontSize`, `wheelSensitivity`, `crossHair`,
@@ -32,7 +32,7 @@ export type AppPrefKey = (typeof APP_PREF_KEYS)[number];
 /** Per-key range for the numeric prefs. A value outside these (or a string
  *  like `"abc"`) would otherwise reach `formatValue`'s `toFixed(digits)` and
  *  throw RangeError, killing the frame loop, so out-of-range and wrong-typed
- *  entries are dropped on load. The bounds mirror the OptionsPanel controls. */
+ *  entries are dropped on load. The bounds mirror the Other Options controls. */
 const NUMBER_RANGES: Partial<Record<AppPrefKey, { min: number; max: number }>> = {
   valueFontSize: { min: 8, max: 40 },
   shortDecimalDigits: { min: 0, max: 6 },

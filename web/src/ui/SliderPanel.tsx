@@ -1,6 +1,6 @@
 /** Circuit-level sliders (`38` Adjustable lines), bound to the target
- *  element's parameter. Renders in the right drawer below the options panel;
- *  nothing is shown when the circuit has no resolvable slider. */
+ *  element's parameter. Rendered inside the Sliders dialog; nothing is shown
+ *  when the circuit has no resolvable slider. */
 
 import { useStore } from '../state/store';
 import { resolveParam, sliderPositionToValue, sliderValueToPosition } from '../model/sliders';
@@ -46,7 +46,7 @@ export function SliderPanel() {
               value={Math.round(position)}
               // Pointer-down lands before the first change event, so a drag
               // opens one edit session and is one undo step, exactly like the
-              // options panel's range fields (OptionsPanel.tsx:174-175).
+              // edit dialog's range fields.
               onPointerDown={beginEdit}
               onFocus={beginEdit}
               onChange={(e) => {

@@ -176,9 +176,7 @@ export function Menubar({ engine }: Props) {
   const clipboard = useStore((s) => s.clipboard);
   const hasRecovery = useStore((s) => s.hasRecovery);
   const partsOpen = useStore((s) => s.partsOpen);
-  const panelOpen = useStore((s) => s.panelOpen);
   const setPartsOpen = useStore((s) => s.setPartsOpen);
-  const setPanelOpen = useStore((s) => s.setPanelOpen);
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [library, setLibrary] = useState<LibraryGroup[] | null>(null);
@@ -400,6 +398,10 @@ export function Menubar({ engine }: Props) {
       onClick: fire(() => openDialog('subcircuitManager')),
     },
     {
+      label: 'Sliders…',
+      onClick: fire(() => openDialog('sliders')),
+    },
+    {
       label: 'Create Test',
       disabled: !editable,
       onClick: fire(() => {
@@ -563,15 +565,6 @@ export function Menubar({ engine }: Props) {
           onClick={() => setPartsOpen(!partsOpen)}
         >
           Parts
-        </button>
-        <button
-          type="button"
-          className={panelOpen ? 'active' : ''}
-          aria-expanded={panelOpen}
-          aria-controls="options-drawer"
-          onClick={() => setPanelOpen(!panelOpen)}
-        >
-          Options
         </button>
       </div>
 

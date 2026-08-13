@@ -1,6 +1,6 @@
 /** Data-recorder export helpers: the download text and filename, kept pure so
  *  the byte format is testable headlessly. The Blob download itself is the
- *  OptionsPanel's DOM-bound job (web/src/io/fileIO.ts). */
+ *  edit dialog's DOM-bound job (web/src/io/fileIO.ts). */
 
 /** The exported file body, upstream's getEditInfo string assembly
  *  (DataRecorderElm.java:106-114): a `# time step = ...` header line then one

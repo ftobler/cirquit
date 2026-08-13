@@ -370,7 +370,6 @@ function createAppStore() {
   problem: null,
   hoveredId: null,
   highlightedNode: null,
-  panelFocusTick: 0,
   undoStack: [],
   redoStack: [],
   revision: 0,
@@ -382,7 +381,6 @@ function createAppStore() {
   scopeMenu: null,
   scopeProperties: null,
   partsOpen: false,
-  panelOpen: false,
   clipboard: null,
   lastSaved: null,
   liveStateProvider: null,
@@ -463,30 +461,18 @@ function createAppStore() {
 
   requestEdit: (id) =>
     set((s) => ({
-      // The edited element must lead the selection because the options panel
+      // The edited element must lead the selection because the edit dialog
       // reads selectedIds[0], while the rest of an existing selection stays
       // selected: editing one member of a group must not deselect the others
-      // (upstream's doEdit leaves the selection alone).
+      // (upstream's doEdit leaves the selection alone). The focus-on-open
+      // lives in the dialog, which mounts fresh with each open.
       selectedIds: s.selectedIds.includes(id)
         ? [id, ...s.selectedIds.filter((x) => x !== id)]
         : [id],
-      panelOpen: true,
-      partsOpen: false,
-      panelFocusTick: s.panelFocusTick + 1,
+      dialog: 'editElement',
     })),
 
-  setPartsOpen: (open) =>
-    set((s) => ({
-      partsOpen: open,
-      // One drawer at a time: opening the toolbox closes the options panel.
-      panelOpen: open ? false : s.panelOpen,
-    })),
-
-  setPanelOpen: (open) =>
-    set((s) => ({
-      panelOpen: open,
-      partsOpen: open ? false : s.partsOpen,
-    })),
+  setPartsOpen: (open) => set({ partsOpen: open }),
 
   movePoint: (id, post, dx, dy) => {
     const s = get();

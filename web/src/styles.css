@@ -625,6 +625,13 @@ h3 {
   font-size: 12px;
 }
 
+/* The problem alert's home outside any drawer, a full-width strip under the
+   menubar so it stays visible whether the parts drawer is open or not. */
+.app-banner {
+  margin: 8px 10px 10px;
+  z-index: 20;
+}
+
 .field {
   display: block;
   margin: 8px 0;
@@ -741,7 +748,7 @@ h3 {
   opacity: 1;
 }
 
-/* The scope properties dialog, a fixed overlay like the options panel. */
+/* The scope properties dialog, a fixed overlay like the dialogs. */
 .scope-props {
   position: fixed;
   top: 50%;

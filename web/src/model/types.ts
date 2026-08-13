@@ -78,7 +78,7 @@ export interface CircuitElement {
   route?: [number, number][];
 }
 
-/** An editable property, surfaced in the options panel. */
+/** An editable property, surfaced in the element edit dialog. */
 export interface FieldDef {
   name: string;
   label: string;
@@ -118,7 +118,7 @@ export interface FieldDef {
 /** Everything the app needs to know about an element type. */
 export interface ElementDef {
   kind: string;
-  /** Display name in the toolbox and options panel. */
+  /** Display name in the toolbox and the element edit dialog. */
   label: string;
   /** Toolbox grouping. */
   category: string;

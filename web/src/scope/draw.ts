@@ -773,7 +773,7 @@ function drawTrigger(
 /** The per-frame entry point: draws one scope canvas. `dark` follows the White
  *  Background setting so the panel, text and trace colours stay legible on a
  *  white backdrop. `decimalDigits` is the readout digit count and `colors` the
- *  user's colour overrides, both from the options panel settings. */
+ *  user's colour overrides, both from the Other Options settings. */
 export function drawScope(
   ctx: CanvasRenderingContext2D,
   engine: SimEngine,

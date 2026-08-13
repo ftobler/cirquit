@@ -27,7 +27,9 @@ export type DialogName =
   | 'findComponent'
   | 'createSubcircuit'
   | 'subcircuitManager'
-  | 'otherOptions';
+  | 'otherOptions'
+  | 'editElement'
+  | 'sliders';
 
 /** A point-in-time copy of everything undo needs to restore. Settings and view
  *  travel with it like the dump header and transform do upstream, so undoing a
@@ -111,9 +113,6 @@ export interface AppState {
   /** Engine node of the shift-highlighted net; every element on it draws with
    *  `theme.highlight` (MouseManager.java:689-693). Null when none. */
   highlightedNode: number | null;
-  /** Bumped by `requestEdit` so the options panel knows to refocus the first
-   *  field of the newly selected element. */
-  panelFocusTick: number;
   /** Set when the engine reports a problem. */
   problem: string | null;
   undoStack: Snapshot[];
@@ -135,10 +134,6 @@ export interface AppState {
    *  an overlay; on desktop the flag is inert because the aside is a flex
    *  sibling. */
   partsOpen: boolean;
-  /** Whether the options panel is open. `requestEdit` opens it, so a
-   *  double-tap or the context-menu Edit lands on the panel; the mobile drawer
-   *  reads it. */
-  panelOpen: boolean;
   /** Scope popup menu (right-click over a scope canvas), or null when closed.
    *  `plotId` is the plot under the cursor, for the Remove Plot command. */
   scopeMenu: { x: number; y: number; scopeId: number; plotId: number } | null;
@@ -209,14 +204,12 @@ export interface AppState {
    *  the port of upstream's row/column capture which reads only stored
    *  endpoints, never derived posts (MouseManager.java:1161-1187). */
   movePoint(id: number, post: 0 | 1, dx: number, dy: number): void;
-  /** Selects the element, opens the options panel, and asks it to focus the
+  /** Selects the element and opens the edit dialog, asking it to focus the
    *  first field. The double-tap and the context menu's Edit item share this
    *  one implementation of "edit this element". */
   requestEdit(id: number): void;
   /** Opens or closes the toolbox drawer (the mobile overlay). */
   setPartsOpen(open: boolean): void;
-  /** Opens or closes the options drawer; requestEdit routes through this. */
-  setPanelOpen(open: boolean): void;
   deleteSelected(): void;
   /** Rotates the selection 90 degrees about each element's midpoint. */
   rotateSelection(): void;
@@ -264,7 +257,7 @@ export interface AppState {
    *  parameter through the live `set_param` fast path. A slider that cannot be
    *  resolved (element gone, no matching field) does nothing: it is
    *  inert-but-preserved. The undo bracketing (one entry per drag) belongs to
-   *  the panel's `beginEdit` on pointer-down, like the OptionsPanel range. */
+   *  the caller's `beginEdit` on pointer-down, like the edit dialog's range. */
   setSliderValue(id: number, value: number): void;
   /** Edits the element's free text (annotations, labels). */
   setText(id: number, text: string): void;

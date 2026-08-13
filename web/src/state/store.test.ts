@@ -318,23 +318,17 @@ describe('topology mutators force a reload', () => {
   });
 });
 
-describe('requestEdit selects and opens the panel', () => {
-  it('selects that id alone, opens the panel, and bumps panelFocusTick', () => {
+describe('requestEdit selects and opens the edit dialog', () => {
+  it('selects that id alone and opens the editElement dialog', () => {
     const a = addResistor();
     const b = addResistor();
     useStore.getState().select([a]);
-    const before = useStore.getState().panelFocusTick;
 
     useStore.getState().requestEdit(b);
 
     const s = useStore.getState();
     expect(s.selectedIds).toEqual([b]);
-    expect(s.panelOpen).toBe(true);
-    expect(s.partsOpen).toBe(false);
-    expect(s.panelFocusTick).toBe(before + 1);
-    // The tick is per call, so a second edit on the same element refocuses.
-    useStore.getState().requestEdit(b);
-    expect(useStore.getState().panelFocusTick).toBe(before + 2);
+    expect(s.dialog).toBe('editElement');
   });
 
   it('keeps the whole selection when the target is already in it', () => {
@@ -345,18 +339,18 @@ describe('requestEdit selects and opens the panel', () => {
     useStore.getState().requestEdit(b);
 
     // Nothing is deselected, and the edited element leads the selection so the
-    // options panel (which reads selectedIds[0]) shows it, not its neighbour.
+    // edit dialog (which reads selectedIds[0]) shows it, not its neighbour.
     expect(useStore.getState().selectedIds).toEqual([b, a]);
-    expect(useStore.getState().panelOpen).toBe(true);
+    expect(useStore.getState().dialog).toBe('editElement');
   });
 
-  it('opens the options drawer and closes the parts drawer', () => {
+  it('leaves the parts drawer alone', () => {
     addResistor();
     useStore.getState().setPartsOpen(true);
     useStore.getState().requestEdit(useStore.getState().elements[0].id);
     const s = useStore.getState();
-    expect(s.panelOpen).toBe(true);
-    expect(s.partsOpen).toBe(false);
+    expect(s.dialog).toBe('editElement');
+    expect(s.partsOpen).toBe(true);
   });
 });
 
@@ -366,19 +360,6 @@ describe('drawer state', () => {
     expect(useStore.getState().partsOpen).toBe(true);
     useStore.getState().setPartsOpen(false);
     expect(useStore.getState().partsOpen).toBe(false);
-  });
-
-  it('only one drawer is open at a time', () => {
-    useStore.getState().setPartsOpen(true);
-    useStore.getState().setPanelOpen(true);
-    let s = useStore.getState();
-    expect(s.panelOpen).toBe(true);
-    expect(s.partsOpen).toBe(false);
-
-    useStore.getState().setPartsOpen(true);
-    s = useStore.getState();
-    expect(s.partsOpen).toBe(true);
-    expect(s.panelOpen).toBe(false);
   });
 });
 
@@ -1078,7 +1059,7 @@ r 0 0 16 0 0 100
   });
 });
 
-describe('options panel settings', () => {
+describe('simulation settings', () => {
   it('DEFAULT_SETTINGS carries the new keys with upstream values', () => {
     expect(DEFAULT_SETTINGS.showCrosshair).toBe(false);
     // European symbols are the port's default (upstream's non-US default).
@@ -2449,6 +2430,21 @@ describe('white background and dialog state', () => {
   it('the Other Options dialog opens from its menu row and closes', () => {
     useStore.getState().openDialog('otherOptions');
     expect(useStore.getState().dialog).toBe('otherOptions');
+    useStore.getState().closeDialog();
+    expect(useStore.getState().dialog).toBeNull();
+  });
+
+  it('the element edit dialog opens from requestEdit and closes', () => {
+    const id = addResistor();
+    useStore.getState().requestEdit(id);
+    expect(useStore.getState().dialog).toBe('editElement');
+    useStore.getState().closeDialog();
+    expect(useStore.getState().dialog).toBeNull();
+  });
+
+  it('the sliders dialog opens from its menu row and closes', () => {
+    useStore.getState().openDialog('sliders');
+    expect(useStore.getState().dialog).toBe('sliders');
     useStore.getState().closeDialog();
     expect(useStore.getState().dialog).toBeNull();
   });

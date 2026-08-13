@@ -111,8 +111,8 @@ export function ContextMenu() {
       label: 'Edit',
       disabled: !editable || !targetDef.fields?.length,
       // One implementation of "edit this element" shared with the canvas
-      // double-click and touch double-tap: select, open the options panel,
-      // focus its first field.
+      // double-click and touch double-tap: select and open the edit dialog,
+      // which focuses its first field.
       action: () => useStore.getState().requestEdit(target),
     });
     scopeItems.push({

@@ -1,8 +1,8 @@
 /**
  * The data-input file format: one numeric voltage value per line, blank lines
  * and `#` comments skipped (DataInputElm.java:185-216). Pure and DOM-free so
- * it is testable headlessly; the file field in the options panel feeds the
- * decoded text in and, on an error, shows the same message upstream alerts.
+ * it is testable headlessly; the file field in the element edit dialog feeds
+ * the decoded text in and, on an error, shows the same message upstream alerts.
  */
 
 export interface DataFileParse {
