@@ -79,9 +79,16 @@ post 0 and leaves post 1 — the same convention throughout.
 **Ground.** Ground symbols are resolved during analysis by remapping their
 component onto node 0, rather than by stamping a 0 V source per symbol. This
 lets any number of ground symbols share a node without producing duplicate,
-singular constraint rows. Consequence: current *through* a ground symbol is not
-reported. If that is wanted later, give ground a single shared 0 V source
-rather than one per symbol.
+singular constraint rows. Current *through* a ground symbol is not a matrix
+unknown; a post-solve KCL pass (`recover_ground_currents`) sums every
+non-ground element's current into the ground's post coordinate and splits the
+net evenly among the symbols sharing it. That recovered current is reported
+like any element's: it animates the current dots on the stem, shows in the
+options readout, and can be scoped. The KCL recovery was kept rather than a
+"single shared 0 V source per coordinate" because all ground terminals already
+merge onto node 0, so a per-coordinate source would tie the already-merged
+node to itself and add a degenerate matrix row for no information, and
+upstream recovers ground current the same way, via `calcWireCurrents`.
 
 **Floating subcircuits** get a 10 nS conductance to ground per node, with a
 warning, rather than an error. Ungrounded circuits pick the first node as the
@@ -190,7 +197,6 @@ fetch it).
   `XMLSerializer`/`XMLDeserializer` and the per-element `dumpXml`/`undumpXml`
   pair for every type. The text format remains what the `cct` and plain-text
   share links use.
-- **Ground current** is not reported (see section 2).
 - **The DC operating point runs per the `autoDC` setting, not always.** The
   solve runs before the first timestep and on every reset only when `autoDC`
   is on: the header's flag bit 128 drives it (CirSim.java:440-444), and a new

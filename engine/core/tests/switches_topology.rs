@@ -1,6 +1,6 @@
 //! Switches, the AC source, potentiometer, labeled nodes, and the solver's handling of floating nodes, wires and grounds.
 
-use circuit_core::{Circuit, CircuitSpec};
+use circuit_core::{Circuit, CircuitSpec, ScopeValue};
 
 mod common;
 use common::*;
@@ -821,6 +821,38 @@ fn ground_reports_the_current_it_sinks() {
         close(c.element_currents()[2], 5e-3, 1e-9),
         "ground current was {}",
         c.element_currents()[2]
+    );
+}
+
+#[test]
+fn scope_on_a_ground_samples_the_recovered_current() {
+    // The scope sampling path reads the ground's recovered `base.current`
+    // (circuit.rs:1362), so a current trace on a ground symbol must see the
+    // same 5 mA the element readout reports, exactly like any other element.
+    let c = &mut build_with(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, true),
+        vec![tr_scope(3, ScopeValue::Current, 0)],
+    );
+    c.run(5);
+    assert!(
+        close(c.element_currents()[2], 5e-3, 1e-9),
+        "ground current was {}",
+        c.element_currents()[2]
+    );
+    assert!(
+        close(last_sample(c, 0), 5e-3, 1e-9),
+        "scope sampled {}",
+        last_sample(c, 0)
     );
 }
 
