@@ -11,6 +11,36 @@ export function snap(v: number, grid: number = GRID_SIZE): number {
   return Math.round(v / grid) * grid;
 }
 
+/** Maps a range-input position in [min, max] to a step count on a log scale,
+ *  so small step counts spread across the slider instead of cramming into the
+ *  low end. Both ends land exactly on min and max; a position outside the
+ *  range clamps. A degenerate range (non-positive min, or max <= min) degrades
+ *  to linear, the same guard the slider mapping in model/sliders.ts uses. */
+export function stepsFromSlider(bar: number, min: number, max: number): number {
+  const span = max - min;
+  const t = span > 0 ? Math.min(1, Math.max(0, (bar - min) / span)) : 0;
+  if (min > 0 && span > 0) {
+    return Math.min(
+      max,
+      Math.max(min, Math.round(10 ** (Math.log10(min) + t * (Math.log10(max) - Math.log10(min))))),
+    );
+  }
+  return Math.min(max, Math.max(min, Math.round(min + t * span)));
+}
+
+/** The inverse of stepsFromSlider: the range-input position that displays the
+ *  given step count, so a stored stepsPerFrame restores the slider thumb. The
+ *  count clamps to [min, max]; a degenerate range degrades to linear. */
+export function sliderFromSteps(n: number, min: number, max: number): number {
+  const span = max - min;
+  if (span <= 0) return min;
+  const clamped = Math.min(max, Math.max(min, n));
+  if (min > 0) {
+    return min + ((Math.log10(clamped) - Math.log10(min)) / (Math.log10(max) - Math.log10(min))) * span;
+  }
+  return clamped;
+}
+
 /** True when reloading the page would lose edits since the last export. */
 export function hasUnsavedChanges(lastSaved: string | null, current: string): boolean {
   return lastSaved !== null && current !== lastSaved;

@@ -5,6 +5,7 @@
 
 import { formatValue, makeTheme } from '../render/draw';
 import type { Theme, ThemeColors } from '../model/types';
+import { sliderFromSteps, stepsFromSlider } from '../state/helpers';
 import { useStore } from '../state/store';
 import { Dialog } from './Dialog';
 import { UnitNumberInput } from './UnitNumberInput';
@@ -52,8 +53,10 @@ export function OtherOptionsDialog() {
             type="range"
             min={1}
             max={1000}
-            value={settings.stepsPerFrame}
-            onChange={(e) => updateSettings({ stepsPerFrame: Number(e.target.value) })}
+            value={sliderFromSteps(settings.stepsPerFrame, 1, 1000)}
+            onChange={(e) =>
+              updateSettings({ stepsPerFrame: stepsFromSlider(Number(e.target.value), 1, 1000) })
+            }
           />
         </label>
         <label className="field">
