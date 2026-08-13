@@ -515,8 +515,11 @@ times. Coupling defaults to 0.999 for the basic and custom transformers and
 0.99 for the tapped one, and the tapped secondary is split in half (each half
 `ratio/2` turns). The basic transformer's polarity lives in FLAG_REVERSE
 (bit 4), which the drawing turns into a post swap rather than a token. A basic
-`T` line may carry `saturationCurrent`; the port preserves the token but does
-not yet model core saturation. The `169` and `T` lines both omit their optional
+`T` line may carry `saturationCurrent`; the port models it as a core-saturation
+rolloff `L_eff = L0/(1 + (I/Isat)^2)` per winding, `Isat` scaled by the winding's
+turns ratio, exactly as upstream (TransformerElm.java:195-270). A saturated
+core flips the element nonlinear, so its companion is re-stamped every Newton
+iteration. The `169` and `T` lines both omit their optional
 trailing tokens when a file stops short, and the save writes exactly the tokens
 that were present. The `406` description is one escaped token
 (`CustomLogicModel.escape`: `+→\p`, `=→\q`, `#→\h`, `&→\a`, CR, space, and

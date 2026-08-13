@@ -2,7 +2,7 @@
 
 use std::f64::consts::PI;
 
-use circuit_core::{Circuit, CircuitSpec, ScopeSpec, ScopeValue};
+use circuit_core::{Circuit, CircuitSpec, ElementSpec, ScopeSpec, ScopeValue};
 
 mod common;
 use common::*;
@@ -110,6 +110,74 @@ fn transformer_dc_pass_pins_ratio() {
     assert!(
         close(v2, 9.99, 1e-6),
         "DC operating point read {v2}, expected 9.99"
+    );
+}
+
+#[test]
+fn transformer_saturation_dc_pass_keeps_the_open_secondary_ratio() {
+    // The DC operating point of a saturating transformer pins the
+    // `!ctx.dc_analysis` guard in stamp and the DC early-returns in
+    // start_iteration and do_step. The DC companion is the current-dependent
+    // mutual matrix, not a short like the inductor's, built from the seeded
+    // zero currents, so L_eff = L0 for both windings and the matrix is exactly
+    // the linear one (the unsaturated start). The open secondary carries no
+    // current, so its full coupling is intact and V2 = k*ratio*V1 falls out of
+    // the M⁻¹ companion alone. Reading the solved voltages before any
+    // transient step is what catches a stamp-guard regression: if the
+    // companion were not stamped under DC, the secondary would have no DC path,
+    // the solve would go singular, and the quiet failure path would zero every
+    // element voltage (V1 included), while the transient's do_step re-stamp
+    // would mask it.
+    let spec = CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "transformer",
+                &[[0, 0], [100, 0], [0, 100], [100, 100]],
+                &[
+                    ("inductance", 4.0),
+                    ("ratio", 2.0),
+                    ("couplingCoef", 0.999),
+                    ("saturationCurrent", 0.01),
+                ],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "ground", &[[100, 100]], &[]),
+        ],
+        options: Some(opts(1e-5, true)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    c.set_circuit(&spec).expect("circuit should analyse");
+    assert_eq!(c.error(), None, "the DC operating point did not solve");
+    assert!(
+        c.warnings()
+            .iter()
+            .all(|w| !w.contains("no path to ground")),
+        "the grounded secondary should not need pinning: {:?}",
+        c.warnings()
+    );
+    // The source reads V(post1) - V(post0) = V1 (VoltageElm.java:462); the
+    // transformer reads V(post0) - V(post1) = V1 - V2, so V2 = source -
+    // transformer.
+    let v1 = c.element_voltages()[0];
+    let v2 = v1 - c.element_voltages()[1];
+    assert!(
+        close(v1, 10.0, 1e-6),
+        "DC solve read V1 = {v1}, expected the source's 10 V"
+    );
+    assert!(
+        close(v2, 0.999 * 2.0 * v1, 1e-6),
+        "DC solve read V2 = {v2}, expected k*ratio*V1 = {}",
+        0.999 * 2.0 * v1
+    );
+    // The transient continues from the DC pass without complaint.
+    let report = c.run(5);
+    assert!(
+        report.converged,
+        "transient after DC failed: {:?}",
+        report.error
     );
 }
 
@@ -239,6 +307,134 @@ fn transformer_current_ratio_loaded_secondary() {
     assert!(
         close(isource, i1, 0.01),
         "source peak {isource} does not match primary peak {i1}"
+    );
+}
+
+/// The RL circuit behind the saturation curve: V = 20 through R = 1000 into a
+/// driven winding of the basic transformer, the other winding open with its
+/// far post grounded so the common mode is referenced (the
+/// `open_secondary_v2_opts` layout). `drive_secondary` picks which winding
+/// carries the drive; `ratio` and `saturation_current` are the transformer's
+/// own tokens.
+fn transformer_rl_saturation(
+    drive_secondary: bool,
+    ratio: f64,
+    saturation_current: Option<f64>,
+) -> Vec<ElementSpec> {
+    let mut params = vec![
+        ("inductance", 1e-3),
+        ("ratio", ratio),
+        ("couplingCoef", 0.999),
+    ];
+    if let Some(isat) = saturation_current {
+        params.push(("saturationCurrent", isat));
+    }
+    let mut els = vec![
+        elm(1, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 20.0)]),
+        elm(2, "ground", &[[0, 200]], &[]),
+    ];
+    // Primary-driven: R feeds primary post 0, primary post 2 grounded,
+    // secondary post 3 grounded. Secondary-driven: R feeds secondary post 1,
+    // secondary post 3 grounded, primary post 2 grounded.
+    if drive_secondary {
+        els.push(elm(
+            3,
+            "resistor",
+            &[[0, 0], [100, 100]],
+            &[("resistance", 1000.0)],
+        ));
+        els.push(elm(
+            4,
+            "transformer",
+            &[[100, 0], [100, 100], [0, 100], [100, 200]],
+            &params,
+        ));
+        els.push(elm(5, "ground", &[[0, 100]], &[]));
+        els.push(elm(6, "ground", &[[100, 200]], &[]));
+    } else {
+        els.push(elm(
+            3,
+            "resistor",
+            &[[0, 0], [100, 0]],
+            &[("resistance", 1000.0)],
+        ));
+        els.push(elm(
+            4,
+            "transformer",
+            &[[100, 0], [100, 100], [0, 100], [100, 200]],
+            &params,
+        ));
+        els.push(elm(5, "ground", &[[0, 100]], &[]));
+        els.push(elm(6, "ground", &[[100, 200]], &[]));
+    }
+    els
+}
+
+#[test]
+fn transformer_saturation_primary_side_follows_the_analytic_curve() {
+    // With the secondary open no secondary current flows, and the companion
+    // reduces the primary to a plain saturating inductor (the i2 = 0
+    // constraint eliminates the M term: v1 = L1_eff*di1/dt). Reuse the
+    // saturating-inductor numbers (reactive.rs:880-919): V = 20 behind
+    // R = 1000, L = 1e-3, Isat = 0.01, ratio = 1. At I = Isat the closed
+    // form gives t = 0.522103*L/R = 5.22103e-7 s, 522 steps at dt = 1e-9.
+    // Measured 9.981e-3 at the same point. The linear twin at the same point
+    // reads the plain exponential I = (V/R)(1 - e^(-t/tau)) = 8.14e-3
+    // (measured 8.127e-3), the gap the saturation collapse produces.
+    let dt = 1e-9;
+    let steps = 522;
+    let sat = &mut build(
+        transformer_rl_saturation(false, 1.0, Some(0.01)),
+        opts(dt, false),
+    );
+    sat.run(steps);
+    let amps = sat.element_currents();
+    assert!(
+        close(amps[3], 0.01, 2e-4),
+        "saturating transformer at Isat: got {}, expected 0.01",
+        amps[3]
+    );
+
+    let lin = &mut build(transformer_rl_saturation(false, 1.0, None), opts(dt, false));
+    lin.run(steps);
+    let amps = lin.element_currents();
+    assert!(
+        close(amps[3], 8.14e-3, 1e-4),
+        "linear twin at the same point read {}, expected 8.14e-3",
+        amps[3]
+    );
+}
+
+#[test]
+fn transformer_saturation_secondary_isat_scales_with_ratio() {
+    // Drive the secondary instead (primary open). With ratio = 2 and
+    // isat = 0.005, the secondary is a saturating inductor of
+    // L2 = L*4 = 4e-3 at Isat2 = isat*2 = 0.01, so x0 = 20/(1000*0.01) = 2
+    // and the same closed form gives t = 0.522103*L2/R = 2.088e-6 s, 2088
+    // steps at dt = 1e-9, where the winding reads I = Isat2 (measured
+    // 9.994e-3, no GMIN perturbation). The point is the isat*|turns|
+    // scaling, not the primary, which stays essentially at zero (measured
+    // 2e-19).
+    let dt = 1e-9;
+    let steps = 2088;
+    let c = &mut build(
+        transformer_rl_saturation(true, 2.0, Some(0.005)),
+        opts(dt, false),
+    );
+    c.run(steps);
+    // The secondary winding is posts (1,3) of the 4-post transformer (element
+    // index 3, post offset 5: voltage 2 + ground 1 + resistor 2).
+    // current_into_node(1) = -currents[1].
+    let posts = c.element_post_currents();
+    let i2 = -posts[6];
+    let i1 = c.element_currents()[3];
+    assert!(
+        close(i2, 0.01, 3e-4),
+        "secondary winding at its ratio-scaled Isat: got {i2}, expected 0.01"
+    );
+    assert!(
+        i1.abs() < 2e-4,
+        "open primary carried {i1}, expected near zero"
     );
 }
 

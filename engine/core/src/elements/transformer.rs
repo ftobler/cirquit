@@ -103,6 +103,11 @@ pub struct Transformer {
     inductance: f64,
     /// Coupling coefficient between every pair of windings, `0 < k < 1`.
     coupling: f64,
+    /// Winding current at which the core's effective inductance halves,
+    /// 0 for a linear core. Only the basic transformer carries the token
+    /// (TransformerElm.java:27); the tapped and custom rows keep this 0 and
+    /// their constant companions.
+    saturation_current: f64,
     /// `(post 0, post 1)` node slots per winding, in file order.
     windings: Vec<(usize, usize)>,
     /// Signed turns ratio `n_i` per winding; a negative `n` means the coil is
@@ -129,6 +134,7 @@ impl Transformer {
             kind: "transformer",
             inductance: spec.param("inductance", 4.0),
             coupling: spec.param("couplingCoef", 0.999),
+            saturation_current: spec.param("saturationCurrent", 0.0),
             windings: vec![(0, 2), (1, 3)],
             turns: vec![1.0, spec.param("ratio", 1.0)],
             a: vec![0.0; n * n],
@@ -149,6 +155,7 @@ impl Transformer {
             kind: "tappedTransformer",
             inductance: spec.param("inductance", 4.0),
             coupling: spec.param("couplingCoef", 0.99),
+            saturation_current: spec.param("saturationCurrent", 0.0),
             windings: vec![(0, 1), (2, 3), (3, 4)],
             turns: vec![
                 1.0,
@@ -172,6 +179,7 @@ impl Transformer {
             kind: "customTransformer",
             inductance: spec.param("inductance", 4.0),
             coupling: spec.param("couplingCoef", 0.999),
+            saturation_current: spec.param("saturationCurrent", 0.0),
             windings: Vec::new(),
             turns: Vec::new(),
             a: Vec::new(),
@@ -259,20 +267,80 @@ impl Transformer {
         self.base.volts[a] - self.base.volts[b]
     }
 
+    /// The current-dependent self-inductance `L0/(1 + (I/Isat)^2)` of a
+    /// winding, the same smooth rolloff the saturating inductor uses
+    /// (`calcEffectiveInductance`, TransformerElm.java:195-200): `L0/2` at
+    /// `|I| = Isat`, `L0/10` at `|I| = 3*Isat`. `isat <= 0` keeps the winding
+    /// linear.
+    fn effective_inductance(l0: f64, i: f64, isat: f64) -> f64 {
+        if isat <= 0.0 {
+            return l0;
+        }
+        let ratio = i / isat;
+        l0 / (1.0 + ratio * ratio)
+    }
+
     fn compute_coefficients(&mut self, dt: f64) {
         let n = self.windings.len();
         let mut m = vec![0.0; n * n];
-        for i in 0..n {
-            for j in 0..n {
-                m[i * n + j] = if i == j {
-                    self.turns[i] * self.turns[i] * self.inductance
-                } else {
-                    self.coupling * self.inductance * self.turns[i] * self.turns[j]
-                };
+        if self.saturation_current <= 0.0 {
+            // Linear core: the constant mutual-inductance matrix.
+            for i in 0..n {
+                for j in 0..n {
+                    m[i * n + j] = if i == j {
+                        self.turns[i] * self.turns[i] * self.inductance
+                    } else {
+                        self.coupling * self.inductance * self.turns[i] * self.turns[j]
+                    };
+                }
+            }
+        } else {
+            // Saturated core: each winding's self inductance rolls off with
+            // its own current (L0_i = n_i^2*L, Isat_i = isat*|n_i|), and the
+            // mutuals follow as k*sqrt(Li*Lj) with the turns pair's sign
+            // carrying the polarity, exactly as k*L*n_i*n_j does unsaturated
+            // (TransformerElm.java:266-270).
+            let l_eff: Vec<f64> = (0..n)
+                .map(|i| {
+                    let l0 = self.turns[i] * self.turns[i] * self.inductance;
+                    let isat = self.saturation_current * self.turns[i].abs();
+                    Self::effective_inductance(l0, self.currents[i], isat)
+                })
+                .collect();
+            for i in 0..n {
+                for j in 0..n {
+                    m[i * n + j] = if i == j {
+                        l_eff[i]
+                    } else {
+                        self.coupling
+                            * (self.turns[i] * self.turns[j]).signum()
+                            * (l_eff[i] * l_eff[j]).sqrt()
+                    };
+                }
             }
         }
         let ts = if self.backward_euler { dt } else { dt / 2.0 };
         self.a = invert(&m, n).iter().map(|v| v * ts).collect();
+    }
+
+    /// Stamps the Norton companion from the current `a` coefficients: the
+    /// diagonal self terms as conductances, the off-diagonal mutual terms as
+    /// VCCSes. `stamp` calls it once for the linear and DC passes; a
+    /// saturating transient re-stamps it every Newton iteration from
+    /// `do_step`.
+    fn stamp_companion(&self, s: &mut Stamper) {
+        let n = self.windings.len();
+        for i in 0..n {
+            let (na, nb) = self.winding_node_pair(i);
+            s.conductance(na, nb, self.a[i * n + i]);
+            for j in 0..n {
+                if i == j {
+                    continue;
+                }
+                let (ma, mb) = self.winding_node_pair(j);
+                s.vccs(na, nb, ma, mb, self.a[i * n + j]);
+            }
+        }
     }
 }
 
@@ -313,25 +381,40 @@ impl Element for Transformer {
         true
     }
 
+    fn nonlinear(&self) -> bool {
+        // The saturating companion is a function of the winding currents, so
+        // the matrix is restored and the companion re-stamped every Newton
+        // iteration (TransformerElm.java:118).
+        self.saturation_current > 0.0
+    }
+
     fn stamp(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         self.compute_coefficients(ctx.dt);
-        let n = self.windings.len();
-        for i in 0..n {
-            let (na, nb) = self.winding_node_pair(i);
-            s.conductance(na, nb, self.a[i * n + i]);
-            for j in 0..n {
-                if i == j {
-                    continue;
-                }
-                let (ma, mb) = self.winding_node_pair(j);
-                s.vccs(na, nb, ma, mb, self.a[i * n + j]);
-            }
+        if !ctx.dc_analysis && self.saturation_current > 0.0 {
+            // Saturating transient: nothing constant to stamp. The matrix is
+            // restored to the snapshot every Newton iteration, so do_step
+            // re-stamps the current-dependent companion there, the same
+            // division of labour as the saturating inductor (inductor.rs:
+            // 99-112). The DC pass still stamps here, with the coefficients
+            // computed from the seeded winding currents.
+            return;
         }
+        self.stamp_companion(s);
     }
 
     fn start_iteration(&mut self, ctx: &SimCtx) {
         if ctx.dc_analysis {
             return;
+        }
+        if self.saturation_current > 0.0 {
+            // The companion depends on the last converged winding currents,
+            // which only change between timesteps, so recompute the
+            // coefficients once per step like the inductor recomputes `geq`
+            // from `i_prev` (inductor.rs:114-127). The coefficients then stay
+            // fixed across the Newton iterations of this timestep, the
+            // staggered scheme upstream's `startIteration` uses
+            // (TransformerElm.java:263-271).
+            self.compute_coefficients(ctx.dt);
         }
         let n = self.windings.len();
         let mut vd = vec![0.0; n];
@@ -352,6 +435,13 @@ impl Element for Transformer {
     fn do_step(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         if ctx.dc_analysis {
             return;
+        }
+        if self.saturation_current > 0.0 {
+            // Re-stamp the companion every Newton iteration with the
+            // coefficients `start_iteration` fixed for the step; the matrix
+            // was restored to the snapshot, so this does not double the
+            // constant pass (TransformerElm.java:283-290).
+            self.stamp_companion(s);
         }
         for i in 0..self.windings.len() {
             let (a, b) = self.winding_node_pair(i);
@@ -429,5 +519,92 @@ impl Element for Transformer {
         self.base.reset();
         self.currents.iter_mut().for_each(|c| *c = 0.0);
         self.source_values.iter_mut().for_each(|v| *v = 0.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// A 2-winding basic transformer at L = 4, ratio = 2, k = 0.999, with the
+    /// given saturation current, winding currents seeded directly.
+    fn basic(isat: f64, currents: [f64; 2]) -> Transformer {
+        let mut params = HashMap::new();
+        params.insert("inductance".into(), 4.0);
+        params.insert("ratio".into(), 2.0);
+        params.insert("couplingCoef".into(), 0.999);
+        params.insert("saturationCurrent".into(), isat);
+        let spec = ElementSpec {
+            id: 1,
+            kind: "transformer".into(),
+            posts: vec![[0, 0], [100, 0], [0, 100], [100, 100]],
+            params,
+            label: None,
+            model: None,
+            flags: 0,
+        };
+        let mut t = Transformer::new_basic(&spec);
+        t.currents = currents.to_vec();
+        t
+    }
+
+    #[test]
+    fn effective_inductance_rolls_off_symmetrically() {
+        // L_eff = L0/(1 + (I/Isat)^2): L0 below onset, L0/2 at I = Isat,
+        // L0/10 at I = 3*Isat, and an even function of the current. An
+        // isat <= 0 keeps the winding linear.
+        assert_eq!(Transformer::effective_inductance(4.0, 1.0, 0.0), 4.0);
+        assert_eq!(Transformer::effective_inductance(4.0, 1.0, -1.0), 4.0);
+        assert_eq!(Transformer::effective_inductance(4.0, 0.01, 0.01), 2.0);
+        assert_eq!(Transformer::effective_inductance(4.0, -0.01, 0.01), 2.0);
+        assert_eq!(Transformer::effective_inductance(4.0, 0.03, 0.01), 0.4);
+        assert_eq!(Transformer::effective_inductance(4.0, -0.03, 0.01), 0.4);
+    }
+
+    #[test]
+    fn zero_isat_is_the_linear_mutual_matrix() {
+        // isat = 0 must reproduce the pre-saturation matrix exactly: diagonal
+        // n_i^2*L, off-diagonal k*L*n_i*n_j, and `a` = M^-1*ts. Rebuild the
+        // same M by hand and invert it, so the saturated path cannot hide
+        // behind the linear branch agreeing with itself.
+        let mut t = basic(0.0, [0.0, 0.0]);
+        t.compute_coefficients(2.0); // trapezoidal: ts = dt/2 = 1.0, so a = M^-1
+        let mut m = vec![0.0; 4];
+        m[0] = 4.0;
+        m[1] = 0.999 * 4.0 * 2.0;
+        m[2] = 0.999 * 4.0 * 2.0;
+        m[3] = 4.0 * 2.0 * 2.0;
+        assert_eq!(t.a, invert(&m, 2));
+    }
+
+    #[test]
+    fn unsaturated_start_matches_the_linear_matrix() {
+        // At zero winding current L_eff = L0 exactly, so the saturated matrix
+        // equals the linear one bit for bit: the sqrt and the signed product
+        // coincide for these power-of-two scalings, the "unsaturated start"
+        // the staggered scheme begins from.
+        let mut linear = basic(0.0, [0.0, 0.0]);
+        linear.compute_coefficients(2.0);
+        let mut sat = basic(0.01, [0.0, 0.0]);
+        sat.compute_coefficients(2.0);
+        assert_eq!(linear.a, sat.a);
+    }
+
+    #[test]
+    fn saturation_raises_the_primary_diagonal_coefficient() {
+        // A primary at its own Isat halves L1, so M^-1 grows and with it the
+        // primary diagonal companion coefficient. Compute coefficients the
+        // way start_iteration would, from the running winding currents.
+        let mut saturated = basic(0.01, [0.01, 0.0]);
+        saturated.compute_coefficients(2.0);
+        let mut unsaturated = basic(0.01, [0.0, 0.0]);
+        unsaturated.compute_coefficients(2.0);
+        assert!(
+            saturated.a[0] > unsaturated.a[0],
+            "saturated primary diagonal {} should exceed the unsaturated {}",
+            saturated.a[0],
+            unsaturated.a[0]
+        );
     }
 }
