@@ -4,7 +4,7 @@
  *  port also matches kind and category, because the split NPN/PNP and
  *  N-MOSFET/P-MOSFET rows share one kind and "transistor" should find both. */
 
-import { TOOLBOX, type ToolboxEntry } from './registry';
+import { defFor, TOOLBOX, type ToolboxEntry } from './registry';
 
 /** One search hit, shaped for the dialog's list. */
 export interface ComponentMatch {
@@ -35,4 +35,27 @@ export function filterComponents(
   // in the browser and under the node test environment.
   out.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
   return out;
+}
+
+/** Substring, case-insensitive match on label, kind or category, preserving
+ *  the toolbox's category grouping and display order. The Find Component
+ *  dialog wants a flat alphabetised list (`filterComponents`); the sidebar
+ *  filters within each category, so a blank query returns the exact palette
+ *  and a hit never jumps between categories. */
+export function filterTools(query: string, entries: ToolboxEntry[] = TOOLBOX): ToolboxEntry[] {
+  const q = query.trim().toLowerCase();
+  if (q === '') return entries;
+  return entries.filter(
+    (e) =>
+      e.label.toLowerCase().includes(q) ||
+      e.kind.toLowerCase().includes(q) ||
+      e.category.toLowerCase().includes(q),
+  );
+}
+
+/** The placement key a tool shows next to its icon: the entry's own char for
+ *  the split N/P flavours, otherwise the kind def's shortcut. Case is
+ *  significant, so `N` and `n` stay distinct. */
+export function toolShortcut(t: ToolboxEntry): string | undefined {
+  return t.shortcut ?? defFor(t.kind)?.shortcut;
 }
