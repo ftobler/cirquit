@@ -774,7 +774,11 @@ export function dragpostHandlesFrom(g: DrawContext, posts: Point[], grabbed: num
   g.ctx.fillStyle = g.theme.selection;
   posts.forEach((p, i) => {
     const s = i === grabbed ? 9 : 7;
-    g.ctx.fillRect(p.x - (s >> 1), p.y - (s >> 1), s, s);
+    // Half-anchor the rect so its centre lands on the post. Upstream uses the
+    // integer offsets (UIManager.java:681-698); this half-pixel centring is a
+    // deliberate aesthetic divergence the owner requested, so the handle sits
+    // on the wire centreline like the grid dots.
+    g.ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
   });
 }
 

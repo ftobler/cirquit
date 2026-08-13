@@ -103,8 +103,10 @@ describe('SvgRecorder paths', () => {
     const r = rec();
     dragpostHandlesFrom(drawCtx(r), [{ x: 0, y: 0 }, { x: 64, y: 0 }], 0);
     const svg = r.toString(100, 100);
-    expect(svg).toContain('<rect x="-4" y="-4" width="9" height="9" fill="#54aeff"');
-    expect(svg).toContain('<rect x="61" y="-3" width="7" height="7" fill="#54aeff"');
+    // The centre (not the top-left corner) is on the post, hence the
+    // fractional anchors: (-4.5, -4.5) for the 9x9, (-3.5, -3.5) for the 7x7.
+    expect(svg).toContain('<rect x="-4.5" y="-4.5" width="9" height="9" fill="#54aeff"');
+    expect(svg).toContain('<rect x="60.5" y="-3.5" width="7" height="7" fill="#54aeff"');
   });
 
   it('emits each current dot as a 4x4 rect, not an arc path', () => {

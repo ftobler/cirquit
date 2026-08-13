@@ -510,8 +510,10 @@ describe('dragpost handles', () => {
       ],
       0,
     );
-    expect(stub.fillRect).toHaveBeenCalledWith(-4, -4, 9, 9);
-    expect(stub.fillRect).toHaveBeenCalledWith(61, -3, 7, 7);
+    // The centre (not the top-left corner) is on the post, hence the
+    // fractional anchors: (-4.5, -4.5) for the 9x9, (-3.5, -3.5) for the 7x7.
+    expect(stub.fillRect).toHaveBeenCalledWith(-4.5, -4.5, 9, 9);
+    expect(stub.fillRect).toHaveBeenCalledWith(60.5, -3.5, 7, 7);
   });
 
   it('swaps the 9x9 to the other endpoint when that one is grabbed', () => {
@@ -524,8 +526,8 @@ describe('dragpost handles', () => {
       ],
       1,
     );
-    expect(stub.fillRect).toHaveBeenCalledWith(-3, -3, 7, 7);
-    expect(stub.fillRect).toHaveBeenCalledWith(60, -4, 9, 9);
+    expect(stub.fillRect).toHaveBeenCalledWith(-3.5, -3.5, 7, 7);
+    expect(stub.fillRect).toHaveBeenCalledWith(59.5, -4.5, 9, 9);
   });
 
   it('fills every rect in the selection colour', () => {
