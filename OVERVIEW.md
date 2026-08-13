@@ -115,9 +115,9 @@ The repeatable unit of work. Roughly:
    `nonlinear() -> true`, junction limiting and a convergence check.
 2. **Register** — add the `kind` to `KINDS` and `build_element` in
    `engine/core/src/elements/mod.rs`.
-3. **Test** — add a case to `engine/core/tests/circuits.rs` asserting against a
-   known analytic result. This is the part that catches sign errors; do not
-   skip it.
+3. **Test** — add a case to one of the topic files in
+   `engine/core/tests/` asserting against a known analytic result. This is the
+   part that catches sign errors; do not skip it.
 4. **Draw** — add an `ElementDef` to `web/src/model/registry.ts`: `dumpCode`
    (from the table in section 6), `posts()`, `draw()`, `fields`, and
    `parse`/`dump` matching the file format's field order.
@@ -147,17 +147,25 @@ fetch it).
   edits, interactive switches.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
-- 291 Rust tests, of which 270 are the end-to-end circuit checks against analytic
-  results in `engine/core/tests/circuits.rs`, and 1635 TypeScript tests. CI runs
-  fmt, clippy, tests, typecheck, lint and build, then deploys to Pages.
+- Adaptive timestep: halve-and-retry with step rejection on a non-convergent
+  step, and step doubling back up after easy ones, off by default like
+  upstream's `adjustTimeStep` (header flag bit 64 turns it on).
+- Live operating-point state crossing back out of the engine: capacitor
+  `voltDiff` and series resistance, inductor current, junction voltages, relay
+  and logic-latch state. Event-driven (save and rebuild only), so the per-frame
+  loop stays one call.
+- 373 Rust tests, of which 332 are the end-to-end circuit checks against
+  analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
+  was split into topic files), plus 40 in-module unit tests and one doctest.
+  1789 TypeScript tests (one corpus test skipped). CI runs fmt, clippy, tests,
+  typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
 
-- **Adaptive timestep.** Upstream shrinks the step when convergence struggles.
-  Here the step is fixed. Worth adding before the trickier nonlinear parts.
 - **Matrix simplification.** Upstream pre-eliminates rows that are constant,
-  which materially speeds up large circuits. Not implemented; the solver is a
-  plain LU. This is the single biggest performance lever remaining.
+  which materially speeds up large circuits. Not implemented: the matrix is
+  factored as-is by whichever LU backend the closure size picks. This is the
+  single biggest performance lever remaining.
 - **Sparse matrix ordering.** The sparse LU has no column ordering, so it
   fills on a dense 2D mesh (`O(n²)` for the fan families it was tuned on, more
   on a true grid). A benchmark-gated minimum-degree ordering is the noted
@@ -177,17 +185,12 @@ fetch it).
 - **XML circuits.** Current upstream saves a `<cir …>` document rather than
   the text format, and 38 of the 373 bundled circuits are in that form. They
   load as an empty circuit here and are passed through byte-for-byte on save,
-  so nothing is lost, but nothing is drawn either. Importing them means
-  porting `XMLSerializer`/`XMLDeserializer` and the per-element
-  `dumpXml`/`undumpXml` pair for every type. The text format remains what the
-  `cct` and plain-text share links use.
+  so nothing is lost, but nothing is drawn either. This is a permanent
+  non-goal by owner decision (2026-08-12): the porting work would mean
+  `XMLSerializer`/`XMLDeserializer` and the per-element `dumpXml`/`undumpXml`
+  pair for every type. The text format remains what the `cct` and plain-text
+  share links use.
 - **Ground current** is not reported (see section 2).
-- **Live state never comes back out of the engine.** A file's operating-point
-  tokens (capacitor `voltDiff`, inductor `current`, transistor `lastVbe`) are
-  read on load and seeded into the models, but the running values are not
-  copied back into `params`, so a mid-transient save writes the values the file
-  was loaded with. Matching upstream needs a state-readback path across the
-  engine boundary.
 - **The DC operating point runs per the `autoDC` setting, not always.** The
   solve runs before the first timestep and on every reset only when `autoDC`
   is on: the header's flag bit 128 drives it (CirSim.java:440-444), and a new
@@ -210,22 +213,6 @@ fetch it).
   grounding an effectively-open current-source output that had run away, not
   to the DC solve. The one-shot "Find DC Operating Point" menu command is not
   ported; the toggle covers its use.
-- **A rebuild re-injects the file's saved charge.** The engine reads `voltDiff`
-  out of the element spec on every build, and `setCircuit` re-serialises
-  `e.params`, which still holds the value the file was loaded with. So any
-  mid-run rebuild, including ticking a capacitor's Backward Euler checkbox,
-  snaps every capacitor back to its file charge rather than continuing from
-  where the run had got to. It used to snap them to zero instead; neither is
-  right, and both go away with the state-readback path above.
-- **The capacitor validate walk is ported, but the write-back divergence
-  stays.** Analysis re-runs `CapacitorElm.validate()`: a CAP_V/SHORT DFS over
-  the merged nodes gives one member of a fresh ideal-cap loop a 0.1 ohm series
-  resistance and zeroes a wire-shorted cap (`circuit.rs:501-572`), so a freshly
-  drawn parallel pair settles instead of ringing. A damped cap holds the 0.1
-  in engine state only; a save still writes the params value (0), part of the
-  live-state write-back gap above. Files that already carry the guard's output
-  keep it, because the `c` reader takes the series-resistance token whether or
-  not FLAG_RESISTANCE is set (see section 6).
 
 ---
 
@@ -234,7 +221,7 @@ fetch it).
 ### Milestone A — solver depth
 
 - [x] Adaptive timestep with step rejection
-- [x] Matrix simplification / constant-row elimination
+- [ ] Matrix simplification / constant-row elimination
 - [x] Sparse matrix path for large circuits
 - [x] Convergence diagnostics surfaced in the UI (which element failed)
 - [x] Benchmark harness with representative circuits, wired into CI
@@ -246,7 +233,8 @@ fetch it).
 - [x] Wire auto-routing and junction dots
 - [x] Sliders (`38` lines) bound to element parameters
 - [x] Full scope UI: stacked traces, time/div, cursors, X-Y mode, FFT
-- [ ] Subcircuits (`CustomComposite`)
+- [x] Subcircuits (`CustomComposite`): `.` model lines, Create Subcircuit, the
+  subcircuit manager, and the 410 element
 
 ### Milestone C — element coverage
 
@@ -312,11 +300,16 @@ Line-oriented, whitespace-separated. Element lines are:
 ```
 
 The header is `$ flags timeStep iterCount currentSpeed voltageRange powerRange
-minTimeStep`. Only `timeStep`, `currentSpeed`, `voltageRange` and flag bits 1
-(show current) and 16 (show values) are modelled; `iterCount`, `powerRange`,
-`minTimeStep` and flag bits 2, 4, 8, 32, 64 and 128 round-trip verbatim without
-being interpreted. An old header that stops after `voltageRange` gains the two
-missing fields on save, which is what upstream writes too.
+minTimeStep`. `timeStep`, `iterCount`, `currentSpeed`, `voltageRange`,
+`powerRange` and `minTimeStep` are all modelled, as are flag bits 1 (show
+current), 4 (volts off, i.e. voltage colouring), 8 (power colouring), 16 (show
+values), 64 (adaptive timestep) and 128 (DC operating point on reset); the
+colour mode bits are mutually exclusive, with power winning when both arrive,
+matching upstream's `readCircuitFlags`. Only bits 2 (upstream's small grid, an
+option the port removed) and 32 (linear scale in the afilter) round-trip
+verbatim without being interpreted, so a save never clears a bit upstream
+wrote. An old header that stops after `voltageRange` gains the two missing
+fields on save, which is what upstream writes too.
 
 Unrecognised lines are preserved verbatim on load and re-emitted on save, in
 their original positions, along with blank lines and `#` comments, so
@@ -454,8 +447,9 @@ halves the body.
 For the `412` row the four tokens are the `_`-joined dumps of the parallel
 capacitor, the series capacitor, the inductor and the series resistor; the port
 re-derives them from the current params on save so parameter edits persist.
-Saved child voltDiff/current state tokens are dropped, part of the live-state
-write-back gap. FLAG_SHOW_FREQ (bit 2) is set on a fresh crystal and draws the
+Saved child voltDiff/current state tokens are dropped: the crystal is the one
+composite that still writes its file state rather than the live running state.
+FLAG_SHOW_FREQ (bit 2) is set on a fresh crystal and draws the
 series-resonance frequency caption.
 
 For the `f` row the channel type is FLAG_PNP (bit 1), not a token: `+1` is an
@@ -507,8 +501,9 @@ overwrite with a zero. A `209` line does honour the flag, because without it
 the rating genuinely is the fourth token rather than the fifth.
 
 The `voltDiff` token is the saved charge and it is restored into the engine on
-load; a mid-transient save still writes the load-time value, because live state
-does not yet cross back over the engine boundary.
+load; the engine's running charge crosses back out on save and rebuild, so a
+mid-transient save writes the live value (see the live-state Working bullet in
+section 4).
 
 The three transformer rows are one electrical family: coupled inductors stamped
 as a mutual-inductance Norton companion with no voltage-source unknowns. The
