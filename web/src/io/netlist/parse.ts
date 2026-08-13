@@ -83,15 +83,16 @@ export function resetIds(): void {
 }
 
 /** Scope `flags` bits that change how the `o` line's plot list is laid out
- *  (ScopeSerializer.java:13-19). */
-const FLAG_PLOTS = 4096;
-const FLAG_PERPLOTFLAGS = 1 << 18;
-const FLAG_PERPLOT_MAN_SCALE = 1 << 19;
-const FLAG_DIVISIONS = 1 << 21;
+ *  (ScopeSerializer.java:13-19). Shared with the scope-line decoder, whose
+ *  token walk must advance exactly as this one does. */
+export const FLAG_PLOTS = 4096;
+export const FLAG_PERPLOTFLAGS = 1 << 18;
+export const FLAG_PERPLOT_MAN_SCALE = 1 << 19;
+export const FLAG_DIVISIONS = 1 << 21;
 
 /** Upstream's `importDecOrHex`: an `x` prefix means the rest is hex
- *  (ScopeSerializer.java:327-332). */
-function importDecOrHex(token: string): number {
+ *  (ScopeSerializer.java:327-332). Shared with the scope-line decoder. */
+export function importDecOrHex(token: string): number {
   if (token.startsWith('x')) return Number.parseInt(token.slice(1), 16);
   return Number(token);
 }
@@ -125,14 +126,21 @@ export function scopeValueFromToken(token: number, kind: string | null): ScopeVa
   }
 }
 
+/** The `value`/`val` token a trace quantity serializes as, the inverse of
+ *  `scopeValueFromToken`. Shared with the scope-line encoder. */
+export function valueTokenOf(value: ScopeValue | null): number {
+  return value === 'current' ? 3 : value === 'power' ? 7 : 0;
+}
+
 /** The units index a value token plots in, mirroring `getScopeUnits`
  *  (CircuitElm.java:1274-1277, TransistorElm.java:595-602, LampElm.java:221-222,
  *  CapacitorElm.java:230-231). Only W and higher carry an extra scale token on
  *  the line, so this decides how far the plot walk advances
  *  (ScopeSerializer.java:221-223, 236-238). A lamp's VAL_R plots in ohms and a
  *  capacitor's VAL_CHARGE in coulombs, both > UNITS_A; skipping their scale
- *  token would read the next plot's `ne` one token early. */
-function unitsOf(token: number, kind: string | null): number {
+ *  token would read the next plot's `ne` one token early. Shared with the
+ *  scope-line decoder, whose walk must agree token-for-token. */
+export function unitsOf(token: number, kind: string | null): number {
   if (kind === 'lamp' && token === 2) return 3;  // resistance: Ω
   if ((kind === 'capacitor' || kind === 'polarizedCapacitor') && token === 8) return 4;  // charge: C
   if (kind === 'transistor') {

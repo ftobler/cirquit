@@ -9,6 +9,7 @@ import {
   type ScopeConfig,
 } from '../io/netlist';
 import { overlayLiveState } from '../io/liveState';
+import { decodeScopeLine, encodeScopeLine, scopeLineMatches } from '../io/scopeLine';
 import {
   buildModelFromSelection,
   clearSessionModels,
@@ -192,24 +193,31 @@ const UNDO_LIMIT = 100;
 function serializeDocument(elements: CircuitElement[]): string {
   const s = useStore.getState();
   const indexById = new Map(elements.map((e, i) => [e.id, i]));
+  const kindById = new Map(s.elements.map((e) => [e.id, e.kind]));
   const scopeConfigs: ScopeConfig[] = s.scopes.map((x) => {
     const first = x.plots[0];
     const speedToken = String(x.speed);
+    const kinds = x.plots.map((p) =>
+      p.elementId === null ? null : (kindById.get(p.elementId) ?? null),
+    );
+    // An unedited loaded line saves byte-for-byte: only the speed token
+    // tracks the live zoom. Any display edit flips scopeLineMatches and the
+    // encoder regenerates the whole line from state, so UI edits persist. The
+    // scope's index in the store array reproduces the load-time position
+    // fallback for lines without a position token.
+    const raw =
+      x.raw !== null && scopeLineMatches(x, x.raw, kinds, s.scopes.indexOf(x))
+        ? x.raw[0] === speedToken
+          ? x.raw
+          : [speedToken, ...x.raw.slice(1)]
+        : encodeScopeLine(x, (id) => indexById.get(id));
     return {
       id: x.id,
       // Recomputed by the writer from where the element lands in the file;
       // this is only the fallback for a plot with no element left.
       elementIndex: indexById.get(first.elementId ?? -1) ?? -1,
       elementId: first.elementId ?? undefined,
-      // A loaded line keeps every display field it came with, only the
-      // speed token tracks the live zoom. One created here gets a full
-      // new-style line (position 0, one or two plots) that upstream parses,
-      // replacing the old unloadable 4-token stub.
-      raw: x.raw
-        ? x.raw[0] === speedToken
-          ? x.raw
-          : [speedToken, ...x.raw.slice(1)]
-        : scopeUIRaw(x.speed, x.plots, (id) => indexById.get(id)),
+      raw,
       plots: x.plots.map((p) => ({
         id: p.id,
         elementIndex: indexById.get(p.elementId ?? -1) ?? -1,
@@ -268,12 +276,6 @@ const DIODE_MODEL_PARAMS = [
  *  upstream's exclusion list (Scope.addValue, Scope.java:360-367). */
 const OUTPUT_LIKE = new Set(['output', 'logicOutput', 'audioOutput', 'testPoint', 'probe']);
 
-/** The `value`/`val` token a trace quantity serializes as, the inverse of
- *  `scopeValueFromToken`. */
-function valueTokenOf(value: ScopeValue | null): number {
-  return value === 'current' ? 3 : value === 'power' ? 7 : 0;
-}
-
 function makePlot(id: number, elementId: number | null, value: ScopeValue | null): ScopePlot {
   return { id, elementId, value, manScale: null, manVPosition: 0, acCoupled: false };
 }
@@ -282,35 +284,12 @@ function defaultTrigger(): ScopeTrigger {
   return { mode: 'freeRun', edge: 'rising', level: 0 };
 }
 
-/** A new-style `o` line for a UI-created scope, plot list included. The first
- *  token is the live speed; per-plot `ne val` pairs (plus any W-scale tokens)
- *  follow the plot count, so upstream parses the line back into the same
- *  plots. `indexOf` resolves element ids to their file ordinals.
- *  (ScopeSerializer.java:188-289.) */
-function scopeUIRaw(
-  speed: number,
-  plots: ScopePlot[],
-  indexOf: (elementId: number) => number | undefined,
-): string[] {
-  const first = plots[0];
-  const tokens = [String(speed), String(valueTokenOf(first.value)), '4099', '20', '0.05', '0'];
-  if (plots.length === 1) {
-    tokens.push('1');
-    if (first.value === 'power') tokens.push('20');
-    return tokens;
-  }
-  tokens.push(String(plots.length));
-  for (let i = 1; i < plots.length; i++) {
-    const p = plots[i];
-    const index = p.elementId === null ? -1 : (indexOf(p.elementId) ?? -1);
-    tokens.push(String(index), String(valueTokenOf(p.value)));
-    if (p.value === 'power') tokens.push('20');
-  }
-  return tokens;
-}
-
 /** A scope panel with the full field set. Position defaults to its own column,
- *  which is what a fresh UI scope gets. */
+ *  which is what a fresh UI scope gets. showV/showI mirror upstream's
+ *  initialize(), which turns both on when the scope carries the matching plots
+ *  (Scope.java:276-285); the port's one default cannot know the plot units, so
+ *  it opts into showing them, and the scale tokens use the values the UI line
+ *  has always written. */
 function makeScope(
   id: number,
   raw: string[] | null,
@@ -339,6 +318,10 @@ function makeScope(
     fftPlot: false,
     logSpectrum: false,
     plotXY: false,
+    showI: true,
+    showV: true,
+    scaleV: 20,
+    scaleA: 0.05,
     trigger: defaultTrigger(),
   };
 }
@@ -1542,29 +1525,41 @@ function createAppStore() {
     // saved output is unchanged.
     const resolved = parsed.elements.map(resolveCompositeModel);
     // The parser has already resolved each plot's element index, which counts
-    // element lines this build cannot read. The parse-time ids and the
-    // untouched display tokens all travel with the scope, so a save puts the
-    // line back where it was with every field it arrived with.
+    // element lines this build cannot read. The scope's display fields are
+    // decoded from the raw tokens here and merged over the makeScope defaults,
+    // so a loaded file renders and measures as configured; the raw tokens stay
+    // attached so an untouched line still saves byte-for-byte.
+    const kindById = new Map(resolved.map((e) => [e.id, e.kind]));
     const scopes: Scope[] = [];
     const unmatchedScopes: ScopeConfig[] = [];
-    for (const [index, c] of parsed.scopes.entries()) {
+    for (const c of parsed.scopes) {
       if (c.elementId === undefined) unmatchedScopes.push(c);
       else {
         // raw[0] is the speed token in both line styles (the o-line walk
-        // starts at the element index, so raw slices it off). raw[5] is the
-        // stacking position.
+        // starts at the element index, so raw slices it off). The scope's own
+        // index in the list so far is the position fallback a line without a
+        // position token gets, the same value the save path re-derives from
+        // the scope's position in the store array.
         const speed = scopeSpeed(Number(c.raw[0]) || 64);
-        const posToken = Number(c.raw[5]);
-        const position = Number.isFinite(posToken) && posToken >= 0 ? posToken : index;
-        scopes.push(
-          makeScope(
-            c.id,
-            c.raw,
-            c.plots.map((p) => makePlot(p.id, p.elementId ?? null, p.value)),
-            speed,
-            position,
-          ),
+        const plots = c.plots.map((p) => makePlot(p.id, p.elementId ?? null, p.value));
+        const kinds = c.plots.map((p) =>
+          p.elementId === undefined ? null : (kindById.get(p.elementId) ?? null),
         );
+        const decoded = decodeScopeLine(c.raw, plots, kinds, scopes.length);
+        // Only the display fields merge: speed keeps the load path's clamping,
+        // the trigger stays at the freeRun default (the text format carries no
+        // trigger state), and the per-plot fields land on their plots.
+        const { perPlot, speed: _speed, ...display } = decoded;
+        scopes.push({
+          ...makeScope(c.id, c.raw, plots, speed, decoded.position),
+          ...display,
+          plots: plots.map((p, i) => ({
+            ...p,
+            acCoupled: perPlot[i].acCoupled,
+            manScale: perPlot[i].manScale,
+            manVPosition: perPlot[i].manVPosition,
+          })),
+        });
       }
     }
 

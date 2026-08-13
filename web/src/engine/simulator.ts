@@ -83,6 +83,16 @@ export interface Scope {
   fftPlot: boolean;
   logSpectrum: boolean;
   plotXY: boolean;
+  /** The scope-line `showV`/`showI` label flags (ScopeSerializer.java:26-27),
+   *  carried for fidelity only. The port renders every plot and derives scale
+   *  automatically, so nothing in the UI reads them. */
+  showI: boolean;
+  showV: boolean;
+  /** The fixed `scaleV`/`scaleA` tokens a scope line carries after its flags
+   *  (ScopeSerializer.java:201-202). The port derives scale per plot, so these
+   *  only keep a regenerated line faithful to the file. */
+  scaleV: number;
+  scaleA: number;
   trigger: ScopeTrigger;
 }
 

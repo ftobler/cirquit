@@ -178,10 +178,10 @@ fetch it).
   zener selector shows zero-breakdown models too (upstream hides them), a
   form-only divergence. Mosfet/JFET model names never appear in the text
   format, so their picker choices are session-only, as upstream.
-- **Scope line fidelity.** `o` lines are parsed for their element attachment
-  only; the remaining display fields are preserved verbatim but not
-  interpreted. Hints (`h`) and subcircuit definitions are likewise preserved
-  but inert.
+- **Scope line fidelity.** `o` lines are parsed for their element attachment and
+  their display fields decode into scope state on load and regenerate on edit,
+  so an untouched loaded scope still saves byte-for-byte. Hints (`h`) are
+  preserved verbatim but inert.
 - **XML circuits.** Current upstream saves a `<cir …>` document rather than
   the text format, and 38 of the 373 bundled circuits are in that form. They
   load as an empty circuit here and are passed through byte-for-byte on save,
