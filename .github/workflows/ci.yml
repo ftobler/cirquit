@@ -3,7 +3,7 @@ name: CI
 on: [push, pull_request]
 
 concurrency:
-  group: ci  # just some name to tell which other jobs to cancel
+  group: ${{ github.workflow }}-${{ github.run_id }}  # just some name to tell which other jobs to cancel
   cancel-in-progress: false
 
 jobs:
