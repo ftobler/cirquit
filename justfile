@@ -49,6 +49,11 @@ preview: build
 test-rust:
     cd engine && cargo test --workspace
 
+# Print the solver benchmark table (deterministic flop counters; ms are
+# debug-build, informational only).
+bench:
+    cd engine && cargo test -p circuit-core --test benchmarks -- --nocapture --test-threads=1
+
 # TypeScript unit tests. Needs the wasm bindings, which `just wasm` builds.
 test-web: wasm
     cd web && npm run test -- --run

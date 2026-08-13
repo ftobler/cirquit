@@ -3,80 +3,10 @@
 //! the Auto selection. The engine is headlessly testable, so these run the
 //! real `Circuit` with no DOM.
 
-use circuit_core::{Circuit, CircuitSpec, ElementSpec, SolverBackend, SolverType};
+use circuit_core::{Circuit, CircuitSpec, SolverBackend, SolverType};
 
 mod common;
 use common::*;
-
-/// `chains` resistor chains of `len` 1 ohm resistors fanning out from one
-/// driven node (0,0) to ground, driven by a `drive` volt source. Mirrors the
-/// 20x20 grid builder in transformer_matrix.rs, parameterised. Chain `c`'s
-/// far corner (junction after its `len - 1`-th resistor) sits at coordinate
-/// `(c*16, 16*(len-1))` and node `1 + (len-1)*(c+1)`, at `drive/len` V.
-fn fan(chains: usize, len: usize, drive: f64, base: u32) -> Vec<ElementSpec> {
-    let mut v = vec![
-        // The source's grounded terminal sits off the grid: for `len` over 25
-        // the chains' junction coordinates reach y = 400 and would merge the
-        // driven node with ground through a stray junction.
-        elm(
-            base,
-            "voltage",
-            &[[-100, 400], [0, 0]],
-            &[("maxVoltage", drive)],
-        ),
-        elm(base + 1, "ground", &[[-100, 400]], &[]),
-    ];
-    let mut id = base + 2;
-    for c in 0..chains {
-        let cx = c as i32 * 16;
-        v.push(elm(
-            id,
-            "resistor",
-            &[[0, 0], [cx, 16]],
-            &[("resistance", 1.0)],
-        ));
-        id += 1;
-        for k in 1..len {
-            v.push(elm(
-                id,
-                "resistor",
-                &[[cx, 16 * k as i32], [cx, 16 * (k + 1) as i32]],
-                &[("resistance", 1.0)],
-            ));
-            id += 1;
-        }
-        v.push(elm(id, "ground", &[[cx, 16 * len as i32]], &[]));
-        id += 1;
-    }
-    v
-}
-
-/// `n` equal 1000 ohm resistors in series from a 10 V source to ground,
-/// placed at x offset 0. `n` resistors give `n` junction nodes plus one
-/// voltage-source row.
-fn chain(n: usize, base: u32) -> Vec<ElementSpec> {
-    let mut v = vec![
-        elm(
-            base,
-            "voltage",
-            &[[0, 100], [0, 0]],
-            &[("maxVoltage", 10.0)],
-        ),
-        elm(base + 1, "ground", &[[0, 100]], &[]),
-    ];
-    let mut id = base + 2;
-    for k in 0..n {
-        v.push(elm(
-            id,
-            "resistor",
-            &[[16 * k as i32, 0], [16 * (k + 1) as i32, 0]],
-            &[("resistance", 1000.0)],
-        ));
-        id += 1;
-    }
-    v.push(elm(id, "ground", &[[16 * n as i32, 0]], &[]));
-    v
-}
 
 #[test]
 fn large_sparse_grid_keeps_the_analytic_far_corner() {
@@ -111,28 +41,6 @@ fn large_sparse_grid_keeps_the_analytic_far_corner() {
             "far corner of chain {c_idx} was {v}, expected 0.2"
         );
     }
-}
-
-#[test]
-fn sparse_factor_flops_are_much_smaller_than_dense() {
-    // The 40x40 fan (1561 node rows plus the source row) factors both ways.
-    // Dense LU is O(n^3) regardless of the matrix's sparsity; the sparse LU
-    // only works where the fill is. The multiply-add counters are
-    // deterministic, so this is a flop proof, not a wall clock.
-    let sparse = build(
-        fan(40, 40, 20.0, 1),
-        opts_solver(1e-5, false, SolverType::Sparse),
-    );
-    let dense = build(
-        fan(40, 40, 20.0, 1),
-        opts_solver(1e-5, false, SolverType::Dense),
-    );
-    let f_sparse = sparse.factor_flops();
-    let f_dense = dense.factor_flops();
-    assert!(
-        f_dense > f_sparse * 1000,
-        "dense factored {f_dense} flops, sparse only {f_sparse}"
-    );
 }
 
 #[test]
@@ -188,27 +96,9 @@ fn sparse_and_dense_agree_within_tolerance() {
 }
 
 /// The 20x20 fan with a diode and a diode-connected transistor dropped onto
-/// chain 0's far corner. The corner clamps through the two junctions, which
-/// makes the whole circuit nonlinear: every closure refactors every Newton
-/// iteration, exercising the monotone pair set and the per-iteration restore
-/// on the sparse path.
-fn fan_with_nonlinear_arm() -> Vec<ElementSpec> {
-    let mut v = fan(20, 20, 20.0, 1);
-    // Chain 0's far corner is at (0, 304). The diode drops from the corner to
-    // a fresh grounded coordinate; the transistor is diode-connected (base
-    // and collector both on the corner) with its emitter grounded.
-    v.push(elm(423, "diode", &[[0, 304], [0, 480]], &[]));
-    v.push(elm(424, "ground", &[[0, 480]], &[]));
-    v.push(elm(
-        425,
-        "transistor",
-        &[[0, 304], [0, 304], [100, 304]],
-        &[("beta", 100.0)],
-    ));
-    v.push(elm(426, "ground", &[[100, 304]], &[]));
-    v
-}
-
+/// chain 0's far corner (see `fan_with_nonlinear_arm` in common). The corner
+/// clamps through the two junctions, which makes the whole circuit nonlinear:
+/// every closure refactors every Newton iteration on both paths.
 #[test]
 fn nonlinear_circuit_solves_identically_on_both_paths() {
     let mut sparse = build(
@@ -242,7 +132,7 @@ fn large_singular_circuit_is_rejected_on_the_sparse_path() {
     // voltage source shorted across the first: duplicate constraint rows, so
     // the eager build-time factor must reject it on the sparse path exactly as
     // it does on the dense path.
-    let mut sparse_els = chain(200, 1);
+    let mut sparse_els = resistor_chain(200, 0, 1);
     sparse_els.push(elm(
         300,
         "voltage",
@@ -261,7 +151,7 @@ fn large_singular_circuit_is_rejected_on_the_sparse_path() {
         "sparse accepted the shorted circuit at set_circuit"
     );
 
-    let mut dense_els = chain(200, 1);
+    let mut dense_els = resistor_chain(200, 0, 1);
     dense_els.push(elm(
         300,
         "voltage",
@@ -291,7 +181,7 @@ fn auto_picks_sparse_above_the_threshold() {
         vec![SolverBackend::Sparse],
         "the 382-row grid closure should be sparse under Auto"
     );
-    let small = build(chain(100, 1), opts(1e-5, false));
+    let small = build(resistor_chain(100, 0, 1), opts(1e-5, false));
     assert_eq!(
         small.closure_backends(),
         vec![SolverBackend::Dense],

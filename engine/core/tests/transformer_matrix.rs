@@ -2,7 +2,7 @@
 
 use std::f64::consts::PI;
 
-use circuit_core::{Circuit, CircuitSpec, ElementSpec, ScopeSpec, ScopeValue};
+use circuit_core::{Circuit, CircuitSpec, ScopeSpec, ScopeValue};
 
 mod common;
 use common::*;
@@ -726,76 +726,13 @@ fn singular_linear_circuit_is_rejected_at_set_circuit() {
 
 // ─── Matrix simplification (per-closure dense systems) ───
 
-/// 20 chains of 20 equal resistors fanning out from one driven node to
-/// ground: a literal 20x20 grid of 400 nodes, all in a single closure (the
-/// chains share the driven node) plus the feeding source. The fan's first
-/// resistor in each chain shares post 0 with the driven node, so no wires are
-/// needed.
-fn twenty_by_twenty_grid() -> Vec<ElementSpec> {
-    let mut v = vec![
-        elm(1, "voltage", &[[0, 400], [0, 0]], &[("maxVoltage", 20.0)]),
-        elm(2, "ground", &[[0, 400]], &[]),
-    ];
-    let mut id = 3;
-    for c in 0..20 {
-        // The first resistor fans out from the shared driven node (0,0).
-        v.push(elm(
-            id,
-            "resistor",
-            &[[0, 0], [c * 16, 16]],
-            &[("resistance", 1.0)],
-        ));
-        id += 1;
-        for k in 1..20 {
-            v.push(elm(
-                id,
-                "resistor",
-                &[[c * 16, 16 * k], [c * 16, 16 * (k + 1)]],
-                &[("resistance", 1.0)],
-            ));
-            id += 1;
-        }
-        v.push(elm(id, "ground", &[[c * 16, 320]], &[]));
-        id += 1;
-    }
-    v
-}
-
-/// A chain of `n` equal resistors in series from a driven node to ground,
-/// placed at x offset `off`. `base_id` gives unique element ids so several
-/// chains can share one circuit.
-fn resistor_chain(n: usize, off: i32, base_id: u32) -> Vec<ElementSpec> {
-    let mut v = Vec::new();
-    let mut id = base_id;
-    v.push(elm(
-        id,
-        "voltage",
-        &[[off, 100], [off, 0]],
-        &[("maxVoltage", 10.0)],
-    ));
-    id += 1;
-    v.push(elm(id, "ground", &[[off, 100]], &[]));
-    id += 1;
-    for k in 0..n {
-        v.push(elm(
-            id,
-            "resistor",
-            &[[off + 16 * k as i32, 0], [off + 16 * (k + 1) as i32, 0]],
-            &[("resistance", 1000.0)],
-        ));
-        id += 1;
-    }
-    v.push(elm(id, "ground", &[[off + 16 * n as i32, 0]], &[]));
-    v
-}
-
 #[test]
 fn large_resistor_grid_keeps_the_analytic_far_corner() {
     // 400 nodes in one closure, driven at 20 V. Each chain of 20 equal 1 ohm
     // resistors drops 1 V per resistor, so every far corner sits at exactly
     // 1 V. This is the "big linear circuit stays exact" guard: the closure
     // split must not change any solved value.
-    let c = &mut build(twenty_by_twenty_grid(), opts(1e-5, false));
+    let c = &mut build(fan(20, 20, 20.0, 1), opts(1e-5, false));
     let report = c.run(5);
     assert!(report.converged, "did not converge: {:?}", report.error);
     assert!(

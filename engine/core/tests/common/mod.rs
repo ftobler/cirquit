@@ -319,3 +319,190 @@ pub fn clock_cycle(c: &mut Circuit, clock_id: u32) {
     c.set_state(clock_id, 0);
     c.run(3);
 }
+
+// ─── Grid, fan and chain builders (shared by the benchmark and the solver tests) ───
+
+/// `chains` resistor chains of `len` 1 ohm resistors fanning out from one
+/// driven node (0,0) to ground, driven by a `drive` volt source. Mirrors the
+/// grid the closure section describes, parameterised. Chain `c`'s far corner
+/// (junction after its `len - 1`-th resistor) sits at coordinate
+/// `(c*16, 16*(len-1))` and node `1 + (len-1)*(c+1)`, at `drive/len` V.
+pub fn fan(chains: usize, len: usize, drive: f64, base: u32) -> Vec<ElementSpec> {
+    let mut v = vec![
+        // The source's grounded terminal sits off the grid: for `len` over 25
+        // the chains' junction coordinates reach y = 400 and would merge the
+        // driven node with ground through a stray junction.
+        elm(
+            base,
+            "voltage",
+            &[[-100, 400], [0, 0]],
+            &[("maxVoltage", drive)],
+        ),
+        elm(base + 1, "ground", &[[-100, 400]], &[]),
+    ];
+    let mut id = base + 2;
+    for c in 0..chains {
+        let cx = c as i32 * 16;
+        v.push(elm(
+            id,
+            "resistor",
+            &[[0, 0], [cx, 16]],
+            &[("resistance", 1.0)],
+        ));
+        id += 1;
+        for k in 1..len {
+            v.push(elm(
+                id,
+                "resistor",
+                &[[cx, 16 * k as i32], [cx, 16 * (k + 1) as i32]],
+                &[("resistance", 1.0)],
+            ));
+            id += 1;
+        }
+        v.push(elm(id, "ground", &[[cx, 16 * len as i32]], &[]));
+        id += 1;
+    }
+    v
+}
+
+/// The 20x20 fan with a diode and a diode-connected transistor dropped onto
+/// chain 0's far corner. The corner clamps through the two junctions, which
+/// makes the whole circuit nonlinear: every closure refactors every Newton
+/// iteration, exercising the monotone pair set and the per-iteration restore
+/// on the sparse path.
+pub fn fan_with_nonlinear_arm() -> Vec<ElementSpec> {
+    let mut v = fan(20, 20, 20.0, 1);
+    // Chain 0's far corner is at (0, 304). The diode drops from the corner to
+    // a fresh grounded coordinate; the transistor is diode-connected (base
+    // and collector both on the corner) with its emitter grounded.
+    v.push(elm(423, "diode", &[[0, 304], [0, 480]], &[]));
+    v.push(elm(424, "ground", &[[0, 480]], &[]));
+    v.push(elm(
+        425,
+        "transistor",
+        &[[0, 304], [0, 304], [100, 304]],
+        &[("beta", 100.0)],
+    ));
+    v.push(elm(426, "ground", &[[100, 304]], &[]));
+    v
+}
+
+/// A chain of `n` equal 1000 ohm resistors in series from a 10 V source to
+/// ground, placed at x offset `off`. `base_id` gives unique element ids so
+/// several chains can share one circuit. `n` resistors give `n` junction
+/// nodes plus one voltage-source row, so a 60-node chain is one closure of
+/// 61 rows.
+pub fn resistor_chain(n: usize, off: i32, base_id: u32) -> Vec<ElementSpec> {
+    let mut v = Vec::new();
+    let mut id = base_id;
+    v.push(elm(
+        id,
+        "voltage",
+        &[[off, 100], [off, 0]],
+        &[("maxVoltage", 10.0)],
+    ));
+    id += 1;
+    v.push(elm(id, "ground", &[[off, 100]], &[]));
+    id += 1;
+    for k in 0..n {
+        v.push(elm(
+            id,
+            "resistor",
+            &[[off + 16 * k as i32, 0], [off + 16 * (k + 1) as i32, 0]],
+            &[("resistance", 1000.0)],
+        ));
+        id += 1;
+    }
+    v.push(elm(id, "ground", &[[off + 16 * n as i32, 0]], &[]));
+    v
+}
+
+/// An (n+1) x (n+1) lattice of 1 ohm resistors: 2n(n+1) edges, a 10 V source
+/// driving corner (0,0) (ground terminal off-grid) and a ground symbol at the
+/// far corner (n,n). Horizontal edges are emitted row-major (y outer, x
+/// inner) before vertical edges, which makes the node ids deterministic:
+/// `node(x, y) = y*(n+1) + x + 1`, so the driven corner is node 1 and the
+/// center (n/2, n/2) of an even-n mesh is node `(n/2)*(n+1) + n/2 + 1`.
+///
+/// Two analytic facts fall out of the symmetry: V(i, j) == V(j, i) (the
+/// square lattice and its drive are symmetric under the transpose) and
+/// V(center) = 10/2 = 5.0 V exactly (a 180 degree rotation swaps the driven
+/// corner with the grounded one, so the antisymmetric drive has a midpoint
+/// at the center). Re-verify the node formula if `assign_nodes` numbering
+/// ever changes; the driven-corner read (node 1) is order-independent because
+/// the source is element 1.
+pub fn resistor_mesh(n: usize) -> Vec<ElementSpec> {
+    let step = 16i32;
+    let mut v = vec![
+        elm(
+            1,
+            "voltage",
+            &[[-100, 400], [0, 0]],
+            &[("maxVoltage", 10.0)],
+        ),
+        elm(2, "ground", &[[-100, 400]], &[]),
+    ];
+    let mut id = 3;
+    for y in 0..=n {
+        for x in 0..n {
+            v.push(elm(
+                id,
+                "resistor",
+                &[
+                    [step * x as i32, step * y as i32],
+                    [step * (x + 1) as i32, step * y as i32],
+                ],
+                &[("resistance", 1.0)],
+            ));
+            id += 1;
+        }
+    }
+    for x in 0..=n {
+        for y in 0..n {
+            v.push(elm(
+                id,
+                "resistor",
+                &[
+                    [step * x as i32, step * y as i32],
+                    [step * x as i32, step * (y + 1) as i32],
+                ],
+                &[("resistance", 1.0)],
+            ));
+            id += 1;
+        }
+    }
+    v.push(elm(
+        id,
+        "ground",
+        &[[step * n as i32, step * n as i32]],
+        &[],
+    ));
+    v
+}
+
+/// A `drive` volt source, one `r` ohm resistor from the driven node, then `n`
+/// diodes in series to ground along the x axis. `n` junction nodes plus the
+/// driven node plus one voltage-source row, so the closure has `n + 2` rows.
+/// Under the default diode model each junction sits near 0.8 V, so with drive
+/// 10 V and r 1k the chain current is a few mA. The resistor is element 3,
+/// so `element_currents()[2]` reads the chain current.
+pub fn diode_chain(n: usize, drive: f64, r: f64) -> Vec<ElementSpec> {
+    let step = 16i32;
+    let mut v = vec![
+        elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", drive)]),
+        elm(2, "ground", &[[0, 100]], &[]),
+        elm(3, "resistor", &[[0, 0], [step, 0]], &[("resistance", r)]),
+    ];
+    let mut id = 4;
+    for k in 0..n {
+        v.push(elm(
+            id,
+            "diode",
+            &[[step * (k + 1) as i32, 0], [step * (k + 2) as i32, 0]],
+            &[],
+        ));
+        id += 1;
+    }
+    v.push(elm(id, "ground", &[[step * (n + 1) as i32, 0]], &[]));
+    v
+}

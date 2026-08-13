@@ -237,7 +237,7 @@ fetch it).
 - [x] Matrix simplification / constant-row elimination
 - [x] Sparse matrix path for large circuits
 - [x] Convergence diagnostics surfaced in the UI (which element failed)
-- [ ] Benchmark harness with representative circuits, wired into CI
+- [x] Benchmark harness with representative circuits, wired into CI
 
 ### Milestone B — editing parity
 

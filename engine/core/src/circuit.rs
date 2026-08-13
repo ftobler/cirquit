@@ -235,6 +235,20 @@ impl Circuit {
         self.closures.iter().map(|c| c.sys.backend()).collect()
     }
 
+    /// The row count of each closure's system, one entry per closure in
+    /// closure order. A test hook for the closure-decomposition benchmark;
+    /// the frontend never needs it.
+    pub fn closure_rows(&self) -> Vec<usize> {
+        self.closures.iter().map(|c| c.sys.size()).collect()
+    }
+
+    /// The factor flops of each closure's system since its last resize, one
+    /// entry per closure in closure order. A test hook for the benchmark's
+    /// per-closure cost rows; the frontend never needs it.
+    pub fn closure_flops(&self) -> Vec<u64> {
+        self.closures.iter().map(|c| c.sys.flops()).collect()
+    }
+
     pub fn element_count(&self) -> usize {
         self.elements.len()
     }
