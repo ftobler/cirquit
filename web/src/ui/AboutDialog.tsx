@@ -28,7 +28,11 @@ export function AboutDialog() {
         <a href="https://github.com/pfalstad/circuitjs1" target="_blank" rel="noreferrer">
           Falstad's CircuitJS1
         </a>
-        , and is licensed under the GNU General Public License version 2.0 or later. The bundled
+        . The source for this project lives at{' '}
+        <a href="https://github.com/ftobler/cirquit" target="_blank" rel="noreferrer">
+          github.com/ftobler/cirquit
+        </a>
+        . It is licensed under the GNU General Public License version 2.0 or later, and the bundled
         example circuits keep their upstream attribution.
       </p>
     </Dialog>
