@@ -1,0 +1,187 @@
+/* Docs side pages on top of the app theme (styles.css). The app reserves the
+   whole viewport, so the docs reset body overflow under a docs-root class the
+   dispatcher sets before first render. */
+
+body.docs-root {
+  overflow: auto;
+  height: auto;
+}
+
+.docs-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.docs-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-brand {
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.docs-nav {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.docs-nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.docs-nav a:hover {
+  color: var(--accent);
+}
+
+.docs-body {
+  flex: 1;
+  padding: 1rem 0 2rem;
+  line-height: 1.6;
+}
+
+.docs-body h1 {
+  font-size: 1.6rem;
+  margin: 0 0 0.5rem;
+}
+
+.docs-body h2 {
+  font-size: 1.25rem;
+  margin: 1.5rem 0 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-body h3 {
+  font-size: 1.05rem;
+  margin: 1.25rem 0 0.25rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+
+.docs-body p {
+  margin: 0.5rem 0;
+}
+
+.docs-body a {
+  color: var(--accent);
+}
+
+.docs-body ul,
+.docs-body ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.docs-body li {
+  margin: 0.25rem 0;
+}
+
+.docs-body code {
+  background: var(--panel);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.docs-body pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+
+.docs-body pre code {
+  background: none;
+  padding: 0;
+}
+
+.docs-body table {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+
+.docs-body th,
+.docs-body td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+}
+
+.docs-body th {
+  background: var(--panel);
+}
+
+.docs-body .docs-muted {
+  color: var(--muted);
+}
+
+/* The docs index groups the registry by section. */
+
+.docs-group h2 {
+  font-size: 1.1rem;
+}
+
+.docs-group ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.docs-group li {
+  margin: 0.4rem 0;
+}
+
+/* Calculator forms. */
+
+.docs-form {
+  margin: 1rem 0;
+}
+
+.docs-form label {
+  display: block;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.docs-form input[type='text'] {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.35rem 0.5rem;
+  border-radius: 3px;
+  font: inherit;
+}
+
+.docs-form input[type='text']:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.docs-result {
+  margin-top: 1rem;
+}
+
+.docs-result p {
+  margin: 0.25rem 0;
+}
+
+.docs-footer {
+  padding: 1rem 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+}

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { SimEngine } from './engine/simulator';
 import { chordOf, hasChord, isPrintableKey, matchShortcut } from './input/shortcuts';
 import { openCircuit } from './io/fileIO';
-import { circuitFromUrl } from './io/urlShare';
+import { loadLibraryCircuit } from './io/library';
+import { startupSource } from './io/urlShare';
 import { printCircuit } from './render/print';
 import { AboutDialog } from './ui/AboutDialog';
 import { CreateSubcircuitDialog } from './ui/CreateSubcircuitDialog';
@@ -57,7 +58,6 @@ export default function App() {
   const [engine, setEngine] = useState<SimEngine | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
   const dialog = useStore((s) => s.dialog);
-  const loadNetlist = useStore((s) => s.loadNetlist);
   const partsOpen = useStore((s) => s.partsOpen);
   const panelOpen = useStore((s) => s.panelOpen);
   const setPartsOpen = useStore((s) => s.setPartsOpen);
@@ -72,13 +72,37 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     SimEngine.create()
-      .then((e) => {
+      .then(async (e) => {
         if (cancelled) return;
         setEngine(e);
         // Point the store at the engine's token reader so saveNetlist and the
         // rebuild path can overlay live state onto a copy of the elements.
         useStore.getState().setLiveStateProvider(() => e.elementStateTokens());
-        loadNetlist(circuitFromUrl() ?? STARTER_CIRCUIT);
+        // Startup precedence, decided by the pure startupSource: a share link
+        // (ctz/cct) carries the whole circuit and wins; else a startCircuit
+        // deep link names a bundled library file, fetched through the same
+        // path the Circuits menu uses, falling back to the starter circuit
+        // with a status message when the fetch fails; else the starter.
+        const source = startupSource();
+        const load = useStore.getState().loadNetlist;
+        if (source.kind === 'url') {
+          load(source.netlist);
+        } else if (source.kind === 'file') {
+          try {
+            const text = await loadLibraryCircuit(source.file);
+            // The fetch can outlive a strict-mode unmount; don't load a circuit
+            // into a component that has been torn down.
+            if (cancelled) return;
+            load(text);
+          } catch {
+            load(STARTER_CIRCUIT);
+            useStore
+              .getState()
+              .setStatus(`Could not load ${source.file}; showing the starter circuit.`);
+          }
+        } else {
+          load(STARTER_CIRCUIT);
+        }
       })
       .catch((e: unknown) => {
         if (!cancelled) setEngineError(e instanceof Error ? e.message : String(e));
@@ -86,7 +110,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [loadNetlist]);
+  }, []);
 
   // Keyboard shortcuts. All key matching lives in matchShortcut; this effect
   // only guards the input focus, resolves the switch keyShortcut path against

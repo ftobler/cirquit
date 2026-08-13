@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SimEngine } from '../engine/simulator';
+import { DOC_PAGES } from '../docs/pages';
 import { openCircuit } from '../io/fileIO';
 import { filterLibrary, loadLibraryCircuit, loadLibraryIndex, type LibraryGroup } from '../io/library';
 import { parseCircuit } from '../io/netlist';
@@ -193,6 +194,20 @@ export function Menubar({ engine }: Props) {
         .catch(() => undefined);
     }
   };
+
+  // The Help rows are the `menu: true` docs pages, opened in a new tab so the
+  // running circuit is not lost by navigating the app tab away. Generated from
+  // the same registry the docs index and the tests read. The pages live under
+  // `web/pages/`, so Vite emits them to `dist/pages/` and the links carry the
+  // prefix.
+  const openDocsPage = (file: string) => {
+    closeMenus();
+    window.open(`${import.meta.env.BASE_URL}pages/${file}`, '_blank', 'noopener');
+  };
+  const helpItems = DOC_PAGES.filter((p) => p.menu).map((p) => ({
+    label: p.title,
+    onClick: () => openDocsPage(p.file),
+  }));
 
   const copyImage = async () => {
     closeMenus();
@@ -401,6 +416,10 @@ export function Menubar({ engine }: Props) {
 
       <Dropdown label="Tools" open={openMenu === 'tools'} onToggle={() => toggleMenu('tools')} onClose={closeMenus}>
         {menu(toolsItems)}
+      </Dropdown>
+
+      <Dropdown label="Help" open={openMenu === 'help'} onToggle={() => toggleMenu('help')} onClose={closeMenus}>
+        {menu(helpItems)}
       </Dropdown>
 
       <Dropdown
