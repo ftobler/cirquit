@@ -81,6 +81,16 @@ button:hover {
   border-color: var(--accent);
 }
 
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* a disabled button must not light up with the accent border on hover */
+button:disabled:hover {
+  border-color: var(--border);
+}
+
 /* ---- focus ---- */
 
 /* The app-wide keyboard focus baseline. Browser-default outlines already

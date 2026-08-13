@@ -164,6 +164,10 @@ export function Menubar({ engine }: Props) {
 
   const dark = useStore((s) => s.dark);
   const editable = useStore((s) => s.settings.editable);
+  // Derived selectors: commit replaces the stack arrays wholesale, so
+  // subscribing to the length picks up each undo/redo boundary.
+  const canUndo = useStore((s) => s.undoStack.length > 0);
+  const canRedo = useStore((s) => s.redoStack.length > 0);
   const conventional = useStore((s) => s.settings.conventional);
   const euroResistors = useStore((s) => s.settings.euroResistors);
   const euroGates = useStore((s) => s.settings.euroGates);
@@ -575,6 +579,28 @@ export function Menubar({ engine }: Props) {
       </span>
 
       <div className="run-group">
+        <button
+          type="button"
+          disabled={!editable || !canUndo}
+          onClick={fire(undo)}
+          title="Undo"
+          aria-label="Undo"
+        >
+          <span className="material-icons" aria-hidden="true">
+            undo
+          </span>
+        </button>
+        <button
+          type="button"
+          disabled={!editable || !canRedo}
+          onClick={fire(redo)}
+          title="Redo"
+          aria-label="Redo"
+        >
+          <span className="material-icons" aria-hidden="true">
+            redo
+          </span>
+        </button>
         <button
           type="button"
           className="primary"
