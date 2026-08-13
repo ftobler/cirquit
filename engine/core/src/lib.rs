@@ -35,11 +35,13 @@ pub mod elements;
 pub mod expr;
 pub mod matrix;
 pub mod scope;
+pub mod sparse;
 pub mod spec;
 pub mod stamp;
 
 pub use circuit::{Circuit, StepReport};
 pub use element::{Element, SimCtx};
 pub use elements::KINDS;
+pub use matrix::SolverBackend;
 pub use scope::ScopeTrace;
-pub use spec::{CircuitSpec, ElementSpec, ScopeSpec, ScopeValue, SimOptions};
+pub use spec::{CircuitSpec, ElementSpec, ScopeSpec, ScopeValue, SimOptions, SolverType};

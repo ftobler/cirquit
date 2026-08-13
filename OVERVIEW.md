@@ -25,7 +25,7 @@ land.
                                     │  JSON in (on change), typed arrays out
 ┌───────────────────────────────────▼─────── engine/ (Rust → wasm) ────────────┐
 │  circuit.rs  node analysis, timestep loop, Newton-Raphson                    │
-│  matrix.rs   dense LU with partial pivoting and cached factors               │
+│  matrix.rs   dense and sparse LU backends, cached factors                   │
 │  stamp.rs    MNA stamping helpers and sign conventions                       │
 │  elements/   device models                                                   │
 │  scope.rs    per-timestep waveform capture                                   │
@@ -134,7 +134,9 @@ fetch it).
 ### Working
 
 - MNA solver: dense LU with partial pivoting and row scaling, cached
-  factorisation, singularity detection.
+  factorisation, singularity detection. Closures of 150 rows or more route to
+  the sparse left-looking LU (column partial pivoting, monotone pair set)
+  automatically, matching upstream's `solverType` threshold.
 - Newton-Raphson with junction limiting and per-element convergence reporting.
 - DC operating point before transient, with reactive elements switched to their
   steady-state stamps.
@@ -155,9 +157,11 @@ fetch it).
   Here the step is fixed. Worth adding before the trickier nonlinear parts.
 - **Matrix simplification.** Upstream pre-eliminates rows that are constant,
   which materially speeds up large circuits. Not implemented; the solver is a
-  plain dense LU. This is the single biggest performance lever remaining.
-- **Sparse matrices.** Dense LU is `O(n³)`. Fine to a few hundred nodes;
-  circuits in the thousands will need a sparse solver.
+  plain LU. This is the single biggest performance lever remaining.
+- **Sparse matrix ordering.** The sparse LU has no column ordering, so it
+  fills on a dense 2D mesh (`O(n²)` for the fan families it was tuned on, more
+  on a true grid). A benchmark-gated minimum-degree ordering is the noted
+  follow-up; the thousands-of-nodes goal is met without it.
 - **Device model libraries.** The built-in diode, transistor and MOSFET/JFET
   model tables are ported (`web/src/model/deviceModels.ts`): a named model
   with no `34`/`32` line resolves from the table at load, the file's model
@@ -231,7 +235,7 @@ fetch it).
 
 - [x] Adaptive timestep with step rejection
 - [x] Matrix simplification / constant-row elimination
-- [ ] Sparse matrix path for large circuits
+- [x] Sparse matrix path for large circuits
 - [x] Convergence diagnostics surfaced in the UI (which element failed)
 - [ ] Benchmark harness with representative circuits, wired into CI
 

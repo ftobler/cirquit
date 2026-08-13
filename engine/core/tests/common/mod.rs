@@ -8,7 +8,9 @@
 
 use std::collections::HashMap;
 
-use circuit_core::{Circuit, CircuitSpec, ElementSpec, ScopeSpec, ScopeValue, SimOptions};
+use circuit_core::{
+    Circuit, CircuitSpec, ElementSpec, ScopeSpec, ScopeValue, SimOptions, SolverType,
+};
 
 pub fn elm(id: u32, kind: &str, posts: &[[i32; 2]], params: &[(&str, f64)]) -> ElementSpec {
     ElementSpec {
@@ -112,6 +114,21 @@ pub fn build_with(
 
 pub fn opts(time_step: f64, dc: bool) -> SimOptions {
     SimOptions {
+        solver_type: SolverType::Auto,
+        time_step,
+        min_time_step: 50e-12,
+        adaptive: false,
+        steps_per_frame: 1,
+        max_subiterations: 100,
+        dc_operating_point: dc,
+    }
+}
+
+/// The fixed `opts` helper with a forced solver backend, for the parity tests
+/// that must run the same circuit through the dense and the sparse path.
+pub fn opts_solver(time_step: f64, dc: bool, solver_type: SolverType) -> SimOptions {
+    SimOptions {
+        solver_type,
         time_step,
         min_time_step: 50e-12,
         adaptive: false,
@@ -127,6 +144,7 @@ pub fn opts(time_step: f64, dc: bool) -> SimOptions {
 /// need.
 pub fn adaptive_opts(max_step: f64, min_step: f64, subiters: u32) -> SimOptions {
     SimOptions {
+        solver_type: SolverType::Auto,
         time_step: max_step,
         min_time_step: min_step,
         adaptive: true,
@@ -142,6 +160,7 @@ pub fn adaptive_opts(max_step: f64, min_step: f64, subiters: u32) -> SimOptions 
 /// the fixed run hands it.
 pub fn opts_budget(time_step: f64, dc: bool, max_sub: u32) -> SimOptions {
     SimOptions {
+        solver_type: SolverType::Auto,
         time_step,
         min_time_step: 50e-12,
         adaptive: false,

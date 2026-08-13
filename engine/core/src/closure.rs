@@ -17,7 +17,8 @@ use std::collections::HashMap;
 
 use crate::circuit::UnionFind;
 use crate::element::Element;
-use crate::matrix::LinearSystem;
+use crate::matrix::Solver;
+use crate::spec::SolverType;
 use crate::stamp::GROUND;
 
 /// One connected component of the matrix graph.
@@ -29,7 +30,9 @@ pub struct Closure {
     /// Closure rows after the node block -> global voltage-source index, in
     /// global VS order.
     pub vs_rows: Vec<usize>,
-    pub sys: LinearSystem,
+    /// The closure's linear system, dense or sparse per its size and the
+    /// circuit's [`SolverType`]. Both backends share one method surface.
+    pub sys: Solver,
     /// True when the circuit has any nonlinear element. Matches upstream, which
     /// sets every matrix nonlinear when any element is (SimulationManager.java:
     /// 976-983), so a nonlinear circuit splits into closures but each closure
@@ -67,6 +70,7 @@ pub fn build_closures(
     node_count: usize,
     vs_count: usize,
     nonlinear: bool,
+    solver_type: SolverType,
 ) -> ClosureMap {
     let mut uf = UnionFind::new(node_count.max(1));
     for elm in elements {
@@ -110,7 +114,7 @@ pub fn build_closures(
         .map(|_| Closure {
             node_rows: Vec::new(),
             vs_rows: Vec::new(),
-            sys: LinearSystem::new(),
+            sys: Solver::new(),
             nonlinear,
         })
         .collect();
@@ -168,7 +172,8 @@ pub fn build_closures(
     }
 
     for c in closures.iter_mut() {
-        c.sys.resize(c.node_rows.len() + c.vs_rows.len());
+        c.sys
+            .resize(c.node_rows.len() + c.vs_rows.len(), solver_type);
     }
 
     ClosureMap {

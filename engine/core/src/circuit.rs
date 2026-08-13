@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::closure::{build_closures, Closure};
 use crate::element::{Element, SimCtx};
 use crate::elements::build_element;
-use crate::matrix::{LinearSystem, SolveError};
+use crate::matrix::{LinearSystem, SolveError, SolverBackend};
 use crate::scope::ScopeTrace;
 use crate::spec::{CircuitSpec, ElementSpec, ScopeValue, SimOptions};
 use crate::stamp::{Stamper, GROUND};
@@ -226,6 +226,13 @@ impl Circuit {
     /// wall clock.
     pub fn factor_flops(&self) -> u64 {
         self.closures.iter().map(|c| c.sys.flops()).sum()
+    }
+
+    /// The solver backend each closure solves through, one entry per closure
+    /// in closure order. A test hook for the Auto-selection parity tests; the
+    /// frontend never needs it.
+    pub fn closure_backends(&self) -> Vec<SolverBackend> {
+        self.closures.iter().map(|c| c.sys.backend()).collect()
     }
 
     pub fn element_count(&self) -> usize {
@@ -728,6 +735,7 @@ impl Circuit {
             self.node_count,
             self.vs_count,
             self.nonlinear,
+            self.options.solver_type,
         );
         self.closures = map.closures;
         self.node_closure = map.node_closure;
@@ -975,8 +983,8 @@ impl Circuit {
     fn restore_committed(&mut self) {
         debug_assert_eq!(self.closures.len(), self.last_x.len());
         for (c, last) in self.closures.iter_mut().zip(self.last_x.iter()) {
-            debug_assert_eq!(c.sys.x.len(), last.len());
-            c.sys.x.copy_from_slice(last);
+            debug_assert_eq!(c.sys.x().len(), last.len());
+            c.sys.x_mut().copy_from_slice(last);
         }
         self.write_back();
         for elm in self.elements.iter_mut() {
@@ -1016,8 +1024,8 @@ impl Circuit {
                     report.iterations += subiter as u32 + 1;
                     debug_assert_eq!(self.closures.len(), self.last_x.len());
                     for (c, last) in self.closures.iter_mut().zip(self.last_x.iter_mut()) {
-                        debug_assert_eq!(c.sys.x.len(), last.len());
-                        last.copy_from_slice(&c.sys.x);
+                        debug_assert_eq!(c.sys.x().len(), last.len());
+                        last.copy_from_slice(c.sys.x());
                     }
                     if subiter < 3 {
                         self.good_iterations += 1;
@@ -1284,7 +1292,7 @@ impl Circuit {
     fn write_back(&mut self) {
         self.node_voltages[0] = 0.0;
         for c in self.closures.iter() {
-            let x = &c.sys.x;
+            let x = c.sys.x();
             for (k, &node) in c.node_rows.iter().enumerate() {
                 self.node_voltages[node] = x[k];
             }
@@ -1297,7 +1305,7 @@ impl Circuit {
             for k in 0..base.vs_currents.len() {
                 let gvs = base.vs_base + k;
                 let c = self.vs_closure[gvs];
-                base.vs_currents[k] = self.closures[c].sys.x[self.vs_row[gvs]];
+                base.vs_currents[k] = self.closures[c].sys.x()[self.vs_row[gvs]];
             }
         }
     }

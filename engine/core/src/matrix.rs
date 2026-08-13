@@ -4,6 +4,13 @@
 //! timestep. For a purely linear circuit `A` is constant, so it is factored
 //! once and only the right-hand side is re-solved; nonlinear circuits refactor
 //! on every Newton iteration.
+//!
+//! [`Solver`] is the backend seam [`crate::closure::Closure`] holds. A closure
+//! below the sparse threshold keeps the dense [`LinearSystem`]; a large closure
+//! can be routed to the sparse backend in [`crate::sparse`].
+
+use crate::sparse::SparseSystem;
+use crate::spec::SolverType;
 
 /// Reasons a solve can fail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +19,12 @@ pub enum SolveError {
     /// shorted voltage source, or two ideal sources fighting over one node.
     Singular,
 }
+
+/// Closure sizes at and above which Auto routes a closure to the sparse
+/// backend. Matches upstream's `SimulationManager.SPARSE_THRESHOLD`
+/// (SimulationManager.java:46): below it the dense path is already cheap and
+/// the sparse path's structure overhead is not worth it.
+pub const SPARSE_THRESHOLD: usize = 150;
 
 /// Row-major dense system of size `n`.
 #[derive(Default, Clone)]
@@ -220,6 +233,195 @@ impl LinearSystem {
             }
         }
         Ok(())
+    }
+}
+
+/// Backend seam for a closure's system: the dense [`LinearSystem`] by default,
+/// or the sparse [`crate::sparse::SparseSystem`] for closures that cross the
+/// sparse threshold. Every method mirrors [`LinearSystem`]'s surface so
+/// [`crate::closure::Closure`] and the Stamper never see which backend a
+/// closure uses.
+///
+/// The variants are deliberately unboxed: `Solver` sits on the per-frame hot
+/// path (every element stamps through it), so a heap pointer per backend
+/// would add indirection where the dense default is otherwise a plain by-value
+/// system.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
+pub enum Solver {
+    Dense(LinearSystem),
+    Sparse(SparseSystem),
+}
+
+/// Which backend a [`Solver`] actually solves through. A test hook for the
+/// Auto-selection parity tests; the frontend never needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SolverBackend {
+    Dense,
+    Sparse,
+}
+
+impl Default for Solver {
+    fn default() -> Self {
+        Solver::Dense(LinearSystem::default())
+    }
+}
+
+impl Solver {
+    pub fn new() -> Self {
+        Solver::Dense(LinearSystem::new())
+    }
+
+    /// The backend this solver solves through.
+    pub fn backend(&self) -> SolverBackend {
+        match self {
+            Solver::Dense(_) => SolverBackend::Dense,
+            Solver::Sparse(_) => SolverBackend::Sparse,
+        }
+    }
+
+    /// Discards all state and allocates an `n x n` system of zeroes. The
+    /// backend is chosen from `solver_type`: forced dense/sparse honour the
+    /// request, Auto picks sparse only at or above [`SPARSE_THRESHOLD`].
+    pub fn resize(&mut self, n: usize, solver_type: SolverType) {
+        let want_sparse = match solver_type {
+            SolverType::Auto => n >= SPARSE_THRESHOLD,
+            SolverType::Dense => false,
+            SolverType::Sparse => true,
+        };
+        if want_sparse {
+            match self {
+                Solver::Sparse(s) => s.resize(n),
+                Solver::Dense(_) => {
+                    let mut s = SparseSystem::new();
+                    s.resize(n);
+                    *self = Solver::Sparse(s);
+                }
+            }
+        } else {
+            match self {
+                Solver::Dense(s) => s.resize(n),
+                Solver::Sparse(_) => {
+                    let mut s = LinearSystem::new();
+                    s.resize(n);
+                    *self = Solver::Dense(s);
+                }
+            }
+        }
+    }
+
+    #[inline]
+    pub fn size(&self) -> usize {
+        match self {
+            Solver::Dense(s) => s.size(),
+            Solver::Sparse(s) => s.size(),
+        }
+    }
+
+    #[inline]
+    pub fn add(&mut self, row: usize, col: usize, v: f64) {
+        match self {
+            Solver::Dense(s) => s.add(row, col, v),
+            Solver::Sparse(s) => s.add(row, col, v),
+        }
+    }
+
+    #[inline]
+    pub fn add_rhs(&mut self, row: usize, v: f64) {
+        match self {
+            Solver::Dense(s) => s.add_rhs(row, v),
+            Solver::Sparse(s) => s.add_rhs(row, v),
+        }
+    }
+
+    #[inline]
+    pub fn get(&self, row: usize, col: usize) -> f64 {
+        match self {
+            Solver::Dense(s) => s.get(row, col),
+            Solver::Sparse(s) => s.get(row, col),
+        }
+    }
+
+    /// Snapshots the current matrix as the reusable base for later timesteps.
+    pub fn snapshot(&mut self) {
+        match self {
+            Solver::Dense(s) => s.snapshot(),
+            Solver::Sparse(s) => s.snapshot(),
+        }
+    }
+
+    /// Restores the snapshot so the per-timestep contributions can be re-added.
+    pub fn restore(&mut self) {
+        match self {
+            Solver::Dense(s) => s.restore(),
+            Solver::Sparse(s) => s.restore(),
+        }
+    }
+
+    /// Restores only the right-hand side. Valid when nothing has touched the
+    /// matrix since the snapshot, which is the case for linear circuits.
+    pub fn restore_rhs(&mut self) {
+        match self {
+            Solver::Dense(s) => s.restore_rhs(),
+            Solver::Sparse(s) => s.restore_rhs(),
+        }
+    }
+
+    /// Invalidates cached LU factors.
+    pub fn invalidate(&mut self) {
+        match self {
+            Solver::Dense(s) => s.invalidate(),
+            Solver::Sparse(s) => s.invalidate(),
+        }
+    }
+
+    #[inline]
+    pub fn is_factored(&self) -> bool {
+        match self {
+            Solver::Dense(s) => s.is_factored(),
+            Solver::Sparse(s) => s.is_factored(),
+        }
+    }
+
+    /// Multiply-adds accumulated by factor passes since the last `resize`.
+    pub fn flops(&self) -> u64 {
+        match self {
+            Solver::Dense(s) => s.flops(),
+            Solver::Sparse(s) => s.flops(),
+        }
+    }
+
+    /// LU-factors the matrix, no-op if the cached factorisation is valid.
+    pub fn factor(&mut self) -> Result<(), SolveError> {
+        match self {
+            Solver::Dense(s) => s.factor(),
+            Solver::Sparse(s) => s.factor(),
+        }
+    }
+
+    /// Solves for the current right-hand side using the cached factors. The
+    /// result lands in [`Solver::x`].
+    pub fn solve(&mut self) -> Result<(), SolveError> {
+        match self {
+            Solver::Dense(s) => s.solve(),
+            Solver::Sparse(s) => s.solve(),
+        }
+    }
+
+    /// The solved vector, indexed by closure-local row.
+    pub fn x(&self) -> &[f64] {
+        match self {
+            Solver::Dense(s) => &s.x,
+            Solver::Sparse(s) => &s.x,
+        }
+    }
+
+    /// Mutable view of the solved vector, for the committed-solution copies.
+    pub fn x_mut(&mut self) -> &mut [f64] {
+        match self {
+            Solver::Dense(s) => &mut s.x,
+            Solver::Sparse(s) => &mut s.x,
+        }
     }
 }
 

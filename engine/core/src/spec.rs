@@ -47,10 +47,30 @@ impl ElementSpec {
     }
 }
 
+/// Which linear-solver backend a closure uses. Upstream's `solverType`
+/// selection (SimulationManager.java:1013-1017); the frontend sends nothing
+/// and gets [`SolverType::Auto`]. A future Options>Simulation row can expose
+/// it directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SolverType {
+    /// Dense below the sparse threshold, sparse at or above it.
+    #[default]
+    Auto,
+    /// Always the dense LU, whatever the closure size.
+    Dense,
+    /// Always the sparse LU, whatever the closure size.
+    Sparse,
+}
+
 /// Global simulation settings.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SimOptions {
+    /// Solver backend selection. See [`SolverType`]; the sparse path exists
+    /// for closures whose dense `O(n^3)` LU would not fit in a frame.
+    #[serde(default)]
+    pub solver_type: SolverType,
     /// Nominal (maximum) timestep in seconds.
     pub time_step: f64,
     /// Floor for adaptive step shrinking, in seconds. The working step can
@@ -76,6 +96,7 @@ pub struct SimOptions {
 impl Default for SimOptions {
     fn default() -> Self {
         Self {
+            solver_type: SolverType::Auto,
             time_step: 5e-6,
             // Upstream's new-circuit default (CircuitLoader.java:50).
             min_time_step: 50e-12,
