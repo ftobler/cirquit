@@ -14,25 +14,17 @@ import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
 import { useStore } from '../state/store';
 import { useMenuKeyboard } from './menuKeyboard';
+import { deferred, type MenuItemDef } from './menuRows';
 
 interface Props {
   engine: SimEngine | null;
 }
 
-interface MenuItemDef {
-  label: string;
-  shortcut?: string;
-  disabled?: boolean;
-  disabledTitle?: string;
-  title?: string;
-  onClick: () => void;
-}
-
-function MenuItem({ label, shortcut, disabled, disabledTitle, title, onClick }: MenuItemDef) {
+function MenuItem({ label, shortcut, disabled, disabledTitle, title, onClick, deferred }: MenuItemDef) {
   return (
     <button
       type="button"
-      className="menu-item"
+      className={deferred ? 'menu-item deferred' : 'menu-item'}
       role="menuitem"
       disabled={disabled}
       title={disabled ? disabledTitle : title}
@@ -292,17 +284,14 @@ export function Menubar({ engine }: Props) {
     [clipboard],
   );
 
-  // Rows owned by other features that have not landed: disabled with the
-  // deferral reason as a tooltip, so nothing half-working is ever bound.
-  const deferred = (label: string, reason: string, shortcut?: string): MenuItemDef => ({
-    label,
-    shortcut,
-    disabled: true,
-    disabledTitle: reason,
-    onClick: () => undefined,
-  });
+  // Rows owned by other features that have not landed render disabled with the
+  // deferral reason as a tooltip and a red strikethrough via `deferred()`
+  // (menuRows.ts), so nothing half-working is ever bound.
 
   const fileItems: MenuItemDef[] = [
+    // Upstream's New Window opens a fresh window over the running app
+    // (Menus.java:105); the port is a single-window static site.
+    deferred('New Window…', 'The port is a single-window static site; there is no multi-window support', 'Ctrl+N'),
     { label: 'New Blank Circuit', onClick: fire(newCircuit) },
     {
       label: 'Open File…',
@@ -314,7 +303,7 @@ export function Menubar({ engine }: Props) {
       ),
     },
     { label: 'Import From Text…', onClick: fire(() => openDialog('importText')) },
-    // deferred('Import From Dropbox…', 'Dropbox import needs a backend service; not available'),
+    deferred('Import From Dropbox…', 'Dropbox import needs a backend service; not available'),
     { label: 'Save As…', onClick: fire(() => openDialog('saveAs')) },
     { label: 'Export As Link…', onClick: fire(() => openDialog('exportAsLink')) },
     { label: 'Export As Text…', onClick: fire(() => openDialog('exportAsText')) },
@@ -425,6 +414,7 @@ export function Menubar({ engine }: Props) {
         disabled={m.disabled}
         disabledTitle={m.disabledTitle}
         title={m.title}
+        deferred={m.deferred}
         onClick={m.onClick}
       />
     ));
@@ -479,10 +469,22 @@ export function Menubar({ engine }: Props) {
         <CheckItem label="IEC Gates" checked={euroGates} onClick={fire(() => updateSettings({ euroGates: !euroGates }))} />
         <CheckItem label="Conventional Current Motion" checked={conventional} onClick={fire(() => updateSettings({ conventional: !conventional }))} />
         <CheckItem label="Disable Editing" checked={!editable} onClick={fire(() => updateSettings({ editable: !editable }))} />
+        {menu([
+          // Upstream's display toggles the port does not implement, all real
+          // checkboxes in Menus.java: Small Grid and Toolbar above the other
+          // display rows, Edit Values With Mouse Wheel below Disable Editing
+          // (Menus.java:207-234). The port omits the four Show rows (they live
+          // in Other Options), so the three unported toggles read together.
+          deferred('Small Grid', 'The grid spacing is fixed; the small-grid toggle is not ported'),
+          deferred('Toolbar', 'The port has no toggleable toolbar; the parts panel is always visible'),
+          deferred('Edit Values With Mouse Wheel', 'The wheel value stepper is always on; there is no toggle'),
+        ])}
         <div className="menu-sep" role="separator" />
         {menu([
           { label: 'Shortcuts…', onClick: fire(() => openDialog('shortcuts')) },
           { label: 'Other Options…', onClick: fire(() => openDialog('otherOptions')) },
+          // Electron-only upstream (Menus.java:238-239); the port is a web app.
+          deferred('Toggle Dev Tools', 'The port is a web app, not Electron; there is no dev tools toggle'),
         ])}
       </Dropdown>
 

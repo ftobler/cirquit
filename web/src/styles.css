@@ -211,6 +211,15 @@ button.active,
   background: transparent;
 }
 
+/* A row the port does not implement: struck through in the danger red on top
+   of the disabled look, so an absent feature reads as absent. Contextually
+   disabled rows (no selection, editing disabled) carry no `deferred` class,
+   so they stay plain. */
+.menu-item.deferred {
+  text-decoration: line-through;
+  text-decoration-color: var(--danger);
+}
+
 .menu-shortcut {
   color: var(--muted);
   font-size: 11px;
