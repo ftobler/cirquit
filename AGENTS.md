@@ -129,9 +129,10 @@ committed to this repo. One file per feature, plus an index.
 
 Two files, both under `feature/`:
 
-- `feature/knowledgebase.user.md` holds the owner's own statements. The agent
-  writes them there, kept original and accurate. Do not paraphrase, reword or
-  tidy them.
+- `feature/knowledgebase.user.md` holds the owner's statements and decisions,
+  condensed: not every utterance, not word for word. Meaning must stay
+  accurate, and one-off bug reports that have landed belong in the git log,
+  not here. Do not record statements verbatim at length.
 - `feature/knowledgebase.agent.md` is where the idea, knowledge and code flow
   come together. Keep it detailed: actual code references, file paths, values,
   and anything worth remembering later.
