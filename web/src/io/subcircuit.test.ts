@@ -93,6 +93,33 @@ function stickyStorage(inner: SubcircuitStorage): SubcircuitStorage {
   };
 }
 
+/** A browser-shaped `localStorage` backed by a plain map, returned alongside
+ *  the map so tests can seed and inspect keys. The library reads
+ *  `globalThis.localStorage` through `defaultStorage`, and the store's rename
+ *  path has nowhere to inject a fake past it, so these tests give it a real
+ *  one, which is also what makes the doubling reproducible: without persisted
+ *  keys the old code's promotion of the file's model into storage had nowhere
+ *  to land. */
+function installLocalStorage(): Map<string, string> {
+  const store = new Map<string, string>();
+  const fake = {
+    get length() {
+      return store.size;
+    },
+    key: (i: number) => [...store.keys()][i] ?? null,
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      store.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      store.delete(k);
+    },
+    clear: () => store.clear(),
+  };
+  (globalThis as unknown as { localStorage?: unknown }).localStorage = fake;
+  return store;
+}
+
 beforeEach(() => {
   clearSessionModels();
   useStore.setState(fresh());
@@ -1039,31 +1066,6 @@ describe('renaming a subcircuit the open file introduced', () => {
    *  different and not a byte more. */
   const RENAMED_FILE = FILE.replace('. divider', '. amp');
 
-  /** The library reads `globalThis.localStorage` through `defaultStorage`, and
-   *  the store's rename path has nowhere to inject a fake past it. These tests
-   *  therefore give it a real one, which is also what makes the doubling
-   *  reproducible: without persisted keys the old code's promotion of the
-   *  file's model into storage had nowhere to land. */
-  function installLocalStorage(): Map<string, string> {
-    const store = new Map<string, string>();
-    const fake = {
-      get length() {
-        return store.size;
-      },
-      key: (i: number) => [...store.keys()][i] ?? null,
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => {
-        store.set(k, String(v));
-      },
-      removeItem: (k: string) => {
-        store.delete(k);
-      },
-      clear: () => store.clear(),
-    };
-    (globalThis as unknown as { localStorage?: unknown }).localStorage = fake;
-    return store;
-  }
-
   let stored: Map<string, string>;
   beforeEach(() => {
     stored = installLocalStorage();
@@ -1264,6 +1266,231 @@ describe('renaming a subcircuit the open file introduced', () => {
     expect(netlist()).toBe(RENAMED_FILE);
     expect(names()).toEqual(['amp']);
     expect([...stored.keys()]).toEqual(['subcircuit:amp']);
+  });
+});
+
+describe('renaming a subcircuit a 410 element names', () => {
+  /** The `. divider` line plus a 410 naming it, the shape whose next save used
+   *  to break: the rename rewrote the `.` line but left the 410 saying the old
+   *  name, so the saved file had a `410 ... divider` with no `.` definition
+   *  left behind it. */
+  const DIVIDER_LINE = MODEL_LINE.replace('. myCirc', '. divider');
+  const FILE = HEADER + DIVIDER_LINE + '\n410 0 0 96 0 1 divider\n';
+  /** The same file once `divider` has become `amp`: the name token of each of
+   *  the two lines, and not a byte more. */
+  const RENAMED_FILE =
+    HEADER + DIVIDER_LINE.replace('. divider', '. amp') + '\n410 0 0 96 0 1 amp\n';
+  /** A 410 naming a model only storage holds: no `.` line defines it, exactly
+   *  the shape a placed part saves when its model never rode the file. */
+  const STORED_ONLY_FILE = HEADER + '410 0 0 96 0 1 saved\n';
+
+  let stored: Map<string, string>;
+  beforeEach(() => {
+    stored = installLocalStorage();
+  });
+  afterEach(() => {
+    delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
+  });
+
+  const load = () => useStore.getState().loadNetlist(FILE);
+  const rename = (from: string, to: string) => useStore.getState().renameSubcircuit(from, to);
+  const netlist = () => useStore.getState().toNetlist();
+  const names = () => listModels().map((m) => m.name);
+  const composite = () => useStore.getState().elements[0];
+
+  it('rewrites the 410 text with the `.` line, and the saved file keeps working', () => {
+    load();
+    expect(rename('divider', 'amp')).toBe('renamed');
+    // Both name tokens moved and nothing else, so the saved file still pairs
+    // a `.` line with a 410 that resolves.
+    expect(netlist()).toBe(RENAMED_FILE);
+    expect(netlist()).not.toContain('divider');
+    // The element kept its geometry and gained the new name; its
+    // engine payload is name-independent, so the revision-bump rebuild reads
+    // it as-is instead of dropping the part to its fallback body.
+    expect(composite()).toMatchObject({
+      x1: 0,
+      y1: 0,
+      x2: 96,
+      y2: 0,
+      text: 'amp',
+      model: {
+        model: 'ResistorElm 1 2\rResistorElm 2 3',
+        external: [1, 3],
+        dumps: ['0_1000', '0_1000'],
+      },
+    });
+    // One undo step, exactly like a `.`-only rename, and it puts the element
+    // text and the `.` line back together.
+    useStore.getState().undo();
+    expect(netlist()).toBe(FILE);
+    expect(composite().text).toBe('divider');
+    useStore.getState().redo();
+    expect(netlist()).toBe(RENAMED_FILE);
+    // The reload finds one model, under the new name, and the 410 resolves it.
+    useStore.getState().loadNetlist(netlist());
+    expect(names()).toEqual(['amp']);
+    expect(useStore.getState().elements[0].text).toBe('amp');
+    expect(useStore.getState().elements[0].model).toEqual({
+      model: 'ResistorElm 1 2\rResistorElm 2 3',
+      external: [1, 3],
+      dumps: ['0_1000', '0_1000'],
+    });
+  });
+
+  it("in the uncovered shape the 410 follows the file's model, not the stored one", () => {
+    load();
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    stored.set('subcircuit:divider', compositeModelLine({ ...base, name: 'divider', sizeX: 9 }));
+
+    expect(rename('divider', 'amp')).toBe('uncovered');
+    // The file's copy moved, the stored model of that name stayed behind, and
+    // the 410 now names the moved copy.
+    expect(netlist()).toBe(RENAMED_FILE);
+    expect(names()).toEqual(['amp', 'divider']);
+    expect(composite().text).toBe('amp');
+    expect(composite().model).toEqual({
+      model: 'ResistorElm 1 2\rResistorElm 2 3',
+      external: [1, 3],
+      dumps: ['0_1000', '0_1000'],
+    });
+    expect(getModel('divider')!.sizeX).toBe(9);  // the stored one, where it was
+    expect(getModel('amp')!.sizeX).toBe(2);  // the file's, under its new name
+    // The saved file still resolves on reload, the stored `divider` untouched.
+    useStore.getState().loadNetlist(netlist());
+    expect(names()).toEqual(['amp', 'divider']);
+    expect(useStore.getState().elements[0].text).toBe('amp');
+  });
+
+  it('a 410 naming a name nothing resolves is left alone', () => {
+    const ghost = HEADER + DIVIDER_LINE + '\n410 0 0 96 0 1 divider\n410 0 0 96 0 1 nomodel\n';
+    useStore.getState().loadNetlist(ghost);
+    expect(rename('divider', 'amp')).toBe('renamed');
+    const saved = netlist();
+    expect(saved).toBe(
+      ghost
+        .replace('. divider', '. amp')
+        .replace('410 0 0 96 0 1 divider', '410 0 0 96 0 1 amp'),
+    );
+    expect(saved).toContain('410 0 0 96 0 1 nomodel');
+    const [renamed, ghostly] = useStore.getState().elements;
+    expect(renamed.text).toBe('amp');
+    expect(ghostly.text).toBe('nomodel');
+    expect(ghostly.model).toBeUndefined();
+  });
+
+  it('a rename that matches no `.` line and no 410 stays a library-only no-op', () => {
+    load();
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    stored.set('subcircuit:saved', compositeModelLine({ ...base, name: 'saved' }));
+
+    expect(rename('saved', 'renamed')).toBe('renamed');
+    // The 410 says `divider`, not `saved`, so the document did not move: no
+    // undo entry and not a byte of the file changed.
+    expect(useStore.getState().undoStack).toHaveLength(0);
+    expect(netlist()).toBe(FILE);
+    expect(composite().text).toBe('divider');
+  });
+
+  it('a rename reaches a 410 backed only by storage', () => {
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    stored.set('subcircuit:saved', compositeModelLine({ ...base, name: 'saved' }));
+    useStore.getState().loadNetlist(STORED_ONLY_FILE);
+    // The 410 resolved against storage at load, the way placement resolves a
+    // part whose model never rode the file.
+    expect(useStore.getState().elements[0].model).not.toBeUndefined();
+
+    expect(rename('saved', 'renamed')).toBe('renamed');
+    expect(netlist()).toBe(HEADER + '410 0 0 96 0 1 renamed\n');
+    expect(useStore.getState().elements[0].text).toBe('renamed');
+    expect(names()).toEqual(['renamed']);
+    // The saved file resolves the moved name on reload.
+    useStore.getState().loadNetlist(netlist());
+    expect(names()).toEqual(['renamed']);
+    expect(useStore.getState().elements[0].text).toBe('renamed');
+    expect(useStore.getState().elements[0].model).toEqual({
+      model: 'ResistorElm 1 2\rResistorElm 2 3',
+      external: [1, 3],
+      dumps: ['0_1000', '0_1000'],
+    });
+  });
+
+  it('undo of a storage-only rename reverts the element text but not the library', () => {
+    // The stored branch of `renameModel` is not transactional: it writes the
+    // new key and drops the old one, and undo only re-syncs the session map
+    // from `.` lines. The element text reverts through the snapshot, but the
+    // library stays renamed, so a reload of the reverted file finds the old
+    // name with nothing to resolve it.
+    const base = parseCompositeModelLine(MODEL_LINE)!;
+    stored.set('subcircuit:saved', compositeModelLine({ ...base, name: 'saved' }));
+    useStore.getState().loadNetlist(STORED_ONLY_FILE);
+    expect(rename('saved', 'renamed')).toBe('renamed');
+    expect(useStore.getState().elements[0].text).toBe('renamed');
+
+    useStore.getState().undo();
+    expect(composite().text).toBe('saved');
+    expect(netlist()).toBe(STORED_ONLY_FILE);
+    expect(names()).toEqual(['renamed']);
+    expect(getModel('saved')).toBeUndefined();
+    useStore.getState().loadNetlist(STORED_ONLY_FILE);
+    expect(useStore.getState().elements[0].text).toBe('saved');
+    expect(useStore.getState().elements[0].model).toBeUndefined();
+  });
+
+  it('a rename reaches a 410 backed only by a pasted session model', () => {
+    // A paste introduced the model without a `.` line: it lives only in the
+    // session map, so the rename has no `.` line to rewrite and the 410's
+    // text is the only document surface that can follow it.
+    registerSessionModel({ ...parseCompositeModelLine(MODEL_LINE)!, name: 'pasted' });
+    const id = useStore.getState().addElement(makeElement('customComposite', 0, 0, 96, 0));
+    useStore.getState().setText(id, 'pasted');
+    expect(useStore.getState().elements[0].model).not.toBeUndefined();
+
+    expect(rename('pasted', 'moved')).toBe('renamed');
+    const saved = netlist();
+    expect(saved).toContain('410 0 0 96 0 1 moved');
+    expect(saved).not.toContain('pasted');
+    expect(useStore.getState().elements[0].text).toBe('moved');
+    expect(useStore.getState().elements[0].model).toEqual({
+      model: 'ResistorElm 1 2\rResistorElm 2 3',
+      external: [1, 3],
+      dumps: ['0_1000', '0_1000'],
+    });
+    expect(names()).toEqual(['moved']);
+  });
+
+  it('an escaped 410 name rides the rename to the escaped new name', () => {
+    // The `.` line and the 410 both carry the escaped form of the model name,
+    // like the escaped-name `.`-line test in the rename suite, so each surface
+    // speaks its own dialect: the file and the rewrite stay escaped, the
+    // library and the rename take the unescaped name.
+    const escaped = MODEL_LINE.replace('. myCirc', '. my\\sdivider');
+    const escapedFile = HEADER + escaped + '\n410 0 0 96 0 1 my\\sdivider\n';
+    useStore.getState().loadNetlist(escapedFile);
+    expect(names()).toEqual(['my divider']);
+
+    expect(rename('my divider', 'my amp')).toBe('renamed');
+    const saved = netlist();
+    expect(saved).toBe(
+      escapedFile
+        .replace('. my\\sdivider', '. my\\samp')
+        .replace('410 0 0 96 0 1 my\\sdivider', '410 0 0 96 0 1 my\\samp'),
+    );
+    expect(saved).not.toContain('my\\sdivider');
+    // Both lines still parse to the unescaped new name.
+    const line = saved.split('\n').find((l) => l.trim().startsWith('.'))!;
+    expect(parseCompositeModelLine(line.trim())!.name).toBe('my amp');
+    expect(useStore.getState().elements[0].text).toBe('my amp');
+    expect(names()).toEqual(['my amp']);
+    // A reload of the escaped file resolves the escaped name.
+    useStore.getState().loadNetlist(saved);
+    expect(names()).toEqual(['my amp']);
+    expect(useStore.getState().elements[0].text).toBe('my amp');
+    expect(useStore.getState().elements[0].model).toEqual({
+      model: 'ResistorElm 1 2\rResistorElm 2 3',
+      external: [1, 3],
+      dumps: ['0_1000', '0_1000'],
+    });
   });
 });
 

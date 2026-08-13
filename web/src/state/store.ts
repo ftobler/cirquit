@@ -860,19 +860,41 @@ function createAppStore() {
       const renamed = rename(entry.line);
       return renamed === null ? entry : { ...entry, line: renamed };
     });
-    // A rename that matched no `.` line (a purely saved model, or a session
-    // model with nothing behind it) is a library-only rename: nothing to
-    // commit. Unchanged lines come back by identity, so this compares
-    // references.
+    // A 410 element embeds its model name in `text` and serializes only that
+    // text (customComposite.ts dump), so the element has to move with the
+    // model or the next save writes a `410 ... oldName` whose `.` line no
+    // longer exists and a reload drops the part to its fallback body. The
+    // match is `text === oldName` against the capture above, not a fresh
+    // `getModel`: `renameModel` has already re-keyed a session-backed model
+    // out of the old name, and in the `uncovered` case the old name would
+    // resolve to the stored copy of a different model, which must not move.
+    // The engine payload is name-independent, so it is left alone and the
+    // revision-bump rebuild re-reads it, the same re-resolution `setText`
+    // relies on. Undo restores the element text and any `.` line through the
+    // snapshot, but it cannot revert the storage half of a saved-model
+    // rename: `renameModel` already wrote the new key and dropped the old
+    // one, and `undo` only re-syncs the session map from `.` lines.
+    const elements = s.elements.map((e) =>
+      // The guard is redundant: the return above already proved the capture
+      // non-undefined, so kind and name are all that decide here.
+      e.kind === 'customComposite' && e.text === oldName && model !== undefined
+        ? { ...e, text: newName }
+        : e,
+    );
+    // A rename that matched no `.` line and no 410 (a purely saved model, or
+    // a session model with nothing behind it) is a library-only rename:
+    // nothing to commit. Unchanged lines and elements come back by identity,
+    // so this compares references.
     const untouched =
       order.every((entry, i) => entry === s.order[i]) &&
-      passthrough.every((line, i) => line === s.passthrough[i]);
+      passthrough.every((line, i) => line === s.passthrough[i]) &&
+      elements.every((e, i) => e === s.elements[i]);
     if (untouched) return outcome;
     // The document changed, so this is an edit like any other: one commit
     // before it makes the rename one undo step. The revision bump is the
     // engine's cue to reread a netlist that now names the model differently.
     get().commit();
-    set((st) => ({ passthrough, order, revision: st.revision + 1 }));
+    set((st) => ({ elements, passthrough, order, revision: st.revision + 1 }));
     return outcome;
   },
 
