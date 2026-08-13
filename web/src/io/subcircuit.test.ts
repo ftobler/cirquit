@@ -475,6 +475,43 @@ describe('building a model from a selection', () => {
     expect(built.model!.sizeX).toBe(4);
   });
 
+  it('orders the ext list alphabetically while keeping each pin pos and side', () => {
+    // Upstream sorts the assembled side-major list by name, case-insensitively,
+    // before the model is written (EditCompositeModelDialog.java:76-80), and
+    // the `.` line's pin order is what the other half consumes, so a west pin
+    // `z` and an east pin `a` come back alphabetical while their derived
+    // `pos`/`side` are untouched.
+    const elements = [
+      resistor(0, 0, 160, 0),
+      resistor(0, 160, 160, 160),
+      label('z', 0, 160, -32, 0),
+      label('a', 160, 160, 32, 0),
+    ];
+    const built = buildModelFromSelection(elements, []);
+    expect(built.model!.extList).toEqual([
+      { name: 'a', node: 4, pos: 0, side: 3 },
+      { name: 'z', node: 3, pos: 0, side: 2 },
+    ]);
+  });
+
+  it('keeps side-major order for names that tie under case-insensitive sort', () => {
+    // `ab` and `AB` compare equal once lowercased, so the sort is a tie and
+    // `Array.prototype.sort` is stable: the west pin keeps the side-major
+    // position it held before the alphabetical pass, as Java's stable
+    // `Collections.sort` does (EditCompositeModelDialog.java:76-80).
+    const elements = [
+      resistor(0, 0, 160, 0),
+      resistor(0, 160, 160, 160),
+      label('ab', 0, 160, -32, 0),
+      label('AB', 160, 160, 32, 0),
+    ];
+    const built = buildModelFromSelection(elements, []);
+    expect(built.model!.extList.map((p) => [p.name, p.node, p.pos, p.side])).toEqual([
+      ['ab', 3, 0, 2],
+      ['AB', 4, 0, 3],
+    ]);
+  });
+
   it('refuses a labeled node on the ground net', () => {
     const elements = [
       resistor(0, 0, 160, 0),

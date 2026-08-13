@@ -747,6 +747,19 @@ export function buildModelFromSelection(
     );
   }
 
+  // The `.` line's pin order is the post order both halves consume, so match
+  // upstream's alphabetical ext list (EditCompositeModelDialog.java:76-80:
+  // `a.name.toLowerCase().compareTo(b.name.toLowerCase())`). The sort is stable,
+  // so same-letter ties keep the side-major order above, as Java's stable
+  // `Collections.sort` does. The code-unit comparison mirrors `String.compareTo`
+  // rather than a locale's collation, so the order matches upstream character
+  // for character.
+  extList.sort((a, b) => {
+    const an = a.name.toLowerCase();
+    const bn = b.name.toLowerCase();
+    return an < bn ? -1 : an > bn ? 1 : 0;
+  });
+
   // Chip footprint: wide enough for the north/south pins with a column spare
   // each side when the west/east sides are occupied, tall enough for the
   // west/east pins (the same sizing EditCompositeModelDialog.createModel
