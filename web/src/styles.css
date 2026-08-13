@@ -50,6 +50,18 @@ body {
   margin-right: 10px;
   font-size: 13px;
   letter-spacing: 0.2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* The gradient-clipped text must not inherit an underline or outline that
+     would leak the transparent colour; the strong element itself is fine. */
+  text-decoration: none;
+}
+
+.brand-logo {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
 }
 
 .menubar .sep {

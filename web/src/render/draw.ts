@@ -935,10 +935,10 @@ export function labelOnSegment(g: DrawContext, a: Point, b: Point, text: string)
 }
 
 /** Builds a theme, overlaying the five user-settable colours over the palette
- *  for `dark`. A null entry keeps the palette's own value, so the argument
- *  shares the shape of the settings object and a plain `makeTheme(dark)` is
- *  still the stock palette. */
-export function makeTheme(dark = true, colors?: ThemeColors): Theme {
+ *  for `dark`. A null or absent entry keeps the palette's own value, so the
+ *  argument shares the shape of the settings object and a plain `makeTheme(dark)`
+ *  is still the stock palette. */
+export function makeTheme(dark = true, colors?: Partial<ThemeColors>): Theme {
   const base = dark ? darkTheme() : lightTheme();
   return {
     ...base,

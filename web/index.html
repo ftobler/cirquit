@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="description" content="Interactive electronic circuit simulator running entirely in the browser." />
     <title>Circuit Simulator</title>
+    <!-- %BASE_URL% is Vite's html env replacement, so the icon resolves under
+         the configurable deploy base (/cirquit/ on Pages) and at / in dev. -->
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
   </head>
   <body>
     <div id="root"></div>

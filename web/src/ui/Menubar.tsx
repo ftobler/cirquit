@@ -3,16 +3,18 @@
  *  the context menu and the keyboard cannot diverge. Rows whose commands other
  *  features still own render disabled with a tooltip, never live-looking. */
 
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { DOC_PAGES } from '../docs/pages';
 import { openCircuit } from '../io/fileIO';
 import { filterLibrary, loadLibraryCircuit, loadLibraryIndex, type LibraryGroup } from '../io/library';
 import { parseCircuit } from '../io/netlist';
 import { canMirror, canRotate } from '../model/transform';
+import { makeTheme } from '../render/draw';
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
 import { useStore } from '../state/store';
+import { brandGradient } from './brand';
 import { useMenuKeyboard } from './menuKeyboard';
 import { deferred, type MenuItemDef } from './menuRows';
 
@@ -156,6 +158,11 @@ export function Menubar({ engine }: Props) {
 
   const dark = useStore((s) => s.dark);
   const editable = useStore((s) => s.settings.editable);
+  // The brand gradient tracks the two colour-scale overrides; the other three
+  // theme colours do not affect it, so the component re-renders only when
+  // these or `dark` change.
+  const positiveColor = useStore((s) => s.settings.positiveColor);
+  const negativeColor = useStore((s) => s.settings.negativeColor);
   // Derived selectors: commit replaces the stack arrays wholesale, so
   // subscribing to the length picks up each undo/redo boundary.
   const canUndo = useStore((s) => s.undoStack.length > 0);
@@ -283,6 +290,25 @@ export function Menubar({ engine }: Props) {
     () => clipboard !== null && parseCircuit(clipboard).elements.length > 0,
     [clipboard],
   );
+
+  // The brand gradient always rides the dark palette: the menubar panel stays
+  // dark in both canvas themes, so forcing dark keeps contrast when White
+  // Background is on. The custom colour settings still overlay on top.
+  const brandTheme = useMemo(
+    () => makeTheme(true, { positiveColor, negativeColor }),
+    [positiveColor, negativeColor],
+  );
+  const brandStyle: CSSProperties = {
+    background: brandGradient(brandTheme),
+    WebkitBackgroundClip: 'text',
+    backgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    color: 'transparent',
+  };
+  // The logo is the favicon file itself, so the tab icon and the brand mark
+  // can never drift apart. BASE_URL carries the deploy base, like the docs
+  // links below.
+  const brandLogoSrc = `${import.meta.env.BASE_URL}favicon.svg`;
 
   // Rows owned by other features that have not landed render disabled with the
   // deferral reason as a tooltip and a red strikethrough via `deferred()`
@@ -426,7 +452,17 @@ export function Menubar({ engine }: Props) {
 
   return (
     <header className="menubar">
-      <strong className="brand">Circuit Simulator</strong>
+      <strong className="brand">
+        <img
+          className="brand-logo"
+          src={brandLogoSrc}
+          alt=""
+          width={20}
+          height={20}
+          draggable={false}
+        />
+        <span style={brandStyle}>Circuit Simulator</span>
+      </strong>
 
       <Dropdown
         label="File"
