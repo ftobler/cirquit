@@ -45,6 +45,11 @@ build: wasm
 preview: build
     cd web && npm run preview
 
+# Serve web/dist on a plain static server (npx serve, SPA fallback).
+# you need to build first.
+static:
+    npx --yes serve -s web/dist
+
 # Rust unit tests (native, fast).
 test-rust:
     cd engine && cargo test --workspace
