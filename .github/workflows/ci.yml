@@ -9,6 +9,7 @@ concurrency:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    if: github.server_url != 'https://github.com'  # gitea
     steps:
       - uses: actions/checkout@v4
 
