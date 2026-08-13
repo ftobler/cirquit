@@ -125,6 +125,15 @@ button.primary {
   font-weight: 600;
 }
 
+/* The run/pause button turns red while the sim runs, the inverse of upstream,
+   which turns it red when stopped (UIManager.java:522-540). The owner wants
+   red while running, so the port inverts upstream on purpose. */
+button.primary.running,
+button.primary.running:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
 .material-icons {
   font-family: 'Material Icons';
   font-weight: normal;

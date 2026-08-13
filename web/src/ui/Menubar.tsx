@@ -603,7 +603,7 @@ export function Menubar({ engine }: Props) {
         </button>
         <button
           type="button"
-          className="primary"
+          className={running ? 'primary running' : 'primary'}
           onClick={toggleRunning}
           title="Run/Pause"
           aria-label={running ? 'Pause' : 'Run'}
