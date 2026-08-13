@@ -209,12 +209,14 @@ function Field({
     // The built-in model picker, the port of the upstream model edit item
     // (DiodeElm.java:197-210, MosfetElm.java:724-736). Options are the
     // family's built-in models plus the name-free "(default)" row; the select
-    // posts a string, not a number. A loaded name outside the table (a
-    // file-defined `34` model, an unknown name) still displays as a disabled
-    // option so it is not silently lost, mirroring upstream's choice list
-    // which always contains the current model.
+    // posts a string, not a number. The zener's `zenerBreakdown` flag narrows
+    // its list to the rows with a breakdown voltage (DiodeModel.java:193-194).
+    // A loaded name outside the table (a file-defined `34` model, an unknown
+    // name, or a zero-breakdown model the filter dropped) still displays as a
+    // disabled option so it is not silently lost, mirroring upstream's choice
+    // list which always contains the current model.
     const current = String(value ?? '');
-    const options = selectableModels(field.modelFamily ?? 'diode');
+    const options = selectableModels(field.modelFamily ?? 'diode', field.zenerBreakdown);
     const known = current === '' || options.includes(current);
     return (
       <label className="field">

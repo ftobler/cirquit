@@ -94,6 +94,13 @@ export interface FieldDef {
    *  table, the transistor, mosfet and jfet each have their own. Absent on
    *  every other field type. */
   modelFamily?: 'diode' | 'transistor' | 'mosfet' | 'jfet';
+  /** Only list diode models that carry a breakdown voltage, upstream's zener
+   *  filter in getModelList (DiodeModel.java:193-194: `if (zener &&
+   *  dm.breakdownVoltage == 0) continue;`). A model a loaded file names is
+   *  still kept on the element by the caller's `options.includes` fallback,
+   *  so the picker never drops a name a file relies on. Absent means every
+   *  non-internal model shows, as the diode/varactor/led pickers want. */
+  zenerBreakdown?: boolean;
   choices?: { value: number; label: string }[];
   min?: number;
   max?: number;

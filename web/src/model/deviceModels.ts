@@ -138,9 +138,11 @@ export function modelFamilyFor(kind: string): ModelFamily | undefined {
 }
 
 /** The picker option names for a family, sorted like upstream's getModelList
- *  (Collections.sort). Built-ins only, internal entries excluded, and the
- *  mosfet/jfet split filtered by the jfet flag (MosfetModel.java:212). */
-export function selectableModels(family: ModelFamily): string[] {
+ *  (Collections.sort). Built-ins only, internal entries excluded, the
+ *  mosfet/jfet split filtered by the jfet flag (MosfetModel.java:212), and
+ *  `requireBreakdown` (the zener's picker, getModelList DiodeModel.java:193-194)
+ *  dropping the diode rows whose breakdownVoltage is 0. */
+export function selectableModels(family: ModelFamily, requireBreakdown = false): string[] {
   const names =
     family === 'transistor'
       ? Object.keys(TRANSISTOR_MODELS).filter((n) => !TRANSISTOR_MODELS[n].internal)
@@ -148,7 +150,11 @@ export function selectableModels(family: ModelFamily): string[] {
         ? Object.keys(MOSFET_MODELS).filter(
             (n) => !MOSFET_MODELS[n].internal && MOSFET_MODELS[n].jfet === (family === 'jfet'),
           )
-        : Object.keys(DIODE_MODELS).filter((n) => !DIODE_MODELS[n].internal);
+        : Object.keys(DIODE_MODELS).filter(
+            (n) =>
+              !DIODE_MODELS[n].internal &&
+              (!requireBreakdown || DIODE_MODELS[n].breakdownVoltage !== 0),
+          );
   return names.sort();
 }
 

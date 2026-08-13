@@ -170,9 +170,20 @@ describe('zener fields', () => {
 
   it('copies the diode field definitions exactly, in the diode order', () => {
     expect(ZENER_DEF.fields).toHaveLength((DIODE_DEF.fields ?? []).length + 1);
-    for (let i = 0; i < (DIODE_DEF.fields ?? []).length; i++) {
+    for (let i = 1; i < (DIODE_DEF.fields ?? []).length; i++) {
       expect(ZENER_DEF.fields?.[i]).toEqual(DIODE_DEF.fields?.[i]);
     }
+    // The one deliberate divergence: the zener's model row carries the
+    // breakdown filter, so its picker hides the zero-breakdown models the
+    // diode keeps showing (DiodeModel.java:193-194).
+    expect(ZENER_DEF.fields?.[0]).toEqual({
+      name: 'modelName',
+      label: 'Model',
+      type: 'modelChoice',
+      target: 'modelName',
+      modelFamily: 'diode',
+      zenerBreakdown: true,
+    });
   });
 });
 

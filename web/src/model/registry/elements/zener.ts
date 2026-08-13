@@ -49,10 +49,15 @@ export const ZENER_DEF: ElementDef = {
   // ZenerElm inherits DiodeElm's editing surface upstream (ZenerElm extends
   // DiodeElm), so the zener exposes the diode's three model fields plus its
   // own breakdown voltage. The FieldDefs are copied from the diode so both
-  // elements read and write identically.
+  // elements read and write identically; the model row is the one deliberate
+  // divergence, carrying zenerBreakdown so the picker narrows its list.
   fields: [
     // The model choice is upstream's edit item 0 (DiodeElm.java:197-210).
-    { name: 'modelName', label: 'Model', type: 'modelChoice', target: 'modelName', modelFamily: 'diode' },
+    // The zener picker hides the zero-breakdown rows (spice-default, default),
+    // which are no zener at all, exactly like getModelList(zener)
+    // (DiodeModel.java:193-194). The diode/varactor/led fields copy this row
+    // without the flag, so they keep the full list.
+    { name: 'modelName', label: 'Model', type: 'modelChoice', target: 'modelName', modelFamily: 'diode', zenerBreakdown: true },
     { name: 'forwardVoltage', label: 'Forward drop', unit: 'V' },
     { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
     { name: 'emissionCoefficient', label: 'Emission coefficient' },

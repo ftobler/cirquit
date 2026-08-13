@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defFor } from './registry';
 import {
   DIODE_MODELS,
   MOSFET_MODELS,
@@ -64,6 +65,29 @@ describe('built-in device model tables', () => {
     const mosfet = selectableModels('mosfet');
     expect(mosfet).toEqual(['default', 'default-body', 'default-digital', 'default-nodiode']);
     expect(selectableModels('jfet')).toEqual(['default-jfet']);
+  });
+
+  it('selectableModels with requireBreakdown drops the zero-breakdown rows', () => {
+    // The zener's picker, matching getModelList(zener) (DiodeModel.java:193-194):
+    // `spice-default` and `default` have no breakdown voltage, so a zener cannot
+    // use them, while the models with a real zener voltage stay.
+    expect(selectableModels('diode', true)).toEqual([
+      '1N4004',
+      '1N4148',
+      '1N5711',
+      '1N5712',
+      'BAT85',
+      'default-zener',
+    ]);
+  });
+
+  it('zener FieldDef carries the breakdown filter, the diode one does not', () => {
+    // The flag lives on the registry row so the picker can honour it; the
+    // diode/varactor/led rows share the diode family but keep the full list.
+    const zenerModel = defFor('zener')?.fields?.find((f) => f.type === 'modelChoice');
+    expect(zenerModel?.zenerBreakdown).toBe(true);
+    const diodeModel = defFor('diode')?.fields?.find((f) => f.type === 'modelChoice');
+    expect(diodeModel?.zenerBreakdown).toBeUndefined();
   });
 
   it('derives the forward voltage upstream updateModel does', () => {

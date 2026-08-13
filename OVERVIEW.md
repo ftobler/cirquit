@@ -182,9 +182,10 @@ fetch it).
   with no `34`/`32` line resolves from the table at load, the file's model
   line wins over it, and unknown names fall back to defaults with the name
   preserved. A model-name selector sits in the element options panel. The
-  zener selector shows zero-breakdown models too (upstream hides them), a
-  form-only divergence. Mosfet/JFET model names never appear in the text
-  format, so their picker choices are session-only, as upstream.
+  zener picker hides the zero-breakdown models, exactly as upstream's
+  `getModelList(zener)` does (DiodeModel.java:193-194); the diode, varactor
+  and LED pickers keep the full list. Mosfet/JFET model names never appear in
+  the text format, so their picker choices are session-only, as upstream.
 - **Scope line fidelity.** `o` lines are parsed for their element attachment and
   their display fields decode into scope state on load and regenerate on edit,
   so an untouched loaded scope still saves byte-for-byte. Hints (`h`) are
