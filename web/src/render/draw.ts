@@ -971,7 +971,7 @@ function darkTheme(): Theme {
     // parity, so a future palette tweak has to argue with the claim. Selection
     // is the exception: it used to carry upstream's cyan but now matches the
     // hover blue, the owner's call that the hover colour was the right one.
-    background: '#0d1117',
+    background: '#000000',
     grid: '#1b2230',
     wire: '#c9d1d9',
     // Upstream's normal theme sets whiteColor to white (UIManager.java:583).
