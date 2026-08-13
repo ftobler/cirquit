@@ -34,6 +34,9 @@ jobs:
 
       - uses: extractions/setup-just@v2
 
+      - name: Install web dependencies
+        run: cd web && npm ci
+
       - name: Build wasm and react
         run: just build
         env:
