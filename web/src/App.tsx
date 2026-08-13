@@ -15,6 +15,7 @@ import { FindComponentDialog } from './ui/FindComponentDialog';
 import { ImportFromTextDialog } from './ui/ImportFromTextDialog';
 import { Menubar } from './ui/Menubar';
 import { OptionsPanel } from './ui/OptionsPanel';
+import { OtherOptionsDialog } from './ui/OtherOptionsDialog';
 import { SaveAsDialog } from './ui/SaveAsDialog';
 import { SaveAsImageDialog } from './ui/SaveAsImageDialog';
 import { ScopePanel } from './ui/ScopePanel';
@@ -331,6 +332,7 @@ export default function App() {
       {dialog === 'findComponent' && <FindComponentDialog />}
       {dialog === 'createSubcircuit' && <CreateSubcircuitDialog />}
       {dialog === 'subcircuitManager' && <SubcircuitManagerDialog />}
+      {dialog === 'otherOptions' && <OtherOptionsDialog />}
       <div className="workspace">
         <aside id="parts-drawer" className={partsOpen ? 'left open' : 'left'}>
           <Toolbox />

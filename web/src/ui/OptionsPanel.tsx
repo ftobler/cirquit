@@ -1,14 +1,15 @@
-/** Properties of the selected element, plus global simulation settings. */
+/** Properties of the selected element. The global settings moved to the
+ *  Other Options dialog. */
 
 import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
 import { parseDataFile } from '../model/dataFile';
 import { recorderDataText, recorderFilename } from '../model/recorder';
-import { formatValue, makeTheme } from '../render/draw';
+import { formatValue } from '../render/draw';
 import { saveBlob } from '../io/fileIO';
 import { selectableModels } from '../model/deviceModels';
-import type { CircuitElement, FieldDef, Theme, ThemeColors } from '../model/types';
+import type { CircuitElement, FieldDef } from '../model/types';
 import { useStore } from '../state/store';
 import { UnitNumberInput } from './UnitNumberInput';
 
@@ -273,27 +274,16 @@ function loadFileInto(
   reader.readAsArrayBuffer(file);
 }
 
-/** The five mutable colour rows, and which theme key each overrides. */
-const COLOR_ROWS: { key: keyof ThemeColors; label: string; themeKey: keyof Theme }[] = [
-  { key: 'positiveColor', label: 'Positive', themeKey: 'positive' },
-  { key: 'negativeColor', label: 'Negative', themeKey: 'negative' },
-  { key: 'neutralColor', label: 'Neutral', themeKey: 'neutral' },
-  { key: 'selectionColor', label: 'Selection', themeKey: 'selection' },
-  { key: 'currentColor', label: 'Current', themeKey: 'currentDot' },
-];
-
 export function OptionsPanel({ engine }: Props) {
   const elements = useStore((s) => s.elements);
   const selectedIds = useStore((s) => s.selectedIds);
   const settings = useStore((s) => s.settings);
-  const dark = useStore((s) => s.dark);
   const setParam = useStore((s) => s.setParam);
   const setText = useStore((s) => s.setText);
   const setKeyShortcut = useStore((s) => s.setKeyShortcut);
   const setModelName = useStore((s) => s.setModelName);
   const beginEdit = useStore((s) => s.beginEdit);
   const updateElement = useStore((s) => s.updateElement);
-  const updateSettings = useStore((s) => s.updateSettings);
   const loadAudioFile = useStore((s) => s.loadAudioFile);
   const loadDataFile = useStore((s) => s.loadDataFile);
   const addScope = useStore((s) => s.addScope);
@@ -428,205 +418,6 @@ export function OptionsPanel({ engine }: Props) {
           <p className="hint">Click an element to inspect and edit it.</p>
         </section>
       )}
-
-      <section>
-        <h3>Simulation</h3>
-        <label className="field">
-          <span>
-            Speed <em>{settings.stepsPerFrame} steps/frame</em>
-          </span>
-          <input
-            type="range"
-            min={1}
-            max={1000}
-            value={settings.stepsPerFrame}
-            onChange={(e) => updateSettings({ stepsPerFrame: Number(e.target.value) })}
-          />
-        </label>
-        <label className="field">
-          <span>
-            Current speed <em>{settings.currentSpeed}</em>
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={settings.currentSpeed}
-            onChange={(e) => updateSettings({ currentSpeed: Number(e.target.value) })}
-          />
-        </label>
-        <label className="field">
-          <span>
-            Voltage range <em>{formatValue(settings.voltageRange, 'V')}</em>
-          </span>
-          <input
-            type="range"
-            min={0.5}
-            max={50}
-            step={0.5}
-            value={settings.voltageRange}
-            onChange={(e) => updateSettings({ voltageRange: Number(e.target.value) })}
-          />
-        </label>
-        <UnitNumberInput
-          label="Timestep (s)"
-          value={settings.timeStep}
-          positive
-          onCommit={(n) => updateSettings({ timeStep: n })}
-        />
-
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={settings.showCurrent}
-            onChange={(e) => updateSettings({ showCurrent: e.target.checked })}
-          />
-          <span>Show current</span>
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={settings.conventional}
-            onChange={(e) => updateSettings({ conventional: e.target.checked })}
-          />
-          <span>Conventional current motion</span>
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={settings.showValues}
-            onChange={(e) => updateSettings({ showValues: e.target.checked })}
-          />
-          <span>Show values</span>
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={settings.showVoltageColor}
-            onChange={(e) => updateSettings({ showVoltageColor: e.target.checked })}
-          />
-          <span>Colour by voltage</span>
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={settings.showPowerColor}
-            onChange={(e) => updateSettings({ showPowerColor: e.target.checked })}
-          />
-          <span>Show power</span>
-        </label>
-        {settings.showPowerColor && (
-          <label className="field">
-            <span>
-              Power brightness <em>{settings.powerRange}</em>
-            </span>
-            <input
-              type="range"
-              min={1}
-              max={100}
-              value={settings.powerRange}
-              onChange={(e) => updateSettings({ powerRange: Number(e.target.value) })}
-            />
-          </label>
-        )}
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={settings.autoDC}
-            onChange={(e) => updateSettings({ autoDC: e.target.checked })}
-          />
-          <span>Run DC operating point</span>
-        </label>
-      </section>
-
-      <section>
-        <h3>Grid and view</h3>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={settings.showGrid}
-            onChange={(e) => updateSettings({ showGrid: e.target.checked })}
-          />
-          <span>Show grid</span>
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={settings.showCrosshair}
-            onChange={(e) => updateSettings({ showCrosshair: e.target.checked })}
-          />
-          <span>Show cursor crosshair</span>
-        </label>
-      </section>
-
-      <section>
-        <h3>Colours</h3>
-        {/* The displayed swatch is the theme's own colour while the setting is
-            null, so resetting to defaults still shows what each row means. */}
-        {COLOR_ROWS.map(({ key, label, themeKey }) => (
-          <label key={key} className="field">
-            <span>{label}</span>
-            <input
-              type="color"
-              value={settings[key] ?? makeTheme(dark)[themeKey]}
-              onChange={(e) => updateSettings({ [key]: e.target.value })}
-            />
-          </label>
-        ))}
-        <button
-          type="button"
-          onClick={() =>
-            updateSettings({
-              positiveColor: null,
-              negativeColor: null,
-              neutralColor: null,
-              selectionColor: null,
-              currentColor: null,
-            })
-          }
-        >
-          Reset colours to default
-        </button>
-      </section>
-
-      <section>
-        <h3>Format</h3>
-        <UnitNumberInput
-          label="Decimal digits (short format)"
-          value={settings.shortDecimalDigits}
-          min={0}
-          max={6}
-          integer
-          onCommit={(n) => updateSettings({ shortDecimalDigits: n })}
-        />
-        <UnitNumberInput
-          label="Decimal digits (long format)"
-          value={settings.decimalDigits}
-          min={0}
-          max={6}
-          integer
-          onCommit={(n) => updateSettings({ decimalDigits: n })}
-        />
-        <UnitNumberInput
-          label="Value label font size"
-          value={settings.valueFontSize}
-          min={8}
-          max={40}
-          integer
-          onCommit={(n) => updateSettings({ valueFontSize: n })}
-        />
-      </section>
-
-      <section>
-        <h3>Input</h3>
-        <UnitNumberInput
-          label="Mouse wheel sensitivity"
-          value={settings.wheelSensitivity}
-          min={0.1}
-          max={10}
-          onCommit={(n) => updateSettings({ wheelSensitivity: n })}
-        />
-      </section>
     </div>
   );
 }

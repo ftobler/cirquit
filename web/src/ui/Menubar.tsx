@@ -480,6 +480,7 @@ export function Menubar({ engine }: Props) {
         <div className="menu-sep" role="separator" />
         {menu([
           { label: 'Shortcuts…', onClick: fire(() => openDialog('shortcuts')) },
+          { label: 'Other Options…', onClick: fire(() => openDialog('otherOptions')) },
         ])}
       </Dropdown>
 

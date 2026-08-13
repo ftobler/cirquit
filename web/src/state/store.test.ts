@@ -898,6 +898,10 @@ describe('updateSettings reload classification', () => {
     ['decimalDigits', 4, false],
     ['wheelSensitivity', 2, false],
     ['positiveColor', '#ff0000', false],
+    ['negativeColor', '#00ff00', false],
+    ['neutralColor', '#888888', false],
+    ['selectionColor', '#00ffff', false],
+    ['currentColor', '#ffff00', false],
   ] as const)('%s reloads=%s', (key, value, reload) => {
     const before = useStore.getState().revision;
     useStore.getState().updateSettings({ [key]: value } as Partial<SimSettings>);
@@ -2438,6 +2442,13 @@ describe('white background and dialog state', () => {
     // Opening a second dialog replaces the first; only one overlay is live.
     useStore.getState().openDialog('about');
     expect(useStore.getState().dialog).toBe('about');
+    useStore.getState().closeDialog();
+    expect(useStore.getState().dialog).toBeNull();
+  });
+
+  it('the Other Options dialog opens from its menu row and closes', () => {
+    useStore.getState().openDialog('otherOptions');
+    expect(useStore.getState().dialog).toBe('otherOptions');
     useStore.getState().closeDialog();
     expect(useStore.getState().dialog).toBeNull();
   });
