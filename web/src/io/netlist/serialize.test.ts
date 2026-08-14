@@ -269,6 +269,56 @@ describe('potentiometer slider text', () => {
   });
 });
 
+describe('multi-plot o-line renumbering', () => {
+  const HEADER = '$ 1 0.000005 10 50 5 43 5e-11\n';
+  const resistors = (n: number) =>
+    Array.from({ length: n }, (_, i) => `r ${i * 16} 0 ${(i + 1) * 16} 0 0 ${100 + i}\n`).join('');
+
+  it('renumbers every plot, not just the first, when an element ahead is deleted', () => {
+    // Five resistors (file indices 0..4); the scope's plot 0 targets index 4,
+    // plot 1 targets index 2, a different element entirely. Deleting index 0
+    // shifts every ordinal down by one: 4 -> 3 and 2 -> 1. Before the fix,
+    // `scopeLineFor` only recomputed the leading `e` token (4 -> 3) and left
+    // plot 1's `ne` token (2) exactly as loaded, now pointing one element off.
+    const text = HEADER + resistors(5) + 'o 4 64 0 4099 20 0.05 0 2 2 0\n';
+    const parsed = parseCircuit(text);
+    expect(parsed.scopes[0].plots).toHaveLength(2);
+    const target0 = parsed.elements[4];
+    const target1 = parsed.elements[2];
+    expect(parsed.scopes[0].plots[0].elementId).toBe(target0.id);
+    expect(parsed.scopes[0].plots[1].elementId).toBe(target1.id);
+
+    // Delete the first resistor (index 0); the other four, and both scope
+    // targets, keep their ids but shift down one file slot.
+    const remaining = parsed.elements.filter((e) => e.id !== parsed.elements[0].id);
+    const out = serializeCircuit(
+      remaining,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    const oLine = out.split('\n').find((l) => l.startsWith('o '));
+    expect(oLine).toBeDefined();
+    const tokens = (oLine ?? '').split(' ');
+    // tokens: o <e> speed value flags scaleV scaleA position sz ne val
+    expect(tokens[1]).toBe('3'); // plot 0's element, 4 -> 3
+    expect(tokens[9]).toBe('1'); // plot 1's element, 2 -> 1
+    expect(tokens[10]).toBe('0'); // plot 1's value token is untouched
+
+    // Reloading the saved line reattaches both traces to their correct,
+    // distinct elements rather than to a stale or out-of-range index.
+    const reloaded = parseCircuit(out);
+    const reloadedTarget0 = reloaded.elements.find((e) => e.x1 === target0.x1 && e.y1 === target0.y1);
+    const reloadedTarget1 = reloaded.elements.find((e) => e.x1 === target1.x1 && e.y1 === target1.y1);
+    expect(reloadedTarget0).toBeDefined();
+    expect(reloadedTarget1).toBeDefined();
+    expect(reloaded.scopes[0].plots[0].elementId).toBe(reloadedTarget0?.id);
+    expect(reloaded.scopes[0].plots[1].elementId).toBe(reloadedTarget1?.id);
+    expect(reloaded.scopes[0].plots[0].elementId).not.toBe(reloaded.scopes[0].plots[1].elementId);
+  });
+});
+
 describe('routed wires serialize as plain w lines', () => {
   const ROUTED = [
     '$ 0 0.000005 10 50 5 43 5e-11',

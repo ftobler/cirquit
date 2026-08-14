@@ -1,8 +1,16 @@
 import { defFor } from '../../model/registry';
 import type { CircuitElement, SimSettings } from '../../model/types';
-import type { NetlistLine, ScopeConfig, SliderConfig } from './types';
+import type { NetlistLine, ScopeConfig, ScopePlotConfig, SliderConfig } from './types';
 import { escapeToken } from './tokens';
-import { isElementLine } from './parse';
+import {
+  FLAG_DIVISIONS,
+  FLAG_PERPLOTFLAGS,
+  FLAG_PERPLOT_MAN_SCALE,
+  FLAG_PLOTS,
+  importDecOrHex,
+  isElementLine,
+  unitsOf,
+} from './parse';
 
 /**
  * Rebuilds the `$` line rather than echoing the parsed one, so edits to the
@@ -59,16 +67,74 @@ function elementLine(e: CircuitElement): string | null {
 }
 
 /**
+ * Renumbers the `ne` token every plot after the first carries inside `raw`,
+ * walking the same new-style plot list `parseScopeLine`/`decodeScopeLine`
+ * read (parse.ts, ../scopeLine.ts), so the cursor lands on the same tokens
+ * those readers do. Plot 0's index lives in the leading `e` token ahead of
+ * `raw`, already recomputed by `scopeLineFor`; this only rewrites what `raw`
+ * itself carries for plot 1 and beyond. A plot whose target this build could
+ * not read keeps the token the file gave it, the same "nothing better is
+ * knowable" rule `scopeLineFor` uses for plot 0.
+ */
+function renumberPlotIndices(
+  raw: string[],
+  plots: ScopePlotConfig[],
+  ordinalById: Map<number, number>,
+  kindOf: (elementId: number | undefined) => string | null,
+): string[] {
+  if (plots.length < 2) return raw;
+  const valueToken = Number(raw[1]);
+  const flags = importDecOrHex(raw[2] ?? '0');
+  if ((flags & FLAG_PLOTS) === 0) return raw;
+
+  const out = raw.slice();
+  let cursor = 5;  // raw[0]=speed [1]=value [2]=flags [3]=scaleV [4]=scaleA
+  const next = (): number => Number(out[cursor++]);
+  const position = next();
+  const sz = next();
+  if (!Number.isFinite(position) || !Number.isFinite(sz)) return raw;
+
+  if ((flags & FLAG_DIVISIONS) !== 0) cursor += 1;
+  // Plot 0's units can carry an extra scale token before the per-plot tokens
+  // (ScopeSerializer.java:221-223).
+  if (unitsOf(valueToken, kindOf(plots[0].elementId)) > 1 && cursor < out.length) cursor += 1;
+  for (let i = 0; i < sz && i < plots.length; i++) {
+    if ((flags & FLAG_PERPLOTFLAGS) !== 0 && cursor < out.length) cursor += 1;
+    if (i !== 0) {
+      const neSlot = cursor;
+      const ne = Number(out[cursor++]);
+      const val = Number(out[cursor++]);
+      if (!Number.isFinite(ne) || !Number.isFinite(val)) break;
+      const plot = plots[i];
+      if (plot.elementId !== undefined) {
+        out[neSlot] = String(ordinalById.get(plot.elementId) ?? -1);
+      }
+      if (unitsOf(val, kindOf(plot.elementId)) > 1 && cursor < out.length) cursor += 1;
+    }
+    if ((flags & FLAG_PERPLOT_MAN_SCALE) !== 0) cursor += 2;
+  }
+  return out;
+}
+
+/**
  * One `o` line. The index token is recomputed from where the target element
  * ended up in the written file, so deleting an element ahead of a scope does
  * not silently repoint it. A scope whose target this build could not read
  * keeps the index the file gave it: nothing better is knowable, and the common
- * load-then-save case leaves it exactly right.
+ * load-then-save case leaves it exactly right. Every plot after the first
+ * carries its own `ne` token inside `raw`; those are renumbered the same way,
+ * not just the leading token, so a two-plot scope with distinct targets
+ * survives a delete ahead of it (see `renumberPlotIndices`).
  */
-function scopeLineFor(s: ScopeConfig, ordinalById: Map<number, number>): string {
+function scopeLineFor(
+  s: ScopeConfig,
+  ordinalById: Map<number, number>,
+  kindOf: (elementId: number | undefined) => string | null,
+): string {
   const index =
     s.elementId === undefined ? s.elementIndex : (ordinalById.get(s.elementId) ?? -1);
-  return ['o', index, ...s.raw].join(' ');
+  const raw = renumberPlotIndices(s.raw, s.plots, ordinalById, kindOf);
+  return ['o', index, ...raw].join(' ');
 }
 
 /**
@@ -134,13 +200,19 @@ export function serializeCircuit(
     if (line !== null) rendered.push({ id: e.id, line });
   }
   const ordinalById = new Map<number, number>();
+  // A plot's own kind, keyed by its element id: renumbering a non-first plot's
+  // `ne` token has to skip the same per-unit scale tokens the parser skipped
+  // reading it, and that decision is kind-dependent (see `unitsOf`).
+  const kindById = new Map(elements.map((e) => [e.id, e.kind]));
+  const kindOf = (elementId: number | undefined): string | null =>
+    elementId === undefined ? null : (kindById.get(elementId) ?? null);
 
   // An empty order is "no file was loaded", not "the file was empty", so it
   // takes the default layout rather than dropping the passthrough lines.
   if (!order || order.length === 0) {
     rendered.forEach((r, i) => ordinalById.set(r.id, i));
     const body = rendered.map((r) => r.line);
-    const traces = scopes.map((s) => scopeLineFor(s, ordinalById));
+    const traces = scopes.map((s) => scopeLineFor(s, ordinalById, kindOf));
     const sliderLines = sliders.map((s) => sliderLineFor(s, ordinalById));
     return [header, ...body, ...traces, ...sliderLines, ...passthrough].join('\n') + '\n';
   }
@@ -214,7 +286,7 @@ export function serializeCircuit(
     lines.push(r.line);
   });
   scopes.forEach((s, i) => {
-    if (!usedScopes.has(i)) lines.push(scopeLineFor(s, ordinalById));
+    if (!usedScopes.has(i)) lines.push(scopeLineFor(s, ordinalById, kindOf));
   });
   sliders.forEach((s, i) => {
     if (!usedSliders.has(i)) lines.push(sliderLineFor(s, ordinalById));
@@ -222,7 +294,7 @@ export function serializeCircuit(
   for (const d of deferred) {
     lines[d.at] =
       d.kind === 'scope'
-        ? scopeLineFor(scopes[d.slot], ordinalById)
+        ? scopeLineFor(scopes[d.slot], ordinalById, kindOf)
         : sliderLineFor(sliders[d.slot], ordinalById);
   }
 
