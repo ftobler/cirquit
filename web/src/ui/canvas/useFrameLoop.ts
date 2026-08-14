@@ -11,7 +11,7 @@ import { postDotPoints, shouldDrawDot } from '../../render/junction';
 import { scopeWidth } from '../../scope/geometry';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { GRID_SIZE } from '../../model/types';
-import { useStore } from '../../state/store';
+import { mergeProblem, useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
 import { overlayLiveState, shouldInjectLiveState } from '../../io/liveState';
@@ -86,7 +86,9 @@ export function useFrameLoop(
         const err = engine.setCircuit(build, settings, scopes, widthOf);
         builtDocument.current = state.document;
         const warnings = err ? [err] : engine.warnings();
-        useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
+        // Merge, not replace: the load-time unsupported-lines message has to
+        // survive the first engine build, which is what wiped it before.
+        useStore.getState().setProblem(mergeProblem(state.unsupportedProblem, warnings));
         // The reload serialised the current elements, so any queued value
         // edits are already in effect. Mark them consumed and drop the queue,
         // or they would be replayed against the fresh circuit below.
@@ -138,7 +140,9 @@ export function useFrameLoop(
           const err = engine.setCircuit(build, settings, scopes, widthOf);
           builtDocument.current = state.document;
           const warnings = err ? [err] : engine.warnings();
-          useStore.getState().setProblem(warnings.length ? warnings.join(' ') : null);
+          // Same merge as the revision branch: the load-time message must not
+          // be overwritten by this rebuild's warnings either.
+          useStore.getState().setProblem(mergeProblem(state.unsupportedProblem, warnings));
         }
         state.clearPending();
       }
@@ -176,7 +180,11 @@ export function useFrameLoop(
               .join(', ');
             useStore
               .getState()
-              .setProblem(names ? `${stats.error}; not settled: ${names}` : stats.error);
+              .setProblem(
+                mergeProblem(state.unsupportedProblem, [
+                  names ? `${stats.error}; not settled: ${names}` : stats.error,
+                ]),
+              );
           }
         }
         currents = engine.elementCurrents();

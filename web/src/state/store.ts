@@ -276,6 +276,18 @@ function describeUnsupported(unsupported: string[]): string | null {
   return parts.length > 0 ? parts.join(' ') : null;
 }
 
+/** The frame loop's banner: the load-time unsupported-lines message joined
+ *  with the engine's warnings, so neither can wipe the other. The frame loop
+ *  recomputes this from the two separate sources on every build, so an engine
+ *  warning is never reported twice and a stale unsupported message (cleared by
+ *  a fresh load) stays dead. */
+export function mergeProblem(unsupported: string | null, engineWarnings: string[]): string | null {
+  const parts: string[] = [];
+  if (unsupported !== null && unsupported !== '') parts.push(unsupported);
+  if (engineWarnings.length > 0) parts.push(engineWarnings.join(' '));
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 /** Diode/zener model parameters: editing one invalidates the stored model name. */
 const DIODE_MODEL_PARAMS = [
   'forwardVoltage',
@@ -386,6 +398,7 @@ function createAppStore() {
   subcircuitError: null,
   status: '',
   problem: null,
+  unsupportedProblem: null,
   hoveredId: null,
   highlightedNode: null,
   undoStack: [],
@@ -1754,6 +1767,10 @@ function createAppStore() {
       undoStack: [],
       redoStack: [],
       problem: describeUnsupported(parsed.unsupported),
+      // The same message in its own field: the frame loop's first engine build
+      // must not wipe the banner, so it merges this with the engine warnings
+      // instead of overwriting the store's `problem`.
+      unsupportedProblem: describeUnsupported(parsed.unsupported),
       // A refusal from the previous circuit says nothing about this one.
       subcircuitError: null,
       revision: s.revision + 1,
@@ -1817,6 +1834,9 @@ function createAppStore() {
       undoStack: [],
       redoStack: [],
       problem: null,
+      // A fresh circuit has no unsupported lines, so nothing for the frame
+      // loop to merge into the engine warnings.
+      unsupportedProblem: null,
       subcircuitError: null,
       revision: s.revision + 1,
       // New is a fresh document, like a load: no live charges carry over.

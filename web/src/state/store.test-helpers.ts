@@ -22,6 +22,7 @@ export const fresh = () => ({
   subcircuitError: null,
   status: '',
   problem: null,
+  unsupportedProblem: null,
   hoveredId: null,
   highlightedNode: null,
   undoStack: [],

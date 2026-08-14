@@ -116,8 +116,13 @@ export interface AppState {
   /** Engine node of the shift-highlighted net; every element on it draws with
    *  `theme.highlight` (MouseManager.java:689-693). Null when none. */
   highlightedNode: number | null;
-  /** Set when the engine reports a problem. */
+  /** The problem banner: the load-time unsupported-lines message merged with
+   *  the engine's warnings by the frame loop, or null when neither applies. */
   problem: string | null;
+  /** The load-time unsupported-lines message, kept apart from `problem` so the
+   *  frame loop can merge it with engine warnings instead of letting one
+   *  rebuild's warning wipe it. Set by `loadNetlist`, cleared by `newCircuit`. */
+  unsupportedProblem: string | null;
   undoStack: Snapshot[];
   redoStack: Snapshot[];
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
