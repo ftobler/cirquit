@@ -59,6 +59,51 @@ describe('the load-time unsupported message survives the frame-loop merge', () =
   });
 });
 
+describe('the clamp-on-load warning survives the frame-loop merge', () => {
+  // A hand-edited 12-input AND gate (code 150): the engine supports at most 8
+  // inputs, so the load clamps to 8 and the parse warns that a save would
+  // rewrite the file (oversized-gates-load-policy, option 2).
+  const OVERSIZED_GATE = '$ 1 0.000005 10 50 5 50 5e-11\n150 0 0 96 0 0 12 0 5\n';
+  const GATE_CLAMP_WARNING = 'AND gate with 12 inputs loaded as 8 inputs';
+
+  it('an oversized gate loads clamped, with the warning in the banner', () => {
+    useStore.getState().loadNetlist(OVERSIZED_GATE);
+    const s = useStore.getState();
+    expect(s.problem).toBe(GATE_CLAMP_WARNING);
+    expect(s.unsupportedProblem).toBe(GATE_CLAMP_WARNING);
+    expect(s.elements.find((e) => e.kind === 'andGate')?.params.inputCount).toBe(8);
+  });
+
+  it('the warning survives the first engine build', () => {
+    // The frame loop merges the load-time message with the engine warnings
+    // instead of overwriting it, so a warning-only circuit keeps the banner
+    // after the first rebuild, the same guarantee as the unsupported message.
+    useStore.getState().loadNetlist(OVERSIZED_GATE);
+    const s = useStore.getState();
+    expect(mergeProblem(s.unsupportedProblem, [])).toBe(GATE_CLAMP_WARNING);
+    expect(mergeProblem(s.unsupportedProblem, [FLOATING_WARNING])).toBe(
+      `${GATE_CLAMP_WARNING} ${FLOATING_WARNING}`,
+    );
+  });
+
+  it('an oversized chip width loads clamped, with the warning in the banner', () => {
+    // The DAC shares the policy: a hand-edited 65-bit width clamps to the
+    // engine's 30-bit ceiling and the parse warns about the loss.
+    useStore.getState().loadNetlist('$ 1 0.000005 10 50 5 50 5e-11\n166 0 0 128 0 0 65\n');
+    const s = useStore.getState();
+    expect(s.problem).toBe('DAC with 65 bits loaded as 30 bits');
+    expect(s.elements.find((e) => e.kind === 'dac')?.params.bits).toBe(30);
+  });
+
+  it('an in-range gate loads clean with no warning', () => {
+    useStore.getState().loadNetlist('$ 1 0.000005 10 50 5 50 5e-11\n150 0 0 96 0 0 6 0 5\n');
+    const s = useStore.getState();
+    expect(s.problem).toBeNull();
+    expect(s.unsupportedProblem).toBeNull();
+    expect(s.elements.find((e) => e.kind === 'andGate')?.params.inputCount).toBe(6);
+  });
+});
+
 describe('the unsupported message clears when the line goes', () => {
   it('New clears the unsupported message and the banner', () => {
     useStore.getState().loadNetlist(UNSUPPORTED);

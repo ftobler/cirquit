@@ -68,8 +68,8 @@ export const COUNTER_DEF: ElementDef = {
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, invertreset: 1, modulus: 0, highVoltage: 5 },
-  parse: (t, e) => {
-    const i = chipCommonTokens(t, e, true, normalizeCounterBits);
+  parse: (t, e, warn) => {
+    const i = chipCommonTokens(t, e, true, normalizeCounterBits, 'counter', warn);
     const names = chipStateNames(counterPins(e));
     readParams(t.slice(i, i + names.length), e, names);
     // The counter's own trailing tokens: the reset polarity as a Boolean, then

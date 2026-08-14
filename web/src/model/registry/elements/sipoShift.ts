@@ -66,9 +66,9 @@ export const SIPO_SHIFT_DEF: ElementDef = {
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 10,  // the chip spans (sizeX + 1) * 32
   defaults: { bits: 8, highVoltage: 5 },
-  parse: (t, e) => {
+  parse: (t, e, warn) => {
     // `bits` must land first: it decides how many data words follow.
-    const i = chipCommonTokens(t, e, true, normalizeSipoBits);
+    const i = chipCommonTokens(t, e, true, normalizeSipoBits, 'SIPO shift register', warn);
     readParams(t.slice(i), e, sipoDataNames(sipoBits(e)));
   },
   dump: (e) => {

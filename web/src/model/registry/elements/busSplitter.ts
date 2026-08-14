@@ -62,7 +62,8 @@ export const BUS_SPLITTER_DEF: ElementDef = {
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, highVoltage: 5 },
-  parse: (t, e) => chipParse(t, e, busSplitterPins(e), true, normalizeBusSplitterBits),
+  parse: (t, e, warn) =>
+    chipParse(t, e, busSplitterPins(e), true, normalizeBusSplitterBits, 'bus splitter', warn),
   dump: (e) => chipDump(e, busSplitterPins(e), true),
   dumpFlags: chipDumpFlags,
   fields: [

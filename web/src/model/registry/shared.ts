@@ -35,6 +35,13 @@ export const CONTACT_STROKE_WIDTH = 4;
  * controlled-source and gate parsers normalise to this, so the frontend post
  * list and the engine's `(x as i64)` build agree and a rebuild never trips the
  * post-count guard (circuit.rs:261-269).
+ *
+ * The clamp-on-load policy (oversized-gates-load-policy, option 2): clamp, as
+ * today, but report the clamp through `warnOnClamp` at the load parsers, so a
+ * hand-edited out-of-range token is surfaced as a load warning instead of
+ * silently rewritten by the next save. The engine's own clamp makes accepting
+ * the raw token impossible without a bigger change, and carrying the original
+ * token through the element model would duplicate every field a save rewrites.
  */
 export function normalizeInputCount(value: number): number {
   if (!Number.isFinite(value)) return 2;
@@ -42,6 +49,26 @@ export function normalizeInputCount(value: number): number {
   if (n < 1) return 1;
   if (n > 8) return 8;
   return n;
+}
+
+/**
+ * Reports a clamp-on-load event when the file's token differs from the value
+ * the engine derived. `raw` is the file's value and `clamped` the normalised
+ * one; a token the engine truncates in range (2.5 loads as 2) is not a loss
+ * and stays silent. `warn` is only handed out by the netlist parser, so the
+ * draw and store-edit paths, which normalise too, never report.
+ */
+export function warnOnClamp(
+  warn: ((message: string) => void) | undefined,
+  label: string,
+  unit: string,
+  raw: number,
+  clamped: number,
+): void {
+  if (warn === undefined || !Number.isFinite(raw)) return;
+  const n = Math.trunc(raw);
+  if (n === clamped) return;
+  warn(`${label} with ${n} ${unit} loaded as ${clamped} ${unit}`);
 }
 
 /** Body colour for an element: the power colour when that mode is on, else the

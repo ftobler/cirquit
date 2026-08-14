@@ -67,7 +67,7 @@ export const DAC_DEF: ElementDef = {
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, highVoltage: 5 },
-  parse: (t, e) => chipParse(t, e, dacPins(e), true, normalizeDacBits),
+  parse: (t, e, warn) => chipParse(t, e, dacPins(e), true, normalizeDacBits, 'DAC', warn),
   dump: (e) => chipDump(e, dacPins(e), true),
   dumpFlags: chipDumpFlags,
   fields: [

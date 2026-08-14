@@ -20,7 +20,7 @@ import {
   polyline,
   voltageColor,
 } from '../../../render/draw';
-import { readParams } from '../shared';
+import { readParams, warnOnClamp } from '../shared';
 import type { Box, CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** File-format flag bits shared by every chip (ChipElm.java:30-34). */
@@ -338,7 +338,10 @@ export function chipStateNames(pins: ChipPinDef[]): string[] {
  * the same clamp: latch.rs:42, ring_counter.rs:28, counter2.rs:27,
  * sipo_shift.rs:20, piso_shift.rs:32. The store's `setParam`, the parsers and
  * the geometry all normalise to this, so a fractional edit never draws a post
- * list the engine's build rejects (circuit.rs:261-269).
+ * list the engine's build rejects (circuit.rs:261-269). The clamp-on-load
+ * policy (oversized-gates-load-policy, option 2): keep the clamp, but the
+ * token walk reports an out-of-range width through `warnOnClamp`, so the loss
+ * is surfaced instead of silently rewritten by the next save.
  */
 export function normalizeChipBits(value: number, floor: number, ceiling?: number): number {
   if (!Number.isFinite(value)) return floor;
@@ -353,18 +356,25 @@ export function normalizeChipBits(value: number, floor: number, ceiling?: number
  *  FLAG_CUSTOM_VOLTAGE says a token follows (ChipElm.java:51-56). Returns the
  *  index of the first state-voltage token. `normalizeBits` mirrors the owning
  *  element's engine cast on the bits token; the round fallback keeps any
- *  future caller that skips it on the old behaviour. */
+ *  future caller that skips it on the old behaviour. `label` names the chip in
+ *  the clamp-on-load warning and `warn` collects it: a hand-edited width over
+ *  the engine's ceiling clamps as before but is surfaced instead of silently
+ *  rewritten by the next save (oversized-gates-load-policy, option 2). */
 export function chipCommonTokens(
   t: string[],
   e: CircuitElement,
   hasBits: boolean,
   normalizeBits?: (value: number) => number,
+  label?: string,
+  warn?: (message: string) => void,
 ): number {
   let i = 0;
   if (hasBits) {
     const bits = Number(t[i]);
     if (t[i] !== undefined && Number.isFinite(bits)) {
-      e.params.bits = normalizeBits === undefined ? Math.round(bits) : normalizeBits(bits);
+      const clamped = normalizeBits === undefined ? Math.round(bits) : normalizeBits(bits);
+      if (normalizeBits !== undefined) warnOnClamp(warn, label ?? 'Chip', 'bits', bits, clamped);
+      e.params.bits = clamped;
     }
     i++;
   }
@@ -383,8 +393,10 @@ export function chipParse(
   pins: ChipPinDef[],
   hasBits: boolean,
   normalizeBits?: (value: number) => number,
+  label?: string,
+  warn?: (message: string) => void,
 ): void {
-  const i = chipCommonTokens(t, e, hasBits, normalizeBits);
+  const i = chipCommonTokens(t, e, hasBits, normalizeBits, label, warn);
   readParams(t.slice(i), e, chipStateNames(pins));
 }
 

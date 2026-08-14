@@ -242,6 +242,11 @@ export interface ParsedCircuit {
   compositeModels: CompositeModel[];
   /** Types present in the file that this build cannot draw or simulate. */
   unsupported: string[];
+  /** Clamp-on-load warnings: file tokens the engine's range guards normalised
+   *  (a 12-input gate loaded as 8, a chip width over its ceiling), so the next
+   *  save would rewrite them. Carried separately from `unsupported`, whose
+   *  items are line heads. */
+  warnings: string[];
   /** Every line of the file, for a save that reproduces its arrangement. */
   order: NetlistLine[];
 }

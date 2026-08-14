@@ -102,10 +102,10 @@ export const LATCH_DEF: ElementDef = {
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaultFlags: LATCH_STATE,  // LatchElm.java:47
   defaults: { bits: 4, highVoltage: 5 },
-  parse: (t, e) => {
+  parse: (t, e, warn) => {
     // `bits` must land first: the output pins (and their state tokens) sit at
     // posts `bits..2*bits`, so the state names depend on the loaded width.
-    const i = chipCommonTokens(t, e, true, normalizeLatchBits);
+    const i = chipCommonTokens(t, e, true, normalizeLatchBits, 'latch', warn);
     readParams(t.slice(i), e, chipStateNames(latchPins(e)));
     // Old latches predate FLAG_STATE; upstream adds it on load so the next
     // save carries the state tokens (LatchElm.java:54-58).

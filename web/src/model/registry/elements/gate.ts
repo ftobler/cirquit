@@ -21,7 +21,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { GATE_INVERT_INPUTS, GATE_SCHMITT, GATE_SMALL } from '../flags';
-import { normalizeInputCount, readParams, writeParams } from '../shared';
+import { normalizeInputCount, readParams, warnOnClamp, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The six gate kinds whose `inputCount` the store normalises on edit, so the
@@ -307,9 +307,16 @@ function gateDef(
     noDiagonal: true,   // GateElm.java:40
     defaultLength: 6,   // getDragLength() = 96
     defaults,
-    parse: (t, e) => {
+    parse: (t, e, warn) => {
       readParams(t, e, ['inputCount', 'lastOutputVoltage', 'highVoltage']);
-      if (e.params.inputCount !== undefined) e.params.inputCount = normalizeInputCount(e.params.inputCount);
+      if (e.params.inputCount !== undefined) {
+        // Clamp-on-load policy: keep the engine's 1..8 clamp, but warn when a
+        // hand-edited file carries an out-of-range count, so the loss is
+        // surfaced instead of silently rewritten by the next save.
+        const clamped = normalizeInputCount(e.params.inputCount);
+        warnOnClamp(warn, label, 'inputs', e.params.inputCount, clamped);
+        e.params.inputCount = clamped;
+      }
     },
     dump: writeParams(['inputCount', 'lastOutputVoltage', 'highVoltage']),
     fields: [

@@ -74,13 +74,13 @@ export const FULL_ADDER_DEF: ElementDef = {
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32
   defaultFlags: FULL_ADDER_BITS,  // the interactive constructor sets it (FullAdderElm.java:25)
   defaults: { bits: 4, highVoltage: 5 },
-  parse: (t, e) => {
+  parse: (t, e, warn) => {
     // The bits token exists only under FLAG_BITS; a flagless line is the
     // 1-bit adder the file constructor defaults to, kept byte-exact on save.
     // The high-voltage token, when FLAG_CUSTOM_VOLTAGE says one follows, comes
     // after it (ChipElm.java:51-56).
     const flagged = (e.flags & FULL_ADDER_BITS) !== 0;
-    chipCommonTokens(t, e, flagged, normalizeFullAdderBits);
+    chipCommonTokens(t, e, flagged, normalizeFullAdderBits, 'adder', warn);
     if (!flagged) e.params.bits = 1;
   },
   dump: (e) => {

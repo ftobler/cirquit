@@ -79,9 +79,9 @@ export const RING_COUNTER_DEF: ElementDef = {
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32
   defaultFlags: RING_CLOCK_INHIBIT,  // RingCounterElm.java:29
   defaults: { bits: 10, highVoltage: 5 },
-  parse: (t, e) => {
+  parse: (t, e, warn) => {
     // `bits` must land first: it decides how many state tokens follow.
-    const i = chipCommonTokens(t, e, true, normalizeRingBits);
+    const i = chipCommonTokens(t, e, true, normalizeRingBits, 'ring counter', warn);
     readParams(t.slice(i), e, chipStateNames(ringPins(e)));
   },
   dump: (e) => chipDump(e, ringPins(e), true, 10),

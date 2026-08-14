@@ -68,10 +68,10 @@ export const ADC_DEF: ElementDef = {
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, highVoltage: 5 },
-  parse: (t, e) => {
+  parse: (t, e, warn) => {
     // `bits` must land first; nothing follows it but the optional high voltage
     // because the outputs carry no saved state (ADCElm.java:36).
-    chipCommonTokens(t, e, true, normalizeAdcBits);
+    chipCommonTokens(t, e, true, normalizeAdcBits, 'A/D converter', warn);
   },
   dump: (e) => chipDump(e, adcPins(e), true, 4),
   dumpFlags: chipDumpFlags,

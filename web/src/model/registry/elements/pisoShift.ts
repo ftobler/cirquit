@@ -81,9 +81,9 @@ export const PISO_SHIFT_DEF: ElementDef = {
   defaultLength: 11,  // the chip spans (sizeX + 1) * 32
   defaultFlags: PISO_NEW_BEHAVIOR,  // PisoShiftElm.java:39
   defaults: { bits: 8, highVoltage: 5 },
-  parse: (t, e) => {
+  parse: (t, e, warn) => {
     // `bits` must land first: it decides how many data words follow.
-    const i = chipCommonTokens(t, e, true, normalizePisoBits);
+    const i = chipCommonTokens(t, e, true, normalizePisoBits, 'PISO shift register', warn);
     readParams(t.slice(i), e, pisoDataNames(pisoBits(e)));
   },
   dump: (e) => {

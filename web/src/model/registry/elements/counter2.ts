@@ -74,10 +74,10 @@ export const COUNTER2_DEF: ElementDef = {
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32
   defaults: { bits: 4, modulus: 0, highVoltage: 5 },
-  parse: (t, e) => {
+  parse: (t, e, warn) => {
     // `bits` must land first: it decides how many saved Q levels follow, and
     // the modulus token comes after them (Counter2Elm.java:38-39).
-    const i = chipCommonTokens(t, e, true, normalizeCounter2Bits);
+    const i = chipCommonTokens(t, e, true, normalizeCounter2Bits, 'counter (parallel load)', warn);
     const names = chipStateNames(counter2Pins(e));
     readParams(t.slice(i, i + names.length), e, names);
     const mod = Number(t[i + names.length]);

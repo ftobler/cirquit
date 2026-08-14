@@ -1427,6 +1427,22 @@ describe('logic gate file formats', () => {
     expect(high.e.params.inputCount).toBe(8);
   });
 
+  it('an oversized gate input count warns on load instead of rewriting silently', () => {
+    // Clamp-on-load policy (oversized-gates-load-policy, option 2): the engine
+    // supports at most 8 inputs, so a hand-edited 12-input gate loads as 8 and
+    // the next save would rewrite it; the parse reports the loss through
+    // `warnings` so it is surfaced instead of hidden.
+    const parsed = parseCircuit('150 0 0 96 0 0 12 0 5\n');
+    expect(parsed.elements[0].params.inputCount).toBe(8);
+    expect(parsed.warnings).toEqual(['AND gate with 12 inputs loaded as 8 inputs']);
+  });
+
+  it('an in-range gate input count loads clean with no warning', () => {
+    const parsed = parseCircuit('150 0 0 96 0 0 6 0 5\n');
+    expect(parsed.elements[0].params.inputCount).toBe(6);
+    expect(parsed.warnings).toEqual([]);
+  });
+
   it('an inverter line round-trips byte-for-byte', () => {
     const line = 'I 272 208 352 208 0 0.5 5';
     const { e, elementLine } = gateLine(line, 'I');
@@ -2126,6 +2142,21 @@ describe('controlled source file formats', () => {
     const { e, elementLine } = csLine('166 0 0 128 0 0 65', '166');
     expect(e.params.bits).toBe(30);
     expect(elementLine).toBe('166 0 0 128 0 0 30');
+  });
+
+  it('an oversized chip width warns on load instead of rewriting silently', () => {
+    // The same clamp-on-load policy as the gate: a hand-edited 65-bit DAC
+    // loads at the engine's 30-bit ceiling and the save would rewrite it, so
+    // the parse reports the loss through `warnings`.
+    const parsed = parseCircuit('166 0 0 128 0 0 65\n');
+    expect(parsed.elements[0].params.bits).toBe(30);
+    expect(parsed.warnings).toEqual(['DAC with 65 bits loaded as 30 bits']);
+  });
+
+  it('an in-range chip width loads clean with no warning', () => {
+    const parsed = parseCircuit('166 0 0 128 0 0 4\n');
+    expect(parsed.elements[0].params.bits).toBe(4);
+    expect(parsed.warnings).toEqual([]);
   });
 
   it('an out-of-range latch bit count clamps on load to the engine ceiling', () => {

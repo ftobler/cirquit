@@ -1854,6 +1854,11 @@ function createAppStore() {
       }
     }
 
+    // The load banner: the unsupported-lines message plus any clamp-on-load
+    // warnings (a hand-edited 12-input gate loading as 8), joined the same way
+    // the frame loop joins the engine warnings, so a rebuild cannot wipe them.
+    const loadProblem = mergeProblem(describeUnsupported(parsed.unsupported), parsed.warnings);
+
     set((s) => ({
       elements: resolved,
       scopes,
@@ -1878,11 +1883,11 @@ function createAppStore() {
       hoveredId: null,
       undoStack: [],
       redoStack: [],
-      problem: describeUnsupported(parsed.unsupported),
+      problem: loadProblem,
       // The same message in its own field: the frame loop's first engine build
       // must not wipe the banner, so it merges this with the engine warnings
       // instead of overwriting the store's `problem`.
-      unsupportedProblem: describeUnsupported(parsed.unsupported),
+      unsupportedProblem: loadProblem,
       // A refusal from the previous circuit says nothing about this one.
       subcircuitError: null,
       ...bumpRevision(s),

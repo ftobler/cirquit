@@ -19,7 +19,7 @@ import {
   drawChip,
   type ChipPinDef,
 } from './dFlipFlop';
-import { normalizeInputCount, readParams } from '../shared';
+import { normalizeInputCount, readParams, warnOnClamp } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** Default expression for a fresh source, inherited from the VCCS base
@@ -64,12 +64,26 @@ export function csSizeY(e: CircuitElement): number {
 /** The shared file-format parse: `inputCount` then the expression, which the
  *  netlist layer has already unescaped. A fractional count from a hand-edited
  *  file is clamped to the integer the engine truncates to, the same guard the
- *  gate applies on its own input count (gate.ts:312). */
-export function csParse(t: string[], e: CircuitElement): void {
+ *  gate applies on its own input count (gate.ts:312). The clamp-on-load policy
+ *  warns when the token is out of the 1..8 range, so a file that loads wider
+ *  than it saves is surfaced instead of silently rewritten. */
+export function csParse(t: string[], e: CircuitElement, warn?: (message: string) => void): void {
   readParams(t, e, ['inputCount']);
-  if (e.params.inputCount !== undefined) e.params.inputCount = normalizeInputCount(e.params.inputCount);
+  if (e.params.inputCount !== undefined) {
+    const clamped = normalizeInputCount(e.params.inputCount);
+    warnOnClamp(warn, CS_LABEL[e.kind] ?? 'Controlled source', 'inputs', e.params.inputCount, clamped);
+    e.params.inputCount = clamped;
+  }
   if (t[1] !== undefined) e.text = t[1];
 }
+
+/** The controlled-source kinds' display names, for the clamp-on-load warning. */
+const CS_LABEL: Record<string, string> = {
+  vcvs: 'Voltage-Controlled Voltage Source',
+  vccs: 'Voltage-Controlled Current Source',
+  ccvs: 'Current-Controlled Voltage Source',
+  cccs: 'Current-Controlled Current Source',
+};
 
 /** The shared file-format dump: the input count and the expression. A fresh
  *  part without a label falls back to the upstream constructor expression so

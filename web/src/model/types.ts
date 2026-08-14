@@ -148,8 +148,11 @@ export interface ElementDef {
   draggablePosts?: number;
   /** Terminal coordinates, in the order the engine expects them. */
   posts(e: CircuitElement): Point[];
-  /** Reads the tokens that follow `flags` on a netlist line. */
-  parse?(tokens: string[], e: CircuitElement): void;
+  /** Reads the tokens that follow `flags` on a netlist line. `warn` collects
+   *  clamp-on-load warnings: an out-of-range token the engine normalises (a
+   *  hand-edited 12-input gate loading as 8), so the loss rides the load-time
+   *  banner that survives the first engine build. */
+  parse?(tokens: string[], e: CircuitElement, warn?: (message: string) => void): void;
   /** Writes the tokens that follow `flags` on a netlist line. */
   dump?(e: CircuitElement): (string | number)[];
   /** Live parameters a placement or single-endpoint drag derives from its

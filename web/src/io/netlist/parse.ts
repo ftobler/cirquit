@@ -316,6 +316,7 @@ export function parseCircuit(text: string): ParsedCircuit {
   const sliders: SliderConfig[] = [];
   const passthrough: string[] = [];
   const unsupported: string[] = [];
+  const warnings: string[] = [];
   const order: NetlistLine[] = [];
   const compositeModels: CompositeModel[] = [];
   // A `.` line repeated under the same name shadows its predecessors in the
@@ -665,7 +666,14 @@ export function parseCircuit(text: string): ParsedCircuit {
       params: { ...(def.defaults ?? {}) },
     };
     const tail = tokens.slice(6);
-    def.parse?.(def.rawTokens ? tail : tail.map(unescapeToken), element);
+    // A clamp-on-load warning (an out-of-range token the engine normalises)
+    // is collected here so it rides the load-time banner alongside the
+    // unsupported-lines message and survives the first engine rebuild.
+    def.parse?.(
+      def.rawTokens ? tail : tail.map(unescapeToken),
+      element,
+      (message) => warnings.push(message),
+    );
     elements.push(element);
     order.push({ kind: 'element', id: element.id });
     idByFileIndex.set(fileIndex++, element.id);
@@ -743,6 +751,7 @@ export function parseCircuit(text: string): ParsedCircuit {
     passthrough,
     compositeModels,
     unsupported,
+    warnings,
     order,
   };
 }
