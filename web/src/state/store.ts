@@ -1456,39 +1456,55 @@ function createAppStore() {
     set((s) => bumpRevision(s));
   },
 
-  setScopeSpeed: (id, speed) =>
-    set((s) => {
-      const clamped = scopeSpeed(speed);
-      const scope = s.scopes.find((x) => x.id === id);
-      // A no-op must not touch scopeRevision, or a wheel tick with nothing to
-      // do would still patch the engine.
-      if (!scope || scope.speed === clamped) return s;
-      return {
-        scopes: s.scopes.map((x) => (x.id === id ? { ...x, speed: clamped } : x)),
-        scopeRevision: s.scopeRevision + 1,
-      };
-    }),
+  setScopeSpeed: (id, speed) => {
+    const s = get();
+    const clamped = scopeSpeed(speed);
+    const scope = s.scopes.find((x) => x.id === id);
+    // A no-op must not touch scopeRevision, or a wheel tick with nothing to
+    // do would still patch the engine; committing it would also push a
+    // spurious undo entry.
+    if (!scope || scope.speed === clamped) return;
+    s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) => (x.id === id ? { ...x, speed: clamped } : x)),
+      scopeRevision: st.scopeRevision + 1,
+    }));
+  },
 
-  setScopeTrigger: (id, patch) =>
-    set((s) => {
-      const scope = s.scopes.find((x) => x.id === id);
-      if (!scope) return s;
-      const trigger = { ...scope.trigger, ...patch };
-      return {
-        scopes: s.scopes.map((x) => (x.id === id ? { ...x, trigger } : x)),
-        // The trigger is part of the engine spec, so it must reload.
-        ...bumpRevision(s),
-      };
-    }),
+  setScopeTrigger: (id, patch) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.id === id);
+    if (!scope) return;
+    const trigger = { ...scope.trigger, ...patch };
+    // A patch that changes nothing must not reload the engine or push an undo
+    // entry; the three fields are the whole ScopeTrigger.
+    if (
+      trigger.mode === scope.trigger.mode &&
+      trigger.edge === scope.trigger.edge &&
+      trigger.level === scope.trigger.level
+    ) {
+      return;
+    }
+    s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) => (x.id === id ? { ...x, trigger } : x)),
+      // The trigger is part of the engine spec, so it must reload.
+      ...bumpRevision(st),
+    }));
+  },
 
-  setScopeFlags: (id, patch) =>
-    set((s) => {
-      const scope = s.scopes.find((x) => x.id === id);
-      if (!scope) return s;
-      return {
-        scopes: s.scopes.map((x) => (x.id === id ? { ...x, ...patch } : x)),
-      };
-    }),
+  setScopeFlags: (id, patch) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.id === id);
+    if (!scope) return;
+    // A patch whose keys already hold their values changes nothing; skipping
+    // it avoids both the notify and a spurious undo entry.
+    if (Object.entries(patch).every(([k, v]) => scope[k as keyof Scope] === v)) return;
+    s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    }));
+  },
 
   setScopeShowValue: (scopeId, value, show) =>
     set((s) => {
@@ -1517,48 +1533,73 @@ function createAppStore() {
       };
     }),
 
-  setPlotCoupling: (scopeId, plotId, acCoupled) =>
-    set((s) => {
-      const scope = s.scopes.find((x) => x.id === scopeId);
-      if (!scope) return s;
-      return {
-        scopes: s.scopes.map((x) =>
-          x.id === scopeId
-            ? {
-                ...x,
-                plots: x.plots.map((p) =>
-                  p.id === plotId ? { ...p, acCoupled: acCoupled && p.value === 'voltage' } : p,
-                ),
-              }
-            : x,
-        ),
-        // AC coupling is a scope-capture flag, applied through the engine's
-        // scope fast path (applyScopeParams), so toggling it must not rewind
-        // the simulation. The trigger path has no fast path yet and still
-        // reloads; see setScopeTrigger.
-      };
-    }),
+  setPlotCoupling: (scopeId, plotId, acCoupled) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.id === scopeId);
+    if (!scope) return;
+    const plot = scope.plots.find((p) => p.id === plotId);
+    // The effective flag is what a voltage plot can carry (canAcCouple); a
+    // repeat of the same state changes nothing and must not push an undo
+    // entry.
+    if (!plot || plot.acCoupled === (acCoupled && plot.value === 'voltage')) return;
+    s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) =>
+        x.id === scopeId
+          ? {
+              ...x,
+              plots: x.plots.map((p) =>
+                p.id === plotId ? { ...p, acCoupled: acCoupled && p.value === 'voltage' } : p,
+              ),
+            }
+          : x,
+      ),
+      // AC coupling is a scope-capture flag, applied through the engine's
+      // scope fast path (applyScopeParams), so toggling it must not rewind
+      // the simulation. The trigger path has no fast path yet and still
+      // reloads; see setScopeTrigger.
+    }));
+  },
 
-  setPlotManScale: (plotId, manScale) =>
-    set((s) => ({
-      scopes: s.scopes.map((x) => ({
+  setPlotManScale: (plotId, manScale) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.plots.some((p) => p.id === plotId));
+    if (!scope) return;
+    const plot = scope.plots.find((p) => p.id === plotId)!;
+    // A repeat of the current scale changes nothing and must not push an undo
+    // entry.
+    if (plot.manScale === manScale) return;
+    s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) => ({
         ...x,
         plots: x.plots.map((p) => (p.id === plotId ? { ...p, manScale } : p)),
       })),
-    })),
+    }));
+  },
 
-  setPlotManPosition: (plotId, manVPosition) =>
-    set((s) => ({
-      scopes: s.scopes.map((x) => ({
+  setPlotManPosition: (plotId, manVPosition) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.plots.some((p) => p.id === plotId));
+    if (!scope) return;
+    const clamped = positionToOffset(manVPosition);
+    const plot = scope.plots.find((p) => p.id === plotId)!;
+    // A repeat of the current position (a drag frame that clamped to the same
+    // value) changes nothing and must not push an undo entry.
+    if (plot.manVPosition === clamped) return;
+    s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) => ({
         ...x,
         plots: x.plots.map((p) =>
           // Upstream's +-V_POSITION_STEPS span (Scope.java:1227-1228); the
           // draw divides by the same 200, so a 200 parks a plot at the very
           // top of the screen.
-          p.id === plotId ? { ...p, manVPosition: positionToOffset(manVPosition) } : p,
+          p.id === plotId ? { ...p, manVPosition: clamped } : p,
         ),
       })),
-    })),
+    }));
+  },
 
   togglePlot: (scopeId, value) => {
     const scope = get().scopes.find((x) => x.id === scopeId);

@@ -2476,8 +2476,7 @@ describe('scope mutator coverage', () => {
     expect(s.scopes[0].manualScale).toBe(true);
     expect(s.scopes[0].showMax).toBe(false);
     // Display fields are pure scope state: neither the rebuild nor the scope
-    // fast path fires (store.ts:1484), the current-behaviour subject of item
-    // 21.
+    // fast path fires (store.ts:1496).
     expect(s.revision).toBe(beforeRevision);
     expect(s.scopeRevision).toBe(beforeScopeRevision);
   });

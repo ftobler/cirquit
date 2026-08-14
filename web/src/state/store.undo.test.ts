@@ -100,13 +100,11 @@ describe('scope raw snapshot isolation', () => {
 describe('scope family undo-restore', () => {
   // The five structural mutators commit() themselves (addScope store.ts:1386,
   // removeScope store.ts:1445, togglePlot store.ts:1568, combineScopes
-  // store.ts:1601, separateScope store.ts:1618), so one undo after each
-  // restores the exact pre-mutation snapshot. The six fast-path setters
-  // (setScopeSpeed/Trigger/Flags, setPlotCoupling/ManScale/ManPosition) do
-  // not commit: item 21 (scope-setters-undo-commit) decides whether they
-  // should. Until then an undo after one of them pops the previous entry, so
-  // those tests drive an explicit commit first and assert the setter pushed
-  // nothing of its own.
+  // store.ts:1601, separateScope store.ts:1618) and so do the six fast-path
+  // setters (setScopeSpeed/Trigger/Flags, setPlotCoupling/ManScale/ManPosition):
+  // item 21 decided they are ordinary property edits and must be undoable as
+  // their own step. One undo after each restores the exact pre-mutation
+  // snapshot, so the tests below call the setter without an explicit commit.
 
   const scoped = () => {
     const a = addResistor();
@@ -189,29 +187,32 @@ describe('scope family undo-restore', () => {
     scoped();
     const scopeId = useStore.getState().scopes[0].id;
     const plotId = useStore.getState().scopes[0].plots[0].id;
-    // The snapshot the fast-path setter is expected to extend. Without the
-    // explicit commit the undo would pop the addScope entry and restore the
-    // pre-scope circuit instead of the pre-setter scope.
-    useStore.getState().commit();
+    // The pre-set snapshot the setter is expected to commit itself. No
+    // explicit commit: each setter pushes one entry holding this state, so
+    // the undo below restores it and not some earlier commit.
     const pre = useStore.getState().scopes;
-    const baseline = useStore.getState().undoStack.length;
-    return { scopeId, plotId, pre, baseline };
+    return { scopeId, plotId, pre };
   };
 
-  it('setScopeSpeed does not commit itself; undo after an explicit commit restores the speed', () => {
-    const { scopeId, pre, baseline } = fastPath();
+  it('setScopeSpeed commits itself; undo restores the pre-set speed', () => {
+    const { scopeId, pre } = fastPath();
+    const baseline = useStore.getState().undoStack.length;
     expect(useStore.getState().scopes[0].speed).toBe(64);
 
     useStore.getState().setScopeSpeed(scopeId, 128);
     expect(useStore.getState().scopes[0].speed).toBe(128);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
+
+    useStore.getState().redo();
+    expect(useStore.getState().scopes[0].speed).toBe(128);
   });
 
-  it('setScopeTrigger does not commit itself; undo after an explicit commit restores the trigger', () => {
-    const { scopeId, pre, baseline } = fastPath();
+  it('setScopeTrigger commits itself; undo restores the pre-set trigger', () => {
+    const { scopeId, pre } = fastPath();
+    const baseline = useStore.getState().undoStack.length;
 
     useStore.getState().setScopeTrigger(scopeId, { mode: 'normal', edge: 'falling', level: 2.5 });
     expect(useStore.getState().scopes[0].trigger).toEqual({
@@ -219,14 +220,22 @@ describe('scope family undo-restore', () => {
       edge: 'falling',
       level: 2.5,
     });
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
+
+    useStore.getState().redo();
+    expect(useStore.getState().scopes[0].trigger).toEqual({
+      mode: 'normal',
+      edge: 'falling',
+      level: 2.5,
+    });
   });
 
-  it('setScopeFlags does not commit itself; undo after an explicit commit restores the flags', () => {
-    const { scopeId, pre, baseline } = fastPath();
+  it('setScopeFlags commits itself; undo restores the pre-set flags', () => {
+    const { scopeId, pre } = fastPath();
+    const baseline = useStore.getState().undoStack.length;
 
     useStore.getState().setScopeFlags(scopeId, {
       label: 'Renamed',
@@ -237,43 +246,75 @@ describe('scope family undo-restore', () => {
     expect(after.scopes[0].label).toBe('Renamed');
     expect(after.scopes[0].manualScale).toBe(true);
     expect(after.scopes[0].showMax).toBe(false);
-    expect(after.undoStack.length).toBe(baseline);
+    expect(after.undoStack.length).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
+
+    useStore.getState().redo();
+    expect(useStore.getState().scopes[0].label).toBe('Renamed');
   });
 
-  it('setPlotCoupling does not commit itself; undo after an explicit commit restores the coupling', () => {
-    const { scopeId, plotId, pre, baseline } = fastPath();
+  it('setPlotCoupling commits itself; undo restores the pre-set coupling', () => {
+    const { scopeId, plotId, pre } = fastPath();
+    const baseline = useStore.getState().undoStack.length;
 
     useStore.getState().setPlotCoupling(scopeId, plotId, true);
     expect(useStore.getState().scopes[0].plots[0].acCoupled).toBe(true);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
+
+    useStore.getState().redo();
+    expect(useStore.getState().scopes[0].plots[0].acCoupled).toBe(true);
   });
 
-  it('setPlotManScale does not commit itself; undo after an explicit commit restores the man scale', () => {
-    const { plotId, pre, baseline } = fastPath();
+  it('setPlotManScale commits itself; undo restores the pre-set man scale', () => {
+    const { plotId, pre } = fastPath();
+    const baseline = useStore.getState().undoStack.length;
 
     useStore.getState().setPlotManScale(plotId, 2);
     expect(useStore.getState().scopes[0].plots[0].manScale).toBe(2);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
+
+    useStore.getState().redo();
+    expect(useStore.getState().scopes[0].plots[0].manScale).toBe(2);
   });
 
-  it('setPlotManPosition does not commit itself; undo after an explicit commit restores the position', () => {
-    const { plotId, pre, baseline } = fastPath();
+  it('setPlotManPosition commits itself; undo restores the pre-set position', () => {
+    const { plotId, pre } = fastPath();
+    const baseline = useStore.getState().undoStack.length;
 
     useStore.getState().setPlotManPosition(plotId, 100);
     expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(100);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
+
+    useStore.getState().redo();
+    expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(100);
+  });
+
+  it('a no-op setter call commits nothing', () => {
+    const { scopeId, plotId } = fastPath();
+    const baseline = useStore.getState().undoStack.length;
+
+    // Every value below already equals the scope's state, so each setter must
+    // bail before its commit: a drag frame or wheel tick that changes nothing
+    // must not grow the undo stack.
+    useStore.getState().setScopeSpeed(scopeId, 64);
+    useStore.getState().setScopeTrigger(scopeId, { mode: 'freeRun', edge: 'rising', level: 0 });
+    useStore.getState().setScopeFlags(scopeId, { showMax: true, label: '' });
+    useStore.getState().setPlotCoupling(scopeId, plotId, false);
+    useStore.getState().setPlotManScale(plotId, null);
+    useStore.getState().setPlotManPosition(plotId, 0);
+
+    expect(useStore.getState().undoStack.length).toBe(baseline);
   });
 });
 
