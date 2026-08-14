@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { clearSampleCache, getDataSamples } from '../model/sampleCache';
+import { parseCircuit } from '../io/netlist';
 import { postPatch } from '../render/geometry';
 import { hasUnsavedChanges, useStore } from './store';
 import { addCapacitor, addResistor, fresh } from './store.test-helpers';
@@ -315,6 +317,174 @@ describe('scope family undo-restore', () => {
     useStore.getState().setPlotManPosition(plotId, 0);
 
     expect(useStore.getState().undoStack.length).toBe(baseline);
+  });
+});
+
+describe('caller-bracketed undo: setText, setModelName, loadDataFile', () => {
+  // None of these three setters commits itself: setText and setModelName are
+  // plain `set` calls (store.ts:1176,1073) and loadDataFile routes through
+  // updateElement (store.ts:1270). Their undo baseline is the caller's
+  // beginEdit, the edit dialog's onFocus on the field (OptionsPanel.tsx:76,92,
+  // 158), so each test opens that session with an explicit commit before
+  // mutating and asserts one undo restores the exact pre-mutation snapshot. A
+  // regression that drops the caller's commit would make these undos restore an
+  // older state, so the pre-mutation equality assertion is the thing under test.
+
+  const DATA_INPUT = {
+    kind: 'dataInput' as const,
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    flags: 16,
+    params: {
+      waveform: 1,
+      frequency: 60,
+      maxVoltage: 5,
+      bias: 0,
+      phaseShift: 0,
+      dutyCycle: 0.5,
+      sampleLength: 1e-3,
+      scaleFactor: 1,
+      fileNum: 0,
+    },
+  };
+
+  beforeEach(() => clearSampleCache());
+
+  it('setText on a display-only decoration: undo restores the pre-mutation text', () => {
+    const id = useStore.getState().addElement({
+      kind: 'decoration',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 0,
+      flags: 0,
+      params: { size: 12 },
+      text: 'old',
+    });
+    // The caller's beginEdit, the dialog field's onFocus.
+    useStore.getState().commit();
+    const pre = useStore.getState().elements.find((e) => e.id === id);
+
+    useStore.getState().setText(id, 'new text');
+    expect(useStore.getState().elements.find((e) => e.id === id)?.text).toBe('new text');
+
+    useStore.getState().undo();
+    expect(useStore.getState().elements.find((e) => e.id === id)).toEqual(pre);
+  });
+
+  it('setText on a labeled node (the reload path): undo restores text and revision', () => {
+    const id = useStore.getState().addElement({
+      kind: 'labeledNode',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 0,
+      flags: 0,
+      params: {},
+      text: 'A',
+    });
+    useStore.getState().commit();
+    const pre = useStore.getState().elements.find((e) => e.id === id);
+    const preRevision = useStore.getState().revision;
+
+    useStore.getState().setText(id, 'B');
+    expect(useStore.getState().elements.find((e) => e.id === id)?.text).toBe('B');
+    expect(useStore.getState().revision).toBeGreaterThan(preRevision);
+
+    useStore.getState().undo();
+    const s = useStore.getState();
+    expect(s.elements.find((e) => e.id === id)).toEqual(pre);
+    // Undo itself bumps revision (store.ts:1985) to force an engine rebuild,
+    // on top of the reload bump setText took, so the restored revision is
+    // higher than the pre-mutation value; the element is what undo restores,
+    // not the revision.
+    expect(s.revision).toBeGreaterThan(preRevision);
+  });
+
+  it('setModelName: undo restores the pre-mutation model name and params', () => {
+    const [loaded] = parseCircuit('d 176 80 384 80 2 1N4148').elements;
+    useStore.getState().addElement(loaded);
+    const id = useStore.getState().elements[0].id;
+    useStore.getState().commit();
+    const pre = useStore.getState().elements[0];
+    expect(pre.modelName).toBe('1N4148');
+
+    useStore.getState().setModelName(id, '1N4004');
+    expect(useStore.getState().elements[0].modelName).toBe('1N4004');
+    expect(useStore.getState().elements[0].params.saturationCurrent).toBe(18.8e-9);
+
+    useStore.getState().undo();
+    const e = useStore.getState().elements[0];
+    expect(e.modelName).toBe('1N4148');
+    expect(e).toEqual(pre);
+  });
+
+  it('loadDataFile: undo restores the pre-mutation fileNum and label', () => {
+    const id = useStore.getState().addElement(DATA_INPUT);
+    useStore.getState().loadDataFile(id, [1.0], 'first');
+    const pre = useStore.getState().elements.find((e) => e.id === id);
+    // The caller's beginEdit, the file input's onFocus.
+    useStore.getState().commit();
+    const preFileNum = pre!.params.fileNum as number;
+
+    useStore.getState().loadDataFile(id, [2.0], 'second');
+    const after = useStore.getState().elements.find((e) => e.id === id);
+    expect(after?.text).toBe('second');
+    const afterFileNum = after!.params.fileNum as number;
+    expect(afterFileNum).not.toBe(preFileNum);
+    expect(getDataSamples(afterFileNum)).toEqual({ samples: [2.0] });
+
+    useStore.getState().undo();
+    const restored = useStore.getState().elements.find((e) => e.id === id);
+    expect(restored?.text).toBe('first');
+    expect(restored?.params.fileNum).toBe(preFileNum);
+    // The old cache entry is deliberately kept (sampleCache.ts:9-11), so the
+    // restored fileNum still resolves to the first file.
+    expect(getDataSamples(restored?.params.fileNum as number)).toEqual({ samples: [1.0] });
+  });
+});
+
+describe('unblowFuses is a run-mode reset, not an undoable edit', () => {
+  // FINDING: unblowFuses is NOT undoable in the current design. It commits
+  // nothing itself (store.ts:1279) and its only caller, the Reset command
+  // (Menubar.tsx:654-666), commits nothing either: engine.reset() rewinds the
+  // runtime state in place and unblowFuses just drops the store's live copies
+  // of that reset. Like a switch toggle, reset is a run-mode action with no
+  // undo entry (types.ts:340-344). A test that asserted "undo restores the
+  // blown fuse" would pin a contract the code does not have, so this test pins
+  // the actual behaviour: the blown-and-unblown sequence never reaches the
+  // undo stack.
+
+  it('pushes no undo entry, so undo cannot restore a blown fuse', () => {
+    const fuseId = useStore.getState().addElement({
+      kind: 'fuse',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 0.0613, i2t: 6.73 },
+    });
+    useStore.getState().commit();
+    useStore.getState().setElementState(fuseId, 1);
+    expect(useStore.getState().elements.find((e) => e.id === fuseId)?.state).toBe(1);
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().unblowFuses();
+    const after = useStore.getState();
+    expect(after.elements.find((e) => e.id === fuseId)?.state).toBe(0);
+    expect(after.pendingStates.has(fuseId)).toBe(false);
+    // No commit anywhere on the Reset path, so the stack does not grow.
+    expect(after.undoStack.length).toBe(baseline);
+
+    // Undo restores the last committed snapshot (the intact fuse); the
+    // transient blown state was never committed, so it is unreachable. The
+    // snapshot predates setElementState, so the restored fuse has no `state`
+    // key at all, which the engine reads as intact.
+    useStore.getState().undo();
+    expect(useStore.getState().elements.find((e) => e.id === fuseId)?.state).toBeUndefined();
   });
 });
 
