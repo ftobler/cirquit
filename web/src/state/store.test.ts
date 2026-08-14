@@ -2410,6 +2410,79 @@ describe('scope coupling fast path', () => {
   });
 });
 
+describe('scope mutator coverage', () => {
+  it('removeScope drops the scope and bumps revision; an unknown id is a no-op', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    const before = useStore.getState().revision;
+
+    useStore.getState().removeScope(scopeId);
+    let s = useStore.getState();
+    expect(s.scopes).toHaveLength(0);
+    expect(s.revision).toBe(before + 1);
+
+    // An unknown id returns before commit, so nothing moves.
+    const baseline = s.undoStack.length;
+    const rev = s.revision;
+    useStore.getState().removeScope(999);
+    s = useStore.getState();
+    expect(s.scopes).toHaveLength(0);
+    expect(s.undoStack.length).toBe(baseline);
+    expect(s.revision).toBe(rev);
+  });
+
+  it('setScopeTrigger patches the trigger and forces a reload; unknown id is a no-op', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    const before = useStore.getState().revision;
+
+    useStore.getState().setScopeTrigger(scopeId, { mode: 'normal', edge: 'falling', level: 2.5 });
+    let s = useStore.getState();
+    expect(s.scopes[0].trigger).toEqual({ mode: 'normal', edge: 'falling', level: 2.5 });
+    // The trigger is part of the engine spec, so it must reload.
+    expect(s.revision).toBe(before + 1);
+
+    // A partial patch merges over the previous trigger.
+    useStore.getState().setScopeTrigger(scopeId, { edge: 'rising' });
+    expect(useStore.getState().scopes[0].trigger).toEqual({
+      mode: 'normal',
+      edge: 'rising',
+      level: 2.5,
+    });
+
+    const rev = useStore.getState().revision;
+    useStore.getState().setScopeTrigger(999, { level: 1 });
+    s = useStore.getState();
+    expect(s.revision).toBe(rev);
+    expect(s.scopes[0].trigger.level).toBe(2.5);
+  });
+
+  it('setScopeFlags patches the display fields without a reload', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    const beforeRevision = useStore.getState().revision;
+    const beforeScopeRevision = useStore.getState().scopeRevision;
+
+    useStore.getState().setScopeFlags(scopeId, {
+      label: 'Renamed',
+      manualScale: true,
+      showMax: false,
+    });
+    const s = useStore.getState();
+    expect(s.scopes[0].label).toBe('Renamed');
+    expect(s.scopes[0].manualScale).toBe(true);
+    expect(s.scopes[0].showMax).toBe(false);
+    // Display fields are pure scope state: neither the rebuild nor the scope
+    // fast path fires (store.ts:1484), the current-behaviour subject of item
+    // 21.
+    expect(s.revision).toBe(beforeRevision);
+    expect(s.scopeRevision).toBe(beforeScopeRevision);
+  });
+});
+
 describe('arrow-nudge selection', () => {
   it('moves the whole selection by the delta and is exactly one undo step', () => {
     const a = addResistor();
