@@ -430,6 +430,16 @@ describe('hover and net-highlight store state', () => {
     expect(useStore.getState().hoveredId).toBeNull();
     expect(useStore.getState().highlightedNode).toBeNull();
   });
+
+  it('a rebuild (a revision bump) clears the highlighted net', () => {
+    // The engine renumbers nodes on every rebuild, so a highlight from before
+    // the bump would light the wrong net until the mouse moves. The revision
+    // bump must clear it; the hover re-sets it on the next shift-hover.
+    useStore.getState().setHighlightedNode(3);
+    useStore.getState().moveElements([addResistor()], GRID_SIZE, 0);
+    expect(useStore.getState().revision).toBeGreaterThan(0);
+    expect(useStore.getState().highlightedNode).toBeNull();
+  });
 });
 
 describe('momentary switch press-and-release', () => {

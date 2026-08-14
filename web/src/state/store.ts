@@ -370,6 +370,16 @@ const STORE_INSTANCE_KEY = '__falstadCirquitStore';
 
 type AppStore = ReturnType<typeof createAppStore>;
 
+/** The revision bump that makes the frame loop rebuild the engine, which
+ *  renumbers the circuit nodes. A shift-highlighted net index from the
+ *  previous build would then light the wrong net, so the bump clears it: the
+ *  hover re-sets it on the next shift-hover. Every rebuild path goes through
+ *  this helper, so no revision bump can leave a stale highlight. */
+const bumpRevision = (s: Pick<AppState, 'revision'>): { revision: number; highlightedNode: null } => ({
+  revision: s.revision + 1,
+  highlightedNode: null,
+});
+
 function createAppStore() {
   return create<AppState>((set, get) => ({
   elements: [],
@@ -486,7 +496,7 @@ function createAppStore() {
         patch.minTimeStep !== undefined ||
         patch.adaptiveTimeStep !== undefined ||
         patch.autoDC !== undefined;
-      return { settings: merged, revision: reload ? s.revision + 1 : s.revision };
+      return { settings: merged, ...(reload ? bumpRevision(s) : {}) };
     });
   },
 
@@ -568,7 +578,7 @@ function createAppStore() {
           y2: Math.round(e.y2),
         },
       ],
-      revision: s.revision + 1,
+      ...bumpRevision(s),
     }));
     return id;
   },
@@ -622,7 +632,7 @@ function createAppStore() {
           if (reroute !== null) next.route = reroute;
           return next;
         }),
-        revision: s.revision + 1,
+        ...bumpRevision(s),
       };
     }),
 
@@ -647,7 +657,7 @@ function createAppStore() {
       if (placed.x2 === px && placed.y2 === py) return;
       set((st) => ({
         elements: st.elements.map((e) => (e.id === id ? { ...e, x2: px, y2: py } : e)),
-        revision: st.revision + 1,
+        ...bumpRevision(st),
       }));
       return;
     }
@@ -660,7 +670,7 @@ function createAppStore() {
         .filter((e) => e.id !== crossed.id)
         .map((e) => (e.id === id ? { ...e, x2: px, y2: py } : e))
         .concat(halves),
-      revision: st.revision + 1,
+      ...bumpRevision(st),
     }));
   },
 
@@ -680,7 +690,7 @@ function createAppStore() {
     s.commit();
     set((st) => ({
       elements: st.elements.filter((e) => e.id !== id).concat(halves),
-      revision: st.revision + 1,
+      ...bumpRevision(st),
     }));
   },
 
@@ -708,7 +718,7 @@ function createAppStore() {
           ...(route ? { route } : {}),
         };
       }),
-      revision: s.revision + 1,
+      ...bumpRevision(s),
     }));
   },
 
@@ -776,7 +786,7 @@ function createAppStore() {
         (x) => x.elementId === undefined || !selectedIds.includes(x.elementId),
       ),
       selectedIds: [],
-      revision: s.revision + 1,
+      ...bumpRevision(s),
     }));
   },
 
@@ -799,7 +809,7 @@ function createAppStore() {
     // identical to the chain they replace: the engine merges wires into nodes
     // by coordinate, so a reload sees the same node voltages.
     s.commit();
-    set({ elements: converted, revision: s.revision + 1 });
+    set({ elements: converted, ...bumpRevision(s) });
   },
 
   createTest: () => {
@@ -836,7 +846,7 @@ function createAppStore() {
     }));
     set((st) => ({
       elements: [...st.elements, ...added],
-      revision: st.revision + 1,
+      ...bumpRevision(st),
     }));
     return true;
   },
@@ -939,7 +949,7 @@ function createAppStore() {
     // before it makes the rename one undo step. The revision bump is the
     // engine's cue to reread a netlist that now names the model differently.
     get().commit();
-    set((st) => ({ elements, passthrough, order, revision: st.revision + 1 }));
+    set((st) => ({ elements, passthrough, order, ...bumpRevision(st) }));
     return outcome;
   },
 
@@ -1043,7 +1053,7 @@ function createAppStore() {
         }
         return next;
       }),
-      revision: s.revision + 1,
+      ...bumpRevision(s),
     })),
 
   setSliderValue: (id, value) => {
@@ -1151,7 +1161,7 @@ function createAppStore() {
           }
           return next;
         }),
-        revision: reload ? s.revision + 1 : s.revision,
+        ...(reload ? bumpRevision(s) : {}),
         // A text edit never queues an engine param: the reload kinds rebuild
         // through `revision`, and the display-only kinds carry no engine
         // state at all. Bumping `paramRevision` would run the frame loop's
@@ -1346,7 +1356,7 @@ function createAppStore() {
       }
       return {
         scopes: [...s.scopes, makeScope(id, null, plots, 64, s.scopes.length)],
-        revision: s.revision + 1,
+        ...bumpRevision(s),
       };
     });
   },
@@ -1380,7 +1390,7 @@ function createAppStore() {
       }
       return {
         scopes: st.scopes.map((x) => (x.id === scopeId ? { ...x, plots } : x)),
-        revision: st.revision + 1,
+        ...bumpRevision(st),
       };
     });
   },
@@ -1390,7 +1400,7 @@ function createAppStore() {
     get().commit();
     set((s) => ({
       scopes: s.scopes.filter((x) => x.id !== id),
-      revision: s.revision + 1,
+      ...bumpRevision(s),
     }));
   },
 
@@ -1398,7 +1408,7 @@ function createAppStore() {
     if (!get().scopes.some((x) => x.id === id)) return;
     // The Reset command clears the capture buffer and the sticky scale, which
     // a rebuild does for the buffer; the menu drops the scale state itself.
-    set((s) => ({ revision: s.revision + 1 }));
+    set((s) => bumpRevision(s));
   },
 
   setScopeSpeed: (id, speed) =>
@@ -1422,7 +1432,7 @@ function createAppStore() {
       return {
         scopes: s.scopes.map((x) => (x.id === id ? { ...x, trigger } : x)),
         // The trigger is part of the engine spec, so it must reload.
-        revision: s.revision + 1,
+        ...bumpRevision(s),
       };
     }),
 
@@ -1458,7 +1468,7 @@ function createAppStore() {
               }
             : x,
         ),
-        ...(addPlot ? { revision: s.revision + 1 } : {}),
+        ...(addPlot ? bumpRevision(s) : {}),
       };
     }),
 
@@ -1523,7 +1533,7 @@ function createAppStore() {
               ? { ...x, plots: x.plots.filter((p) => !(p.value === value && p.elementId !== null)) }
               : x,
           ),
-          revision: s.revision + 1,
+          ...bumpRevision(s),
         };
       }
       const elementId = target.plots.find((p) => p.elementId !== null)?.elementId ?? null;
@@ -1534,7 +1544,7 @@ function createAppStore() {
             ? { ...x, plots: [...x.plots, makePlot(allocateId(), elementId, value)] }
             : x,
         ),
-        revision: s.revision + 1,
+        ...bumpRevision(s),
       };
     });
   },
@@ -1552,7 +1562,7 @@ function createAppStore() {
         scopes: st.scopes
           .filter((x) => x.id !== bId)
           .map((x) => (x.id === aId ? { ...x, plots: [...x.plots, ...b.plots] } : x)),
-        revision: st.revision + 1,
+        ...bumpRevision(st),
       };
     });
   },
@@ -1585,7 +1595,7 @@ function createAppStore() {
         out.push(makeScope(allocateId(), null, [p], scope.speed, base + out.length));
         last = p;
       }
-      return { scopes: [...others, ...out], revision: st.revision + 1 };
+      return { scopes: [...others, ...out], ...bumpRevision(st) };
     });
   },
 
@@ -1604,7 +1614,7 @@ function createAppStore() {
           if (j > i) return { ...x, position: Math.max(0, x.position - 1) };
           return x;
         }),
-        revision: st.revision + 1,
+        ...bumpRevision(st),
       };
     });
   },
@@ -1619,7 +1629,7 @@ function createAppStore() {
     s.commit();
     set((st) => ({
       scopes: st.scopes.map((x, j) => (j >= i ? { ...x, position: x.position + 1 } : x)),
-      revision: st.revision + 1,
+      ...bumpRevision(st),
     }));
   },
 
@@ -1629,7 +1639,7 @@ function createAppStore() {
     get().commit();
     set((s) => ({
       scopes: s.scopes.map((x) => ({ ...x, position: 0, showMax: false, showMin: false })),
-      revision: s.revision + 1,
+      ...bumpRevision(s),
     }));
   },
 
@@ -1638,7 +1648,7 @@ function createAppStore() {
     get().commit();
     set((s) => ({
       scopes: s.scopes.map((x, i) => ({ ...x, position: i, showMax: true })),
-      revision: s.revision + 1,
+      ...bumpRevision(s),
     }));
   },
 
@@ -1652,7 +1662,7 @@ function createAppStore() {
       // the reverse combine loop of ScopeManager.combineAll.
       return {
         scopes: [{ ...first, plots: st.scopes.flatMap((x) => x.plots) }],
-        revision: st.revision + 1,
+        ...bumpRevision(st),
       };
     });
   },
@@ -1684,7 +1694,7 @@ function createAppStore() {
           last = p;
         }
       }
-      return { scopes: out, revision: st.revision + 1 };
+      return { scopes: out, ...bumpRevision(st) };
     });
   },
 
@@ -1769,7 +1779,6 @@ function createAppStore() {
       },
       selectedIds: [],
       hoveredId: null,
-      highlightedNode: null,
       undoStack: [],
       redoStack: [],
       problem: describeUnsupported(parsed.unsupported),
@@ -1779,7 +1788,7 @@ function createAppStore() {
       unsupportedProblem: describeUnsupported(parsed.unsupported),
       // A refusal from the previous circuit says nothing about this one.
       subcircuitError: null,
-      revision: s.revision + 1,
+      ...bumpRevision(s),
       // A load is a new document: the frame loop's rebuild gate must refuse to
       // inject the previous circuit's live charges into it.
       document: s.document + 1,
@@ -1836,7 +1845,6 @@ function createAppStore() {
       },
       selectedIds: [],
       hoveredId: null,
-      highlightedNode: null,
       undoStack: [],
       redoStack: [],
       problem: null,
@@ -1844,7 +1852,7 @@ function createAppStore() {
       // loop to merge into the engine warnings.
       unsupportedProblem: null,
       subcircuitError: null,
-      revision: s.revision + 1,
+      ...bumpRevision(s),
       // New is a fresh document, like a load: no live charges carry over.
       document: s.document + 1,
     }));
@@ -1888,7 +1896,7 @@ function createAppStore() {
       undoStack: s.undoStack.slice(0, -1),
       redoStack: [...s.redoStack, clone(s)],
       selectedIds: [],
-      revision: s.revision + 1,
+      ...bumpRevision(s),
     });
     // The `.` lines that came back define library models, so the session half
     // of the library follows them. Both line sets are read, so a step that did
@@ -1905,7 +1913,7 @@ function createAppStore() {
       redoStack: s.redoStack.slice(0, -1),
       undoStack: [...s.undoStack, clone(s)],
       selectedIds: [],
-      revision: s.revision + 1,
+      ...bumpRevision(s),
     });
     syncSessionModels(s.passthrough, next.passthrough);
   },
@@ -2046,7 +2054,7 @@ function insertElementsFromText(text: string): void {
       ...s.order.filter((l) => l.kind !== 'other' || !isReplaced(l.line)),
       ...parsed.order.filter((l) => l.kind === 'other'),
     ],
-    revision: s.revision + 1,
+    ...bumpRevision(s),
   }));
 }
 
@@ -2087,7 +2095,7 @@ function transformSelected(
   s.commit();
   useStore.setState((st) => ({
     elements: st.elements.map((e) => (st.selectedIds.includes(e.id) ? apply(e) : e)),
-    revision: st.revision + 1,
+    ...bumpRevision(st),
   }));
 }
 

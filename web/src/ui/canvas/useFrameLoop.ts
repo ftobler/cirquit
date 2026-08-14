@@ -148,6 +148,10 @@ export function useFrameLoop(
                 // A trace index out of range means the last setCircuit failed;
                 // force the reload branch next frame.
                 loadedRevision.current = -1;
+                // That retry rebuilds and renumbers nodes without bumping
+                // `revision`, so the store's revision-bump clear cannot reach
+                // it; clear the stale highlight before the retry renders.
+                useStore.getState().setHighlightedNode(null);
               }
             }
           }
@@ -171,6 +175,11 @@ export function useFrameLoop(
               // does not snap every reactive element back to its file charge.
               dotPhaseRef.current.clear();
               postPhaseRef.current.clear();
+              // This rebuild renumbers nodes like any other, so a
+              // shift-highlighted net index from before would light the wrong
+              // net; the store's revision-bump clear cannot reach this branch,
+              // which rebuilds without bumping `revision`.
+              useStore.getState().setHighlightedNode(null);
               const build = shouldInjectLiveState(builtDocument.current, state.document)
                 ? overlayLiveState(elements, engine.elementStateTokens())
                 : elements;
