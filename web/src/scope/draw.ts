@@ -84,6 +84,25 @@ export const isDrawable = (plot: ScopePlot): plot is DrawablePlot =>
 
 export type DrawablePlot = ScopePlot & { elementId: number; value: ScopeValue };
 
+/** Caption shown when a trace has dropped non-finite samples (a diverged
+ *  node), so a frozen trace reads as a warning instead of a healthy flatline.
+ *  The unusable sample is discarded by the engine, never drawn. */
+export const DIVERGED_CAPTION = 'Trace not a number';
+
+const DIVERGED_COLOR = '#ff6b6b';
+
+/** The warning caption for a scope, or null when every visible trace has
+ *  stayed finite. Maps each drawable plot to its engine trace and reads the
+ *  engine's diverged flag, so the caption appears whenever the engine reports
+ *  one (and only then). */
+export function divergedCaption(engine: SimEngine, scope: Scope): string | null {
+  for (const plot of visiblePlotsOf(scope).filter(isDrawable)) {
+    const index = engine.scopeIndexOf(plot.id);
+    if (index !== undefined && engine.scopeDiverged(index)) return DIVERGED_CAPTION;
+  }
+  return null;
+}
+
 /** The plots actually drawn, the port of `calcVisiblePlots` (Scope.java:289-315):
  *  a voltage plot is visible only when showV is on, a current plot only when
  *  showI is on, anything else (power, charge) always. X-Y mode shows every
@@ -718,6 +737,18 @@ export function drawScope(
   ctx.fillRect(0, 0, w, h);
   if (w < 2 || h < 2) return;
   const speed = scopeSpeed(scope.speed);
+
+  // A diverged trace captions the frozen signal instead of passing it off as
+  // a healthy flatline. Drawn after the background fill but before the XY and
+  // empty-plot early returns below, so the warning shows in every mode.
+  const caption = divergedCaption(engine, scope);
+  if (caption) {
+    ctx.font = canvasFont(10);
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = DIVERGED_COLOR;
+    ctx.fillText(caption, w - 4, 4);
+  }
 
   if (scope.plotXY) {
     drawXY(ctx, engine, scope, w, h);

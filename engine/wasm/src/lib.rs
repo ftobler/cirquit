@@ -297,6 +297,19 @@ impl Simulator {
             .unwrap_or(0.0)
     }
 
+    /// Whether a scope trace has dropped a non-finite sample since the last
+    /// reset (a diverged node). The sample is unusable and is discarded, but
+    /// the drop must not be silent: the UI reads this flag and captions the
+    /// frozen trace as a warning instead of a healthy flatline.
+    #[wasm_bindgen(js_name = scopeDiverged)]
+    pub fn scope_diverged(&self, index: usize) -> bool {
+        self.circuit
+            .scopes()
+            .get(index)
+            .map(|s| s.diverged)
+            .unwrap_or(false)
+    }
+
     /// This frame's recent raw samples for a scope (X-Y mode), oldest first.
     #[wasm_bindgen(js_name = recentSamples)]
     pub fn recent_samples(&self, index: usize) -> Vec<f32> {

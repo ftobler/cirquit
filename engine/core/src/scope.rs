@@ -200,6 +200,12 @@ pub struct ScopeTrace {
     /// Total columns ever completed. Lets the UI align traces in time and
     /// detect wrap-around.
     pub columns_written: u64,
+    /// Set when a sample was dropped for not being finite (a diverged node).
+    /// The sample itself is unusable, so it is discarded, but the drop must
+    /// not be silent: the UI reads this flag and captions the frozen trace as
+    /// a warning instead of a healthy flatline. Cleared on reset like the
+    /// capture buffers, so a re-run of a healthy circuit stops warning.
+    pub diverged: bool,
     acc_count: u32,
     acc_min: f64,
     acc_max: f64,
@@ -228,6 +234,7 @@ impl ScopeTrace {
             maxs: vec![0.0; cap],
             head: 0,
             columns_written: 0,
+            diverged: false,
             acc_count: 0,
             acc_min: f64::INFINITY,
             acc_max: f64::NEG_INFINITY,
@@ -259,6 +266,7 @@ impl ScopeTrace {
         self.maxs.iter_mut().for_each(|v| *v = 0.0);
         self.head = 0;
         self.columns_written = 0;
+        self.diverged = false;
         self.acc_count = 0;
         self.acc_min = f64::INFINITY;
         self.acc_max = f64::NEG_INFINITY;
@@ -297,6 +305,10 @@ impl ScopeTrace {
     /// Feeds one timestep's sample in.
     pub fn push(&mut self, value: f64, sim_time: f64) {
         if !value.is_finite() {
+            // The sample is unusable, so it is dropped, but the drop must not
+            // be silent: flag the trace so the UI can caption it as diverged
+            // instead of drawing a frozen trace that reads as healthy.
+            self.diverged = true;
             return;
         }
         // Recent-sample ring first, so X-Y mode shows the raw signal.
@@ -471,6 +483,36 @@ mod tests {
         // `columns` gives the holdoff a full ring to re-arm in.
         s.display_width = columns;
         s
+    }
+
+    #[test]
+    fn non_finite_samples_set_the_diverged_flag_and_are_still_dropped() {
+        let mut t = ScopeTrace::new(spec(1, 16), Some(0));
+        for v in [1.0, f64::NAN, 2.0, f64::INFINITY, -f64::INFINITY] {
+            t.push(v, 0.0);
+        }
+        assert!(t.diverged, "a dropped non-finite sample must flag the trace");
+        // The unusable samples are still dropped: only the two finite ones
+        // aggregate, one single-sample column each.
+        let snap = t.snapshot();
+        assert_eq!(snap.len(), 4);
+        assert_eq!(snap[0], 1.0);
+        assert_eq!(snap[1], 1.0);
+        assert_eq!(snap[2], 2.0);
+        assert_eq!(snap[3], 2.0);
+    }
+
+    #[test]
+    fn healthy_trace_never_sets_diverged_and_reset_clears_it() {
+        let mut t = ScopeTrace::new(spec(1, 16), Some(0));
+        for v in [1.0, -2.0, 3.0, 0.5] {
+            t.push(v, 0.0);
+        }
+        assert!(!t.diverged, "finite samples must not flag the trace");
+        t.push(f64::NAN, 0.0);
+        assert!(t.diverged);
+        t.clear();
+        assert!(!t.diverged, "reset clears the diverged flag like the buffers");
     }
 
     #[test]

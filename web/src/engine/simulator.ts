@@ -508,6 +508,14 @@ export class SimEngine {
     return i < 0 ? undefined : i;
   }
 
+  /** Whether a trace has dropped a non-finite sample since the last reset (a
+   *  diverged node). The sample is unusable and is discarded; this flag lets
+   *  the panel caption the frozen trace as a warning instead of a healthy
+   *  flatline. */
+  scopeDiverged(index: number): boolean {
+    return this.sim.scopeDiverged(index);
+  }
+
   /** Live scope capture resize (speed and ring width) without a rebuild.
    *  False when the trace index is out of range; the caller then reloads. */
   setScopeParams(index: number, stepsPerColumn: number, columns: number): boolean {

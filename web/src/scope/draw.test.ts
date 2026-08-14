@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Scope, ScopePlot, SimEngine } from '../engine/simulator';
-import { isDrawable, triggerTimeAnchor, visiblePlotsOf } from './draw';
+import {
+  DIVERGED_CAPTION,
+  divergedCaption,
+  drawScope,
+  emptyCursor,
+  isDrawable,
+  triggerTimeAnchor,
+  visiblePlotsOf,
+} from './draw';
 
 /** A minimal scope over the given plots, with the visibility flags to test. */
 const scopeOf = (plots: ScopePlot[], overrides: Partial<Scope> = {}): Scope => ({
@@ -131,5 +139,95 @@ describe('triggerTimeAnchor', () => {
     expect(scope.plots[0].id).toBe(1);
     expect(triggerTimeAnchor(engine, scope, 100)).toEqual({ time: 42 });
     expect(called).toEqual([0]);
+  });
+});
+
+/** An engine facade answering the diverged flag per trace index, for the
+ *  caption tests. */
+const flagEngine = (diverged: (index: number) => boolean): SimEngine =>
+  ({
+    scopeIndexOf: (plotId: number) => (plotId === 1 ? 0 : 1),
+    scopeDiverged: diverged,
+  }) as unknown as SimEngine;
+
+describe('divergedCaption', () => {
+  it('returns the warning when any visible trace reports the flag', () => {
+    const engine = flagEngine((index) => index === 0);
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')]);
+    expect(divergedCaption(engine, scope)).toBe(DIVERGED_CAPTION);
+  });
+
+  it('returns null when no visible trace reports the flag', () => {
+    expect(divergedCaption(flagEngine(() => false), scopeOf([plot(1, 'voltage')]))).toBeNull();
+  });
+
+  it('ignores a diverged trace hidden by showV', () => {
+    // The caption maps only the plots that would actually draw: a voltage
+    // trace hidden by showV is not on the canvas, so its flag stays silent.
+    const engine = flagEngine((index) => index === 0);
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], { showV: false });
+    expect(divergedCaption(engine, scope)).toBeNull();
+  });
+
+  it('skips a plot the engine never registered', () => {
+    const engine = {
+      scopeIndexOf: () => undefined,
+      scopeDiverged: () => true,
+    } as unknown as SimEngine;
+    expect(divergedCaption(engine, scopeOf([plot(1, 'voltage')]))).toBeNull();
+  });
+});
+
+/** Minimal canvas stub recording every drawn text, enough for drawScope. */
+const mkCtx = (): { ctx: CanvasRenderingContext2D; texts: string[] } => {
+  const texts: string[] = [];
+  const ctx = {
+    fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 0,
+    lineCap: '',
+    lineJoin: '',
+    globalAlpha: 1,
+    font: '',
+    textAlign: '',
+    textBaseline: '',
+    fillRect: vi.fn(),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    stroke: vi.fn(),
+    fill: vi.fn(),
+    arc: vi.fn(),
+    setLineDash: vi.fn(),
+    fillText: vi.fn((text: string) => {
+      texts.push(text);
+    }),
+    measureText: (text: string) => ({ width: text.length * 6 }),
+  } as unknown as CanvasRenderingContext2D;
+  return { ctx, texts };
+};
+
+/** A free-run scope over one voltage plot, plus an engine that answers the
+ *  diverged flag from `scopeData`-shaped traces. */
+const captionEngine = (diverged: boolean): SimEngine =>
+  ({
+    scopeIndexOf: () => 0,
+    scopeData: () => new Float32Array([1, 1, 2, 2]),
+    scopeDiverged: () => diverged,
+  }) as unknown as SimEngine;
+
+describe('drawScope diverged caption', () => {
+  const scope = scopeOf([plot(1, 'voltage')]);
+
+  it('draws the warning caption when the engine reports a diverged trace', () => {
+    const { ctx, texts } = mkCtx();
+    drawScope(ctx, captionEngine(true), scope, 200, 120, emptyCursor(), 0, 5e-6, false, 3);
+    expect(texts).toContain(DIVERGED_CAPTION);
+  });
+
+  it('does not caption a healthy trace', () => {
+    const { ctx, texts } = mkCtx();
+    drawScope(ctx, captionEngine(false), scope, 200, 120, emptyCursor(), 0, 5e-6, false, 3);
+    expect(texts).not.toContain(DIVERGED_CAPTION);
   });
 });
