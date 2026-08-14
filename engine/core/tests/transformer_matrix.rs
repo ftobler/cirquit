@@ -2,7 +2,7 @@
 
 use std::f64::consts::PI;
 
-use circuit_core::{Circuit, CircuitSpec, ElementSpec, ScopeSpec, ScopeValue};
+use circuit_core::{Circuit, CircuitSpec, ElementSpec, ScopeSpec, ScopeValue, SimOptions};
 
 mod common;
 use common::*;
@@ -952,6 +952,147 @@ fn all_ground_voltage_source_is_rejected_at_set_circuit() {
     assert!(
         report.converged,
         "the empty-closures no-op path should not report a failed step"
+    );
+}
+
+/// A minimal circuit whose validity does not depend on the timestep, so
+/// these tests isolate the `timeStep`/`minTimeStep` guard from every other
+/// `set_circuit` rejection path above.
+fn simple_resistor_spec(options: SimOptions) -> CircuitSpec {
+    CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, 0], [0, 100]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 100], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[0, 0]], &[]),
+        ],
+        options: Some(options),
+        scopes: Vec::new(),
+    }
+}
+
+/// A negative, NaN or infinite `timeStep` reaches the reactive companions
+/// (capacitor.rs, inductor.rs) as `geq = 2*C/dt`, a negative or NaN
+/// conductance that stamps without complaint and produces garbage output.
+/// `set_circuit` must reject it before anything downstream consumes it.
+#[test]
+fn negative_time_step_is_rejected_at_set_circuit() {
+    let spec = simple_resistor_spec(opts(-1e-5, false));
+    let mut c = Circuit::new();
+    assert!(
+        c.set_circuit(&spec).is_err(),
+        "negative timeStep accepted at set_circuit"
+    );
+}
+
+#[test]
+fn nan_time_step_is_rejected_at_set_circuit() {
+    let spec = simple_resistor_spec(opts(f64::NAN, false));
+    let mut c = Circuit::new();
+    assert!(
+        c.set_circuit(&spec).is_err(),
+        "NaN timeStep accepted at set_circuit"
+    );
+}
+
+#[test]
+fn infinite_time_step_is_rejected_at_set_circuit() {
+    let spec = simple_resistor_spec(opts(f64::INFINITY, false));
+    let mut c = Circuit::new();
+    assert!(
+        c.set_circuit(&spec).is_err(),
+        "infinite timeStep accepted at set_circuit"
+    );
+}
+
+#[test]
+fn negative_min_time_step_is_rejected_at_set_circuit() {
+    let mut options = opts(1e-5, false);
+    options.min_time_step = -50e-12;
+    let spec = simple_resistor_spec(options);
+    let mut c = Circuit::new();
+    assert!(
+        c.set_circuit(&spec).is_err(),
+        "negative minTimeStep accepted at set_circuit"
+    );
+}
+
+#[test]
+fn non_finite_min_time_step_is_rejected_at_set_circuit() {
+    let mut options = opts(1e-5, false);
+    options.min_time_step = f64::NAN;
+    let spec = simple_resistor_spec(options);
+    let mut c = Circuit::new();
+    assert!(
+        c.set_circuit(&spec).is_err(),
+        "NaN minTimeStep accepted at set_circuit"
+    );
+
+    let mut options = opts(1e-5, false);
+    options.min_time_step = f64::INFINITY;
+    let spec = simple_resistor_spec(options);
+    let mut c = Circuit::new();
+    assert!(
+        c.set_circuit(&spec).is_err(),
+        "infinite minTimeStep accepted at set_circuit"
+    );
+}
+
+/// The guard must not reject the ordinary case: a normal positive, finite
+/// timestep still builds and steps cleanly.
+#[test]
+fn positive_finite_time_step_is_accepted_at_set_circuit() {
+    let spec = simple_resistor_spec(opts(1e-5, false));
+    let mut c = Circuit::new();
+    assert!(
+        c.set_circuit(&spec).is_ok(),
+        "ordinary positive finite timeStep rejected at set_circuit"
+    );
+    let report = c.run(3);
+    assert!(report.converged, "ordinary circuit failed to step");
+}
+
+/// A rejected `set_circuit` must not leave `self.options` holding the bad
+/// value it just rejected: `reset()` reads `self.options.time_step` directly
+/// (bypassing `set_time_step`) and restamps immediately, so a bad value that
+/// slipped into `self.options` on a rejected call would resurrect the
+/// original negative/NaN-conductance bug on the very next `reset()`, on the
+/// same long-lived `Circuit` a real frontend keeps across edits.
+#[test]
+fn rejected_set_circuit_does_not_corrupt_options_for_a_later_reset() {
+    let good_spec = simple_resistor_spec(opts(1e-5, false));
+    let mut c = Circuit::new();
+    c.set_circuit(&good_spec)
+        .expect("good circuit should build");
+
+    let bad_spec = simple_resistor_spec(opts(-1e-5, false));
+    assert!(
+        c.set_circuit(&bad_spec).is_err(),
+        "negative timeStep accepted on a live instance"
+    );
+    assert_eq!(
+        c.options().time_step,
+        1e-5,
+        "a rejected set_circuit overwrote the last good timeStep"
+    );
+
+    // reset() stamps against self.options.time_step directly; if the guard
+    // had let the bad value through, this call is exactly where the negative
+    // conductance would resurface.
+    c.reset();
+    let report = c.run(3);
+    assert!(
+        report.converged,
+        "reset() after a rejected set_circuit failed to step cleanly"
+    );
+    assert!(
+        report.time_step.is_finite() && report.time_step > 0.0,
+        "reset() stepped with a corrupted timestep: {}",
+        report.time_step
     );
 }
 

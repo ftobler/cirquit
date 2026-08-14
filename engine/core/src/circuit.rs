@@ -304,7 +304,32 @@ impl Circuit {
     /// Nonlinear circuits keep per-step detection: their base matrix can be
     /// structurally fine and singular only at a specific operating point.
     pub fn set_circuit(&mut self, spec: &CircuitSpec) -> Result<(), String> {
-        self.options = spec.options.clone().unwrap_or_default();
+        let options = spec.options.clone().unwrap_or_default();
+        // A negative or non-finite step reaches the reactive companions
+        // (capacitor.rs, inductor.rs) as `geq = 2*C/dt < 0` or NaN, a genuine
+        // negative resistance that stamps without complaint and produces
+        // garbage output. Caught here, before anything downstream consumes
+        // either value, so a bad `$` header or JSON SimOptions is rejected
+        // the same way a degenerate topology is rejected below rather than
+        // silently running. Validated on this local `options` and only
+        // committed to `self.options` once both checks pass: a live instance
+        // keeps its last good options across a rejected call, so a later
+        // `reset()` (which reads `self.options.time_step` directly, bypassing
+        // `set_time_step`) can't stamp against a bad value that was never
+        // actually accepted.
+        if !options.time_step.is_finite() || options.time_step <= 0.0 {
+            return Err(format!(
+                "timeStep must be a positive, finite number of seconds, got {}",
+                options.time_step
+            ));
+        }
+        if !options.min_time_step.is_finite() || options.min_time_step <= 0.0 {
+            return Err(format!(
+                "minTimeStep must be a positive, finite number of seconds, got {}",
+                options.min_time_step
+            ));
+        }
+        self.options = options;
         self.warnings.clear();
         self.error = None;
         self.open_pinned.clear();
@@ -722,7 +747,13 @@ impl Circuit {
     /// Sets the working timestep and rebuilds the constant stamp pass, which
     /// holds the reactive companion conductances that depend on `dt`. Called
     /// on every halve and every double, matching upstream's re-stamp on a
-    /// step change (SimulationManager.java:1318,1405).
+    /// step change (SimulationManager.java:1318,1405). Private, and its only
+    /// callers pass `step / 2.0` or `(current_time_step * 2.0).min(options.time_step)`,
+    /// both derived from `current_time_step` and `options.time_step`, which
+    /// `set_circuit` already validated positive and finite; a positive finite
+    /// input can't become negative or non-finite through halving or a min
+    /// against another positive finite value, so `dt` needs no guard of its
+    /// own here.
     fn set_time_step(&mut self, dt: f64) {
         self.current_time_step = dt;
         self.ctx.dt = dt;
