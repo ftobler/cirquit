@@ -47,6 +47,27 @@ const CAP_AT_UNITY_SLEW: f64 = 30e-12;
 /// The output current limit the capacitor and resistor table are tuned for
 /// (OpAmpRealElm.java:64).
 const DEFAULT_CURRENT_LIMIT: f64 = 0.0231;
+/// The slew-rate floor a `slewRate` token of zero (or negative, or NaN) is
+/// clamped to before it sizes the compensation capacitor. One hundredth of
+/// the 0.6 V/us default: the token is read as "as slow as the model can go",
+/// and a floor 60x under the default caps the compensation capacitor at 60x
+/// the default, a sane finite bound. A zero or NaN slew would otherwise make
+/// `CAP_AT_UNITY_SLEW / (slew / 0.6)` infinite or NaN, which the capacitor's
+/// `value > 0.0` guard admits and the stamper's `is_finite` check then drops,
+/// silently collapsing the 741's gain-bandwidth.
+const MIN_SLEW: f64 = 0.01;
+
+/// Normalises a `slewRate` token for the compensation-capacitance division,
+/// clamping anything that is not a positive finite value (zero, negative, NaN,
+/// +/-inf) to [`MIN_SLEW`]. Upstream's `setSlewRate` never lets the field reach
+/// zero through the UI, but the file format can carry any value.
+fn clamped_slew(slew: f64) -> f64 {
+    if !slew.is_finite() || slew <= 0.0 {
+        MIN_SLEW
+    } else {
+        slew
+    }
+}
 
 pub fn from_spec(spec: &ElementSpec) -> Option<Composite> {
     let mut op = Composite::from_model(MODEL, EXTERNAL, None, "opampReal");
@@ -54,7 +75,7 @@ pub fn from_spec(spec: &ElementSpec) -> Option<Composite> {
     // current multiplier scales the two output-stage resistors and the two
     // output transistors' betas together, so the delivered current follows
     // the `currentLimit` field.
-    let slew = spec.param("slewRate", 0.6);
+    let slew = clamped_slew(spec.param("slewRate", 0.6));
     let cap_value = spec.param("capValue", 0.0);
     let current_limit = spec.param("currentLimit", DEFAULT_CURRENT_LIMIT);
     let current_mult = current_limit / DEFAULT_CURRENT_LIMIT;
@@ -67,4 +88,70 @@ pub fn from_spec(spec: &ElementSpec) -> Option<Composite> {
     op.set_child_param(13, "beta", current_mult * 100.0);
     op.set_child_param(18, "beta", current_mult * 100.0);
     Some(op)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    fn opamp_real_spec(slew: f64) -> ElementSpec {
+        ElementSpec {
+            id: 1,
+            kind: "opampReal".into(),
+            posts: Vec::new(),
+            params: [("slewRate", slew)]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect::<HashMap<_, _>>(),
+            label: None,
+            model: None,
+            flags: 0,
+        }
+    }
+
+    #[test]
+    fn clamped_slew_guards_zero_negative_and_non_finite() {
+        assert_eq!(clamped_slew(0.0), MIN_SLEW);
+        assert_eq!(clamped_slew(-1.0), MIN_SLEW);
+        assert_eq!(clamped_slew(f64::NAN), MIN_SLEW);
+        assert_eq!(clamped_slew(f64::INFINITY), MIN_SLEW);
+        assert_eq!(clamped_slew(f64::NEG_INFINITY), MIN_SLEW);
+        assert_eq!(clamped_slew(0.6), 0.6);
+        assert_eq!(clamped_slew(1.0), 1.0);
+    }
+
+    #[test]
+    fn from_spec_clamps_zero_negative_and_nan_slew_rate() {
+        // A file can carry `slewRate 0` (or negative, or NaN). Each must still
+        // build a working composite. Every one of those clamps to the floor,
+        // so the compensation capacitor lands on the same finite value, not
+        // the inf/NaN `CAP_AT_UNITY_SLEW / (slew / 0.6)` a raw token would
+        // give: that passes the capacitor's `value > 0.0` guard and is then
+        // dropped by the stamper's `is_finite` check, collapsing the 741's
+        // gain-bandwidth.
+        for slew in [0.0, -1.0, f64::NAN] {
+            assert!(
+                from_spec(&opamp_real_spec(slew)).is_some(),
+                "from_spec rejected slewRate {slew}"
+            );
+        }
+        // The floor capacitance: the floor slew through the same division
+        // `from_spec` uses for `set_child_param(20, "capacitance", ...)`.
+        let cap = CAP_AT_UNITY_SLEW / (MIN_SLEW / 0.6);
+        assert!(cap.is_finite(), "floor capacitance was {cap}");
+        assert!(cap > 0.0, "floor capacitance was {cap}");
+    }
+
+    #[test]
+    fn from_spec_keeps_a_positive_slew_rate_unclamped() {
+        // A sane token must pass through untouched: the default slew sizes the
+        // compensation capacitor at exactly `CAP_AT_UNITY_SLEW`.
+        let op = from_spec(&opamp_real_spec(0.6));
+        assert!(op.is_some(), "from_spec rejected slewRate 0.6");
+        let cap = CAP_AT_UNITY_SLEW / (0.6 / 0.6);
+        assert_eq!(cap, CAP_AT_UNITY_SLEW);
+        assert_eq!(clamped_slew(0.6), 0.6);
+    }
 }
