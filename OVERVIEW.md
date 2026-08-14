@@ -21,7 +21,7 @@ land.
 │  state/      zustand store: elements, selection, view, undo                  │
 │  engine/     thin facade over the wasm module                                │
 └───────────────────────────────────┬──────────────────────────────────────────┘
-                                    │  one call per animation frame
+                                    │  one engine call batch per animation frame
                                     │  JSON in (on change), typed arrays out
 ┌───────────────────────────────────▼─────── engine/ (Rust → wasm) ────────────┐
 │  circuit.rs  node analysis, timestep loop, Newton-Raphson                    │
@@ -40,8 +40,10 @@ lives in Rust. Only rendering, editing and file handling are in TypeScript.
 That matters for performance. A frame advances 160 timesteps by default, and
 each timestep visits every element at least once. Had the element models stayed
 in JavaScript, a 200-element circuit would mean ~32,000 boundary crossings per
-frame. As it is there is exactly **one** call per frame, and the results come
-back as flat typed arrays.
+frame. As it is the frame loop crosses the boundary about 8 times: `run`, then
+the flat-array getters for node voltages, element currents and the rest. Each
+crossing is one flat typed array, never one call per element model, which is
+why the whole frame stays cheap.
 
 The cost is that each element type is defined in two places: a simulation model
 in Rust and a drawing/geometry definition in TypeScript, joined by a shared
@@ -159,8 +161,8 @@ fetch it).
   upstream's `adjustTimeStep` (header flag bit 64 turns it on).
 - Live operating-point state crossing back out of the engine: capacitor
   `voltDiff` and series resistance, inductor current, junction voltages, relay
-  and logic-latch state. Event-driven (save and rebuild only), so the per-frame
-  loop stays one call.
+  and logic-latch state. Event-driven (save and rebuild only), so it adds no
+  per-frame crossing.
 - 383 Rust tests, of which 337 are the end-to-end circuit checks against
   analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
    was split into topic files), plus 45 in-module unit tests and one doctest.
@@ -252,7 +254,7 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **125 of ~200**.
+a test. Done so far: **119 of ~200**.
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, transformer, tapped transformer, custom transformer, fuse,
