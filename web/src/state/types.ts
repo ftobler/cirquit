@@ -28,7 +28,6 @@ export type DialogName =
   | 'createSubcircuit'
   | 'subcircuitManager'
   | 'otherOptions'
-  | 'editElement'
   | 'sliders';
 
 /** A point-in-time copy of everything undo needs to restore. Settings and view
@@ -138,6 +137,15 @@ export interface AppState {
    *  an overlay; on desktop the flag is inert because the aside is a flex
    *  sibling. */
   partsOpen: boolean;
+  /** Whether the options drawer (the selected element's properties and the
+   *  circuit's sliders) is open. Only the mobile layout renders it as an
+   *  overlay; on desktop the flag is inert because the aside is a flex
+   *  sibling. */
+  panelOpen: boolean;
+  /** Bumped by `requestEdit` so the options panel's mount effect (which only
+   *  runs once) can still refocus the first field on a fresh edit request,
+   *  since the panel itself never unmounts. */
+  panelFocusTick: number;
   /** The element the Sliders dialog is scoped to, from the context menu's
    *  Sliders... row, or null for the circuit-wide menubar dialog. The dialog
    *  shows create/remove checkboxes for this element's adjustable fields. */
@@ -217,12 +225,16 @@ export interface AppState {
    *  the port of upstream's row/column capture which reads only stored
    *  endpoints, never derived posts (MouseManager.java:1161-1187). */
   movePoint(id: number, post: 0 | 1, dx: number, dy: number): void;
-  /** Selects the element and opens the edit dialog, asking it to focus the
+  /** Selects the element and opens the options panel, asking it to focus the
    *  first field. The double-tap and the context menu's Edit item share this
    *  one implementation of "edit this element". */
   requestEdit(id: number): void;
-  /** Opens or closes the toolbox drawer (the mobile overlay). */
+  /** Opens or closes the toolbox drawer (the mobile overlay). Opening it
+   *  closes the options drawer, since only one mobile drawer shows at a time. */
   setPartsOpen(open: boolean): void;
+  /** Opens or closes the options drawer (the mobile overlay). Opening it
+   *  closes the toolbox drawer, since only one mobile drawer shows at a time. */
+  setPanelOpen(open: boolean): void;
   deleteSelected(): void;
   /** Rotates the selection 90 degrees about each element's midpoint. */
   rotateSelection(): void;

@@ -32,6 +32,8 @@ export const fresh = () => ({
   pendingStates: new Map(),
   contextMenu: null,
   partsOpen: false,
+  panelOpen: false,
+  panelFocusTick: 0,
   sliderElementId: null,
   clipboard: null,
   lastSaved: null,

@@ -1,7 +1,7 @@
-/** Properties of the selected element as a modal, the port of upstream's edit
- *  dialog (EditDialog, opened by `edit`/`elm:edit`). The global settings live
- *  in the Other Options dialog; this one holds only the element half. The live
- *  readout still updates per frame because the dialog reads the store and
+/** Properties of the selected element, the right-sidebar port of upstream's
+ *  edit dialog (EditDialog, opened by `edit`/`elm:edit`). The global settings
+ *  live in the Other Options dialog; this panel holds only the element half.
+ *  The live readout updates per frame because the panel reads the store and
  *  engine on each render. */
 
 import { useEffect, useRef } from 'react';
@@ -13,8 +13,8 @@ import { formatValue } from '../render/draw';
 import { saveBlob } from '../io/fileIO';
 import { selectableModels } from '../model/deviceModels';
 import type { CircuitElement, FieldDef } from '../model/types';
+import { sliderFromSteps, stepsFromSlider } from '../state/helpers';
 import { useStore } from '../state/store';
-import { Dialog } from './Dialog';
 import { UnitNumberInput } from './UnitNumberInput';
 
 interface Props {
@@ -278,10 +278,11 @@ function loadFileInto(
   reader.readAsArrayBuffer(file);
 }
 
-export function EditElementDialog({ engine }: Props) {
+export function OptionsPanel({ engine }: Props) {
   const elements = useStore((s) => s.elements);
   const selectedIds = useStore((s) => s.selectedIds);
   const settings = useStore((s) => s.settings);
+  const updateSettings = useStore((s) => s.updateSettings);
   const setParam = useStore((s) => s.setParam);
   const setText = useStore((s) => s.setText);
   const setKeyShortcut = useStore((s) => s.setKeyShortcut);
@@ -291,20 +292,22 @@ export function EditElementDialog({ engine }: Props) {
   const loadAudioFile = useStore((s) => s.loadAudioFile);
   const loadDataFile = useStore((s) => s.loadDataFile);
   const addScope = useStore((s) => s.addScope);
-  const closeDialog = useStore((s) => s.closeDialog);
 
   const selected = elements.find((e) => e.id === selectedIds[0]);
   const def = selected ? defFor(selected.kind) : undefined;
 
-  // Double-tap edit opens the dialog fresh, so a mount effect focuses the
-  // element's first field for immediate typing, mirroring upstream's edit
-  // dialog which opens focused on the first value (EditDialog.java:249-255).
-  // The dialog is modal, so the selection cannot change underneath it, and a
-  // later single-click selection change must not steal focus back.
+  // Double-tap edit selects and bumps panelFocusTick; focus the element's
+  // first field so the user can type immediately (MouseManager's edit dialog
+  // opens focused on the first value). Keyed on the tick alone: requestEdit
+  // sets the selection and bumps the tick in one step, so the section ref
+  // already tracks the freshly selected element, while a later single-click
+  // selection change must not steal focus back from the canvas.
+  const panelFocusTick = useStore((s) => s.panelFocusTick);
   const fieldsRef = useRef<HTMLElement>(null);
   useEffect(() => {
+    if (panelFocusTick === 0) return;
     fieldsRef.current?.querySelector<HTMLElement>('.field input, .field select')?.focus();
-  }, []);
+  }, [panelFocusTick]);
 
   const idx = selected && engine ? engine.indexOf(selected.id) : undefined;
   const current = idx !== undefined && engine ? engine.elementCurrents()[idx] : undefined;
@@ -312,17 +315,7 @@ export function EditElementDialog({ engine }: Props) {
   const power = idx !== undefined && engine ? engine.elementPowers()[idx] : undefined;
 
   return (
-    <Dialog
-      title={def ? `Edit ${def.label}` : 'Edit Element'}
-      onClose={closeDialog}
-      actions={
-        <>
-          <button type="button" onClick={closeDialog}>
-            Close
-          </button>
-        </>
-      }
-    >
+    <div className="options" tabIndex={-1}>
       {selected && def ? (
         <section ref={fieldsRef}>
           <h3>{def.label}</h3>
@@ -423,6 +416,36 @@ export function EditElementDialog({ engine }: Props) {
           <p className="hint">Click an element to inspect and edit it.</p>
         </section>
       )}
-    </Dialog>
+
+      <section>
+        <h3>Simulation</h3>
+        <label className="field">
+          <span>
+            Speed <em>{settings.stepsPerFrame} steps/frame</em>
+          </span>
+          <input
+            type="range"
+            min={1}
+            max={1000}
+            value={sliderFromSteps(settings.stepsPerFrame, 1, 1000)}
+            onChange={(e) =>
+              updateSettings({ stepsPerFrame: stepsFromSlider(Number(e.target.value), 1, 1000) })
+            }
+          />
+        </label>
+        <label className="field">
+          <span>
+            Current speed <em>{settings.currentSpeed}</em>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={settings.currentSpeed}
+            onChange={(e) => updateSettings({ currentSpeed: Number(e.target.value) })}
+          />
+        </label>
+      </section>
+    </div>
   );
 }

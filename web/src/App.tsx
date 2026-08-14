@@ -9,18 +9,19 @@ import { AboutDialog } from './ui/AboutDialog';
 import { CreateSubcircuitDialog } from './ui/CreateSubcircuitDialog';
 import { CircuitCanvas } from './ui/CircuitCanvas';
 import { ContextMenu } from './ui/ContextMenu';
-import { EditElementDialog } from './ui/EditElementDialog';
 import { ExportAsLinkDialog } from './ui/ExportAsLinkDialog';
 import { ExportAsTextDialog } from './ui/ExportAsTextDialog';
 import { FindComponentDialog } from './ui/FindComponentDialog';
 import { ImportFromTextDialog } from './ui/ImportFromTextDialog';
 import { Menubar } from './ui/Menubar';
+import { OptionsPanel } from './ui/OptionsPanel';
 import { OtherOptionsDialog } from './ui/OtherOptionsDialog';
 import { SaveAsDialog } from './ui/SaveAsDialog';
 import { SaveAsImageDialog } from './ui/SaveAsImageDialog';
 import { ScopePanel } from './ui/ScopePanel';
 import { ShortcutsDialog } from './ui/ShortcutsDialog';
 import { SliderDialog } from './ui/SliderDialog';
+import { SliderPanel } from './ui/SliderPanel';
 import { SubcircuitManagerDialog } from './ui/SubcircuitManagerDialog';
 import { Toolbox } from './ui/Toolbox';
 import { useAutoPause } from './ui/useAutoPause';
@@ -61,7 +62,9 @@ export default function App() {
   const [engineError, setEngineError] = useState<string | null>(null);
   const dialog = useStore((s) => s.dialog);
   const partsOpen = useStore((s) => s.partsOpen);
+  const panelOpen = useStore((s) => s.panelOpen);
   const setPartsOpen = useStore((s) => s.setPartsOpen);
+  const setPanelOpen = useStore((s) => s.setPanelOpen);
   const problem = useStore((s) => s.problem);
   // The print shortcut needs the engine, but the keydown listener is
   // registered once with no deps; a ref keeps it seeing the latest handle
@@ -342,7 +345,6 @@ export default function App() {
       {dialog === 'createSubcircuit' && <CreateSubcircuitDialog />}
       {dialog === 'subcircuitManager' && <SubcircuitManagerDialog />}
       {dialog === 'otherOptions' && <OtherOptionsDialog />}
-      {dialog === 'editElement' && <EditElementDialog engine={engine} />}
       {dialog === 'sliders' && <SliderDialog />}
       <div className="workspace">
         <aside id="parts-drawer" className={partsOpen ? 'left open' : 'left'}>
@@ -353,13 +355,18 @@ export default function App() {
           <ScopePanel engine={engine} />
           <ContextMenu />
         </main>
-        {/* A full-screen tap target that dismisses the parts drawer when it is
-            open. Only rendered then, and only the mobile layout shows it. */}
-        {partsOpen && (
+        <aside id="options-drawer" className={panelOpen ? 'right open' : 'right'}>
+          <OptionsPanel engine={engine} />
+          <SliderPanel />
+        </aside>
+        {/* A full-screen tap target that dismisses whichever drawer is open.
+            Only rendered when one is, and only the mobile layout shows it. */}
+        {(partsOpen || panelOpen) && (
           <div
             className="drawer-scrim"
             onClick={() => {
               setPartsOpen(false);
+              setPanelOpen(false);
             }}
           />
         )}
