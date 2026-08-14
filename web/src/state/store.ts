@@ -148,9 +148,11 @@ const clone = (s: Snapshot): Snapshot => ({
     return copy;
   }),
   // Plots and triggers are nested objects, so a shallow spread would alias the
-  // live state into the undo snapshot.
+  // live state into the undo snapshot. raw is an array of line tokens with the
+  // same aliasing risk, so it is cloned like the sliders' raw.
   scopes: s.scopes.map((x) => ({
     ...x,
+    raw: x.raw ? [...x.raw] : null,
     trigger: { ...x.trigger },
     plots: x.plots.map((p) => ({ ...p })),
   })),

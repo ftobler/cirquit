@@ -76,6 +76,27 @@ describe('ctrl-drag post movement undo', () => {
   });
 });
 
+describe('scope raw snapshot isolation', () => {
+  const NETLIST = [
+    '$ 1 0.000005 10 50 5 50 5e-11',
+    'r 0 0 16 0 0 100',
+    'o 0 64 0 266244 20 0.05 0 1 1 Ac\\sCoupled',
+    '',
+  ].join('\n');
+
+  it('an in-place push to a live scope raw after a commit does not corrupt the undo snapshot', () => {
+    useStore.getState().loadNetlist(NETLIST);
+    const scope = useStore.getState().scopes[0];
+    const original = [...scope.raw!];
+    useStore.getState().commit();
+    // The hypothetical future mutator writes raw in place, so the snapshot's
+    // clone must not share the array.
+    scope.raw!.push('extra');
+    useStore.getState().undo();
+    expect(useStore.getState().scopes[0].raw).toEqual(original);
+  });
+});
+
 describe('context menu state', () => {
   it('openContextMenu stores coordinates, the circuit point and an element target', () => {
     useStore.getState().openContextMenu(10, 20, 7, { x: 3, y: 4 });
