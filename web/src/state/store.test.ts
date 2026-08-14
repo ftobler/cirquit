@@ -2786,11 +2786,15 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
       logarithmic: false,
       shared: null,
     });
-    // raw stays empty so the line is upstream's canonical fresh form, and the
-    // caption resolves the param on reload (resolveParam matches by label).
+    // raw stays empty so the line is the writer's canonical fresh form, and
+    // the caption resolves the param on reload (resolveParam matches by
+    // label). No `ano` token and no FLAG_SHARED bit: this slider is not
+    // shared, and the reader only consumes an `ano` token under FLAG_SHARED
+    // (parse.ts), so writing one unconditionally here would come back as a
+    // misread caption and step on the next load.
     expect(s.sliders[0].raw).toEqual([]);
     expect(s.toNetlist().split('\n').find((l) => l.startsWith('38 '))).toBe(
-      '38 0 F0 0 1 1000 -1 Resistance 0',
+      '38 0 F0 0 1 1000 Resistance 0',
     );
     // One undo step: the dialog's create is an edit like any other.
     expect(s.undoStack.length).toBe(baseline + 1);

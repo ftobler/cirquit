@@ -1073,8 +1073,9 @@ function createAppStore() {
     }
     s.commit();
     set((st) => ({
-      // raw stays empty so the writer emits upstream's canonical fresh line
-      // (`e F0 editItem min max ano text step`, serialize.ts sliderLineFor);
+      // raw stays empty so the writer emits the port's canonical fresh line
+      // (`e F0 editItem min max text step`, no `ano` since this slider is
+      // unshared; serialize.ts sliderLineFor);
       // the min/max are upstream's Adjustable defaults (Adjustable.java:34-35).
       sliders: [
         ...st.sliders,

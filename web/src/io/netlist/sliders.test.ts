@@ -152,7 +152,99 @@ describe('slider lines and the element index', () => {
       undefined,
       [created],
     );
-    expect(out.trim().split('\n').at(-1)).toBe('38 0 F0 0 1 100 -1 My\\sSlider 0');
+    // FLAG_SHARED is unset and no `ano` token is written: the non-shared case
+    // has to match what the reader (parse.ts, gated on FLAG_SHARED) expects,
+    // not upstream's own dump(), which writes `ano` unconditionally and would
+    // misread its own caption and step back (Adjustable.java:183-196, 54-58).
+    expect(out.trim().split('\n').at(-1)).toBe('38 0 F0 0 1 100 My\\sSlider 0');
+  });
+
+  it('a UI-created shared slider writes FLAG_SHARED and the ano token', () => {
+    const created: SliderConfig = {
+      id: 99,
+      elementId: 42,
+      editItem: 0,
+      min: 1,
+      max: 100,
+      step: 0,
+      text: 'My Slider',
+      logarithmic: false,
+      shared: 3,
+      raw: [],
+    };
+    const out = serializeCircuit(
+      [{ id: 42, kind: 'resistor', x1: 0, y1: 0, x2: 16, y2: 0, flags: 0, params: { resistance: 10 } }],
+      { ...DEFAULT_SETTINGS },
+      [],
+      [],
+      undefined,
+      [created],
+    );
+    expect(out.trim().split('\n').at(-1)).toBe('38 0 F1 0 1 100 3 My\\sSlider 0');
+  });
+
+  it('a UI-created non-shared slider round-trips its caption and step through save then parse', () => {
+    const created: SliderConfig = {
+      id: 99,
+      elementId: 42,
+      editItem: 1,
+      min: 2,
+      max: 200,
+      step: 0.5,
+      text: 'Duty Cycle',
+      logarithmic: true,
+      shared: null,
+      raw: [],
+    };
+    const out = serializeCircuit(
+      [{ id: 42, kind: 'resistor', x1: 0, y1: 0, x2: 16, y2: 0, flags: 0, params: { resistance: 10 } }],
+      { ...DEFAULT_SETTINGS },
+      [],
+      [],
+      undefined,
+      [created],
+    );
+    const reparsed = parseCircuit(out);
+    expect(reparsed.sliders).toHaveLength(1);
+    expect(reparsed.sliders[0]).toMatchObject({
+      editItem: 1,
+      min: 2,
+      max: 200,
+      step: 0.5,
+      text: 'Duty Cycle',
+      logarithmic: true,
+      shared: null,
+    });
+  });
+
+  it('a UI-created shared slider round-trips its shared index through save then parse', () => {
+    const created: SliderConfig = {
+      id: 99,
+      elementId: 42,
+      editItem: 0,
+      min: 1,
+      max: 100,
+      step: 0,
+      text: 'Shared Slider',
+      logarithmic: false,
+      shared: 5,
+      raw: [],
+    };
+    const out = serializeCircuit(
+      [{ id: 42, kind: 'resistor', x1: 0, y1: 0, x2: 16, y2: 0, flags: 0, params: { resistance: 10 } }],
+      { ...DEFAULT_SETTINGS },
+      [],
+      [],
+      undefined,
+      [created],
+    );
+    const reparsed = parseCircuit(out);
+    expect(reparsed.sliders).toHaveLength(1);
+    expect(reparsed.sliders[0]).toMatchObject({
+      text: 'Shared Slider',
+      step: 0,
+      shared: 5,
+    });
   });
 });
 

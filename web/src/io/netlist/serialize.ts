@@ -78,15 +78,22 @@ function scopeLineFor(s: ScopeConfig, ordinalById: Map<number, number>): string 
  * the upstream `-1` sentinel (Adjustable.java:49-50); an element line this
  * build could not read keeps the index the file gave it, the same rule scopes
  * use. Every other token is kept exactly as loaded. A slider with no loaded
- * tokens (created in the UI, a later stage) writes upstream's canonical
- * `e F<flags> editItem min max ano text step` form (Adjustable.java:194-195);
- * the writer path is shared, only the token form differs.
+ * tokens (created in the UI, a later stage) writes the `e F<flags> editItem
+ * min max [ano] text step` form, the `ano` token present, and FLAG_SHARED
+ * (bit 1) set, only when `shared` is non-null. Upstream's own dump()
+ * (Adjustable.java:183-196) writes `ano` unconditionally while its reader
+ * only consumes it under FLAG_SHARED (:54-58), so a current-format upstream
+ * save of a non-shared slider misreads its own caption and step; gating the
+ * token on the flag here keeps this port's writer and reader in agreement
+ * instead of reproducing that mismatch. The reader path is shared, only the
+ * token form differs.
  */
 function sliderLineFor(s: SliderConfig, ordinalById: Map<number, number>): string {
   const index =
     s.elementId === undefined ? Number(s.raw[0] ?? -1) : (ordinalById.get(s.elementId) ?? -1);
   if (s.raw.length === 0) {
-    const flags = (s.logarithmic ? 2 : 0);
+    const shared = s.shared !== null;
+    const flags = (shared ? 1 : 0) | (s.logarithmic ? 2 : 0);
     return [
       '38',
       index,
@@ -94,7 +101,7 @@ function sliderLineFor(s: SliderConfig, ordinalById: Map<number, number>): strin
       s.editItem,
       s.min,
       s.max,
-      s.shared ?? -1,
+      ...(shared ? [s.shared] : []),
       escapeToken(s.text),
       s.step,
     ].join(' ');
