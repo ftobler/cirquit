@@ -75,6 +75,38 @@ export function releaseHeldMomentary(pointerId: number, refs: PointerDownRefs): 
   if (e) useStore.getState().setElementState(id, ((e.state ?? 0) + 1) % 2);
 }
 
+/** The pointer-up cleanup a placement owes: drop a zero-length element,
+ *  split a wire whose end landed on another wire, and return to select mode.
+ *  Shared by the normal up path and the abort paths (double-tap, a second
+ *  finger landing mid-placement), so a placement can never leak a stray
+ *  element that would serialize into the saved netlist. Extracted here,
+ *  alongside beginPointerGesture, so the cancel path stays headlessly
+ *  testable. */
+export function finishPlacement(drag: Drag, state: AppState): void {
+  if (drag.mode !== 'place') return;
+  const e = state.elements.find((x) => x.id === drag.id);
+  const def = e ? defFor(e.kind) : undefined;
+  if (e && def && postCountOf(e) > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
+    state.select([e.id]);
+    // skipCommit: the addElement commit at pointer-down is the single undo
+    // baseline for this whole gesture. Without it, deleteSelected's own
+    // commit would push a second entry holding the stray element, and the
+    // first Ctrl+Z would resurrect it instead of undoing the placement, the
+    // same one-gesture-one-undo-entry reasoning behind beginPointerGesture's
+    // switch-toggle commit below.
+    state.deleteSelected(true);
+  } else if (e && e.kind === 'wire') {
+    // A wire end dropped on another wire's interior splits that wire so the
+    // two connect, matching upstream's splitWireAt on placement
+    // (MouseManager.java:597-613). The addElement commit at pointer-down is
+    // the single undo baseline for the whole drop.
+    state.placeWireEnd(e.id, e.x2, e.y2);
+  }
+  // Placing one element then returning to select mode matches how people
+  // actually build a schematic.
+  state.setTool(null);
+}
+
 /** A row or column sweep captures every stored endpoint on the line at
  *  pointer-down so a sweep cannot pick up elements it passes over, and only
  *  the stored endpoints count, never derived posts (MouseManager.java:1159-1187).

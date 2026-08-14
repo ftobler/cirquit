@@ -235,7 +235,11 @@ export interface AppState {
   /** Opens or closes the options drawer (the mobile overlay). Opening it
    *  closes the toolbox drawer, since only one mobile drawer shows at a time. */
   setPanelOpen(open: boolean): void;
-  deleteSelected(): void;
+  /** skipCommit is set by the placement-cancel path (a zero-length drop):
+   *  the deleted element's own creation is already the gesture's undo
+   *  baseline, so this must not push a second one. Every other caller
+   *  omits it and gets the normal pre-delete commit. */
+  deleteSelected(skipCommit?: boolean): void;
   /** Rotates the selection 90 degrees about each element's midpoint. */
   rotateSelection(): void;
   /** Mirrors the selection across each element's vertical centre axis. */

@@ -18,7 +18,7 @@ import { boxFromPoints, selectByBox } from '../../render/selection';
 import { snap, useStore } from '../../state/store';
 import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
 import { DRAG_DELAY_MS, LONG_PRESS_MS, TouchGesture, type GestureAction } from '../gestures';
-import { beginPointerGesture, releaseHeldMomentary, type Drag } from './pointerDown';
+import { beginPointerGesture, finishPlacement, releaseHeldMomentary, type Drag } from './pointerDown';
 import { useStoreRef } from './useStoreRef';
 
 export type { Drag } from './pointerDown';
@@ -88,30 +88,6 @@ export function useCanvasInteractions(
       clearTimeout(dragDelayTimerRef.current);
       dragDelayTimerRef.current = null;
     }
-  };
-
-  /** The pointer-up cleanup a placement owes: drop a zero-length element,
-   *  split a wire whose end landed on another wire, and return to select mode.
-   *  Shared by the normal up path and the abort paths (double-tap, a second
-   *  finger landing mid-placement), so a placement can never leak a stray
-   *  element that would serialize into the saved netlist. */
-  const finishPlacement = (drag: Drag, state: ReturnType<typeof useStore.getState>) => {
-    if (drag.mode !== 'place') return;
-    const e = state.elements.find((x) => x.id === drag.id);
-    const def = e ? defFor(e.kind) : undefined;
-    if (e && def && postCountOf(e) > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
-      state.select([e.id]);
-      state.deleteSelected();
-    } else if (e && e.kind === 'wire') {
-      // A wire end dropped on another wire's interior splits that wire so
-      // the two connect, matching upstream's splitWireAt on placement
-      // (MouseManager.java:597-613). The addElement commit at pointer-down
-      // is the single undo baseline for the whole drop.
-      state.placeWireEnd(e.id, e.x2, e.y2);
-    }
-    // Placing one element then returning to select mode matches how people
-    // actually build a schematic.
-    state.setTool(null);
   };
 
   /** Both timers, validated by the recognizer when they fire: a timer that

@@ -722,10 +722,17 @@ function createAppStore() {
     set({ view: fitView(bounds, s.viewSize.w, s.viewSize.h, Infinity) });
   },
 
-  deleteSelected: () => {
+  deleteSelected: (skipCommit) => {
     const { selectedIds } = get();
     if (selectedIds.length === 0) return;
-    get().commit();
+    // skipCommit is the placement-cancel path's escape hatch: the element
+    // being deleted was created by the same gesture's addElement commit, so
+    // that commit is already the whole gesture's undo baseline. Committing
+    // again here would push a second entry holding the about-to-be-deleted
+    // element, and the first Ctrl+Z would resurrect it instead of undoing the
+    // placement outright. Every other caller deletes real, pre-existing
+    // state and still needs its own commit.
+    if (!skipCommit) get().commit();
     set((s) => ({
       elements: s.elements.filter((e) => !selectedIds.includes(e.id)),
       // A scope goes when any of its plots names a deleted element, matching

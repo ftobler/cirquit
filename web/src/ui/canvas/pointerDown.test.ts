@@ -8,6 +8,7 @@ import { snap, useStore } from '../../state/store';
 import { fresh } from '../../state/store.test-helpers';
 import {
   beginPointerGesture,
+  finishPlacement,
   releaseHeldMomentary,
   type Drag,
   type PointerDownInput,
@@ -312,6 +313,36 @@ describe('touch gating', () => {
     beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), true, r);
     expect(useStore.getState().elements[0].state).toBe(0);
     expect(r.dragRef.current).toEqual({ mode: 'move', last: { x: 30, y: 0 }, moved: false, gated: true });
+  });
+});
+
+describe('finishPlacement cancelling a zero-length drop', () => {
+  // The resistor tool has no defaultLength, so a pointer-down with no drag
+  // already places it at zero length; the drop lands back on its own start
+  // point with no move needed. Single-click and double-tap both funnel their
+  // cancel through this one finishPlacement, so one test covers both triggers.
+  it('one Ctrl+Z after the cancel restores the pre-placement circuit, not the stray element', () => {
+    useStore.getState().setTool('resistor');
+    const r = refs();
+    const before = useStore.getState().undoStack.length;
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
+    expect(useStore.getState().elements).toHaveLength(1);
+    // addElement's own commit is the gesture's only undo baseline so far.
+    expect(useStore.getState().undoStack.length).toBe(before + 1);
+
+    finishPlacement(drag, useStore.getState());
+
+    // The cancel deleted the stray zero-length element...
+    expect(useStore.getState().elements).toHaveLength(0);
+    // ...without pushing a second undo entry on top of addElement's.
+    expect(useStore.getState().undoStack.length).toBe(before + 1);
+
+    useStore.getState().undo();
+    // The one undo entry restores the pre-placement circuit; it must not
+    // resurrect the just-deleted element.
+    expect(useStore.getState().elements).toHaveLength(0);
   });
 });
 
