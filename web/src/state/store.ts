@@ -380,6 +380,40 @@ const bumpRevision = (s: Pick<AppState, 'revision'>): { revision: number; highli
   highlightedNode: null,
 });
 
+/** True when applying `patch` to `e` would actually change it, the guard the
+ *  drag paths lean on so a pointer event that stays inside one grid cell does
+ *  not bump `revision` and rebuild the whole engine (each bump is a full
+ *  setCircuit). Geometry is compared after the same rounding the writer
+ *  applies, so a sub-grid jitter that rounds back onto the stored coordinate
+ *  counts as no change. `updateElement` spreads the patch wholesale, so
+ *  `params` replaces the object and the comparison is a value compare of the
+ *  two maps; `model` stays a reference compare because the patch never carries
+ *  a fresh blob. */
+function patchChangesElement(e: CircuitElement, patch: Partial<CircuitElement>): boolean {
+  for (const [k, raw] of Object.entries(patch)) {
+    if (k === 'x1' || k === 'y1' || k === 'x2' || k === 'y2') {
+      const v = raw as number;
+      if (v !== undefined && Math.round(v) !== e[k]) return true;
+    } else if (k === 'params') {
+      const p = raw as Record<string, number>;
+      const cur = e.params;
+      if (Object.keys(p).length !== Object.keys(cur).length) return true;
+      for (const [pk, pv] of Object.entries(p)) if (cur[pk] !== pv) return true;
+    } else if (k === 'route') {
+      const r = raw as [number, number][] | undefined;
+      if (r === undefined) continue;
+      const cur = e.route;
+      if (cur === undefined || r.length !== cur.length) return true;
+      for (let i = 0; i < r.length; i++) {
+        if (r[i][0] !== cur[i][0] || r[i][1] !== cur[i][1]) return true;
+      }
+    } else if (e[k as keyof CircuitElement] !== raw) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function createAppStore() {
   return create<AppState>((set, get) => ({
   elements: [],
@@ -585,19 +619,24 @@ function createAppStore() {
 
   updateElement: (id, patch) =>
     set((s) => {
+      const target = s.elements.find((e) => e.id === id);
+      // A no-op update (a pointer event that stayed inside one grid cell) must
+      // not bump `revision`: the frame loop rebuilds the whole engine per bump,
+      // so the drag would otherwise pay a full setCircuit every pointer event.
+      // Returning the same state also makes zustand skip the notify.
+      if (target === undefined || !patchChangesElement(target, patch)) return s;
       const geometry =
         patch.x1 !== undefined ||
         patch.y1 !== undefined ||
         patch.x2 !== undefined ||
         patch.y2 !== undefined;
-      const target = s.elements.find((e) => e.id === id);
       // A routed wire's polyline is valid only for its exact endpoints. When a
       // post moves, re-run the router against the current obstacle set so the
       // polyline follows the post and keeps avoiding the other elements'
       // bodies, upstream's setPoints re-route (RoutedWireElm.java:86-123). A
       // fully blocked re-route falls back to the L-shape upstream uses.
       let reroute: [number, number][] | null = null;
-      if (geometry && target && target.route && target.route.length >= 2) {
+      if (geometry && target.route && target.route.length >= 2) {
         const routed = routeWire(
           { x: Math.round(patch.x1 ?? target.x1), y: Math.round(patch.y1 ?? target.y1) },
           { x: Math.round(patch.x2 ?? target.x2), y: Math.round(patch.y2 ?? target.y2) },
@@ -701,25 +740,31 @@ function createAppStore() {
     // snapped to the grid this is identity.
     const rdx = Math.round(dx);
     const rdy = Math.round(dy);
-    return set((s) => ({
-      elements: s.elements.map((e) => {
-        if (!ids.includes(e.id)) return e;
-        // A routed wire's polyline moves with it, so the route stays valid
-        // under a group move (RoutedWireElm.move, RoutedWireElm.java:76-82).
-        const route = e.route
-          ? e.route.map(([x, y]): [number, number] => [x + rdx, y + rdy])
-          : undefined;
-        return {
-          ...e,
-          x1: e.x1 + rdx,
-          y1: e.y1 + rdy,
-          x2: e.x2 + rdx,
-          y2: e.y2 + rdy,
-          ...(route ? { route } : {}),
-        };
-      }),
-      ...bumpRevision(s),
-    }));
+    return set((s) => {
+      // A zero delta moves nothing: the frame loop rebuilds the whole engine
+      // per revision bump, so an in-cell pointer event must not pay it.
+      // Returning the same state also makes zustand skip the notify.
+      if (rdx === 0 && rdy === 0) return s;
+      return {
+        elements: s.elements.map((e) => {
+          if (!ids.includes(e.id)) return e;
+          // A routed wire's polyline moves with it, so the route stays valid
+          // under a group move (RoutedWireElm.move, RoutedWireElm.java:76-82).
+          const route = e.route
+            ? e.route.map(([x, y]): [number, number] => [x + rdx, y + rdy])
+            : undefined;
+          return {
+            ...e,
+            x1: e.x1 + rdx,
+            y1: e.y1 + rdy,
+            x2: e.x2 + rdx,
+            y2: e.y2 + rdy,
+            ...(route ? { route } : {}),
+          };
+        }),
+        ...bumpRevision(s),
+      };
+    });
   },
 
   nudgeSelection: (dx, dy) => {

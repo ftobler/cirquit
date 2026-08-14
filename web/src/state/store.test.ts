@@ -319,6 +319,76 @@ describe('topology mutators force a reload', () => {
   });
 });
 
+describe('no-op drag updates do not rebuild the engine', () => {
+  // Every no-op below is the shape a pointer event inside one grid cell sends
+  // during a drag or placement. Each revision bump is a full setCircuit in the
+  // frame loop, so a guard that misses these would make large circuits janky.
+
+  it('updateElement with identical coordinates does not bump revision', () => {
+    const id = addResistor(); // x1=0, y1=0, x2=160, y2=0
+    const before = useStore.getState().revision;
+
+    useStore.getState().updateElement(id, { x2: 160, y2: 0 });
+
+    expect(useStore.getState().revision).toBe(before);
+  });
+
+  it('updateElement with a sub-grid jitter that rounds back does not bump revision', () => {
+    const id = addResistor();
+    const before = useStore.getState().revision;
+
+    // The writer rounds geometry, so 159.6 lands back on the stored 160.
+    useStore.getState().updateElement(id, { x2: 159.6, y1: -0.4 });
+
+    expect(useStore.getState().revision).toBe(before);
+    expect(useStore.getState().elements[0].x2).toBe(160);
+  });
+
+  it('updateElement with identical params does not bump revision', () => {
+    const id = addResistor();
+    const before = useStore.getState().revision;
+
+    // The wattmeter width drag re-sends the whole params object each move;
+    // an in-cell move keeps every value, so nothing may rebuild.
+    useStore.getState().updateElement(id, { params: { resistance: 1000 } });
+
+    expect(useStore.getState().revision).toBe(before);
+  });
+
+  it('moveElements with a zero delta does not bump revision', () => {
+    const id = addResistor();
+    const before = useStore.getState().revision;
+
+    useStore.getState().moveElements([id], 0, 0);
+
+    expect(useStore.getState().revision).toBe(before);
+  });
+
+  it('moveElements with a delta that rounds to zero does not bump revision', () => {
+    const id = addResistor();
+    const before = useStore.getState().revision;
+
+    useStore.getState().moveElements([id], 0.4, -0.4);
+
+    expect(useStore.getState().revision).toBe(before);
+  });
+
+  it('placement with an unchanged snapped position does not bump revision', () => {
+    // The `place` handler re-sends the snapped second post on every
+    // pointermove. A move into a fresh grid cell rebuilds once; a following
+    // move that stays inside that cell sends the identical post and must not
+    // rebuild the engine again.
+    const id = addResistor();
+    useStore.getState().updateElement(id, { x2: 320 });
+    const before = useStore.getState().revision;
+    expect(before).toBeGreaterThan(0);
+
+    useStore.getState().updateElement(id, { x2: 320 });
+
+    expect(useStore.getState().revision).toBe(before);
+  });
+});
+
 describe('requestEdit selects and opens the panel', () => {
   it('selects that id alone, opens the panel, and bumps panelFocusTick', () => {
     const a = addResistor();

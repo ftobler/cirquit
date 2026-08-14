@@ -348,9 +348,19 @@ export function useCanvasInteractions(
             x2 = snapped.x;
             y2 = snapped.y;
           }
-          const patch: { x2: number; y2: number; params?: Record<string, number> } = { x2, y2 };
-          if (extra !== undefined) patch.params = { ...placed.params, ...extra };
-          state.updateElement(drag.id, patch);
+          // A no-op update would bump `revision` and make the engine reload
+          // mid-cell, so only touch the store when the second post actually
+          // moved or a drag-derived parameter (the wattmeter's width) really
+          // changed while the axis lock held the endpoint still.
+          const movedPost = placed.x2 !== x2 || placed.y2 !== y2;
+          const paramsChanged =
+            extra !== undefined &&
+            Object.entries(extra).some(([k, v]) => placed.params[k] !== v);
+          if (movedPost || paramsChanged) {
+            const patch: { x2: number; y2: number; params?: Record<string, number> } = { x2, y2 };
+            if (extra !== undefined) patch.params = { ...placed.params, ...extra };
+            state.updateElement(drag.id, patch);
+          }
         }
         break;
       }
