@@ -336,6 +336,13 @@ pub trait Element {
         self.voltage_diff() * self.base().current
     }
 
+    /// The charge a charge scope samples, upstream's `getScopeValue(VAL_CHARGE)`
+    /// (CapacitorElm.java:225-229). The default is zero, which is right for
+    /// every element: only the capacitor holds a charge worth plotting.
+    fn charge(&self) -> f64 {
+        0.0
+    }
+
     /// Instrument reading reported back to the UI each frame, the probe's
     /// meter mode. Defaults to the two-terminal voltage difference, so every
     /// other element reports what a voltage scope on it would plot.

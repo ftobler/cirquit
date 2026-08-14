@@ -13,7 +13,7 @@
  * fields and swallow part of the label.
  */
 
-import type { Scope, ScopePlot } from '../engine/simulator';
+import type { Scope, ScopePlot, ScopeValue } from '../engine/simulator';
 import { unescapeToken, escapeToken } from './netlist/tokens';
 import {
   FLAG_DIVISIONS,
@@ -57,6 +57,11 @@ export interface DecodedScopeLine {
   plotXY: boolean;
   manualScale: boolean;
   maxScale: boolean;
+  /** The manual-mode division count, 8 when the line carries none
+   *  (ScopeSerializer.java:218-220). */
+  manDivisions: number;
+  /** Show Extended Info (bit 1<<20), the Properties dialog's checkbox. */
+  showElmInfo: boolean;
   /** The label, unescaped; empty when the line carried none. */
   label: string;
   scaleV: number;
@@ -65,8 +70,8 @@ export interface DecodedScopeLine {
 }
 
 /** Scope flag bits the decoder reads, from the table researched out of
- *  ScopeSerializer.java:25-68. Bits 32 (YELM), 2048 (IVALUE) and 1<<20
- *  (showElmInfo) are old-format or display-only and not modelled. */
+ *  ScopeSerializer.java:25-68. Bits 32 (YELM) and 2048 (IVALUE) are
+ *  old-format only. */
 const FLAG_SHOW_I = 1;
 const FLAG_SHOW_V = 2;
 const FLAG_SHOW_MAX_OFF = 4;
@@ -81,6 +86,7 @@ const FLAG_SHOW_RMS = 16384;
 const FLAG_SHOW_DUTY = 32768;
 const FLAG_LOG_SPECTRUM = 65536;
 const FLAG_SHOW_AVERAGE = 1 << 17;
+const FLAG_SHOW_ELM_INFO = 1 << 20;
 const FLAG_SHOW_P2P = 1 << 22;
 /** FLAG_YELM / FLAG_IVALUE, old-style only: a y-element index and an extra
  *  value token that sit before the label (ScopeSerializer.java:264-274). */
@@ -89,6 +95,13 @@ const FLAG_IVALUE = 2048;
 /** Per-plot flags read as hex with no `x` prefix, like `Integer.parseInt(_, 16)`
  *  (ScopeSerializer.java:231). */
 const FLAG_AC = 1;
+
+/** The vertical position a fresh plot of this value starts at: power and
+ *  charge plots sit at the bottom of the manual-mode screen, everything else
+ *  centred, upstream's ScopePlot constructor (ScopePlot.java:62-66). */
+function defaultManVPosition(value: ScopeValue | null): number {
+  return value === 'power' || value === 'charge' ? -100 : 0;
+}
 
 /** The stacking column a position token maps to. A missing or negative token
  *  means "unstacked, own column", which upstream assigns the scope's own index
@@ -117,10 +130,13 @@ export function decodeScopeLine(
   const valueToken = Number(raw[1]);
   const flags = importDecOrHex(raw[2] ?? '0');
 
-  const perPlot: DecodedPlotFields[] = plots.map(() => ({
+  const perPlot: DecodedPlotFields[] = plots.map((p) => ({
     acCoupled: false,
     manScale: null,
-    manVPosition: 0,
+    // Without a per-plot pair the constructor default stands, so a W/C plot
+    // loads at the bottom of the manual-mode screen exactly as upstream's
+    // ScopePlot constructor placed it (ScopePlot.java:62-66).
+    manVPosition: defaultManVPosition(p.value),
   }));
 
   // Cursor over the raw tokens: the fixed `speed value flags scaleV scaleA`
@@ -128,12 +144,16 @@ export function decodeScopeLine(
   // token at raw[5]. New-style reads it and the plot count; old-style skips
   // only the optional yElm/IVALUE pair before the label.
   let cursor = 5;
+  let manDivisions = 8;
   if ((flags & FLAG_PLOTS) !== 0) {
     const next = (): number => Number(raw[cursor++]);
     const position = next();
     const sz = next();
     if (Number.isFinite(position) && Number.isFinite(sz)) {
-      if ((flags & FLAG_DIVISIONS) !== 0) cursor += 1;
+      if ((flags & FLAG_DIVISIONS) !== 0) {
+        const d = Number(raw[cursor++]);
+        if (Number.isFinite(d) && d > 0) manDivisions = d;
+      }
       // Plot 0's units can carry an extra scale token before the per-plot
       // tokens (ScopeSerializer.java:221-223).
       if (unitsOf(valueToken, kinds[0] ?? null) > 1 && cursor < raw.length) cursor += 1;
@@ -188,6 +208,8 @@ export function decodeScopeLine(
     plotXY: (flags & FLAG_PLOT2D) !== 0,
     manualScale: (flags & FLAG_MAN_SCALE) !== 0,
     maxScale: (flags & FLAG_MAX_SCALE) !== 0,
+    manDivisions,
+    showElmInfo: (flags & FLAG_SHOW_ELM_INFO) !== 0,
     label: labelTokens.length > 0 ? unescapeToken(labelTokens.join(' ')) : '',
     // A truncated line can end before these tokens; fall back to the makeScope
     // defaults so the decoded state stays finite, load and scopeLineMatches
@@ -209,7 +231,11 @@ export function encodeScopeLine(
 ): string[] {
   const first = scope.plots[0];
   const anyPlotFlags = scope.plots.some((p) => p.acCoupled);
-  const anyManScale = scope.plots.some((p) => p.manScale !== null || p.manVPosition !== 0);
+  // Upstream writes the per-plot man-scale pair and the divisions token only
+  // in manual scale mode (ScopeSerializer.java:29-30, 42-43), and reads them
+  // back under the same gate. The port's manScale/manVPosition fields persist
+  // either way; the line just does not carry them in auto mode.
+  const manual = scope.manualScale;
   const flags =
     (scope.showI ? FLAG_SHOW_I : 0) |
     (scope.showV ? FLAG_SHOW_V : 0) |
@@ -228,9 +254,11 @@ export function encodeScopeLine(
     (scope.logSpectrum ? FLAG_LOG_SPECTRUM : 0) |
     (scope.showAverage ? FLAG_SHOW_AVERAGE : 0) |
     (scope.showP2P ? FLAG_SHOW_P2P : 0) |
+    (scope.showElmInfo ? FLAG_SHOW_ELM_INFO : 0) |
     FLAG_PLOTS |
     (anyPlotFlags ? FLAG_PERPLOTFLAGS : 0) |
-    (anyManScale ? FLAG_PERPLOT_MAN_SCALE : 0);
+    (manual ? FLAG_PERPLOT_MAN_SCALE : 0) |
+    (manual ? FLAG_DIVISIONS : 0);
 
   const tokens = [
     String(scope.speed),
@@ -241,17 +269,25 @@ export function encodeScopeLine(
     String(scope.position),
     String(scope.plots.length),
   ];
-  // The scale token a power plot carries, the port's fixed 20 per division.
-  if (unitsOf(valueTokenOf(first.value), null) > 1) tokens.push('20');
+  // The divisions token sits between the plot count and the first plot's
+  // per-unit scale, exactly where undump reads it (ScopeSerializer.java:219-220).
+  if (manual) tokens.push(String(scope.manDivisions));
+  // A W or C plot carries a scale token (ScopeSerializer.java:221-223). Charge
+  // needs the explicit value check: the kind is unknown here, and only the
+  // capacitor's charge is ever a `charge` plot, so `unitsOf` with a null kind
+  // would wrongly read it as volts.
+  const needsScaleToken = (value: ScopeValue | null): boolean =>
+    value === 'charge' || unitsOf(valueTokenOf(value), null) > 1;
+  if (needsScaleToken(first.value)) tokens.push('20');
   for (let i = 0; i < scope.plots.length; i++) {
     const p = scope.plots[i];
     if (anyPlotFlags) tokens.push(p.acCoupled ? '1' : '0');
     if (i !== 0) {
       const index = p.elementId === null ? -1 : (indexOf(p.elementId) ?? -1);
       tokens.push(String(index), String(valueTokenOf(p.value)));
-      if (unitsOf(valueTokenOf(p.value), null) > 1) tokens.push('20');
+      if (needsScaleToken(p.value)) tokens.push('20');
     }
-    if (anyManScale) {
+    if (manual) {
       // A plot without a user scale keeps a neutral pair so the flag stays
       // readable; upstream writes a pair for every plot under the flag.
       tokens.push(String(p.manScale ?? 1), String(p.manVPosition));
@@ -291,6 +327,8 @@ export function scopeLineMatches(
     decoded.plotXY === scope.plotXY &&
     decoded.manualScale === scope.manualScale &&
     decoded.maxScale === scope.maxScale &&
+    decoded.manDivisions === scope.manDivisions &&
+    decoded.showElmInfo === scope.showElmInfo &&
     decoded.label === scope.label &&
     decoded.scaleV === scope.scaleV &&
     decoded.scaleA === scope.scaleA &&

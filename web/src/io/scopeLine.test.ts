@@ -88,7 +88,9 @@ describe('decodeScopeLine on the corpus shapes', () => {
 
   it('decodes a power line, skipping the W-scale token before the label', () => {
     // longdist.txt: flags 135187 = showI + showV + manualScale + FLAG_PLOTS +
-    // showAverage. The trailing 160 is the W-scale, not a label.
+    // showAverage. The trailing 160 is the W-scale, not a label. The power
+    // plot loads at the bottom of the manual-mode screen (manVPosition -100),
+    // upstream's ScopePlot constructor (ScopePlot.java:62-66).
     const decoded = decodeScopeLine(
       ['64', '7', '135187', '80', '0.00009765625', '0', '1', '160'],
       [plot(17, 'power')],
@@ -100,7 +102,11 @@ describe('decodeScopeLine on the corpus shapes', () => {
     expect(decoded.manualScale).toBe(true);
     expect(decoded.showAverage).toBe(true);
     expect(decoded.label).toBe('');
-    expect(decoded.perPlot[0]).toEqual({ acCoupled: false, manScale: null, manVPosition: 0 });
+    expect(decoded.perPlot[0]).toEqual({
+      acCoupled: false,
+      manScale: null,
+      manVPosition: -100,
+    });
   });
 
   it('decodes showDutyCycle and showFreq off the flag word', () => {
@@ -182,8 +188,17 @@ describe('encodeScopeLine round-trip', () => {
   ): void => {
     const decoded = decodeScopeLine(raw, plots, kinds, 0);
     const scope = loadedScope(decoded, plots);
-    const tokens = encodeScopeLine(scope, () => 0);
-    expect(decodeScopeLine(tokens, plots, kinds, scope.position)).toEqual(decoded);
+    const first = encodeScopeLine(scope, () => 0);
+    // Re-encoding the re-decoded line must be stable. Some old-format lines
+    // (manual mode without per-plot pairs, or pairs or a divisions token
+    // without manual mode) normalize to upstream's current canonical form on
+    // the first encode (ScopeSerializer.java:29-30, 42-43), so the fixed point
+    // is reached on the second pass, not the first.
+    const second = encodeScopeLine(
+      loadedScope(decodeScopeLine(first, plots, kinds, scope.position), plots),
+      () => 0,
+    );
+    expect(second).toEqual(first);
   };
 
   it('reproduces every corpus shape field-for-field', () => {
@@ -212,8 +227,11 @@ describe('encodeScopeLine round-trip', () => {
   });
 
   it('round-trips per-plot AC coupling and manual scale', () => {
+    // Manual mode (bit 16): the per-plot man-scale pairs and the divisions
+    // token ride the line (ScopeSerializer.java:29-30, 42-43). The encoder
+    // writes a pair for every plot and the divisions token after the count.
     roundTrips(
-      ['64', '0', '790528', '20', '0.05', '0', '2', '1', '2', '50', '0', '0', '3', '1', '60', 'label'],
+      ['64', '0', '790544', '20', '0.05', '0', '2', '8', '1', '2', '50', '0', '0', '3', '1', '60', 'label'],
       [plot(0, 'voltage'), plot(1, 'current')],
       [null, 'resistor'],
     );
@@ -229,6 +247,7 @@ describe('encodeScopeLine round-trip', () => {
     const kinds = ['resistor', 'resistor'];
     const decoded = decodeScopeLine(raw, plots, kinds, 0);
     expect(decoded.showV).toBe(true);
+    expect(decoded.manDivisions).toBe(4);
     expect(decoded.perPlot).toEqual([
       { acCoupled: false, manScale: null, manVPosition: 0 },
       { acCoupled: false, manScale: null, manVPosition: 0 },
@@ -240,28 +259,45 @@ describe('encodeScopeLine round-trip', () => {
   it('round-trips a per-plot W-scale token after the second plot value', () => {
     // The second plot is power, so its per-unit scale token follows its
     // `ne val` pair and must be skipped before the label (ScopeSerializer.java:
-    // 236-238); the encoder pushes the same fixed 20 per division.
+    // 236-238); the encoder pushes the same fixed 20 per division. The power
+    // plot loads at the bottom of the manual-mode screen, so its manVPosition
+    // is -100 (ScopePlot.java:62-66).
     const raw = ['64', '0', '4099', '20', '0.05', '0', '2', '0', '7', '20'];
     const plots = [plot(0, 'voltage'), plot(0, 'power')];
     const kinds = ['resistor', 'resistor'];
     const decoded = decodeScopeLine(raw, plots, kinds, 0);
     expect(decoded.perPlot).toEqual([
       { acCoupled: false, manScale: null, manVPosition: 0 },
-      { acCoupled: false, manScale: null, manVPosition: 0 },
+      { acCoupled: false, manScale: null, manVPosition: -100 },
     ]);
     expect(decoded.label).toBe('');
     roundTrips(raw, plots, kinds);
   });
 
+  it('round-trips the showElmInfo flag (bit 1<<20) and manDivisions', () => {
+    // showElmInfo + manualScale: flags 1052691 = 1<<20 + FLAG_MAN_SCALE +
+    // FLAG_PLOTS + showV + showI. The re-encoded manual-mode line carries the
+    // divisions token and a per-plot pair.
+    const raw = ['64', '0', '1052691', '20', '0.05', '0', '1'];
+    const plots = [plot(0, 'voltage')];
+    const decoded = decodeScopeLine(raw, plots, ['resistor'], 0);
+    expect(decoded.showElmInfo).toBe(true);
+    expect(decoded.manualScale).toBe(true);
+    expect(decoded.manDivisions).toBe(8);
+    roundTrips(raw, plots, ['resistor']);
+  });
+
   it('writes upstream-shaped token streams', () => {
-    // The power line's decoded state encodes with the W-scale token and the
-    // old-style line's decoded state encodes as the equivalent new-style line.
+    // The power line decodes with manualScale on (bit 16), so the encoder
+    // writes the canonical manual-mode form: FLAG_DIVISIONS (1<<21) and
+    // FLAG_PERPLOT_MAN_SCALE (1<<19) ride the flag word, the divisions token
+    // follows the plot count, and a man-scale pair follows the W-scale token.
     const power = loadedScope(
       decodeScopeLine(['64', '7', '135187', '80', '0.00009765625', '0', '1', '160'], [plot(17, 'power')], ['resistor'], 0),
       [plot(17, 'power')],
     );
     expect(encodeScopeLine(power, () => 17)).toEqual([
-      '64', '7', '135187', '80', '0.00009765625', '0', '1', '20',
+      '64', '7', '2756627', '80', '0.00009765625', '0', '1', '8', '20', '1', '-100',
     ]);
     const oldStyle = loadedScope(
       decodeScopeLine(['64', '0', '6', '5.0', '9.765625E-5', '0', 'set'], [plot(15, 'voltage')], [null], 0),

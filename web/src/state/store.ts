@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Scope, ScopePlot, ScopeTrigger, ScopeValue } from '../engine/simulator';
 import { scopeSpeed } from '../scope/geometry';
+import { positionToOffset } from '../scope/scale';
 import {
   allocateId,
   isElementLine,
@@ -277,7 +278,10 @@ const DIODE_MODEL_PARAMS = [
 const OUTPUT_LIKE = new Set(['output', 'logicOutput', 'audioOutput', 'testPoint', 'probe']);
 
 function makePlot(id: number, elementId: number | null, value: ScopeValue | null): ScopePlot {
-  return { id, elementId, value, manScale: null, manVPosition: 0, acCoupled: false };
+  // Power and charge plots start at the bottom of the manual-mode screen, the
+  // port of ScopePlot's constructor (ScopePlot.java:62-66).
+  const manVPosition = value === 'power' || value === 'charge' ? -100 : 0;
+  return { id, elementId, value, manScale: null, manVPosition, acCoupled: false };
 }
 
 function defaultTrigger(): ScopeTrigger {
@@ -306,6 +310,7 @@ function makeScope(
     manualScale: false,
     maxScale: false,
     label: '',
+    manDivisions: 8,
     showScale: false,
     // Upstream's default: showMax is on, everything else off (Scope.java:272-275).
     showMax: true,
@@ -318,6 +323,7 @@ function makeScope(
     fftPlot: false,
     logSpectrum: false,
     plotXY: false,
+    showElmInfo: false,
     showI: true,
     showV: true,
     scaleV: 20,
@@ -1375,6 +1381,33 @@ function createAppStore() {
       };
     }),
 
+  setScopeShowValue: (scopeId, value, show) =>
+    set((s) => {
+      const scope = s.scopes.find((x) => x.id === scopeId);
+      if (!scope) return s;
+      const key = value === 'voltage' ? 'showV' : 'showI';
+      const first = scope.plots.find((p) => p.elementId !== null)?.elementId ?? null;
+      // Turning a value on with no plot of it present adds one for the
+      // scope's first element, upstream's showVoltage/showCurrent
+      // (Scope.java:115-134). A plot is a netlist change, so adding one
+      // bumps revision; the visibility flag alone is display-only and must
+      // not rewind the simulation.
+      const addPlot = show && first !== null && !scope.plots.some((p) => p.value === value);
+      if (!addPlot && scope[key] === show) return s;
+      return {
+        scopes: s.scopes.map((x) =>
+          x.id === scopeId
+            ? {
+                ...x,
+                [key]: show,
+                plots: addPlot ? [...x.plots, makePlot(allocateId(), first, value)] : x.plots,
+              }
+            : x,
+        ),
+        ...(addPlot ? { revision: s.revision + 1 } : {}),
+      };
+    }),
+
   setPlotCoupling: (scopeId, plotId, acCoupled) =>
     set((s) => {
       const scope = s.scopes.find((x) => x.id === scopeId);
@@ -1410,7 +1443,10 @@ function createAppStore() {
       scopes: s.scopes.map((x) => ({
         ...x,
         plots: x.plots.map((p) =>
-          p.id === plotId ? { ...p, manVPosition: Math.max(-100, Math.min(100, manVPosition)) } : p,
+          // Upstream's +-V_POSITION_STEPS span (Scope.java:1227-1228); the
+          // draw divides by the same 200, so a 200 parks a plot at the very
+          // top of the screen.
+          p.id === plotId ? { ...p, manVPosition: positionToOffset(manVPosition) } : p,
         ),
       })),
     })),

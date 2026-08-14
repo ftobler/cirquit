@@ -226,6 +226,14 @@ impl Element for Capacitor {
         self.base.current = self.geq * v - self.ieq;
     }
 
+    /// Charge on the plate, `C * Vplate`, upstream's `getScopeValue(VAL_CHARGE)`
+    /// (CapacitorElm.java:225-229). `v_prev` holds the plate voltage
+    /// (`step_finished` below), which is what the scope's stored charge must
+    /// track, not the terminal voltage.
+    fn charge(&self) -> f64 {
+        self.capacitance * self.v_prev
+    }
+
     fn step_finished(&mut self, _ctx: &SimCtx) {
         // The stored charge is the plate voltage (CapacitorElm.java:184).
         // The operating-point step commits too, so a capacitor the DC solve

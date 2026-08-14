@@ -1017,4 +1017,51 @@ fn unijunction_fires_when_the_emitter_is_driven_high() {
     );
 }
 
+#[test]
+fn charge_scope_samples_capacitance_times_plate_voltage() {
+    // A charge scope on a capacitor must sample C*Vplate, upstream's
+    // `getScopeValue(VAL_CHARGE)` (CapacitorElm.java:225-229). The DC
+    // operating point charges the cap to the 10 V rail, so the stored charge
+    // is 1e-4 * 10 = 1e-3 C. The engine side of the port's o-line token 8
+    // contract: a saved file's charge trace has to reload as a real charge,
+    // or it would redraw as a flat voltage waveform.
+    let c = &mut build_with(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-4)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+        vec![ScopeSpec {
+            element_id: 3,
+            value: ScopeValue::Charge,
+            post: 0,
+            steps_per_column: 1,
+            columns: 1024,
+            ac_coupled: false,
+            trigger: Default::default(),
+            display_width: 0,
+        }],
+    );
+    c.run(30);
+    let snap = c.scopes()[0].snapshot();
+    let (min, max) = (snap[snap.len() - 2] as f64, snap[snap.len() - 1] as f64);
+    assert!(
+        close(min, 1e-3, 1e-6) && close(max, 1e-3, 1e-6),
+        "charge scope sampled {min}/{max}, expected 1e-3 C"
+    );
+}
+
 // ─── Composite elements and the OTA (Milestone B subcircuits) ───

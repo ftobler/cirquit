@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import type { ScopeValue } from '../engine/simulator';
 import { seedManScale, barToSpeed, speedToBar, gridStepX, scaleStateFor } from '../scope/scale';
 import { formatValue } from '../render/draw';
 import { MAN_DIVISIONS } from '../scope/draw';
@@ -24,7 +25,6 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
   const scope = useStore((s) => s.scopes.find((x) => x.id === scopeId));
   const [labelText, setLabelText] = useState(scope?.label ?? '');
   const [levelText, setLevelText] = useState(String(scope?.trigger.level ?? 0));
-  const [divisions, setDivisions] = useState(String(MAN_DIVISIONS));
   // Modal focus handling like the Dialog shell: Trap Tab, return focus to the
   // opener on close. The opener (a scope-menu row) is usually gone by then,
   // so the trap's restore guards against a detached element.
@@ -51,7 +51,10 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
       for (const plot of scope.plots) {
         if (plot.manScale === null) {
           const gridMax = scaleStateFor(plot.id).gridMax;
-          useStore.getState().setPlotManScale(plot.id, seedManScale(gridMax, Number(divisions) || MAN_DIVISIONS));
+          useStore.getState().setPlotManScale(
+            plot.id,
+            seedManScale(gridMax, scope.manDivisions || MAN_DIVISIONS),
+          );
         }
       }
       setFlags({ manualScale: true, maxScale: false });
@@ -67,6 +70,13 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
     if (Number.isFinite(v) && v > 0) useStore.getState().setPlotManScale(plotId, v);
   };
 
+  const setDivisions = (text: string) => {
+    const n = Math.round(Number(text));
+    if (Number.isFinite(n) && n > 0 && n !== scope.manDivisions) {
+      useStore.getState().setScopeFlags(scope.id, { manDivisions: n });
+    }
+  };
+
   const applyTriggerLevel = () => {
     const v = Number(levelText);
     if (Number.isFinite(v)) useStore.getState().setScopeTrigger(scope.id, { level: v });
@@ -80,6 +90,30 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
       {label}
     </label>
   );
+
+  // The scope's single element, when there is exactly one and its kind is
+  // known: which extra Plots boxes the dialog offers (ScopePropertiesDialog
+  // shows Show Charge only for a capacitor, ScopePropertiesDialog.java:573-576).
+  const singleElement = scope.plots.find((p) => p.elementId !== null)?.elementId ?? null;
+  const element = singleElement === null ? null : useStore.getState().elements.find((e) => e.id === singleElement)?.kind ?? null;
+  const isCapacitor = element === 'capacitor' || element === 'polarizedCapacitor';
+
+  // The Plots boxes mirror upstream's ScopeCheckBox states
+  // (ScopePropertiesDialog.java:801-804): checked when the show flag is on and
+  // a matching plot exists. Toggling on with none present adds one.
+  const showBox = (label: string, value: 'voltage' | 'current') => (
+    <label key={value}>
+      <input
+        type="checkbox"
+        checked={(value === 'voltage' ? scope.showV : scope.showI) && scope.plots.some((p) => p.value === value)}
+        onChange={(e) => useStore.getState().setScopeShowValue(scope.id, value, e.target.checked)}
+      />
+      {label}
+    </label>
+  );
+
+  const channelLetter = (value: ScopeValue | null) =>
+    value === 'voltage' ? 'V' : value === 'current' ? 'I' : value === 'power' ? 'P' : value === 'charge' ? 'Q' : '?';
 
   return (
     <div className="scope-props" role="dialog" aria-modal="true" aria-label="Scope properties" tabIndex={-1} ref={panelRef}>
@@ -115,7 +149,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
             id="divisions"
             className="scalebox"
             type="text"
-            value={divisions}
+            value={String(scope.manDivisions)}
             onChange={(e) => setDivisions(e.target.value)}
             style={{ width: 48 }}
           />
@@ -127,7 +161,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
         {scope.plots.map((plot) => (
           <div key={plot.id} className="scope-props-channel">
             <div className="row">
-              <span>{`CH ${plot.value === 'voltage' ? 'V' : plot.value === 'current' ? 'I' : 'P'}`}</span>
+              <span>{`CH ${channelLetter(plot.value)}`}</span>
               <label>
                 <input
                   type="radio"
@@ -161,8 +195,8 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
                 <span>/div</span>
                 <input
                   type="range"
-                  min={-100}
-                  max={100}
+                  min={-200}
+                  max={200}
                   value={plot.manVPosition}
                   onChange={(e) =>
                     useStore.getState().setPlotManPosition(plot.id, Number(e.target.value))
@@ -242,6 +276,18 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
       <fieldset>
         <legend>Measurements</legend>
         <div className="row" style={{ flexWrap: 'wrap' }}>
+          {showBox('Show Voltage', 'voltage')}
+          {showBox('Show Current', 'current')}
+          {isCapacitor && (
+            <label key="charge">
+              <input
+                type="checkbox"
+                checked={scope.plots.some((p) => p.value === 'charge')}
+                onChange={() => useStore.getState().togglePlot(scope.id, 'charge')}
+              />
+              Show Charge
+            </label>
+          )}
           {rows('Scale', scope.showScale, 'showScale')}
           {rows('Max', scope.showMax, 'showMax')}
           {rows('Min', scope.showMin, 'showMin')}
@@ -250,6 +296,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
           {rows('RMS', scope.showRMS, 'showRMS')}
           {rows('Average', scope.showAverage, 'showAverage')}
           {rows('Duty Cycle', scope.showDutyCycle, 'showDutyCycle')}
+          {rows('Extended Info', scope.showElmInfo, 'showElmInfo')}
           {rows('Spectrum', scope.fftPlot, 'fftPlot')}
           {rows('Log Spectrum', scope.logSpectrum, 'logSpectrum')}
           {rows('X-Y', scope.plotXY, 'plotXY')}

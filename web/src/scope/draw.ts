@@ -10,6 +10,7 @@
 import type { Scope, ScopePlot, ScopeValue, SimEngine } from '../engine/simulator';
 import { canvasFont, formatValue, makeTheme } from '../render/draw';
 import type { ThemeColors } from '../model/types';
+import { defFor } from '../model/registry';
 import { scopeSpeed, timeToX } from './geometry';
 import {
   axisSamplesFit,
@@ -26,11 +27,17 @@ import {
   xyScaleFor,
 } from './scale';
 import { average, dutyCycle, estimateFrequency, maxValue, minValue, rms } from './measure';
-import { dbOf, spectrumMagnitudes } from './fft';
 import { buildCsv } from './csv';
 import { tracePolyline } from './trace';
+import { drawInfo, type InfoLine } from './info';
+import { drawFFT } from './spectrum';
 
-export const UNIT: Record<ScopeValue, string> = { voltage: 'V', current: 'A', power: 'W' };
+export const UNIT: Record<ScopeValue, string> = {
+  voltage: 'V',
+  current: 'A',
+  power: 'W',
+  charge: 'C',
+};
 
 /** Cursor and drag state, kept in a ref so it survives frame redraws. */
 export interface ScopeCursor {
@@ -39,7 +46,13 @@ export interface ScopeCursor {
   hover: boolean;
   /** Canvas x of the pointer, for the FFT readout. */
   mouseX: number;
+  /** Index into the visible-plot list of the trace the cursor dot reads,
+   *  which the showV/showI flags can shorten between frames. */
   selectedPlot: number;
+  /** Plot id grabbed at pointer-down for the vertical drag. Stored by id
+   *  rather than by index: `selectedPlot` is a visible-list index, and the
+   *  full `scope.plots` list is longer when a plot is hidden. */
+  dragPlotId: number;
   draggingPlotY: boolean;
   dragPlotYStart: number;
   dragPlotYInitial: number;
@@ -52,6 +65,7 @@ export function emptyCursor(): ScopeCursor {
     hover: false,
     mouseX: 0,
     selectedPlot: -1,
+    dragPlotId: -1,
     draggingPlotY: false,
     dragPlotYStart: 0,
     dragPlotYInitial: 0,
@@ -69,6 +83,22 @@ export const isDrawable = (plot: ScopePlot): plot is DrawablePlot =>
   plot.elementId !== null && plot.value !== null;
 
 export type DrawablePlot = ScopePlot & { elementId: number; value: ScopeValue };
+
+/** The plots actually drawn, the port of `calcVisiblePlots` (Scope.java:289-315):
+ *  a voltage plot is visible only when showV is on, a current plot only when
+ *  showI is on, anything else (power, charge) always. X-Y mode shows every
+ *  plot so the axis scales can be adjusted for any of them, exactly as
+ *  upstream's 2D branch does. */
+export function visiblePlotsOf(scope: Scope): ScopePlot[] {
+  if (scope.plotXY) return scope.plots;
+  return scope.plots.filter((p) => showPlot(scope, p));
+}
+
+function showPlot(scope: Scope, p: ScopePlot): boolean {
+  if (p.value === 'voltage') return scope.showV;
+  if (p.value === 'current') return scope.showI;
+  return true;
+}
 
 function colorOf(plot: ScopePlot, dark: boolean, colors?: ThemeColors): string {
   // The default V/I palette mirrors upstream (ScopePlot.assignColor): voltage
@@ -109,6 +139,8 @@ interface TriggerInfoLike {
   written: number;
   state: number;
   triggered: boolean;
+  /** Armed with no trigger yet, the WAIT status (ScopeTrigger.java:198-204). */
+  waiting: boolean;
   /** Sim time at the trigger, for anchored time conversions. */
   time: number;
 }
@@ -169,8 +201,9 @@ function transformFor(
   if (scope.manualScale) {
     // Manual mode: the grid is driven by the plot's manScale and the vertical
     // position by manVPosition (Scope.java:787-792).
-    const manScale = plot.manScale ?? seedManScale(5, MAN_DIVISIONS);
-    const gridMax = (MAN_DIVISIONS / 2 + 0.05) * manScale;
+    const divisions = scope.manDivisions || MAN_DIVISIONS;
+    const manScale = plot.manScale ?? seedManScale(5, divisions);
+    const gridMax = (divisions / 2 + 0.05) * manScale;
     return {
       gridMid: 0,
       gridMult: maxy / gridMax,
@@ -293,24 +326,6 @@ function drawGridLines(
   }
 }
 
-interface InfoLine {
-  text: string;
-  color?: string;
-  y: number;
-}
-
-/** Draws stacked info text at the given y positions. */
-function drawInfo(ctx: CanvasRenderingContext2D, lines: InfoLine[], h: number): void {
-  ctx.font = canvasFont(10);
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  for (const line of lines) {
-    if (line.y < 0 || line.y >= h - 5) continue;
-    ctx.fillStyle = line.color ?? '#8b949e';
-    ctx.fillText(line.text, 4, line.y);
-  }
-}
-
 /** The scope's own label as a title line, in the theme text colour, drawn
  *  only when it is set (ScopeOverlays.draw / Scope.getScopeLabelOrText). */
 function drawScopeLabel(ctx: CanvasRenderingContext2D, scope: Scope, h: number): void {
@@ -328,7 +343,14 @@ export function triggerTimeAnchor(
   w: number,
 ): { time: number } | null {
   if (scope.trigger.mode === 'freeRun') return null;
-  const index = engine.scopeIndexOf(scope.plots[0].id);
+  // The anchored window is drawn from the first visible trace (drawScope),
+  // so the cursor time conversion must anchor off that same trace: with plot 0
+  // hidden by showV/showI, `scope.plots[0]` is a different trace's ring and
+  // the cursor dot would sit a column off the pointer.
+  const index = visiblePlotsOf(scope)
+    .filter(isDrawable)
+    .map((plot) => engine.scopeIndexOf(plot.id))
+    .find((i): i is number => i !== undefined);
   if (index === undefined) return null;
   const trig = engine.triggerInfo(index, w);
   const anchor = trig.triggered ? { time: trig.time } : null;
@@ -346,23 +368,38 @@ function drawHeader(
   h: number,
   dark: boolean,
   decimalDigits: number,
+  kindOf: (elementId: number) => string | null,
 ): void {
   const lines: InfoLine[] = [];
   // The scope's own label renders as a title line above the scale, in the
   // theme text colour, and only when it is set (ScopeOverlays.draw:
-  // getScopeLabelOrText).
+  // getScopeLabelOrText). Show Extended Info takes its place and draws the
+  // plotted element's name instead, the port of `drawElmInfo`'s first line
+  // (ScopeOverlays.java:179-184); the full getInfo array (current, power, ...)
+  // is deferred as element-model work the port has no table for.
   let y = 4;
   if (scope.label) {
     lines.push({ text: scope.label, y });
     y += 15;
+  } else if (scope.showElmInfo && firstPlot.elementId !== null) {
+    const kind = kindOf(firstPlot.elementId);
+    const name = kind === null ? null : (defFor(kind)?.label ?? kind);
+    if (name) {
+      lines.push({ text: name, y });
+      y += 15;
+    }
   }
   const hs = `H=${formatValue(gridStepX(speed, timeStep), 's', decimalDigits)}/div`;
   if (scope.manualScale) {
     // Per-plot coloured /div labels (ScopeOverlays.drawScale, manual mode).
     lines.push({ text: hs, y });
     let x = 0;
-    for (const p of scope.plots.filter(isDrawable)) {
-      const manScale = p.manScale ?? seedManScale(5, MAN_DIVISIONS);
+    // Only the visible plots get a bullet and /div label (ScopeOverlays.drawScale
+    // iterates `visiblePlots`), so a plot hidden by showV/showI stays off the
+    // header.
+    for (const p of visiblePlotsOf(scope).filter(isDrawable)) {
+      const divisions = scope.manDivisions || MAN_DIVISIONS;
+      const manScale = p.manScale ?? seedManScale(5, divisions);
       const s = `=${formatValue(manScale, UNIT[p.value], decimalDigits)}/div`;
       ctx.font = canvasFont(10);
       const width = ctx.measureText(s).width + 20;
@@ -375,14 +412,12 @@ function drawHeader(
       x += width;
     }
   } else {
-    // Auto scale: the V label shows unless both V and I are plotted
-    // (ScopeOverlays.java:22-25).
-    const hasV = scope.plots.some((p) => p.value === 'voltage');
-    const hasI = scope.plots.some((p) => p.value === 'current');
+    // Auto scale: the V label is hidden when both V and I plots are shown
+    // (ScopeOverlays.drawScale, ScopeOverlays.java:21-25).
     const vs =
-      hasV && !hasI
-        ? ` V=${formatValue(firstTransform.stepY, UNIT[firstPlot.value], decimalDigits)}/div`
-        : '';
+      scope.showV && scope.showI
+        ? ''
+        : ` V=${formatValue(firstTransform.stepY, UNIT[firstPlot.value], decimalDigits)}/div`;
     lines.push({ text: hs + vs, y });
   }
   drawInfo(ctx, lines, h);
@@ -470,7 +505,11 @@ function drawCursor(
 ): void {
   if (!cursor.hover || cursor.cursorTime < 0 || states.length === 0) return;
   const maxy = Math.floor((h - 1) / 2);
-  const selected = states[cursor.selectedPlot >= 0 ? cursor.selectedPlot : 0];
+  // The selected plot is an index into the visible list, which the showV/
+  // showI flags can shorten between frames; a stale index falls back to the
+  // first plot rather than reading a gap.
+  const selected =
+    states[cursor.selectedPlot >= 0 && cursor.selectedPlot < states.length ? cursor.selectedPlot : 0];
   const x = timeToX(cursor.cursorTime, simTime, w, speed, timeStep, triggerAnchor);
   if (x < 0 || x >= w) return;
   ctx.strokeStyle = '#ffffff';
@@ -525,133 +564,9 @@ function drawCursor(
   drawInfo(ctx, lines, h);
 }
 
-/** Draws the FFT spectrum (ScopeFFT.java:43-111). Blanks until the ring is
- *  full enough for a complete transform. */
-function drawFFT(
-  ctx: CanvasRenderingContext2D,
-  scope: Scope,
-  data: Float32Array,
-  columns: number,
-  w: number,
-  h: number,
-  speed: number,
-  timeStep: number,
-  cursor: ScopeCursor,
-  decimalDigits: number,
-): void {
-  const n = Math.pow(2, Math.ceil(Math.log2(columns)));
-  // Blank until columns_written >= columns: a partial ring would feed the
-  // transform stale zeroes.
-  if (columns < n) return;
-  const values = new Float64Array(n);
-  const start = columns - n;
-  for (let i = 0; i < n; i++) {
-    values[i] = 0.5 * (data[(start + i) * 2] + data[(start + i) * 2 + 1]);
-  }
-  const mag = spectrumMagnitudes(values);
-  let maxM = 1e-8;
-  for (let i = 0; i < mag.length; i++) if (mag[i] > maxM) maxM = mag[i];
+/** Draws the FFT spectrum overlay (ScopeFFT.java), from `fft.ts`'s windowing
+ *  math plus the frequency grid and cursor readout in `spectrum.ts`. */
 
-  // Frequency grid: 20 divisions up to 1/(timeStep*speed*2)
-  // (ScopeFFT.java:24-41).
-  const divs = 20;
-  const maxFreq = 1 / (timeStep * speed * divs * 2);
-  ctx.font = canvasFont(9);
-  let prevEnd = 0;
-  for (let i = 0; i < divs; i++) {
-    const x = (w * i) / divs;
-    if (x < prevEnd) continue;
-    const s = `${Math.round(i * maxFreq)}Hz`;
-    const sWidth = ctx.measureText(s).width;
-    prevEnd = x + sWidth + 4;
-    if (i > 0) {
-      ctx.strokeStyle = '#880000';
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
-      ctx.stroke();
-    }
-    ctx.fillStyle = '#ff5555';
-    ctx.fillText(s, x + 2, h - 4);
-  }
-
-  drawSpectrumBody(ctx, mag, maxM, w, h, n, scope.logSpectrum);
-
-  // Cursor readout: frequency and dB at the mouse x (ScopeFFT.java:159-171).
-  if (cursor.hover) {
-    const cx = cursor.mouseX;
-    const f = (maxFreq * divs * cx) / w;
-    const lines: InfoLine[] = [{ text: formatValue(f, 'Hz', decimalDigits), y: 4 }];
-    const fftIndex = Math.floor((cx * n) / (2 * w));
-    if (fftIndex >= 0 && fftIndex < mag.length && maxM > 0) {
-      lines.push({ text: `${Math.round(dbOf(mag[fftIndex], maxM))} dB`, y: 19 });
-    }
-    drawInfo(ctx, lines, h);
-  }
-}
-
-function drawSpectrumBody(
-  ctx: CanvasRenderingContext2D,
-  mag: Float64Array,
-  maxM: number,
-  w: number,
-  h: number,
-  n: number,
-  logSpectrum: boolean,
-): void {
-  if (!logSpectrum) {
-    ctx.strokeStyle = '#ff5555';
-    ctx.beginPath();
-    const y0 = h - 12;
-    let prevX = 0;
-    let prevHeight = 0;
-    for (let i = 0; i < mag.length; i++) {
-      const x = (2 * i * w) / n;
-      const height = (mag[i] * y0) / maxM;
-      if (x !== prevX) {
-        ctx.moveTo(prevX, y0 - prevHeight);
-        ctx.lineTo(x, y0 - height);
-      }
-      prevHeight = height;
-      prevX = x;
-    }
-    ctx.stroke();
-  } else {
-    const dbRange = 80;
-    const topMargin = 5;
-    const bottomMargin = 12;
-    const plotHeight = h - topMargin - bottomMargin;
-    const pixelsPerDb = plotHeight / dbRange;
-    for (let db = -20; db >= -80; db -= 20) {
-      const y = topMargin + -db * pixelsPerDb;
-      if (y < 0 || y >= h) continue;
-      ctx.strokeStyle = '#880000';
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
-      ctx.fillStyle = '#ff5555';
-      ctx.font = canvasFont(9);
-      ctx.fillText(`${db} dB`, 2, y - 2);
-    }
-    ctx.strokeStyle = '#ff5555';
-    ctx.beginPath();
-    let prevX = 0;
-    let prevY = 0;
-    for (let i = 0; i < mag.length; i++) {
-      const x = (2 * i * w) / n;
-      const db = dbOf(mag[i], maxM, dbRange);
-      const y = topMargin + -db * pixelsPerDb;
-      if (x !== prevX) {
-        ctx.moveTo(prevX, prevY);
-        ctx.lineTo(x, y);
-      }
-      prevY = y;
-      prevX = x;
-    }
-    ctx.stroke();
-  }
-}
 
 /** Offscreen persistence canvases for X-Y mode, keyed by scope id. The locus
  *  is drawn into one and faded over time, so slow signals leave a trail
@@ -750,7 +665,7 @@ function drawTrigger(
   ctx: CanvasRenderingContext2D,
   scope: Scope,
   t: PlotTransform,
-  trig: { state: number; triggered: boolean } | null,
+  trig: { state: number; triggered: boolean; waiting: boolean } | null,
   w: number,
   h: number,
 ): void {
@@ -769,8 +684,11 @@ function drawTrigger(
     ctx.font = canvasFont(9);
     ctx.fillText(scope.trigger.edge === 'rising' ? 'T↑' : 'T↓', w - 25, trigY - 3);
   }
+  // The status text keys off the tracker state and its `waiting` flag, never
+  // off `triggered`: `fired` stays latched across a re-arm, so it cannot tell
+  // WAIT from ARMED (ScopeTrigger.drawIndicator, ScopeTrigger.java:198-204).
   const status =
-    trig?.state === 1 ? 'TRIG' : trig?.state === 2 ? 'AUTO' : trig?.triggered ? 'WAIT' : 'ARMED';
+    trig?.state === 1 ? 'TRIG' : trig?.state === 2 ? 'AUTO' : trig?.waiting ? 'WAIT' : 'ARMED';
   ctx.font = canvasFont(10);
   const sw = ctx.measureText(status).width;
   ctx.fillStyle = TRIGGER_COLOR;
@@ -793,6 +711,7 @@ export function drawScope(
   dark: boolean,
   decimalDigits = 3,
   colors?: ThemeColors,
+  kindOf?: (elementId: number) => string | null,
 ): void {
   const theme = makeTheme(dark, colors);
   ctx.fillStyle = theme.background;
@@ -806,7 +725,7 @@ export function drawScope(
     return;
   }
 
-  const plots = scope.plots
+  const plots = visiblePlotsOf(scope)
     .filter(isDrawable)
     .map((plot) => ({ plot, index: engine.scopeIndexOf(plot.id) }))
     .filter((x): x is { plot: DrawablePlot; index: number } => x.index !== undefined);
@@ -824,6 +743,7 @@ export function drawScope(
         written: trig.written,
         state: trig.state,
         triggered: trig.triggered,
+        waiting: trig.waiting,
         time: trig.time,
       }
     : null;
@@ -885,7 +805,18 @@ export function drawScope(
   }
 
   if (!(cursor.hover && cursor.cursorTime >= 0)) {
-    drawHeader(ctx, scope, first.transform, first.plot, speed, timeStep, h, dark, decimalDigits);
+    drawHeader(
+      ctx,
+      scope,
+      first.transform,
+      first.plot,
+      speed,
+      timeStep,
+      h,
+      dark,
+      decimalDigits,
+      kindOf ?? (() => null),
+    );
   }
   drawMeasurements(ctx, scope, states[0], h, speed, timeStep, decimalDigits);
   drawCursor(ctx, cursor, states, simTime, speed, timeStep, w, h, triggerAnchor, dark, decimalDigits);
@@ -902,7 +833,7 @@ export function selectPlotAt(
   h: number,
 ): number {
   const maxy = Math.floor((h - 1) / 2);
-  const plots = scope.plots
+  const plots = visiblePlotsOf(scope)
     .filter(isDrawable)
     .map((plot) => ({ plot, index: engine.scopeIndexOf(plot.id) }))
     .filter((p): p is { plot: DrawablePlot; index: number } => p.index !== undefined);
@@ -940,7 +871,9 @@ export function exportScopeCsv(
   simTime: number,
 ): string {
   const rows: { name: string; unit: string; min: Float32Array; max: Float32Array }[] = [];
-  for (const plot of scope.plots.filter(isDrawable)) {
+  // CSV exports the visible plots, like upstream's exportCSV over
+  // `visiblePlots` (Scope.java:1143-1178).
+  for (const plot of visiblePlotsOf(scope).filter(isDrawable)) {
     const index = engine.scopeIndexOf(plot.id);
     if (index === undefined) continue;
     const data = engine.scopeData(index);

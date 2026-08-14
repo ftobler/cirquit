@@ -19,7 +19,7 @@ import type { LiveState } from '../io/liveState';
 import { scopeColumnCount, scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 
 /** The quantity a scope trace samples. */
-export type ScopeValue = 'voltage' | 'current' | 'power';
+export type ScopeValue = 'voltage' | 'current' | 'power' | 'charge';
 
 /** Trigger acquisition settings, mirroring ScopeTrigger.java. Free run
  *  disables the trigger. The strings match the engine's serde names. */
@@ -42,7 +42,7 @@ export interface ScopePlot {
   value: ScopeValue | null;
   /** Manual-scale units per division, or null when not user-set. */
   manScale: number | null;
-  /** Vertical position in -100..100, 0 centred (ScopePlot.java:42-43). */
+  /** Vertical position in -200..200, 0 centred (Scope.V_POSITION_STEPS). */
   manVPosition: number;
   /** DC-blocking filter on the raw sample (voltage plots only). */
   acCoupled: boolean;
@@ -71,6 +71,10 @@ export interface Scope {
   maxScale: boolean;
   /** The scope's own label, overriding the element-derived one. */
   label: string;
+  /** Vertical divisions in manual scale mode; the Properties dialog's
+   *  Divisions box, persisted on the `o` line under FLAG_DIVISIONS
+   *  (Scope.java:83, ScopeSerializer.java:18-19). */
+  manDivisions: number;
   /** Overlay and instrument-mode flags, all defaulting off except scale/max. */
   showScale: boolean;
   showMax: boolean;
@@ -83,9 +87,15 @@ export interface Scope {
   fftPlot: boolean;
   logSpectrum: boolean;
   plotXY: boolean;
-  /** The scope-line `showV`/`showI` label flags (ScopeSerializer.java:26-27),
-   *  carried for fidelity only. The port renders every plot and derives scale
-   *  automatically, so nothing in the UI reads them. */
+  /** Show Extended Info: draw the element's info lines on the scope
+   *  (ScopeOverlays.draw, ScopeOverlays.java:216-217). */
+  showElmInfo: boolean;
+  /** The scope-line `showV`/`showI` label flags (ScopeSerializer.java:26-27).
+   *  Unlike `scaleV`/`scaleA`, these are live: upstream's `calcVisiblePlots`
+   *  draws a voltage plot only when showV is on and a current plot only when
+   *  showI is on (Scope.java:289-315), so a loaded scope with the flag clear
+   *  hides that trace, and the Properties dialog's Show Voltage / Show Current
+   *  boxes toggle them (Scope.java:115-134). */
   showI: boolean;
   showV: boolean;
   /** The fixed `scaleV`/`scaleA` tokens a scope line carries after its flags

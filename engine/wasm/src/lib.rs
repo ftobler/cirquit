@@ -88,6 +88,8 @@ pub struct TriggerInfo {
     triggered: bool,
     /// 0 armed, 1 triggered, 2 auto-run.
     state: u8,
+    /// True while armed with no trigger yet (the WAIT status text).
+    waiting: bool,
     start_index: usize,
     valid_count: usize,
     columns: usize,
@@ -106,6 +108,10 @@ impl TriggerInfo {
     #[wasm_bindgen(getter)]
     pub fn state(&self) -> u8 {
         self.state
+    }
+    #[wasm_bindgen(getter)]
+    pub fn waiting(&self) -> bool {
+        self.waiting
     }
     /// Ring index where the display window starts.
     #[wasm_bindgen(getter)]
@@ -327,6 +333,7 @@ impl Simulator {
             .map(|t| TriggerInfo {
                 triggered: t.triggered,
                 state: t.state,
+                waiting: t.waiting,
                 start_index: t.start_index,
                 valid_count: t.valid_count,
                 columns: t.columns,

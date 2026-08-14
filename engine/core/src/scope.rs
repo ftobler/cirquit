@@ -397,6 +397,11 @@ impl ScopeTrace {
         TriggerInfo {
             triggered: self.trigger.is_triggered(mode),
             state: self.trigger.state_code(),
+            // The WAIT/ARMED status text needs the tracker's own `waiting`
+            // flag: `triggered` stays latched across a re-arm (as upstream's
+            // `fired` does, ScopeTrigger.java:103-150), so it cannot tell
+            // "waiting for the first edge" from "re-armed after a trigger".
+            waiting: self.trigger.waiting,
             start_index: ipa,
             valid_count: self.trigger.valid_data_count(mode, self.head, ipa, w, cap),
             columns: cap,
@@ -417,6 +422,9 @@ pub struct TriggerInfo {
     pub triggered: bool,
     /// 0 armed, 1 triggered, 2 auto-run: drives the WAIT/TRIG/AUTO status text.
     pub state: u8,
+    /// True while armed without a trigger yet; distinguishes WAIT from the
+    /// re-armed ARMED state (ScopeTrigger.drawIndicator, ScopeTrigger.java:198-204).
+    pub waiting: bool,
     /// Ring index where the display window starts.
     pub start_index: usize,
     /// Columns of valid data the display may draw.
@@ -573,6 +581,52 @@ mod tests {
         // `w/2` columns before the trigger column and extends `w` wide.
         assert_eq!(info.start_index, 3 + 64 - 32);
         assert_eq!(info.valid_count, (6 + 64 - info.start_index) % 64 + 1);
+    }
+
+    #[test]
+    fn trigger_waiting_drives_the_wait_status_text() {
+        // The WAIT/ARMED status text (ScopeTrigger.java:198-204) keys off the
+        // tracker's `waiting` flag, never off `fired`: `fired` latches on the
+        // first trigger and survives a re-arm, so `triggered` cannot tell
+        // "waiting for the first edge" from "re-armed". Before any edge the
+        // armed tracker is waiting; after a trigger it is not.
+        let mut t = ScopeTrace::new(trigger_spec(1, 64, TriggerMode::Normal, 2.0), Some(0));
+        for _ in 0..3 {
+            t.push(0.0, 0.0);
+        }
+        let info = t.trigger_info(64);
+        assert_eq!(info.state, 0);
+        assert!(info.waiting, "first arm should read WAIT");
+        assert!(!info.triggered);
+        // Cross the level: triggered, no longer waiting.
+        for _ in 0..3 {
+            t.push(3.0, 0.0);
+        }
+        let info = t.trigger_info(64);
+        assert_eq!(info.state, 1);
+        assert!(!info.waiting);
+        assert!(info.triggered);
+        // One screen width of holdoff re-arms, then the signal still sitting
+        // above the level means the next armed checks find no edge and the
+        // tracker is waiting again, so the UI reads WAIT while `triggered`
+        // stays latched (upstream-faithful; do not clear `fired` on re-arm).
+        for _ in 0..70 {
+            t.push(3.0, 0.0);
+        }
+        let info = t.trigger_info(64);
+        assert_eq!(info.state, 0);
+        assert!(info.waiting, "re-armed without an edge reads WAIT");
+        assert!(info.triggered);
+        // A fresh edge re-triggers and clears the waiting state.
+        for _ in 0..3 {
+            t.push(0.0, 0.0);
+        }
+        for _ in 0..3 {
+            t.push(4.0, 0.0);
+        }
+        let info = t.trigger_info(64);
+        assert_eq!(info.state, 1);
+        assert!(!info.waiting);
     }
 
     #[test]

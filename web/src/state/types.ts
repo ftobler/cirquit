@@ -333,6 +333,11 @@ export interface AppState {
   setScopeTrigger(id: number, patch: Partial<ScopeTrigger>): void;
   /** Display flags (overlays, scale mode, FFT/X-Y); never forces a reload. */
   setScopeFlags(id: number, patch: Partial<Omit<Scope, 'id' | 'raw' | 'plots' | 'trigger'>>): void;
+  /** Shows or hides every voltage (showV) or current (showI) plot, the
+   *  Properties dialog's Show Voltage / Show Current boxes (Scope.java:115-134).
+   *  Enabling a value with no plot of it present adds one for the scope's first
+   *  element; adding a plot forces a reload, the flag alone does not. */
+  setScopeShowValue(scopeId: number, value: 'voltage' | 'current', show: boolean): void;
   setPlotCoupling(scopeId: number, plotId: number, acCoupled: boolean): void;
   setPlotManScale(plotId: number, manScale: number | null): void;
   setPlotManPosition(plotId: number, manVPosition: number): void;

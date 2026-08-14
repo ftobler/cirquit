@@ -161,10 +161,10 @@ fetch it).
   `voltDiff` and series resistance, inductor current, junction voltages, relay
   and logic-latch state. Event-driven (save and rebuild only), so the per-frame
   loop stays one call.
-- 373 Rust tests, of which 332 are the end-to-end circuit checks against
+- 383 Rust tests, of which 337 are the end-to-end circuit checks against
   analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
-  was split into topic files), plus 40 in-module unit tests and one doctest.
-  1789 TypeScript tests (one corpus test skipped). CI runs fmt, clippy, tests,
+   was split into topic files), plus 45 in-module unit tests and one doctest.
+   1923 TypeScript tests (one corpus test skipped). CI runs fmt, clippy, tests,
   typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -188,8 +188,14 @@ fetch it).
   the text format, so their picker choices are session-only, as upstream.
 - **Scope line fidelity.** `o` lines are parsed for their element attachment and
   their display fields decode into scope state on load and regenerate on edit,
-  so an untouched loaded scope still saves byte-for-byte. Hints (`h`) are
-  preserved verbatim but inert.
+  so an untouched loaded scope still saves byte-for-byte. Interpreting the
+  display fields (the `scope-settings-sync` feature) reached every flag the
+  port models: speed, stacking position, showV/showI (live trace-visibility
+  toggles, Scope.java:289-315), scale mode (auto/max/manual), manDivisions,
+  the measurement toggles, FFT/log-spectrum, X-Y, the label, and the per-plot
+  DC/AC coupling and manual scale/position. The trigger bits (1<<24) are
+  deliberately not read: the text format carries no trigger state and upstream
+  never restores it. Hints (`h`) are preserved verbatim but inert.
 - **XML circuits.** Current upstream saves a `<cir …>` document rather than
   the text format, and 38 of the 373 bundled circuits are in that form. They
   load as an empty circuit here and are passed through byte-for-byte on save,
@@ -557,7 +563,11 @@ it is not an index into the elements the port loaded: a circuit with one
 unimplemented part ahead of a scope would otherwise attach the trace to its
 neighbour. A trace whose target is one of those unreadable lines has nothing
 to draw, and its line is carried through untouched. The display fields are
-preserved verbatim and none of them is interpreted yet.
+interpreted into scope state: speed, stacking position, showV/showI, scale
+mode, manDivisions, the measurement toggles, FFT/log-spectrum, X-Y, the label
+and per-plot coupling and manual scale/position. The trigger bits (1<<24) are
+deliberately not read, so a loaded line's trigger field is left alone; see the
+scope line fidelity section.
 
 For the `s` and `S` rows the label token exists only when FLAG_LABEL (bit 4) is
 set, and the SPDT reads it before `link` and `throwCount`, so a label shifts

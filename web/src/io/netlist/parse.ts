@@ -101,11 +101,12 @@ export function importDecOrHex(token: string): number {
  * The `value`/`val` token to a trace quantity. Token 1 is the legacy power id
  * upstream rewrites to power for anything but a transistor
  * (ScopeSerializer.java:197-199); on a transistor it is VAL_IB. A transistor's
- * own ids (IB/IC/IE/VBE/VBC/VCE) and the lamp's VAL_R and capacitor's
- * VAL_CHARGE are element-specific values the engine cannot sample, so they map
- * to null and the trace is preserved via raw only instead of drawing a wrong
- * voltage waveform. Every other token falls through to a voltage difference
- * (CircuitElm.java:1270-1273).
+ * own ids (IB/IC/IE/VBE/VBC/VCE), the lamp's VAL_R and the capacitor's
+ * VAL_CHARGE are element-specific values the engine cannot sample generically,
+ * so they map to null (charge, on a capacitor, maps to the engine's Charge
+ * scope value) and an unmapped trace is preserved via raw only instead of
+ * drawing a wrong voltage waveform. Every other token falls through to a
+ * voltage difference (CircuitElm.java:1270-1273).
  */
 export function scopeValueFromToken(token: number, kind: string | null): ScopeValue | null {
   switch (token) {
@@ -120,7 +121,10 @@ export function scopeValueFromToken(token: number, kind: string | null): ScopeVa
     case 2:
       return kind === 'lamp' || kind === 'transistor' ? null : 'voltage';  // VAL_R, or VAL_IC
     case 8:
-      return kind === 'capacitor' || kind === 'polarizedCapacitor' ? null : 'voltage';  // VAL_CHARGE
+      // VAL_CHARGE: a capacitor plots C*Vplate, upstream's getScopeValue
+      // (CapacitorElm.java:225-229); any other element falls through to its
+      // voltage like the default below.
+      return kind === 'capacitor' || kind === 'polarizedCapacitor' ? 'charge' : 'voltage';
     default:
       return kind === 'transistor' ? null : 'voltage';  // VBE/VBC/VCE on a transistor
   }
@@ -129,7 +133,16 @@ export function scopeValueFromToken(token: number, kind: string | null): ScopeVa
 /** The `value`/`val` token a trace quantity serializes as, the inverse of
  *  `scopeValueFromToken`. Shared with the scope-line encoder. */
 export function valueTokenOf(value: ScopeValue | null): number {
-  return value === 'current' ? 3 : value === 'power' ? 7 : 0;
+  switch (value) {
+    case 'current':
+      return 3;
+    case 'power':
+      return 7;
+    case 'charge':
+      return 8;
+    default:
+      return 0;
+  }
 }
 
 /** The units index a value token plots in, mirroring `getScopeUnits`

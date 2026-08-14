@@ -1362,6 +1362,7 @@ impl Circuit {
                 ScopeValue::Current => base.current,
                 ScopeValue::Power => elm.power(),
                 ScopeValue::NodeVoltage => base.volts.get(scope.spec.post).copied().unwrap_or(0.0),
+                ScopeValue::Charge => elm.charge(),
             };
             scope.push(v, sim_time);
         }

@@ -145,6 +145,10 @@ pub enum ScopeValue {
     Power,
     /// Absolute voltage at one node of the element.
     NodeVoltage,
+    /// Stored charge (a capacitor's `C * Vplate`), upstream's `VAL_CHARGE`
+    /// (CapacitorElm.java:225-229). Only elements with a meaningful charge
+    /// return non-zero (capacitor.rs); the default is 0.
+    Charge,
 }
 
 /// Which edge fires the trigger.

@@ -15,8 +15,10 @@ import {
   clearXYPersistence,
   drawScope,
   emptyCursor,
+  isDrawable,
   selectPlotAt,
   triggerTimeAnchor,
+  visiblePlotsOf,
   type ScopeCursor,
 } from '../scope/draw';
 import { clearXYScale, dragPlotYPosition } from '../scope/scale';
@@ -38,6 +40,11 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
   // an overlay toggle) must be visible without restarting the loop.
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
+  // The showElmInfo element-name line needs the element kinds, but the draw
+  // loop must not restart when they change; a ref keeps the latest list
+  // readable from the already-running loop.
+  const elementsRef = useRef<ReturnType<typeof useStore.getState>['elements']>([]);
+  elementsRef.current = useStore((s) => s.elements);
   const settings = useStore((s) => s.settings);
   const dark = useStore((s) => s.dark);
 
@@ -89,6 +96,7 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
         dark,
         settings.decimalDigits,
         settings,
+        (id: number) => elementsRef.current.find((e) => e.id === id)?.kind ?? null,
       );
     };
     raf = requestAnimationFrame(draw);
@@ -115,12 +123,22 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     cursor.mouseX = x;
     // Manual mode drags the selected plot's vertical position.
     if (scope.manualScale && engine) {
+      // selectPlotAt returns an index into the visible-plot list, which the
+      // showV/showI flags can shorten, so resolve through that list before
+      // touching scope.plots (Scope.java:937-969).
+      const visible = visiblePlotsOf(scope).filter(isDrawable);
       const plot = selectPlotAt(engine, scope, x, y, w, h);
-      if (plot >= 0) {
+      const target = plot >= 0 ? visible[plot] : undefined;
+      if (target) {
         cursor.selectedPlot = plot;
+        // Store the target by id: `plot` is a visible-list index, and the
+        // full `scope.plots` list is longer when a plot is hidden, so reading
+        // back through `scope.plots[selectedPlot]` would grab a different
+        // (hidden) trace while this one stays put.
+        cursor.dragPlotId = target.id;
         cursor.draggingPlotY = true;
         cursor.dragPlotYStart = y;
-        cursor.dragPlotYInitial = scope.plots[plot].manVPosition ?? 0;
+        cursor.dragPlotYInitial = target.manVPosition ?? 0;
         return;
       }
     }
@@ -140,7 +158,7 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     if (cursor.draggingPlotY) {
       const maxy = Math.floor((h - 1) / 2);
       const next = dragPlotYPosition(cursor.dragPlotYInitial, y - cursor.dragPlotYStart, maxy);
-      const plot = scope.plots[cursor.selectedPlot];
+      const plot = scope.plots.find((p) => p.id === cursor.dragPlotId);
       if (plot) useStore.getState().setPlotManPosition(plot.id, next);
       return;
     }
@@ -151,6 +169,7 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
   const onPointerUp = () => {
     const cursor = cursorRef.current;
     cursor.draggingPlotY = false;
+    cursor.dragPlotId = -1;
     cursor.dragStartTime = -1;
   };
 
@@ -164,10 +183,10 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     // Scrolling down slows the time base (zooms out), matching upstream's
-    // onMouseWheel -> slowDown/speedUp (Scope.java:1378-1388). Deltas
-    // accumulate past a +-5 threshold so trackpad micro-deltas do not zoom
-    // every event.
-    wheelDeltaRef.current += e.deltaY;
+    // onMouseWheel -> slowDown/speedUp (Scope.java:1378-1388). Deltas are
+    // scaled by the wheel sensitivity and accumulate past a +-5 threshold so
+    // trackpad micro-deltas do not zoom every event.
+    wheelDeltaRef.current += e.deltaY * settings.wheelSensitivity;
     if (wheelDeltaRef.current > 5) {
       wheelDeltaRef.current = 0;
       useStore.getState().setScopeSpeed(scope.id, speed * 2);
@@ -184,8 +203,12 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const { w, h } = size();
+    // selectPlotAt indexes the visible-plot list, like the drag path, so the
+    // Remove Plot target is resolved through it too.
+    const visible = visiblePlotsOf(scope).filter(isDrawable);
     const plot = selectPlotAt(engine, scope, x, y, w, h);
-    const plotId = plot >= 0 ? scope.plots[plot].id : scope.plots[0].id;
+    const target = plot >= 0 ? visible[plot] : undefined;
+    const plotId = target?.id ?? scope.plots[0].id;
     useStore.getState().openScopeMenu(e.clientX, e.clientY, scope.id, plotId);
   };
 

@@ -244,9 +244,10 @@ describe('scope o-line fidelity', () => {
     expect(parsed.scopes[0].raw).toEqual(['64', '6', '4162', '4e-7', '1e-9', '0', '2', '0', '2']);
   });
 
-  it('does not register a lamp resistance or capacitor charge plot', () => {
-    // lightbulb.txt's VAL_R (2) plot on a lamp and a capacitor's VAL_CHARGE
-    // (8) have no engine meaning: both stay preserved, not plotted as voltage.
+  it('keeps lamp resistance unregistered and maps capacitor charge', () => {
+    // lightbulb.txt's VAL_R (2) plot on a lamp has no engine meaning and stays
+    // preserved, not plotted as voltage; a capacitor's VAL_CHARGE (8) maps to
+    // the engine's Charge scope value, C*Vplate (CapacitorElm.java:225-229).
     const parsed = parseCircuit(
       HEADER +
         '181 0 0 16 0 0 293 100 120 0.4 0.4\n' +
@@ -254,7 +255,7 @@ describe('scope o-line fidelity', () => {
         'o 0 64 2 4099 160 1.6 0 1 160\n' +
         'o 1 64 8 4099 20 0.05 0 1\n',
     );
-    expect(parsed.scopes.map((s) => s.plots[0].value)).toEqual([null, null]);
+    expect(parsed.scopes.map((s) => s.plots[0].value)).toEqual([null, 'charge']);
     expect(parsed.scopes.map((s) => s.plots[0].elementIndex)).toEqual([0, 1]);
   });
 
@@ -266,7 +267,7 @@ describe('scope o-line fidelity', () => {
       HEADER + 'c 0 0 16 0 0 1e-6 0.001\n' + 'o 0 64 8 4099 20 0.05 0 2 0.001 0 3\n';
     const plots = parseCircuit(text).scopes[0].plots;
     expect(plots).toHaveLength(2);
-    expect(plots[0]).toMatchObject({ elementIndex: 0, value: null });
+    expect(plots[0]).toMatchObject({ elementIndex: 0, value: 'charge' });
     expect(plots[1]).toMatchObject({ elementIndex: 0, value: 'current' });
   });
 
