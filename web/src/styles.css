@@ -559,6 +559,7 @@ button.active,
   display: flex;
   flex: 1;
   min-height: 0;
+  position: relative; /* anchors .app-banner so it overlays instead of pushing flow */
 }
 
 .left,
@@ -673,11 +674,20 @@ h3 {
   font-size: 12px;
 }
 
-/* The problem alert's home outside any drawer, a full-width strip under the
-   menubar so it stays visible whether the parts drawer is open or not. */
+/* The problem alert overlays the workspace instead of sitting in normal
+   document flow, so it no longer pushes the canvas and drawers down when it
+   appears or up when it clears. Anchored to .workspace, not the menubar,
+   because the menubar's own height varies when it wraps at narrow widths;
+   .workspace always starts right below it regardless. z-index sits above the
+   menubar (36) so it stays visible over an open mobile drawer (35), but below
+   dialogs (40). */
 .app-banner {
-  margin: 8px 10px 10px;
-  z-index: 20;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  margin: 0;
+  z-index: 37;
 }
 
 .field {

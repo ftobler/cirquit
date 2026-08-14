@@ -328,11 +328,6 @@ export default function App() {
   return (
     <div className="app">
       <Menubar engine={engine} />
-      {problem && (
-        <div className="problem app-banner" role="alert">
-          {problem}
-        </div>
-      )}
       {dialog === 'importText' && <ImportFromTextDialog />}
       {dialog === 'saveAs' && <SaveAsDialog />}
       {dialog === 'exportAsLink' && <ExportAsLinkDialog />}
@@ -347,6 +342,14 @@ export default function App() {
       {dialog === 'otherOptions' && <OtherOptionsDialog />}
       {dialog === 'sliders' && <SliderDialog />}
       <div className="workspace">
+        {problem && (
+          // Absolutely positioned inside .workspace (see .app-banner in
+          // styles.css) so it overlays the canvas instead of pushing it:
+          // toggling `problem` must not shift the drawers or canvas below.
+          <div className="problem app-banner" role="alert">
+            {problem}
+          </div>
+        )}
         <aside id="parts-drawer" className={partsOpen ? 'left open' : 'left'}>
           <Toolbox />
         </aside>
