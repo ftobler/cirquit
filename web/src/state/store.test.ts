@@ -236,15 +236,16 @@ describe('setText edits free text through the fast path', () => {
     expect(other?.text).toBeUndefined();
   });
 
-  it('bumps paramRevision and not revision', () => {
-    const id = addDecoration();
+  it('a display-only text edit changes the text and leaves paramRevision untouched', () => {
+    const id = addDecoration('old');
     const before = useStore.getState();
 
     useStore.getState().setText(id, 'hello');
 
     const after = useStore.getState();
+    expect(after.elements.find((e) => e.id === id)?.text).toBe('hello');
     expect(after.revision).toBe(before.revision);
-    expect(after.paramRevision).toBe(before.paramRevision + 1);
+    expect(after.paramRevision).toBe(before.paramRevision);
     expect(after.pendingParams.size).toBe(0);
   });
 

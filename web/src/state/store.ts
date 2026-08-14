@@ -1150,7 +1150,11 @@ function createAppStore() {
           return next;
         }),
         revision: reload ? s.revision + 1 : s.revision,
-        paramRevision: reload ? s.paramRevision : s.paramRevision + 1,
+        // A text edit never queues an engine param: the reload kinds rebuild
+        // through `revision`, and the display-only kinds carry no engine
+        // state at all. Bumping `paramRevision` would run the frame loop's
+        // param-apply branch over an empty queue on every annotation edit.
+        paramRevision: s.paramRevision,
       };
     }),
 
