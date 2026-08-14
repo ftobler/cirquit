@@ -1258,6 +1258,13 @@ function createAppStore() {
     const s = get();
     const target = s.elements.find((e) => e.id === id);
     if (!target) return;
+    // The decode lands asynchronously, so the undo baseline is taken here, at
+    // the apply point, not on the file input's onFocus (OptionsPanel
+    // loadFileInto): an edit the user makes between starting the decode and
+    // its landing commits its own entry first, and this commit separates the
+    // file load from it, so the two never share one undo step. A decode that
+    // fails in the caller never reaches this action, so it leaves no entry.
+    s.commit();
     // A fresh number, never reused, so an undo of this load restores the
     // element's previous fileNum whose cache entry still holds the old file.
     const fileNum = nextFileNum();
@@ -1271,6 +1278,10 @@ function createAppStore() {
     const s = get();
     const target = s.elements.find((e) => e.id === id);
     if (!target) return;
+    // Same as loadAudioFile: the baseline is this commit at the apply point,
+    // never the file input's onFocus, so an unrelated edit that lands while
+    // the decode is in flight keeps its own undo step.
+    s.commit();
     const fileNum = nextFileNum();
     setDataSamples(fileNum, samples);
     s.updateElement(id, { params: { ...target.params, fileNum }, text: fileName });

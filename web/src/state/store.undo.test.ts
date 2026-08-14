@@ -320,37 +320,17 @@ describe('scope family undo-restore', () => {
   });
 });
 
-describe('caller-bracketed undo: setText, setModelName, loadDataFile', () => {
-  // None of these three setters commits itself: setText and setModelName are
-  // plain `set` calls (store.ts:1176,1073) and loadDataFile routes through
-  // updateElement (store.ts:1270). Their undo baseline is the caller's
-  // beginEdit, the edit dialog's onFocus on the field (OptionsPanel.tsx:76,92,
-  // 158), so each test opens that session with an explicit commit before
-  // mutating and asserts one undo restores the exact pre-mutation snapshot. A
-  // regression that drops the caller's commit would make these undos restore an
-  // older state, so the pre-mutation equality assertion is the thing under test.
-
-  const DATA_INPUT = {
-    kind: 'dataInput' as const,
-    x1: 0,
-    y1: 0,
-    x2: 64,
-    y2: 0,
-    flags: 16,
-    params: {
-      waveform: 1,
-      frequency: 60,
-      maxVoltage: 5,
-      bias: 0,
-      phaseShift: 0,
-      dutyCycle: 0.5,
-      sampleLength: 1e-3,
-      scaleFactor: 1,
-      fileNum: 0,
-    },
-  };
-
-  beforeEach(() => clearSampleCache());
+describe('caller-bracketed undo: setText, setModelName', () => {
+  // These two setters do not commit themselves: setText and setModelName are
+  // plain `set` calls (store.ts:1176,1073). Their undo baseline is the
+  // caller's beginEdit, the edit dialog's onFocus on the field
+  // (OptionsPanel.tsx:76,92,158), so each test opens that session with an
+  // explicit commit before mutating and asserts one undo restores the exact
+  // pre-mutation snapshot. A regression that drops the caller's commit would
+  // make these undos restore an older state, so the pre-mutation equality
+  // assertion is the thing under test. loadDataFile used to live here too but
+  // now commits itself at the apply point (store.ts:1284), so it is tested in
+  // the file-load undo block below instead.
 
   it('setText on a display-only decoration: undo restores the pre-mutation text', () => {
     const id = useStore.getState().addElement({
@@ -420,13 +400,43 @@ describe('caller-bracketed undo: setText, setModelName, loadDataFile', () => {
     expect(e.modelName).toBe('1N4148');
     expect(e).toEqual(pre);
   });
+});
+
+describe('file-load undo: the store action takes the baseline', () => {
+  // loadAudioFile and loadDataFile commit themselves at the apply point
+  // (store.ts:1267,1284), not on the file input's onFocus: the read and decode
+  // are async, so an edit the user makes while they run must land on its own
+  // undo step, and a decode that never completes must leave no entry. The
+  // caller (OptionsPanel loadFileInto) never touches the undo stack.
+
+  const DATA_INPUT = {
+    kind: 'dataInput' as const,
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    flags: 16,
+    params: {
+      waveform: 1,
+      frequency: 60,
+      maxVoltage: 5,
+      bias: 0,
+      phaseShift: 0,
+      dutyCycle: 0.5,
+      sampleLength: 1e-3,
+      scaleFactor: 1,
+      fileNum: 0,
+    },
+  };
+
+  beforeEach(() => clearSampleCache());
 
   it('loadDataFile: undo restores the pre-mutation fileNum and label', () => {
     const id = useStore.getState().addElement(DATA_INPUT);
+    // The action's own commit is the first load's baseline; no explicit commit
+    // like the caller-bracketed setters above.
     useStore.getState().loadDataFile(id, [1.0], 'first');
     const pre = useStore.getState().elements.find((e) => e.id === id);
-    // The caller's beginEdit, the file input's onFocus.
-    useStore.getState().commit();
     const preFileNum = pre!.params.fileNum as number;
 
     useStore.getState().loadDataFile(id, [2.0], 'second');
@@ -443,6 +453,56 @@ describe('caller-bracketed undo: setText, setModelName, loadDataFile', () => {
     // The old cache entry is deliberately kept (sampleCache.ts:9-11), so the
     // restored fileNum still resolves to the first file.
     expect(getDataSamples(restored?.params.fileNum as number)).toEqual({ samples: [1.0] });
+  });
+
+  it('a file load landing after an unrelated edit undoes as two separate steps', () => {
+    const rid = addResistor();
+    const id = useStore.getState().addElement(DATA_INPUT);
+    const preResistor = useStore.getState().elements.find((e) => e.id === rid);
+
+    // The file input commits nothing on focus, so starting the async load
+    // leaves the stack alone. While the decode is in flight the user edits
+    // the resistor; that field's onFocus commit is the pre-edit baseline.
+    const commitsBefore = useStore.getState().undoStack.length;
+    useStore.getState().commit();
+    expect(useStore.getState().undoStack.length).toBe(commitsBefore + 1);
+    useStore.getState().setParam(rid, 'resistance', 2200);
+    expect(useStore.getState().elements.find((e) => e.id === rid)?.params.resistance).toBe(2200);
+
+    // The decode lands: the store action commits the current state (the
+    // resistor edit already applied) before applying the samples, so the two
+    // edits get separate undo steps instead of folding into one.
+    useStore.getState().loadDataFile(id, [2.0], 'second');
+    expect(useStore.getState().elements.find((e) => e.id === id)?.text).toBe('second');
+
+    // First undo reverts only the file load; the unrelated edit survives.
+    useStore.getState().undo();
+    const one = useStore.getState();
+    expect(one.elements.find((e) => e.id === id)?.text).toBeUndefined();
+    expect(one.elements.find((e) => e.id === rid)?.params.resistance).toBe(2200);
+
+    // Second undo reverts the unrelated edit back to the pre-gesture element.
+    useStore.getState().undo();
+    expect(useStore.getState().elements.find((e) => e.id === rid)).toEqual(preResistor);
+  });
+
+  it('a failed decode leaves no spurious undo entry', () => {
+    const id = useStore.getState().addElement(DATA_INPUT);
+    const commitsBefore = useStore.getState().undoStack.length;
+    const pre = useStore.getState().elements.find((e) => e.id === id);
+
+    // The failure happens entirely in the caller (OptionsPanel loadFileInto):
+    // the reader errors or decodeAudioFile rejects, the caller alerts and
+    // never invokes loadDataFile/loadAudioFile. Because the baseline lives in
+    // the store action and not on the file input's onFocus, an aborted load
+    // pushes nothing: the stack is exactly where addElement left it.
+    expect(useStore.getState().undoStack.length).toBe(commitsBefore);
+    expect(useStore.getState().elements.find((e) => e.id === id)).toEqual(pre);
+
+    // One undo still steps straight back over addElement, not over a phantom
+    // entry the failed load would have left behind.
+    useStore.getState().undo();
+    expect(useStore.getState().elements.length).toBe(0);
   });
 });
 

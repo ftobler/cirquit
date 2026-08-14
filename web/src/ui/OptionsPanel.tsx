@@ -63,17 +63,17 @@ function Field({
   if (field.type === 'file') {
     // The load itself is asynchronous (a FileReader plus, for audio, the
     // WebAudio decoder); the change handler in the parent does the reading
-    // and calls the store action when the file is ready.
+    // and calls the store action when the file is ready. The file input
+    // deliberately does not commit on focus like the other fields: the read
+    // and decode take time, so the undo baseline is taken by the store action
+    // when the decoded samples actually land (store.ts loadAudioFile/
+    // loadDataFile), which keeps an edit made mid-decode on its own undo step
+    // and leaves nothing behind when the decode fails.
     return (
       <label className="field">
         <span>{field.label}</span>
         <input
           type="file"
-          // Focus opens the edit session, so a file load is one undo entry,
-          // same as the number and text fields; the async decode still lands
-          // inside the session because commit's dedup only runs on the next
-          // commit.
-          onFocus={onBeginEdit}
           onChange={(e) => onChange(e.target.files)}
         />
       </label>
