@@ -145,7 +145,12 @@ pub enum ScopeValue {
     Current,
     /// Instantaneous power dissipated.
     Power,
-    /// Absolute voltage at one node of the element.
+    /// Absolute voltage at one node of the element. Serialised as
+    /// `nodeVoltage`, the camelCase the TS side would spell a node-voltage
+    /// scope value (`web/src/engine/simulator.ts`), which is the contract
+    /// this enum's wire strings follow. The enum-level `rename_all =
+    /// "lowercase"` would otherwise spell it `nodevoltage`.
+    #[serde(rename = "nodeVoltage")]
     NodeVoltage,
     /// Stored charge (a capacitor's `C * Vplate`), upstream's `VAL_CHARGE`
     /// (CapacitorElm.java:225-229). Only elements with a meaningful charge
@@ -261,6 +266,19 @@ mod tests {
         let options = spec.options.expect("options block present");
         assert_eq!(options.time_step, 5e-6);
         assert_eq!(options.min_time_step, 50e-12);
+    }
+
+    #[test]
+    fn scope_value_node_voltage_serialises_as_camel_case() {
+        // The TS side spells scope strings camelCase
+        // (`web/src/engine/simulator.ts`), so the node-voltage wire string
+        // must be `nodeVoltage`. The `rename_all = "lowercase"` on the enum
+        // would produce `nodevoltage`; the variant-level rename overrides it.
+        // The round-trip guards both directions against drifting apart.
+        let json = serde_json::to_string(&ScopeValue::NodeVoltage).expect("should serialise");
+        assert_eq!(json, "\"nodeVoltage\"");
+        let back: ScopeValue = serde_json::from_str(&json).expect("should deserialise");
+        assert_eq!(back, ScopeValue::NodeVoltage);
     }
 
     #[test]
