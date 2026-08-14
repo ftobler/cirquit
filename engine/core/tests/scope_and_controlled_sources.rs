@@ -665,6 +665,79 @@ fn linear_circuit_pins_an_open_current_source_output() {
 }
 
 #[test]
+fn many_open_current_source_outputs_stay_pinned() {
+    // The single-output linear case scaled to a dozen open outputs, so the
+    // pin re-derivation checks one effectively-open current-source output per
+    // source per Newton iteration: enough open nodes that a linear membership
+    // scan over the previous iteration's pin set would have been quadratic.
+    // Each source is a plain `current` (no voltage compliance, so the circuit
+    // is linear) whose post 1 node is loaded only by a 1e10 ohm resistor, an
+    // open switch's `r_off`. Without the pin every driven node sits at
+    // I*1e10 = 1e7 V; with it (OPEN_PIN_G = 1.0) each settles at
+    // ~I/1.0 = 1e-3 V. Every driven node must land on the pinned value, not
+    // just the first one.
+    let n = 12;
+    let mut elements = Vec::new();
+    let mut id = 1;
+    for i in 0..n as i32 {
+        let x = i * 16;
+        elements.push(elm(
+            id,
+            "current",
+            &[[x, 0], [x + 100, 0]],
+            &[("current", 1e-3)],
+        ));
+        id += 1;
+        elements.push(elm(
+            id,
+            "resistor",
+            &[[x + 100, 0], [x + 100, 200]],
+            &[("resistance", 1e10)],
+        ));
+        id += 1;
+        // Post 0 grounds through 1 ohm, keeping the output pair DC-connected
+        // so the source is not marked broken.
+        elements.push(elm(
+            id,
+            "resistor",
+            &[[x, 0], [x, 200]],
+            &[("resistance", 1.0)],
+        ));
+        id += 1;
+        elements.push(elm(id, "ground", &[[x + 100, 200]], &[]));
+        id += 1;
+        elements.push(elm(id, "ground", &[[x, 200]], &[]));
+        id += 1;
+    }
+    let c = &mut build(elements, opts(1e-5, true));
+    let report = c.run(50);
+    assert!(
+        report.converged,
+        "step failed: {}",
+        report.error.unwrap_or_default()
+    );
+    for (i, v) in c.node_voltages().iter().enumerate() {
+        assert!(v.is_finite(), "node {i} went non-finite");
+        assert!(
+            v.abs() < 1e4,
+            "node {i} reached {v} V, expected a pinned solve"
+        );
+    }
+    // Each source block contributes 8 flattened posts: current (2), the open
+    // resistor (2), the grounding resistor (2), ground (1), ground (1). The
+    // driven terminal is the source's post 1, at offset 8*i + 1.
+    let nodes = c.element_nodes();
+    for i in 0..n {
+        let driven = nodes[8 * i + 1] as usize;
+        let vd = c.node_voltages()[driven];
+        assert!(
+            close(vd, 1e-3, 1e-4),
+            "driven node {driven} of source {i} was {vd} V, expected ~1e-3 V under the pin"
+        );
+    }
+}
+
+#[test]
 fn cccs_sense_current_drives_the_output_into_a_load() {
     // 215 with one pair: the sense current is the expression variable, so
     // expr "i*2" over the 0.01 A sense loop delivers 0.02 A into the 1 k load

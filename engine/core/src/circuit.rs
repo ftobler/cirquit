@@ -1,6 +1,6 @@
 //! Netlist analysis and the time-stepping loop.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::closure::{build_closures, Closure};
 use crate::element::{Element, SimCtx};
@@ -155,8 +155,13 @@ pub struct Circuit {
     /// this run, so the pin survives the iterations where the node's voltage
     /// is back at a sane level. Re-derived every iteration from the load check
     /// and dropped the first time the load becomes real (see
-    /// `pin_open_current_outputs`).
-    open_pinned: Vec<usize>,
+    /// `pin_open_current_outputs`). A `HashSet` (std, not rustc-hash: the
+    /// engine has no `rustc-hash` dependency) keeps the per-iteration
+    /// membership test O(1); with a `Vec` the pass was quadratic in the number
+    /// of open outputs. The set is only ever read via `contains`, so its
+    /// iteration order is irrelevant and the rebuild can stay a plain `Vec`
+    /// fed through `collect` at the end.
+    open_pinned: HashSet<usize>,
     scopes: Vec<ScopeTrace>,
     warnings: Vec<String>,
     error: Option<String>,
@@ -190,7 +195,7 @@ impl Circuit {
             good_iterations: 0,
             last_x: Vec::new(),
             nonlinear: false,
-            open_pinned: Vec::new(),
+            open_pinned: HashSet::new(),
             scopes: Vec::new(),
             warnings: Vec::new(),
             error: None,
@@ -1363,7 +1368,10 @@ impl Circuit {
                 }
             }
         }
-        self.open_pinned = keep;
+        // Keep a Vec of what stays pinned and turn it into the set at the
+        // end, so the re-derivation is deterministic and the old behaviour is
+        // unchanged; `open_pinned` is read only through `contains`.
+        self.open_pinned = keep.into_iter().collect();
     }
 
     /// Copies each closure's solved vector into node voltages and per-element
