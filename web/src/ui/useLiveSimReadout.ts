@@ -1,0 +1,69 @@
+/** Live Voltage/Current/Power readout for the element edit panel. The engine's
+ *  operating-point arrays are rewritten every frame, so the readout re-reads
+ *  them on a rAF loop while the panel is mounted with one element selected.
+ *  Without the loop the panel would show a snapshot from whenever the store
+ *  last re-rendered, frozen while the sim runs. */
+
+import { useEffect, useState } from 'react';
+import type { SimEngine } from '../engine/simulator';
+
+export interface ElementReadout {
+  current?: number;
+  voltage?: number;
+  power?: number;
+}
+
+/** Reads the three engine operating-point arrays for one element id. Pure, so
+ *  the mapping is testable without React or a rAF; a missing engine, a missing
+ *  selection, or an id the engine skipped all read as an empty readout. */
+export function readElementReadout(
+  engine: SimEngine | null,
+  selectedId: number | undefined,
+): ElementReadout {
+  if (!engine || selectedId === undefined) return {};
+  const idx = engine.indexOf(selectedId);
+  if (idx === undefined) return {};
+  return {
+    current: engine.elementCurrents()[idx],
+    voltage: engine.elementVoltages()[idx],
+    power: engine.elementPowers()[idx],
+  };
+}
+
+/** The per-frame pump: reads the readout once per animation frame and hands
+ *  each result to `emit`, returning an unsubscribe. Kept outside the hook so
+ *  the rAF subscription is testable under vitest, which has no DOM to mount
+ *  the hook in. */
+export function tickReadout(
+  read: () => ElementReadout,
+  emit: (readout: ElementReadout) => void,
+): () => void {
+  let raf = 0;
+  const frame = () => {
+    raf = requestAnimationFrame(frame);
+    emit(read());
+  };
+  raf = requestAnimationFrame(frame);
+  return () => cancelAnimationFrame(raf);
+}
+
+/** Runs `tickReadout` while the panel is mounted with something to read. Only
+ *  reads when the engine is present and a single element is selected; the
+ *  plain state updates never touch the store, so the loop cannot fight the
+ *  canvas's focus or selection logic. */
+export function useLiveSimReadout(
+  engine: SimEngine | null,
+  selectedId: number | undefined,
+): ElementReadout {
+  const [readout, setReadout] = useState<ElementReadout>(() =>
+    readElementReadout(engine, selectedId),
+  );
+  useEffect(() => {
+    // The reset also clears a stale readout when the engine goes null or the
+    // selection changes away from a single element, where the loop is not run.
+    setReadout(readElementReadout(engine, selectedId));
+    if (!engine || selectedId === undefined) return;
+    return tickReadout(() => readElementReadout(engine, selectedId), setReadout);
+  }, [engine, selectedId]);
+  return readout;
+}

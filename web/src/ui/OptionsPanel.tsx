@@ -1,8 +1,8 @@
 /** Properties of the selected element, the right-sidebar port of upstream's
  *  edit dialog (EditDialog, opened by `edit`/`elm:edit`). The global settings
  *  live in the Other Options dialog; this panel holds only the element half.
- *  The live readout updates per frame because the panel reads the store and
- *  engine on each render. */
+ *  The live readout ticks per frame through useLiveSimReadout, which re-reads
+ *  the engine arrays while this panel is mounted with one element selected. */
 
 import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../engine/simulator';
@@ -17,6 +17,7 @@ import type { CircuitElement, FieldDef } from '../model/types';
 import { sliderFromSteps, stepsFromSlider } from '../state/helpers';
 import { useStore } from '../state/store';
 import { UnitNumberInput } from './UnitNumberInput';
+import { useLiveSimReadout } from './useLiveSimReadout';
 
 interface Props {
   engine: SimEngine | null;
@@ -319,10 +320,10 @@ export function OptionsPanel({ engine }: Props) {
     fieldsRef.current?.querySelector<HTMLElement>('.field input, .field select')?.focus();
   }, [panelFocusTick]);
 
-  const idx = selected && engine ? engine.indexOf(selected.id) : undefined;
-  const current = idx !== undefined && engine ? engine.elementCurrents()[idx] : undefined;
-  const voltage = idx !== undefined && engine ? engine.elementVoltages()[idx] : undefined;
-  const power = idx !== undefined && engine ? engine.elementPowers()[idx] : undefined;
+  // Only a single selection reads the engine per frame; with nothing or
+  // several selected the readout stays hidden, matching the empty state below.
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : undefined;
+  const { current, voltage, power } = useLiveSimReadout(engine, selectedId);
 
   return (
     <div className="options" tabIndex={-1}>
