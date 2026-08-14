@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use crate::circuit::UnionFind;
 use crate::element::Element;
 use crate::matrix::{matrix_too_large, Solver, MAX_MATRIX_ROWS};
+use crate::simplified::SimplifiedSolve;
 use crate::spec::SolverType;
 use crate::stamp::GROUND;
 
@@ -38,6 +39,11 @@ pub struct Closure {
     /// 976-983), so a nonlinear circuit splits into closures but each closure
     /// still refactors every Newton iteration.
     pub nonlinear: bool,
+    /// Constant-row elimination state, built from the first Newton
+    /// iteration's stamps and used from then on (see [`crate::simplified`]).
+    /// Only nonlinear dense closures get one; linear and sparse closures keep
+    /// `None` and their existing paths untouched.
+    pub(crate) simplified: Option<SimplifiedSolve>,
 }
 
 /// Everything the solver needs to address a circuit through its closures: the
@@ -127,6 +133,7 @@ pub fn build_closures(
             vs_rows: Vec::new(),
             sys: Solver::new(),
             nonlinear,
+            simplified: None,
         })
         .collect();
     // No non-ground node anywhere means every voltage source's terminals are

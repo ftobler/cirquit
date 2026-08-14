@@ -9,6 +9,7 @@ use crate::matrix::{
     matrix_too_large, LinearSystem, SolveError, SolverBackend, MAX_DENSE_ROWS, MAX_MATRIX_ROWS,
 };
 use crate::scope::ScopeTrace;
+use crate::simplified::build_simplified;
 use crate::spec::{CircuitSpec, ElementSpec, ScopeValue, SimOptions};
 use crate::stamp::{Stamper, GROUND};
 
@@ -232,7 +233,7 @@ impl Circuit {
     /// for the closure-decomposition speedup test. Deterministic, unlike a
     /// wall clock.
     pub fn factor_flops(&self) -> u64 {
-        self.closures.iter().map(|c| c.sys.flops()).sum()
+        self.closure_flops().iter().sum()
     }
 
     /// The solver backend each closure solves through, one entry per closure
@@ -250,10 +251,36 @@ impl Circuit {
     }
 
     /// The factor flops of each closure's system since its last resize, one
-    /// entry per closure in closure order. A test hook for the benchmark's
-    /// per-closure cost rows; the frontend never needs it.
+    /// entry per closure in closure order. For a simplified closure this adds
+    /// the constant-row elimination's own factors (the fixed part once, the
+    /// reduced system per iteration), so the per-closure numbers still sum to
+    /// [`Circuit::factor_flops`]. A test hook for the benchmark's per-closure
+    /// cost rows; the frontend never needs it.
     pub fn closure_flops(&self) -> Vec<u64> {
-        self.closures.iter().map(|c| c.sys.flops()).collect()
+        self.closures
+            .iter()
+            .map(|c| c.sys.flops() + c.simplified.as_ref().map(|s| s.flops()).unwrap_or(0))
+            .collect()
+    }
+
+    /// Which closures run the constant-row elimination, one entry per closure
+    /// in closure order. A test hook for the simplification tests; the
+    /// frontend never needs it.
+    pub fn closure_simplified(&self) -> Vec<bool> {
+        self.closures
+            .iter()
+            .map(|c| c.simplified.is_some())
+            .collect()
+    }
+
+    /// The per-iteration reduced-system row count of each simplified closure,
+    /// zero for a closure on the full path. The tests asserting that constant
+    /// rows were actually eliminated read this; the frontend never needs it.
+    pub fn closure_reduced_rows(&self) -> Vec<usize> {
+        self.closures
+            .iter()
+            .map(|c| c.simplified.as_ref().map(|s| s.reduced_rows()).unwrap_or(0))
+            .collect()
     }
 
     pub fn element_count(&self) -> usize {
@@ -1056,6 +1083,15 @@ impl Circuit {
         // Only meaningful on budget exhaustion, where it lets the caller name
         // the failing elements.
         let mut last_failing: Vec<usize> = Vec::new();
+        // Constant-row elimination: the first Newton iteration of a restamp
+        // epoch records which closure rows `do_step` rewrites, and the
+        // simplified.rs pass splits those closures into a cached fixed part
+        // and a small per-iteration changing system. The recording runs on
+        // subiter 0 of every step, never on later subiterations; the split
+        // runs right after it, once per epoch, because build_simplified
+        // skips closures that already carry a system.
+        let detect = self.options.simplify && self.nonlinear;
+        let mut touches: Vec<(usize, usize, usize)> = Vec::new();
 
         for subiter in 0..max_sub {
             self.ctx.subiter = subiter as usize;
@@ -1082,6 +1118,9 @@ impl Circuit {
                     &self.vs_row,
                     &self.element_closure,
                 );
+                if subiter == 0 && detect {
+                    s.set_recording(&mut touches);
+                }
                 for (ei, elm) in self.elements.iter_mut().enumerate() {
                     s.set_current(ei);
                     elm.do_step(&ctx, &mut s);
@@ -1089,10 +1128,31 @@ impl Circuit {
                 last_failing = std::mem::take(&mut s.failing);
                 s.converged
             };
+            // The pin stamps happen outside the recorder, so a newly-pinned
+            // open current-source row looks "fixed" to the elimination and
+            // trips the drift check, falling back to the full path. Exact,
+            // but the closure stays unsimplified for the epoch.
             self.pin_open_current_outputs();
 
+            if subiter == 0 && detect {
+                build_simplified(&mut self.closures, &touches);
+            }
+
             for c in self.closures.iter_mut() {
-                if let Err(SolveError::Singular) = c.sys.solve() {
+                let solved = if let Some(ss) = c.simplified.as_mut() {
+                    // The reduced solve falls back to the full solve on its
+                    // own when a guard trips, so `solve_into` can only return
+                    // Singular when the full path is singular too. A
+                    // simplified closure is always dense by construction.
+                    let sys = c
+                        .sys
+                        .dense_mut()
+                        .expect("a simplified closure is always dense");
+                    ss.solve_into(sys)
+                } else {
+                    c.sys.solve()
+                };
+                if let Err(SolveError::Singular) = solved {
                     self.ctx.time = committed_time;
                     return Err(StepError::Singular(subiter + 1));
                 }

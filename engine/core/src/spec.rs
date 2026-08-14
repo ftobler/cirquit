@@ -93,6 +93,18 @@ pub struct SimOptions {
     /// (VoltageElm.java:168-169). The solved reactive state carries into the
     /// transient, so the first step starts from the operating point.
     pub dc_operating_point: bool,
+    /// Constant-row elimination for nonlinear dense closures (see
+    /// [`crate::simplified`]): rows `do_step` never rewrites are factored
+    /// once at build and the per-iteration solve works on a small reduced
+    /// system. On by default; the frontend sends nothing and gets the win.
+    /// Disabling it is a solver-internal lever for the tests that pin the
+    /// simplified path against the unsimplified one.
+    #[serde(default = "default_simplify")]
+    pub simplify: bool,
+}
+
+fn default_simplify() -> bool {
+    true
 }
 
 impl Default for SimOptions {
@@ -119,6 +131,7 @@ impl Default for SimOptions {
             // frontend sets it from `settings.autoDC`, which honours the
             // loaded file's header flag bit 128.
             dc_operating_point: false,
+            simplify: true,
         }
     }
 }
@@ -287,7 +300,7 @@ mod tests {
         // deserialise/reserialise cycle unchanged. Compared as serde_json
         // values, not bytes: a float like 1e-5 round-trips through the same
         // binary value but may print as "0.00001".
-        let json = r#"{"solverType":"auto","timeStep":1e-5,"minTimeStep":1e-10,"adaptive":true,"stepsPerFrame":320,"maxSubiterations":500,"dcOperatingPoint":true}"#;
+        let json = r#"{"solverType":"auto","timeStep":1e-5,"minTimeStep":1e-10,"adaptive":true,"stepsPerFrame":320,"maxSubiterations":500,"dcOperatingPoint":true,"simplify":true}"#;
         let options: SimOptions = serde_json::from_str(json).expect("full JSON should deserialise");
         let out = serde_json::to_string(&options).expect("should re-serialise");
         let expected: serde_json::Value =

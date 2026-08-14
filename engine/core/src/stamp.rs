@@ -57,6 +57,15 @@ pub struct Stamper<'a> {
     /// Element indices that called `not_converged` this iteration, so the
     /// solver can name the non-convergent elements when the budget runs out.
     pub failing: Vec<usize>,
+    /// Optional collector for coefficient-stamp touches, active only on the
+    /// detection pass of the constant-row elimination. Each entry is
+    /// `(closure, row, col)`. RHS-only ops never record: the elimination
+    /// classifies rows by whether their *coefficients* can change, and a row
+    /// whose do_step only feeds the right-hand side is constant (capacitors
+    /// and inductors stamp their companions in `stamp` and update only source
+    /// values per iteration, which is exactly the case the elimination wants
+    /// to cache).
+    record: Option<&'a mut Vec<(usize, usize, usize)>>,
 }
 
 impl<'a> Stamper<'a> {
@@ -80,6 +89,27 @@ impl<'a> Stamper<'a> {
             converged: true,
             current: 0,
             failing: Vec::new(),
+            record: None,
+        }
+    }
+
+    /// Starts recording coefficient-stamp touches into `buf` on the
+    /// subsequent stamps, for the constant-row detection pass. The recorder
+    /// is one-shot in practice: the solver enables it on the first Newton
+    /// iteration of a restamp epoch and never turns it back on.
+    #[inline]
+    pub fn set_recording(&mut self, buf: &'a mut Vec<(usize, usize, usize)>) {
+        self.record = Some(buf);
+    }
+
+    /// Records one coefficient touch `(closure, row, col)`, value-independent:
+    /// a stamp with `v == 0.0` still counts, because a zero at the detection
+    /// operating point (a MOSFET in cutoff) can be nonzero at a later one, and
+    /// under-classifying a row would silently corrupt the solve.
+    #[inline]
+    fn record_touch(&mut self, c: usize, row: usize, col: usize) {
+        if let Some(buf) = self.record.as_deref_mut() {
+            buf.push((c, row, col));
         }
     }
 
@@ -112,6 +142,7 @@ impl<'a> Stamper<'a> {
     /// Raw matrix entry, in already-resolved closure-local row/column indices.
     #[inline]
     pub fn raw(&mut self, row: usize, col: usize, v: f64) {
+        self.record_touch(self.active, row, col);
         self.closures[self.active].sys.add(row, col, v);
     }
 
@@ -131,9 +162,9 @@ impl<'a> Stamper<'a> {
         let ca = self.node_closure[a];
         debug_assert_eq!(ca, self.node_closure[b], "stamp straddles closures");
         if ca == self.node_closure[b] {
-            self.closures[ca]
-                .sys
-                .add(self.node_row[a], self.node_row[b], v);
+            let (ra, rb) = (self.node_row[a], self.node_row[b]);
+            self.record_touch(ca, ra, rb);
+            self.closures[ca].sys.add(ra, rb, v);
         }
     }
 
@@ -188,17 +219,27 @@ impl<'a> Stamper<'a> {
         } else {
             Some(self.node_row[n2])
         };
-        let sys = &mut self.closures[c].sys;
+        // Recorded before the `sys` borrow, which the touch recorder would
+        // otherwise conflict with.
         if let Some(r) = r1 {
             // The stamped terminals must live in the closure the unknown was
             // assigned to; a tear here means the VS-owning element's
             // `voltage_source_nodes` disagrees with its stamp.
             debug_assert_eq!(self.node_closure[n1], c, "VS terminal straddles closures");
+            self.record_touch(c, r, vn);
+            self.record_touch(c, vn, r);
+        }
+        if let Some(r) = r2 {
+            debug_assert_eq!(self.node_closure[n2], c, "VS terminal straddles closures");
+            self.record_touch(c, r, vn);
+            self.record_touch(c, vn, r);
+        }
+        let sys = &mut self.closures[c].sys;
+        if let Some(r) = r1 {
             sys.add(r, vn, 1.0);
             sys.add(vn, r, -1.0);
         }
         if let Some(r) = r2 {
-            debug_assert_eq!(self.node_closure[n2], c, "VS terminal straddles closures");
             sys.add(r, vn, -1.0);
             sys.add(vn, r, 1.0);
         }
@@ -235,13 +276,19 @@ impl<'a> Stamper<'a> {
         let vn = self.vs_row[vs];
         let r1 = self.node_row(n1);
         let r2 = self.node_row(n2);
-        let sys = &mut self.closures[c].sys;
         if let Some(r) = r1 {
             debug_assert_eq!(self.node_closure[n1], c, "VCVS terminal straddles closures");
-            sys.add(vn, r, coef);
+            self.record_touch(c, vn, r);
         }
         if let Some(r) = r2 {
             debug_assert_eq!(self.node_closure[n2], c, "VCVS terminal straddles closures");
+            self.record_touch(c, vn, r);
+        }
+        let sys = &mut self.closures[c].sys;
+        if let Some(r) = r1 {
+            sys.add(vn, r, coef);
+        }
+        if let Some(r) = r2 {
             sys.add(vn, r, -coef);
         }
     }
@@ -258,12 +305,24 @@ impl<'a> Stamper<'a> {
             let c = self.node_closure[n1];
             debug_assert_eq!(c, vc, "CCCS control source straddles closures");
             if c == vc {
-                self.closures[c].sys.add(self.node_row[n1], vn, gain);
+                self.record_touch(c, self.node_row[n1], vn);
             }
         }
         if n2 != GROUND {
             let c = self.node_closure[n2];
             debug_assert_eq!(c, vc, "CCCS control source straddles closures");
+            if c == vc {
+                self.record_touch(c, self.node_row[n2], vn);
+            }
+        }
+        if n1 != GROUND {
+            let c = self.node_closure[n1];
+            if c == vc {
+                self.closures[c].sys.add(self.node_row[n1], vn, gain);
+            }
+        }
+        if n2 != GROUND {
+            let c = self.node_closure[n2];
             if c == vc {
                 self.closures[c].sys.add(self.node_row[n2], vn, -gain);
             }

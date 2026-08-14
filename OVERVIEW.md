@@ -146,6 +146,12 @@ fetch it).
   factorisation, singularity detection. Closures of 150 rows or more route to
   the sparse left-looking LU (column partial pivoting, monotone pair set)
   automatically, matching upstream's `solverType` threshold.
+- Constant-row elimination for nonlinear dense closures: rows `do_step` never
+  rewrites are factored once per build and each Newton iteration solves a
+  small reduced system instead of refactoring the whole matrix (see
+  `engine/core/src/simplified.rs`). A nonlinear element buried in a large
+  passive network is the win case; fallback guards keep it bit-exact with the
+  unsimplified path.
 - Newton-Raphson with junction limiting and per-element convergence reporting.
 - DC operating point before transient, with reactive elements switched to their
   steady-state stamps.
@@ -171,10 +177,24 @@ fetch it).
 
 ### Deliberate gaps
 
-- **Matrix simplification.** Upstream pre-eliminates rows that are constant,
-  which materially speeds up large circuits. Not implemented: the matrix is
-  factored as-is by whichever LU backend the closure size picks. This is the
-  single biggest performance lever remaining.
+- **Matrix simplification is implemented** as constant-row elimination for
+  nonlinear dense closures (`engine/core/src/simplified.rs`): the rows
+  `do_step` rewrites are detected on the first Newton iteration of each
+  restamp epoch via the Stamper's touch recording, the constant bulk is
+  factored once, and each iteration solves a small reduced system plus a
+  back-substitution. Three fallback guards (fixed-row drift, singular or
+  non-finite reduced solve, full-system residual) route back to the exact
+  unsimplified solve rather than ever returning a wrong answer, so the corpus
+  report and every analytic test are unchanged. The deterministic factor-flop
+  win on a 134-row dense fan with one diode is 2,187,354 to 82,400 over a
+  10-step run (26.5x), but that counts only LU factor multiply-adds: the
+  simplified path also pays per-iteration O(n²) work the full path never
+  does (the fixed-row drift scan, the `A_FD^-1*b_F` solve and the residual
+  scan, roughly 53k ops/iteration against the full factor's ~81k), so the
+  real steady-state win is about 1.5-2x, not the factor-only headline. The
+  `simplify` SimOptions flag (on by default) disables it for tests. Sparse
+  closures are deliberately not simplified: their refactor is already cheap
+  and the dense reduced system would not pay for itself.
 - **Sparse matrix ordering.** The sparse LU has no column ordering, so it
   fills on a dense 2D mesh (`O(n²)` for the fan families it was tuned on, more
   on a true grid). A benchmark-gated minimum-degree ordering is the noted
@@ -236,7 +256,7 @@ fetch it).
 ### Milestone A — solver depth
 
 - [x] Adaptive timestep with step rejection
-- [ ] Matrix simplification / constant-row elimination
+- [x] Matrix simplification / constant-row elimination
 - [x] Sparse matrix path for large circuits
 - [x] Convergence diagnostics surfaced in the UI (which element failed)
 - [x] Benchmark harness with representative circuits, wired into CI

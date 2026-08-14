@@ -362,6 +362,77 @@ fn bench_mesh_30x30_stays_within_fill_budget() {
 }
 
 #[test]
+fn bench_constant_rows_eliminate_the_refactor_cost() {
+    // The constant-row elimination's target case: a nonlinear element buried
+    // in a large dense passive network. A 12x12 fan plus a diode is 134
+    // closure rows, dense under Auto, and the diode is the only changing
+    // element, so the whole passive network can be cached. The unsimplified
+    // run refactors the full 134-row matrix every Newton iteration; the
+    // simplified run factors the fixed part once and solves a ~1-row reduced
+    // system per iteration. The measured numbers are deterministic flop
+    // counters, so the delta is meaningful.
+    //
+    // The flop counter counts LU factor multiply-adds only, on both paths.
+    // The simplified path additionally pays per-iteration O(n²) work the full
+    // path never does: the fixed-row drift scan, the `A_FD^-1*b_F` solve and
+    // the residual scan, about 53k ops/iteration on this fan against the full
+    // factor's ~81k. So the 26.5x factor-flop ratio below is an upper bound:
+    // the real steady-state win, per iteration, is roughly 1.5-2x.
+    let simplified = row(
+        "fan 12x12 + diode (simplified)",
+        fan_with_diode(12),
+        opts(1e-5, false),
+        10,
+    );
+    let unsimplified = row(
+        "fan 12x12 + diode (unsimplified)",
+        fan_with_diode(12),
+        opts_no_simplify(1e-5, false),
+        10,
+    );
+    assert_eq!(simplified.closure_backends, vec![SolverBackend::Dense]);
+    assert_eq!(simplified.closure_rows, vec![134]);
+    let reduced = simplified.circuit.closure_reduced_rows();
+    assert!(
+        (1..=2).contains(&reduced[0]),
+        "the per-step system was {} rows, expected one or two (the diode's own node)",
+        reduced[0]
+    );
+    assert!(simplified.converged && unsimplified.converged);
+    assert!(
+        simplified.run_flops < unsimplified.run_flops / 10,
+        "simplified refactored {} flops, unsimplified {}: the factor-flop win must exceed 10x",
+        simplified.run_flops,
+        unsimplified.run_flops
+    );
+    // Ranged, not exact: a legitimate LU optimisation in either path can move
+    // the count, but the order of magnitude is the point.
+    assert!(
+        (40_000.0..200_000.0).contains(&(simplified.run_flops as f64)),
+        "simplified refactored {} flops over the run, expected ~82k",
+        simplified.run_flops
+    );
+    assert!(
+        (1_000_000.0..4_000_000.0).contains(&(unsimplified.run_flops as f64)),
+        "unsimplified refactored {} flops over the run, expected ~2.19M",
+        unsimplified.run_flops
+    );
+    // The far corners of the untouched chains keep the analytic drive/len =
+    // 20/12 V: the clamp on chain 0 changes its own corner, not the network.
+    let v = simplified.circuit.node_voltages();
+    for c in 1..12 {
+        let corner = 1 + 11 * (c + 1);
+        assert!(
+            close(v[corner], 20.0 / 12.0, 1e-6),
+            "chain {c} far corner was {}",
+            v[corner]
+        );
+    }
+    print_row(&unsimplified);
+    print_row(&simplified);
+}
+
+#[test]
 fn bench_nonlinear_circuits_bound_the_refactor_cost() {
     // Nonlinear circuits refactor every Newton iteration, so after the run
     // `factor_flops` is the total nonlinear refactor work. The diode chain is

@@ -127,6 +127,37 @@ impl LinearSystem {
         self.a[row * self.n + col]
     }
 
+    /// The working matrix, row-major. Read-only view for the constant-row
+    /// elimination in [`crate::simplified`], which splits it into a cached
+    /// fixed part and a small per-iteration changing system.
+    pub(crate) fn a(&self) -> &[f64] {
+        &self.a
+    }
+
+    /// The working right-hand side. See [`LinearSystem::a`].
+    pub(crate) fn b(&self) -> &[f64] {
+        &self.b
+    }
+
+    /// The snapshot matrix, row-major. See [`LinearSystem::a`].
+    pub(crate) fn base_a(&self) -> &[f64] {
+        &self.base_a
+    }
+
+    /// Mutable view of the working matrix, for the reduced system the
+    /// simplified solver rebuilds each iteration. The reduced system is
+    /// resized once, so a per-iteration rewrite of its entries must not go
+    /// through `resize` (which resets the flop counter).
+    pub(crate) fn a_mut(&mut self) -> &mut [f64] {
+        &mut self.a
+    }
+
+    /// Mutable view of the working right-hand side. See
+    /// [`LinearSystem::a_mut`].
+    pub(crate) fn b_mut(&mut self) -> &mut [f64] {
+        &mut self.b
+    }
+
     /// Snapshots the current matrix as the reusable base for later timesteps.
     pub fn snapshot(&mut self) {
         self.base_a.copy_from_slice(&self.a);
@@ -267,6 +298,40 @@ impl LinearSystem {
             self.x[i] = sum / self.lu[i * n + i];
         }
         for v in self.x.iter() {
+            if !v.is_finite() {
+                return Err(SolveError::Singular);
+            }
+        }
+        Ok(())
+    }
+
+    /// Solves the cached factors for an arbitrary right-hand side, leaving the
+    /// system's own `b` and `x` untouched. The constant-row elimination's
+    /// fixed part is factored once and then re-solved for a fresh `rhs` every
+    /// iteration, so it needs this rather than `solve`, which would clobber
+    /// the working vector with a partial solution.
+    pub(crate) fn solve_rhs(&mut self, rhs: &[f64], out: &mut [f64]) -> Result<(), SolveError> {
+        debug_assert_eq!(rhs.len(), self.n);
+        debug_assert_eq!(out.len(), self.n);
+        self.factor()?;
+        let n = self.n;
+        for i in 0..n {
+            let row = &self.lu[i * n..i * n + i];
+            let mut sum = rhs[self.perm[i]];
+            for (k, &v) in out[..i].iter().enumerate() {
+                sum -= row[k] * v;
+            }
+            out[i] = sum;
+        }
+        for i in (0..n).rev() {
+            let row = &self.lu[i * n..];
+            let mut sum = out[i];
+            for (k, &v) in out[(i + 1)..].iter().enumerate() {
+                sum -= row[i + 1 + k] * v;
+            }
+            out[i] = sum / row[i];
+        }
+        for v in out.iter() {
             if !v.is_finite() {
                 return Err(SolveError::Singular);
             }
@@ -465,6 +530,16 @@ impl Solver {
         match self {
             Solver::Dense(s) => &mut s.x,
             Solver::Sparse(s) => &mut s.x,
+        }
+    }
+
+    /// The dense system, when this solver is dense. The constant-row
+    /// elimination only ever builds on dense closures, so the caller can
+    /// unwrap it; `None` on the sparse backend keeps the type honest.
+    pub(crate) fn dense_mut(&mut self) -> Option<&mut LinearSystem> {
+        match self {
+            Solver::Dense(s) => Some(s),
+            Solver::Sparse(_) => None,
         }
     }
 }

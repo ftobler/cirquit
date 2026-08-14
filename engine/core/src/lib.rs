@@ -35,6 +35,7 @@ pub mod elements;
 pub mod expr;
 pub mod matrix;
 pub mod scope;
+mod simplified;
 pub mod sparse;
 pub mod spec;
 pub mod stamp;

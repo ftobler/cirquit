@@ -137,6 +137,7 @@ pub fn opts(time_step: f64, dc: bool) -> SimOptions {
         steps_per_frame: 1,
         max_subiterations: 100,
         dc_operating_point: dc,
+        simplify: true,
     }
 }
 
@@ -151,6 +152,22 @@ pub fn opts_solver(time_step: f64, dc: bool, solver_type: SolverType) -> SimOpti
         steps_per_frame: 1,
         max_subiterations: 100,
         dc_operating_point: dc,
+        simplify: true,
+    }
+}
+
+/// Like [`opts`] with constant-row elimination disabled, for the tests that
+/// pin the simplified path against the unsimplified one.
+pub fn opts_no_simplify(time_step: f64, dc: bool) -> SimOptions {
+    SimOptions {
+        solver_type: SolverType::Auto,
+        time_step,
+        min_time_step: 50e-12,
+        adaptive: false,
+        steps_per_frame: 1,
+        max_subiterations: 100,
+        dc_operating_point: dc,
+        simplify: false,
     }
 }
 
@@ -167,6 +184,7 @@ pub fn adaptive_opts(max_step: f64, min_step: f64, subiters: u32) -> SimOptions 
         steps_per_frame: 1,
         max_subiterations: subiters,
         dc_operating_point: false,
+        simplify: true,
     }
 }
 
@@ -183,6 +201,7 @@ pub fn opts_budget(time_step: f64, dc: bool, max_sub: u32) -> SimOptions {
         steps_per_frame: 1,
         max_subiterations: max_sub,
         dc_operating_point: dc,
+        simplify: true,
     }
 }
 
@@ -520,5 +539,22 @@ pub fn diode_chain(n: usize, drive: f64, r: f64) -> Vec<ElementSpec> {
         id += 1;
     }
     v.push(elm(id, "ground", &[[step * (n + 1) as i32, 0]], &[]));
+    v
+}
+
+/// A `len`x`len` resistor fan with a diode clamped onto chain 0's far corner.
+/// The far corner (one resistor from ground) sits at (0, 16*(len-1)). For
+/// `len` up to 12 the closure stays under the sparse threshold, so Auto gives
+/// it the dense backend, and the diode is the only changing element: the
+/// constant-row elimination should cache the whole passive network.
+pub fn fan_with_diode(len: usize) -> Vec<ElementSpec> {
+    let mut v = fan(len, len, 20.0, 1);
+    v.push(elm(
+        400,
+        "diode",
+        &[[0, 16 * (len as i32 - 1)], [0, 320]],
+        &[],
+    ));
+    v.push(elm(401, "ground", &[[0, 320]], &[]));
     v
 }
