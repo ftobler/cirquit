@@ -1,5 +1,6 @@
 //! Logic gates, the inverter, Schmitt trigger, tri-state buffer, custom logic, LED, analog switch and memristor.
 
+use circuit_core::elements::build_element;
 use circuit_core::{ScopeSpec, ScopeValue};
 
 mod common;
@@ -541,6 +542,81 @@ fn custom_logic_tri_state_output_goes_high_impedance() {
         close(midpoint(0.0), 2.5, 1e-3),
         "high-impedance output floats to the 2.5 V divider point, got {}",
         midpoint(0.0)
+    );
+}
+
+#[test]
+fn custom_logic_rejects_a_rule_left_longer_than_the_pin_table() {
+    // A 5-char left on a 2-in/2-out model would walk `pins[4]` past the four
+    // posts in `execute`; the construction-time shape check rejects it through
+    // the same invalid-element path an unknown kind takes.
+    let spec = elm_model(
+        1,
+        &[[0, 0], [0, 32], [96, 0], [96, 32]],
+        2,
+        2,
+        false,
+        &[("00000", "00")],
+    );
+    assert!(
+        build_element(&spec).is_none(),
+        "a rule-left longer than the pin table must not build"
+    );
+}
+
+#[test]
+fn custom_logic_rejects_a_rule_right_longer_than_the_outputs() {
+    // A 3-char right on a 2-in/2-out model would index `high_impedance[2]`
+    // and `write_output(4)` past their vectors in `execute`.
+    let spec = elm_model(
+        1,
+        &[[0, 0], [0, 32], [96, 0], [96, 32]],
+        2,
+        2,
+        false,
+        &[("00", "000")],
+    );
+    assert!(
+        build_element(&spec).is_none(),
+        "a rule-right longer than the outputs must not build"
+    );
+}
+
+#[test]
+fn custom_logic_rejects_a_rule_right_side_with_fewer_entries_than_the_left() {
+    // `execute` reads `rules_right[i]` for every left rule, so a right table
+    // with fewer entries leaves the second left rule without a right side.
+    let spec = elm_model_rules(
+        1,
+        &[[0, 0], [0, 32], [96, 0], [96, 32]],
+        2,
+        2,
+        false,
+        &["00", "01"],
+        &["10"],
+    );
+    assert!(
+        build_element(&spec).is_none(),
+        "a right table shorter than the left table must not build"
+    );
+}
+
+#[test]
+fn custom_logic_builds_a_well_formed_model() {
+    // The mirror image: a rule table obeying every shape bound still builds.
+    // The truth-table test above runs the same shape end-to-end; this pins the
+    // construction-time contract directly.
+    let spec = elm_model(
+        1,
+        &[[0, 0], [0, 32], [96, 0], [96, 32]],
+        2,
+        2,
+        false,
+        &[("00", "00"), ("01", "01"), ("10", "01"), ("11", "11")],
+    );
+    assert!(
+        build_element(&spec).is_some(),
+        "a well-formed model must build"
     );
 }
 

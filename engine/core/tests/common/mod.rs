@@ -75,12 +75,28 @@ pub fn elm_model(
     tri_state: bool,
     rules: &[(&str, &str)],
 ) -> ElementSpec {
+    let left: Vec<&str> = rules.iter().map(|(l, _)| *l).collect();
+    let right: Vec<&str> = rules.iter().map(|(_, r)| *r).collect();
+    elm_model_rules(id, posts, inputs, outputs, tri_state, &left, &right)
+}
+
+/// Like [`elm_model`], with the left and right rule tables supplied
+/// separately, for the malformed-shape tests that need unbalanced counts.
+pub fn elm_model_rules(
+    id: u32,
+    posts: &[[i32; 2]],
+    inputs: usize,
+    outputs: usize,
+    tri_state: bool,
+    rules_left: &[&str],
+    rules_right: &[&str],
+) -> ElementSpec {
     let model = serde_json::json!({
         "inputs": (0..inputs).map(|i| String::from_utf8(vec![b'A' + i as u8]).unwrap()).collect::<Vec<_>>(),
         "outputs": (0..outputs).map(|i| String::from_utf8(vec![b'A' + inputs as u8 + i as u8]).unwrap()).collect::<Vec<_>>(),
         "triState": tri_state,
-        "rulesLeft": rules.iter().map(|(l, _)| *l).collect::<Vec<_>>(),
-        "rulesRight": rules.iter().map(|(_, r)| *r).collect::<Vec<_>>(),
+        "rulesLeft": rules_left,
+        "rulesRight": rules_right,
     });
     ElementSpec {
         id,

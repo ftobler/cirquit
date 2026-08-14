@@ -76,6 +76,34 @@ impl ModelData {
             self.outputs.len()
         }
     }
+
+    /// Shape-checks the rule table the way the TS parser does (parse.ts:49-51),
+    /// because the model arrives as raw JSON and must not be trusted to index
+    /// `execute`'s vectors. The left side may test output pins too, so it may
+    /// be longer than the input count but never longer than the whole pin
+    /// table; the right side must name exactly the output count; and no left
+    /// rule may outlive its right partner. `execute` indexes `pins[j]`,
+    /// `last_values[j]`, `rules_right[i]`, `high_impedance[k]` and
+    /// `write_output(input_count + k)` with exactly these bounds, so a passing
+    /// check keeps every one of those in range.
+    fn rules_in_bounds(&self, input_count: usize, output_count: usize) -> bool {
+        if self.rules_right.len() < self.rules_left.len() {
+            return false;
+        }
+        let pin_count = input_count + output_count;
+        for rl in &self.rules_left {
+            let len = rl.chars().count();
+            if len < input_count || len > pin_count {
+                return false;
+            }
+        }
+        for rr in &self.rules_right {
+            if rr.chars().count() != output_count {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 pub struct CustomLogic {
@@ -95,7 +123,10 @@ pub struct CustomLogic {
 }
 
 impl CustomLogic {
-    pub fn new(spec: &ElementSpec) -> Self {
+    /// `None` means the model's rule table is too malformed to walk safely;
+    /// `build_element` then reports the element through the same invalid-
+    /// circuit path an unknown kind takes.
+    pub fn new(spec: &ElementSpec) -> Option<Self> {
         let model = spec
             .model
             .as_deref()
@@ -105,6 +136,9 @@ impl CustomLogic {
         // missing or empty one falls back to the defaults.
         let input_count = model.input_count();
         let output_count = model.output_count();
+        if !model.rules_in_bounds(input_count, output_count) {
+            return None;
+        }
         // Pin table (CustomLogicElm.java:75-88): the inputs on the west, then
         // the outputs on the east. The `state` flag stays off: the saved
         // output voltages are keyed by output ordinal here, not pin position,
@@ -135,7 +169,7 @@ impl CustomLogic {
             }
         }
         chip.just_loaded = loaded;
-        Self {
+        Some(Self {
             chip,
             input_count,
             output_count,
@@ -145,7 +179,7 @@ impl CustomLogic {
             last_values: vec![false; input_count + output_count],
             pattern_values: [false; 26],
             high_impedance: vec![false; output_count],
-        }
+        })
     }
 
     fn internal_node(&self, output: usize) -> usize {
@@ -172,7 +206,9 @@ impl CustomLogic {
                     '+' => value && !self.last_values[j],
                     // down transition
                     '-' => !value && self.last_values[j],
-                    // save the pin's value into the pattern table
+                    // save the pin's value into the pattern table. The table is
+                    // fixed at 26 entries and the arm below bounds the index to
+                    // a..z, so this can never walk out.
                     'a'..='z' => {
                         self.pattern_values[(x as u8 - b'a') as usize] = value;
                         true
