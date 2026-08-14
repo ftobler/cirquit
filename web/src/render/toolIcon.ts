@@ -59,6 +59,7 @@ export function renderToolIcon(
   canvas: ToolIconSurface,
   dark: boolean,
   settings?: SimSettings,
+  pixelRatio = 1,
 ): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -79,10 +80,17 @@ export function renderToolIcon(
   const fit = iconFit(e, def);
   const theme = makeTheme(dark, settings);
 
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, TOOL_ICON_SIZE, TOOL_ICON_SIZE);
-  ctx.setTransform(fit.scale, 0, 0, fit.scale, fit.tx, fit.ty);
+  ctx.setTransform(
+    fit.scale * pixelRatio,
+    0,
+    0,
+    fit.scale * pixelRatio,
+    fit.tx * pixelRatio,
+    fit.ty * pixelRatio,
+  );
 
   const g: DrawContext = {
     ctx,

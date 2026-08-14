@@ -7,6 +7,13 @@ import { useEffect, useRef } from 'react';
 import type { SimSettings } from '../model/types';
 import { renderToolIcon, TOOL_ICON_SIZE } from '../render/toolIcon';
 
+/** Oversampling factor for the icon's backing canvas, on top of the real
+ *  device pixel ratio. These are hairline vector strokes at a 24 px icon
+ *  size, so even a DPR-1 display aliases visibly when the backing store
+ *  matches the CSS size 1:1; quadrupling it supersamples down to a crisp
+ *  square in every theme and at every zoom level. */
+const ICON_OVERSAMPLE = 4;
+
 export function ToolIcon({
   toolId,
   dark,
@@ -22,13 +29,20 @@ export function ToolIcon({
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
-    renderToolIcon(toolId, canvas, dark, settings);
+    const pixelRatio = (window.devicePixelRatio || 1) * ICON_OVERSAMPLE;
+    const size = TOOL_ICON_SIZE * pixelRatio;
+    if (canvas.width !== size || canvas.height !== size) {
+      canvas.width = size;
+      canvas.height = size;
+    }
+    renderToolIcon(toolId, canvas, dark, settings, pixelRatio);
   }, [toolId, dark, settings]);
   return (
     <canvas
       ref={ref}
       width={TOOL_ICON_SIZE}
       height={TOOL_ICON_SIZE}
+      style={{ width: TOOL_ICON_SIZE, height: TOOL_ICON_SIZE }}
       className={className}
       aria-hidden="true"
     />
