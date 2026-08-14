@@ -559,7 +559,6 @@ button.active,
   display: flex;
   flex: 1;
   min-height: 0;
-  position: relative; /* anchors .app-banner so it overlays instead of pushing flow */
 }
 
 .left,
@@ -585,6 +584,7 @@ button.active,
   min-width: 0;
   display: flex;
   flex-direction: column;
+  position: relative; /* anchors .app-banner so it overlays instead of pushing flow */
 }
 
 .circuit-canvas {
@@ -674,13 +674,14 @@ h3 {
   font-size: 12px;
 }
 
-/* The problem alert overlays the workspace instead of sitting in normal
-   document flow, so it no longer pushes the canvas and drawers down when it
-   appears or up when it clears. Anchored to .workspace, not the menubar,
-   because the menubar's own height varies when it wraps at narrow widths;
-   .workspace always starts right below it regardless. z-index sits above the
-   menubar (36) so it stays visible over an open mobile drawer (35), but below
-   dialogs (40). */
+/* The problem alert overlays the canvas instead of sitting in normal document
+   flow, so it no longer pushes the canvas down when it appears or up when it
+   clears. Anchored to .centre, not the menubar, because the menubar's own
+   height varies when it wraps at narrow widths; .centre always starts right
+   below it regardless. Anchoring to .centre rather than .workspace keeps the
+   banner within the canvas column instead of stretching across the parts and
+   options drawers. z-index sits above the menubar (36) so it stays visible
+   over an open mobile drawer (35), but below dialogs (40). */
 .app-banner {
   position: absolute;
   top: 10px;

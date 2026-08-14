@@ -342,18 +342,20 @@ export default function App() {
       {dialog === 'otherOptions' && <OtherOptionsDialog />}
       {dialog === 'sliders' && <SliderDialog />}
       <div className="workspace">
-        {problem && (
-          // Absolutely positioned inside .workspace (see .app-banner in
-          // styles.css) so it overlays the canvas instead of pushing it:
-          // toggling `problem` must not shift the drawers or canvas below.
-          <div className="problem app-banner" role="alert">
-            {problem}
-          </div>
-        )}
         <aside id="parts-drawer" className={partsOpen ? 'left open' : 'left'}>
           <Toolbox />
         </aside>
         <main className="centre">
+          {problem && (
+            // Absolutely positioned inside .centre (see .app-banner in
+            // styles.css) so it overlays the canvas instead of pushing it:
+            // toggling `problem` must not shift the canvas below, and
+            // anchoring to .centre rather than .workspace keeps it clear of
+            // the parts and options drawers on either side.
+            <div className="problem app-banner" role="alert">
+              {problem}
+            </div>
+          )}
           <CircuitCanvas engine={engine} />
           <ScopePanel engine={engine} />
           <ContextMenu />
