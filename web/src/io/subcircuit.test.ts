@@ -8,6 +8,7 @@ import {
   clearSessionModels,
   compositeModelLine,
   describeBuildFailure,
+  escapeChildField,
   getModel,
   listModels,
   modelToEngineSpec,
@@ -18,6 +19,7 @@ import {
   renameCompositeModelLine,
   renameModel,
   saveModel,
+  unescapeChildField,
   type SubcircuitStorage,
 } from './subcircuits';
 import { parseCircuit, serializeCircuit } from './netlist';
@@ -29,6 +31,7 @@ import {
   startSubcircuitEdit,
 } from '../ui/subcircuitManager';
 import { summarizeImport } from './importSummary';
+import { escapeToken, unescapeToken } from './netlist/tokens';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
 import { LABELED_NODE_INTERNAL } from '../model/registry/flags';
 import { makeElement, makeToolElement, useStore } from '../state/store';
@@ -610,6 +613,83 @@ describe('building a model from a selection', () => {
       compositeModelLine({ ...built.model!, name: 'mixed' }),
     );
     expect(reparsed).toEqual({ ...built.model!, name: 'mixed' });
+  });
+
+  it('keeps child dump fields containing `_` and a space intact through the round trip', () => {
+    // A switch label is a string dump field, so a label with an underscore
+    // and a space is exactly the value the `_`-join corrupts: the writer
+    // turns every underscore into a space and the loader splits every space
+    // into a new field. The child-dump escaping must keep the label one
+    // field end to end.
+    const elements = [
+      {
+        ...makeElement('switch', 0, 0, 160, 0),
+        id: nextId++,
+        text: 'my_switch on',
+      } as CircuitElement,
+      label('in', 0, 0, -32, 0),
+      label('out', 160, 0, 32, 0),
+    ];
+    const built = buildModelFromSelection(elements, []);
+    expect(built.unsupported).toEqual([]);
+    const model = built.model!;
+    expect(model.nodeList).toBe('SwitchElm 1 2');
+    // The stored `.` line form: the label's `_` encoded `\u`, its space `\s`,
+    // each backslash doubled again by the outer token escape. The label is
+    // still a single `\s`-separated field of the child token.
+    expect(model.elmDump).toBe('4\\s0\\sfalse\\smy\\\\uswitch\\\\son');
+    // The engine token: the loader's unescape/split/join restores the
+    // `_`-joined form with the label still one field (the engine drops the
+    // non-numeric switch label either way).
+    expect(modelToEngineSpec(model).dumps).toEqual(['4_0_false_my\\uswitch\\son']);
+    // The inverse of the loader, the way the engine dumps would walk back to
+    // an elmDump, recovers the stored token exactly.
+    const back = modelToEngineSpec(model).dumps.map((d) => escapeToken(d.split('_').join(' ')));
+    expect(back.join(' ')).toBe(model.elmDump);
+    // Decoding that recovered dump yields the original switch fields.
+    const fields = unescapeToken(back[0]).split(' ').map(unescapeChildField);
+    expect(fields).toEqual(['4', '0', 'false', 'my_switch on']);
+    // And the `.` line round trip keeps the elmDump byte for byte.
+    const reparsed = parseCompositeModelLine(
+      compositeModelLine({ ...model, name: 'labelled' }),
+    );
+    expect(reparsed).toEqual({ ...model, name: 'labelled' });
+  });
+
+  it('round-trips a diode model name containing an underscore', () => {
+    // The named-model form of a diode dump carries the model name as its
+    // only field; a name with an underscore is another real `_`-in-field case
+    // (a built-in 34-line name is never escaped, so one reaching the dump has
+    // a real underscore).
+    const elements = [
+      {
+        ...makeElement('diode', 0, 0, 160, 0),
+        id: nextId++,
+        modelName: '1N_4148',
+      } as CircuitElement,
+      label('in', 0, 0, -32, 0),
+      label('out', 160, 0, 32, 0),
+    ];
+    const built = buildModelFromSelection(elements, []);
+    expect(built.unsupported).toEqual([]);
+    const model = built.model!;
+    // FLAG_MODEL (bit 2) with the model name as the one field.
+    expect(model.elmDump).toBe('2\\s1N\\\\u4148');
+    const dumps = modelToEngineSpec(model).dumps;
+    expect(dumps).toEqual(['2_1N\\u4148']);
+    // The loader round trip keeps the name in one field.
+    const fields = unescapeToken(escapeToken(dumps[0].split('_').join(' ')))
+      .split(' ')
+      .map(unescapeChildField);
+    expect(fields).toEqual(['2', '1N_4148']);
+  });
+
+  it('the child-dump field escaping round-trips any value', () => {
+    // Backslashes come first in the encoding, so a value that already looks
+    // like an escape, or mixes all three special characters, still decodes.
+    for (const value of ['plain', 'with_space', '1N_4148', 'a\\b', 'a\\u', 'a\\s', 'a\\_b', 'x_u\\v w']) {
+      expect(unescapeChildField(escapeChildField(value))).toBe(value);
+    }
   });
 
   it('maps jfet and mosfet channel type onto the polarity-named class', () => {

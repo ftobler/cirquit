@@ -279,6 +279,8 @@ export function sameCompositeModel(a: CompositeModel, b: CompositeModel): boolea
  * `apply_dump` expect. The `.` line's elmDump children are space-separated
  * escaped dumps; the engine wants `flags_field1_field2`, so each is split and
  * re-joined (CompositeElm.loadComposite's token walk over the escaped dump).
+ * `childDumpToken` already escaped `_` and space inside field values, so the
+ * space split here separates fields, never a value.
  */
 export function modelToEngineSpec(model: CompositeModel): CompositeEngineSpec {
   return {
@@ -778,19 +780,44 @@ export function buildModelFromSelection(
       sizeY,
       extList,
       nodeList: lines.join('\r'),
+      // The `_` separators `childDumpToken` joined become spaces (escaped to
+      // `\s`); field values never carry a literal `_` or space, so the join
+      // only ever splits on field boundaries.
       elmDump: dumps.map((t) => escapeToken(t.replaceAll('_', ' '))).join(' '),
     },
     unsupported: [],
   };
 }
 
+/** Escapes one child dump field for the `_`-joined token: a value's own `_`
+ *  would read as another field separator, and a space would read as one on
+ *  the loader's space split (`modelToEngineSpec`), so each is encoded (`_`
+ *  -> `\u`, space -> `\s`) and a backslash first, which keeps an already
+ *  escaped sequence from being misread. The common case, a numeric field,
+ *  contains none of the three characters and passes through unchanged, which
+ *  is what keeps existing `.` lines loadable. */
+export function escapeChildField(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/_/g, '\\u').replace(/ /g, '\\s');
+}
+
+/** The inverse of `escapeChildField`, decoding one field back out of a child
+ *  dump token. The `\\`/`\u`/`\s` codes the encoder writes are the only
+ *  sequences touched, and `\\` is matched first, so a value that merely
+ *  contains `\u` as two characters survives. */
+export function unescapeChildField(s: string): string {
+  return s.replace(/\\(u|s|\\)/g, (_, c: string) => (c === 'u' ? '_' : c === 's' ? ' ' : '\\'));
+}
+
 /** The `_`-joined child dump token for a buildable element: its file flags
  *  then its dump fields, the shape the engine's `apply_dump` splits
  *  (composite.rs). The field order is the registry's own dump, so the token
- *  matches what the element's own line would save. */
+ *  matches what the element's own line would save. Fields are escaped before
+ *  the join, so the only `_` in the token are the separators; the writer
+ *  (`buildModelFromSelection`) and the loader (`modelToEngineSpec`) can then
+ *  round-trip a field that itself contains `_` or a space. */
 function childDumpToken(e: CircuitElement): string {
   const def = defFor(e.kind);
   const flags = def?.dumpFlags?.(e) ?? e.flags;
   const fields = def?.dump?.(e) ?? [];
-  return [String(flags), ...fields.map((f) => String(f))].join('_');
+  return [String(flags), ...fields.map((f) => escapeChildField(String(f)))].join('_');
 }
