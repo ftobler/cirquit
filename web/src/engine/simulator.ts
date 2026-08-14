@@ -117,6 +117,50 @@ export interface FrameStats {
   failingElementIds: number[];
 }
 
+/** The surface of a wasm `FrameResult` that `frameStatsOf` reads. Structural,
+ *  so a test stub can stand in for the wasm object and make a read throw on
+ *  purpose. */
+export interface FrameResultRead {
+  steps: number;
+  iterations: number;
+  time: number;
+  converged: boolean;
+  error?: string | null;
+  failingElementIds(): Uint32Array;
+  free(): void;
+}
+
+/**
+ * Reads a wasm frame result into a plain `FrameStats`. The release is
+ * unconditional: `free()` runs even when a read throws (a wasm panic surfaces
+ * as a JS exception from the binding), so a failing frame cannot leak the wasm
+ * heap object. The throw itself is converted into an error flag so nothing
+ * escapes `run` to the frame loop.
+ */
+export function frameStatsOf(result: FrameResultRead): FrameStats {
+  try {
+    return {
+      steps: result.steps,
+      iterations: result.iterations,
+      time: result.time,
+      converged: result.converged,
+      error: result.error ?? undefined,
+      failingElementIds: Array.from(result.failingElementIds()),
+    };
+  } catch (err) {
+    return {
+      steps: 0,
+      iterations: 0,
+      time: 0,
+      converged: false,
+      error: err instanceof Error ? err.message : String(err),
+      failingElementIds: [],
+    };
+  } finally {
+    result.free();
+  }
+}
+
 /** One trace handed to the engine, in the order it will occupy in `scopeData`. */
 export interface ScopeTraceSpec {
   /** Store plot id; the engine trace order is the array order, and this is
@@ -328,17 +372,7 @@ export class SimEngine {
   }
 
   run(steps: number): FrameStats {
-    const r = this.sim.run(steps);
-    const stats: FrameStats = {
-      steps: r.steps,
-      iterations: r.iterations,
-      time: r.time,
-      converged: r.converged,
-      error: r.error ?? undefined,
-      failingElementIds: Array.from(r.failingElementIds()),
-    };
-    r.free();
-    return stats;
+    return frameStatsOf(this.sim.run(steps));
   }
 
   reset(): void {

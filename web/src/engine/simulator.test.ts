@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { SimEngine } from './simulator';
+import { frameStatsOf, SimEngine } from './simulator';
 import { DEFAULT_SETTINGS } from '../model/types';
 import type { CircuitElement } from '../model/types';
 import { postsOf } from '../model/registry';
@@ -463,6 +463,78 @@ describe('SimEngine recordedData facade', () => {
     // A non-recorder element reports nothing.
     expect(engine.recordedData(2).length).toBe(0);
     expect(engine.recordedData(99).length).toBe(0);
+  });
+});
+
+describe('SimEngine run converts wasm throws into error flags', () => {
+  // The wasm FrameResult cannot be made to throw from a test (the real module
+  // is loaded by SimEngine.create), so frameStatsOf is the seam: a structural
+  // stub stands in for the wasm object. These tests pin the two guarantees the
+  // frame loop depends on: a throw surfaces as `{converged:false, error:...}`
+  // instead of escaping, and free() runs even when the read throws.
+
+  it('returns an error flag and still releases the result when a read throws', () => {
+    let freed = 0;
+    const result = {
+      steps: 3,
+      iterations: 7,
+      time: 1e-5,
+      converged: true,
+      error: undefined as string | undefined,
+      failingElementIds: () => {
+        throw new Error('wasm panicked');
+      },
+      free: () => {
+        freed++;
+      },
+    };
+    const stats = frameStatsOf(result);
+    expect(stats.converged).toBe(false);
+    expect(stats.error).toContain('wasm panicked');
+    expect(stats.steps).toBe(0);
+    expect(stats.failingElementIds).toEqual([]);
+    expect(freed).toBe(1);
+  });
+
+  it('converts a non-Error throw into a string error flag', () => {
+    let freed = 0;
+    const stats = frameStatsOf({
+      steps: 3,
+      iterations: 7,
+      time: 1e-5,
+      converged: true,
+      error: undefined,
+      failingElementIds: () => {
+        throw 'boom';
+      },
+      free: () => {
+        freed++;
+      },
+    });
+    expect(stats.converged).toBe(false);
+    expect(stats.error).toBe('boom');
+    expect(freed).toBe(1);
+  });
+
+  it('releases the result on a healthy read as well', () => {
+    let freed = 0;
+    const stats = frameStatsOf({
+      steps: 3,
+      iterations: 7,
+      time: 1e-5,
+      converged: true,
+      error: null,
+      failingElementIds: () => new Uint32Array([1, 2]),
+      free: () => {
+        freed++;
+      },
+    });
+    expect(stats.converged).toBe(true);
+    expect(stats.steps).toBe(3);
+    expect(stats.iterations).toBe(7);
+    expect(stats.error).toBeUndefined();
+    expect(stats.failingElementIds).toEqual([1, 2]);
+    expect(freed).toBe(1);
   });
 });
 
