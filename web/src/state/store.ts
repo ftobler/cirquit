@@ -162,6 +162,14 @@ const clone = (s: Snapshot): Snapshot => ({
   // rename) replaces rather than edits in place.
   passthrough: [...s.passthrough],
   order: [...s.order],
+  // Unreadable o lines carry the same nested shape as a resolved scope's raw
+  // tokens and plot list, so they need the same deep copy or a future
+  // in-place edit would alias the live state into the undo snapshot.
+  unmatchedScopes: s.unmatchedScopes.map((x) => ({
+    ...x,
+    raw: [...x.raw],
+    plots: x.plots.map((p) => ({ ...p })),
+  })),
 });
 
 /** Canonical fingerprint of the snapshot state, mirroring upstream's dump
@@ -182,6 +190,10 @@ const snapshotKey = (s: Snapshot): string =>
     // skip a step.
     passthrough: s.passthrough,
     order: s.order,
+    // Without this an unmatched-scope-only edit (recovering a file whose
+    // unreadable o lines differ from the previous one) would dedup against
+    // the top of the stack and undo would skip the step.
+    unmatchedScopes: s.unmatchedScopes,
   });
 
 const UNDO_LIMIT = 100;

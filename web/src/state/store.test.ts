@@ -1047,6 +1047,50 @@ r 0 0 16 0 0 100
     expect(s.elements[0].params.resistance).toBe(1000);
   });
 
+  it('undo after a recovery restores the pre-recovery unmatchedScopes, not the recovered file\'s', () => {
+    // Both files carry a normal resistor plus an `o` line whose element index
+    // (5) does not resolve to any element line this build read, the same
+    // "index lands on an element line this build could not read" shape
+    // unmatchedScopes exists for. Each lands its own entry there.
+    const PRE_RECOVERY = [
+      '$ 1 0.000005 10.2 50 5 43 5e-11',
+      'r 0 0 16 0 0 100',
+      'o 5 64 0 4099 20 0.05 0 2 4 3',
+      '',
+    ].join('\n');
+    const RECOVERY = [
+      '$ 1 0.000005 10.2 50 5 43 5e-11',
+      'r 0 0 16 0 0 200',
+      'o 5 64 0 4099 20 0.05 0 2 4 7',
+      '',
+    ].join('\n');
+    try {
+      withRecovery(RECOVERY);
+      useStore.getState().loadNetlist(PRE_RECOVERY);
+      const preUnmatched = useStore.getState().unmatchedScopes;
+      expect(preUnmatched).toHaveLength(1);
+      useStore.setState({ hasRecovery: true });
+
+      useStore.getState().recoverAutoSave();
+      const recovered = useStore.getState();
+      expect(recovered.unmatchedScopes).toHaveLength(1);
+      expect(recovered.unmatchedScopes[0].raw).not.toEqual(preUnmatched[0].raw);
+
+      recovered.undo();
+      const afterUndo = useStore.getState();
+      // The pre-recovery unmatched scope is back, not the recovered file's.
+      expect(afterUndo.unmatchedScopes).toEqual(preUnmatched);
+
+      // A subsequent save must serialise the pre-recovery unmatched o line,
+      // not the recovered file's, proving the round trip actually closes.
+      const saved = afterUndo.toNetlist();
+      expect(saved).toContain('o 5 64 0 4099 20 0.05 0 2 4 3');
+      expect(saved).not.toContain('o 5 64 0 4099 20 0.05 0 2 4 7');
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+  });
+
   it('a clean load keeps the previous session recovery, a real edit overwrites it', () => {
     vi.useFakeTimers();
     const map = new Map<string, string>([[RECOVERY_STORAGE_KEY, 'stale recovery']]);

@@ -44,6 +44,10 @@ export interface Snapshot {
    *  saved file without changing an element, so undo has to bring them back. */
   passthrough: string[];
   order: NetlistLine[];
+  /** `o` lines whose element index lands on an element line this build could
+   *  not read. See `AppState.unmatchedScopes`; undo/redo must round-trip it
+   *  identically to the other document fields above. */
+  unmatchedScopes: ScopeConfig[];
 }
 
 /**
