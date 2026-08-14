@@ -1,32 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { makeTheme } from '../render/draw';
-import { brandGradient } from './brand';
+import { BRAND_GRADIENT } from './brand';
 
 const FAVICON_PATH = fileURLToPath(new URL('../../public/favicon.svg', import.meta.url));
 
-describe('brandGradient', () => {
-  it('builds a 90deg linear gradient from positive to negative', () => {
-    expect(brandGradient({ positive: '#00ff00', negative: '#ff0000' })).toBe(
-      'linear-gradient(90deg, #00ff00, #ff0000)',
-    );
-  });
-
-  it('uses the dark theme green-to-red by default', () => {
-    // The page chrome stays dark in both canvas themes, so the brand always
-    // shows the dark palette's positive/negative roles.
-    expect(brandGradient(makeTheme(true))).toBe('linear-gradient(90deg, #00ff00, #ff0000)');
-  });
-
-  it('flows the custom colour settings through makeTheme', () => {
-    const theme = makeTheme(true, { positiveColor: '#123456', negativeColor: '#abcdef' });
-    expect(brandGradient(theme)).toBe('linear-gradient(90deg, #123456, #abcdef)');
-  });
-
-  it('keeps the palette values when the overrides are null', () => {
-    const theme = makeTheme(true, { positiveColor: null, negativeColor: null });
-    expect(brandGradient(theme)).toBe('linear-gradient(90deg, #00ff00, #ff0000)');
+describe('BRAND_GRADIENT', () => {
+  it('is a fixed 90deg golden-to-magenta sweep', () => {
+    expect(BRAND_GRADIENT).toBe('linear-gradient(90deg, rgb(226 212 25), rgb(223 27 126))');
   });
 });
 

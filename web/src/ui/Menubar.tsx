@@ -10,11 +10,10 @@ import { openCircuit } from '../io/fileIO';
 import { filterLibrary, loadLibraryCircuit, loadLibraryIndex, type LibraryGroup } from '../io/library';
 import { parseCircuit } from '../io/netlist';
 import { canMirror, canRotate } from '../model/transform';
-import { makeTheme } from '../render/draw';
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
 import { useStore } from '../state/store';
-import { brandGradient } from './brand';
+import { BRAND_GRADIENT } from './brand';
 import { useMenuKeyboard } from './menuKeyboard';
 import { deferred, type MenuItemDef } from './menuRows';
 
@@ -158,11 +157,6 @@ export function Menubar({ engine }: Props) {
 
   const dark = useStore((s) => s.dark);
   const editable = useStore((s) => s.settings.editable);
-  // The brand gradient tracks the two colour-scale overrides; the other three
-  // theme colours do not affect it, so the component re-renders only when
-  // these or `dark` change.
-  const positiveColor = useStore((s) => s.settings.positiveColor);
-  const negativeColor = useStore((s) => s.settings.negativeColor);
   // Derived selectors: commit replaces the stack arrays wholesale, so
   // subscribing to the length picks up each undo/redo boundary.
   const canUndo = useStore((s) => s.undoStack.length > 0);
@@ -291,15 +285,8 @@ export function Menubar({ engine }: Props) {
     [clipboard],
   );
 
-  // The brand gradient always rides the dark palette: the menubar panel stays
-  // dark in both canvas themes, so forcing dark keeps contrast when White
-  // Background is on. The custom colour settings still overlay on top.
-  const brandTheme = useMemo(
-    () => makeTheme(true, { positiveColor, negativeColor }),
-    [positiveColor, negativeColor],
-  );
   const brandStyle: CSSProperties = {
-    background: brandGradient(brandTheme),
+    background: BRAND_GRADIENT,
     WebkitBackgroundClip: 'text',
     backgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
