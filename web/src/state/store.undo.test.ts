@@ -435,3 +435,86 @@ r 176 96 384 96 0 1000
     expect(hasUnsavedChanges(null, 'anything')).toBe(false);
   });
 });
+
+describe('redo machinery', () => {
+  it('a new edit after an undo clears the redo stack', () => {
+    addResistor();
+    useStore.getState().commit();
+    useStore.getState().undo();
+    addResistor();
+    expect(useStore.getState().redoStack).toEqual([]);
+  });
+
+  it('a dedup commit (snapshot equal to the current state) clears the redo stack', () => {
+    // Two undos and one redo leave the current state equal to the top of the
+    // undo stack again, so this commit hits commit's dedup branch
+    // (store.ts:588) while the redo stack is still populated.
+    addResistor();
+    useStore.getState().commit();
+    useStore.getState().undo();
+    useStore.getState().undo();
+    useStore.getState().redo();
+    useStore.getState().commit();
+    expect(useStore.getState().redoStack).toEqual([]);
+  });
+
+  it('redo on an empty stack is a safe no-op', () => {
+    addResistor();
+    const elements = useStore.getState().elements;
+    useStore.getState().redo();
+    expect(useStore.getState().elements).toBe(elements);
+  });
+
+  it('pushing more than UNDO_LIMIT commits drops the oldest', () => {
+    // UNDO_LIMIT is 100 (store.ts:201). 110 adds commit 110 pre-add states;
+    // the slice keeps the newest 100, so after 100 undos ten resistors remain
+    // and the first ten pre-add states are unreachable.
+    for (let i = 0; i < 110; i++) addResistor();
+    for (let i = 0; i < 100; i++) useStore.getState().undo();
+    expect(useStore.getState().elements).toHaveLength(10);
+  });
+
+  it('undo bumps the revision', () => {
+    addResistor();
+    useStore.getState().commit();
+    const before = useStore.getState().revision;
+    useStore.getState().undo();
+    expect(useStore.getState().revision).toBeGreaterThan(before);
+  });
+
+  it('redo bumps the revision', () => {
+    addResistor();
+    useStore.getState().commit();
+    useStore.getState().undo();
+    const before = useStore.getState().revision;
+    useStore.getState().redo();
+    expect(useStore.getState().revision).toBeGreaterThan(before);
+  });
+
+  it('undo clears the selection', () => {
+    const id = addResistor();
+    useStore.getState().commit();
+    useStore.getState().select([id]);
+    useStore.getState().undo();
+    expect(useStore.getState().selectedIds).toEqual([]);
+  });
+
+  it('redo clears the selection', () => {
+    const id = addResistor();
+    useStore.getState().commit();
+    useStore.getState().select([id]);
+    useStore.getState().undo();
+    useStore.getState().select([id]);
+    useStore.getState().redo();
+    expect(useStore.getState().selectedIds).toEqual([]);
+  });
+
+  it('newCircuit wipes the undo and redo stacks', () => {
+    addResistor();
+    useStore.getState().commit();
+    useStore.getState().undo();
+    useStore.getState().newCircuit();
+    expect(useStore.getState().undoStack).toHaveLength(0);
+    expect(useStore.getState().redoStack).toHaveLength(0);
+  });
+});
