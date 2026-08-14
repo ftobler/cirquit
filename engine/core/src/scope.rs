@@ -491,7 +491,10 @@ mod tests {
         for v in [1.0, f64::NAN, 2.0, f64::INFINITY, -f64::INFINITY] {
             t.push(v, 0.0);
         }
-        assert!(t.diverged, "a dropped non-finite sample must flag the trace");
+        assert!(
+            t.diverged,
+            "a dropped non-finite sample must flag the trace"
+        );
         // The unusable samples are still dropped: only the two finite ones
         // aggregate, one single-sample column each.
         let snap = t.snapshot();
@@ -512,7 +515,10 @@ mod tests {
         t.push(f64::NAN, 0.0);
         assert!(t.diverged);
         t.clear();
-        assert!(!t.diverged, "reset clears the diverged flag like the buffers");
+        assert!(
+            !t.diverged,
+            "reset clears the diverged flag like the buffers"
+        );
     }
 
     #[test]
