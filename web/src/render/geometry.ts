@@ -244,6 +244,38 @@ export function distanceToElement(p: Point, e: CircuitElement): number {
   return rect ? Math.min(body, nearPost, distanceToBox(p, rect)) : Math.min(body, nearPost);
 }
 
+/** Screen-pixel radius within which a pointer hits an element, at any zoom.
+ *  Upstream's grab tolerances are grid units: 5 for a post (POSTGRABSQ,
+ *  MouseManager.java:70) and the resistor's 6-unit half-height for a body
+ *  (ResistorElm.java:67); at the initial fit zoom of at most 1.5
+ *  (UIManager.java:469) those are about 8 px on screen. */
+export const HIT_TOLERANCE_PX = 8;
+
+/** The element a pointer at circuit point `p` hits: the topmost element (the
+ *  last in `elements`, drawn last) whose distance is within `tolerancePx`
+ *  screen pixels at `scale`. `distanceToElement` measures circuit units, so the
+ *  reach is the pixel tolerance divided by the scale: a fixed on-screen reach
+ *  grabs the same elements zoomed out to 0.15 or in to 6 (the port's analogue
+ *  of upstream's `boundingBox.contains` gate, MouseManager.java:812-821). A
+ *  non-positive scale hits nothing. */
+export function hitTestElement(
+  p: Point,
+  elements: readonly CircuitElement[],
+  scale: number,
+  tolerancePx = HIT_TOLERANCE_PX,
+): CircuitElement | null {
+  if (!Number.isFinite(scale) || scale <= 0) return null;
+  const reach = tolerancePx / scale;
+  // The topmost element (last in `elements`) within reach wins, so walk back
+  // to front and return the first hit.
+  for (let i = elements.length - 1; i >= 0; i--) {
+    if (distanceToElement(p, elements[i]) <= reach) {
+      return elements[i];
+    }
+  }
+  return null;
+}
+
 /** Shortest distance from `p` to the axis-aligned box `box`: 0 when `p` is
  *  inside, else the distance to the nearest edge or corner. The body hit-test
  *  of a chip, whose whole rectangle is grabbable; normalises so a def can hand

@@ -13,7 +13,7 @@ import {
 import type { ScrollValueSession } from '../../model/scrollValue';
 import type { CircuitElement, Point } from '../../model/types';
 import { GRID_SIZE } from '../../model/types';
-import { distanceToElement, postAt, postPatch } from '../../render/geometry';
+import { HIT_TOLERANCE_PX, hitTestElement, postAt, postPatch } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
 import { snap, useStore } from '../../state/store';
 import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
@@ -22,9 +22,6 @@ import { beginPointerGesture, finishPlacement, releaseHeldMomentary, type Drag }
 import { useStoreRef } from './useStoreRef';
 
 export type { Drag } from './pointerDown';
-
-/** How close the pointer must be to an element to hit it, in circuit units. */
-const HIT_TOLERANCE = 8;
 
 /** The open mouse-wheel value popover, positioned at the cursor. */
 export interface ScrollValuePopover {
@@ -206,19 +203,11 @@ export function useCanvasInteractions(
   }, [canvasRef]);
 
   const hitTest = useCallback((p: Point): CircuitElement | null => {
-    const { elements } = stateRef.current;
-    let best: CircuitElement | null = null;
-    let bestDist = HIT_TOLERANCE;
-    // Later elements are drawn on top, so search back to front.
-    for (let i = elements.length - 1; i >= 0; i--) {
-      const d = distanceToElement(p, elements[i]);
-      if (d <= bestDist) {
-        bestDist = d;
-        best = elements[i];
-        break;
-      }
-    }
-    return best;
+    const { elements, view } = stateRef.current;
+    // The reach is a screen-pixel distance, converted per pointer event: the
+    // circuit-space reach is the pixel tolerance over the scale, so the same
+    // on-screen slop grabs the same element at zoom 0.15 and zoom 6.
+    return hitTestElement(p, elements, view.scale, HIT_TOLERANCE_PX);
   }, [stateRef]);
 
   // ---- pointer handling ---------------------------------------------------

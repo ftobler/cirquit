@@ -3,9 +3,11 @@ import { GRID_SIZE, type CircuitElement } from '../model/types';
 import { defFor, postsOf } from '../model/registry';
 import { snap } from '../state/store';
 import {
+  HIT_TOLERANCE_PX,
   distanceToBox,
   distanceToElement,
   distanceToSegment,
+  hitTestElement,
   invalidDropPoint,
   nearestPost,
   pointOnSegmentInterior,
@@ -165,6 +167,34 @@ describe('distanceToElement', () => {
 
   it('measures against the body line for two-terminal elements', () => {
     expect(distanceToElement({ x: 80, y: 5 }, element(0, 0, 160, 0))).toBe(5);
+  });
+});
+
+describe('hitTestElement', () => {
+  it('hits an element at a fixed screen-pixel distance at any zoom', () => {
+    const e = element(0, 0, 160, 0);
+    // 8 screen px at zoom 0.15 is 8/0.15 ~= 53 circuit units from the body,
+    // and at zoom 6 the same 8 screen px is only 8/6 ~= 1.3 units away.
+    for (const scale of [0.15, 6]) {
+      const d = HIT_TOLERANCE_PX / scale;
+      expect(hitTestElement({ x: 0, y: d }, [e], scale)).toBe(e);
+      expect(hitTestElement({ x: 0, y: d + 1e-9 }, [e], scale)).toBeNull();
+    }
+  });
+
+  it('scales the circuit-space reach with 1/scale', () => {
+    // The reach in circuit units at zoom 6 is 6/0.15 = 40x the reach at zoom
+    // 0.15, mirroring the scale ratio: same on-screen slop, different reach.
+    const reach = (scale: number) => HIT_TOLERANCE_PX / scale;
+    expect(reach(6)).toBeCloseTo(reach(0.15) * (0.15 / 6), 12);
+  });
+
+  it('prefers the topmost element, drawn last', () => {
+    const behind = element(0, 0, 160, 0);
+    const top = element(0, 0, 160, 0);
+    top.id = 2;
+    // Both are within reach, so the later one wins.
+    expect(hitTestElement({ x: 80, y: 1 }, [behind, top], 1)).toBe(top);
   });
 });
 
