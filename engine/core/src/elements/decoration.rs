@@ -35,4 +35,10 @@ impl Element for Decoration {
     fn connects(&self, _a: usize, _b: usize) -> bool {
         false
     }
+    /// An annotation has no electrical presence, so no current can be
+    /// attributed to any of its posts. The explicit zero also keeps the
+    /// multi-post default's debug guard from firing on a boxed annotation.
+    fn current_into_node(&self, _post: usize) -> f64 {
+        0.0
+    }
 }

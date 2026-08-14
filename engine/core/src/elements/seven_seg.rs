@@ -82,6 +82,12 @@ impl Element for SevenSeg {
     fn calculate_current(&mut self, _ctx: &SimCtx) {
         self.chip.base.current = 0.0;
     }
+    /// The display draws no current, so none can be attributed to any pin.
+    /// The explicit zero also keeps the multi-post default's debug guard from
+    /// firing on a display's many input posts.
+    fn current_into_node(&self, _post: usize) -> f64 {
+        0.0
+    }
     fn set_param(&mut self, name: &str, value: f64) -> bool {
         match name {
             "highVoltage" => self.chip.high_voltage = value,

@@ -73,6 +73,14 @@ impl Element for Noise {
     fn calculate_current(&mut self, ctx: &SimCtx) {
         self.source.calculate_current(ctx);
     }
+    /// The post is the rail's delivery terminal, so the current exits the
+    /// source into the node there, exactly like the plain rail
+    /// (`voltage_source.rs`). Without the delegation the wire-current
+    /// recovery would read a silent zero at a noise rail's post and wires
+    /// sharing its node would animate the wrong current.
+    fn current_into_node(&self, post: usize) -> f64 {
+        self.source.current_into_node(post)
+    }
     fn reset(&mut self) {
         self.source.reset();
     }

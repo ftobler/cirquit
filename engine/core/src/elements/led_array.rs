@@ -165,6 +165,30 @@ impl Element for LedArray {
         self.base.current = total;
     }
 
+    /// The posts are the diode anodes (rows) and cathodes (columns), and each
+    /// cell's `current` flows from its row post into the element and out its
+    /// column post (`do_step` stamps row to column), so a row post drains the
+    /// sum of its row's cell currents and a column post receives the sum of
+    /// its column's. Without this the wire-current recovery would read a
+    /// silent zero at every post and wires sharing the grid's nodes would
+    /// animate the wrong current.
+    fn current_into_node(&self, post: usize) -> f64 {
+        if post < self.size_x {
+            let mut total = 0.0;
+            for iy in 0..self.size_y {
+                total += self.cells[iy * self.size_x + post].current;
+            }
+            total
+        } else {
+            let row = post - self.size_x;
+            let mut total = 0.0;
+            for ix in 0..self.size_x {
+                total += self.cells[row * self.size_x + ix].current;
+            }
+            -total
+        }
+    }
+
     /// Re-anchors every junction from the restored node voltages after a
     /// rejected step, the same re-linearisation `Diode::restore_iteration`
     /// performs.

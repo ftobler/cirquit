@@ -194,6 +194,18 @@ pub trait Element {
     /// Current flowing into the node at `post` from this element, used by the
     /// wire-current recovery. For a two-terminal element positive current
     /// enters post 0, so post 0 drains `current` and post 1 injects it.
+    ///
+    /// THIS BASE IS ONLY CORRECT FOR TWO-TERMINAL ELEMENTS. Any element with
+    /// more than two posts MUST override it: the default cannot distribute
+    /// `current` among the posts and returns a silent zero, which the
+    /// wire-current recovery reads as "this element injects nothing at this
+    /// node" and leaves every wire sharing the post animating the wrong
+    /// current. The `debug_assert!` turns that silent wrong current into an
+    /// early test-time failure in debug builds; release builds keep the
+    /// pre-existing zero so element files that predate this guard still run.
+    /// Single-post elements keep the default, which reads zero: no current
+    /// can be attributed to a lone terminal, exact for the meter and readout
+    /// family whose `calculate_current` zeroes it.
     fn current_into_node(&self, post: usize) -> f64 {
         if self.post_count() == 2 {
             if post == 0 {
@@ -202,6 +214,13 @@ pub trait Element {
                 self.base().current
             }
         } else {
+            debug_assert!(
+                self.post_count() < 2,
+                "current_into_node has no default for a {}-post element: it \
+                 MUST override to report real per-post currents (or an \
+                 explicit documented 0.0 where none can be attributed)",
+                self.post_count()
+            );
             0.0
         }
     }
@@ -402,5 +421,64 @@ pub(crate) fn two_terminal_current(base: &Base, resistance: f64) -> f64 {
         base.voltage_diff() / resistance
     } else {
         0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A bare element with no overrides, to exercise the trait defaults in
+    /// isolation.
+    struct DefaultElm {
+        base: Base,
+        posts: usize,
+    }
+
+    impl DefaultElm {
+        fn new(posts: usize, current: f64) -> Self {
+            let mut base = Base::with_posts(posts);
+            base.current = current;
+            Self { base, posts }
+        }
+    }
+
+    impl Element for DefaultElm {
+        fn kind(&self) -> &'static str {
+            "defaultElm"
+        }
+        fn base(&self) -> &Base {
+            &self.base
+        }
+        fn base_mut(&mut self) -> &mut Base {
+            &mut self.base
+        }
+        fn post_count(&self) -> usize {
+            self.posts
+        }
+    }
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-12
+    }
+
+    #[test]
+    fn default_current_into_node_follows_the_two_terminal_sign_convention() {
+        let elm = DefaultElm::new(2, 3.0);
+        // Positive current enters post 0, so post 0 drains `current` and post
+        // 1 injects it.
+        assert!(close(elm.current_into_node(0), -3.0));
+        assert!(close(elm.current_into_node(1), 3.0));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "MUST override")]
+    fn default_current_into_node_panics_for_a_multi_post_element() {
+        // A three-post element that relies on the default cannot distribute
+        // `current` among its posts, so consulting it must trip the guard
+        // rather than silently report zero.
+        let elm = DefaultElm::new(3, 1.0);
+        let _ = elm.current_into_node(0);
     }
 }

@@ -343,6 +343,88 @@ fn led_array_lights_the_cells_whose_columns_are_driven_low() {
 }
 
 #[test]
+fn led_array_reports_real_currents_at_each_post() {
+    // The grid is a diode crossbar, so the current each post exchanges with
+    // its node is the sum over the cells in that row or column: each lit cell
+    // carries `current` from its row post into the element and out its column
+    // post. The wire-current recovery reads these through
+    // `current_into_node`; without the override it would read a silent zero
+    // at every post and wires sharing the grid's nodes would animate the
+    // wrong current. Column 0 low lights cells (0,0) and (1,0), so column 0
+    // receives their sum, each row drains exactly what its feed resistor
+    // delivers, and the four post currents sum to zero.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[64, 0], [64, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[64, 32], [64, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "rail", &[[64, 100]], &[("maxVoltage", 5.0)]),
+            elm(6, "rail", &[[64, 132]], &[("maxVoltage", 5.0)]),
+            elm(
+                7,
+                "ledArray",
+                &[[0, 0], [0, 32], [64, 0], [64, 32]],
+                &[("sizeX", 2.0), ("sizeY", 2.0)],
+            ),
+            elm(8, "ground", &[[164, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(3);
+
+    // Post order within the 2x2 grid: columns 0,1 then rows 0,1 (the ledArray
+    // is element 7, whose four posts start at flat offset 8).
+    let posts = c.element_post_currents();
+    let (col0, col1, row0, row1) = (posts[8], posts[9], posts[10], posts[11]);
+    // Each row drains exactly what its feed resistor delivers into it. The
+    // cell currents are the last Newton linearisation, so they carry the
+    // iteration's ~1e-8 residual; 1e-7 pins the match while tolerating it.
+    assert!(
+        close(row0, c.element_currents()[2], 1e-7),
+        "row0 post current {row0} did not match its feed {}",
+        c.element_currents()[2]
+    );
+    assert!(
+        close(row1, c.element_currents()[3], 1e-7),
+        "row1 post current {row1} did not match its feed {}",
+        c.element_currents()[3]
+    );
+    // Column 0 receives the two lit cells' current, column 1 stays dark.
+    assert!(
+        close(col0, -(row0 + row1), 1e-7),
+        "column 0 post current {col0} did not balance the rows {}",
+        -(row0 + row1)
+    );
+    assert!(close(col1, 0.0, 1e-9), "dark column 1 reported {col1}");
+    // KCL across the grid: the four post currents sum to zero.
+    assert!(
+        close(col0 + col1 + row0 + row1, 0.0, 1e-7),
+        "grid post currents did not sum to zero"
+    );
+}
+
+#[test]
 fn adc_converts_its_analog_input_into_digital_bits() {
     // A 4-bit ADC with a 5 V reference converts `trunc(15 * V(in) / V(+))`
     // clamped to [0, 15] (ADCElm.java:42-46). Truncation is deliberate:
