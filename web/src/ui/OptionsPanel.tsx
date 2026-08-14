@@ -7,6 +7,7 @@
 import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
+import { AUDIO_DECODE_ERROR, decodeAudioFile } from '../model/audioFile';
 import { parseDataFile } from '../model/dataFile';
 import { recorderDataText, recorderFilename } from '../model/recorder';
 import { formatValue } from '../render/draw';
@@ -261,19 +262,28 @@ function loadFileInto(
     return;
   }
   const reader = new FileReader();
+  // All three failure routes land on the same alert: a read error, a missing
+  // or throwing AudioContext constructor, or a failed decode.
+  reader.onerror = () => window.alert(AUDIO_DECODE_ERROR);
+  reader.onabort = () => window.alert(AUDIO_DECODE_ERROR);
   reader.onload = () => {
     const Ctx =
       window.AudioContext ??
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    const context = new Ctx();
-    context
-      .decodeAudioData(reader.result as ArrayBuffer)
-      .then((buffer) => {
-        loadAudioFile(e.id, Array.from(buffer.getChannelData(0)), context.sampleRate, fileName);
-        context.close();
-      })
-      .catch(() => context.close());
+    if (!Ctx) {
+      window.alert(AUDIO_DECODE_ERROR);
+      return;
+    }
+    // `decodeAudioFile` absorbs the constructor throw and the decode failure
+    // into the error state and swallows the best-effort close(), so no throw
+    // or unhandled rejection escapes this callback.
+    decodeAudioFile(reader.result as ArrayBuffer, () => new Ctx()).then((decoded) => {
+      if (decoded.error !== null) {
+        window.alert(decoded.error);
+        return;
+      }
+      loadAudioFile(e.id, decoded.samples, decoded.samplingRate, fileName);
+    });
   };
   reader.readAsArrayBuffer(file);
 }
