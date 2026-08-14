@@ -106,6 +106,48 @@ fn set_state_on_a_switch_preserves_time() {
 }
 
 #[test]
+fn closing_a_switch_that_grounds_the_last_node_does_not_panic_on_the_next_step() {
+    // The switch's far terminal sits on the same coordinate as the ground
+    // symbol and the source's own grounded post. Open, the source's other
+    // terminal is a distinct, healthy non-ground node; closing the switch is
+    // a removable wire that collapses that terminal onto ground too, leaving
+    // a live voltage source with nowhere to route its row (the same
+    // degenerate topology `all_ground_voltage_source_is_rejected_at_set_circuit`
+    // covers at set_circuit, transformer_matrix.rs). This reaches it through
+    // set_state's reanalyze path instead, which has no Result to report
+    // failure through and used to leave a stale, larger closure list in
+    // place for the very next run() to index the shrunk node voltages with
+    // and panic.
+    let mut c = build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "ground", &[[0, 0]], &[]),
+            elm(3, "switch", &[[0, 100], [0, 0]], &[("position", 1.0)]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(1);
+
+    assert!(c.set_state(3, 0));
+    assert!(
+        c.error().is_some(),
+        "the degenerate closure should surface as an error"
+    );
+    assert!(
+        c.closure_rows().is_empty(),
+        "closures survived a rejected reanalyze"
+    );
+
+    // The critical assertion: stepping after the rejected reanalyze must not
+    // panic against the stale, larger closure list.
+    let report = c.run(3);
+    assert!(
+        report.converged,
+        "the empty-closures no-op path should not report a failed step"
+    );
+}
+
+#[test]
 fn set_circuit_rewinds_to_zero() {
     let spec = CircuitSpec {
         elements: vec![

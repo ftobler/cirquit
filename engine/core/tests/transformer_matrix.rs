@@ -920,6 +920,41 @@ fn singular_linear_circuit_is_rejected_at_set_circuit() {
     );
 }
 
+/// Test D: a voltage source whose two posts both sit on the ground symbol's
+/// coordinate. Both terminals merge onto node 0, so the whole circuit has no
+/// non-ground node at all; `build_closures` used to index its empty closure
+/// list with the source's fallback closure 0 and panic.
+#[test]
+fn all_ground_voltage_source_is_rejected_at_set_circuit() {
+    let spec = CircuitSpec {
+        elements: vec![
+            elm(1, "voltage", &[[0, 0], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "ground", &[[0, 0]], &[]),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    assert!(
+        c.set_circuit(&spec).is_err(),
+        "voltage source shorted to ground on both posts accepted at set_circuit"
+    );
+    // The rejected build must also leave nothing behind for a subsequent
+    // frame to trip over: `closure_rows` must be empty, matching the
+    // no-circuit-built state, so `run` takes the harmless empty-closures
+    // path (a no-op that reports trivially converged) instead of indexing a
+    // stale, larger closure list against the shrunk node voltages.
+    assert!(
+        c.closure_rows().is_empty(),
+        "closures survived a rejected set_circuit"
+    );
+    let report = c.run(3);
+    assert!(
+        report.converged,
+        "the empty-closures no-op path should not report a failed step"
+    );
+}
+
 // ─── Matrix simplification (per-closure dense systems) ───
 
 #[test]

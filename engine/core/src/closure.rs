@@ -71,7 +71,7 @@ pub fn build_closures(
     vs_count: usize,
     nonlinear: bool,
     solver_type: SolverType,
-) -> ClosureMap {
+) -> Result<ClosureMap, String> {
     let mut uf = UnionFind::new(node_count.max(1));
     for elm in elements {
         let nodes = &elm.base().nodes;
@@ -118,6 +118,19 @@ pub fn build_closures(
             nonlinear,
         })
         .collect();
+    // No non-ground node anywhere means every voltage source's terminals are
+    // all ground: it is shorted across itself and there is no closure row it
+    // could stamp into. That is the same degenerate topology the "no
+    // solution" error already covers for a matrix that factors singular; a
+    // circuit that reduces to nothing but ground and voltage sources with no
+    // resistive path never reaches a factor() call, so it must be rejected
+    // here instead of indexing the (empty) closures list.
+    if closures.is_empty() && vs_count > 0 {
+        return Err(
+            "The circuit has no solution: check for shorted sources or missing connections."
+                .to_string(),
+        );
+    }
     for n in 1..node_count {
         let ci = closure_of_root[&uf.find(n)];
         node_closure[n] = ci;
@@ -176,12 +189,12 @@ pub fn build_closures(
             .resize(c.node_rows.len() + c.vs_rows.len(), solver_type);
     }
 
-    ClosureMap {
+    Ok(ClosureMap {
         closures,
         node_closure,
         node_row,
         vs_closure,
         vs_row,
         element_closure,
-    }
+    })
 }

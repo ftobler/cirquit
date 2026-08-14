@@ -380,7 +380,7 @@ impl Circuit {
                 base.volts[i] = self.node_voltages[base.nodes[i]];
             }
         }
-        self.allocate_and_stamp();
+        self.allocate_and_stamp()?;
         self.build_scopes(spec);
 
         if self.options.dc_operating_point {
@@ -726,12 +726,19 @@ impl Circuit {
     fn set_time_step(&mut self, dt: f64) {
         self.current_time_step = dt;
         self.ctx.dt = dt;
-        self.restamp();
+        // A step-size change never touches topology, so `restamp` cannot
+        // newly fail here; the side channel matches every other runtime
+        // caller that cannot return `Result` through a `pub` bool/void API.
+        if let Err(e) = self.restamp() {
+            self.error = Some(e);
+        }
     }
 
     /// Zeroes the matrix, re-runs the constant stamp pass and snapshots the
-    /// result for reuse across timesteps.
-    fn restamp(&mut self) {
+    /// result for reuse across timesteps. Errors when `build_closures` finds
+    /// a voltage source with nowhere to route its row, a degenerate topology
+    /// (see [`build_closures`]) rather than a panic.
+    fn restamp(&mut self) -> Result<(), String> {
         // A live parameter edit can flip `nonlinear()` (a current source
         // gaining or losing `maxVoltage`), which `allocate` only decides once.
         // Recompute so the single-subiteration path is not taken for a source
@@ -744,13 +751,33 @@ impl Circuit {
         // Rebuild the closures: a throw that merges or unmerges terminals
         // changes membership, and every restamp re-solves which system each
         // element stamps into.
-        let map = build_closures(
+        let map = match build_closures(
             &self.elements,
             self.node_count,
             self.vs_count,
             self.nonlinear,
             self.options.solver_type,
-        );
+        ) {
+            Ok(map) => map,
+            Err(e) => {
+                // `assign_nodes` has already resized `node_voltages` and
+                // `node_count` to the new topology by the time this runs, so
+                // leaving the previous, larger closures in place would let
+                // the next run()/step() index `node_voltages` with a stale,
+                // out-of-range node id in `write_back`. Clearing everything
+                // reproduces the same closure-less state the harmless empty
+                // case below settles into, so `step_once`'s
+                // `closures.is_empty()` guard catches the next call instead.
+                self.closures = Vec::new();
+                self.node_closure = Vec::new();
+                self.node_row = Vec::new();
+                self.vs_closure = Vec::new();
+                self.vs_row = Vec::new();
+                self.element_closure = Vec::new();
+                self.last_x = Vec::new();
+                return Err(e);
+            }
+        };
         self.closures = map.closures;
         self.node_closure = map.node_closure;
         self.node_row = map.node_row;
@@ -759,7 +786,7 @@ impl Circuit {
         self.element_closure = map.element_closure;
         if self.closures.is_empty() {
             self.last_x = Vec::new();
-            return;
+            return Ok(());
         }
         let ctx = self.ctx;
         let pins = self.floating_nodes();
@@ -802,10 +829,11 @@ impl Circuit {
                 .map(|c| vec![0.0; c.sys.size()])
                 .collect();
         }
+        Ok(())
     }
 
     /// Allocation plus stamping, with the one-off floating-node diagnostic.
-    fn allocate_and_stamp(&mut self) {
+    fn allocate_and_stamp(&mut self) -> Result<(), String> {
         self.allocate();
         let pins = self.floating_nodes();
         if !pins.is_empty() {
@@ -815,7 +843,7 @@ impl Circuit {
                 format_ohms(1.0 / GMIN)
             ));
         }
-        self.restamp();
+        self.restamp()
     }
 
     /// Re-runs the topology analysis after an interactive edit that can merge
@@ -839,7 +867,13 @@ impl Circuit {
                 break;
             }
         }
-        self.allocate_and_stamp();
+        // An interactive throw cannot be rejected the way `set_circuit`
+        // rejects a build: `set_state` already returns a plain bool. Record
+        // the failure on the side channel the frontend already polls after
+        // every state-changing call.
+        if let Err(e) = self.allocate_and_stamp() {
+            self.error = Some(e);
+        }
     }
 
     fn build_scopes(&mut self, spec: &CircuitSpec) {
@@ -861,7 +895,7 @@ impl Circuit {
         // open circuit, an inductor as a short), so the matrix has to be built
         // for DC, used, and then rebuilt for transient stepping.
         self.ctx.dc_analysis = true;
-        self.restamp();
+        self.restamp()?;
         // No adaptation here: there is no time to shrink, and reactive stamps
         // ignore `dt` under `dc_analysis`. One attempt at the nominal step
         // with the normal budget, exactly as before.
@@ -891,7 +925,7 @@ impl Circuit {
                 );
             }
         }
-        self.restamp();
+        self.restamp()?;
         Ok(())
     }
 
@@ -1417,7 +1451,14 @@ impl Circuit {
             s.clear();
         }
         self.node_voltages.iter_mut().for_each(|v| *v = 0.0);
-        self.allocate_and_stamp();
+        // Topology is unchanged from the last accepted `set_circuit`, so this
+        // cannot newly fail; guarded anyway since `reset` has no `Result` to
+        // return it through, and a failure here must skip the DC solve below
+        // rather than run it against a broken closure map.
+        if let Err(e) = self.allocate_and_stamp() {
+            self.error = Some(e);
+            return;
+        }
         if self.options.dc_operating_point {
             if let Err(e) = self.solve_operating_point() {
                 self.error = Some(e);
@@ -1442,7 +1483,13 @@ impl Circuit {
         } else if !self.elements[ei].set_param(name, value) {
             return false;
         }
-        self.restamp();
+        // A parameter edit never changes topology, so `restamp` cannot newly
+        // fail here; handled anyway since `set_param`'s `bool` signature
+        // cannot carry a `Result`.
+        if let Err(e) = self.restamp() {
+            self.error = Some(e);
+            return false;
+        }
         true
     }
 
