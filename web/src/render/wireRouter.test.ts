@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { CircuitElement, Point } from '../model/types';
-import { lShapeRoute, routeWire, routingObstacles, type WireObstacle } from './wireRouter';
+import {
+  lShapeRoute,
+  routeWire,
+  routingObstacles,
+  snapGridOrigin,
+  type WireObstacle,
+} from './wireRouter';
 
 const pts = (route: Point[]) => route.map((p) => [p.x, p.y]);
 
@@ -76,6 +82,27 @@ describe('routeWire', () => {
       [160, -16],
       [160, 0],
     ]);
+  });
+});
+
+describe('snapGridOrigin', () => {
+  it('snaps a non-negative min to the grid cell containing it', () => {
+    expect(snapGridOrigin(0, 16)).toBe(0);
+    expect(snapGridOrigin(20, 16)).toBe(16);
+    expect(snapGridOrigin(48, 16)).toBe(48);
+    expect(snapGridOrigin(0, 8)).toBe(0);
+  });
+
+  it('truncates a negative min toward zero on both axes, not toward -inf', () => {
+    // -8/16 = -0.5: Java integer division and Math.trunc both land on 0, while
+    // Math.floor would snap one cell down to -16.
+    expect(snapGridOrigin(-8, 16)).toBe(0);
+    // A fractional quotient truncates toward zero: -20/16 -> -1, not -2.
+    expect(snapGridOrigin(-20, 16)).toBe(-16);
+    expect(snapGridOrigin(-20, 8)).toBe(-16);
+    // An exact negative cell boundary is unchanged either way.
+    expect(snapGridOrigin(-32, 16)).toBe(-32);
+    expect(snapGridOrigin(-150, 16)).toBe(-144);
   });
 });
 

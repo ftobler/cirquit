@@ -449,6 +449,18 @@ class RouterGrid {
 }
 
 /**
+ * The min-side grid origin upstream computes with Java integer division
+ * (WireRouter.java:116-117): `(min / gridSize) * gridSize`, the quotient
+ * truncated toward zero. `Math.floor` would round a negative min one cell
+ * further down and shift the whole routing grid; `Math.trunc` mirrors Java
+ * exactly. A truncated zero is normalised to +0 so callers never hold -0.
+ */
+export function snapGridOrigin(min: number, grid: number): number {
+  const snapped = Math.trunc(min / grid) * grid;
+  return snapped === 0 ? 0 : snapped;
+}
+
+/**
  * Routes an orthogonal polyline from `a` to `b` on the grid, avoiding the
  * obstacles. Returns the corner polyline (endpoints included), or `[]` when no
  * path exists and the caller falls back to an L-shape. The grid covers the
@@ -488,8 +500,11 @@ export function routeWire(
     }
   }
 
-  const originX = Math.floor(minX / grid) * grid - GRID_MARGIN * grid;
-  const originY = Math.floor(minY / grid) * grid - GRID_MARGIN * grid;
+  // Upstream snaps the origin with Java integer division, which truncates
+  // toward zero, not toward -inf (WireRouter.java:116-117). A negative min
+  // must not round the origin down a further cell, or the grid shifts.
+  const originX = snapGridOrigin(minX, grid) - GRID_MARGIN * grid;
+  const originY = snapGridOrigin(minY, grid) - GRID_MARGIN * grid;
   const rows = Math.floor((maxY - originY) / grid) + 1 + 2 * GRID_MARGIN;
   const cols = Math.floor((maxX - originX) / grid) + 1 + 2 * GRID_MARGIN;
 
