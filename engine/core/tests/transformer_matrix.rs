@@ -955,6 +955,48 @@ fn all_ground_voltage_source_is_rejected_at_set_circuit() {
     );
 }
 
+/// A hand-edited netlist can carry tens of thousands of elements whose posts
+/// sit at absurd coordinates (1e9, far outside any canvas); the terminal
+/// count and node count blow past the sanity cap. `set_circuit` must reject
+/// the circuit as invalid rather than attempt the unbounded matrix
+/// allocation, and a rejected build must leave nothing behind for a later
+/// frame to trip over.
+#[test]
+fn absurd_coordinates_are_rejected_at_set_circuit() {
+    let mut elements = Vec::with_capacity(60_000);
+    let base: i32 = 1_000_000_000;
+    for i in 0..60_000usize {
+        elements.push(elm(
+            i as u32 + 1,
+            "resistor",
+            &[[base + i as i32, 0], [base + i as i32 + 1, 0]],
+            &[("resistance", 1000.0)],
+        ));
+    }
+    let spec = CircuitSpec {
+        elements,
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    let err = c
+        .set_circuit(&spec)
+        .expect_err("oversized netlist accepted at set_circuit");
+    assert!(
+        err.contains("too large"),
+        "oversized netlist reported a different error: {err}"
+    );
+    assert!(
+        c.closure_rows().is_empty(),
+        "closures survived a rejected set_circuit"
+    );
+    let report = c.run(3);
+    assert!(
+        report.converged,
+        "the empty-closures no-op path should not report a failed step"
+    );
+}
+
 /// A minimal circuit whose validity does not depend on the timestep, so
 /// these tests isolate the `timeStep`/`minTimeStep` guard from every other
 /// `set_circuit` rejection path above.

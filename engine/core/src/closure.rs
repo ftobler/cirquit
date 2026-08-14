@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use crate::circuit::UnionFind;
 use crate::element::Element;
-use crate::matrix::Solver;
+use crate::matrix::{matrix_too_large, Solver, MAX_MATRIX_ROWS};
 use crate::spec::SolverType;
 use crate::stamp::GROUND;
 
@@ -64,7 +64,10 @@ pub struct ClosureMap {
 /// and neither is ground, mirroring the upstream flood that stops at ground
 /// (SimulationManager.java:740, :744). Each root is a closure; closure rows are
 /// assigned node by node in id order, and the closures are ordered by their
-/// smallest node id so repeated builds solve in an identical order.
+/// smallest node id so repeated builds solve in an identical order. Errors on
+/// an absurd node count or an oversized closure system (see
+/// [`MAX_MATRIX_ROWS`]): a pathological netlist is reported as an invalid
+/// circuit rather than allocated.
 pub fn build_closures(
     elements: &[Box<dyn Element>],
     node_count: usize,
@@ -72,6 +75,14 @@ pub fn build_closures(
     nonlinear: bool,
     solver_type: SolverType,
 ) -> Result<ClosureMap, String> {
+    // An absurd node count from a hand-edited netlist is rejected before any
+    // of the O(node_count) structures below is allocated. `assign_nodes`
+    // enforces the same bound first; this check keeps the guard local even if
+    // that call site changes, and the per-closure `resize` call at the bottom
+    // enforces it again on the actual system sizes.
+    if node_count > MAX_MATRIX_ROWS {
+        return Err(matrix_too_large(node_count, MAX_MATRIX_ROWS));
+    }
     let mut uf = UnionFind::new(node_count.max(1));
     for elm in elements {
         let nodes = &elm.base().nodes;
@@ -186,7 +197,7 @@ pub fn build_closures(
 
     for c in closures.iter_mut() {
         c.sys
-            .resize(c.node_rows.len() + c.vs_rows.len(), solver_type);
+            .resize(c.node_rows.len() + c.vs_rows.len(), solver_type)?;
     }
 
     Ok(ClosureMap {

@@ -5,7 +5,9 @@ use std::collections::{HashMap, HashSet};
 use crate::closure::{build_closures, Closure};
 use crate::element::{Element, SimCtx};
 use crate::elements::build_element;
-use crate::matrix::{LinearSystem, SolveError, SolverBackend};
+use crate::matrix::{
+    matrix_too_large, LinearSystem, SolveError, SolverBackend, MAX_DENSE_ROWS, MAX_MATRIX_ROWS,
+};
 use crate::scope::ScopeTrace;
 use crate::spec::{CircuitSpec, ElementSpec, ScopeValue, SimOptions};
 use crate::stamp::{Stamper, GROUND};
@@ -385,7 +387,10 @@ impl Circuit {
         // node is always allocated before anything stamps.
         let mut attempts = 0;
         loop {
-            self.assign_nodes(&spec.elements);
+            if let Err(e) = self.assign_nodes(&spec.elements) {
+                self.clear_closure_state();
+                return Err(e);
+            }
             if !self.validate_capacitors() {
                 break;
             }
@@ -393,7 +398,10 @@ impl Circuit {
             if attempts >= 10 {
                 // Defensive only: monotone damping cannot reach this, but a
                 // fresh node pass keeps the final state consistent regardless.
-                self.assign_nodes(&spec.elements);
+                if let Err(e) = self.assign_nodes(&spec.elements) {
+                    self.clear_closure_state();
+                    return Err(e);
+                }
                 break;
             }
         }
@@ -432,14 +440,23 @@ impl Circuit {
         Ok(())
     }
 
-    /// Works out which terminals share a node.
-    fn assign_nodes(&mut self, specs: &[ElementSpec]) {
+    /// Works out which terminals share a node. Errors when the terminal
+    /// count or the resulting node count exceeds [`MAX_MATRIX_ROWS`]: a
+    /// hand-edited netlist with an absurd number of distinct posts must be
+    /// rejected as an invalid circuit here, before anything sized by the
+    /// count is allocated.
+    fn assign_nodes(&mut self, specs: &[ElementSpec]) -> Result<(), String> {
         // Flatten every terminal into one index space.
         let mut offsets = Vec::with_capacity(self.elements.len());
         let mut total = 0usize;
         for es in specs {
             offsets.push(total);
-            total += es.posts.len();
+            total = total
+                .checked_add(es.posts.len())
+                .ok_or_else(|| matrix_too_large(total, MAX_MATRIX_ROWS))?;
+            if total > MAX_MATRIX_ROWS {
+                return Err(matrix_too_large(total, MAX_MATRIX_ROWS));
+            }
         }
 
         let mut uf = UnionFind::new(total.max(1));
@@ -542,8 +559,15 @@ impl Circuit {
             next_id += internal;
         }
 
+        if next_id > MAX_MATRIX_ROWS {
+            // Checked before `node_count` or the state vector is touched, so
+            // a rejected build leaves neither a huge node count nor a stale
+            // vector a later `run` could index against.
+            return Err(matrix_too_large(next_id, MAX_MATRIX_ROWS));
+        }
         self.node_count = next_id;
         self.node_voltages = vec![0.0; self.node_count];
+        Ok(())
     }
 
     /// Resolves relay labels once, at build time, so a coil's per-step state
@@ -770,6 +794,22 @@ impl Circuit {
         }
     }
 
+    /// Leaves the circuit in the state a rejected build settles into: no
+    /// closures and no node-voltage vector, so a subsequent `run()` takes the
+    /// harmless empty-closures no-op path instead of indexing a stale, larger
+    /// closure list against the node voltages. Mirrors the clearing the
+    /// `restamp` error path performs.
+    fn clear_closure_state(&mut self) {
+        self.closures = Vec::new();
+        self.node_closure = Vec::new();
+        self.node_row = Vec::new();
+        self.vs_closure = Vec::new();
+        self.vs_row = Vec::new();
+        self.element_closure = Vec::new();
+        self.node_voltages = Vec::new();
+        self.last_x = Vec::new();
+    }
+
     /// Zeroes the matrix, re-runs the constant stamp pass and snapshots the
     /// result for reuse across timesteps. Errors when `build_closures` finds
     /// a voltage source with nowhere to route its row, a degenerate topology
@@ -893,13 +933,23 @@ impl Circuit {
         // upstream's per-analysis validateCircuit.
         let mut attempts = 0;
         loop {
-            self.assign_nodes(&self.specs.clone());
+            // The node-count guard cannot fire here (a throw only merges or
+            // unmerges terminals in a circuit `set_circuit` already accepted),
+            // but the call now returns `Result`, and its failure must land on
+            // the side channel like every other interactive-build failure.
+            if let Err(e) = self.assign_nodes(&self.specs.clone()) {
+                self.error = Some(e);
+                return;
+            }
             if !self.validate_capacitors() {
                 break;
             }
             attempts += 1;
             if attempts >= 10 {
-                self.assign_nodes(&self.specs.clone());
+                if let Err(e) = self.assign_nodes(&self.specs.clone()) {
+                    self.error = Some(e);
+                    return;
+                }
                 break;
             }
         }
@@ -1751,6 +1801,23 @@ fn resolve_stuck_wires(
         let dropped = m - 1;
         let nr = m - 1;
 
+        // The Gram solve is dense O(n^2), so the entry count is computed with
+        // checked arithmetic and capped the same way the dense backend caps
+        // its systems. A wire component that large is a hand-edited netlist,
+        // not a real circuit; it falls back to the zero-current report a
+        // failed solve already produces instead of overflowing or exhausting
+        // memory.
+        let Some(g_entries) = nr
+            .checked_mul(nr)
+            .filter(|&n| n <= MAX_DENSE_ROWS * MAX_DENSE_ROWS)
+        else {
+            for &i in idxs {
+                currents[i] = 0.0;
+                resolved[i] = true;
+            }
+            continue;
+        };
+
         // Right-hand side: negated net injection at each coordinate, where
         // already-resolved wires contribute through `current_into_node`.
         let mut b = vec![0.0; m];
@@ -1772,7 +1839,7 @@ fn resolve_stuck_wires(
         // Gram matrix G = B' B'^T over the reduced coordinates. Each edge
         // contributes its column's outer product; a self-loop's column is
         // zero, so it neither constrains the system nor carries current.
-        let mut g = vec![0.0; nr * nr];
+        let mut g = vec![0.0; g_entries];
         let mut col = vec![0.0; nr];
         for &i in idxs {
             let (r0, r1) = (comp_coord[&edges[i][0]], comp_coord[&edges[i][1]]);
@@ -1798,7 +1865,10 @@ fn resolve_stuck_wires(
         }
 
         let mut sys = LinearSystem::new();
-        sys.resize(nr);
+        // `nr` is bounded by the Gram guard above, so the resize cannot fail;
+        // the expect encodes that invariant instead of swallowing a real
+        // guard hit.
+        sys.resize(nr).expect("nr is bounded by MAX_DENSE_ROWS");
         for r in 0..nr {
             for s in 0..nr {
                 if g[r * nr + s] != 0.0 {

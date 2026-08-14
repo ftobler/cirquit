@@ -24,7 +24,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::matrix::SolveError;
+use crate::matrix::{matrix_too_large, SolveError, MAX_MATRIX_ROWS};
 
 /// Row-major accumulator of the stamped matrix, plus its snapshot.
 ///
@@ -487,8 +487,15 @@ impl SparseSystem {
         }
     }
 
-    /// Discards all state and allocates an `n x n` system of zeroes.
-    pub fn resize(&mut self, n: usize) {
+    /// Discards all state and allocates an `n`-node system of zeroes. Errors
+    /// when `n` exceeds [`MAX_MATRIX_ROWS`]: the sparse structure is O(n), so
+    /// the cap is a sanity bound on untrusted netlists rather than an
+    /// allocation limit, and an absurd closure size must be reported as an
+    /// invalid circuit instead of attempted.
+    pub fn resize(&mut self, n: usize) -> Result<(), String> {
+        if n > MAX_MATRIX_ROWS {
+            return Err(matrix_too_large(n, MAX_MATRIX_ROWS));
+        }
         self.n = n;
         self.matrix = CscMatrix::new(n);
         self.b = vec![0.0; n];
@@ -496,6 +503,7 @@ impl SparseSystem {
         self.lu = SparseLU::new(n);
         self.factored = false;
         self.x = vec![0.0; n];
+        Ok(())
     }
 
     #[inline]
@@ -633,7 +641,7 @@ mod tests {
 
     fn make_fan(chains: usize, len: usize) -> SparseSystem {
         let mut sys = SparseSystem::new();
-        sys.resize(1 + chains * (len - 1));
+        sys.resize(1 + chains * (len - 1)).unwrap();
         stamp_fan(chains, len, |r, c, v| sys.add(r, c, v));
         fan_rhs(|r, v| sys.add_rhs(r, v));
         sys
@@ -645,7 +653,7 @@ mod tests {
         // and C each carry a 1 ohm resistor to ground. Injecting 3 A into A
         // puts A at 3 V and both B and C at 1.5 V.
         let mut sys = SparseSystem::new();
-        sys.resize(3);
+        sys.resize(3).unwrap();
         sys.add(0, 0, 2.0);
         sys.add(0, 1, -1.0);
         sys.add(0, 2, -1.0);
@@ -664,7 +672,7 @@ mod tests {
     fn sparse_matches_dense_on_a_structured_matrix() {
         let mut sparse = make_fan(40, 40);
         let mut dense = crate::matrix::LinearSystem::new();
-        dense.resize(1 + 40 * 39);
+        dense.resize(1 + 40 * 39).unwrap();
         stamp_fan(40, 40, |r, c, v| dense.add(r, c, v));
         fan_rhs(|r, v| dense.add_rhs(r, v));
         sparse.solve().unwrap();
@@ -694,7 +702,7 @@ mod tests {
     #[test]
     fn sparse_detects_a_singular_system() {
         let mut sys = SparseSystem::new();
-        sys.resize(2);
+        sys.resize(2).unwrap();
         sys.add(0, 0, 1.0);
         sys.add(0, 1, 1.0);
         sys.add(1, 0, 1.0);
@@ -706,7 +714,7 @@ mod tests {
     #[test]
     fn sparse_poisons_on_nonfinite_entries() {
         let mut sys = SparseSystem::new();
-        sys.resize(2);
+        sys.resize(2).unwrap();
         sys.add(0, 0, f64::NAN);
         sys.add(1, 1, 1.0);
         assert_eq!(sys.solve(), Err(SolveError::Singular));
@@ -715,7 +723,7 @@ mod tests {
     #[test]
     fn sparse_reuses_factors_across_right_hand_sides() {
         let mut sys = SparseSystem::new();
-        sys.resize(2);
+        sys.resize(2).unwrap();
         sys.add(0, 0, 4.0);
         sys.add(1, 1, 5.0);
         sys.add_rhs(0, 8.0);
@@ -736,7 +744,7 @@ mod tests {
     #[test]
     fn sparse_symbolic_is_stable_across_value_changes() {
         let mut sys = SparseSystem::new();
-        sys.resize(2);
+        sys.resize(2).unwrap();
         sys.add(0, 0, 2.0);
         sys.add(0, 1, 1.0);
         sys.add(1, 0, 1.0);
@@ -775,19 +783,31 @@ mod tests {
     #[test]
     fn solver_resize_picks_the_backend() {
         let mut auto = Solver::new();
-        auto.resize(50, SolverType::Auto);
+        auto.resize(50, SolverType::Auto).unwrap();
         assert_eq!(auto.backend(), SolverBackend::Dense);
-        auto.resize(200, SolverType::Auto);
+        auto.resize(200, SolverType::Auto).unwrap();
         assert_eq!(auto.backend(), SolverBackend::Sparse);
 
         let mut sparse = Solver::new();
-        sparse.resize(50, SolverType::Sparse);
+        sparse.resize(50, SolverType::Sparse).unwrap();
         assert_eq!(sparse.backend(), SolverBackend::Sparse);
-        sparse.resize(200, SolverType::Sparse);
+        sparse.resize(200, SolverType::Sparse).unwrap();
         assert_eq!(sparse.backend(), SolverBackend::Sparse);
 
         let mut dense = Solver::new();
-        dense.resize(200, SolverType::Dense);
+        dense.resize(200, SolverType::Dense).unwrap();
         assert_eq!(dense.backend(), SolverBackend::Dense);
+    }
+
+    #[test]
+    fn sparse_resize_rejects_an_absurd_row_count() {
+        let mut sys = SparseSystem::new();
+        let err = sys.resize(MAX_MATRIX_ROWS + 1).unwrap_err();
+        assert!(err.contains("too large"), "{err}");
+        assert_eq!(
+            sys.size(),
+            0,
+            "a rejected resize must leave the system empty"
+        );
     }
 }
