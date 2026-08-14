@@ -21,10 +21,11 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 export const COUNTER_UP_DOWN = 4;
 export const COUNTER_NEGATIVE_EDGE = 8;
 
-/** The bits field, floored like the engine: truncated and held to the engine's
- *  floor of 3, the edit dialog's minimum (counter.rs:27). */
+/** The bits field, clamped like the engine: truncated and held to the engine's
+ *  3..62 range, the edit dialog's minimum and the ceiling that keeps the
+ *  per-bit i64 shifts in execute() clear of the sign bit (counter.rs:27). */
 export function normalizeCounterBits(value: number): number {
-  return normalizeChipBits(value, 3);
+  return normalizeChipBits(value, 3, 62);
 }
 
 function counterBits(e: CircuitElement): number {
@@ -92,7 +93,7 @@ export const COUNTER_DEF: ElementDef = {
   },
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 3 },
+    { name: 'bits', label: '# of Bits', min: 3, max: 62 },
     { name: 'modulus', label: 'Modulus' },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     {

@@ -23,8 +23,13 @@ pub struct Counter {
 
 impl Counter {
     pub fn new(spec: &ElementSpec) -> Self {
-        // The edit dialog rejects fewer than 3 bits (CounterElm.java:118).
-        let bits = (spec.param("bits", 4.0) as usize).max(3);
+        // The edit dialog rejects fewer than 3 bits (CounterElm.java:118). The
+        // upper clamp keeps `value: i64`'s per-bit shifts in execute() (both
+        // `1 << i` and `value & (1 << i)`, i up to bits - 1 = 61) two below
+        // the sign bit at 63, matching counter2.rs's identical `.min(62)` on
+        // the same pack-bits-into-an-i64 pattern; a hand-edited width cannot
+        // make the count silently wrap or panic on shift overflow.
+        let bits = (spec.param("bits", 4.0) as usize).clamp(3, 62);
         let modulus = spec.param("modulus", 0.0).max(0.0) as usize;
         // The default is active-low reset, `invertreset = true`
         // (CounterElm.java:28, :40).

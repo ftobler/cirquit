@@ -1,6 +1,9 @@
 //! Flip-flops, counters, the latch, and the PISO/SIPO shift registers and sequence generator.
 
-use circuit_core::Circuit;
+use std::collections::HashMap;
+
+use circuit_core::elements::build_element;
+use circuit_core::{Circuit, ElementSpec, SimCtx};
 
 mod common;
 use common::*;
@@ -259,6 +262,35 @@ fn counter_advances_on_each_clock_edge() {
         clock_cycle(c, 1);
         assert_eq!(count(c), expected, "count after the next edge");
     }
+}
+
+#[test]
+fn counter_clamps_an_out_of_range_bit_width() {
+    // A hand-edited file can carry any "bits" value; 65 used to reach the
+    // engine unclamped and panic once execute()'s `1 << i` shift hit an i64
+    // shift amount of 64 (counter.rs used to floor bits at 3 with no ceiling).
+    let spec = ElementSpec {
+        id: 1,
+        kind: "counter".into(),
+        posts: Vec::new(),
+        params: HashMap::from([("bits".to_string(), 65.0)]),
+        label: None,
+        model: None,
+        flags: 0,
+    };
+    let mut counter = build_element(&spec).expect("counter kind is registered");
+    // post_count = bits + 2 (clock, reset) with no up/down pin here, so this
+    // confirms bits clamped to 62 instead of passing 65 straight through.
+    assert_eq!(
+        counter.post_count(),
+        64,
+        "bits should clamp to 62, not pass 65 through"
+    );
+
+    // Drive the clock pin high and run a step to exercise execute()'s shifts;
+    // this is the call that used to panic on the unclamped bit width.
+    counter.base_mut().volts[0] = 5.0;
+    counter.start_iteration(&SimCtx::default());
 }
 
 #[test]

@@ -2095,6 +2095,16 @@ describe('controlled source file formats', () => {
     expect(e.params.bits).toBe(n);
   });
 
+  it('an out-of-range counter bit count clamps on load to the engine ceiling', () => {
+    // A hand-edited file can carry any "bits" value; 65 used to pass straight
+    // through the frontend's floor-only normalizeChipBits(value, 3) and reach
+    // the engine unclamped, where execute()'s per-bit i64 shift could panic
+    // once i reached 64. Both sides now clamp to 62 (counter.rs:27,
+    // counter.ts's normalizeCounterBits).
+    const { e } = csLine('164 0 0 128 0 0 65', '164');
+    expect(e.params.bits).toBe(62);
+  });
+
   it('a fractional adc bit count re-emits the engine integer', () => {
     // The ADC's token stream is just `bits` then the optional high voltage, so
     // a save writes the normalised integer back in place (ADCElm.java:36).
@@ -2105,6 +2115,17 @@ describe('controlled source file formats', () => {
   it('a fractional dac bit count re-emits the engine integer', () => {
     const { elementLine } = csLine('166 0 0 128 0 0 2.5', '166');
     expect(elementLine).toBe('166 0 0 128 0 0 2');
+  });
+
+  it('an out-of-range dac bit count clamps on load to the engine ceiling', () => {
+    // A hand-edited file can carry any "bits" value; 65 used to pass straight
+    // through the frontend's floor-only normalizeChipBits(value, 1) and reach
+    // the engine unclamped, where output_v() computes `1usize << bits` on
+    // every Newton iteration and could panic once bits reached usize's width.
+    // Both sides now clamp to 30 (dac.rs:36, dac.ts's normalizeDacBits).
+    const { e, elementLine } = csLine('166 0 0 128 0 0 65', '166');
+    expect(e.params.bits).toBe(30);
+    expect(elementLine).toBe('166 0 0 128 0 0 30');
   });
 
   it('a fractional decimal display bit count re-emits the engine integer', () => {

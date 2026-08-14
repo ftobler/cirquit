@@ -32,8 +32,13 @@ impl Dac {
     pub fn new(spec: &ElementSpec) -> Self {
         // A floor of 1 keeps a degenerate file from dividing by a zero
         // full-scale; the edit dialog already rejects fewer than 2 bits
-        // (DACElm.java:66-71).
-        let bits = (spec.param("bits", 4.0) as usize).max(1);
+        // (DACElm.java:66-71). The upper clamp mirrors adc.rs's identical
+        // `(1 << bits) - 1` full-scale formula, but the margin it buys is not
+        // the same: usize is 32 bits on the wasm32 target this ships to
+        // (against i64's 64), so `1usize << self.bits` needs bits < 32, and
+        // 30 leaves only 2 bits of headroom here, load-bearing and much
+        // tighter than the ~34 bits of headroom the same value gives adc.rs.
+        let bits = (spec.param("bits", 4.0) as usize).clamp(1, 30);
         // The bit inputs, then the O output source, then the V+ reference pin
         // (setupPins, DACElm.java:35-40). No pin carries saved state, so the
         // token stream after `bits` holds only the optional high voltage.
@@ -119,5 +124,35 @@ impl Element for Dac {
 
     fn reset(&mut self) {
         self.chip.reset();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn bits_clamps_to_the_usize_shift_ceiling() {
+        // A hand-edited file can carry any "bits" value; 65 used to reach
+        // output_v() unclamped, where `1usize << self.bits` panics once bits
+        // reaches the width of usize (32 bits on the wasm32 target this
+        // ships to).
+        let mut params = HashMap::new();
+        params.insert("bits".to_string(), 65.0);
+        let spec = ElementSpec {
+            id: 1,
+            kind: "dac".into(),
+            posts: Vec::new(),
+            params,
+            label: None,
+            model: None,
+            flags: 0,
+        };
+        let dac = Dac::new(&spec);
+        assert_eq!(dac.bits, 30, "bits should clamp to 30, not pass 65 through");
+        // output_v() is where the unclamped shift used to panic; call it
+        // directly, the same code path do_step drives every Newton iteration.
+        assert!(dac.output_v().is_finite());
     }
 }

@@ -24,11 +24,13 @@ import {
 } from './dFlipFlop';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
-/** The bits field, floored like the engine: truncated and held to the engine's
- *  floor of 1 so a degenerate file cannot draw a zero-size chip (dac.rs:36).
- *  The edit dialog rejects below 2, but the engine floor is 1. */
+/** The bits field, clamped like the engine: truncated, held to the engine's
+ *  floor of 1 so a degenerate file cannot draw a zero-size chip, and capped at
+ *  30 so `1usize << bits` cannot reach the width of usize on the wasm32
+ *  target this ships to (dac.rs:36). The edit dialog rejects below 2, but the
+ *  engine floor is 1. */
 export function normalizeDacBits(value: number): number {
-  return normalizeChipBits(value, 1);
+  return normalizeChipBits(value, 1, 30);
 }
 
 function dacBits(e: CircuitElement): number {
@@ -69,7 +71,7 @@ export const DAC_DEF: ElementDef = {
   dump: (e) => chipDump(e, dacPins(e), true),
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 2 },
+    { name: 'bits', label: '# of Bits', min: 2, max: 30 },
     // Upstream's DAC dialog skips the high logic voltage (isDigitalChip is
     // false), but the threshold it sets lives in the file format under
     // FLAG_CUSTOM_VOLTAGE, so it is exposed here like every other chip.
