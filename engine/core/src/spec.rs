@@ -72,11 +72,13 @@ pub struct SimOptions {
     #[serde(default)]
     pub solver_type: SolverType,
     /// Nominal (maximum) timestep in seconds.
+    #[serde(default = "default_time_step")]
     pub time_step: f64,
     /// Floor for adaptive step shrinking, in seconds. The working step can
     /// halve down to `2 * min_time_step` before the at-the-floor fallback
     /// budget applies; below that a shrink is impossible and a non-convergent
     /// step stops the run.
+    #[serde(default = "default_min_time_step")]
     pub min_time_step: f64,
     /// Enable step doubling after easy steps and halve-and-retry on a
     /// non-convergent step.
@@ -226,4 +228,54 @@ fn default_steps_per_column() -> u32 {
 
 fn default_columns() -> u32 {
     1024
+}
+
+/// Serde default for [`SimOptions::time_step`].
+///
+/// A plain `#[serde(default)]` on an `f64` would hand a missing `timeStep` a
+/// 0.0, and a zero step is a footgun: the closure would advance nothing and
+/// the simulation would stall or spin. A missing field must mean the same as
+/// [`SimOptions::default()`], so delegate to it and stay in lockstep.
+fn default_time_step() -> f64 {
+    SimOptions::default().time_step
+}
+
+/// Serde default for [`SimOptions::min_time_step`]; see [`default_time_step`].
+fn default_min_time_step() -> f64 {
+    SimOptions::default().min_time_step
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn circuit_spec_defaults_missing_timing_options() {
+        // A frontend that omits `options.timeStep` and `options.minTimeStep`
+        // must not fail the whole `set_circuit` with "bad circuit": the
+        // missing fields take the simulation defaults, not a footgun 0.0.
+        let spec: CircuitSpec = serde_json::from_str(
+            r#"{"elements":[],"options":{"solverType":"auto","adaptive":false,"stepsPerFrame":160,"maxSubiterations":1000,"dcOperatingPoint":false},"scopes":[]}"#,
+        )
+        .expect("omitting the timing fields must not fail deserialisation");
+        let options = spec.options.expect("options block present");
+        assert_eq!(options.time_step, 5e-6);
+        assert_eq!(options.min_time_step, 50e-12);
+    }
+
+    #[test]
+    fn sim_options_round_trips_present_timing_fields() {
+        // A full JSON with both timing fields present must survive a
+        // deserialise/reserialise cycle unchanged. Compared as serde_json
+        // values, not bytes: a float like 1e-5 round-trips through the same
+        // binary value but may print as "0.00001".
+        let json = r#"{"solverType":"auto","timeStep":1e-5,"minTimeStep":1e-10,"adaptive":true,"stepsPerFrame":320,"maxSubiterations":500,"dcOperatingPoint":true}"#;
+        let options: SimOptions = serde_json::from_str(json).expect("full JSON should deserialise");
+        let out = serde_json::to_string(&options).expect("should re-serialise");
+        let expected: serde_json::Value =
+            serde_json::from_str(json).expect("expected JSON is valid");
+        let actual: serde_json::Value =
+            serde_json::from_str(&out).expect("re-serialised JSON is valid");
+        assert_eq!(actual, expected);
+    }
 }
