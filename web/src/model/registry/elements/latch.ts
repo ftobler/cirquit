@@ -29,10 +29,12 @@ export const LATCH_ENABLE_ONE = 32;
 export const LATCH_ENABLE_TWO = 64;
 export const LATCH_RESET_INVERT = 128;
 
-/** The bits field, floored like the engine: truncated and held to the engine's
- *  floor of 2, the edit dialog's minimum (latch.rs:40). */
+/** The bits field, clamped like the engine: truncated and held to the engine's
+ *  2..32 range, the edit dialog's floor and the ceiling that keeps a
+ *  hand-edited width from allocating unbounded pins (latch.rs:42,
+ *  LatchElm.java:258). */
 export function normalizeLatchBits(value: number): number {
-  return normalizeChipBits(value, 2);
+  return normalizeChipBits(value, 2, 32);
 }
 
 function latchBits(e: CircuitElement): number {
@@ -112,7 +114,7 @@ export const LATCH_DEF: ElementDef = {
   dump: (e) => chipDump(e, latchPins(e), true),
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 2 },
+    { name: 'bits', label: '# of Bits', min: 2, max: 32 },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     { name: 'level', label: 'Level triggered', type: 'bool', flag: LATCH_NO_EDGE },
     { name: 'reset', label: 'Reset Pin', type: 'bool', flag: LATCH_RESET },

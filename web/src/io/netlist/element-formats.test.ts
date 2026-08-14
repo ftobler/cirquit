@@ -2128,6 +2128,44 @@ describe('controlled source file formats', () => {
     expect(elementLine).toBe('166 0 0 128 0 0 30');
   });
 
+  it('an out-of-range latch bit count clamps on load to the engine ceiling', () => {
+    // A hand-edited file can carry any "bits" value; 1e9 used to pass straight
+    // through the frontend's floor-only normalizeChipBits(value, 2) and reach
+    // the engine unclamped, where Vec::with_capacity and vec![false; bits]
+    // panic on the allocation. Both sides now clamp to 32 (latch.rs:42,
+    // latch.ts's normalizeLatchBits).
+    const { e } = csLine('168 0 0 128 0 0 1e9', '168');
+    expect(e.params.bits).toBe(32);
+  });
+
+  it('an out-of-range ring counter bit count clamps on load to the engine ceiling', () => {
+    // Same allocation panic as the latch; both sides now clamp to 32
+    // (ring_counter.rs:28, ringCounter.ts's normalizeRingBits).
+    const { e } = csLine('163 0 0 128 0 0 1e9', '163');
+    expect(e.params.bits).toBe(32);
+  });
+
+  it('an out-of-range counter 2 bit count clamps on load to the engine ceiling', () => {
+    // Same allocation panic as the latch; both sides now clamp to 32
+    // (counter2.rs:27, counter2.ts's normalizeCounter2Bits).
+    const { e } = csLine('421 0 0 128 0 0 1e9', '421');
+    expect(e.params.bits).toBe(32);
+  });
+
+  it('an out-of-range sipo shift bit count clamps on load to the engine ceiling', () => {
+    // Same allocation panic as the latch; both sides now clamp to 32
+    // (sipo_shift.rs:20, sipoShift.ts's normalizeSipoBits).
+    const { e } = csLine('189 0 0 128 0 0 1e9', '189');
+    expect(e.params.bits).toBe(32);
+  });
+
+  it('an out-of-range piso shift bit count clamps on load to the engine ceiling', () => {
+    // Same allocation panic as the latch; both sides now clamp to 32
+    // (piso_shift.rs:32, pisoShift.ts's normalizePisoBits).
+    const { e } = csLine('186 0 0 128 0 0 1e9', '186');
+    expect(e.params.bits).toBe(32);
+  });
+
   it('a fractional decimal display bit count re-emits the engine integer', () => {
     // The decimal display reads its own `bitCount displayMode` after the
     // optional high voltage, and the 2.5 lands on the bit count

@@ -20,10 +20,12 @@ import {
 import { readParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
-/** The bits field, floored like the engine: truncated and held to the engine's
- *  floor of 2, the edit dialog's minimum (counter2.rs:37). */
+/** The bits field, clamped like the engine: truncated and held to the engine's
+ *  2..32 range, the edit dialog's floor and the ceiling that keeps a
+ *  hand-edited width from allocating unbounded Q/I pins (counter2.rs:27,
+ *  Counter2Elm.java:100). */
 export function normalizeCounter2Bits(value: number): number {
-  return normalizeChipBits(value, 2);
+  return normalizeChipBits(value, 2, 32);
 }
 
 function counter2Bits(e: CircuitElement): number {
@@ -94,7 +96,7 @@ export const COUNTER2_DEF: ElementDef = {
   },
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 2 },
+    { name: 'bits', label: '# of Bits', min: 2, max: 32 },
     { name: 'modulus', label: 'Modulus' },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
   ],

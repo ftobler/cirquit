@@ -36,8 +36,10 @@ pub struct Latch {
 
 impl Latch {
     pub fn new(spec: &ElementSpec) -> Self {
-        // The edit dialog rejects fewer than 2 bits (LatchElm.java:281).
-        let bits = (spec.param("bits", 4.0) as usize).max(2);
+        // The edit dialog rejects fewer than 2 bits (LatchElm.java:281) and
+        // caps no higher; the ceiling of 32 keeps a hand-edited width from
+        // allocating unbounded pin and output vectors.
+        let bits = (spec.param("bits", 4.0) as usize).clamp(2, 32);
         let has_reset = spec.flag(FLAG_RESET);
         let has_set = spec.flag(FLAG_SET);
         let reset_active_low = spec.flag(FLAG_RESET_INVERT);
@@ -341,5 +343,34 @@ impl Element for Latch {
     fn reset(&mut self) {
         self.chip.reset();
         self.output_values.fill(false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn bits_clamps_to_the_allocation_ceiling() {
+        // A hand-edited file can carry any "bits" value; 1e9 used to reach
+        // `Vec::with_capacity(2 * bits + ...)` and `vec![false; bits]`
+        // unclamped and panic on the allocation.
+        let mut params = HashMap::new();
+        params.insert("bits".to_string(), 1e9);
+        let spec = ElementSpec {
+            id: 1,
+            kind: "latch".into(),
+            posts: Vec::new(),
+            params,
+            label: None,
+            model: None,
+            flags: 0,
+        };
+        let latch = Latch::new(&spec);
+        assert_eq!(
+            latch.bits, 32,
+            "bits should clamp to 32, not pass 1e9 through"
+        );
     }
 }

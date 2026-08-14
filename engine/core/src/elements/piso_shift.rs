@@ -26,8 +26,10 @@ pub struct PisoShift {
 
 impl PisoShift {
     pub fn new(spec: &ElementSpec) -> Self {
-        // The edit dialog rejects fewer than 1 bit (PisoShiftElm.java:149).
-        let bits = (spec.param("bits", 8.0) as usize).max(1);
+        // The edit dialog rejects fewer than 1 bit (PisoShiftElm.java:149)
+        // and caps no higher; the ceiling of 32 keeps a hand-edited width from
+        // allocating unbounded D pins and register storage.
+        let bits = (spec.param("bits", 8.0) as usize).clamp(1, 32);
         let has_new_behavior = spec.flag(FLAG_NEW_BEHAVIOR);
         let mut pins = vec![
             ChipPin::input(),         // 0 LD
@@ -175,5 +177,34 @@ impl Element for PisoShift {
     fn reset(&mut self) {
         self.chip.reset();
         self.data.fill(false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn bits_clamps_to_the_allocation_ceiling() {
+        // A hand-edited file can carry any "bits" value; 1e9 used to reach
+        // the D-pin allocation and `vec![false; bits]` unclamped and panic on
+        // it.
+        let mut params = HashMap::new();
+        params.insert("bits".to_string(), 1e9);
+        let spec = ElementSpec {
+            id: 1,
+            kind: "pisoShift".into(),
+            posts: Vec::new(),
+            params,
+            label: None,
+            model: None,
+            flags: 0,
+        };
+        let shift = PisoShift::new(&spec);
+        assert_eq!(
+            shift.bits, 32,
+            "bits should clamp to 32, not pass 1e9 through"
+        );
     }
 }

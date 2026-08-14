@@ -22,8 +22,10 @@ pub struct RingCounter {
 impl RingCounter {
     pub fn new(spec: &ElementSpec) -> Self {
         // The edit dialog rejects fewer than 2 bits (RingCounterElm.java:123);
-        // the default is 10 (RingCounterElm.java:39).
-        let bits = (spec.param("bits", 10.0) as usize).max(2);
+        // the default is 10 (RingCounterElm.java:39). The ceiling of 32 keeps
+        // a hand-edited width from allocating unbounded output pins; the
+        // dialog's `# of Bits` field caps no higher.
+        let bits = (spec.param("bits", 10.0) as usize).clamp(2, 32);
         let clock_inhibit = spec.flag(FLAG_CLOCK_INHIBIT) && bits >= 3;
         let invert_reset = !spec.flag(FLAG_RESET_HIGH);
         let mut pins = vec![
@@ -137,5 +139,33 @@ impl Element for RingCounter {
 
     fn reset(&mut self) {
         self.chip.reset();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn bits_clamps_to_the_allocation_ceiling() {
+        // A hand-edited file can carry any "bits" value; 1e9 used to reach
+        // the output-pin allocation unclamped and panic on it.
+        let mut params = HashMap::new();
+        params.insert("bits".to_string(), 1e9);
+        let spec = ElementSpec {
+            id: 1,
+            kind: "ringCounter".into(),
+            posts: Vec::new(),
+            params,
+            label: None,
+            model: None,
+            flags: 0,
+        };
+        let ring = RingCounter::new(&spec);
+        assert_eq!(
+            ring.bits, 32,
+            "bits should clamp to 32, not pass 1e9 through"
+        );
     }
 }

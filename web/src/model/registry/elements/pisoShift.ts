@@ -21,10 +21,12 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 export const PISO_NEW_BEHAVIOR = 2;
 
-/** The bits field, floored like the engine: truncated and held to the engine's
- *  floor of 1, the edit dialog's minimum (piso_shift.rs:27). */
+/** The bits field, clamped like the engine: truncated and held to the engine's
+ *  1..32 range, the edit dialog's floor and the ceiling that keeps a
+ *  hand-edited width from allocating unbounded D pins and register storage
+ *  (piso_shift.rs:32, PisoShiftElm.java:144). */
 export function normalizePisoBits(value: number): number {
-  return normalizeChipBits(value, 1);
+  return normalizeChipBits(value, 1, 32);
 }
 
 function pisoBits(e: CircuitElement): number {
@@ -96,7 +98,7 @@ export const PISO_SHIFT_DEF: ElementDef = {
   },
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 1 },
+    { name: 'bits', label: '# of Bits', min: 1, max: 32 },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     { name: 'newBehavior', label: 'New behavior', type: 'bool', flag: PISO_NEW_BEHAVIOR },
   ],

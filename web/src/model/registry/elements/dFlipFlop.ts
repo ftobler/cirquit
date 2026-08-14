@@ -329,20 +329,16 @@ export function chipStateNames(pins: ChipPinDef[]): string[] {
  * The integer bit count the engine's `(x as usize)` cast derives from a value:
  * non-finite values and negatives saturate to 0 (NaN and -1 cast to 0), a
  * fraction truncates toward zero, and the result clamps to the engine's
- * `floor..=ceiling` range where one applies. Four of the six chip families
- * this backs pack the bit count into a shifted integer (`1 << bits` or a
- * per-bit `1 << i` loop) and so need a ceiling to keep that shift in range:
- * adc.rs:28, dac.rs:36, counter.rs:27, decimal_display.rs:24. latch.rs:40 and
- * ring_counter.rs:26 index pins and hold a `Vec<bool>`/pin table instead of
- * shifting a value, so they are clear of that specific shift-overflow panic
- * and stay floor-only here; they are not clear of an unclamped `bits`
- * generally, since every chip's `Chip::new` sizes its post/pin vectors off
- * `bits` (`Base::with_posts`, `vec![false; bits]` in latch.rs), so a huge
- * hand-edited width can still panic on an allocation this function does not
- * guard against. That gap is unfixed and tracked separately. The store's
- * `setParam`, the parsers and the geometry all normalise to this, so a
- * fractional edit never draws a post list the engine's build rejects
- * (circuit.rs:261-269).
+ * `floor..=ceiling` range. Every chip family this backs carries a ceiling now.
+ * Four pack the bit count into a shifted integer (`1 << bits` or a per-bit
+ * `1 << i` loop) and need the ceiling to keep that shift in range: adc.rs:28,
+ * dac.rs:36, counter.rs:27, decimal_display.rs:24. The other five index pins
+ * and allocate from `bits` (`Base::with_posts`, `vec![false; bits]` in
+ * latch.rs), so a huge hand-edited width would panic on the allocation without
+ * the same clamp: latch.rs:42, ring_counter.rs:28, counter2.rs:27,
+ * sipo_shift.rs:20, piso_shift.rs:32. The store's `setParam`, the parsers and
+ * the geometry all normalise to this, so a fractional edit never draws a post
+ * list the engine's build rejects (circuit.rs:261-269).
  */
 export function normalizeChipBits(value: number, floor: number, ceiling?: number): number {
   if (!Number.isFinite(value)) return floor;

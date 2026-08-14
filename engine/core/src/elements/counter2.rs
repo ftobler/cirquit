@@ -21,8 +21,10 @@ pub struct Counter2 {
 
 impl Counter2 {
     pub fn new(spec: &ElementSpec) -> Self {
-        // The edit dialog rejects fewer than 2 bits (Counter2Elm.java:107).
-        let bits = (spec.param("bits", 4.0) as usize).max(2);
+        // The edit dialog rejects fewer than 2 bits (Counter2Elm.java:107)
+        // and caps no higher; the ceiling of 32 keeps a hand-edited width from
+        // allocating unbounded Q and I pins.
+        let bits = (spec.param("bits", 4.0) as usize).clamp(2, 32);
         let modulus = spec.param("modulus", 0.0).max(0.0) as usize;
         let mut pins: Vec<ChipPin> = Vec::with_capacity(2 * bits + 6);
         // The Q outputs first, MSB at pin 0 (makeBitPins reversed,
@@ -190,5 +192,33 @@ impl Element for Counter2 {
     fn reset(&mut self) {
         self.chip.reset();
         self.carry = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn bits_clamps_to_the_allocation_ceiling() {
+        // A hand-edited file can carry any "bits" value; 1e9 used to reach
+        // `Vec::with_capacity(2 * bits + 6)` unclamped and panic on it.
+        let mut params = HashMap::new();
+        params.insert("bits".to_string(), 1e9);
+        let spec = ElementSpec {
+            id: 1,
+            kind: "counter2".into(),
+            posts: Vec::new(),
+            params,
+            label: None,
+            model: None,
+            flags: 0,
+        };
+        let counter = Counter2::new(&spec);
+        assert_eq!(
+            counter.bits, 32,
+            "bits should clamp to 32, not pass 1e9 through"
+        );
     }
 }

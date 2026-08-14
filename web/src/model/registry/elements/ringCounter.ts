@@ -22,10 +22,12 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 export const RING_CLOCK_INHIBIT = 2;
 export const RING_RESET_HIGH = 4;
 
-/** The bits field, floored like the engine: truncated and held to the engine's
- *  floor of 2, the edit dialog's minimum (ring_counter.rs:26). */
+/** The bits field, clamped like the engine: truncated and held to the engine's
+ *  2..32 range, the edit dialog's floor and the ceiling that keeps a
+ *  hand-edited width from allocating unbounded output pins (ring_counter.rs:28,
+ *  RingCounterElm.java:109). */
 export function normalizeRingBits(value: number): number {
-  return normalizeChipBits(value, 2);
+  return normalizeChipBits(value, 2, 32);
 }
 
 function ringBits(e: CircuitElement): number {
@@ -85,7 +87,7 @@ export const RING_COUNTER_DEF: ElementDef = {
   dump: (e) => chipDump(e, ringPins(e), true, 10),
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 2 },
+    { name: 'bits', label: '# of Bits', min: 2, max: 32 },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     { name: 'resetHigh', label: 'Reset active high', type: 'bool', flag: RING_RESET_HIGH },
   ],
