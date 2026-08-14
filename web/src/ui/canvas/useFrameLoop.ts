@@ -14,7 +14,7 @@ import { GRID_SIZE } from '../../model/types';
 import { mergeProblem, useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
-import { overlayLiveState, shouldInjectLiveState } from '../../io/liveState';
+import { overlayLiveState, recordBuildOnSuccess, shouldInjectLiveState } from '../../io/liveState';
 
 /** Resolves each scope's measured canvas width, for engine ring sizing. */
 const widthOf = (id: number): number | undefined => scopeWidth(id);
@@ -84,7 +84,10 @@ export function useFrameLoop(
           ? overlayLiveState(elements, engine.elementStateTokens())
           : elements;
         const err = engine.setCircuit(build, settings, scopes, widthOf);
-        builtDocument.current = state.document;
+        // A failed build leaves the engine on a stale or partial circuit, so
+        // the next rebuild must not pull live tokens off it; record only on
+        // success (recordBuildOnSuccess).
+        builtDocument.current = recordBuildOnSuccess(builtDocument.current, state.document, err);
         const warnings = err ? [err] : engine.warnings();
         // Merge, not replace: the load-time unsupported-lines message has to
         // survive the first engine build, which is what wiped it before.
@@ -138,7 +141,7 @@ export function useFrameLoop(
             ? overlayLiveState(elements, engine.elementStateTokens())
             : elements;
           const err = engine.setCircuit(build, settings, scopes, widthOf);
-          builtDocument.current = state.document;
+          builtDocument.current = recordBuildOnSuccess(builtDocument.current, state.document, err);
           const warnings = err ? [err] : engine.warnings();
           // Same merge as the revision branch: the load-time message must not
           // be overwritten by this rebuild's warnings either.

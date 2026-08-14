@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { overlayLiveState, shouldInjectLiveState } from './liveState';
+import { overlayLiveState, recordBuildOnSuccess, shouldInjectLiveState } from './liveState';
 import { parseCircuit, serializeCircuit } from './netlist';
 import { DEFAULT_SETTINGS } from '../model/types';
 import type { CircuitElement } from '../model/types';
@@ -84,5 +84,51 @@ describe('shouldInjectLiveState', () => {
 
   it('undo and redo keep the document, so the rebuild still injects', () => {
     expect(shouldInjectLiveState(3, 3)).toBe(true);
+  });
+});
+
+describe('recordBuildOnSuccess', () => {
+  it('records the document only when setCircuit succeeded', () => {
+    expect(recordBuildOnSuccess(-1, 5, 'boom')).toBe(-1);
+    expect(recordBuildOnSuccess(-1, 5, null)).toBe(5);
+    expect(recordBuildOnSuccess(3, 5, 'boom')).toBe(3);
+    expect(recordBuildOnSuccess(3, 5, null)).toBe(5);
+  });
+
+  it('a failed build keeps the live-state gate closed, a later success opens it', () => {
+    const document = 7;
+    // The never-built sentinel, like the engine before its first stamp.
+    let built = -1;
+
+    // First rebuild fails: not recorded, so the next rebuild refuses to inject.
+    built = recordBuildOnSuccess(built, document, 'stamp failed');
+    expect(built).toBe(-1);
+    expect(shouldInjectLiveState(built, document)).toBe(false);
+
+    // A later rebuild of the same document succeeds: recorded, gate opens.
+    built = recordBuildOnSuccess(built, document, null);
+    expect(built).toBe(document);
+    expect(shouldInjectLiveState(built, document)).toBe(true);
+  });
+
+  it('a failed rebuild never overlays stale live tokens onto the new document', () => {
+    const elements = [elm(1, { capacitance: 1e-6, voltDiff: 5 })];
+    // Tokens the engine would report if it still held a stale or partial
+    // build from the failed setCircuit.
+    const staleLive = { 1: { voltDiff: 3.2 } };
+    let built = -1;
+    const document = 9;
+
+    built = recordBuildOnSuccess(built, document, 'stamp failed');
+    const build = shouldInjectLiveState(built, document)
+      ? overlayLiveState(elements, staleLive)
+      : elements;
+    expect(build[0].params.voltDiff).toBe(5);
+
+    built = recordBuildOnSuccess(built, document, null);
+    const build2 = shouldInjectLiveState(built, document)
+      ? overlayLiveState(elements, staleLive)
+      : elements;
+    expect(build2[0].params.voltDiff).toBe(3.2);
   });
 });

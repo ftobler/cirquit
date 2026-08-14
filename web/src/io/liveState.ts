@@ -40,3 +40,18 @@ export function overlayLiveState(elements: CircuitElement[], live: LiveState): C
 export function shouldInjectLiveState(builtDocument: number, currentDocument: number): boolean {
   return builtDocument === currentDocument;
 }
+
+/**
+ * The document a rebuild records for the next rebuild's live-state gate: the
+ * build's document only when setCircuit succeeded, otherwise the previous
+ * value unchanged. A failed build leaves the engine holding a stale or partial
+ * circuit, so recording its document anyway would let the next rebuild pull
+ * live tokens off that stale engine and land them on the wrong element.
+ */
+export function recordBuildOnSuccess(
+  builtDocument: number,
+  document: number,
+  err: string | null,
+): number {
+  return err === null ? document : builtDocument;
+}
