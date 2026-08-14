@@ -258,6 +258,14 @@ const UPSTREAM_ELEMENT_CODES = new Set([
   'z',
 ]);
 
+/** The dump-code token a raw line starts with, upstream's dispatch key
+ *  before it ever tries `createCe` (CircuitLoader.java's whitespace split).
+ *  Shared by `isElementLine` and anything else that needs a line's head
+ *  without parsing the rest of it. */
+export function dumpCodeOfLine(line: string): string {
+  return line.trim().split(/\s+/)[0] ?? '';
+}
+
 /**
  * Does this line take a slot in the element list a scope `o` index counts
  * against? Upstream dispatches every other line type before it ever tries to
@@ -268,9 +276,37 @@ const UPSTREAM_ELEMENT_CODES = new Set([
  * scope carries is not an index into `ParsedCircuit.elements`.
  */
 export function isElementLine(line: string): boolean {
-  const head = line.trim().split(/\s+/)[0] ?? '';
+  const head = dumpCodeOfLine(line);
   if (head === '' || head.startsWith('#')) return false;
   return defForDumpCode(head) !== undefined || UPSTREAM_ELEMENT_CODES.has(head);
+}
+
+/**
+ * The upstream dump codes for the element kinds `unitsOf`/`scopeValueFromToken`
+ * special-case (LampElm.java:74, CapacitorElm.java:67, PolarCapacitorElm.java:18,
+ * TransistorElm.java:101). An `o`-line plot can target an element line this
+ * build cannot construct (its head is in `UPSTREAM_ELEMENT_CODES` but not the
+ * registry, or a future upstream code neither build has caught up with yet);
+ * the plot walk still has to know whether *that* element's real kind carries a
+ * units-scale token, and every other kind is handled by `unitsOf`'s
+ * token-only branches regardless of kind, so this is the only kind
+ * information an unreadable line's raw head needs to supply.
+ */
+const KIND_BY_DUMP_CODE: Record<string, string> = {
+  '181': 'lamp',
+  c: 'capacitor',
+  '209': 'polarizedCapacitor',
+  t: 'transistor',
+};
+
+/**
+ * The kind an unreadable element line's raw dump code implies, for `unitsOf`
+ * purposes only: never a substitute for the registry on a line this build can
+ * actually construct. Returns null for any code outside the small set above,
+ * which is exactly right because `unitsOf` has no other kind-specific branch.
+ */
+export function kindOfDumpCode(code: string): string | null {
+  return KIND_BY_DUMP_CODE[code] ?? null;
 }
 
 export function parseCircuit(text: string): ParsedCircuit {
@@ -309,6 +345,9 @@ export function parseCircuit(text: string): ParsedCircuit {
   // Upstream's `elmList` position, which the `o` lines index into.
   let fileIndex = 0;
   const idByFileIndex = new Map<number, number>();
+  // Only set for a slot this build could not construct: the raw head is all
+  // a later scope-plot walk can use to guess that element's real kind.
+  const dumpCodeByFileIndex = new Map<number, string>();
   const pendingScopes: { id: number; tokens: string[] }[] = [];
 
   for (const rawLine of rawLines) {
@@ -605,7 +644,10 @@ export function parseCircuit(text: string): ParsedCircuit {
       else if (NON_ELEMENT_HEADS.includes(head[0])) unsupported.push(head[0]);
       // An element line this build cannot read is still an element to
       // upstream, so it takes its slot and shifts every later scope index.
-      if (isElementLine(lineText)) fileIndex += 1;
+      if (isElementLine(lineText)) {
+        dumpCodeByFileIndex.set(fileIndex, head);
+        fileIndex += 1;
+      }
       continue;
     }
 
@@ -633,7 +675,7 @@ export function parseCircuit(text: string): ParsedCircuit {
   // elements still finds its targets, and the plot walk knows each plot's
   // element kind, which decides whether a scale token follows its value.
   for (const { id, tokens } of pendingScopes) {
-    scopes.push(parseScopeLine(id, tokens, idByFileIndex, elements));
+    scopes.push(parseScopeLine(id, tokens, idByFileIndex, dumpCodeByFileIndex, elements));
   }
 
   // Model names resolve after the whole file is read too, for the same
@@ -716,6 +758,7 @@ function parseScopeLine(
   id: number,
   tokens: string[],
   idByFileIndex: Map<number, number>,
+  dumpCodeByFileIndex: Map<number, string>,
   elements: CircuitElement[],
 ): ScopeConfig {
   const rawIndex = Number(tokens[1]);
@@ -723,12 +766,16 @@ function parseScopeLine(
   const valueToken = Number(tokens[3]);
   const flags = importDecOrHex(tokens[4] ?? '0');
 
-  // The element kind a file index resolves to, or null when the index lands on
-  // an element line this build could not read (or before any element).
+  // The element kind a file index resolves to. When the index lands on an
+  // element line this build could not read, the raw dump code recorded for
+  // that slot still tells `unitsOf` what it needs to know (lamp/capacitor/
+  // polarizedCapacitor/transistor); anything else, or an index before any
+  // element, has no kind to report.
   const kindOf = (index: number): string | null => {
     const elementId = idByFileIndex.get(index);
-    if (elementId === undefined) return null;
-    return elements.find((e) => e.id === elementId)?.kind ?? null;
+    if (elementId !== undefined) return elements.find((e) => e.id === elementId)?.kind ?? null;
+    const code = dumpCodeByFileIndex.get(index);
+    return code === undefined ? null : kindOfDumpCode(code);
   };
 
   const plots: ScopePlotConfig[] = [];

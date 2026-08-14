@@ -7,8 +7,10 @@ import {
   FLAG_PERPLOTFLAGS,
   FLAG_PERPLOT_MAN_SCALE,
   FLAG_PLOTS,
+  dumpCodeOfLine,
   importDecOrHex,
   isElementLine,
+  kindOfDumpCode,
   unitsOf,
 } from './parse';
 
@@ -80,7 +82,7 @@ function renumberPlotIndices(
   raw: string[],
   plots: ScopePlotConfig[],
   ordinalById: Map<number, number>,
-  kindOf: (elementId: number | undefined) => string | null,
+  kindOf: (plot: ScopePlotConfig) => string | null,
 ): string[] {
   if (plots.length < 2) return raw;
   const valueToken = Number(raw[1]);
@@ -97,7 +99,7 @@ function renumberPlotIndices(
   if ((flags & FLAG_DIVISIONS) !== 0) cursor += 1;
   // Plot 0's units can carry an extra scale token before the per-plot tokens
   // (ScopeSerializer.java:221-223).
-  if (unitsOf(valueToken, kindOf(plots[0].elementId)) > 1 && cursor < out.length) cursor += 1;
+  if (unitsOf(valueToken, kindOf(plots[0])) > 1 && cursor < out.length) cursor += 1;
   for (let i = 0; i < sz && i < plots.length; i++) {
     if ((flags & FLAG_PERPLOTFLAGS) !== 0 && cursor < out.length) cursor += 1;
     if (i !== 0) {
@@ -109,7 +111,7 @@ function renumberPlotIndices(
       if (plot.elementId !== undefined) {
         out[neSlot] = String(ordinalById.get(plot.elementId) ?? -1);
       }
-      if (unitsOf(val, kindOf(plot.elementId)) > 1 && cursor < out.length) cursor += 1;
+      if (unitsOf(val, kindOf(plot)) > 1 && cursor < out.length) cursor += 1;
     }
     if ((flags & FLAG_PERPLOT_MAN_SCALE) !== 0) cursor += 2;
   }
@@ -129,7 +131,7 @@ function renumberPlotIndices(
 function scopeLineFor(
   s: ScopeConfig,
   ordinalById: Map<number, number>,
-  kindOf: (elementId: number | undefined) => string | null,
+  kindOf: (plot: ScopePlotConfig) => string | null,
 ): string {
   const index =
     s.elementId === undefined ? s.elementIndex : (ordinalById.get(s.elementId) ?? -1);
@@ -202,10 +204,18 @@ export function serializeCircuit(
   const ordinalById = new Map<number, number>();
   // A plot's own kind, keyed by its element id: renumbering a non-first plot's
   // `ne` token has to skip the same per-unit scale tokens the parser skipped
-  // reading it, and that decision is kind-dependent (see `unitsOf`).
+  // reading it, and that decision is kind-dependent (see `unitsOf`). A plot
+  // whose target this build could not read has no element id; the order-walk
+  // below records that slot's raw dump code instead, so `kindOf` can fall
+  // back to the same kind guess `parseScopeLine` used on load
+  // (`kindOfDumpCode`), keeping the two walks in agreement.
   const kindById = new Map(elements.map((e) => [e.id, e.kind]));
-  const kindOf = (elementId: number | undefined): string | null =>
-    elementId === undefined ? null : (kindById.get(elementId) ?? null);
+  const dumpCodeByFileIndex = new Map<number, string>();
+  const kindOf = (plot: ScopePlotConfig): string | null => {
+    if (plot.elementId !== undefined) return kindById.get(plot.elementId) ?? null;
+    const code = dumpCodeByFileIndex.get(plot.elementIndex);
+    return code === undefined ? null : kindOfDumpCode(code);
+  };
 
   // An empty order is "no file was loaded", not "the file was empty", so it
   // takes the default layout rather than dropping the passthrough lines.
@@ -246,7 +256,13 @@ export function serializeCircuit(
       sawHeader = true;
     } else if (entry.kind === 'other') {
       lines.push(entry.line);
-      if (isElementLine(entry.line)) fileIndex += 1;
+      // An unmodelled element line still takes its slot (see `parseCircuit`);
+      // its raw dump code is recorded so a plot targeting it can still resolve
+      // a kind for `unitsOf`, the same fallback the reader uses.
+      if (isElementLine(entry.line)) {
+        dumpCodeByFileIndex.set(fileIndex, dumpCodeOfLine(entry.line));
+        fileIndex += 1;
+      }
     } else if (entry.kind === 'element') {
       // A deleted element vacates its slot; the lines around it do not move.
       const slot = (slotById.get(entry.id) ?? []).find((i) => !usedElements.has(i));

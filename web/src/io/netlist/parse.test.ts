@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCircuit, serializeCircuit } from './index';
+import { kindOfDumpCode, parseCircuit, serializeCircuit } from './index';
 import { SAMPLE } from './fixtures';
 import { DEFAULT_SETTINGS } from '../../model/types';
 
@@ -257,6 +257,19 @@ describe('scope o-line fidelity', () => {
     );
     expect(parsed.scopes.map((s) => s.plots[0].value)).toEqual([null, 'charge']);
     expect(parsed.scopes.map((s) => s.plots[0].elementIndex)).toEqual([0, 1]);
+  });
+
+  it('resolves the units-relevant kind straight from a raw dump code', () => {
+    // The only kinds `unitsOf`/`scopeValueFromToken` special-case, so these are
+    // the only codes an unreadable element line needs to be recognised by.
+    expect(kindOfDumpCode('181')).toBe('lamp');
+    expect(kindOfDumpCode('c')).toBe('capacitor');
+    expect(kindOfDumpCode('209')).toBe('polarizedCapacitor');
+    expect(kindOfDumpCode('t')).toBe('transistor');
+    // Every other code, including one with no units-specific meaning at all,
+    // reports no kind: `unitsOf`'s token-only branches already get it right.
+    expect(kindOfDumpCode('150')).toBeNull();
+    expect(kindOfDumpCode('999')).toBeNull();
   });
 
   it('consumes the scale token a charge plot carries before the next plot', () => {
