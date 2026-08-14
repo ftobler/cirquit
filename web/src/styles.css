@@ -71,6 +71,14 @@ body {
   margin: 0 4px;
 }
 
+.menubar .edit-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto; /* the undo/redo buttons never shrink; the menus give way first */
+  margin-right: 2px;
+}
+
 .menubar .run-group {
   display: flex;
   align-items: center;

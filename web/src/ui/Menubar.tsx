@@ -464,6 +464,32 @@ export function Menubar({ engine }: Props) {
         <span style={brandStyle}>Circuit Simulator</span>
       </strong>
 
+      <div className="edit-group">
+        <button
+          type="button"
+          disabled={!editable || !canUndo}
+          onClick={fire(undo)}
+          title="Undo"
+          aria-label="Undo"
+        >
+          <span className="material-icons" aria-hidden="true">
+            undo
+          </span>
+        </button>
+        <button
+          type="button"
+          disabled={!editable || !canRedo}
+          onClick={fire(redo)}
+          title="Redo"
+          aria-label="Redo"
+        >
+          <span className="material-icons" aria-hidden="true">
+            redo
+          </span>
+        </button>
+      </div>
+      <span className="sep" />
+
       <Dropdown
         label="File"
         menu
@@ -616,28 +642,6 @@ export function Menubar({ engine }: Props) {
       </span>
 
       <div className="run-group">
-        <button
-          type="button"
-          disabled={!editable || !canUndo}
-          onClick={fire(undo)}
-          title="Undo"
-          aria-label="Undo"
-        >
-          <span className="material-icons" aria-hidden="true">
-            undo
-          </span>
-        </button>
-        <button
-          type="button"
-          disabled={!editable || !canRedo}
-          onClick={fire(redo)}
-          title="Redo"
-          aria-label="Redo"
-        >
-          <span className="material-icons" aria-hidden="true">
-            redo
-          </span>
-        </button>
         <button
           type="button"
           className={running ? 'primary running' : 'primary'}
