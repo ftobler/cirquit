@@ -1864,14 +1864,13 @@ describe('undo parity', () => {
 
     useStore.getState().commit();
     useStore.getState().setElementState(id, 1);
-    // The frame loop applies the queued state and drops it each frame.
-    useStore.getState().clearPending();
 
     useStore.getState().undo();
 
-    const s = useStore.getState();
-    expect(s.elements[0].state).toBe(0);
-    expect(s.pendingStates.size).toBe(0);
+    // No clearPending in this test: undo itself must bring back the committed
+    // element state. pendingStates is a live frame queue, not part of the undo
+    // Snapshot (types.ts:36), so the element state is what proves the undo.
+    expect(useStore.getState().elements[0].state).toBe(0);
   });
 
   it('dedups consecutive identical commits', () => {
@@ -2299,7 +2298,7 @@ describe('scope panels', () => {
     expect(iPanel?.plots.map((p) => p.value)).toEqual(['current']);
   });
 
-  it('stack and unstack update positions with one undo step per command', () => {
+  it('stack and unstack update positions, one undo restores each command', () => {
     const a = addResistor();
     const b = addResistor();
     const c = addResistor();
@@ -2308,51 +2307,72 @@ describe('scope panels', () => {
     useStore.getState().addScope(c, 'voltage');
     let s = useStore.getState();
     expect(s.scopes.map((x) => x.position)).toEqual([0, 1, 2]);
-    const baseline = s.undoStack.length;
 
-    useStore.getState().stackScope(s.scopes[2].id);
+    // stackScope commits itself, so one undo restores the pre-stack layout.
+    const top = s.scopes[2].id;
+    let pre = s.scopes;
+    useStore.getState().stackScope(top);
     s = useStore.getState();
     expect(s.scopes.map((x) => x.position)).toEqual([0, 1, 1]);
-    expect(s.undoStack.length).toBe(baseline + 1);
+    useStore.getState().undo();
+    expect(useStore.getState().scopes).toEqual(pre);
 
-    useStore.getState().unstackScope(s.scopes[2].id);
+    // unstackScope commits itself too, so one undo restores the stacked
+    // layout it started from.
+    useStore.getState().stackScope(top);
+    pre = useStore.getState().scopes;
+    useStore.getState().unstackScope(top);
     s = useStore.getState();
     expect(s.scopes.map((x) => x.position)).toEqual([0, 1, 2]);
-    expect(s.undoStack.length).toBe(baseline + 2);
+    useStore.getState().undo();
+    expect(useStore.getState().scopes).toEqual(pre);
   });
 
-  it('the Scopes menu batch commands are one undo step each', () => {
+  it('the Scopes menu batch commands each undo in one step', () => {
     const a = addResistor();
     const b = addResistor();
     useStore.getState().addScope(a, 'voltage');
     useStore.getState().addScope(b, 'voltage');
-    const baseline = useStore.getState().undoStack.length;
 
+    // stackAllScopes: one undo restores the pre-stack positions.
+    let pre = useStore.getState().scopes;
     useStore.getState().stackAllScopes();
     let s = useStore.getState();
     expect(s.scopes.map((x) => x.position)).toEqual([0, 0]);
-    expect(s.undoStack.length).toBe(baseline + 1);
+    useStore.getState().undo();
+    expect(useStore.getState().scopes).toEqual(pre);
 
+    // unstackAllScopes: one undo restores the stacked layout it started from.
+    useStore.getState().stackAllScopes();
+    pre = useStore.getState().scopes;
     useStore.getState().unstackAllScopes();
     s = useStore.getState();
     expect(s.scopes.map((x) => x.position)).toEqual([0, 1]);
-    expect(s.undoStack.length).toBe(baseline + 2);
+    useStore.getState().undo();
+    expect(useStore.getState().scopes).toEqual(pre);
 
+    // combineAllScopes: one undo restores both scopes and all their plots.
+    pre = useStore.getState().scopes;
     useStore.getState().combineAllScopes();
     s = useStore.getState();
     expect(s.scopes).toHaveLength(1);
     expect(s.scopes[0].plots).toHaveLength(4);
-    expect(s.undoStack.length).toBe(baseline + 3);
+    useStore.getState().undo();
+    expect(useStore.getState().scopes).toEqual(pre);
 
+    // separateAllScopes: one undo restores the combined scope. Each original
+    // V+I pair stays together, so two panels come back.
+    useStore.getState().combineAllScopes();
+    pre = useStore.getState().scopes;
     useStore.getState().separateAllScopes();
     s = useStore.getState();
-    // Each original V+I pair stays together, so two panels come back.
     expect(s.scopes).toHaveLength(2);
     expect(s.scopes.map((x) => x.plots.map((p) => p.value))).toEqual([
       ['voltage', 'current'],
       ['voltage', 'current'],
     ]);
-    expect(s.undoStack.length).toBe(baseline + 4);
+    useStore.getState().undo();
+    expect(useStore.getState().scopes).toEqual(pre);
   });
 
   it('the batch commands are no-ops with nothing to act on', () => {

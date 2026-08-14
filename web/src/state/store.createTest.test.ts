@@ -21,7 +21,6 @@ describe('createTest', () => {
     const chip = useStore.getState().addElement(dff());
     useStore.getState().select([chip]);
     const before = useStore.getState().elements.length;
-    const undoBefore = useStore.getState().undoStack.length;
 
     expect(useStore.getState().createTest()).toBe(true);
 
@@ -38,9 +37,11 @@ describe('createTest', () => {
     for (const p of placed) {
       expect(chipPosts).toContainEqual({ x: p.x1, y: p.y1 });
     }
-    // Exactly one undo entry for the whole harness, like upstream's single
-    // pushUndo (CommandManager.java:146-149).
-    expect(s.undoStack).toHaveLength(undoBefore + 1);
+    // createTest commits once for the whole harness (store.ts:887), so one
+    // undo removes it entirely, exactly as upstream pushes once before
+    // TestCreator.createTest (CommandManager.java:146-149).
+    useStore.getState().undo();
+    expect(useStore.getState().elements).toHaveLength(before);
   });
 
   it('reports false and places nothing when no single chip is selected', () => {

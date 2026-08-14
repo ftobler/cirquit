@@ -33,11 +33,12 @@ describe('ctrl-drag post movement undo', () => {
     expect(useStore.getState().elements[0]).toEqual(original);
   });
 
-  it('rolls back a drag that collapsed the element to a point', () => {
+  it('undo restores the dragged element\'s endpoints', () => {
     const id = addResistor();
     const original = useStore.getState().elements[0];
     useStore.getState().commit();
-    // The pointer-up handler detects the zero-length result and undoes.
+    // updateElement never pushes undo entries, so the single commit is the
+    // whole drag: one undo restores the original geometry.
     useStore.getState().updateElement(id, postPatch(2, 0, 0));
     expect(useStore.getState().elements[0].x2).toBe(0);
     expect(useStore.getState().elements[0].y2).toBe(0);
