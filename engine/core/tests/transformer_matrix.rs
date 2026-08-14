@@ -955,6 +955,65 @@ fn all_ground_voltage_source_is_rejected_at_set_circuit() {
     );
 }
 
+/// Two elements sharing an id make `set_param`/`set_state`/`indexOf` pick the
+/// wrong element, so `set_circuit` must reject the spec instead of silently
+/// keeping only the last element under that id in `id_index`.
+#[test]
+fn duplicate_element_id_is_rejected_at_set_circuit() {
+    let spec = CircuitSpec {
+        elements: vec![
+            elm(
+                1,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                1,
+                "resistor",
+                &[[0, 100], [100, 100]],
+                &[("resistance", 2000.0)],
+            ),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    let err = c
+        .set_circuit(&spec)
+        .expect_err("duplicate element id accepted at set_circuit");
+    assert!(
+        err.contains("duplicate element id 1"),
+        "error does not name the duplicate id: {err}"
+    );
+    assert!(
+        err.contains("resistor") && err.contains("element 0") && err.contains("element 1"),
+        "error does not name both elements: {err}"
+    );
+}
+
+/// A spec with unique ids still builds, and `element_ids` reports exactly the
+/// ids the spec supplied, in element order.
+#[test]
+fn unique_ids_build_and_element_ids_match() {
+    let spec = CircuitSpec {
+        elements: vec![
+            elm(7, "voltage", &[[0, 0], [0, 100]], &[("maxVoltage", 5.0)]),
+            elm(
+                3,
+                "resistor",
+                &[[0, 100], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[0, 0]], &[]),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let c = build(spec.elements, spec.options.expect("opts"));
+    assert_eq!(c.element_ids(), &[7, 3, 9]);
+}
+
 /// A hand-edited netlist can carry tens of thousands of elements whose posts
 /// sit at absurd coordinates (1e9, far outside any canvas); the terminal
 /// count and node count blow past the sanity cap. `set_circuit` must reject
@@ -1169,31 +1228,36 @@ fn two_independent_dividers_stay_independent() {
     // feels the other. The closure solve is bit-identical to the lone
     // divider's because the matrices are the same, which no global solve can
     // guarantee.
-    let divider = |base: i32| {
+    let divider = |base: i32, id_base: u32| {
         vec![
             elm(
-                1,
+                id_base,
                 "voltage",
                 &[[base, 200], [base, 0]],
                 &[("maxVoltage", 10.0)],
             ),
             elm(
-                2,
+                id_base + 1,
                 "resistor",
                 &[[base, 0], [base + 100, 0]],
                 &[("resistance", 1000.0)],
             ),
             elm(
-                3,
+                id_base + 2,
                 "resistor",
                 &[[base + 100, 0], [base + 100, 100]],
                 &[("resistance", 2000.0)],
             ),
-            elm(4, "ground", &[[base, 200]], &[]),
-            elm(5, "ground", &[[base + 100, 100]], &[]),
+            elm(id_base + 3, "ground", &[[base, 200]], &[]),
+            elm(id_base + 4, "ground", &[[base + 100, 100]], &[]),
         ]
     };
-    let mut full = build([divider(0), divider(400)].concat(), opts(1e-5, false));
+    // The two dividers used to reuse the same id block 1-5, which the
+    // duplicate-id guard now rejects; each gets its own id block instead.
+    let mut full = build(
+        [divider(0, 1), divider(400, 100)].concat(),
+        opts(1e-5, false),
+    );
     full.run(5);
     // element_voltages: [VS, R1, R2, VS, R1, R2]; R2 reads the junction.
     assert!(
@@ -1208,7 +1272,7 @@ fn two_independent_dividers_stay_independent() {
     );
 
     // Deleting one network leaves the other's solve unchanged, exactly.
-    let mut single = build(divider(0), opts(1e-5, false));
+    let mut single = build(divider(0, 1), opts(1e-5, false));
     single.run(5);
     assert_eq!(
         single.element_voltages()[2],

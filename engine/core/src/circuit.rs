@@ -368,6 +368,18 @@ impl Circuit {
                     es.posts.len()
                 ));
             }
+            // A duplicate id makes set_param/set_state/indexOf ambiguous, so
+            // reject it rather than keep only the last element under that id.
+            if let Some(&prev) = self.id_index.get(&es.id) {
+                return Err(format!(
+                    "duplicate element id {} (element {} '{}' and element {} '{}')",
+                    es.id,
+                    prev,
+                    self.elements[prev].kind(),
+                    self.elements.len(),
+                    es.kind,
+                ));
+            }
             self.id_index.insert(es.id, self.elements.len());
             self.ids.push(es.id);
             self.elements.push(elm);
