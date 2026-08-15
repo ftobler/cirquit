@@ -59,6 +59,8 @@ import { CAPACITOR_DEF } from '../model/registry/elements/capacitor';
 import { LAMP_DEF } from '../model/registry/elements/lamp';
 import { WIRE_DEF } from '../model/registry/elements/wire';
 import { TRANSMISSION_LINE_DEF } from '../model/registry/elements/transmissionLine';
+import { SCR_DEF, scrGeometry } from '../model/registry/elements/scr';
+import { TRIAC_DEF, triacGeometry } from '../model/registry/elements/triac';
 import { TOO_FAST, dotPhaseStep } from './dots';
 import {
   OUTPUT_SHOW_VOLTAGE,
@@ -2678,6 +2680,158 @@ describe('current dot direction', () => {
     // two negated steps pull the whole train toward the body contact.
     expect(Math.max(...at0)).toBeGreaterThan(15);
     expect(Math.max(...atNeg)).toBeLessThan(Math.max(...at0));
+  });
+
+  // The SCR and triac share the thyristor dot layout: one run per main
+  // terminal on that post's own current and phase, plus the gate train across
+  // both segments. Both elements get the same assertions, so one fixture
+  // parameterized by def keeps them DRY. The SCR fixture carries the gate-fix
+  // flag (SCR_GATE_FIX=1, its default), which makes it measure the axis length
+  // for the leads; the triac always does. Both land on the same geometry: lead2
+  // (58,0), p1 (0,0), p2 (100,0), gate0 (84,-26), gate1 (80,-32).
+  const thyristorCases: Array<{
+    def: { draw(g: DrawContext, e: CircuitElement): void };
+    e: CircuitElement;
+    geo: { p1: Point; p2: Point; lead2: Point; gate0: Point; gate1: Point };
+  }> = [
+    {
+      def: SCR_DEF,
+      e: { id: 1, kind: 'scr', x1: 0, y1: 0, x2: 100, y2: 0, flags: 1, params: {} },
+      geo: scrGeometry({ id: 1, kind: 'scr', x1: 0, y1: 0, x2: 100, y2: 0, flags: 1, params: {} }),
+    },
+    {
+      def: TRIAC_DEF,
+      e: { id: 1, kind: 'triac', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: {} },
+      geo: triacGeometry({
+        id: 1,
+        kind: 'triac',
+        x1: 0,
+        y1: 0,
+        x2: 100,
+        y2: 0,
+        flags: 0,
+        params: {},
+      }),
+    },
+  ];
+
+  /** Draw with explicit per-post currents and phases (the shared `drawAt`
+   *  only sets the scalar `current`). The scalar current is 0 so a test that
+   *  animates a terminal proves it runs on `postCurrents`, not on `g.current`.
+   */
+  const drawThyristor = (
+    def: { draw(g: DrawContext, e: CircuitElement): void },
+    e: CircuitElement,
+    postCurrents: number[],
+    postDotPhases: number[],
+  ): Point[] => {
+    const { ctx, rects } = dotCtx();
+    def.draw(
+      {
+        ...context(ctx, 0),
+        voltages: [0, 0, 0],
+        current: 0,
+        postCurrents,
+        postDotPhases,
+      },
+      e,
+    );
+    return dots(rects);
+  };
+
+  /** Signed distance of `p` along the `from`-`to` axis, for tracking which
+   *  way a dot train shifts between two sampled phases. */
+  const project = (p: Point, from: Point, to: Point): number => {
+    const dir = unit({ x: to.x - from.x, y: to.y - from.y });
+    return (p.x - from.x) * dir.x + (p.y - from.y) * dir.y;
+  };
+
+  it('an SCR cathode or triac MT1 run draws even when the scalar current is zero', () => {
+    // The regression the fix targets: both main-terminal runs used to animate
+    // on the scalar `g.current` (the anode/MT2 current), so a conducting
+    // cathode/MT1 with zero scalar current drew nothing at all. The fixed draw
+    // animates each post on its own current, so postCurrents[1] = +1mA puts
+    // the dots on the lead2->p2 run regardless of the scalar current.
+    for (const { def, e, geo } of thyristorCases) {
+      const pts = drawThyristor(def, e, [0, 1e-3, 0], [0, 0, 0]);
+      expect(pts.length).toBeGreaterThan(0);
+      // The run lies on the horizontal lead2->p2 segment, the cathode/MT1 lead.
+      for (const p of pts) {
+        expect(p.y).toBe(0);
+        expect(p.x).toBeGreaterThanOrEqual(geo.lead2.x);
+        expect(p.x).toBeLessThanOrEqual(geo.p2.x);
+      }
+    }
+  });
+
+  it('an SCR anode or triac MT2 run crawls from the post into the body', () => {
+    // postCurrents[0] = -ia/-i2 (current entering the device) drives the phase
+    // down each frame, so the train moves from the post end back to the body:
+    // the leading dot's projection on the lead2->p1 axis shrinks between phase
+    // 0 and phase -2, the mirror of the transistor collector test above.
+    for (const { def, e, geo } of thyristorCases) {
+      const draw = (phase: number): number[] =>
+        drawThyristor(def, e, [-1e-3, 0, 0], [phase, 0, 0]).map((p) =>
+          project(p, geo.lead2, geo.p1),
+        );
+      const at0 = draw(0);
+      const atNeg = draw(-2);
+      // At phase 0 the leading dot sits near the post (48 of the 58 units);
+      // two negated steps pull the whole train toward the body.
+      expect(Math.max(...at0)).toBeGreaterThan(40);
+      expect(Math.max(...atNeg)).toBeLessThan(Math.max(...at0));
+    }
+  });
+
+  it('an SCR cathode or triac MT1 run crawls from the body toward the post', () => {
+    // postCurrents[1] = +ic/+i1 (current leaving the device) drives the phase
+    // up, so the train moves from the body toward the post: the leading dot's
+    // projection on the lead2->p2 axis grows between phase 0 and phase 2.
+    for (const { def, e, geo } of thyristorCases) {
+      const draw = (phase: number): number[] =>
+        drawThyristor(def, e, [0, 1e-3, 0], [0, phase, 0]).map((p) =>
+          project(p, geo.lead2, geo.p2),
+        );
+      const at0 = draw(0);
+      const at2 = draw(2);
+      // At phase 0 the leading dot sits 32 units along the 42-unit run; two
+      // positive steps push the whole train toward the post.
+      expect(Math.max(...at0)).toBeGreaterThan(25);
+      expect(Math.max(...at2)).toBeGreaterThan(Math.max(...at0));
+    }
+  });
+
+  it('an SCR or triac gate draws one continuous train across both segments', () => {
+    // postCurrents[2] = -ig (current entering at the gate post) drives the
+    // phase down, so the train crawls from the gate post toward the body. The
+    // two segments chain into one run: the first starts at the corner, so at
+    // phase 0 its head dot sits on gate0, and the second segment's phase is
+    // the first's offset by the first segment's length (dotPhaseAfter), which
+    // keeps the spacing continuous across the corner instead of restarting
+    // the train at lead2.
+    for (const { def, e, geo } of thyristorCases) {
+      const pts = drawThyristor(def, e, [0, 0, -1e-3], [0, 0, 0]);
+      // The boundary dot: the first segment (gate0->gate1) starts at the
+      // corner, so its head lands exactly on gate0 at phase 0.
+      expect(hasDot(pts, geo.gate0)).toBe(true);
+      // The chained second segment (lead2->gate0) does not restart at the
+      // body, and the train still reaches both segments.
+      expect(hasDot(pts, geo.lead2)).toBe(false);
+      expect(pts.length).toBeGreaterThan(1);
+      // With no gate current the gate draws nothing at all.
+      expect(drawThyristor(def, e, [0, 0, 0], [0, 0, 0])).toHaveLength(0);
+    }
+  });
+
+  it('a degenerate SCR gate (too short for a lead) draws no stray origin run', () => {
+    // A span too short for a gate lead makes scrGeometry return the (0,0)
+    // sentinel for both gate points (scr.ts:56-60). The dot runs must skip it,
+    // or currentDotsFrom(lead2, gate0, ...) would smear dots from the origin
+    // into the body. The guard keeps the sentinel-gate deviation from
+    // regressing into stray dots.
+    const short = { id: 1, kind: 'scr', x1: 0, y1: 0, x2: 20, y2: 0, flags: 1, params: {} };
+    expect(scrGeometry(short).gate0).toEqual({ x: 0, y: 0 });
+    expect(drawThyristor(SCR_DEF, short, [0, 0, -1e-3], [0, 0, 0])).toHaveLength(0);
   });
 });
 

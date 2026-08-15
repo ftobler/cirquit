@@ -1,5 +1,6 @@
 import {
-  currentDots,
+  currentDotsFrom,
+  dotPhaseAfter,
   endpoints,
   interp,
   interp2Precise,
@@ -21,7 +22,7 @@ function snapGrid(x: number): number {
   return Math.floor((x + GRID_SIZE / 2 - 1) / GRID_SIZE) * GRID_SIZE;
 }
 
-interface ScrGeometry {
+export interface ScrGeometry {
   p1: Point;
   p2: Point;
   lead1: Point;
@@ -35,7 +36,7 @@ interface ScrGeometry {
  *  end at `dir` times the grid step, and snaps the gate post onto the grid,
  *  so the gate lead is always grid-aligned and a wire dropped on it meets
  *  the post the file format promises. */
-function scrGeometry(e: CircuitElement): ScrGeometry {
+export function scrGeometry(e: CircuitElement): ScrGeometry {
   const [p1, p2raw] = endpoints(e);
   const dx = p2raw.x - p1.x;
   const dy = p2raw.y - p1.y;
@@ -90,8 +91,29 @@ function drawScr(g: DrawContext, e: CircuitElement): void {
   const gateColor = voltageColor(g, g.voltages[2]);
   lead(g, lead2, gate0, gateColor);
   lead(g, gate0, gate1, gateColor);
-  currentDots(g, p1, lead2, g.current);
-  currentDots(g, p2, lead2, g.current);
+
+  // One dot run per terminal on that post's own current and phase (SCRElm.java:
+  // 170-178). `postCurrents[i]` is the engine's `current_into_node(i)`, which
+  // is negative at the conducting anode and positive at the conducting
+  // cathode, so the anode train crawls post to body and the cathode's crawls
+  // body to post, each at its own speed; the gate pulse rides on post 2.
+  currentDotsFrom(g, lead2, p1, g.postCurrents[0], g.postDotPhases[0]);
+  currentDotsFrom(g, lead2, p2, g.postCurrents[1], g.postDotPhases[1]);
+  // The gate is one continuous train across both segments, the second run
+  // phase-offset by the first segment's length so the dots keep their spacing
+  // across the corner (SCRElm.java:176-178). Skipped on the degenerate case:
+  // a span too short for a gate lead leaves gate0 at the (0,0) sentinel, and
+  // the run would smear dots from the origin into the body.
+  if (gate0.x !== 0 || gate0.y !== 0) {
+    currentDotsFrom(g, gate0, gate1, g.postCurrents[2], g.postDotPhases[2]);
+    currentDotsFrom(
+      g,
+      lead2,
+      gate0,
+      g.postCurrents[2],
+      dotPhaseAfter(g.postDotPhases[2], Math.hypot(gate1.x - gate0.x, gate1.y - gate0.y)),
+    );
+  }
 }
 
 export const SCR_DEF: ElementDef = {
