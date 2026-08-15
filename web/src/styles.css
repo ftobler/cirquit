@@ -454,8 +454,18 @@ button.active,
   border-radius: var(--md-shape-xs);
 }
 
-.dropdown-menu summary:hover {
-  background: var(--hover);
+/* The menu rows sit on #1e1e1e, lighter than the panel, so the shared
+   `--hover` wash derived from the panel is nearly invisible there. Give the
+   dropdown its own state layers mixed over the menu background: hover raises
+   a tier, press dips one tier deeper. */
+.dropdown-menu summary:hover,
+.dropdown-menu .menu-item:hover {
+  background: color-mix(in srgb, var(--text) 14%, #1e1e1e);
+}
+
+.dropdown-menu summary:active,
+.dropdown-menu .menu-item:active {
+  background: color-mix(in srgb, var(--text) 20%, #1e1e1e);
 }
 
 .library-search {
