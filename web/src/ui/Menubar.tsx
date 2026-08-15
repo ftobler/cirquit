@@ -38,7 +38,10 @@ function MenuItem({ label, shortcut, disabled, disabledTitle, title, onClick, de
   );
 }
 
-/** A checkbox-style menu row: the two Options rows this plan owns. */
+/** A checkbox-style menu row: the two Options rows this plan owns. The check
+ *  renders in the fixed 24 px leading slot (`.menu-check`), the MD3
+ *  menu-with-selection-control pattern, so the icon column lines up across
+ *  the whole menu. */
 function CheckItem({ label, checked, onClick }: { label: string; checked: boolean; onClick: () => void }) {
   return (
     <button
@@ -48,7 +51,9 @@ function CheckItem({ label, checked, onClick }: { label: string; checked: boolea
       aria-checked={checked}
       onClick={onClick}
     >
-      <span className="menu-check">{checked ? '✓' : ''}</span>
+      <span className="menu-check" aria-hidden="true">
+        {checked ? <span className="material-icons">check</span> : null}
+      </span>
       <span>{label}</span>
     </button>
   );

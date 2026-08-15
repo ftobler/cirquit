@@ -421,16 +421,25 @@ button.active,
   margin: 4px 6px;
 }
 
-/* A checkbox-style menu row: the Options rows that toggle a setting. */
+/* A checkbox-style menu row: the Options rows that toggle a setting. The
+   checkmark lives in a fixed 24 px leading slot, so every row in the menu
+   lines its selection icon up in the same column instead of the glyph
+   floating inline with the label. */
 .check-item {
   justify-content: flex-start;
   gap: 8px;
 }
 
 .check-item .menu-check {
-  display: inline-block;
-  width: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  flex: none;
   text-align: center;
+  color: var(--md-primary);
+  font-size: 20px;
+  line-height: 1;
 }
 
 /* ---- dialogs ---- */
