@@ -30,7 +30,7 @@ import { average, dutyCycle, estimateFrequency, maxValue, minValue, rms } from '
 import { buildCsv } from './csv';
 import { tracePolyline } from './trace';
 import { drawInfo, type InfoLine } from './info';
-import { drawFFT } from './spectrum';
+import { drawFFT, drawPhaseBand } from './spectrum';
 
 export const UNIT: Record<ScopeValue, string> = {
   voltage: 'V',
@@ -595,11 +595,52 @@ function drawCursor(
 /** Offscreen persistence canvases for X-Y mode, keyed by scope id. The locus
  *  is drawn into one and faded over time, so slow signals leave a trail
  *  (ScopePlot2d.java:191-221). */
-const xyPersistence = new Map<number, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D | null; w: number; h: number }>();
+const xyPersistence = new Map<
+  number,
+  { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D | null; w: number; h: number; lastTrailSimTime: number }
+>();
 
 /** Drops a scope's X-Y persistence canvas (called when a scope is removed). */
 export function clearXYPersistence(id: number): void {
   xyPersistence.delete(id);
+}
+
+/** Logarithmic trail-persistence slider mapping (ScopePropertiesDialog.java:
+ *  763-776): slider 0 = 0 timesteps (the default fade); slider n ->
+ *  round(10^(n/10)) timesteps. */
+export function trailSliderToSteps(v: number): number {
+  if (v <= 0) return 0;
+  return Math.round(Math.pow(10, v / 10));
+}
+
+/** The slider position for a persistence in timesteps, the inverse of
+ *  `trailSliderToSteps` (ScopePropertiesDialog.java:767-770). */
+export function trailStepsToSlider(steps: number): number {
+  if (steps <= 0) return 0;
+  return Math.round(Math.log10(steps) * 10);
+}
+
+/** The X-Y persistence fade alpha for one frame, the port of the fade in
+ *  ScopePlot2d.draw (ScopePlot2d.java:191-221). A zero persistence keeps the
+ *  legacy hard-coded 2% fade; a positive persistence fades exponentially with
+ *  time constant `trailPersistence * timeStep` seconds, and the sub-pixel
+ *  guard (alpha below 3/255) holds the last-trail time back so a slow trace
+ *  keeps fading instead of stalling on an 8-bit canvas. Returns the alpha and
+ *  the next last-trail time, which drawXY stores per scope. */
+export function trailFadeAlpha(
+  trailPersistence: number,
+  timeStep: number,
+  simTime: number,
+  lastTrailSimTime: number,
+): { alpha: number; lastTrailSimTime: number } {
+  if (trailPersistence <= 0) return { alpha: 0.02, lastTrailSimTime };
+  if (lastTrailSimTime < 0 || simTime < lastTrailSimTime) lastTrailSimTime = simTime;
+  const elapsed = simTime - lastTrailSimTime;
+  const timeConst = trailPersistence * timeStep;
+  let alpha = 1.0 - Math.exp(-elapsed / timeConst);
+  if (alpha >= 3 / 255) lastTrailSimTime = simTime;
+  else alpha = 0;
+  return { alpha, lastTrailSimTime };
 }
 
 /** Draws the X-Y locus from the recent-sample rings (ScopePlot2d.java). */
@@ -609,6 +650,8 @@ function drawXY(
   scope: Scope,
   w: number,
   h: number,
+  simTime: number,
+  timeStep: number,
 ): void {
   const plots = scope.plots
     .filter(isDrawable)
@@ -653,14 +696,21 @@ function drawXY(
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
-    entry = { canvas, ctx: canvas.getContext('2d'), w, h };
+    entry = { canvas, ctx: canvas.getContext('2d'), w, h, lastTrailSimTime: -1 };
     xyPersistence.set(scope.id, entry);
   }
   const pctx = entry.ctx;
   if (!pctx) return;
-  // Fade the previous trace by repainting the background with low alpha.
-  pctx.fillStyle = 'rgba(13, 17, 23, 0.02)';
-  pctx.fillRect(0, 0, w, h);
+  // Fade the previous trace by repainting the background with the trail alpha:
+  // zero persistence keeps the legacy hard-coded fade, a positive one fades
+  // exponentially with time constant trailPersistence * timeStep
+  // (ScopePlot2d.java:191-221).
+  const fade = trailFadeAlpha(scope.trailPersistence, timeStep, simTime, entry.lastTrailSimTime);
+  entry.lastTrailSimTime = fade.lastTrailSimTime;
+  if (fade.alpha > 0) {
+    pctx.fillStyle = `rgba(13, 17, 23, ${fade.alpha})`;
+    pctx.fillRect(0, 0, w, h);
+  }
   pctx.strokeStyle = '#ffffff';
   pctx.lineWidth = 1;
   pctx.beginPath();
@@ -803,7 +853,7 @@ export function drawScope(
   }
 
   if (scope.plotXY) {
-    drawXY(ctx, engine, scope, w, h);
+    drawXY(ctx, engine, scope, w, h, simTime, timeStep);
     drawScopeLabel(ctx, scope, h);
     drawSettingsWheel(ctx, cursor, w, h, theme);
     return;
@@ -863,9 +913,17 @@ export function drawScope(
 
   // The FFT spectrum is an overlay drawn under the traces, which stay visible
   // (Scope.java:615-618 then 666-681).
+  const traces = states.map((s) => ({ value: s.plot.value, data: s.data }));
   if (scope.fftPlot) {
-    const firstData = engine.scopeData(states[0].index);
-    drawFFT(ctx, scope, firstData, firstData.length / 2, w, h, speed, timeStep, cursor, decimalDigits);
+    drawFFT(ctx, scope, traces, w, h, speed, timeStep, cursor, decimalDigits);
+  }
+  // The per-bin phase band is its own overlay, drawn whenever Show Phase
+  // Angle is on and independent of the spectrum itself: upstream calls
+  // drawPhaseAngle from ScopeOverlays.draw on every frame
+  // (ScopeOverlays.java:218-219), and the FFT it needs is computed from the
+  // trace snapshots, not from the spectrum state.
+  if (scope.showPhaseAngle) {
+    drawPhaseBand(ctx, traces, w, h);
   }
   // Traces underneath: current first, voltage on top (Scope.java:666-681).
   for (const s of [...states].reverse()) {

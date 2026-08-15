@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Scope, ScopePlot, SimEngine } from '../engine/simulator';
 import { makeTheme } from '../render/draw';
+import { PHASE_COLOR } from './spectrum';
 import {
   DIVERGED_CAPTION,
   divergedCaption,
   drawScope,
   emptyCursor,
   isDrawable,
+  trailFadeAlpha,
+  trailSliderToSteps,
+  trailStepsToSlider,
   triggerTimeAnchor,
   visiblePlotsOf,
   type ScopeCursor,
@@ -34,6 +38,8 @@ const scopeOf = (plots: ScopePlot[], overrides: Partial<Scope> = {}): Scope => (
   fftPlot: false,
   logSpectrum: false,
   plotXY: false,
+  showPhaseAngle: false,
+  trailPersistence: 0,
   showElmInfo: false,
   showI: true,
   showV: true,
@@ -298,5 +304,105 @@ describe('drawScope settings wheel', () => {
   it('skips the wheel when the canvas is too small', () => {
     const { ctx } = strokeColorsOf(engine, scope, 80, 80, emptyCursor());
     expect(wheelDrawn(ctx, 80)).toBe(false);
+  });
+});
+
+/** An engine answering two traces (voltage at index 0, current at index 1)
+ *  with fixed snapshot data, enough for the FFT phase overlay. */
+const twoTraceEngine = (vData: number[], iData: number[]): SimEngine =>
+  ({
+    scopeIndexOf: (id: number) => (id === 1 ? 0 : 1),
+    scopeData: (index: number) =>
+      index === 0 ? new Float32Array(vData) : new Float32Array(iData),
+    scopeDiverged: () => false,
+  }) as unknown as SimEngine;
+
+describe('drawScope phase overlay', () => {
+  const v = [1, 1, 2, 2, 3, 3, 4, 4];
+  const i = [1, 1, 2, 2, 3, 3, 4, 4];
+
+  it('draws phase lines when showPhaseAngle is on and both a V and an I plot exist', () => {
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], {
+      fftPlot: true,
+      showPhaseAngle: true,
+    });
+    const { colors } = strokeColorsOf(twoTraceEngine(v, i), scope, 200, 120, emptyCursor());
+    expect(colors).toContain(PHASE_COLOR);
+  });
+
+  it('draws phase lines with the spectrum off, like upstream drawPhaseAngle on every frame', () => {
+    // The phase band is independent of the Show Spectrum box: upstream calls
+    // drawPhaseAngle from ScopeOverlays.draw unconditionally
+    // (ScopeOverlays.java:218-219).
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], {
+      showPhaseAngle: true,
+    });
+    const { colors } = strokeColorsOf(twoTraceEngine(v, i), scope, 200, 120, emptyCursor());
+    expect(colors).toContain(PHASE_COLOR);
+  });
+
+  it('draws no phase lines with showPhaseAngle off', () => {
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], { fftPlot: true });
+    const { colors } = strokeColorsOf(twoTraceEngine(v, i), scope, 200, 120, emptyCursor());
+    expect(colors).not.toContain(PHASE_COLOR);
+  });
+
+  it('draws no phase lines when only one of the two plots exists', () => {
+    const scope = scopeOf([plot(1, 'voltage')], { fftPlot: true, showPhaseAngle: true });
+    const { colors } = strokeColorsOf(twoTraceEngine(v, i), scope, 200, 120, emptyCursor());
+    expect(colors).not.toContain(PHASE_COLOR);
+  });
+
+  it('draws no phase lines for a near-zero signal, the 1e-8 fundamental guard', () => {
+    // All-zero snapshots give an all-zero spectrum, so the fundamental
+    // magnitude scan bails and no noise phase lines paint
+    // (ScopeFFT.java:149-150).
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], { showPhaseAngle: true });
+    const { colors } = strokeColorsOf(
+      twoTraceEngine([0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0]),
+      scope,
+      200,
+      120,
+      emptyCursor(),
+    );
+    expect(colors).not.toContain(PHASE_COLOR);
+  });
+});
+
+describe('trail persistence', () => {
+  it('trailSliderToSteps maps the slider logarithmically', () => {
+    expect(trailSliderToSteps(0)).toBe(0);
+    expect(trailSliderToSteps(-3)).toBe(0);
+    expect(trailSliderToSteps(10)).toBe(10);
+    expect(trailSliderToSteps(20)).toBe(100);
+  });
+
+  it('trailStepsToSlider inverts the mapping', () => {
+    expect(trailStepsToSlider(0)).toBe(0);
+    expect(trailStepsToSlider(-5)).toBe(0);
+    expect(trailStepsToSlider(10)).toBe(10);
+    expect(trailStepsToSlider(100)).toBe(20);
+    expect(trailStepsToSlider(trailSliderToSteps(15))).toBe(15);
+  });
+
+  it('a zero persistence keeps the current hard-coded fade', () => {
+    expect(trailFadeAlpha(0, 5e-6, 42, -1)).toEqual({ alpha: 0.02, lastTrailSimTime: -1 });
+    expect(trailFadeAlpha(0, 5e-6, 42, 40)).toEqual({ alpha: 0.02, lastTrailSimTime: 40 });
+  });
+
+  it('a positive persistence fades with timeConst = persistence * timeStep', () => {
+    // elapsed == timeConst: alpha = 1 - 1/e.
+    const r = trailFadeAlpha(10, 1e-3, 0.01, 0);
+    expect(r.alpha).toBeCloseTo(1 - Math.exp(-1), 9);
+    // The fade is visible, so the last-trail time advances to simTime.
+    expect(r.lastTrailSimTime).toBe(0.01);
+  });
+
+  it('holds the last-trail time back while the fade is sub-pixel', () => {
+    // elapsed 1e-6 s against timeConst 0.01 s: alpha ~ 1e-4, below 3/255, so
+    // the time stays put and the canvas is not repainted.
+    const r = trailFadeAlpha(10, 1e-3, 0.000001, 0);
+    expect(r.alpha).toBe(0);
+    expect(r.lastTrailSimTime).toBe(0);
   });
 });

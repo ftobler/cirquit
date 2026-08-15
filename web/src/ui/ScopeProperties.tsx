@@ -8,9 +8,10 @@
 
 import { useEffect, useState } from 'react';
 import type { ScopeValue } from '../engine/simulator';
-import { seedManScale, barToSpeed, speedToBar, gridStepX, scaleStateFor } from '../scope/scale';
+import { seedManScale, barToSpeed, speedToBar, gridStepX, scaleStateFor, nextHighestScale, nextLowestScale } from '../scope/scale';
 import { formatValue } from '../render/draw';
-import { MAN_DIVISIONS } from '../scope/draw';
+import { MAN_DIVISIONS, trailSliderToSteps, trailStepsToSlider, UNIT } from '../scope/draw';
+import { saveScopeDefaults } from '../state/scopeDefaults';
 import { useStore } from '../state/store';
 import { useFocusTrap } from './useFocusTrap';
 
@@ -23,6 +24,7 @@ type FlagKey = Parameters<ReturnType<typeof useStore.getState>['setScopeFlags']>
 
 export function ScopeProperties({ scopeId, onClose }: Props) {
   const scope = useStore((s) => s.scopes.find((x) => x.id === scopeId));
+  const timeStep = useStore((s) => s.settings.timeStep);
   const [labelText, setLabelText] = useState(scope?.label ?? '');
   const [levelText, setLevelText] = useState(String(scope?.trigger.level ?? 0));
   // Modal focus handling like the Dialog shell: Trap Tab, return focus to the
@@ -65,6 +67,10 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
 
   const setSpeedBar = (bar: number) => useStore.getState().setScopeSpeed(scope.id, barToSpeed(bar));
 
+  // Trail persistence is stored in sim timesteps; the slider maps logarithmically
+  // (trailSliderToSteps/trailStepsToSlider, ScopePropertiesDialog.java:763-776).
+  const setTrailBar = (bar: number) => setFlags({ trailPersistence: trailSliderToSteps(bar) });
+
   const setManScaleText = (plotId: number, text: string) => {
     const v = Number(text);
     if (Number.isFinite(v) && v > 0) useStore.getState().setPlotManScale(plotId, v);
@@ -100,17 +106,53 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
 
   // The Plots boxes mirror upstream's ScopeCheckBox states
   // (ScopePropertiesDialog.java:801-804): checked when the show flag is on and
-  // a matching plot exists. Toggling on with none present adds one.
-  const showBox = (label: string, value: 'voltage' | 'current') => (
-    <label key={value}>
-      <input
-        type="checkbox"
-        checked={(value === 'voltage' ? scope.showV : scope.showI) && scope.plots.some((p) => p.value === value)}
-        onChange={(e) => useStore.getState().setScopeShowValue(scope.id, value, e.target.checked)}
-      />
-      {label}
-    </label>
-  );
+  // a matching plot exists. Toggling on with none present adds one. A value
+  // with a flag (voltage/current) routes through setScopeShowValue; any other
+  // value (power, charge) has no flag and toggles the plot itself, upstream's
+  // showPower/showPlotValue (Scope.java:145-165), via togglePlot.
+  const showBox = (label: string, value: ScopeValue) => {
+    // A null-element plot is preserved via its raw line only and can never be
+    // toggled away, so the checked state follows what togglePlot would remove
+    // (elementId !== null), keeping the box and the panel in step.
+    const hasPlot = scope.plots.some((p) => p.value === value && p.elementId !== null);
+    if (value === 'voltage' || value === 'current') {
+      const show = value === 'voltage' ? scope.showV : scope.showI;
+      return (
+        <label key={value}>
+          <input
+            type="checkbox"
+            checked={show && hasPlot}
+            onChange={(e) => useStore.getState().setScopeShowValue(scope.id, value, e.target.checked)}
+          />
+          {label}
+        </label>
+      );
+    }
+    return (
+      <label key={value}>
+        <input
+          type="checkbox"
+          checked={hasPlot}
+          onChange={() => useStore.getState().togglePlot(scope.id, value)}
+        />
+        {label}
+      </label>
+    );
+  };
+
+  /** The manual-scale stepper for one plot: up steps to the next 1-2-5-10
+   *  checkpoint, down to the previous one (ScopePropertiesDialog.java:115-166). */
+  const stepManScale = (plotId: number, dir: 1 | -1) => {
+    const plot = scope.plots.find((p) => p.id === plotId);
+    if (!plot) return;
+    // The draw's fallback when no user scale is set; manual-mode entry seeds
+    // every plot, so this only covers a loaded manual-mode line.
+    const current = plot.manScale ?? seedManScale(5, scope.manDivisions || MAN_DIVISIONS);
+    const next = dir > 0 ? nextHighestScale(current) : nextLowestScale(current);
+    if (next > 0 && next !== current) useStore.getState().setPlotManScale(plotId, next);
+  };
+
+  const unitOf = (value: ScopeValue | null): string => (value === null ? '?' : UNIT[value]);
 
   const channelLetter = (value: ScopeValue | null) =>
     value === 'voltage' ? 'V' : value === 'current' ? 'I' : value === 'power' ? 'P' : value === 'charge' ? 'Q' : '?';
@@ -183,14 +225,25 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
             </div>
             {scope.manualScale && (
               <div className="row">
+                <span>{`Max Value (${unitOf(plot.value)})`}</span>
+                <button type="button" aria-label="Decrease max value" onClick={() => stepManScale(plot.id, -1)}>
+                  &#9660;
+                </button>
                 <input
                   className="scalebox"
                   type="text"
-                  aria-label="Scale per division"
+                  aria-label="Max value per division"
                   defaultValue={plot.manScale?.toString() ?? ''}
                   onBlur={(e) => setManScaleText(plot.id, e.target.value)}
                 />
+                <button type="button" aria-label="Increase max value" onClick={() => stepManScale(plot.id, 1)}>
+                  &#9650;
+                </button>
                 <span>/div</span>
+              </div>
+            )}
+            {scope.manualScale && (
+              <div className="row">
                 <input
                   type="range"
                   min={-200}
@@ -275,16 +328,8 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
         <div className="row row-wrap">
           {showBox('Show Voltage', 'voltage')}
           {showBox('Show Current', 'current')}
-          {isCapacitor && (
-            <label key="charge">
-              <input
-                type="checkbox"
-                checked={scope.plots.some((p) => p.value === 'charge')}
-                onChange={() => useStore.getState().togglePlot(scope.id, 'charge')}
-              />
-              Show Charge
-            </label>
-          )}
+          {showBox('Show Power Consumed', 'power')}
+          {isCapacitor && showBox('Show Charge', 'charge')}
           {rows('Scale', scope.showScale, 'showScale')}
           {rows('Max', scope.showMax, 'showMax')}
           {rows('Min', scope.showMin, 'showMin')}
@@ -293,10 +338,31 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
           {rows('RMS', scope.showRMS, 'showRMS')}
           {rows('Average', scope.showAverage, 'showAverage')}
           {rows('Duty Cycle', scope.showDutyCycle, 'showDutyCycle')}
+          {rows('Show Phase Angle', scope.showPhaseAngle, 'showPhaseAngle')}
           {rows('Extended Info', scope.showElmInfo, 'showElmInfo')}
           {rows('Spectrum', scope.fftPlot, 'fftPlot')}
           {rows('Log Spectrum', scope.logSpectrum, 'logSpectrum')}
           {rows('X-Y', scope.plotXY, 'plotXY')}
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>X-Y Plots</legend>
+        <div className="row">
+          <label htmlFor="trail">Trail Persistence (time steps)</label>
+          <input
+            id="trail"
+            type="range"
+            min={0}
+            max={61}
+            value={trailStepsToSlider(scope.trailPersistence)}
+            onChange={(e) => setTrailBar(Number(e.target.value))}
+          />
+          <span>
+            {scope.trailPersistence <= 0
+              ? 'default'
+              : formatValue(scope.trailPersistence * timeStep, 's')}
+          </span>
         </div>
       </fieldset>
 
@@ -313,6 +379,9 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
       </fieldset>
 
       <div className="scope-props-actions">
+        <button type="button" onClick={() => saveScopeDefaults(scope)}>
+          Save as Default
+        </button>
         <button type="button" onClick={onClose}>
           Close
         </button>

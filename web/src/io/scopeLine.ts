@@ -55,6 +55,7 @@ export interface DecodedScopeLine {
   fftPlot: boolean;
   logSpectrum: boolean;
   plotXY: boolean;
+  showPhaseAngle: boolean;
   manualScale: boolean;
   maxScale: boolean;
   /** The manual-mode division count, 8 when the line carries none
@@ -88,6 +89,8 @@ const FLAG_LOG_SPECTRUM = 65536;
 const FLAG_SHOW_AVERAGE = 1 << 17;
 const FLAG_SHOW_ELM_INFO = 1 << 20;
 const FLAG_SHOW_P2P = 1 << 22;
+/** Show Phase Angle: the FFT per-bin phase overlay (ScopeFFT.java:9). */
+const FLAG_SHOW_PHASE_ANGLE = 1 << 23;
 /** FLAG_YELM / FLAG_IVALUE, old-style only: a y-element index and an extra
  *  value token that sit before the label (ScopeSerializer.java:264-274). */
 const FLAG_YELM = 32;
@@ -101,6 +104,89 @@ const FLAG_AC = 1;
  *  centred, upstream's ScopePlot constructor (ScopePlot.java:62-66). */
 function defaultManVPosition(value: ScopeValue | null): number {
   return value === 'power' || value === 'charge' ? -100 : 0;
+}
+
+/** The full flag word a scope's display state encodes, the port of upstream's
+ *  `getFlags` (ScopeSerializer.java:25-47). Shared by the o-line encoder and
+ *  the save-as-default storage, so the two can never drift. The per-plot bits
+ *  (FLAG_PLOTS and friends) depend only on the scope state, so a UI-created
+ *  scope and a loaded one encode identically. */
+export function scopeDisplayFlags(scope: Scope): number {
+  const anyPlotFlags = scope.plots.some((p) => p.acCoupled);
+  const manual = scope.manualScale;
+  return (
+    (scope.showI ? FLAG_SHOW_I : 0) |
+    (scope.showV ? FLAG_SHOW_V : 0) |
+    (scope.showMax ? 0 : FLAG_SHOW_MAX_OFF) |
+    (scope.showFreq ? FLAG_SHOW_FREQ : 0) |
+    (scope.manualScale ? FLAG_MAN_SCALE : 0) |
+    // plotXY writes both of upstream's 2D bits: plot2d.enabled and plotXY
+    // (ScopeSerializer.java:31-32).
+    (scope.plotXY ? FLAG_PLOT2D | 128 : 0) |
+    (scope.showMin ? FLAG_SHOW_MIN : 0) |
+    (scope.showScale ? FLAG_SHOW_SCALE : 0) |
+    (scope.fftPlot ? FLAG_FFT : 0) |
+    (scope.maxScale ? FLAG_MAX_SCALE : 0) |
+    (scope.showRMS ? FLAG_SHOW_RMS : 0) |
+    (scope.showDutyCycle ? FLAG_SHOW_DUTY : 0) |
+    (scope.logSpectrum ? FLAG_LOG_SPECTRUM : 0) |
+    (scope.showAverage ? FLAG_SHOW_AVERAGE : 0) |
+    (scope.showP2P ? FLAG_SHOW_P2P : 0) |
+    (scope.showElmInfo ? FLAG_SHOW_ELM_INFO : 0) |
+    (scope.showPhaseAngle ? FLAG_SHOW_PHASE_ANGLE : 0) |
+    FLAG_PLOTS |
+    (anyPlotFlags ? FLAG_PERPLOTFLAGS : 0) |
+    (manual ? FLAG_PERPLOT_MAN_SCALE : 0) |
+    (manual ? FLAG_DIVISIONS : 0)
+  );
+}
+
+/** The display fields a flag word encodes, the inverse of the flag half of
+ *  `scopeDisplayFlags` and of upstream's `setFlags` (ScopeSerializer.java:49-68).
+ *  The scope-defaults loader uses it: the stored blob carries only the flag
+ *  word, never the plot list, so the per-plot bits are simply not read here. */
+export function scopeFieldsFromFlags(flags: number): Pick<
+  DecodedScopeLine,
+  | 'showI'
+  | 'showV'
+  | 'showMax'
+  | 'showMin'
+  | 'showScale'
+  | 'showP2P'
+  | 'showFreq'
+  | 'showRMS'
+  | 'showAverage'
+  | 'showDutyCycle'
+  | 'fftPlot'
+  | 'logSpectrum'
+  | 'plotXY'
+  | 'showPhaseAngle'
+  | 'manualScale'
+  | 'maxScale'
+  | 'showElmInfo'
+> {
+  return {
+    showI: (flags & FLAG_SHOW_I) !== 0,
+    showV: (flags & FLAG_SHOW_V) !== 0,
+    // Bit 4 is inverted: showMax was always on before the bit existed.
+    showMax: (flags & FLAG_SHOW_MAX_OFF) === 0,
+    showMin: (flags & FLAG_SHOW_MIN) !== 0,
+    showScale: (flags & FLAG_SHOW_SCALE) !== 0,
+    showP2P: (flags & FLAG_SHOW_P2P) !== 0,
+    showFreq: (flags & FLAG_SHOW_FREQ) !== 0,
+    showRMS: (flags & FLAG_SHOW_RMS) !== 0,
+    showAverage: (flags & FLAG_SHOW_AVERAGE) !== 0,
+    showDutyCycle: (flags & FLAG_SHOW_DUTY) !== 0,
+    fftPlot: (flags & FLAG_FFT) !== 0,
+    logSpectrum: (flags & FLAG_LOG_SPECTRUM) !== 0,
+    // Upstream's plot2d.enabled; the corpus sets bit 64 for X-Y, with or
+    // without the separate plotXY bit 128 (ScopeSerializer.java:55-56).
+    plotXY: (flags & FLAG_PLOT2D) !== 0,
+    showPhaseAngle: (flags & FLAG_SHOW_PHASE_ANGLE) !== 0,
+    manualScale: (flags & FLAG_MAN_SCALE) !== 0,
+    maxScale: (flags & FLAG_MAX_SCALE) !== 0,
+    showElmInfo: (flags & FLAG_SHOW_ELM_INFO) !== 0,
+  };
 }
 
 /** The stacking column a position token maps to. A missing or negative token
@@ -190,24 +276,7 @@ export function decodeScopeLine(
   return {
     speed: Number(raw[0]) || 64,
     position: positionFromToken(Number(raw[5]), positionFallback),
-    showI: (flags & FLAG_SHOW_I) !== 0,
-    showV: (flags & FLAG_SHOW_V) !== 0,
-    // Bit 4 is inverted: showMax was always on before the bit existed.
-    showMax: (flags & FLAG_SHOW_MAX_OFF) === 0,
-    showMin: (flags & FLAG_SHOW_MIN) !== 0,
-    showScale: (flags & FLAG_SHOW_SCALE) !== 0,
-    showP2P: (flags & FLAG_SHOW_P2P) !== 0,
-    showFreq: (flags & FLAG_SHOW_FREQ) !== 0,
-    showRMS: (flags & FLAG_SHOW_RMS) !== 0,
-    showAverage: (flags & FLAG_SHOW_AVERAGE) !== 0,
-    showDutyCycle: (flags & FLAG_SHOW_DUTY) !== 0,
-    fftPlot: (flags & FLAG_FFT) !== 0,
-    logSpectrum: (flags & FLAG_LOG_SPECTRUM) !== 0,
-    // Upstream's plot2d.enabled; the corpus sets bit 64 for X-Y, with or
-    // without the separate plotXY bit 128 (ScopeSerializer.java:55-56).
-    plotXY: (flags & FLAG_PLOT2D) !== 0,
-    manualScale: (flags & FLAG_MAN_SCALE) !== 0,
-    maxScale: (flags & FLAG_MAX_SCALE) !== 0,
+    ...scopeFieldsFromFlags(flags),
     manDivisions,
     showElmInfo: (flags & FLAG_SHOW_ELM_INFO) !== 0,
     label: labelTokens.length > 0 ? unescapeToken(labelTokens.join(' ')) : '',
@@ -230,35 +299,9 @@ export function encodeScopeLine(
   indexOf: (elementId: number) => number | undefined,
 ): string[] {
   const first = scope.plots[0];
-  const anyPlotFlags = scope.plots.some((p) => p.acCoupled);
-  // Upstream writes the per-plot man-scale pair and the divisions token only
-  // in manual scale mode (ScopeSerializer.java:29-30, 42-43), and reads them
-  // back under the same gate. The port's manScale/manVPosition fields persist
-  // either way; the line just does not carry them in auto mode.
   const manual = scope.manualScale;
-  const flags =
-    (scope.showI ? FLAG_SHOW_I : 0) |
-    (scope.showV ? FLAG_SHOW_V : 0) |
-    (scope.showMax ? 0 : FLAG_SHOW_MAX_OFF) |
-    (scope.showFreq ? FLAG_SHOW_FREQ : 0) |
-    (scope.manualScale ? FLAG_MAN_SCALE : 0) |
-    // plotXY writes both of upstream's 2D bits: plot2d.enabled and plotXY
-    // (ScopeSerializer.java:31-32).
-    (scope.plotXY ? FLAG_PLOT2D | 128 : 0) |
-    (scope.showMin ? FLAG_SHOW_MIN : 0) |
-    (scope.showScale ? FLAG_SHOW_SCALE : 0) |
-    (scope.fftPlot ? FLAG_FFT : 0) |
-    (scope.maxScale ? FLAG_MAX_SCALE : 0) |
-    (scope.showRMS ? FLAG_SHOW_RMS : 0) |
-    (scope.showDutyCycle ? FLAG_SHOW_DUTY : 0) |
-    (scope.logSpectrum ? FLAG_LOG_SPECTRUM : 0) |
-    (scope.showAverage ? FLAG_SHOW_AVERAGE : 0) |
-    (scope.showP2P ? FLAG_SHOW_P2P : 0) |
-    (scope.showElmInfo ? FLAG_SHOW_ELM_INFO : 0) |
-    FLAG_PLOTS |
-    (anyPlotFlags ? FLAG_PERPLOTFLAGS : 0) |
-    (manual ? FLAG_PERPLOT_MAN_SCALE : 0) |
-    (manual ? FLAG_DIVISIONS : 0);
+  const flags = scopeDisplayFlags(scope);
+  const anyPlotFlags = scope.plots.some((p) => p.acCoupled);
 
   const tokens = [
     String(scope.speed),
@@ -325,6 +368,7 @@ export function scopeLineMatches(
     decoded.fftPlot === scope.fftPlot &&
     decoded.logSpectrum === scope.logSpectrum &&
     decoded.plotXY === scope.plotXY &&
+    decoded.showPhaseAngle === scope.showPhaseAngle &&
     decoded.manualScale === scope.manualScale &&
     decoded.maxScale === scope.maxScale &&
     decoded.manDivisions === scope.manDivisions &&

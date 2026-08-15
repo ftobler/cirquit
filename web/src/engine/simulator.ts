@@ -87,6 +87,16 @@ export interface Scope {
   fftPlot: boolean;
   logSpectrum: boolean;
   plotXY: boolean;
+  /** Show the per-bin phase difference between the voltage and current plots
+   *  under the FFT spectrum (ScopeFFT.drawPhaseAngle, ScopeFFT.java:114-171);
+   *  flag bit 23 on the `o` line (ScopeSerializer.java:36,67). */
+  showPhaseAngle: boolean;
+  /** The X-Y plot trail fade time constant in sim timesteps: the persistence
+   *  canvas fades with time constant `trailPersistence * timeStep` seconds
+   *  (ScopePlot2d.trailPersistence, ScopePlot2d.java:23-24). Session-only: the
+   *  text `o` line never carries it, only the XML format does
+   *  (ScopeSerializer.java:122-123). Zero keeps the legacy hard-coded fade. */
+  trailPersistence: number;
   /** Show Extended Info: draw the element's info lines on the scope
    *  (ScopeOverlays.draw, ScopeOverlays.java:216-217). */
   showElmInfo: boolean;

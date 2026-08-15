@@ -70,6 +70,7 @@ import {
 } from '../model/types';
 import type { AppState, Slider, Snapshot, ViewTransform } from './types';
 import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
+import { loadScopeDefaults } from './scopeDefaults';
 import { readRecovery } from './recovery';
 import { loadShortcutOverlay, normalizeKey, saveShortcutOverlay } from '../input/shortcuts';
 import {
@@ -319,7 +320,11 @@ function defaultTrigger(): ScopeTrigger {
  *  initialize(), which turns both on when the scope carries the matching plots
  *  (Scope.java:276-285); the port's one default cannot know the plot units, so
  *  it opts into showing them, and the scale tokens use the values the UI line
- *  has always written. */
+ *  has always written. Stored scope defaults (flags, speed, trigger level)
+ *  seed a fresh scope on top, upstream's `loadDefaults` in the Scope
+ *  constructor (Scope.java:276); the identity stays the caller's, and the
+ *  loadNetlist path re-asserts the file's speed token afterwards, exactly as
+ *  undump reads it after initialize() (ScopeSerializer.java:195). */
 function makeScope(
   id: number,
   raw: string[] | null,
@@ -327,34 +332,48 @@ function makeScope(
   speed: number,
   position: number,
 ): Scope {
+  const defaults = loadScopeDefaults();
   return {
+    ...{
+      id,
+      raw,
+      plots,
+      position,
+      speed,
+      manualScale: false,
+      maxScale: false,
+      label: '',
+      manDivisions: 8,
+      showScale: false,
+      // Upstream's default: showMax is on, everything else off (Scope.java:272-275).
+      showMax: true,
+      showMin: false,
+      showP2P: false,
+      showFreq: false,
+      showRMS: false,
+      showAverage: false,
+      showDutyCycle: false,
+      fftPlot: false,
+      logSpectrum: false,
+      plotXY: false,
+      showPhaseAngle: false,
+      trailPersistence: 0,
+      showElmInfo: false,
+      showI: true,
+      showV: true,
+      scaleV: 20,
+      scaleA: 0.05,
+      trigger: defaultTrigger(),
+    },
+    // The stored defaults override the display fields and speed, but never the
+    // caller's identity; the trigger merges only its stored level into the
+    // freeRun default.
+    ...(defaults ?? {}),
     id,
     raw,
     plots,
-    speed,
     position,
-    manualScale: false,
-    maxScale: false,
-    label: '',
-    manDivisions: 8,
-    showScale: false,
-    // Upstream's default: showMax is on, everything else off (Scope.java:272-275).
-    showMax: true,
-    showMin: false,
-    showP2P: false,
-    showFreq: false,
-    showRMS: false,
-    showAverage: false,
-    showDutyCycle: false,
-    fftPlot: false,
-    logSpectrum: false,
-    plotXY: false,
-    showElmInfo: false,
-    showI: true,
-    showV: true,
-    scaleV: 20,
-    scaleA: 0.05,
-    trigger: defaultTrigger(),
+    trigger: { ...defaultTrigger(), ...defaults?.trigger },
   };
 }
 
@@ -1689,7 +1708,13 @@ function createAppStore() {
           last = p;
           continue;
         }
-        out.push(makeScope(allocateId(), null, [p], scope.speed, base + out.length));
+        out.push({
+          // A split scope inherits the parent's speed over the stored scope
+          // defaults, exactly as Scope.separate calls setSpeed after the new
+          // Scope's initialize() ran loadDefaults (Scope.java:459-468).
+          ...makeScope(allocateId(), null, [p], scope.speed, base + out.length),
+          speed: scope.speed,
+        });
         last = p;
       }
       return { scopes: [...others, ...out], ...bumpRevision(st) };
@@ -1787,7 +1812,13 @@ function createAppStore() {
             last = p;
             continue;
           }
-          out.push(makeScope(allocateId(), null, [p], scope.speed, position++));
+          out.push({
+            // A split scope inherits the parent's speed over the stored scope
+            // defaults, exactly as Scope.separate calls setSpeed after the new
+            // Scope's initialize() ran loadDefaults (Scope.java:459-468).
+            ...makeScope(allocateId(), null, [p], scope.speed, position++),
+            speed: scope.speed,
+          });
           last = p;
         }
       }
@@ -1844,6 +1875,11 @@ function createAppStore() {
         scopes.push({
           ...makeScope(c.id, c.raw, plots, speed, decoded.position),
           ...display,
+          // Re-assert the file's speed token: makeScope applies the stored
+          // scope defaults first, and the file's own speed wins over them,
+          // exactly as undump reads the speed after initialize()
+          // (ScopeSerializer.java:195).
+          speed,
           plots: plots.map((p, i) => ({
             ...p,
             acCoupled: perPlot[i].acCoupled,

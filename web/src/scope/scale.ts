@@ -235,6 +235,33 @@ export function nextHighestScale(d: number): number {
   return gridStep(d * 1.001);
 }
 
+/** Largest 1-2-5-10 series value strictly below `d`, the down-stepper's
+ *  inverse of `nextHighestScale` (ScopePropertiesDialog downClickHandler,
+ *  ScopePropertiesDialog.java:126-134). */
+export function nextLowestScale(d: number): number {
+  if (!Number.isFinite(d) || d <= 0) return d;
+  // gridStep(d*0.999) is the smallest series value >= just-below-d, which is
+  // already the previous checkpoint unless d sits exactly on one, in which
+  // case it lands back on d and one more step down is needed.
+  const s = gridStep(d * 0.999);
+  if (s < d) return s;
+  return previousGridStep(s);
+}
+
+/** The 1-2-5-10 series value immediately below `s` (assumed a series value):
+ *  within a decade 2 falls to 1, 5 to 2 and 10 to 5, and 1 rolls into the
+ *  previous decade's 5. The `<` thresholds absorb float noise around the exact
+ *  mantissa. */
+function previousGridStep(s: number): number {
+  const k = Math.floor(Math.log10(s / 1.0001));
+  const pow = Math.pow(10, k);
+  const b = s / pow;
+  if (b < 1.5) return roundNice((5 * pow) / 10);
+  if (b < 3.5) return roundNice(1 * pow);
+  if (b < 7.5) return roundNice(2 * pow);
+  return roundNice(5 * pow);
+}
+
 /** Logarithmic speed slider: bar 0..10 maps to `2^(10 - bar)`
  *  (ScopePropertiesDialog.java:789). */
 export function barToSpeed(bar: number): number {

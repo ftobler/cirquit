@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
+import { SCOPE_DEFAULTS_STORAGE_KEY } from './scopeDefaults';
+import type { StorageLike } from './appPrefs';
 
 beforeEach(() => useStore.setState(fresh()));
 
@@ -129,6 +131,20 @@ describe('scope plot visibility (showV/showI)', () => {
     expect(s.revision).toBe(before + 1);
   });
 
+  it('togglePlot adds and removes a power plot, the Show Power box path', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    expect(scope.plots.some((p) => p.value === 'power')).toBe(false);
+    useStore.getState().togglePlot(scope.id, 'power');
+    const added = useStore.getState().scopes[0];
+    expect(added.plots.some((p) => p.value === 'power' && p.elementId === r)).toBe(true);
+    // Unchecking removes the power plot but never empties the panel.
+    useStore.getState().togglePlot(scope.id, 'power');
+    expect(useStore.getState().scopes[0].plots.some((p) => p.value === 'power')).toBe(false);
+    expect(useStore.getState().scopes[0].plots.length).toBeGreaterThan(0);
+  });
+
   it('a loaded line with showI clear keeps the current plot hidden state', () => {
     // showV only (flags 2): the line carries a current companion but the file
     // says it is not shown, so the port must remember showI is off.
@@ -195,5 +211,73 @@ describe('charge scope value', () => {
     expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(200);
     useStore.getState().setPlotManPosition(plot.id, -500);
     expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(-200);
+  });
+});
+
+describe('stored scope defaults seed a new scope', () => {
+  /** A plain-object storage standing in for the DOM localStorage, injected via
+   *  the global so makeScope's loadScopeDefaults reads it. */
+  const injectStorage = (blob: string | null): StorageLike & { restore: () => void } => {
+    const map = new Map<string, string>();
+    if (blob !== null) map.set(SCOPE_DEFAULTS_STORAGE_KEY, blob);
+    const storage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    } as StorageLike;
+    const prior = (globalThis as { localStorage?: StorageLike }).localStorage;
+    (globalThis as { localStorage?: StorageLike }).localStorage = storage;
+    return {
+      ...storage,
+      restore: () => {
+        if (prior === undefined) delete (globalThis as { localStorage?: StorageLike }).localStorage;
+        else (globalThis as { localStorage?: StorageLike }).localStorage = prior;
+      },
+    };
+  };
+
+  it('loadDefaults applies the stored flags, speed and trigger level', () => {
+    const storage = injectStorage(
+      JSON.stringify({ flags: 8392706, speed: 32, level: 2.5 }),  // 1<<23 + showV + FLAG_PLOTS
+    );
+    try {
+      const r = addResistor();
+      useStore.getState().addScope(r, 'voltage');
+      const scope = useStore.getState().scopes[0];
+      expect(scope.showPhaseAngle).toBe(true);
+      expect(scope.speed).toBe(32);
+      expect(scope.trigger.level).toBe(2.5);
+    } finally {
+      storage.restore();
+    }
+  });
+
+  it('a corrupt blob leaves the scope on its plain defaults', () => {
+    const storage = injectStorage('{not json');
+    try {
+      const r = addResistor();
+      useStore.getState().addScope(r, 'voltage');
+      const scope = useStore.getState().scopes[0];
+      expect(scope.showPhaseAngle).toBe(false);
+      expect(scope.speed).toBe(64);
+      expect(scope.trigger.level).toBe(0);
+    } finally {
+      storage.restore();
+    }
+  });
+
+  it('a loaded file keeps its own speed token over the stored default', () => {
+    const storage = injectStorage(JSON.stringify({ flags: 4098, speed: 32, level: 0 }));
+    try {
+      const NETLIST = [
+        '$ 1 0.000005 10 50 5 50 5e-11',
+        'r 0 0 16 0 0 100',
+        'o 0 256 0 4099 20 0.05 0 1',
+        '',
+      ].join('\n');
+      useStore.getState().loadNetlist(NETLIST);
+      expect(useStore.getState().scopes[0].speed).toBe(256);
+    } finally {
+      storage.restore();
+    }
   });
 });

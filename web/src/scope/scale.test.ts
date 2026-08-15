@@ -9,6 +9,7 @@ import {
   gridStepY,
   nextAxisScale,
   nextHighestScale,
+  nextLowestScale,
   nextScaleState,
   positionToOffset,
   pruneScaleStates,
@@ -134,9 +135,32 @@ describe('calcGridParams zero placement', () => {
 });
 
 describe('manual scale helpers', () => {
+  it('nextHighestScale walks the 1-2-5-10 checkpoints', () => {
+    expect(nextHighestScale(1)).toBe(2);
+    expect(nextHighestScale(1.2)).toBe(2);
+    expect(nextHighestScale(2)).toBe(5);
+    expect(nextHighestScale(3)).toBe(5);
+    expect(nextHighestScale(5)).toBe(10);
+    expect(nextHighestScale(10)).toBe(20);
+    expect(nextHighestScale(25)).toBe(50);
+  });
+
   it('nextHighestScale picks the next series value above the target', () => {
     expect(nextHighestScale(1.9)).toBe(2);
     expect(nextHighestScale(2.1)).toBe(5);
+  });
+
+  it('nextLowestScale picks the previous series value below the target', () => {
+    expect(nextLowestScale(2.1)).toBe(2);
+    expect(nextLowestScale(2)).toBe(1);
+    expect(nextLowestScale(1)).toBe(0.5);
+    expect(nextLowestScale(5)).toBe(2);
+    expect(nextLowestScale(10)).toBe(5);
+    expect(nextLowestScale(7.5)).toBe(5);
+    expect(nextLowestScale(0.05)).toBe(0.02);
+    // A mid value steps down to the checkpoint below it and up to the one above.
+    expect(nextLowestScale(5.5)).toBe(5);
+    expect(nextHighestScale(5)).toBe(10);
   });
 
   it('seedManScale uses the default 8 divisions', () => {

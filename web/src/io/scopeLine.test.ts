@@ -24,6 +24,7 @@ const loadedScope = (decoded: DecodedScopeLine, plots: ScopePlot[]): Scope => {
   return {
     id: 1,
     raw: null,
+    trailPersistence: 0,
     plots: plots.map((p, i) => ({
       ...p,
       acCoupled: perPlot[i].acCoupled,
@@ -287,6 +288,17 @@ describe('encodeScopeLine round-trip', () => {
     roundTrips(raw, plots, ['resistor']);
   });
 
+  it('decodes and re-encodes the showPhaseAngle flag (bit 1<<23)', () => {
+    // flags 8392706 = 1<<23 + showV + FLAG_PLOTS: the phase-angle box on top
+    // of the default showV scope.
+    const raw = ['64', '0', '8392706', '20', '0.05', '0', '1'];
+    const plots = [plot(0, 'voltage')];
+    const decoded = decodeScopeLine(raw, plots, ['resistor'], 0);
+    expect(decoded.showPhaseAngle).toBe(true);
+    expect(encodeScopeLine(loadedScope(decoded, plots), () => 0)).toContain('8392706');
+    roundTrips(raw, plots, ['resistor']);
+  });
+
   it('writes upstream-shaped token streams', () => {
     // The power line decodes with manualScale on (bit 16), so the encoder
     // writes the canonical manual-mode form: FLAG_DIVISIONS (1<<21) and
@@ -327,6 +339,7 @@ describe('scopeLineMatches', () => {
     expect(scopeLineMatches({ ...loaded(), label: 'x' }, RAW, kinds, 0)).toBe(false);
     expect(scopeLineMatches({ ...loaded(), showMax: false }, RAW, kinds, 0)).toBe(false);
     expect(scopeLineMatches({ ...loaded(), manualScale: true }, RAW, kinds, 0)).toBe(false);
+    expect(scopeLineMatches({ ...loaded(), showPhaseAngle: true }, RAW, kinds, 0)).toBe(false);
     expect(
       scopeLineMatches(
         { ...loaded(), plots: [plots[0], { ...plots[1], acCoupled: true }] },
