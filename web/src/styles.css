@@ -69,7 +69,7 @@
   --md-scrim: #000000;
 
   --bg: var(--md-surface);
-  --panel: var(--md-surface-container);
+  --panel: #141414;
   --border: var(--md-outline);
   --text: var(--md-on-surface);
   --muted: var(--md-on-surface-variant);
