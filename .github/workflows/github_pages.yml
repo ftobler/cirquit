@@ -60,8 +60,8 @@ jobs:
           # stays at the repo root throughout the step.
           mv web/dist web/dist-pages
           (cd web && npx vite build)
-          (cd web/dist && zip -r static-deployment.zip .)
-          mv web/dist/static-deployment.zip web/dist-pages/static-deployment.zip
+          (cd web/dist && zip -r ftobler-cirquit.zip .)
+          mv web/dist/ftobler-cirquit.zip web/dist-pages/ftobler-cirquit.zip
           rm -rf web/dist
           mv web/dist-pages web/dist
 
