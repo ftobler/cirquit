@@ -40,11 +40,6 @@ g 176 320 176 352 0
 o 2 64 0 4099
 `;
 
-/** How long a notice stays on screen. Long enough to read a sentence of it,
- *  short enough that it reads as a flash rather than as a banner waiting to be
- *  dismissed. */
-const NOTICE_MS = 2200;
-
 /** Shortcut actions that edit the circuit. Dropped whole when Disable Editing
  *  is on; everything else (zoom, file, view) stays live. */
 const EDIT_ACTIONS = new Set([
@@ -74,6 +69,7 @@ export default function App() {
   const problem = useStore((s) => s.problem);
   const setProblem = useStore((s) => s.setProblem);
   const notice = useStore((s) => s.notice);
+  const setNotice = useStore((s) => s.setNotice);
   // The print shortcut needs the engine, but the keydown listener is
   // registered once with no deps; a ref keeps it seeing the latest handle
   // without re-registering on every engine load.
@@ -83,15 +79,6 @@ export default function App() {
   // Pause an unattended tab after 10 s of no meaningful input, once, at
   // startup, so an opened-but-ignored page stops burning background CPU.
   useAutoPause();
-
-  // The notice flashes and goes on its own. It reports things the port handled
-  // by itself, which most upstream files trip on, so it must never become
-  // something the user has to click away.
-  useEffect(() => {
-    if (notice === null) return;
-    const timer = setTimeout(() => useStore.getState().setNotice(null), NOTICE_MS);
-    return () => clearTimeout(timer);
-  }, [notice]);
 
   // Bring up the wasm engine once, then load whatever circuit was requested.
   useEffect(() => {
@@ -401,8 +388,18 @@ export default function App() {
               )}
               {notice && (
                 // `status`, not `alert`: it is over before it could be acted
-                // on, and it carries no close button for the same reason.
-                <div className="notice app-banner" role="status">
+                // on, and it carries no close button for the same reason. The
+                // CSS animation is the notice's whole life, fade-in through
+                // fade-out, so its end is the moment to take the element away:
+                // one owner for the timing, no JS timer racing the fade. The
+                // key restarts that animation when the text changes, which a
+                // reused element would not do.
+                <div
+                  key={notice}
+                  className="notice app-banner"
+                  role="status"
+                  onAnimationEnd={() => setNotice(null)}
+                >
                   <span className="app-banner-text">{notice}</span>
                 </div>
               )}

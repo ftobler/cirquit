@@ -113,6 +113,10 @@
 
   --md-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --md-duration-short: 100ms;
+  /* How long a notice stays up, fade-in and fade-out included. Long enough to
+     read a sentence of it, short enough to read as a flash rather than as a
+     banner waiting to be dismissed. */
+  --notice-life: 2200ms;
 
   /* Type scale entries actually used below; body text keeps its literal
      `font:` shorthand (draw.test.ts greps styles.css for a literal
@@ -1019,24 +1023,53 @@ h3 {
 }
 
 /* The notice is the quiet channel: the port handled whatever it reports, so it
-   gets the inverse surface an MD3 snackbar uses rather than the error tint,
-   and it is gone in about two seconds. */
+   gets a plain dark grey rather than the error tint, and it is gone in about
+   two seconds. Not MD3's inverse surface, which a snackbar would use: this
+   chrome is dark throughout, so inverting it put a near-white slab over the
+   canvas. Mostly opaque rather than half-transparent like the problem banner,
+   so the grey stays grey over the white-background canvas too. */
 .notice.app-banner {
-  background: color-mix(in srgb, var(--md-inverse-surface) 85%, transparent);
-  color: var(--md-inverse-on-surface);
-  animation: banner-appear 140ms var(--md-easing-standard);
+  background: #30363de6;
+  color: var(--md-on-surface);
+  /* One animation covers the whole life of a notice: fade in, hold, fade out.
+     App.tsx unmounts it on animationend, so the timing lives here alone and
+     the fade cannot drift out of step with the removal. */
+  animation: notice-flash var(--notice-life) var(--md-easing-standard) forwards;
 }
 
-@keyframes banner-appear {
-  from {
+@keyframes notice-flash {
+  0% {
     opacity: 0;
     transform: translateY(-4px);
   }
+  7% {
+    opacity: 1;
+    transform: none;
+  }
+  85% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
+/* Same lifetime, nothing moving and nothing fading. It has to stay an
+   animation rather than becoming `animation: none`: the animationend event is
+   what takes the notice off screen. */
 @media (prefers-reduced-motion: reduce) {
   .notice.app-banner {
-    animation: none;
+    animation-name: notice-hold;
+  }
+}
+
+@keyframes notice-hold {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
   }
 }
 
