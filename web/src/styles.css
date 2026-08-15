@@ -990,9 +990,33 @@ h3 {
   right: 10px;
   margin: 0;
   z-index: 37;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   /* Only the floating copy is elevated; a `.problem` inline in a dialog is
      part of that surface and stays flat. */
   box-shadow: var(--md-elevation-1);
+}
+
+.app-banner-text {
+  flex: 1;
+  /* Let the text wrap while the close button stays put; long warnings from
+     the engine can exceed one line. */
+  overflow-wrap: anywhere;
+}
+
+/* The close affordance on the floating banner: a plain icon button tinted
+   like the banner text, so it reads on the error-container fill. */
+.app-banner-close {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  font-size: 20px;
+  line-height: 1;
+  color: inherit;
+}
+
+.app-banner-close:hover {
+  background: color-mix(in srgb, var(--md-on-error-container) 14%, transparent);
 }
 
 .field {

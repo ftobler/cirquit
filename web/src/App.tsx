@@ -66,6 +66,7 @@ export default function App() {
   const setPartsOpen = useStore((s) => s.setPartsOpen);
   const setPanelOpen = useStore((s) => s.setPanelOpen);
   const problem = useStore((s) => s.problem);
+  const setProblem = useStore((s) => s.setProblem);
   // The print shortcut needs the engine, but the keydown listener is
   // registered once with no deps; a ref keeps it seeing the latest handle
   // without re-registering on every engine load.
@@ -353,7 +354,16 @@ export default function App() {
             // anchoring to .centre rather than .workspace keeps it clear of
             // the parts and options drawers on either side.
             <div className="problem app-banner" role="alert">
-              {problem}
+              <span className="app-banner-text">{problem}</span>
+              <button
+                type="button"
+                className="app-banner-close"
+                aria-label="Dismiss"
+                title="Dismiss"
+                onClick={() => setProblem(null)}
+              >
+                ×
+              </button>
             </div>
           )}
           <CircuitCanvas engine={engine} />
