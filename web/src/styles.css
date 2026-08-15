@@ -16,27 +16,54 @@
   --md-error-container: #93000a;
   --md-on-error-container: #ffdad6;
 
+  /* The full MD3 role set, all on the same blue axis as the primary so the
+     palette never fights the canvas's hardcoded accent. Secondary and
+     tertiary sit a step off the primary hue so a supporting surface (a tonal
+     selected chip, a secondary action) reads as distinct from the primary
+     fill without introducing a foreign colour. */
+  --md-primary-container: #102b4d;
+  --md-on-primary-container: #d1e5ff;
+
+  --md-secondary: #9db4d0;
+  --md-on-secondary: #10202f;
+  --md-secondary-container: #233243;
+  --md-on-secondary-container: #d3dde9;
+
+  --md-tertiary: #a8b6e3;
+  --md-on-tertiary: #202b3d;
+  --md-tertiary-container: #31395c;
+  --md-on-tertiary-container: #d7dffa;
+
+  --md-surface-tint: #58a6ff;
+
+  --md-inverse-surface: #d0d7de;
+  --md-inverse-on-surface: #0d1117;
+
   --md-surface: #0d1117;
   --md-surface-container-lowest: #010409;
   --md-surface-container: #161b22;
-  /* Tonal elevation: higher tiers mix in a wash of the primary hue, same
+  /* Tonal elevation: higher tiers mix in a wash of the surface-tint hue, same
      mechanic as MD3's surface-tint-at-elevation, so it stays in step with
      whatever --md-primary is. */
   --md-surface-container-high: color-mix(
     in srgb,
     var(--md-surface-container) 92%,
-    var(--md-primary) 8%
+    var(--md-surface-tint) 8%
   );
   --md-surface-container-highest: color-mix(
     in srgb,
     var(--md-surface-container) 85%,
-    var(--md-primary) 15%
+    var(--md-surface-tint) 15%
   );
 
   --md-on-surface: #c9d1d9;
   --md-on-surface-variant: #8b949e;
+  /* The decorative outline is below WCAG 2.4.11's 3:1 bar for component
+     boundaries; the interactive outline above it is the border for form
+     controls, which must be findable. */
   --md-outline: #30363d;
   --md-outline-variant: #21262d;
+  --md-outline-interactive: #59616b;
   --md-scrim: #000000;
 
   --bg: var(--md-surface);
@@ -184,7 +211,10 @@ body {
 .menubar .menubar-btn.active,
 .menubar .menubar-btn.active:hover,
 .menubar .menubar-btn.active:active {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  /* An open dropdown's trigger is a tonal selected chip, the MD3 pattern for
+     a selected item, distinct from the primary fill of the run button. */
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
 }
 
 .menubar .menubar-btn:disabled,
@@ -293,13 +323,15 @@ button.primary.running:active {
   vertical-align: middle;
 }
 
-/* The selected/active state: accent text on a faint accent tint, no border
-   ring. Pinned after the hover and press rules so the tint survives them on a
-   picked tool or an open dropdown trigger. */
+/* The selected/active state: a tonal chip in the secondary container, no
+   border ring, so a picked tool or an open dropdown trigger reads as selected
+   without borrowing the primary fill of the primary buttons. Pinned after the
+   hover and press rules so the tint survives them on a picked tool or an open
+   dropdown trigger. */
 button.active,
 .tool.active {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
 }
 
 .dropdown {
@@ -548,7 +580,8 @@ button.active,
 /* The selected row is a container-tinted state, not a state layer, so it
    survives the pointer moving to another row. */
 .find-list button.selected {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
 }
 
 .find-list .find-category {
