@@ -994,6 +994,9 @@ h3 {
   align-items: flex-start;
   gap: 8px;
   border: none;
+  /* Half-transparent so the canvas shows through, and hardcoded rather than
+     a variable because this one alpha-tinted fill has no other use. */
+  background: #93000a80;
   /* Only the floating copy is elevated; a `.problem` inline in a dialog is
      part of that surface and stays flat. */
   box-shadow: var(--md-elevation-1);
