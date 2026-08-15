@@ -634,6 +634,7 @@ export function Menubar({ engine }: Props) {
           Options
         </button>
       </div>
+      <span className="sep" />
 
       <span className="status" role="status">
         {engine ? status || 'Ready' : 'Loading engine…'}
