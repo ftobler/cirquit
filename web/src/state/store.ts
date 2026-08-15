@@ -264,11 +264,13 @@ function isMissingComponent(type: string): boolean {
 }
 
 /**
- * The load warning. The two failure modes are not the same severity and must
- * not be reported as one: a missing element code means the component is absent
- * from both the drawing and the simulation, so it goes in the sticky banner.
- * Counts are of distinct types, not lines, so seven sliders are one thing to
- * report.
+ * The load warning, and the only one an unreadable line earns: a missing
+ * element code means the component is absent from both the drawing and the
+ * simulation, so it goes in the sticky banner. Everything else `unsupported`
+ * collects rides through untouched and round-trips on save — an `h` hint, a
+ * `!` model definition — so the user is told nothing, having neither lost
+ * anything nor anything to do about it. Counts are of distinct types, not
+ * lines, so seven sliders are one thing to report.
  */
 function describeMissing(unsupported: string[]): string | null {
   const missing = [...new Set(unsupported)].filter(isMissingComponent);
@@ -276,21 +278,6 @@ function describeMissing(unsupported: string[]): string | null {
   return (
     `${missing.length} element type(s) (${missing.join(', ')}) are not implemented yet, ` +
     'so those components are missing from the drawing and the simulation.'
-  );
-}
-
-/**
- * The other half: a `!` model definition or an `h` hint rides through the load
- * untouched, so nothing is lost and nothing is asked of the user. It flashes as
- * a notice rather than sitting in the banner, since most upstream files carry
- * one of these lines.
- */
-function describeInert(unsupported: string[]): string | null {
-  const inert = [...new Set(unsupported)].filter((t) => !isMissingComponent(t));
-  if (inert.length === 0) return null;
-  return (
-    `${inert.length} other line type(s) (${inert.join(', ')}) were preserved ` +
-    'but not interpreted.'
   );
 }
 
@@ -479,7 +466,6 @@ function createAppStore() {
   problem: null,
   unsupportedProblem: null,
   notice: null,
-  unsupportedNotice: null,
   hoveredId: null,
   highlightedNode: null,
   undoStack: [],
@@ -1911,10 +1897,6 @@ function createAppStore() {
     // warnings (a hand-edited 12-input gate loading as 8), joined the same way
     // the frame loop joins the engine warnings, so a rebuild cannot wipe them.
     const loadProblem = mergeProblem(describeMissing(parsed.unsupported), parsed.warnings);
-    // The lines that rode through untouched are not a problem, so they take the
-    // notice channel. The flash itself waits for the first engine build, which
-    // merges this with the engine's own warnings: one flash, not two.
-    const loadNotice = describeInert(parsed.unsupported);
 
     set((s) => ({
       elements: resolved,
@@ -1945,10 +1927,8 @@ function createAppStore() {
       // must not wipe the banner, so it merges this with the engine warnings
       // instead of overwriting the store's `problem`.
       unsupportedProblem: loadProblem,
-      // The previous circuit's notice says nothing about this one, and the
-      // first build flashes this one.
+      // The previous circuit's notice says nothing about this one.
       notice: null,
-      unsupportedNotice: loadNotice,
       // A refusal from the previous circuit says nothing about this one.
       subcircuitError: null,
       ...bumpRevision(s),
@@ -2017,10 +1997,9 @@ function createAppStore() {
       redoStack: [],
       problem: null,
       // A fresh circuit has no unsupported lines, so nothing for the frame
-      // loop to merge into the engine warnings, in either channel.
+      // loop to merge into the engine warnings.
       unsupportedProblem: null,
       notice: null,
-      unsupportedNotice: null,
       subcircuitError: null,
       ...bumpRevision(s),
       // New is a fresh document, like a load: no live charges carry over.

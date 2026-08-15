@@ -48,11 +48,10 @@ export function buildReport(
   err: string | null,
   warnings: string[],
   unsupportedProblem: string | null,
-  unsupportedNotice: string | null,
 ): { problem: string | null; notice: string | null } {
   return {
     problem: mergeProblem(unsupportedProblem, err ? [err] : []),
-    notice: mergeProblem(unsupportedNotice, err ? [] : warnings),
+    notice: mergeProblem(null, err ? [] : warnings),
   };
 }
 
@@ -163,15 +162,10 @@ export function useFrameLoop(
               state.document,
               err,
             );
-            // Merge, not replace: the load-time messages have to survive the
-            // first engine build, which is what wiped them before. The engine's
+            // Merge, not replace: the load-time message has to survive the
+            // first engine build, which is what wiped it before. The engine's
             // own warnings only flash; see buildReport.
-            const report = buildReport(
-              err,
-              err ? [] : engine.warnings(),
-              state.unsupportedProblem,
-              state.unsupportedNotice,
-            );
+            const report = buildReport(err, err ? [] : engine.warnings(), state.unsupportedProblem);
             useStore.getState().setProblem(report.problem);
             flashNotice(report.notice, state.document);
             // The reload serialised the current elements, so any queued value
@@ -240,13 +234,12 @@ export function useFrameLoop(
                 state.document,
                 err,
               );
-              // Same split as the revision branch: the load-time messages must
+              // Same split as the revision branch: the load-time message must
               // not be overwritten by this rebuild's report either.
               const report = buildReport(
                 err,
                 err ? [] : engine.warnings(),
                 state.unsupportedProblem,
-                state.unsupportedNotice,
               );
               useStore.getState().setProblem(report.problem);
               flashNotice(report.notice, state.document);

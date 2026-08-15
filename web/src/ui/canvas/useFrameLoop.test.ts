@@ -44,28 +44,28 @@ describe('buildReport', () => {
     '1 floating node(s) have no path to ground; they were pinned with a 100 MΩ resistance.';
 
   it('sends the engine warnings to the notice, leaving the banner empty', () => {
-    expect(buildReport(null, [NO_GROUND, FLOATING], null, null)).toEqual({
+    expect(buildReport(null, [NO_GROUND, FLOATING], null)).toEqual({
       problem: null,
       notice: `${NO_GROUND} ${FLOATING}`,
     });
   });
 
-  it('keeps the load-time messages on their own channels', () => {
-    expect(buildReport(null, [NO_GROUND], 'missing', 'preserved')).toEqual({
+  it('keeps the load-time message on the banner, beside the flashed warnings', () => {
+    expect(buildReport(null, [NO_GROUND], 'missing')).toEqual({
       problem: 'missing',
-      notice: `preserved ${NO_GROUND}`,
+      notice: NO_GROUND,
     });
   });
 
   it('a build error goes to the banner, and its warnings are dropped', () => {
     // The warnings would describe a circuit that never came up.
-    expect(buildReport('matrix is singular', [NO_GROUND], null, 'preserved')).toEqual({
+    expect(buildReport('matrix is singular', [NO_GROUND], null)).toEqual({
       problem: 'matrix is singular',
-      notice: 'preserved',
+      notice: null,
     });
   });
 
   it('reports nothing on either channel for a clean build', () => {
-    expect(buildReport(null, [], null, null)).toEqual({ problem: null, notice: null });
+    expect(buildReport(null, [], null)).toEqual({ problem: null, notice: null });
   });
 });

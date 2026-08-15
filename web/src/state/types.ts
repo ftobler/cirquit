@@ -126,13 +126,10 @@ export interface AppState {
    *  Set by `loadNetlist`, cleared by `newCircuit`. */
   unsupportedProblem: string | null;
   /** The transient notice: something the port handled on its own and only
-   *  mentions in passing (an uninterpreted line preserved through the load, a
-   *  substituted ground reference, a pinned floating node). It flashes and
-   *  clears itself; nothing here is waiting on the user. */
+   *  mentions in passing (a substituted ground reference, a pinned floating
+   *  node). It flashes and clears itself; nothing here is waiting on the
+   *  user. */
   notice: string | null;
-  /** The load-time part of `notice`, merged with the engine's warnings by the
-   *  frame loop the way `unsupportedProblem` is. */
-  unsupportedNotice: string | null;
   undoStack: Snapshot[];
   redoStack: Snapshot[];
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
