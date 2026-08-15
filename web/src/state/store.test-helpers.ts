@@ -24,7 +24,6 @@ export const fresh = () => ({
   problem: null,
   unsupportedProblem: null,
   notice: null,
-  unsupportedNotice: null,
   hoveredId: null,
   highlightedNode: null,
   undoStack: [],

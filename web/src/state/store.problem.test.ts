@@ -12,11 +12,11 @@ const UNSUPPORTED = '$ 1 0.000005 10 50 5 50 5e-11\n999 0 0 32 0 0 1\n';
 const MISSING_MESSAGE =
   '1 element type(s) (999) are not implemented yet, so those components are ' +
   'missing from the drawing and the simulation.';
-// An `h` hint line rides through the load untouched: nothing is lost, so it
-// takes the notice channel instead of the banner. Every upstream file that
-// carries one would otherwise open on a permanent banner.
+// An `h` hint line rides through the load untouched and round-trips on save,
+// so the load says nothing at all about it. Sixteen of the stock upstream
+// circuits carry one (cap.txt, lrc.txt, the filt-* family), and the hint only
+// ever drove an info-bar readout this port does not compute.
 const INERT = '$ 1 0.000005 10 50 5 50 5e-11\nr 0 0 16 0 0 100\nh 1 4 3\n';
-const INERT_MESSAGE = '1 other line type(s) (h) were preserved but not interpreted.';
 // The engine's floating-node warning wording (circuit.rs:871-873).
 const FLOATING_WARNING =
   '1 floating node(s) have no path to ground; they were pinned with a 100 MΩ resistance.';
@@ -49,40 +49,37 @@ describe('the load-time unsupported message survives the frame-loop merge', () =
   });
 });
 
-describe('a preserved line only flashes, it does not sit in the banner', () => {
-  it('an h hint line takes the notice channel, leaving the banner empty', () => {
+describe('a preserved line is reported on neither channel', () => {
+  it('an h hint line loads silently', () => {
     useStore.getState().loadNetlist(INERT);
     const s = useStore.getState();
-    expect(s.unsupportedNotice).toBe(INERT_MESSAGE);
     expect(s.problem).toBeNull();
     expect(s.unsupportedProblem).toBeNull();
-    // The flash itself is the frame loop's, after the first build.
     expect(s.notice).toBeNull();
+    // Silent, not dropped: the line is still there for the save.
+    expect(s.passthrough).toContain('h 1 4 3');
   });
 
-  it('the engine warnings join the notice, never the banner', () => {
+  it('the first engine build has only its own warnings to flash', () => {
     useStore.getState().loadNetlist(INERT);
     const s = useStore.getState();
-    expect(mergeProblem(s.unsupportedNotice, [FLOATING_WARNING])).toBe(
-      `${INERT_MESSAGE} ${FLOATING_WARNING}`,
-    );
+    expect(mergeProblem(null, [FLOATING_WARNING])).toBe(FLOATING_WARNING);
     expect(mergeProblem(s.unsupportedProblem, [])).toBeNull();
   });
 
-  it('a missing component and a preserved line are reported on separate channels', () => {
+  it('a preserved line alongside a missing component leaves the banner to the component', () => {
     useStore.getState().loadNetlist('$ 1 0.000005 10 50 5 50 5e-11\n999 0 0 32 0 0 1\nh 1 4 3\n');
     const s = useStore.getState();
     expect(s.problem).toBe(MISSING_MESSAGE);
-    expect(s.unsupportedNotice).toBe(INERT_MESSAGE);
+    expect(s.notice).toBeNull();
   });
 
   it('a clean circuit reports on neither channel', () => {
     useStore.getState().loadNetlist(CLEAN);
     const s = useStore.getState();
     expect(s.unsupportedProblem).toBeNull();
-    expect(s.unsupportedNotice).toBeNull();
+    expect(s.notice).toBeNull();
     expect(mergeProblem(s.unsupportedProblem, [])).toBeNull();
-    expect(mergeProblem(s.unsupportedNotice, [])).toBeNull();
   });
 });
 
@@ -132,16 +129,14 @@ describe('the clamp-on-load warning survives the frame-loop merge', () => {
 describe('the unsupported message clears when the line goes', () => {
   it('New clears both channels', () => {
     useStore.getState().loadNetlist(UNSUPPORTED);
-    useStore.getState().setNotice(INERT_MESSAGE);
+    useStore.getState().setNotice(FLOATING_WARNING);
     useStore.getState().newCircuit();
     const s = useStore.getState();
     expect(s.unsupportedProblem).toBeNull();
     expect(s.problem).toBeNull();
-    expect(s.unsupportedNotice).toBeNull();
     expect(s.notice).toBeNull();
-    // A later engine build must not resurrect either.
+    // A later engine build must not resurrect the banner.
     expect(mergeProblem(s.unsupportedProblem, [])).toBeNull();
-    expect(mergeProblem(s.unsupportedNotice, [])).toBeNull();
   });
 
   it('loading a clean circuit clears the unsupported message', () => {
@@ -155,10 +150,8 @@ describe('the unsupported message clears when the line goes', () => {
 
   it('loading a clean circuit clears a pending notice', () => {
     useStore.getState().loadNetlist(INERT);
-    useStore.getState().setNotice(INERT_MESSAGE);
+    useStore.getState().setNotice(FLOATING_WARNING);
     useStore.getState().loadNetlist(CLEAN);
-    const s = useStore.getState();
-    expect(s.unsupportedNotice).toBeNull();
-    expect(s.notice).toBeNull();
+    expect(useStore.getState().notice).toBeNull();
   });
 });
