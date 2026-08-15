@@ -1276,6 +1276,19 @@ input[type='range'] {
   }
 }
 
+/* Fine pointers also get a floor under interactive rows: MD3's 40 px compact
+   minimum. Menubar controls and dropdown rows measure ~28-31 px tall with
+   their padding alone, under the 40 px compact-button bar, so the min-height
+   raises them without pushing the whole bar to the 48 px touch tier, which is
+   reserved for coarse pointers below. */
+@media (pointer: fine) {
+  .menubar .menubar-btn,
+  .menu-item,
+  .tool {
+    min-height: 40px;
+  }
+}
+
 /* Coarse pointers get the 44 px touch-target guideline, and the iOS callout
    and focus-zoom fixes upstream applies at EditDialog.java:249-255. Range
    sliders are already touch-friendly and keep their natural height. */
