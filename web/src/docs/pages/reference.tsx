@@ -97,7 +97,7 @@ export function CustomLogicPage() {
       <p>
         The inputs (and outputs) is a comma separated list of <b>short</b> pin
         labels (one or two characters max). You can also specify inverted
-        labels, like <code>/Q</code> for <span style={{ textDecoration: 'overline' }}>Q</span>.
+        labels, like <code>/Q</code> for <span className="overline">Q</span>.
         Example: <code>A,B,/C,/D</code>.
       </p>
       <p>
@@ -161,9 +161,9 @@ export function CustomLogicPage() {
 ?? AB=AB</pre>
       <p>
         The input pattern (the left side of the equals sign) matches S, R, Q,
-        and <span style={{ textDecoration: 'overline' }}>Q</span>, in that
+        and <span className="overline">Q</span>, in that
         order. The right side of the equals sign specifies the resulting Q and{' '}
-        <span style={{ textDecoration: 'overline' }}>Q</span>.
+        <span className="overline">Q</span>.
       </p>
       <p>
         The first line sets the Q output if both outputs are low (this is

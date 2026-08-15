@@ -147,11 +147,10 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
           <label htmlFor="divisions">Divisions</label>
           <input
             id="divisions"
-            className="scalebox"
+            className="scalebox scalebox-narrow"
             type="text"
             value={String(scope.manDivisions)}
             onChange={(e) => setDivisions(e.target.value)}
-            style={{ width: 48 }}
           />
         </div>
       </fieldset>
@@ -190,7 +189,6 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
                   aria-label="Scale per division"
                   defaultValue={plot.manScale?.toString() ?? ''}
                   onBlur={(e) => setManScaleText(plot.id, e.target.value)}
-                  style={{ width: 64 }}
                 />
                 <span>/div</span>
                 <input
@@ -265,7 +263,6 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
             aria-label="Trigger level"
             value={levelText}
             onChange={(e) => setLevelText(e.target.value)}
-            style={{ width: 64 }}
           />
           <button type="button" onClick={applyTriggerLevel}>
             Apply
@@ -275,7 +272,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
 
       <fieldset>
         <legend>Measurements</legend>
-        <div className="row" style={{ flexWrap: 'wrap' }}>
+        <div className="row row-wrap">
           {showBox('Show Voltage', 'voltage')}
           {showBox('Show Current', 'current')}
           {isCapacitor && (
@@ -306,13 +303,12 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
       <fieldset>
         <legend>Label</legend>
         <input
-          className="scalebox"
+          className="scalebox scalebox-wide"
           type="text"
           aria-label="Scope label"
           value={labelText}
           onChange={(e) => setLabelText(e.target.value)}
           onBlur={() => setFlags({ label: labelText })}
-          style={{ width: '100%' }}
         />
       </fieldset>
 

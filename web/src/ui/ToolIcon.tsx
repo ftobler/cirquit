@@ -42,7 +42,6 @@ export function ToolIcon({
       ref={ref}
       width={TOOL_ICON_SIZE}
       height={TOOL_ICON_SIZE}
-      style={{ width: TOOL_ICON_SIZE, height: TOOL_ICON_SIZE }}
       className={className}
       aria-hidden="true"
     />

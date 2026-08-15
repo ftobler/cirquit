@@ -779,6 +779,11 @@ h3 {
 
 .tool-icon {
   flex: none;
+  /* 24 px, the TOOL_ICON_SIZE constant in render/toolIcon.ts: the backing
+     canvas also carries width/height attributes, but the CSS size pins the
+     on-screen box like the removed inline style did. */
+  width: 24px;
+  height: 24px;
   border-radius: var(--md-shape-xs);
   background: var(--bg);
 }
@@ -919,6 +924,13 @@ h3 {
   font-size: 12px;
 }
 
+/* A .row that wraps instead of squeezing: the scope dialog's measurements
+   checkboxes overflow one line, so they wrap like the removed inline
+   flex-wrap style did. */
+.row-wrap {
+  flex-wrap: wrap;
+}
+
 /* ---- scopes ---- */
 
 .scopes {
@@ -1024,6 +1036,21 @@ h3 {
 
 .scope-props input[type='range'] {
   flex: 1;
+}
+
+/* The scope dialog's text inputs keep the per-field widths the inline styles
+   used to carry: 64 px for the scale and trigger boxes, 48 px for the
+   narrower divisions box, full width for the label. */
+.scalebox {
+  width: 64px;
+}
+
+.scalebox-narrow {
+  width: 48px;
+}
+
+.scalebox-wide {
+  width: 100%;
 }
 
 .scope-props .scope-props-actions {
@@ -1145,5 +1172,46 @@ h3 {
     touch-action: manipulation;
     -webkit-user-select: none;
     user-select: none;
+  }
+}
+
+/* ---- printing ---- */
+
+/* The print-only stylesheet, once built as a string by render/print.ts and
+   injected per print. The rules are keyed to the overlay element printCircuit
+   appends, mirroring ImageExporter.java:76's injected style plus the modern
+   `break-inside` spelling of upstream's `page-break-inside`. On paper every
+   body child except the overlay hides and the schematic fills the page; on
+   screen the overlay itself is hidden, so injecting it never flashes over the
+   app. */
+
+#circuit-print-overlay {
+  display: none;
+}
+
+@media print {
+  body > *:not(#circuit-print-overlay) {
+    display: none !important;
+  }
+
+  @page {
+    size: auto;
+    margin: 10mm;
+  }
+
+  #circuit-print-overlay {
+    display: block !important;
+    width: 100%;
+    height: 100%;
+  }
+
+  #circuit-print-overlay img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    break-inside: avoid;
   }
 }

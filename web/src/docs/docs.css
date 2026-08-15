@@ -131,6 +131,12 @@ body.docs-root {
   color: var(--muted);
 }
 
+/* An overline for /Q-style negated pin labels in the reference prose, the
+   class behind the old inline textDecoration style. */
+.overline {
+  text-decoration: overline;
+}
+
 /* The docs index groups the registry by section. */
 
 .docs-group h2 {
