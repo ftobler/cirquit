@@ -904,6 +904,62 @@ h3 {
   color: var(--text);
 }
 
+/* ---- form controls ---- */
+
+/* The MD3 checkbox: an 18 px square with a 2 px radius, an outline border at
+   rest and a primary fill with an on-primary check when checked, replacing
+   the tiny native box. `appearance: none` turns the input into a plain box,
+   so the check comes from a data-URI SVG background rather than a pseudo
+   element (inputs cannot host ::before/::after). */
+input[type='checkbox'] {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex: none;
+  border: 2px solid var(--md-outline-interactive);
+  border-radius: 2px;
+  background-color: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--md-duration-short) var(--md-easing-standard),
+    border-color var(--md-duration-short) var(--md-easing-standard);
+}
+
+input[type='checkbox']:hover {
+  border-color: var(--md-on-surface-variant);
+}
+
+input[type='checkbox']:checked {
+  background-color: var(--md-primary);
+  border-color: var(--md-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2308243f' d='M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E");
+  background-size: 14px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input[type='checkbox']:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Radios and ranges keep the native control but take the primary as their
+   active colour, so the selected radio dot, the checked checkbox and the
+   slider's filled track all read as the same emphasis. */
+input[type='radio'],
+input[type='range'] {
+  accent-color: var(--md-primary);
+}
+
+/* The field border is the interactive outline, bright enough to clear WCAG's
+   3:1 component-boundary bar against the surface, where the decorative
+   `--md-outline` used everywhere else is not. */
 .field input[type='number'],
 .field input[type='text'],
 .field select {
@@ -911,13 +967,38 @@ h3 {
   font: inherit;
   color: var(--text);
   background: var(--md-surface-container-lowest);
-  border: 1px solid var(--border);
+  border: 1px solid var(--md-outline-interactive);
   border-radius: var(--md-shape-xs);
   padding: 4px 6px;
 }
 
+.field input[type='number'],
+.field input[type='text'],
+.field select,
+.dialog textarea,
+.library-search,
+.tool-search,
+.scalebox,
+.scalebox-narrow,
+.scalebox-wide,
+.shortcuts-table input[type='text'],
+.subcircuit-list li.editing input {
+  border-color: var(--md-outline-interactive);
+}
+
 .field input[type='range'] {
   width: 100%;
+  min-height: 20px;
+}
+
+/* The outlined-field label colour tracks focus, the MD3 focus transition for
+   a field whose label sits above the box instead of floating into it. */
+.field > span {
+  transition: color var(--md-duration-short) var(--md-easing-standard);
+}
+
+.field:focus-within > span {
+  color: var(--md-primary);
 }
 
 /* The create/remove rows of the element-scoped Sliders dialog: a checkbox with
