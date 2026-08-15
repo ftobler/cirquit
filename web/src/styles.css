@@ -1157,16 +1157,16 @@ input[type='range'] {
    panel. Scoped to the sidebar because the scope dialog reuses `.row button`
    for its tiny +/- steppers, which must stay flat. */
 .options .row button {
-  background: var(--md-secondary-container);
+  background: #2e2e2e;
   color: var(--md-on-secondary-container);
 }
 
 .options .row button:hover {
-  background: color-mix(in srgb, var(--md-secondary-container) 90%, var(--md-on-secondary-container));
+  background: color-mix(in srgb, #2e2e2e 90%, var(--md-on-secondary-container));
 }
 
 .options .row button:focus-visible {
-  background: color-mix(in srgb, var(--md-secondary-container) 85%, var(--md-on-secondary-container));
+  background: color-mix(in srgb, #2e2e2e 85%, var(--md-on-secondary-container));
 }
 
 /* A .row that wraps instead of squeezing: the scope dialog's measurements
