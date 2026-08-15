@@ -1,6 +1,7 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DOC_PAGES } from './src/docs/pages';
 
@@ -18,9 +19,31 @@ const docsInput = Object.fromEntries(
   DOC_PAGES.map((p) => [p.id, resolve(root, 'pages', p.file)]),
 );
 
+// GPL-2.0 asks that the licence travel with the distributed work, so the
+// repository LICENSE and README are emitted into the build output. Emitting
+// them as bundle assets rather than copying afterwards means every artifact a
+// build produces carries them: the local `web/dist`, the CI upload, the Pages
+// deployment and the root-deployment zip, which is a second vite build.
+const REPO_FILES = ['LICENSE', 'README.md'];
+
+function repoDocs(): Plugin {
+  return {
+    name: 'repo-docs',
+    generateBundle() {
+      for (const name of REPO_FILES) {
+        this.emitFile({
+          type: 'asset',
+          fileName: name,
+          source: readFileSync(resolve(root, '..', name)),
+        });
+      }
+    },
+  };
+}
+
 export default defineConfig({
   base,
-  plugins: [react()],
+  plugins: [react(), repoDocs()],
   build: {
     target: 'es2022',
     // wasm-pack output is already minified machine code; keeping it as a
