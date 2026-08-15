@@ -171,7 +171,8 @@ describe('circuit library index', () => {
     expect(groups[0].title).toBe('Basics');
     expect(groups[0].entries).toEqual([
       { file: 'ohms.txt', title: "Ohm's Law" },
-      { file: 'lrc.txt', title: 'LRC Circuit' },
+      // The `>` marks the startup default; see library.test.ts.
+      { file: 'lrc.txt', title: 'LRC Circuit', isDefault: true },
     ]);
   });
 });

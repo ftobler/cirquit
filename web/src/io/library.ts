@@ -3,13 +3,16 @@
  *
  * `setuplist.txt` is a flat file of groups and entries copied from upstream:
  * a line starting with `+` opens a group, `-` closes it, and everything else
- * is `<filename> <title>`. A leading `>` marks an entry as a variant of the
- * previous one; it is displayed the same way here.
+ * is `<filename> <title>`. A leading `>` marks the circuit upstream opens on
+ * startup; it is displayed like any other entry.
  */
 
 export interface LibraryEntry {
   file: string;
   title: string;
+  /** Set on the `>` entry: the circuit to open when nothing else was asked
+   *  for. Exactly one entry carries it, see `parseSetupList`. */
+  isDefault?: boolean;
 }
 
 export interface LibraryGroup {
@@ -23,6 +26,9 @@ const CIRCUITS_BASE = `${import.meta.env.BASE_URL}circuits/`;
 export function parseSetupList(text: string): LibraryGroup[] {
   const groups: LibraryGroup[] = [];
   const stack: LibraryGroup[] = [];
+  // Upstream keeps the first `>` it sees and ignores any later one
+  // (Menus.processSetupList, the `startCircuit == null` guard).
+  let seenDefault = false;
 
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
@@ -47,6 +53,10 @@ export function parseSetupList(text: string): LibraryGroup[] {
       file: body.slice(0, space),
       title: body.slice(space + 1).trim(),
     };
+    if (line.startsWith('>') && !seenDefault) {
+      entry.isDefault = true;
+      seenDefault = true;
+    }
     const current = stack[stack.length - 1];
     if (current) current.entries.push(entry);
   }
@@ -64,6 +74,26 @@ export async function loadLibraryCircuit(file: string): Promise<string> {
   const res = await fetch(`${CIRCUITS_BASE}${file}`);
   if (!res.ok) throw new Error(`could not load ${file} (${res.status})`);
   return res.text();
+}
+
+/** The entry the setup list marks with `>`, which is what upstream opens when
+ *  no circuit was requested. Null when the list carries no marker. */
+export function defaultLibraryEntry(groups: LibraryGroup[]): LibraryEntry | null {
+  for (const group of groups) {
+    for (const entry of group.entries) {
+      if (entry.isDefault) return entry;
+    }
+  }
+  return null;
+}
+
+/** Fetches the library's default circuit, index and all, so the app opens on
+ *  the same circuit upstream does. Rejects when the index, the marker or the
+ *  file is missing; the caller decides what to show instead. */
+export async function loadDefaultCircuit(): Promise<{ entry: LibraryEntry; netlist: string }> {
+  const entry = defaultLibraryEntry(await loadLibraryIndex());
+  if (entry === null) throw new Error('the circuit library names no default circuit');
+  return { entry, netlist: await loadLibraryCircuit(entry.file) };
 }
 
 /** Filter the library for the Circuits menu search box: a case-insensitive

@@ -1,5 +1,13 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { filterLibrary, type LibraryGroup } from './library';
+import {
+  defaultLibraryEntry,
+  filterLibrary,
+  parseSetupList,
+  type LibraryGroup,
+} from './library';
 
 const groups: LibraryGroup[] = [
   {
@@ -17,6 +25,57 @@ const groups: LibraryGroup[] = [
     ],
   },
 ];
+
+const CIRCUITS_DIR = fileURLToPath(new URL('../../public/circuits', import.meta.url));
+
+describe('parseSetupList', () => {
+  const list = [
+    '### a comment line',
+    '+Basics',
+    "ohms.txt Ohm's Law",
+    '>lrc.txt LRC Circuit',
+    '-',
+    '+Transistors',
+    '>npn.txt NPN Transistor',
+    '-',
+  ].join('\n');
+
+  it('reads groups and entries', () => {
+    expect(parseSetupList(list)).toEqual([
+      {
+        title: 'Basics',
+        entries: [
+          { file: 'ohms.txt', title: "Ohm's Law" },
+          { file: 'lrc.txt', title: 'LRC Circuit', isDefault: true },
+        ],
+      },
+      { title: 'Transistors', entries: [{ file: 'npn.txt', title: 'NPN Transistor' }] },
+    ]);
+  });
+
+  it('marks only the first > entry as the default, like upstream', () => {
+    expect(defaultLibraryEntry(parseSetupList(list))).toEqual({
+      file: 'lrc.txt',
+      title: 'LRC Circuit',
+      isDefault: true,
+    });
+  });
+
+  it('reports no default when the list marks none', () => {
+    expect(defaultLibraryEntry(parseSetupList('+Basics\nohms.txt Ohm\n-'))).toBeNull();
+  });
+});
+
+describe('the bundled setup list', () => {
+  // Guards `just import-cirquits-upstream`: startup falls back to the plain
+  // starter circuit if the marker or its file ever goes missing.
+  it('names a default circuit that is bundled', () => {
+    const groups = parseSetupList(readFileSync(join(CIRCUITS_DIR, 'setuplist.txt'), 'utf8'));
+    const entry = defaultLibraryEntry(groups);
+    expect(entry?.file).toBe('lrc.txt');
+    expect(existsSync(join(CIRCUITS_DIR, entry!.file))).toBe(true);
+  });
+});
 
 describe('filterLibrary', () => {
   it('returns the groups unchanged for an empty query', () => {

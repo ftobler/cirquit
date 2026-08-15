@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SimEngine } from './engine/simulator';
 import { chordOf, hasChord, isPrintableKey, matchShortcut } from './input/shortcuts';
 import { openCircuit } from './io/fileIO';
-import { loadLibraryCircuit } from './io/library';
+import { loadDefaultCircuit, loadLibraryCircuit } from './io/library';
 import { startupSource } from './io/urlShare';
 import { printCircuit } from './render/print';
 import { AboutDialog } from './ui/AboutDialog';
@@ -29,7 +29,8 @@ import { hasUnsavedChanges, useStore } from './state/store';
 import { startAutoSave } from './state/recovery';
 import { GRID_SIZE } from './model/types';
 
-/** A small RC circuit, so the app opens on something that actually runs. */
+/** A small RC circuit, kept as the offline fallback for when the bundled
+ *  library cannot be fetched, so the app still opens on something that runs. */
 const STARTER_CIRCUIT = `$ 1 0.000005 10.2 50 5 43 5e-11
 v 176 320 176 96 0 0 40 5 0 0 0.5
 r 176 96 384 96 0 1000
@@ -91,7 +92,8 @@ export default function App() {
         // (ctz/cct) carries the whole circuit and wins; else a startCircuit
         // deep link names a bundled library file, fetched through the same
         // path the Circuits menu uses, falling back to the starter circuit
-        // with a status message when the fetch fails; else the starter.
+        // with a status message when the fetch fails; else the library's own
+        // default, the entry upstream marks with `>` in setuplist.txt.
         const source = startupSource();
         const load = useStore.getState().loadNetlist;
         if (source.kind === 'url') {
@@ -110,7 +112,19 @@ export default function App() {
               .setStatus(`Could not load ${source.file}; showing the starter circuit.`);
           }
         } else {
-          load(STARTER_CIRCUIT);
+          try {
+            const { entry, netlist } = await loadDefaultCircuit();
+            if (cancelled) return;
+            load(netlist);
+            // Name it the way the Circuits menu does, so the opening circuit
+            // reads as a library entry rather than as anonymous scratch work.
+            useStore.getState().setStatus(entry.title);
+          } catch {
+            // No status here: a missing library is not something the user
+            // asked for, and the fallback circuit is usable on its own.
+            if (cancelled) return;
+            load(STARTER_CIRCUIT);
+          }
         }
       })
       .catch((e: unknown) => {
