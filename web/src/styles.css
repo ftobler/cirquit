@@ -98,10 +98,18 @@
 
   /* Type scale entries actually used below; body text keeps its literal
      `font:` shorthand (draw.test.ts greps styles.css for a literal
-     `font: ... Roboto` declaration to keep the canvas text stack in step). */
+     `font: ... Roboto` declaration to keep the canvas text stack in step).
+     MD3's 15-style scale distilled to the tiers this UI needs: headline for
+     dialog titles, title for dialog section headers, body for paragraph and
+     helper text, label for controls. */
+  --md-type-headline-small: 400 24px/32px 'Roboto Variable', Roboto, system-ui, sans-serif;
+  --md-type-title-large: 400 22px/28px 'Roboto Variable', Roboto, system-ui, sans-serif;
+  --md-type-title-medium: 500 16px/24px 'Roboto Variable', Roboto, system-ui, sans-serif;
+  --md-type-title-small: 500 14px/20px 'Roboto Variable', Roboto, system-ui, sans-serif;
+  --md-type-body-large: 400 16px/24px 'Roboto Variable', Roboto, system-ui, sans-serif;
+  --md-type-body-medium: 400 14px/20px 'Roboto Variable', Roboto, system-ui, sans-serif;
   --md-type-label-large: 500 13px/20px 'Roboto Variable', Roboto, system-ui, sans-serif;
   --md-type-label-medium: 500 11px/16px 'Roboto Variable', Roboto, system-ui, sans-serif;
-  --md-type-title-small: 500 14px/20px 'Roboto Variable', Roboto, system-ui, sans-serif;
 
   color-scheme: dark;
 }
@@ -458,7 +466,10 @@ button.active,
 
 .dialog h2 {
   margin: 0 0 10px;
-  font: var(--md-type-title-small);
+  /* MD3 dialog titles sit on the headline-small tier so the title outranks
+     the body labels under it (24px vs the body's 13-14px), giving the modal
+     a real typographic hierarchy. */
+  font: var(--md-type-headline-small);
   text-transform: none;
   letter-spacing: normal;
   color: var(--text);
@@ -479,6 +490,12 @@ button.active,
   border-radius: var(--md-shape-xs);
   padding: 6px 8px;
   resize: vertical;
+}
+
+/* Dialog body copy on MD3's body-medium tier, one step above the app's 13px
+   base so modal prose reads comfortably under the headline-small title. */
+.dialog-body {
+  font: var(--md-type-body-medium);
 }
 
 .dialog .hint {
@@ -1036,7 +1053,7 @@ h3 {
 
 .scope-props h3 {
   margin: 0 0 8px;
-  font: var(--md-type-title-small);
+  font: var(--md-type-title-large);
   text-transform: none;
   letter-spacing: normal;
   color: var(--text);
