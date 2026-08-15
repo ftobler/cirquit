@@ -60,10 +60,12 @@
   --md-on-surface-variant: #8b949e;
   /* The decorative outline is below WCAG 2.4.11's 3:1 bar for component
      boundaries; the interactive outline above it is the border for form
-     controls, which must be findable. */
+     controls, which must be findable. It clears 3:1 even on the brightest
+     surface a control sits on, the dialog panel (surface-container-highest),
+     where #59616b would fall to 2.14:1. */
   --md-outline: #30363d;
   --md-outline-variant: #21262d;
-  --md-outline-interactive: #59616b;
+  --md-outline-interactive: #7a8490;
   --md-scrim: #000000;
 
   --bg: var(--md-surface);
@@ -312,6 +314,14 @@ button:active::after {
   100% {
     opacity: 0;
     transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Users who ask for reduced motion get the flat press background without the
+   expanding state layer, so the feedback stays visible but nothing animates. */
+@media (prefers-reduced-motion: reduce) {
+  button:active::after {
+    animation: none;
   }
 }
 
