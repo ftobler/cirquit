@@ -432,7 +432,10 @@ button.active,
 
 .dropdown-menu {
   position: absolute;
-  z-index: 20;
+  /* Above the problem banner (37) so an open menu overlays it, below dialogs
+     (40). On mobile the menubar's own stacking context must sit above the
+     banner too, or the contained menus stay trapped under it. */
+  z-index: 38;
   top: calc(100% + 4px);
   left: 0;
   width: 280px;
@@ -967,8 +970,9 @@ h3 {
    height varies when it wraps at narrow widths; .centre always starts right
    below it regardless. Anchoring to .centre rather than .workspace keeps the
    banner within the canvas column instead of stretching across the parts and
-   options drawers. z-index sits above the menubar (36) so it stays visible
-   over an open mobile drawer (35), but below dialogs (40). */
+   options drawers. z-index sits above an open mobile drawer (35) but below
+   the menubar and its dropdowns (38), so an open menu overlays it; both stay
+   below dialogs (40). */
 .app-banner {
   position: absolute;
   top: 10px;
@@ -1380,10 +1384,11 @@ input[type='range'] {
      Parts/Options drawer toggles would be unreachable while a drawer is open
      (tapping them would hit the scrim and dismiss instead of toggling). The
      menubar is a flex item, so the z-index lifts it and its menus above both
-     the scrim (30) and the drawers (35) without touching the dialogs (40). */
+     the scrim (30) and the drawers (35), and above the problem banner (37)
+     so an open dropdown overlays it, without touching the dialogs (40). */
   .menubar {
     position: relative;
-    z-index: 36;
+    z-index: 38;
   }
 }
 
