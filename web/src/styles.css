@@ -1,7 +1,8 @@
 /**
  * MD3 token system: color roles, a 4-tier tonal elevation scale, a shape
- * scale, state-layer opacities and motion constants. `--bg`/`--panel`/
- * `--border`/`--text`/`--muted`/`--accent`/`--danger` are kept as the public
+ * scale, state layers and motion constants. `--bg`/`--panel`/
+ * `--border`/`--text`/`--muted`/`--accent`/`--danger`/`--hover`/
+ * `--hover-strong` are kept as the public
  * names every rule below keys off; each aliases one MD3 role 1:1, so the
  * whole app inherits the MD3 palette without a mechanical rename of every
  * selector. `--accent` must stay exactly #58a6ff: render/draw.ts hardcodes
@@ -57,11 +58,13 @@
   --md-elevation-2: 0 1px 2px 0 rgb(0 0 0 / 30%), 0 2px 6px 2px rgb(0 0 0 / 15%);
   --md-elevation-3: 0 1px 3px 0 rgb(0 0 0 / 30%), 0 4px 8px 3px rgb(0 0 0 / 15%);
 
-  /* State-layer opacities: currentColor overlaid at these strengths on
-     hover/press, so a control's feedback tint always matches its own label
-     colour (on-surface, primary, on-primary, ...) with no extra rules. */
-  --md-state-hover: 0.08;
-  --md-state-pressed: 0.12;
+  /* Hover and press tiers for the borderless surfaces: the surface text
+     washed over the panel (`var(--panel)`), never a hardcoded hex, so the
+     shade follows the theme's colours. `--hover` is the raised tier buttons
+     and tiles sit on under the pointer (the same 8% wash MD3's hover state
+     uses); `--hover-strong` is the pressed tier. */
+  --hover: color-mix(in srgb, var(--text) 8%, var(--panel));
+  --hover-strong: color-mix(in srgb, var(--text) 15%, var(--panel));
 
   --md-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --md-duration-short: 100ms;
@@ -158,51 +161,61 @@ body {
   margin-left: auto;
 }
 
+/* Menubar controls: the flat end of the button spectrum. Borderless and
+   unshaded at rest, they gain the shared `--hover` shade only under the
+   pointer or keyboard focus, so the bar reads as chrome until a control is
+   live. The class is the plan's shared hook, pinning the menubar treatment
+   in one place while the app's other buttons stay free to choose their own.
+   An open dropdown's accent state (`.active`) wins over the shade, and a
+   disabled control never lights up. */
+.menubar .menubar-btn {
+  background: transparent;
+}
+
+.menubar .menubar-btn:hover,
+.menubar .menubar-btn:focus-visible {
+  background: var(--hover);
+}
+
+.menubar .menubar-btn:active {
+  background: var(--hover-strong);
+}
+
+.menubar .menubar-btn.active,
+.menubar .menubar-btn.active:hover,
+.menubar .menubar-btn.active:active {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.menubar .menubar-btn:disabled,
+.menubar .menubar-btn:disabled:hover,
+.menubar .menubar-btn:disabled:active {
+  background: transparent;
+}
+
 button {
-  position: relative;
-  /* A stacking context, so the state layer's negative z-index keeps it inside
-     the button (above its own background, below its label) instead of sliding
-     behind an ancestor's background. */
-  isolation: isolate;
-  overflow: hidden;
   font: var(--md-type-label-large);
   color: var(--text);
   background: transparent;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--md-shape-sm);
   padding: 4px 10px;
   cursor: pointer;
   transition:
     background var(--md-duration-short) var(--md-easing-standard),
-    border-color var(--md-duration-short) var(--md-easing-standard),
     color var(--md-duration-short) var(--md-easing-standard);
 }
 
-/* The state layer: a currentColor wash under the label, so its tint always
-   matches whatever role colour the button is using (on-surface, primary,
-   on-primary, on-error, ...) without a rule per variant. */
-button::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: currentColor;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--md-duration-short) var(--md-easing-standard);
+/* The borderless button, per Material: rest sits flat on its surface, hover
+   raises it with the shared `--hover` shade (the accent border that used to
+   carry the affordance is gone) and press dips one tier darker. */
+button:hover,
+button:focus-visible {
+  background: var(--hover);
 }
 
-button:hover::before {
-  opacity: var(--md-state-hover);
-}
-
-button:focus-visible::before,
-button:active::before {
-  opacity: var(--md-state-pressed);
-}
-
-button:hover {
-  border-color: var(--accent);
+button:active {
+  background: var(--hover-strong);
 }
 
 button:disabled {
@@ -210,13 +223,10 @@ button:disabled {
   cursor: default;
 }
 
-/* a disabled button must not light up with the accent border on hover */
-button:disabled:hover {
-  border-color: var(--border);
-}
-
-button:disabled:hover::before {
-  opacity: 0;
+/* a disabled button must not gain the hover shade either */
+button:disabled:hover,
+button:disabled:active {
+  background: transparent;
 }
 
 /* ---- focus ---- */
@@ -228,10 +238,6 @@ button:disabled:hover::before {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-button:focus-visible {
-  border-color: var(--accent);
 }
 
 input:focus-visible,
@@ -246,9 +252,20 @@ textarea:focus-visible {
 
 button.primary {
   background: var(--md-primary);
-  border-color: var(--md-primary);
   color: var(--md-on-primary);
   font-weight: 600;
+}
+
+/* The primary keeps its solid accent fill under the pointer and keyboard
+   focus, only the press dips darker; a flat `--hover` shade would swallow the
+   fill. */
+button.primary:hover,
+button.primary:focus-visible {
+  background: var(--md-primary);
+}
+
+button.primary:active {
+  background: color-mix(in srgb, var(--md-primary) 88%, var(--md-on-primary));
 }
 
 /* The run/pause button turns red while the sim runs, the inverse of upstream,
@@ -259,8 +276,11 @@ button.primary {
 button.primary.running,
 button.primary.running:hover {
   background: var(--danger);
-  border-color: var(--danger);
   color: var(--md-on-error);
+}
+
+button.primary.running:active {
+  background: color-mix(in srgb, var(--danger) 88%, var(--md-on-error));
 }
 
 .material-icons {
@@ -273,10 +293,12 @@ button.primary.running:hover {
   vertical-align: middle;
 }
 
+/* The selected/active state: accent text on a faint accent tint, no border
+   ring. Pinned after the hover and press rules so the tint survives them on a
+   picked tool or an open dropdown trigger. */
 button.active,
 .tool.active {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border-color: var(--accent);
   color: var(--accent);
 }
 
@@ -293,7 +315,6 @@ button.active,
   max-height: 70vh;
   overflow: auto;
   background: var(--md-surface-container-high);
-  border: 1px solid var(--border);
   border-radius: var(--md-shape-md);
   padding: 6px;
   box-shadow: var(--md-elevation-2);
@@ -307,7 +328,7 @@ button.active,
 }
 
 .dropdown-menu summary:hover {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
+  background: var(--hover);
 }
 
 .library-search {
@@ -387,7 +408,6 @@ button.active,
 
 .dialog {
   background: var(--md-surface-container-highest);
-  border: 1px solid var(--border);
   border-radius: var(--md-shape-lg);
   padding: 14px 16px;
   min-width: 360px;
@@ -637,7 +657,6 @@ button.active,
   z-index: 30;
   min-width: 96px;
   background: var(--md-surface-container-high);
-  border: 1px solid var(--border);
   border-radius: var(--md-shape-md);
   padding: 6px 8px;
   text-align: center;
@@ -957,7 +976,6 @@ h3 {
   transform: translate(-50%, -50%);
   z-index: 50;
   background: var(--md-surface-container-highest);
-  border: 1px solid var(--border);
   border-radius: var(--md-shape-lg);
   padding: 12px;
   max-height: 85vh;

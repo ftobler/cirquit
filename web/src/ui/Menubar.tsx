@@ -14,6 +14,7 @@ import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
 import { useStore } from '../state/store';
 import { BRAND_GRADIENT } from './brand';
+import { menubarButtonClass } from './controlClasses';
 import { useMenuKeyboard } from './menuKeyboard';
 import { deferred, type MenuItemDef } from './menuRows';
 
@@ -116,7 +117,7 @@ function Dropdown({
     <div ref={ref} className="dropdown">
       <button
         type="button"
-        className={open ? 'active' : ''}
+        className={menubarButtonClass(open)}
         aria-haspopup={menu ? 'menu' : undefined}
         aria-controls={menu ? undefined : popupId}
         aria-expanded={open}
@@ -456,6 +457,7 @@ export function Menubar({ engine }: Props) {
       <div className="edit-group">
         <button
           type="button"
+          className="menubar-btn"
           disabled={!editable || !canUndo}
           onClick={fire(undo)}
           title="Undo"
@@ -467,6 +469,7 @@ export function Menubar({ engine }: Props) {
         </button>
         <button
           type="button"
+          className="menubar-btn"
           disabled={!editable || !canRedo}
           onClick={fire(redo)}
           title="Redo"
@@ -617,7 +620,7 @@ export function Menubar({ engine }: Props) {
       <div className="drawer-buttons">
         <button
           type="button"
-          className={partsOpen ? 'active' : ''}
+          className={menubarButtonClass(partsOpen)}
           aria-expanded={partsOpen}
           aria-controls="parts-drawer"
           onClick={() => setPartsOpen(!partsOpen)}
@@ -626,7 +629,7 @@ export function Menubar({ engine }: Props) {
         </button>
         <button
           type="button"
-          className={panelOpen ? 'active' : ''}
+          className={menubarButtonClass(panelOpen)}
           aria-expanded={panelOpen}
           aria-controls="options-drawer"
           onClick={() => setPanelOpen(!panelOpen)}
@@ -653,6 +656,7 @@ export function Menubar({ engine }: Props) {
         </button>
         <button
           type="button"
+          className="menubar-btn"
           onClick={() => {
             // engine.reset() rewinds runtime state in place — fuse heat/blown,
             // capacitor charge, inductor current, lamp temperature — matching

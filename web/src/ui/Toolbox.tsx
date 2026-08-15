@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { CATEGORIES } from '../model/registry';
 import { filterTools, toolShortcut } from '../model/search';
 import { useStore } from '../state/store';
+import { toolTileClass } from './controlClasses';
 import { ToolIcon } from './ToolIcon';
 
 export function Toolbox() {
@@ -41,7 +42,7 @@ export function Toolbox() {
                   <button
                     key={t.id}
                     type="button"
-                    className={tool === t.id ? 'tool active' : 'tool'}
+                    className={toolTileClass(tool === t.id)}
                     disabled={!editable}
                     onClick={() => setTool(tool === t.id ? null : t.id)}
                     title={editable ? `Place a ${t.label.toLowerCase()}` : 'Editing is disabled'}
