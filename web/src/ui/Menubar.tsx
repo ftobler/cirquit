@@ -127,7 +127,7 @@ function Dropdown({
         aria-expanded={open}
         onClick={onToggle}
       >
-        {label} ▾
+        {label}
       </button>
       {open && (
         <div
