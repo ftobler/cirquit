@@ -15,6 +15,8 @@ import { mergeProblem, useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
 import { overlayLiveState, recordBuildOnSuccess, shouldInjectLiveState } from '../../io/liveState';
+import { drawInfoBox, infoBoxX, infoBoxY, infoLines, simStatsLines } from '../../render/infoBox';
+import { readElementReadout } from '../useLiveSimReadout';
 
 /** Runs one animation frame's work without letting a throw kill the loop.
  *  `report` receives the error message. The loop re-schedules before this
@@ -536,6 +538,23 @@ export function useFrameLoop(
           }
 
           ctx.restore();
+
+          // The info box, upstream's drawBottomArea (UIManager.java:796-891):
+          // a fixed overlay in screen space at the canvas bottom. Hovering an
+          // element swaps the `t =` / `time step =` stats for its getInfo-style
+          // readout, read from the same per-frame arrays the live sim readout
+          // uses. Drawn after restore so the view transform cannot move it.
+          const hovered = hoveredId !== null ? elements.find((e) => e.id === hoveredId) : undefined;
+          const boxLines = hovered
+            ? infoLines(hovered.kind, hovered, readElementReadout(engine, hovered.id))
+            : simStatsLines(engine?.time ?? 0, settings.timeStep, settings.iterCount);
+          drawInfoBox(
+            ctx,
+            infoBoxX(width, scopes.length > 0),
+            infoBoxY(height, boxLines.length),
+            boxLines,
+            theme.text,
+          );
         },
         (message) => {
           // A persistent failure must not rewrite the same banner on every
