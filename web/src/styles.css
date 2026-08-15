@@ -441,7 +441,7 @@ button.active,
   width: 280px;
   max-height: 70vh;
   overflow: auto;
-  background: var(--md-surface-container-high);
+  background: #1e1e1e;
   border-radius: var(--md-shape-md);
   padding: 6px;
   box-shadow: var(--md-elevation-2);
