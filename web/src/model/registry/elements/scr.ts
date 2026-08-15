@@ -11,10 +11,17 @@ import {
 } from '../../../render/draw';
 import { elementColor, readParams } from '../shared';
 import { GRID_SIZE } from '../../types';
+import { TOO_FAST } from '../../../render/dots';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 const SCR_GATE_FIX = 1; // SCRElm.java:37
 const HS = 8; // SCRElm.java:101
+
+/** Negate a phase for the post-anchored runs, keeping the TOO_FAST sentinel
+ *  positive so currentDotsFrom still draws the flow line. */
+function negPhase(phase: number): number {
+  return phase === TOO_FAST ? TOO_FAST : -phase;
+}
 
 /** Upstream's `snapGrid` (CirSim.java:536-538): round down to the grid, with
  *  the half-size-minus-one offset the original's bitmask arithmetic applies. */
@@ -92,26 +99,33 @@ function drawScr(g: DrawContext, e: CircuitElement): void {
   lead(g, lead2, gate0, gateColor);
   lead(g, gate0, gate1, gateColor);
 
-  // One dot run per terminal on that post's own current and phase (SCRElm.java:
-  // 170-178). `postCurrents[i]` is the engine's `current_into_node(i)`, which
-  // is negative at the conducting anode and positive at the conducting
-  // cathode, so the anode train crawls post to body and the cathode's crawls
-  // body to post, each at its own speed; the gate pulse rides on post 2.
-  currentDotsFrom(g, lead2, p1, g.postCurrents[0], g.postDotPhases[0]);
-  currentDotsFrom(g, lead2, p2, g.postCurrents[1], g.postDotPhases[1]);
-  // The gate is one continuous train across both segments, the second run
-  // phase-offset by the first segment's length so the dots keep their spacing
-  // across the corner (SCRElm.java:176-178). Skipped on the degenerate case:
-  // a span too short for a gate lead leaves gate0 at the (0,0) sentinel, and
-  // the run would smear dots from the origin into the body.
+  // One dot run per terminal, each anchored at its POST and integrated in the
+  // flow direction (SCRElm.java:170-178), so a dot sits on the post when the
+  // phase wraps to a multiple of DOT_SPACING, the same residue a connecting
+  // wire's run uses, and the train is phase-continuous across the element
+  // boundary. `postCurrents[i]` is the engine's `current_into_node(i)`, the
+  // negation of the terminal current, so the runs pass the negated phase
+  // (TOO_FAST preserved) to keep the crawl direction while the boundary
+  // residue aligns: entering at the anode (`postCurrents[0] < 0`) crawls post
+  // to body, leaving at the cathode (`postCurrents[1] > 0`) crawls body to
+  // post, each at its own speed; the gate pulse rides on post 2.
+  currentDotsFrom(g, p1, lead2, g.postCurrents[0], negPhase(g.postDotPhases[0]));
+  currentDotsFrom(g, p2, lead2, g.postCurrents[1], negPhase(g.postDotPhases[1]));
+  // The gate is one continuous train across both segments, anchored at the
+  // gate post like the others, the second run phase-offset by the first
+  // segment's length so the dots keep their spacing across the corner
+  // (SCRElm.java:176-178). Skipped on the degenerate case: a span too short
+  // for a gate lead leaves gate0 at the (0,0) sentinel, and the run would
+  // smear dots from the origin into the body.
   if (gate0.x !== 0 || gate0.y !== 0) {
-    currentDotsFrom(g, gate0, gate1, g.postCurrents[2], g.postDotPhases[2]);
+    const gatePhase = negPhase(g.postDotPhases[2]);
+    currentDotsFrom(g, gate1, gate0, g.postCurrents[2], gatePhase);
     currentDotsFrom(
       g,
-      lead2,
       gate0,
+      lead2,
       g.postCurrents[2],
-      dotPhaseAfter(g.postDotPhases[2], Math.hypot(gate1.x - gate0.x, gate1.y - gate0.y)),
+      dotPhaseAfter(gatePhase, Math.hypot(gate1.x - gate0.x, gate1.y - gate0.y)),
     );
   }
 }

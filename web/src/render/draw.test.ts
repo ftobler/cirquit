@@ -2764,58 +2764,70 @@ describe('current dot direction', () => {
     }
   });
 
-  it('an SCR anode or triac MT2 run crawls from the post into the body', () => {
-    // postCurrents[0] = -ia/-i2 (current entering the device) drives the phase
-    // down each frame, so the train moves from the post end back to the body:
-    // the leading dot's projection on the lead2->p1 axis shrinks between phase
-    // 0 and phase -2, the mirror of the transistor collector test above.
+  it('an SCR anode or triac MT2 run is anchored at the post and crawls into the body', () => {
+    // The anchoring fix: the run starts at the post, so at phase 0 its leading
+    // dot sits exactly on p1, the same residue a connecting wire's run uses
+    // (the old lead2-anchored run put it a residue inside the body instead).
+    // postCurrents[0] = -ia/-i2 (current entering the device) drives the
+    // per-post phase down each frame, so the draw passes the negated phase and
+    // the train moves from the post end back to the body: the leading dot's
+    // projection on the lead2->p1 axis shrinks between phase 0 and phase -2,
+    // the mirror of the transistor collector test above.
     for (const { def, e, geo } of thyristorCases) {
+      expect(hasDot(drawThyristor(def, e, [-1e-3, 0, 0], [0, 0, 0]), geo.p1)).toBe(true);
       const draw = (phase: number): number[] =>
         drawThyristor(def, e, [-1e-3, 0, 0], [phase, 0, 0]).map((p) =>
           project(p, geo.lead2, geo.p1),
         );
       const at0 = draw(0);
       const atNeg = draw(-2);
-      // At phase 0 the leading dot sits near the post (48 of the 58 units);
+      // At phase 0 the leading dot sits on the post (all 58 units of the run);
       // two negated steps pull the whole train toward the body.
       expect(Math.max(...at0)).toBeGreaterThan(40);
       expect(Math.max(...atNeg)).toBeLessThan(Math.max(...at0));
     }
   });
 
-  it('an SCR cathode or triac MT1 run crawls from the body toward the post', () => {
-    // postCurrents[1] = +ic/+i1 (current leaving the device) drives the phase
-    // up, so the train moves from the body toward the post: the leading dot's
-    // projection on the lead2->p2 axis grows between phase 0 and phase 2.
+  it('an SCR cathode or triac MT1 run is anchored at the post and crawls out of the body', () => {
+    // The anchoring fix, cathode side: at phase 0 the leading dot sits exactly
+    // on p2. postCurrents[1] = +ic/+i1 (current leaving the device) drives the
+    // per-post phase up each frame, so the draw passes the negated phase and
+    // the train moves toward the post: the leading dot's projection on the
+    // lead2->p2 axis grows as the phase rises, so the samples are taken at
+    // phases -2 and 0 (the drawn phase 2 lands mid-cell and the dot train has
+    // wrapped past its own head).
     for (const { def, e, geo } of thyristorCases) {
+      expect(hasDot(drawThyristor(def, e, [0, 1e-3, 0], [0, 0, 0]), geo.p2)).toBe(true);
       const draw = (phase: number): number[] =>
         drawThyristor(def, e, [0, 1e-3, 0], [0, phase, 0]).map((p) =>
           project(p, geo.lead2, geo.p2),
         );
+      const atNeg = draw(-2);
       const at0 = draw(0);
-      const at2 = draw(2);
-      // At phase 0 the leading dot sits 32 units along the 42-unit run; two
-      // positive steps push the whole train toward the post.
-      expect(Math.max(...at0)).toBeGreaterThan(25);
-      expect(Math.max(...at2)).toBeGreaterThan(Math.max(...at0));
+      // At phase -2 the leading dot sits two units off the post; at phase 0 it
+      // reaches it, so the train slides body to post as the phase rises.
+      expect(Math.max(...atNeg)).toBeGreaterThan(20);
+      expect(Math.max(...at0)).toBeGreaterThan(Math.max(...atNeg));
     }
   });
 
-  it('an SCR or triac gate draws one continuous train across both segments', () => {
+  it('an SCR or triac gate draws one continuous train anchored at the gate post', () => {
     // postCurrents[2] = -ig (current entering at the gate post) drives the
     // phase down, so the train crawls from the gate post toward the body. The
-    // two segments chain into one run: the first starts at the corner, so at
-    // phase 0 its head dot sits on gate0, and the second segment's phase is
-    // the first's offset by the first segment's length (dotPhaseAfter), which
-    // keeps the spacing continuous across the corner instead of restarting
-    // the train at lead2.
+    // two segments chain into one run: the first starts at the gate post, so
+    // at phase 0 its head dot sits on gate1 (the anchoring fix), and the
+    // second segment's phase is the first's offset by the first segment's
+    // length (dotPhaseAfter), which keeps the spacing continuous across the
+    // corner instead of restarting the train at lead2 or gate0.
     for (const { def, e, geo } of thyristorCases) {
       const pts = drawThyristor(def, e, [0, 0, -1e-3], [0, 0, 0]);
-      // The boundary dot: the first segment (gate0->gate1) starts at the
-      // corner, so its head lands exactly on gate0 at phase 0.
-      expect(hasDot(pts, geo.gate0)).toBe(true);
-      // The chained second segment (lead2->gate0) does not restart at the
-      // body, and the train still reaches both segments.
+      // The head dot lands on the gate post, the same residue a wire on the
+      // gate uses.
+      expect(hasDot(pts, geo.gate1)).toBe(true);
+      // The chained second segment does not restart at the corner or the body:
+      // at phase 0 its nearest dot sits part-way along the run (not on gate0)
+      // and nothing lands on lead2.
+      expect(hasDot(pts, geo.gate0)).toBe(false);
       expect(hasDot(pts, geo.lead2)).toBe(false);
       expect(pts.length).toBeGreaterThan(1);
       // With no gate current the gate draws nothing at all.
@@ -2832,6 +2844,42 @@ describe('current dot direction', () => {
     const short = { id: 1, kind: 'scr', x1: 0, y1: 0, x2: 20, y2: 0, flags: 1, params: {} };
     expect(scrGeometry(short).gate0).toEqual({ x: 0, y: 0 });
     expect(drawThyristor(SCR_DEF, short, [0, 0, -1e-3], [0, 0, 0])).toHaveLength(0);
+  });
+
+  it('the dot train is phase-continuous from a connecting wire into the SCR or triac', () => {
+    // The reported symptom, as a regression: a dot entering on a connecting
+    // wire vanished at the post and a new out-of-phase dot spawned on the
+    // element. Both runs now use the same residue (a dot on the post at phase
+    // ≡ 0 mod 16), so at the wire phase that puts a dot on the shared post the
+    // element's run puts one there too, and the combined dots read as one
+    // train every DOT_SPACING units from the wire's near end through the body.
+    // Under the old lead2-anchored run the element's dots landed a residue
+    // inside the body (10, 26, 42, 58 here) and the train broke at the post.
+    for (const { def, e, geo } of thyristorCases) {
+      const { ctx, rects } = dotCtx();
+      const wire = { id: 9, kind: 'wire', x1: -48, y1: 0, x2: 0, y2: 0, flags: 0, params: {} };
+      // A wire 48 units long at dotPhase 0 (its residue for a dot on the post)
+      // puts dots at its near end and every DOT_SPACING to the shared post.
+      WIRE_DEF.draw({ ...context(ctx, 0), current: -1e-3, voltages: [0, 0] }, wire);
+      // The conducting anode at postDotPhases 0 puts its leading dot on the
+      // same post and continues the spacing into the body.
+      def.draw(
+        {
+          ...context(ctx, 0),
+          voltages: [0, 0, 0],
+          current: 0,
+          postCurrents: [-1e-3, 0, 0],
+          postDotPhases: [0, 0, 0],
+        },
+        e,
+      );
+      const pts = dots(rects);
+      // The combined train: -48, -32, -16, 0 (wire), 0, 16, 32, 48 (element).
+      for (const x of [-48, -32, -16, 0, 16, 32, 48]) {
+        expect(hasDot(pts, { x, y: 0 })).toBe(true);
+      }
+      expect(hasDot(pts, geo.p1)).toBe(true);
+    }
   });
 });
 
