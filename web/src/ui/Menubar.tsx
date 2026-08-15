@@ -3,7 +3,7 @@
  *  the context menu and the keyboard cannot diverge. Rows whose commands other
  *  features still own render disabled with a tooltip, never live-looking. */
 
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { DOC_PAGES } from '../docs/pages';
 import { openCircuit } from '../io/fileIO';
@@ -13,7 +13,6 @@ import { canMirror, canRotate } from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
 import { useStore } from '../state/store';
-import { BRAND_GRADIENT } from './brand';
 import { menubarButtonClass } from './controlClasses';
 import { useMenuKeyboard } from './menuKeyboard';
 import { deferred, type MenuItemDef } from './menuRows';
@@ -293,13 +292,6 @@ export function Menubar({ engine }: Props) {
     [clipboard],
   );
 
-  const brandStyle: CSSProperties = {
-    background: BRAND_GRADIENT,
-    WebkitBackgroundClip: 'text',
-    backgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    color: 'transparent',
-  };
   // The logo is the favicon file itself, so the tab icon and the brand mark
   // can never drift apart. BASE_URL carries the deploy base, like the docs
   // links below.
@@ -456,7 +448,7 @@ export function Menubar({ engine }: Props) {
           height={20}
           draggable={false}
         />
-        <span style={brandStyle}>Circuit Simulator</span>
+        <span className="brand-title">Circuit Simulator</span>
       </strong>
 
       <div className="edit-group">

@@ -191,6 +191,17 @@ body {
   flex: 0 0 auto;
 }
 
+.brand-title {
+  font-size: 17px;
+  /* The gradient-clipped text must not inherit an underline or outline that
+     would leak the transparent colour; the span element itself is fine. */
+  background: linear-gradient(90deg, rgb(226 212 25), rgb(223 27 126));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
 .menubar .sep {
   width: 1px;
   height: 20px;
