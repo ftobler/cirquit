@@ -253,37 +253,51 @@ function serializeDocument(elements: CircuitElement[]): string {
 }
 
 /**
- * The load warning. The two failure modes are not the same severity and must
- * not be reported as one: a missing element code means the component is absent
- * from both the drawing and the simulation, while a `!` model definition or a
- * `h` hint only means the line rides through untouched. Counts are of distinct
- * types, not lines, so seven sliders are one thing to report.
+ * Which preserved line types cost the user a component. A head this build knows
+ * as an element does, and so does any all-digit head: upstream numbers its
+ * element codes, so a number this port does not recognise is an element newer
+ * than the port rather than a data line. `isElementLine` alone would call that
+ * one inert, since it can only match codes one of the two builds already knows.
  */
-function describeUnsupported(unsupported: string[]): string | null {
-  const types = [...new Set(unsupported)];
-  const missing = types.filter(isElementLine);
-  const inert = types.filter((t) => !isElementLine(t));
-  const parts: string[] = [];
-  if (missing.length > 0) {
-    parts.push(
-      `${missing.length} element type(s) (${missing.join(', ')}) are not implemented yet, ` +
-        'so those components are missing from the drawing and the simulation.',
-    );
-  }
-  if (inert.length > 0) {
-    parts.push(
-      `${inert.length} other line type(s) (${inert.join(', ')}) were preserved ` +
-        'but not interpreted.',
-    );
-  }
-  return parts.length > 0 ? parts.join(' ') : null;
+function isMissingComponent(type: string): boolean {
+  return isElementLine(type) || /^\d+$/.test(type);
 }
 
-/** The frame loop's banner: the load-time unsupported-lines message joined
- *  with the engine's warnings, so neither can wipe the other. The frame loop
- *  recomputes this from the two separate sources on every build, so an engine
- *  warning is never reported twice and a stale unsupported message (cleared by
- *  a fresh load) stays dead. */
+/**
+ * The load warning. The two failure modes are not the same severity and must
+ * not be reported as one: a missing element code means the component is absent
+ * from both the drawing and the simulation, so it goes in the sticky banner.
+ * Counts are of distinct types, not lines, so seven sliders are one thing to
+ * report.
+ */
+function describeMissing(unsupported: string[]): string | null {
+  const missing = [...new Set(unsupported)].filter(isMissingComponent);
+  if (missing.length === 0) return null;
+  return (
+    `${missing.length} element type(s) (${missing.join(', ')}) are not implemented yet, ` +
+    'so those components are missing from the drawing and the simulation.'
+  );
+}
+
+/**
+ * The other half: a `!` model definition or an `h` hint rides through the load
+ * untouched, so nothing is lost and nothing is asked of the user. It flashes as
+ * a notice rather than sitting in the banner, since most upstream files carry
+ * one of these lines.
+ */
+function describeInert(unsupported: string[]): string | null {
+  const inert = [...new Set(unsupported)].filter((t) => !isMissingComponent(t));
+  if (inert.length === 0) return null;
+  return (
+    `${inert.length} other line type(s) (${inert.join(', ')}) were preserved ` +
+    'but not interpreted.'
+  );
+}
+
+/** Joins a load-time message with what the engine reported on the last build,
+ *  so neither can wipe the other. Used for both channels: the frame loop
+ *  recomputes each from its two sources on every build, so a message is never
+ *  reported twice and a stale one (cleared by a fresh load) stays dead. */
 export function mergeProblem(unsupported: string | null, engineWarnings: string[]): string | null {
   const parts: string[] = [];
   if (unsupported !== null && unsupported !== '') parts.push(unsupported);
@@ -464,6 +478,8 @@ function createAppStore() {
   status: '',
   problem: null,
   unsupportedProblem: null,
+  notice: null,
+  unsupportedNotice: null,
   hoveredId: null,
   highlightedNode: null,
   undoStack: [],
@@ -514,6 +530,7 @@ function createAppStore() {
   },
   setStatus: (status) => set({ status }),
   setProblem: (problem) => set({ problem }),
+  setNotice: (notice) => set({ notice }),
   setDark: (dark) => set({ dark }),
   openDialog: (dialog) => set({ dialog }),
   closeDialog: () => set({ dialog: null }),
@@ -1890,10 +1907,14 @@ function createAppStore() {
       }
     }
 
-    // The load banner: the unsupported-lines message plus any clamp-on-load
+    // The load banner: the missing-elements message plus any clamp-on-load
     // warnings (a hand-edited 12-input gate loading as 8), joined the same way
     // the frame loop joins the engine warnings, so a rebuild cannot wipe them.
-    const loadProblem = mergeProblem(describeUnsupported(parsed.unsupported), parsed.warnings);
+    const loadProblem = mergeProblem(describeMissing(parsed.unsupported), parsed.warnings);
+    // The lines that rode through untouched are not a problem, so they take the
+    // notice channel. The flash itself waits for the first engine build, which
+    // merges this with the engine's own warnings: one flash, not two.
+    const loadNotice = describeInert(parsed.unsupported);
 
     set((s) => ({
       elements: resolved,
@@ -1924,6 +1945,10 @@ function createAppStore() {
       // must not wipe the banner, so it merges this with the engine warnings
       // instead of overwriting the store's `problem`.
       unsupportedProblem: loadProblem,
+      // The previous circuit's notice says nothing about this one, and the
+      // first build flashes this one.
+      notice: null,
+      unsupportedNotice: loadNotice,
       // A refusal from the previous circuit says nothing about this one.
       subcircuitError: null,
       ...bumpRevision(s),
@@ -1992,8 +2017,10 @@ function createAppStore() {
       redoStack: [],
       problem: null,
       // A fresh circuit has no unsupported lines, so nothing for the frame
-      // loop to merge into the engine warnings.
+      // loop to merge into the engine warnings, in either channel.
       unsupportedProblem: null,
+      notice: null,
+      unsupportedNotice: null,
       subcircuitError: null,
       ...bumpRevision(s),
       // New is a fresh document, like a load: no live charges carry over.

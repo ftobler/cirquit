@@ -34,6 +34,28 @@ export function frameSafely(body: () => void, report: (message: string) => void)
 /** Resolves each scope's measured canvas width, for engine ring sizing. */
 const widthOf = (id: number): number | undefined => scopeWidth(id);
 
+/**
+ * Splits what one engine build has to say into the two channels. A build error
+ * stops the simulation and is the user's to fix, so it joins the sticky banner.
+ * `engine.warnings()` are the opposite: the engine hit something it handled by
+ * itself (no ground symbol, a floating node pinned through gmin) and is only
+ * mentioning it, so those flash and go. A failed build reports the error alone;
+ * its warnings describe a circuit that never came up.
+ *
+ * Pure, so the split is testable without a canvas.
+ */
+export function buildReport(
+  err: string | null,
+  warnings: string[],
+  unsupportedProblem: string | null,
+  unsupportedNotice: string | null,
+): { problem: string | null; notice: string | null } {
+  return {
+    problem: mergeProblem(unsupportedProblem, err ? [err] : []),
+    notice: mergeProblem(unsupportedNotice, err ? [] : warnings),
+  };
+}
+
 export function useFrameLoop(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   engine: SimEngine | null,
@@ -53,6 +75,10 @@ export function useFrameLoop(
   // The last crash message surfaced from the frame body, so a persistent
   // failure reports once instead of rewriting the banner every frame.
   const lastFrameErrorRef = useRef('');
+  // The last notice flashed, keyed by document, so a rebuild that has nothing
+  // new to say does not re-flash. Every edit rebuilds, and re-announcing the
+  // same pinned floating node on each one would strobe.
+  const lastNoticeRef = useRef('');
   // The document the engine currently holds. setCircuit records it, and the
   // rebuild branches inject live state only when it matches the store's
   // current document (a load or New bumps the counter, so their rebuilds seed
@@ -63,6 +89,15 @@ export function useFrameLoop(
   // ---- the frame loop -----------------------------------------------------
   useEffect(() => {
     let raf = 0;
+
+    // Hands one build's notice to the store, once. A load or New bumps the
+    // document, which re-arms the flash for the new circuit.
+    const flashNotice = (text: string | null, document: number) => {
+      const key = `${document}:${text ?? ''}`;
+      if (lastNoticeRef.current === key) return;
+      lastNoticeRef.current = key;
+      useStore.getState().setNotice(text);
+    };
 
     // This loop redraws every frame, so a first frame painted in the fallback
     // face is replaced as soon as Roboto lands; no document.fonts.ready
@@ -128,10 +163,17 @@ export function useFrameLoop(
               state.document,
               err,
             );
-            const warnings = err ? [err] : engine.warnings();
-            // Merge, not replace: the load-time unsupported-lines message has to
-            // survive the first engine build, which is what wiped it before.
-            useStore.getState().setProblem(mergeProblem(state.unsupportedProblem, warnings));
+            // Merge, not replace: the load-time messages have to survive the
+            // first engine build, which is what wiped them before. The engine's
+            // own warnings only flash; see buildReport.
+            const report = buildReport(
+              err,
+              err ? [] : engine.warnings(),
+              state.unsupportedProblem,
+              state.unsupportedNotice,
+            );
+            useStore.getState().setProblem(report.problem);
+            flashNotice(report.notice, state.document);
             // The reload serialised the current elements, so any queued value
             // edits are already in effect. Mark them consumed and drop the queue,
             // or they would be replayed against the fresh circuit below.
@@ -198,10 +240,16 @@ export function useFrameLoop(
                 state.document,
                 err,
               );
-              const warnings = err ? [err] : engine.warnings();
-              // Same merge as the revision branch: the load-time message must not
-              // be overwritten by this rebuild's warnings either.
-              useStore.getState().setProblem(mergeProblem(state.unsupportedProblem, warnings));
+              // Same split as the revision branch: the load-time messages must
+              // not be overwritten by this rebuild's report either.
+              const report = buildReport(
+                err,
+                err ? [] : engine.warnings(),
+                state.unsupportedProblem,
+                state.unsupportedNotice,
+              );
+              useStore.getState().setProblem(report.problem);
+              flashNotice(report.notice, state.document);
             }
             state.clearPending();
           }

@@ -974,32 +974,70 @@ h3 {
   font-size: 12px;
 }
 
-/* The problem alert overlays the canvas instead of sitting in normal document
-   flow, so it no longer pushes the canvas down when it appears or up when it
-   clears. Anchored to .centre, not the menubar, because the menubar's own
+/* The banners overlay the canvas instead of sitting in normal document flow,
+   so they no longer push the canvas down when they appear or up when they
+   clear. Anchored to .centre, not the menubar, because the menubar's own
    height varies when it wraps at narrow widths; .centre always starts right
    below it regardless. Anchoring to .centre rather than .workspace keeps the
-   banner within the canvas column instead of stretching across the parts and
+   banners within the canvas column instead of stretching across the parts and
    options drawers. z-index sits above an open mobile drawer (35) but below
-   the menubar and its dropdowns (38), so an open menu overlays it; both stay
-   below dialogs (40). */
-.app-banner {
+   the menubar and its dropdowns (38), so an open menu overlays them; both stay
+   below dialogs (40). The stack is click-through so the gap between a problem
+   and a notice does not swallow canvas drags; the banners themselves take
+   their clicks back. */
+.app-banner-stack {
   position: absolute;
   top: 10px;
   left: 10px;
   right: 10px;
-  margin: 0;
   z-index: 37;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.app-banner {
+  margin: 0;
+  pointer-events: auto;
   display: flex;
   align-items: flex-start;
   gap: 8px;
   border: none;
+  border-radius: var(--md-shape-sm);
+  padding: 6px 8px;
+  font-size: 12px;
+  /* Only the floating copies are elevated; a `.problem` inline in a dialog is
+     part of that surface and stays flat. */
+  box-shadow: var(--md-elevation-1);
+}
+
+.problem.app-banner {
   /* Half-transparent so the canvas shows through, and hardcoded rather than
      a variable because this one alpha-tinted fill has no other use. */
   background: #93000a80;
-  /* Only the floating copy is elevated; a `.problem` inline in a dialog is
-     part of that surface and stays flat. */
-  box-shadow: var(--md-elevation-1);
+}
+
+/* The notice is the quiet channel: the port handled whatever it reports, so it
+   gets the inverse surface an MD3 snackbar uses rather than the error tint,
+   and it is gone in about two seconds. */
+.notice.app-banner {
+  background: color-mix(in srgb, var(--md-inverse-surface) 85%, transparent);
+  color: var(--md-inverse-on-surface);
+  animation: banner-appear 140ms var(--md-easing-standard);
+}
+
+@keyframes banner-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notice.app-banner {
+    animation: none;
+  }
 }
 
 .app-banner-text {

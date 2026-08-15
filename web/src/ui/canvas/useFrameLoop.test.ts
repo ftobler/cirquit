@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { frameSafely } from './useFrameLoop';
+import { buildReport, frameSafely } from './useFrameLoop';
 
 describe('frameSafely', () => {
   it('reports a throw instead of letting it escape the loop', () => {
@@ -33,5 +33,39 @@ describe('frameSafely', () => {
       () => calls.push('report'),
     );
     expect(calls).toEqual(['body']);
+  });
+});
+
+describe('buildReport', () => {
+  // The two the engine can raise on its own, both of which it has already
+  // handled by the time it says so (circuit.rs:601, circuit.rs:989).
+  const NO_GROUND = 'No ground symbol: the first node was used as the voltage reference.';
+  const FLOATING =
+    '1 floating node(s) have no path to ground; they were pinned with a 100 MΩ resistance.';
+
+  it('sends the engine warnings to the notice, leaving the banner empty', () => {
+    expect(buildReport(null, [NO_GROUND, FLOATING], null, null)).toEqual({
+      problem: null,
+      notice: `${NO_GROUND} ${FLOATING}`,
+    });
+  });
+
+  it('keeps the load-time messages on their own channels', () => {
+    expect(buildReport(null, [NO_GROUND], 'missing', 'preserved')).toEqual({
+      problem: 'missing',
+      notice: `preserved ${NO_GROUND}`,
+    });
+  });
+
+  it('a build error goes to the banner, and its warnings are dropped', () => {
+    // The warnings would describe a circuit that never came up.
+    expect(buildReport('matrix is singular', [NO_GROUND], null, 'preserved')).toEqual({
+      problem: 'matrix is singular',
+      notice: 'preserved',
+    });
+  });
+
+  it('reports nothing on either channel for a clean build', () => {
+    expect(buildReport(null, [], null, null)).toEqual({ problem: null, notice: null });
   });
 });

@@ -116,13 +116,23 @@ export interface AppState {
   /** Engine node of the shift-highlighted net; every element on it draws with
    *  `theme.highlight` (MouseManager.java:689-693). Null when none. */
   highlightedNode: number | null;
-  /** The problem banner: the load-time unsupported-lines message merged with
-   *  the engine's warnings by the frame loop, or null when neither applies. */
+  /** The problem banner: what the user has to act on, so it sticks until it is
+   *  dismissed or the circuit changes. Missing element types, clamped values, a
+   *  failed build, a convergence failure, a frame crash. Null when none apply.
+   *  Anything the port handled by itself goes to `notice` instead. */
   problem: string | null;
-  /** The load-time unsupported-lines message, kept apart from `problem` so the
-   *  frame loop can merge it with engine warnings instead of letting one
-   *  rebuild's warning wipe it. Set by `loadNetlist`, cleared by `newCircuit`. */
+  /** The load-time part of `problem`, kept apart from it so the frame loop can
+   *  merge it with the engine's report instead of letting one rebuild wipe it.
+   *  Set by `loadNetlist`, cleared by `newCircuit`. */
   unsupportedProblem: string | null;
+  /** The transient notice: something the port handled on its own and only
+   *  mentions in passing (an uninterpreted line preserved through the load, a
+   *  substituted ground reference, a pinned floating node). It flashes and
+   *  clears itself; nothing here is waiting on the user. */
+  notice: string | null;
+  /** The load-time part of `notice`, merged with the engine's warnings by the
+   *  frame loop the way `unsupportedProblem` is. */
+  unsupportedNotice: string | null;
   undoStack: Snapshot[];
   redoStack: Snapshot[];
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
@@ -195,6 +205,7 @@ export interface AppState {
   setViewSize(w: number, h: number): void;
   setStatus(status: string): void;
   setProblem(problem: string | null): void;
+  setNotice(notice: string | null): void;
   updateSettings(patch: Partial<SimSettings>): void;
   /** White-background on (false) or off (true); see `dark`. */
   setDark(dark: boolean): void;
