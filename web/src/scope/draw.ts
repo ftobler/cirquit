@@ -9,9 +9,9 @@
 
 import type { Scope, ScopePlot, ScopeValue, SimEngine } from '../engine/simulator';
 import { canvasFont, formatValue, makeTheme } from '../render/draw';
-import type { ThemeColors } from '../model/types';
+import type { Theme, ThemeColors } from '../model/types';
 import { defFor } from '../model/registry';
-import { scopeSpeed, timeToX } from './geometry';
+import { MIN_SETTINGS_WHEEL_SIZE, scopeSpeed, timeToX } from './geometry';
 import {
   axisSamplesFit,
   calcGridParams,
@@ -56,6 +56,10 @@ export interface ScopeCursor {
   draggingPlotY: boolean;
   dragPlotYStart: number;
   dragPlotYInitial: number;
+  /** Whether the pointer is over the settings wheel in the bottom-left corner,
+   *  which colours it like a hovered element. The panel sets it from the
+   *  pointer position, the draw loop reads it per frame. */
+  hoverSettingsWheel: boolean;
 }
 
 export function emptyCursor(): ScopeCursor {
@@ -69,6 +73,7 @@ export function emptyCursor(): ScopeCursor {
     draggingPlotY: false,
     dragPlotYStart: 0,
     dragPlotYInitial: 0,
+    hoverSettingsWheel: false,
   };
 }
 
@@ -714,6 +719,53 @@ function drawTrigger(
   ctx.fillText(status, w - sw - 5, h - 5);
 }
 
+/** The settings gear at the scope's bottom-left corner that opens the scope
+ *  properties dialog, the port of `drawSettingsWheel` (Scope.java:526-549): a
+ *  thick circle of inner radius 5 px with eight spokes out to 8 px (the four
+ *  diagonal ones only to 6), centred on `(18, h-18)` like upstream's
+ *  `translate(rect.x+18, rect.y+rect.height-18)`. It colours selection when
+ *  the pointer is over it and the muted gray otherwise, upstream's
+ *  selectColor/dark_gray pair. Only drawn when the canvas clears the 100x100
+ *  show/hide threshold (`showSettingsWheel`, Scope.java:553-555). */
+function drawSettingsWheel(
+  ctx: CanvasRenderingContext2D,
+  cursor: ScopeCursor,
+  w: number,
+  h: number,
+  theme: Theme,
+): void {
+  if (!(h > MIN_SETTINGS_WHEEL_SIZE && w > MIN_SETTINGS_WHEEL_SIZE)) return;
+  const cx = 18;
+  const cy = h - 18;
+  const outR = 8;
+  const inR = 5;
+  const inR45 = 4;
+  const outR45 = 6;
+  ctx.strokeStyle = cursor.hoverSettingsWheel ? theme.selection : theme.muted;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, inR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - outR, cy);
+  ctx.lineTo(cx - inR, cy);
+  ctx.moveTo(cx + outR, cy);
+  ctx.lineTo(cx + inR, cy);
+  ctx.moveTo(cx, cy - outR);
+  ctx.lineTo(cx, cy - inR);
+  ctx.moveTo(cx, cy + outR);
+  ctx.lineTo(cx, cy + inR);
+  ctx.moveTo(cx - outR45, cy - outR45);
+  ctx.lineTo(cx - inR45, cy - inR45);
+  ctx.moveTo(cx + outR45, cy - outR45);
+  ctx.lineTo(cx + inR45, cy - inR45);
+  ctx.moveTo(cx - outR45, cy + outR45);
+  ctx.lineTo(cx - inR45, cy + inR45);
+  ctx.moveTo(cx + outR45, cy + outR45);
+  ctx.lineTo(cx + inR45, cy + inR45);
+  ctx.stroke();
+}
+
 /** The per-frame entry point: draws one scope canvas. `dark` follows the White
  *  Background setting so the panel, text and trace colours stay legible on a
  *  white backdrop. `decimalDigits` is the readout digit count and `colors` the
@@ -753,6 +805,7 @@ export function drawScope(
   if (scope.plotXY) {
     drawXY(ctx, engine, scope, w, h);
     drawScopeLabel(ctx, scope, h);
+    drawSettingsWheel(ctx, cursor, w, h, theme);
     return;
   }
 
@@ -851,6 +904,8 @@ export function drawScope(
   }
   drawMeasurements(ctx, scope, states[0], h, speed, timeStep, decimalDigits);
   drawCursor(ctx, cursor, states, simTime, speed, timeStep, w, h, triggerAnchor, dark, decimalDigits);
+  // The settings wheel draws on top of the traces, like the HTML close button.
+  drawSettingsWheel(ctx, cursor, w, h, theme);
 }
 
 /** Index of the plot whose trace is nearest the pointer, for manual-mode

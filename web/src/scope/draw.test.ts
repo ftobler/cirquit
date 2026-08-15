@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Scope, ScopePlot, SimEngine } from '../engine/simulator';
+import { makeTheme } from '../render/draw';
 import {
   DIVERGED_CAPTION,
   divergedCaption,
@@ -8,6 +9,7 @@ import {
   isDrawable,
   triggerTimeAnchor,
   visiblePlotsOf,
+  type ScopeCursor,
 } from './draw';
 
 /** A minimal scope over the given plots, with the visibility flags to test. */
@@ -229,5 +231,72 @@ describe('drawScope diverged caption', () => {
     const { ctx, texts } = mkCtx();
     drawScope(ctx, captionEngine(false), scope, 200, 120, emptyCursor(), 0, 5e-6, false, 3);
     expect(texts).not.toContain(DIVERGED_CAPTION);
+  });
+});
+
+/** Runs `drawScope` while recording the stroke style of every stroke call, so
+ *  a test can assert the colour of the last-drawn overlay. */
+const strokeColorsOf = (
+  engine: SimEngine,
+  scope: Scope,
+  w: number,
+  h: number,
+  cursor: ScopeCursor,
+): { ctx: CanvasRenderingContext2D; colors: string[] } => {
+  const { ctx } = mkCtx();
+  const colors: string[] = [];
+  const stroke = ctx.stroke;
+  ctx.stroke = vi.fn(() => {
+    colors.push(ctx.strokeStyle as string);
+    stroke();
+  }) as unknown as CanvasRenderingContext2D['stroke'];
+  drawScope(ctx, engine, scope, w, h, cursor, 0, 5e-6, false, 3);
+  return { ctx, colors };
+};
+
+/** Whether the settings wheel's circle was drawn: an arc of radius 5 centred
+ *  on (18, h-18). No other overlay uses that radius at that corner. */
+const wheelDrawn = (ctx: CanvasRenderingContext2D, h: number): boolean =>
+  (ctx.arc as ReturnType<typeof vi.fn>).mock.calls.some(
+    (call) => call[0] === 18 && call[1] === h - 18 && call[2] === 5,
+  );
+
+describe('drawScope settings wheel', () => {
+  const scope = scopeOf([plot(1, 'voltage')]);
+  const engine = captionEngine(false);
+
+  it('draws a radius-5 circle at the bottom-left corner with eight spokes', () => {
+    const { ctx } = strokeColorsOf(engine, scope, 200, 150, emptyCursor());
+    const cx = 18;
+    const cy = 150 - 18;
+    expect(wheelDrawn(ctx, 150)).toBe(true);
+    // The spoke start points: four axial out to 8 px, four diagonal to 6 px
+    // (Scope.java:526-549).
+    const starts = [
+      [cx - 8, cy],
+      [cx + 8, cy],
+      [cx, cy - 8],
+      [cx, cy + 8],
+      [cx - 6, cy - 6],
+      [cx + 6, cy - 6],
+      [cx - 6, cy + 6],
+      [cx + 6, cy + 6],
+    ];
+    const moves = (ctx.moveTo as ReturnType<typeof vi.fn>).mock.calls.map((c) => [c[0], c[1]]);
+    for (const s of starts) expect(moves).toContainEqual(s);
+  });
+
+  it('uses the muted colour normally and the selection colour when hovered', () => {
+    const rest = strokeColorsOf(engine, scope, 200, 150, emptyCursor());
+    expect(rest.colors[rest.colors.length - 1]).toBe(makeTheme(false).muted);
+    const cursor = emptyCursor();
+    cursor.hoverSettingsWheel = true;
+    const hovered = strokeColorsOf(engine, scope, 200, 150, cursor);
+    expect(hovered.colors[hovered.colors.length - 1]).toBe(makeTheme(false).selection);
+  });
+
+  it('skips the wheel when the canvas is too small', () => {
+    const { ctx } = strokeColorsOf(engine, scope, 80, 80, emptyCursor());
+    expect(wheelDrawn(ctx, 80)).toBe(false);
   });
 });

@@ -233,6 +233,10 @@ export interface Theme {
   text: string;
   selection: string;
   highlight: string;
+  /** Upstream's `Color.dark_gray` (64,64,64), the scope settings wheel's rest
+   *  state (Scope.java:536). The same constant as `darkGray`, named for the
+   *  wheel's role so the two call sites stay independent. */
+  muted: string;
   /** Colour at the most negative displayed voltage. */
   negative: string;
   /** A wire endpoint that would not connect (upstream's red bad-connection dot). */

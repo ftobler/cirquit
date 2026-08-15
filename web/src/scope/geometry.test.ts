@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MIN_SETTINGS_WHEEL_SIZE,
+  inSettingsWheel,
   scopeColumnCount,
   timeToX,
   visibleColumnRange,
@@ -82,5 +84,31 @@ describe('scope geometry', () => {
     expect(visibleColumnRange(6, widthPx)).toEqual({ start: 2, count: 4 });
     // Empty window draws nothing.
     expect(visibleColumnRange(0, widthPx)).toEqual({ start: 0, count: 0 });
+  });
+
+  it('inSettingsWheel is true inside the 36x36 bottom-left corner box', () => {
+    // The wheel centre is (18, h-18); the box spans x in [0, 36] and
+    // y in [h-36, h] (Scope.java:557-563).
+    expect(inSettingsWheel(18, 150 - 18, 200, 150)).toBe(true);
+    expect(inSettingsWheel(0, 150, 200, 150)).toBe(true);
+    expect(inSettingsWheel(36, 150 - 36, 200, 150)).toBe(true);
+    expect(inSettingsWheel(36, 150, 200, 150)).toBe(true);
+  });
+
+  it('inSettingsWheel is false outside the corner box', () => {
+    expect(inSettingsWheel(37, 150 - 18, 200, 150)).toBe(false);
+    expect(inSettingsWheel(18, 150 - 37, 200, 150)).toBe(false);
+    expect(inSettingsWheel(-1, 150 - 18, 200, 150)).toBe(false);
+    expect(inSettingsWheel(18, 0, 200, 150)).toBe(false);
+  });
+
+  it('inSettingsWheel is false for canvases under the 100x100 show/hide threshold', () => {
+    // Upstream hides the wheel unless rect.height > 100 && rect.width > 100
+    // (Scope.java:553-555), and the hit-test shares that rule with the draw
+    // gate through the one shared constant.
+    expect(MIN_SETTINGS_WHEEL_SIZE).toBe(100);
+    expect(inSettingsWheel(18, 150 - 18, 100, 150)).toBe(false);
+    expect(inSettingsWheel(18, 150 - 18, 200, 100)).toBe(false);
+    expect(inSettingsWheel(18, 50, 80, 80)).toBe(false);
   });
 });

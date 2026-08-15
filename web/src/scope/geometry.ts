@@ -79,6 +79,26 @@ export function timeToX(
   return widthPx - (simT - t) / ts;
 }
 
+/** Both canvas dimensions must exceed this for the settings wheel to draw and
+ *  to accept clicks, the port of upstream's `height>100 && width>100`
+ *  (`showSettingsWheel`, Scope.java:553-555). Shared by the hit-test here and
+ *  the draw gate in draw.ts, so the two cannot drift. */
+export const MIN_SETTINGS_WHEEL_SIZE = 100;
+
+/** Whether a pointer at `(x, y)` is over the settings wheel: the 36x36
+ *  bottom-left corner box, and only when the canvas clears the show/hide
+ *  threshold, so a small scope neither draws the wheel nor accepts the click. */
+export function inSettingsWheel(x: number, y: number, w: number, h: number): boolean {
+  return (
+    w > MIN_SETTINGS_WHEEL_SIZE &&
+    h > MIN_SETTINGS_WHEEL_SIZE &&
+    x >= 0 &&
+    x <= 36 &&
+    y >= h - 36 &&
+    y <= h
+  );
+}
+
 /**
  * Which columns of a scope snapshot to draw on a `widthPx` canvas, one column
  * per pixel, right-anchored like the time grid: the newest written column

@@ -971,6 +971,9 @@ function lightTheme(): Theme {
     // and the analog switch bar.
     lightGray: '#c0c0c0',
     text: '#24292f',
+    // Upstream's Color.dark_gray, the scope settings wheel's rest state
+    // (Scope.java:536); same constant as darkGray.
+    muted: '#404040',
     selection: '#54aeff',
     // The hover/net-highlight role is the port's own, deliberately outside
     // the upstream-pinned colour-scale roles. Selection and highlight are the
@@ -1007,6 +1010,9 @@ function darkTheme(): Theme {
     // theme carries: the relay blade and the analog switch bar.
     lightGray: '#c0c0c0',
     text: '#8b949e',
+    // Upstream's Color.dark_gray, the scope settings wheel's rest state
+    // (Scope.java:536); same constant as darkGray.
+    muted: '#404040',
     selection: '#58a6ff',
     // Same hover-family decision as the light theme: selection and highlight
     // are both the app's accent blue (styles.css --accent), so the selected

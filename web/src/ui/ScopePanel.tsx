@@ -10,7 +10,12 @@
 import { useEffect, useRef } from 'react';
 import type { Scope, SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
-import { registerScopeWidth, unregisterScopeWidth, xToTime } from '../scope/geometry';
+import {
+  registerScopeWidth,
+  unregisterScopeWidth,
+  xToTime,
+  inSettingsWheel,
+} from '../scope/geometry';
 import {
   clearXYPersistence,
   drawScope,
@@ -33,6 +38,10 @@ interface Props {
 function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: Scope }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cursorRef = useRef<ScopeCursor>(emptyCursor());
+  // Whether the pointer press landed on the settings wheel. Only a press that
+  // starts there opens the dialog on release, so a plot-Y or time drag that
+  // began elsewhere and ends in the corner box does not.
+  const settingsWheelPressRef = useRef(false);
   // Wheel deltas accumulate and only zoom past a threshold, so trackpad
   // micro-deltas do not hammer the time base (Scope.java:1378-1388).
   const wheelDeltaRef = useRef(0);
@@ -121,6 +130,13 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     const cursor = cursorRef.current;
     cursor.hover = true;
     cursor.mouseX = x;
+    // The settings wheel's 36x36 corner box grabs the click, so it neither
+    // drags a plot nor starts a time drag (Scope.java:557-563).
+    if (inSettingsWheel(x, y, w, h)) {
+      cursor.hoverSettingsWheel = true;
+      settingsWheelPressRef.current = true;
+      return;
+    }
     // Manual mode drags the selected plot's vertical position.
     if (scope.manualScale && engine) {
       // selectPlotAt returns an index into the visible-plot list, which the
@@ -155,6 +171,7 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     const cursor = cursorRef.current;
     cursor.hover = true;
     cursor.mouseX = x;
+    cursor.hoverSettingsWheel = inSettingsWheel(x, y, w, h);
     if (cursor.draggingPlotY) {
       const maxy = Math.floor((h - 1) / 2);
       const next = dragPlotYPosition(cursor.dragPlotYInitial, y - cursor.dragPlotYStart, maxy);
@@ -166,11 +183,31 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     cursor.cursorTime = xToTime(x, simTime(), w, speed, settings.timeStep, anchor);
   };
 
-  const onPointerUp = () => {
+  /** Shared reset for the end of a pointer gesture: up, cancel and leave all
+   *  drop the drag and wheel state. */
+  const endPointerInteraction = () => {
     const cursor = cursorRef.current;
     cursor.draggingPlotY = false;
     cursor.dragPlotId = -1;
     cursor.dragStartTime = -1;
+    cursor.hoverSettingsWheel = false;
+    settingsWheelPressRef.current = false;
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const pressedWheel = settingsWheelPressRef.current;
+    endPointerInteraction();
+    // Only the primary button opens the dialog, matching upstream's mouse-down
+    // button guard (MouseManager.java:1071-1072), and only when the press
+    // landed on the wheel: a gesture that started elsewhere must not open it
+    // (MouseManager.java:1104-1117).
+    if (e.button !== 0 || !pressedWheel) return;
+    useStore.getState().openScopeProperties(scope.id);
+  };
+
+  const onPointerCancel = () => {
+    // A cancelled gesture never opens the dialog, but it still ends the drag.
+    endPointerInteraction();
   };
 
   const onPointerLeave = () => {
@@ -178,6 +215,8 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     cursor.hover = false;
     cursor.cursorTime = -1;
     cursor.dragStartTime = -1;
+    cursor.hoverSettingsWheel = false;
+    settingsWheelPressRef.current = false;
   };
 
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -220,7 +259,7 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onPointerLeave={onPointerLeave}
         onWheel={onWheel}
         onContextMenu={onContextMenu}
