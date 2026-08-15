@@ -15,6 +15,8 @@ import type {
 } from './types';
 import { unescapeToken } from './tokens';
 import { modelToEngineSpec, parseCompositeModelLine } from '../subcircuits';
+import { isXml } from '../xml';
+import { xmlToText } from '../xmlToText';
 
 /** Kinds that resolve a `modelName` against the diode model library. All four
  *  share the diode model machinery upstream (VaractorElm, ZenerElm and LEDElm
@@ -310,6 +312,17 @@ export function kindOfDumpCode(code: string): string | null {
 }
 
 export function parseCircuit(text: string): ParsedCircuit {
+  // Upstream's XML `<cir>` documents are migrated to the text format on load:
+  // the port never writes XML, it only reads it, once. Conversion is the
+  // owner's chosen migration path (feature/xml-to-text.md), so a converted
+  // file saves as ordinary text from then on.
+  if (isXml(text)) {
+    try {
+      text = xmlToText(text);
+    } catch (e) {
+      throw new Error(`xml to text conversion failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   const elements: CircuitElement[] = [];
   const settings: Partial<SimSettings> = {};
   const scopes: ScopeConfig[] = [];

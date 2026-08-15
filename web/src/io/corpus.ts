@@ -13,12 +13,16 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isElementLine, parseCircuit, type ParsedCircuit } from './netlist';
+import { registerSessionModel, clearSessionModels } from './subcircuits';
 import { DEFAULT_SETTINGS } from '../model/types';
 import type { FrameStats, SimEngine } from '../engine/simulator';
 
 export interface CorpusEntry {
   file: string;
   format: 'plain' | 'xml';
+  /** True when the file was an upstream XML `<cir>` document, migrated to text
+   *  at load by `xmlToText`. Kept so the report can tell the origin. */
+  converted?: boolean;
   /** Element kinds and device-model codes this build cannot read. */
   missing: string[];
   /** `38` slider lines, feature tracking only, never a load failure. */
@@ -64,15 +68,34 @@ export const SIM_TIMEOUT_MS = 60_000;
  * transient starts from the file's own charge.
  *
  * `qam-256.txt` lived here until the open-current-source pinning feature: a
- * multiplier VCCS whose output node was left loaded only by an open analog
- * switch's 1e10 ohm off-resistance solved to ~7.3e6 V, and the two op-amp
- * followers on it could never settle. The engine now grounds an
- * effectively-open current-source output that has run away, so the file
- * converges and the entry is gone.
+ *  multiplier VCCS whose output node was left loaded only by an open analog
+ *  switch's 1e10 ohm off-resistance solved to ~7.3e6 V, and the two op-amp
+ *  followers on it could never settle. The engine now grounds an
+ *  effectively-open current-source output that has run away, so the file
+ *  converges and the entry is gone.
  *
- * The map is currently empty; add a new entry with the next diagnosed failure.
+ * The XML-to-text migration (feature/xml-to-text.md) converted the 38 bundled
+ * XML circuits, and every one now loads. The nine that still fail to
+ * simulate are port limitations, not conversion bugs: the converted text is
+ * what upstream's own text save would have written. Each named cause is the
+ * engine feature that would retire the entry.
  */
-export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {};
+export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {
+  'alu74181.txt':
+    'the 5-bit bus splitter feeds the separate S0-S3 and M signals, but the port has no bus support, so all bits join one node and the differently-driven logic inputs short',
+  'td4.txt':
+    'the decoder composite is built from gates, which the composite engine has no child model for, and the bus splitters and bus logic inputs are dropped, so the microprocessor is structurally broken',
+  'td4-add2.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
+  'td4-ctr.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
+  'td4-ctr-dn.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
+  'td4-ctr-up-dn.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
+  'cs-varicap.txt':
+    'the VCCS output current depends on dadt/dcdt voltage derivatives through its own input node; the port Newton matrix goes singular on the capacitive feedback loop',
+  'cs-varinduct.txt':
+    'the CCVS sense-current expression depends on a dadt voltage derivative; the port Newton matrix goes singular on the inductive feedback loop',
+  'cs-opamprail.txt':
+    'the clamped VCVS (clamp((a-b)*1000,d,c)) saturates hard against the +/-10 V rails and the Newton iteration cannot settle it',
+};
 
 /**
  * Device-model definitions: none left. The `32` transistor lines are parsed
@@ -133,20 +156,10 @@ export function scanCorpus(dir: string): CorpusEntry[] {
       entries.push(loadErrorEntry(file, e));
       continue;
     }
-    // The XML root can be preceded by a BOM or blank lines; classify on the
-    // first non-blank line rather than the raw first one.
-    const head = text.split(/\r?\n/).find((l) => l.trim().length > 0) ?? '';
-    if (head.trimStart().startsWith('<cir ')) {
-      entries.push({
-        file,
-        format: 'xml',
-        missing: [],
-        sliderLines: 0,
-        load: 'empty',
-        sim: 'notrun',
-      });
-      continue;
-    }
+    // An upstream XML `<cir>` document is converted to the text format inside
+    // parseCircuit (xmlToText), so the scan classifies it like any other file
+    // and the conversion error surfaces as a load error.
+    const xml = text.split(/\r?\n/).find((l) => l.trim().length > 0) ?? '';
     let parsed: ParsedCircuit;
     try {
       parsed = parseCircuit(text);
@@ -159,6 +172,7 @@ export function scanCorpus(dir: string): CorpusEntry[] {
     entries.push({
       file,
       format: 'plain',
+      ...(xml.trimStart().startsWith('<cir ') ? { converted: true } : {}),
       missing,
       sliderLines,
       load: missing.length > 0 ? 'missing' : parsed.elements.length > 0 ? 'ok' : 'empty',
@@ -182,6 +196,12 @@ export function simulate(engine: SimEngine, text: string): SimResult {
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e), converged: false, finite: false };
   }
+  // The file's own `.` subcircuit lines join the session library, so a 410
+  // element's geometry (posts, body) resolves the same way the store's load
+  // resolves it. The corpus scan is per-file, so a stale library from the
+  // previous file cannot leak across: register fresh each time.
+  clearSessionModels();
+  for (const model of parsed.compositeModels) registerSessionModel(model);
   const err = engine.setCircuit(parsed.elements, { ...DEFAULT_SETTINGS, ...parsed.settings }, []);
   if (err) return { error: err, converged: false, finite: false };
   let stats: FrameStats;
@@ -199,7 +219,7 @@ export function simulate(engine: SimEngine, text: string): SimResult {
 export function generateReport(dir: string, engine: SimEngine): CorpusEntry[] {
   const entries = scanCorpus(dir);
   for (const entry of entries) {
-    if (entry.format === 'xml' || entry.load !== 'ok') {
+    if (entry.load !== 'ok') {
       entry.sim = 'notrun';
       continue;
     }
@@ -251,9 +271,9 @@ export function formatReport(entries: CorpusEntry[]): string {
   const s = summarize(entries);
   const lines = [`load ok ${s.loadOk}/${s.total}  sim ok ${s.simOk}/${s.total}`];
 
-  const xmlFiles = entries.filter((e) => e.format === 'xml');
-  lines.push(`xml format: ${xmlFiles.length} file${xmlFiles.length === 1 ? '' : 's'}`);
-  if (xmlFiles.length > 0) lines.push(xmlFiles.map((e) => `  ${e.file}`).join('\n'));
+  const converted = entries.filter((e) => e.converted);
+  lines.push(`converted from xml: ${converted.length} file${converted.length === 1 ? '' : 's'}`);
+  if (converted.length > 0) lines.push(converted.map((e) => `  ${e.file}`).join('\n'));
 
   const sliderFiles = entries.filter((e) => e.sliderLines > 0).length;
   lines.push(`slider lines: ${s.sliderLines} across ${sliderFiles} files`);

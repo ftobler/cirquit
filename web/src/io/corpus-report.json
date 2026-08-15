@@ -217,11 +217,13 @@
   },
   {
     "file": "adder4-sc.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "allpass1.txt",
@@ -243,11 +245,14 @@
   },
   {
     "file": "alu74181.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "amdetect.txt",
@@ -421,11 +426,13 @@
   },
   {
     "file": "brentkung.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "butter10hi.txt",
@@ -699,11 +706,13 @@
   },
   {
     "file": "cmosinvertercap.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cmosinverterslow.txt",
@@ -779,19 +788,23 @@
   },
   {
     "file": "conv-boost.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
-    "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "conv-buck.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
-    "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "conv-buckboost.txt",
@@ -804,19 +817,23 @@
   },
   {
     "file": "conv-cuk.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
-    "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "conv-sepic.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
-    "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "counter.txt",
@@ -874,115 +891,146 @@
   },
   {
     "file": "crystalosc.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "crystalosc2.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-currentadder.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
-    "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "sliderLines": 2,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-diff.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-fullrectifier.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-integrator.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-multiplier.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-opamp.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-opamprail.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "Newton iteration did not converge; try a smaller timestep.",
+    "converged": false
   },
   {
     "file": "cs-ramp.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-resistor.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-varicap.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
-    "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "cs-varinduct.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
-    "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "cs-varyresistor.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cube.txt",
@@ -1328,11 +1376,13 @@
   },
   {
     "file": "freqdouble.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
-    "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "fulladd.txt",
@@ -1345,11 +1395,13 @@
   },
   {
     "file": "fullrect-sc.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "fullrect.txt",
@@ -1416,11 +1468,13 @@
   },
   {
     "file": "gyratorelm.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "halfadd.txt",
@@ -2036,27 +2090,33 @@
   },
   {
     "file": "norton-invert.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "norton-noninvert.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "norton-saw.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "norton.txt",
@@ -2267,43 +2327,53 @@
   },
   {
     "file": "pll2.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
-    "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "pll2a.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
-    "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "sliderLines": 1,
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "plot2d-checker.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "plot2d-color.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "plot2d-smile.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "pmosfet.txt",
@@ -2784,43 +2854,58 @@
   },
   {
     "file": "td4-add2.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "td4-ctr-dn.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "td4-ctr-up-dn.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "td4-ctr.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "td4.txt",
-    "format": "xml",
+    "format": "plain",
+    "converted": true,
     "missing": [],
     "sliderLines": 0,
-    "load": "empty",
-    "sim": "notrun"
+    "load": "ok",
+    "sim": "error",
+    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
+    "converged": false
   },
   {
     "file": "tdiode.txt",

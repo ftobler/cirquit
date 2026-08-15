@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseCircuit, serializeCircuit, type NetlistLine } from './index';
 import { CIRCUITS_DIR, SAMPLE } from './fixtures';
+import { xmlToText } from '../xmlToText';
 import { useStore } from '../../state/store';
 import { DEFAULT_SETTINGS } from '../../model/types';
 import { parseSetupList } from '../library';
@@ -102,7 +103,10 @@ describe('bundled circuit round trips', () => {
     let headers = 0;
     for (const file of files) {
       const text = read(file);
-      const parsed = parseCircuit(text);
+      // XML `<cir>` files are migrated to text before parsing; the converted
+      // text is what the app saves from then on.
+      const input = isXml(text) ? xmlToText(text) : text;
+      const parsed = parseCircuit(input);
       const out = serializeCircuit(
         parsed.elements,
         { ...DEFAULT_SETTINGS, ...parsed.settings },
@@ -112,12 +116,13 @@ describe('bundled circuit round trips', () => {
         parsed.sliders,
       );
       headers += parsed.order.filter((l) => l.kind === 'header').length;
-      anomalies.push(...compare(file, text, out, parsed.order));
+      anomalies.push(...compare(file, input, out, parsed.order));
     }
     expect(anomalies).toEqual([]);
-    // Every non-XML file has exactly one `$` line, and `compare` byte-checks
-    // each of them; without this the header claim would rest on one sample.
-    expect(headers).toBe(files.length - files.filter((f) => isXml(read(f))).length);
+    // Every file, blank.txt included, has exactly one `$` line now that the
+    // XML files are migrated; `compare` byte-checks each of them, so without
+    // this the header claim would rest on one sample.
+    expect(headers).toBe(files.length);
   });
 
   it('round-trips every file through the store, which is how the app saves', () => {
@@ -126,22 +131,30 @@ describe('bundled circuit round trips', () => {
     const anomalies: string[] = [];
     for (const file of files) {
       const text = read(file);
+      const input = isXml(text) ? xmlToText(text) : text;
       useStore.getState().loadNetlist(text);
       const s = useStore.getState();
-      anomalies.push(...compare(file, text, s.toNetlist(), s.order));
+      anomalies.push(...compare(file, input, s.toNetlist(), s.order));
     }
     expect(anomalies).toEqual([]);
   });
 
-  it('leaves the XML-format files exactly as they were', () => {
-    // 38 of the bundled circuits are upstream's `<cir>` XML, which this build
-    // does not import. Passing them through unchanged is the whole promise
-    // until it does: a `$` line in front would stop upstream reading them.
+  it('migrates the XML-format files to text on load', () => {
+    // Loading an XML `<cir>` file converts it: the save that follows writes
+    // the text format, and the converted document saves stably (a second
+    // load-then-save is byte-identical). The 38 bundled XML circuits are the
+    // migration target. A converted file is not expected to match its first
+    // conversion byte-for-byte when a token hit the clamp-on-load policy
+    // (brentkung's decimal display carries `bc 9`, clamped to the engine's
+    // 1..8 ceiling with a warning); the stable fixpoint is the contract.
     const xml = files.filter((f) => isXml(read(f)));
     expect(xml).toHaveLength(38);
     for (const file of xml) {
       useStore.getState().loadNetlist(read(file));
-      expect(useStore.getState().toNetlist(), file).toBe(read(file));
+      const out = useStore.getState().toNetlist();
+      expect(out.split('\n')[0], file).toMatch(/^\$ /);
+      useStore.getState().loadNetlist(out);
+      expect(useStore.getState().toNetlist(), file).toBe(out);
     }
   });
 });

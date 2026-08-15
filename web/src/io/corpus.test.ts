@@ -33,10 +33,13 @@ describe('corpus stage 1: load', () => {
     const scanned = scanCorpus(CIRCUITS_DIR);
     expect(scanned.length).toBe(golden.size);
 
-    const xml = scanned.filter((e) => e.format === 'xml');
-    expect(xml.length).toBeGreaterThan(0);
-    for (const entry of xml) {
-      expect(golden.get(entry.file)?.format, entry.file).toBe('xml');
+    // The XML circuits are migrated to text at load, so the report carries no
+    // `xml` format entries any more; their origin survives as `converted`.
+    expect(scanned.some((e) => e.format === 'xml')).toBe(false);
+    const converted = scanned.filter((e) => e.converted);
+    expect(converted.length).toBeGreaterThan(0);
+    for (const entry of converted) {
+      expect(golden.get(entry.file)?.converted, entry.file).toBe(true);
     }
 
     // No regression: a file that passed must keep passing. Files the golden
@@ -44,7 +47,6 @@ describe('corpus stage 1: load', () => {
     for (const entry of scanned) {
       const g = golden.get(entry.file);
       expect(g, `no golden entry for ${entry.file}`).toBeDefined();
-      if (g?.format === 'xml') continue;
       if (g?.load !== 'ok') continue;
       expect(entry.load, entry.file).toBe('ok');
     }
@@ -102,18 +104,21 @@ describe('corpus fixtures', () => {
     expect(sliderLines).toBe(1);
   });
 
-  it('classifies the xml fixture by its `<cir ` root', () => {
+  it('migrates the xml fixture to text and reports it as converted', () => {
     const entries = scanCorpus(FIXTURES_DIR);
     const xml = entries.find((e) => e.file === 'xml.txt');
-    expect(xml?.format).toBe('xml');
+    expect(xml?.converted).toBe(true);
+    expect(xml?.format).toBe('plain');
+    // The fixture's `<cir>` carries no elements, so the converted circuit is
+    // empty: a header-only text file.
     expect(xml?.load).toBe('empty');
     expect(xml?.sim).toBe('notrun');
   });
 
-  it('classifies xml even when a blank line precedes the root', () => {
+  it('migrates xml even when a blank line precedes the root', () => {
     const entries = scanCorpus(FIXTURES_DIR);
     const xml = entries.find((e) => e.file === 'xml-leading-blank.txt');
-    expect(xml?.format).toBe('xml');
+    expect(xml?.converted).toBe(true);
     expect(xml?.load).toBe('empty');
   });
 
