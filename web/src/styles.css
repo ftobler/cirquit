@@ -314,7 +314,7 @@ button::after {
 }
 
 button:active::after {
-  animation: md-state-expand 350ms var(--md-easing-standard);
+  animation: md-state-expand 600ms var(--md-easing-standard);
 }
 
 @keyframes md-state-expand {
