@@ -3,7 +3,9 @@ import { ELEMENT_DEFS, PLACEMENT_BY_CHAR, TOOLBOX } from '../model/registry';
 import type { StorageLike } from '../state/appPrefs';
 import {
   chordOf,
+  defaultBindingFor,
   hasDuplicateChords,
+  isDefaultBinding,
   loadShortcutOverlay,
   matchShortcut,
   overlayFromRows,
@@ -487,6 +489,26 @@ describe('chord signatures', () => {
   });
 });
 
+describe('default bindings and the Default button', () => {
+  it('defaultBindingFor returns the table binding, or an empty string when none', () => {
+    expect(defaultBindingFor('delete')).toBe('Delete');
+    expect(defaultBindingFor('undo')).toBe('Ctrl+z');
+    expect(defaultBindingFor('toggleRunning')).toBe('');
+  });
+
+  it('isDefaultBinding reports a row at its default and rejects a genuine override', () => {
+    // The delete row's default is the Delete key, so the empty chord is an
+    // override, not a no-op: Default is the only way back once cleared.
+    expect(isDefaultBinding({ action: 'delete', chord: 'Delete' })).toBe(true);
+    expect(isDefaultBinding({ action: 'delete', chord: '' })).toBe(false);
+    expect(isDefaultBinding({ action: 'undo', chord: 'Ctrl+z' })).toBe(true);
+    expect(isDefaultBinding({ action: 'undo', chord: 'Ctrl+y' })).toBe(false);
+    // An action with no table binding is at default when unassigned.
+    expect(isDefaultBinding({ action: 'toggleRunning', chord: '' })).toBe(true);
+    expect(isDefaultBinding({ action: 'toggleRunning', chord: 'p' })).toBe(false);
+  });
+});
+
 describe('shortcut overlay persistence', () => {
   /** A plain-object storage, injected so the module never touches the real
    *  DOM localStorage under the node test environment. */
@@ -537,6 +559,15 @@ describe('shortcut overlay persistence', () => {
         selectAll: 'Shift+Tab',
       }),
     );
+    expect(loadShortcutOverlay(storage)).toEqual({});
+  });
+
+  it('a Delete chord is not assignable, so the Default button is the only way back', () => {
+    // Delete stays a dialog-reserved clear key (NON_ASSIGNABLE_KEYS), so not
+    // even a hand-edited delete:'Delete' blob persists. Restoring the cleared
+    // delete row is the Default button's job, a pure dialog affordance.
+    const storage = fakeStorage();
+    storage.setItem('shortcuts.v1', JSON.stringify({ delete: 'Delete' }));
     expect(loadShortcutOverlay(storage)).toEqual({});
   });
 

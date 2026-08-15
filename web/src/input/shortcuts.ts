@@ -316,6 +316,15 @@ export function overlayFromRows(rows: ShortcutRow[]): ShortcutOverlay {
   return out;
 }
 
+/** True when a row already shows its default binding, so the dialog's Default
+ *  button is a no-op and can be disabled. Clearing a row to '' is at default
+ *  only for an action whose table binding is '' (toggleRunning); for delete it
+ *  is a genuine override, and Default is the only way back to the Delete key,
+ *  which the dialog keeps reserved. */
+export function isDefaultBinding(row: ShortcutRow): boolean {
+  return row.chord === defaultBindingFor(row.action);
+}
+
 /** True when two rows claim the same chord; the dialog flags them and greys
  *  OK, exactly as upstream's checkForDuplicates refuses to apply
  *  (ShortcutsDialog.java:188-214). */

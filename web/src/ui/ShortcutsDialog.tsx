@@ -9,7 +9,9 @@ import { useState } from 'react';
 import {
   ACTION_LABELS,
   chordOf,
+  defaultBindingFor,
   hasDuplicateChords,
+  isDefaultBinding,
   overlayFromRows,
   rowsFromOverlay,
   type ShortcutRow,
@@ -82,7 +84,8 @@ export function ShortcutsDialog() {
           <tr>
             <th>Command</th>
             <th>Shortcut</th>
-            {/* An empty spacer column for the Clear buttons; nothing to announce. */}
+            {/* An empty spacer column for the Clear and Default buttons;
+                nothing to announce. */}
             <th aria-hidden="true" />
           </tr>
         </thead>
@@ -103,6 +106,16 @@ export function ShortcutsDialog() {
               <td>
                 <button type="button" onClick={() => setRow(i, '')}>
                   Clear
+                </button>
+                {/* Restores the table binding. Delete stays dialog-reserved, so
+                    this is the only way back to a cleared delete:'Delete'. A row
+                    already at its default (or with none) is a no-op. */}
+                <button
+                  type="button"
+                  onClick={() => setRow(i, defaultBindingFor(row.action))}
+                  disabled={isDefaultBinding(row)}
+                >
+                  Default
                 </button>
               </td>
             </tr>
