@@ -899,7 +899,7 @@ h3 {
 .tool-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 4px;
+  gap: 0;
 }
 
 .tool {
