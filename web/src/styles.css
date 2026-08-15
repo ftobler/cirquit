@@ -1,11 +1,78 @@
+/**
+ * MD3 token system: color roles, a 4-tier tonal elevation scale, a shape
+ * scale, state-layer opacities and motion constants. `--bg`/`--panel`/
+ * `--border`/`--text`/`--muted`/`--accent`/`--danger` are kept as the public
+ * names every rule below keys off; each aliases one MD3 role 1:1, so the
+ * whole app inherits the MD3 palette without a mechanical rename of every
+ * selector. `--accent` must stay exactly #58a6ff: render/draw.ts hardcodes
+ * that hex for canvas selection/highlight and scope trace colours, and
+ * draw.test.ts asserts it, so the primary role can't drift from the canvas.
+ */
 :root {
-  --bg: #0d1117;
-  --panel: #161b22;
-  --border: #30363d;
-  --text: #c9d1d9;
-  --muted: #8b949e;
-  --accent: #58a6ff;
+  --md-primary: #58a6ff;
+  --md-on-primary: #08243f;
+  --md-on-error: #410002;
+  --md-error-container: #93000a;
+  --md-on-error-container: #ffdad6;
+
+  --md-surface: #0d1117;
+  --md-surface-container-lowest: #010409;
+  --md-surface-container: #161b22;
+  /* Tonal elevation: higher tiers mix in a wash of the primary hue, same
+     mechanic as MD3's surface-tint-at-elevation, so it stays in step with
+     whatever --md-primary is. */
+  --md-surface-container-high: color-mix(
+    in srgb,
+    var(--md-surface-container) 92%,
+    var(--md-primary) 8%
+  );
+  --md-surface-container-highest: color-mix(
+    in srgb,
+    var(--md-surface-container) 85%,
+    var(--md-primary) 15%
+  );
+
+  --md-on-surface: #c9d1d9;
+  --md-on-surface-variant: #8b949e;
+  --md-outline: #30363d;
+  --md-outline-variant: #21262d;
+  --md-scrim: #000000;
+
+  --bg: var(--md-surface);
+  --panel: var(--md-surface-container);
+  --border: var(--md-outline);
+  --text: var(--md-on-surface);
+  --muted: var(--md-on-surface-variant);
+  --accent: var(--md-primary);
   --danger: #f85149;
+
+  /* Shape scale (MD3 corner tiers, only the ones this UI needs). */
+  --md-shape-xs: 4px;
+  --md-shape-sm: 8px;
+  --md-shape-md: 12px;
+  --md-shape-lg: 16px;
+
+  /* Elevation shadows, MD3's level 1-3 shadow tokens. */
+  --md-elevation-1: 0 1px 2px 0 rgb(0 0 0 / 30%), 0 1px 3px 1px rgb(0 0 0 / 15%);
+  --md-elevation-2: 0 1px 2px 0 rgb(0 0 0 / 30%), 0 2px 6px 2px rgb(0 0 0 / 15%);
+  --md-elevation-3: 0 1px 3px 0 rgb(0 0 0 / 30%), 0 4px 8px 3px rgb(0 0 0 / 15%);
+
+  /* State-layer opacities: currentColor overlaid at these strengths on
+     hover/press, so a control's feedback tint always matches its own label
+     colour (on-surface, primary, on-primary, ...) with no extra rules. */
+  --md-state-hover: 0.08;
+  --md-state-pressed: 0.12;
+
+  --md-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md-duration-short: 100ms;
+
+  /* Type scale entries actually used below; body text keeps its literal
+     `font:` shorthand (draw.test.ts greps styles.css for a literal
+     `font: ... Roboto` declaration to keep the canvas text stack in step). */
+  --md-type-label-large: 500 13px/20px 'Roboto Variable', Roboto, system-ui, sans-serif;
+  --md-type-label-medium: 500 11px/16px 'Roboto Variable', Roboto, system-ui, sans-serif;
+  --md-type-title-small: 500 14px/20px 'Roboto Variable', Roboto, system-ui, sans-serif;
+
   color-scheme: dark;
 }
 
@@ -23,7 +90,11 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.45 'Roboto Variable', Roboto, system-ui, sans-serif;
+  font:
+    13px/1.45 'Roboto Variable',
+    Roboto,
+    system-ui,
+    sans-serif;
   overflow: hidden;
 }
 
@@ -67,7 +138,7 @@ body {
 .menubar .sep {
   width: 1px;
   height: 20px;
-  background: var(--border);
+  background: var(--md-outline-variant);
   margin: 0 4px;
 }
 
@@ -88,13 +159,46 @@ body {
 }
 
 button {
-  font: inherit;
+  position: relative;
+  /* A stacking context, so the state layer's negative z-index keeps it inside
+     the button (above its own background, below its label) instead of sliding
+     behind an ancestor's background. */
+  isolation: isolate;
+  overflow: hidden;
+  font: var(--md-type-label-large);
   color: var(--text);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--md-shape-sm);
   padding: 4px 10px;
   cursor: pointer;
+  transition:
+    background var(--md-duration-short) var(--md-easing-standard),
+    border-color var(--md-duration-short) var(--md-easing-standard),
+    color var(--md-duration-short) var(--md-easing-standard);
+}
+
+/* The state layer: a currentColor wash under the label, so its tint always
+   matches whatever role colour the button is using (on-surface, primary,
+   on-primary, on-error, ...) without a rule per variant. */
+button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--md-duration-short) var(--md-easing-standard);
+}
+
+button:hover::before {
+  opacity: var(--md-state-hover);
+}
+
+button:focus-visible::before,
+button:active::before {
+  opacity: var(--md-state-pressed);
 }
 
 button:hover {
@@ -109,6 +213,10 @@ button:disabled {
 /* a disabled button must not light up with the accent border on hover */
 button:disabled:hover {
   border-color: var(--border);
+}
+
+button:disabled:hover::before {
+  opacity: 0;
 }
 
 /* ---- focus ---- */
@@ -126,12 +234,10 @@ button:focus-visible {
   border-color: var(--accent);
 }
 
-.menu-item:focus-visible {
-  background: var(--bg);
-}
-
-.find-list button:focus-visible {
-  background: var(--panel);
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--accent);
 }
 
 .scope-close:focus-visible {
@@ -139,19 +245,22 @@ button:focus-visible {
 }
 
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--md-primary);
+  border-color: var(--md-primary);
+  color: var(--md-on-primary);
   font-weight: 600;
 }
 
 /* The run/pause button turns red while the sim runs, the inverse of upstream,
    which turns it red when stopped (UIManager.java:522-540). The owner wants
-   red while running, so the port inverts upstream on purpose. */
+   red while running, so the port inverts upstream on purpose. on-error is
+   used for the label instead of white: on the vivid --danger fill it's the
+   higher-contrast choice (~5.2:1 vs white's ~3.3:1, which fails AA). */
 button.primary.running,
 button.primary.running:hover {
   background: var(--danger);
   border-color: var(--danger);
+  color: var(--md-on-error);
 }
 
 .material-icons {
@@ -166,6 +275,7 @@ button.primary.running:hover {
 
 button.active,
 .tool.active {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -182,17 +292,22 @@ button.active,
   width: 280px;
   max-height: 70vh;
   overflow: auto;
-  background: var(--panel);
+  background: var(--md-surface-container-high);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--md-shape-md);
   padding: 6px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+  box-shadow: var(--md-elevation-2);
 }
 
 .dropdown-menu summary {
   cursor: pointer;
   padding: 4px 6px;
   font-weight: 600;
+  border-radius: var(--md-shape-xs);
+}
+
+.dropdown-menu summary:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .library-search {
@@ -200,9 +315,9 @@ button.active,
   margin-bottom: 6px;
   font: inherit;
   color: var(--text);
-  background: var(--bg);
+  background: var(--md-surface-container-lowest);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--md-shape-xs);
   padding: 4px 6px;
 }
 
@@ -215,20 +330,14 @@ button.active,
   text-align: left;
   border: none;
   padding: 4px 14px;
-  border-radius: 4px;
+  border-radius: var(--md-shape-xs);
 }
 
-.menu-item:hover {
-  background: var(--bg);
-}
-
+/* Hover, focus and press are the shared button state layer; menu rows only
+   need to drop the button chrome so the layer is the whole visual. */
 .menu-item:disabled {
   opacity: 0.4;
   cursor: default;
-}
-
-.menu-item:disabled:hover {
-  background: transparent;
 }
 
 /* A row the port does not implement: struck through in the danger red on top
@@ -247,7 +356,7 @@ button.active,
 
 .menu-sep {
   height: 1px;
-  background: var(--border);
+  background: var(--md-outline-variant);
   margin: 4px 6px;
 }
 
@@ -269,7 +378,7 @@ button.active,
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: rgb(0 0 0 / 55%);
+  background: color-mix(in srgb, var(--md-scrim) 55%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -277,15 +386,15 @@ button.active,
 }
 
 .dialog {
-  background: var(--panel);
+  background: var(--md-surface-container-highest);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--md-shape-lg);
   padding: 14px 16px;
   min-width: 360px;
   max-width: 620px;
   max-height: 85vh;
   overflow-y: auto;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+  box-shadow: var(--md-elevation-3);
   outline: none;
 }
 
@@ -297,7 +406,7 @@ button.active,
 
 .dialog h2 {
   margin: 0 0 10px;
-  font-size: 14px;
+  font: var(--md-type-title-small);
   text-transform: none;
   letter-spacing: normal;
   color: var(--text);
@@ -306,11 +415,16 @@ button.active,
 .dialog textarea {
   width: 100%;
   min-height: 180px;
-  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font:
+    12px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
   color: var(--text);
-  background: var(--bg);
+  background: var(--md-surface-container-lowest);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--md-shape-xs);
   padding: 6px 8px;
   resize: vertical;
 }
@@ -364,11 +478,16 @@ button.active,
 
 .shortcuts-table input[type='text'] {
   width: 110px;
-  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font:
+    12px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
   color: var(--text);
-  background: var(--bg);
+  background: var(--md-surface-container-lowest);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--md-shape-xs);
   padding: 4px 6px;
 }
 
@@ -386,8 +505,8 @@ button.active,
   max-height: 260px;
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
+  border-radius: var(--md-shape-sm);
+  background: var(--md-surface-container-lowest);
 }
 
 .find-list button {
@@ -401,12 +520,13 @@ button.active,
   background: transparent;
   color: var(--text);
   padding: 5px 8px;
+  /* Full-bleed rows: the list's own rounded corners clip the first and last,
+     so a per-row radius would only show as notches mid-list. */
+  border-radius: 0;
 }
 
-.find-list button:hover {
-  background: var(--panel);
-}
-
+/* The selected row is a container-tinted state, not a state layer, so it
+   survives the pointer moving to another row. */
 .find-list button.selected {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
@@ -425,8 +545,8 @@ button.active,
   max-height: 300px;
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
+  border-radius: var(--md-shape-sm);
+  background: var(--md-surface-container-lowest);
 }
 
 .subcircuit-list li {
@@ -434,7 +554,7 @@ button.active,
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--md-outline-variant);
 }
 
 .subcircuit-list li:last-child {
@@ -473,7 +593,7 @@ button.active,
   color: var(--text);
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--md-shape-xs);
   padding: 3px 6px;
 }
 
@@ -498,8 +618,7 @@ button.active,
    between icon and key, mirroring the toolbox grid rows. */
 .context-menu h3 {
   margin: 6px 2px 2px;
-  font-size: 11px;
-  font-weight: 600;
+  font: var(--md-type-label-medium);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -517,12 +636,12 @@ button.active,
   position: fixed;
   z-index: 30;
   min-width: 96px;
-  background: var(--panel);
+  background: var(--md-surface-container-high);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--md-shape-md);
   padding: 6px 8px;
   text-align: center;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+  box-shadow: var(--md-elevation-2);
 }
 
 .scroll-value-name {
@@ -609,7 +728,7 @@ button.active,
 
 h3 {
   margin: 12px 0 6px;
-  font-size: 11px;
+  font: var(--md-type-label-medium);
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--muted);
@@ -633,15 +752,15 @@ h3 {
   width: 100%;
   font: inherit;
   color: var(--text);
-  background: var(--bg);
+  background: var(--md-surface-container-lowest);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--md-shape-xs);
   padding: 4px 6px;
 }
 
 .tool-icon {
   flex: none;
-  border-radius: 4px;
+  border-radius: var(--md-shape-xs);
   background: var(--bg);
 }
 
@@ -666,9 +785,10 @@ h3 {
 }
 
 .problem {
-  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  background: var(--md-error-container);
   border: 1px solid var(--danger);
-  border-radius: 6px;
+  color: var(--md-on-error-container);
+  border-radius: var(--md-shape-sm);
   padding: 6px 8px;
   margin-bottom: 10px;
   font-size: 12px;
@@ -689,6 +809,9 @@ h3 {
   right: 10px;
   margin: 0;
   z-index: 37;
+  /* Only the floating copy is elevated; a `.problem` inline in a dialog is
+     part of that surface and stays flat. */
+  box-shadow: var(--md-elevation-1);
 }
 
 .field {
@@ -713,9 +836,9 @@ h3 {
   width: 100%;
   font: inherit;
   color: var(--text);
-  background: var(--bg);
+  background: var(--md-surface-container-lowest);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--md-shape-xs);
   padding: 4px 6px;
 }
 
@@ -785,7 +908,7 @@ h3 {
   display: flex;
   gap: 1px;
   height: 150px;
-  background: var(--border);
+  background: var(--md-outline-variant);
   border-top: 1px solid var(--border);
 }
 
@@ -833,13 +956,15 @@ h3 {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 50;
-  background: var(--panel);
+  background: var(--md-surface-container-highest);
   border: 1px solid var(--border);
+  border-radius: var(--md-shape-lg);
   padding: 12px;
   max-height: 85vh;
   overflow-y: auto;
   min-width: 320px;
   max-width: 560px;
+  box-shadow: var(--md-elevation-3);
 }
 
 .scope-props:focus-visible {
@@ -848,13 +973,17 @@ h3 {
 
 .scope-props h3 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font: var(--md-type-title-small);
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
 }
 
 .scope-props fieldset {
   border: 1px solid var(--border);
   margin: 8px 0;
   padding: 8px;
+  border-radius: var(--md-shape-xs);
 }
 
 .scope-props legend {
@@ -929,6 +1058,7 @@ h3 {
     max-width: 340px;
     max-height: 70vh;
     display: none;
+    box-shadow: var(--md-elevation-2);
   }
 
   .left {
@@ -951,7 +1081,7 @@ h3 {
     position: fixed;
     inset: 0;
     z-index: 30;
-    background: rgb(0 0 0 / 50%);
+    background: color-mix(in srgb, var(--md-scrim) 50%, transparent);
   }
 
   .drawer-buttons {
