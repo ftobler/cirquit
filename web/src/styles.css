@@ -1377,9 +1377,18 @@ input[type='range'] {
    reserved for coarse pointers below. */
 @media (pointer: fine) {
   .menubar .menubar-btn,
+  .menubar .run-group button,
   .menu-item,
   .tool {
     min-height: 40px;
+  }
+
+  /* The run/pause and reset icon buttons stay square like the undo/redo
+     pair: the 40 px height alone would leave the primary's natural 40 px
+     width matching, but the min-width pins it so a content change cannot
+     stretch one axis. */
+  .menubar .run-group button {
+    min-width: 40px;
   }
 }
 
