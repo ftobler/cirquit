@@ -264,12 +264,51 @@ button {
    carry the affordance is gone), keyboard focus paints the focus state layer
    (as strong as a press, so a keyboard user sees the interaction), and press
    dips one tier darker. */
+button {
+  position: relative;
+  overflow: hidden;
+}
+
 button:hover {
   background: var(--hover);
 }
 
 button:focus-visible {
   background: color-mix(in srgb, var(--text) calc(var(--md-state-focus) * 100%), var(--panel));
+}
+
+/* The expanding press state layer, MD3's ripple done without JS: a circle of
+   the text colour, anchored at the button's centre (the pointer position
+   would need JS), scaling up and fading out over the press. `overflow:
+   hidden` clips it to the rounded corners. The state layer uses the text
+   colour so it reads on both the flat chrome buttons and the primary fill. */
+button::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: currentColor;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0);
+}
+
+button:active::after {
+  animation: md-state-expand 350ms var(--md-easing-standard);
+}
+
+@keyframes md-state-expand {
+  0% {
+    opacity: calc(var(--md-state-pressed) * 1);
+    transform: translate(-50%, -50%) scale(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 
 button:active {
