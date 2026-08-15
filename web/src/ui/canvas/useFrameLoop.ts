@@ -112,10 +112,14 @@ export function useFrameLoop(
             // A mid-run rebuild keeps the live charges only when the engine still
             // holds this document; the rebuild right after a load injects nothing,
             // because the new file's tokens are already in the params.
-            const build = shouldInjectLiveState(builtDocument.current, state.document)
+            const continues = shouldInjectLiveState(builtDocument.current, state.document);
+            const build = continues
               ? overlayLiveState(elements, engine.elementStateTokens())
               : elements;
-            const err = engine.setCircuit(build, settings, scopes, widthOf);
+            // The same gate carries the clock: editing the shape of a running
+            // circuit must not rewind it to t = 0, wipe the scopes or re-solve
+            // the operating point. Only a new document restarts.
+            const err = engine.setCircuit(build, settings, scopes, widthOf, continues);
             // A failed build leaves the engine on a stale or partial circuit, so
             // the next rebuild must not pull live tokens off it; record only on
             // success (recordBuildOnSuccess).
@@ -182,10 +186,13 @@ export function useFrameLoop(
               // net; the store's revision-bump clear cannot reach this branch,
               // which rebuilds without bumping `revision`.
               useStore.getState().setHighlightedNode(null);
-              const build = shouldInjectLiveState(builtDocument.current, state.document)
+              const continues = shouldInjectLiveState(builtDocument.current, state.document);
+              const build = continues
                 ? overlayLiveState(elements, engine.elementStateTokens())
                 : elements;
-              const err = engine.setCircuit(build, settings, scopes, widthOf);
+              // A param that could not be patched live is still an edit to a
+              // running circuit, so this rebuild continues the run too.
+              const err = engine.setCircuit(build, settings, scopes, widthOf, continues);
               builtDocument.current = recordBuildOnSuccess(
                 builtDocument.current,
                 state.document,

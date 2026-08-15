@@ -143,6 +143,7 @@ fn large_singular_circuit_is_rejected_on_the_sparse_path() {
     assert!(
         sparse
             .set_circuit(&CircuitSpec {
+                preserve_run: false,
                 elements: sparse_els,
                 options: Some(opts_solver(1e-5, false, SolverType::Sparse)),
                 scopes: Vec::new(),
@@ -162,6 +163,7 @@ fn large_singular_circuit_is_rejected_on_the_sparse_path() {
     assert!(
         dense
             .set_circuit(&CircuitSpec {
+                preserve_run: false,
                 elements: dense_els,
                 options: Some(opts_solver(1e-5, false, SolverType::Dense)),
                 scopes: Vec::new(),

@@ -1,6 +1,6 @@
 //! Scope, ammeter, decorations, and the controlled sources: CC2, VCVS, VCCS, CCCS, CCVS and the unijunction transistor.
 
-use circuit_core::{ScopeSpec, ScopeValue};
+use circuit_core::{Circuit, CircuitSpec, ElementSpec, ScopeSpec, ScopeValue};
 
 mod common;
 use common::*;
@@ -1135,6 +1135,118 @@ fn charge_scope_samples_capacitance_times_plate_voltage() {
         close(min, 1e-3, 1e-6) && close(max, 1e-3, 1e-6),
         "charge scope sampled {min}/{max}, expected 1e-3 C"
     );
+}
+
+// ─── Scope capture across a rebuild ───
+
+/// A divider with a voltage scope on the resistor. `extra` is appended so a
+/// rebuild can change the shape; `scope` is the trace the build asks for.
+fn scoped_divider(preserve_run: bool, extra: Vec<ElementSpec>, scope: ScopeSpec) -> CircuitSpec {
+    let mut elements = vec![
+        elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+        elm(
+            2,
+            "resistor",
+            &[[0, 0], [100, 0]],
+            &[("resistance", 1000.0)],
+        ),
+        elm(3, "wire", &[[100, 0], [100, 100]], &[]),
+        elm(4, "ground", &[[100, 100]], &[]),
+    ];
+    elements.extend(extra);
+    CircuitSpec {
+        preserve_run,
+        elements,
+        options: Some(opts(1e-5, false)),
+        scopes: vec![scope],
+    }
+}
+
+fn voltage_scope(element_id: u32, steps_per_column: u32) -> ScopeSpec {
+    ScopeSpec {
+        element_id,
+        value: ScopeValue::Voltage,
+        post: 0,
+        steps_per_column,
+        columns: 1024,
+        ac_coupled: false,
+        trigger: Default::default(),
+        display_width: 0,
+    }
+}
+
+#[test]
+fn preserving_rebuild_keeps_the_captured_scope_columns() {
+    // The capture ring is indexed by column, not by node, so an edit
+    // elsewhere in the circuit cannot invalidate it. Wiping it would blank
+    // every scope on screen each time the user nudged a wire; upstream clears
+    // its plots from `resetGraphs` alone (UIManager.java:1359).
+    let mut c = Circuit::new();
+    c.set_circuit(&scoped_divider(false, Vec::new(), voltage_scope(2, 1)))
+        .unwrap();
+    c.run(50);
+    let before = c.scopes()[0].columns_written;
+    assert_eq!(before, 50, "the scope did not capture the run");
+
+    // Hang a second resistor off the midpoint: a new element and a new node.
+    let edited = scoped_divider(
+        true,
+        vec![elm(
+            5,
+            "resistor",
+            &[[100, 0], [200, 0]],
+            &[("resistance", 2000.0)],
+        )],
+        voltage_scope(2, 1),
+    );
+    c.set_circuit(&edited).unwrap();
+    assert_eq!(
+        c.scopes()[0].columns_written,
+        before,
+        "a shape change wiped the captured scope columns"
+    );
+
+    // The trace keeps filling from where it stopped, and still tracks the
+    // element it was pointed at after the renumbering.
+    c.run(10);
+    assert_eq!(c.scopes()[0].columns_written, before + 10);
+}
+
+#[test]
+fn a_changed_scope_spec_starts_a_fresh_ring() {
+    // A different speed changes what a column means, so the old columns are
+    // not comparable and the ring has to restart. Matching upstream's
+    // `Scope.setSpeed` -> `resetGraph` (ScopePlot.java:75-76), which the
+    // engine's live `set_scope_params` fast path already does; this pins that
+    // the rebuild path agrees rather than silently keeping stale columns.
+    let mut c = Circuit::new();
+    c.set_circuit(&scoped_divider(false, Vec::new(), voltage_scope(2, 1)))
+        .unwrap();
+    c.run(50);
+    assert_eq!(c.scopes()[0].columns_written, 50);
+
+    c.set_circuit(&scoped_divider(true, Vec::new(), voltage_scope(2, 4)))
+        .unwrap();
+    assert_eq!(
+        c.scopes()[0].columns_written,
+        0,
+        "a changed capture speed must start a fresh ring"
+    );
+}
+
+#[test]
+fn a_new_document_clears_the_scope_even_with_an_identical_spec() {
+    // `preserve_run: false` is a load or a New: the columns belong to the
+    // previous circuit whatever the spec says.
+    let mut c = Circuit::new();
+    c.set_circuit(&scoped_divider(false, Vec::new(), voltage_scope(2, 1)))
+        .unwrap();
+    c.run(50);
+    assert_eq!(c.scopes()[0].columns_written, 50);
+
+    c.set_circuit(&scoped_divider(false, Vec::new(), voltage_scope(2, 1)))
+        .unwrap();
+    assert_eq!(c.scopes()[0].columns_written, 0);
 }
 
 // ─── Composite elements and the OTA (Milestone B subcircuits) ───

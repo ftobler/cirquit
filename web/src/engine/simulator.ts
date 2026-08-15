@@ -293,12 +293,21 @@ export class SimEngine {
   /**
    * Replaces the circuit. Elements whose type the engine cannot solve are
    * skipped, so a partially supported file still runs.
+   *
+   * `preserveRun` says this build continues the run already in progress, which
+   * is what every edit-driven rebuild is: the engine then keeps its clock, its
+   * adaptive timestep and the scope captures whose spec is unchanged, and skips
+   * the DC operating-point re-solve. It defaults to false so a fresh document
+   * (a load, New, or a test) starts at t = 0. It is the same gate as the
+   * live-state injection in `useFrameLoop`, and for the same reason: both ask
+   * whether the engine still holds this document.
    */
   setCircuit(
     elements: CircuitElement[],
     settings: SimSettings,
     scopes: Scope[],
     widthOf: WidthResolver = defaultWidth,
+    preserveRun = false,
   ): string | null {
     const usable = elements.filter((e) => this.supports(engineKindOf(e)));
     this.order = usable.map((e) => e.id);
@@ -371,6 +380,7 @@ export class SimEngine {
         trigger: s.trigger,
         displayWidth: s.displayWidth,
       })),
+      preserveRun,
     };
 
     try {

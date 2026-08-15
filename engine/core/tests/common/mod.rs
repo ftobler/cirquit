@@ -119,6 +119,7 @@ pub fn build_with(
     scopes: Vec<ScopeSpec>,
 ) -> Circuit {
     let spec = CircuitSpec {
+        preserve_run: false,
         elements,
         options: Some(options),
         scopes,

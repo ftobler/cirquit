@@ -364,6 +364,7 @@ fn mbb_switch_resistance_edit_crossing_zero_rebuilds() {
     // panicking. The reverse 0 -> nonzero direction needs the same rebuild; a
     // same-side edit stays on the live path.
     let spec = |resistance: f64| CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, -64], [0, 0]], &[("maxVoltage", 10.0)]),
             elm(2, "ground", &[[0, -64]], &[]),
@@ -531,6 +532,7 @@ fn dpdt_switch_resistance_edit_crossing_zero_rebuilds() {
     // re-serialised params, and the ideal and resistor paths each work again
     // without panicking. A same-side edit stays live.
     let spec = |resistance: f64| CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, -64], [0, 0]], &[("maxVoltage", 10.0)]),
             elm(2, "ground", &[[0, -64]], &[]),
@@ -766,6 +768,7 @@ fn singular_closure_is_rejected_at_set_circuit_inside_a_healthy_circuit() {
     // sources fighting over one node) at set_circuit even when a healthy
     // divider shares the circuit as a second closure.
     let spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 300], [0, 200]], &[("maxVoltage", 10.0)]),
             elm(

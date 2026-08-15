@@ -147,31 +147,164 @@ fn closing_a_switch_that_grounds_the_last_node_does_not_panic_on_the_next_step()
     );
 }
 
+/// The divider used by the rebuild-clock tests below, with a spare terminal
+/// coordinate the edited version reaches for.
+fn divider_spec(preserve_run: bool, extra: Vec<circuit_core::ElementSpec>) -> CircuitSpec {
+    let mut elements = vec![
+        elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+        elm(
+            2,
+            "resistor",
+            &[[0, 0], [100, 0]],
+            &[("resistance", 1000.0)],
+        ),
+        elm(3, "ground", &[[0, 100]], &[]),
+    ];
+    elements.extend(extra);
+    CircuitSpec {
+        preserve_run,
+        elements,
+        options: Some(opts(1e-5, true)),
+        scopes: Vec::new(),
+    }
+}
+
 #[test]
-fn set_circuit_rewinds_to_zero() {
-    let spec = CircuitSpec {
+fn set_circuit_rewinds_to_zero_for_a_new_document() {
+    // A build that does not claim to continue a run is a load, a New, or the
+    // first build of a session: it starts the clock at zero.
+    let spec = divider_spec(false, Vec::new());
+    let mut c = Circuit::new();
+    c.set_circuit(&spec).unwrap();
+    c.run(5);
+    assert!(c.time() > 0.0, "circuit never advanced");
+
+    c.set_circuit(&spec).unwrap();
+    assert_eq!(c.time(), 0.0, "a fresh document must restart the clock");
+}
+
+#[test]
+fn preserving_rebuild_keeps_the_clock_through_a_shape_change() {
+    // Editing the shape of a running circuit is upstream's `analyzeCircuit`,
+    // which never touches `t` (only `resetAction` does). The rebuild here both
+    // moves an existing element and adds a new one, the two edits that
+    // renumber nodes, and the clock still has to carry across.
+    let mut c = Circuit::new();
+    c.set_circuit(&divider_spec(false, Vec::new())).unwrap();
+    c.run(5);
+    let t = c.time();
+    assert!(t > 0.0, "circuit never advanced");
+
+    // Same divider with a second resistor hung off the midpoint: new element,
+    // new node, and the wire from the source now lands elsewhere.
+    let edited = divider_spec(
+        true,
+        vec![elm(
+            4,
+            "resistor",
+            &[[100, 0], [100, 100]],
+            &[("resistance", 2000.0)],
+        )],
+    );
+    c.set_circuit(&edited).unwrap();
+    assert_eq!(
+        c.time(),
+        t,
+        "an edit to a running circuit must not rewind the clock"
+    );
+
+    // And the run continues forward from there rather than replaying.
+    c.run(5);
+    assert!(c.time() > t, "the run did not continue past the rebuild");
+}
+
+#[test]
+fn preserving_rebuild_does_not_resolve_the_operating_point_mid_run() {
+    // `dc_operating_point` holds every reactive element at steady state and
+    // rewinds the clock, so re-running it on an edit would snap a charged
+    // capacitor back to its bias. It is a start-of-run act: skipped once the
+    // run has started, still run while the circuit sits at t = 0.
+    //
+    // The source is a sine, which the DC solve freezes at its 0 V bias
+    // (VoltageElm.java:168-169), so the operating point leaves the capacitor
+    // at 0 V while the transient charges it. That gap is what the assertions
+    // read: a re-solve would drag the capacitor back to zero.
+    let freq = 1000.0;
+    let dt = 1.0 / (freq * 4000.0);
+    let cap = |preserve_run: bool| CircuitSpec {
+        preserve_run,
         elements: vec![
-            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                1,
+                "voltage",
+                &[[0, 100], [0, 0]],
+                &[("waveform", 1.0), ("frequency", freq), ("maxVoltage", 10.0)],
+            ),
             elm(
                 2,
                 "resistor",
                 &[[0, 0], [100, 0]],
                 &[("resistance", 1000.0)],
             ),
-            elm(3, "ground", &[[0, 100]], &[]),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-6)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
         ],
-        options: Some(opts(1e-5, true)),
+        options: Some(opts(dt, true)),
         scopes: Vec::new(),
     };
-    let mut c = Circuit::new();
-    c.set_circuit(&spec).unwrap();
-    c.run(5);
-    assert!(c.time() > 0.0, "circuit never advanced");
 
-    // Topology edits take the slow path and restart from zero on purpose, so
-    // the contract stays pinned while the value path changes around it.
-    c.set_circuit(&spec).unwrap();
-    assert_eq!(c.time(), 0.0, "full reload must restart the clock");
+    // The reference: the same circuit run straight through, never rebuilt.
+    let mut reference = Circuit::new();
+    reference.set_circuit(&cap(false)).unwrap();
+    assert!(
+        reference.element_voltages()[2].abs() < 1e-6,
+        "the operating point should leave the capacitor at its 0 V bias"
+    );
+    reference.run(1010);
+    let expected = reference.element_voltages()[2];
+    assert!(
+        expected > 1.0,
+        "the capacitor should have charged, got {expected} V"
+    );
+
+    // The same run with an edit-driven rebuild in the middle. The live tokens
+    // ride back in exactly as the frontend overlays them at rebuild time, so
+    // the trajectory has to be indistinguishable: a rewound clock would put the
+    // sine back at zero phase, and a re-solved operating point would drag the
+    // capacitor back to its 0 V bias.
+    let mut c = Circuit::new();
+    c.set_circuit(&cap(false)).unwrap();
+    c.run(1000);
+    let mut edited = cap(true);
+    for (id, tokens) in c.element_ids().iter().zip(c.state_tokens()) {
+        let Some(e) = edited.elements.iter_mut().find(|e| e.id == *id) else {
+            continue;
+        };
+        e.params.extend(tokens);
+    }
+    c.set_circuit(&edited).unwrap();
+    c.run(10);
+
+    let after = c.element_voltages()[2];
+    // A restart would land near the 0 V bias with the sine back at zero phase,
+    // two orders of magnitude away, so this discriminates hard despite the
+    // loose tolerance below.
+    assert!(after > 1.0, "the rebuild restarted the run: {after} V");
+    // The tolerance is 0.5%, not exact: the trapezoidal companion's `i_prev`
+    // is not one of the capacitor's file tokens (capacitor.rs:162-167), and
+    // neither is upstream's, so the token overlay reseeds `v_prev` and lets
+    // the first step after a rebuild re-derive the current. That residual is
+    // the pre-existing cost of a save/reload round trip, not of the rebuild.
+    assert!(
+        close(after, expected, 5e-3),
+        "a rebuild mid-run changed the trajectory: expected {expected} V, got {after} V"
+    );
 }
 
 #[test]
@@ -290,6 +423,7 @@ fn potentiometer_divides_by_wiper_position() {
 fn labeled_nodes_connect_by_name() {
     // Two disconnected halves joined only by matching node labels.
     let mut spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 6.0)]),
             elm(2, "labeledNode", &[[0, 0]], &[]),

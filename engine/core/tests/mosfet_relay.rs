@@ -477,6 +477,7 @@ fn relay_off_is_a_high_impedance_switch() {
 /// 8 = matched contact A, 11 = unmatched contact B.
 fn coil_contact_pair(coil_label: &str, a_label: &str, b_label: &str) -> Circuit {
     let mut spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 1.0)]),
             elm(2, "relayCoil", &[[100, 0], [100, 100]], &[]),
@@ -725,6 +726,7 @@ fn relay_contact_keeps_resting_position_across_reset() {
     // 7 is the matched contact's series resistor; it stays current-free as
     // long as the contact rests open.
     let mut spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 0.0)]),
             elm(2, "relayCoil", &[[100, 0], [100, 100]], &[]),
@@ -777,6 +779,7 @@ fn relay_latching_coil_keeps_its_contact_after_deenergising() {
     // matched contact's series resistor: current flows while the coil is
     // energised and must keep flowing after the coil voltage drops to zero.
     let mut spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
             elm(2, "relayCoil", &[[100, 0], [100, 100]], &[("type", 3.0)]),

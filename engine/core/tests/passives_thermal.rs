@@ -258,6 +258,7 @@ fn fuse_set_state_confirms_an_unpop_once_the_heat_has_decayed() {
 /// (MotorProtectionSwitchElm.java:245-256).
 fn motor_protection_switch_contact_circuit() -> Circuit {
     let mut spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 3.0)]),
             elm(

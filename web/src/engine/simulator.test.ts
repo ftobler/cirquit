@@ -123,6 +123,70 @@ describe('SimEngine live state read-back', () => {
   });
 });
 
+describe('SimEngine preserveRun', () => {
+  const DIVIDER: CircuitElement[] = [
+    { id: 1, kind: 'voltage', x1: 0, y1: 100, x2: 0, y2: 0, flags: 0, params: { maxVoltage: 10 } },
+    {
+      id: 2,
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 100,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    },
+    { id: 3, kind: 'wire', x1: 100, y1: 0, x2: 100, y2: 100, flags: 0, params: {} },
+    { id: 4, kind: 'ground', x1: 100, y1: 100, x2: 100, y2: 132, flags: 0, params: {} },
+  ];
+
+  /** The divider with a second resistor hung off the midpoint: a shape change
+   *  that adds an element and a node, exactly what dragging a new part onto a
+   *  running circuit does. */
+  const RESHAPED: CircuitElement[] = [
+    ...DIVIDER,
+    {
+      id: 5,
+      kind: 'resistor',
+      x1: 100,
+      y1: 0,
+      x2: 200,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 2000 },
+    },
+  ];
+
+  it('defaults to restarting the clock, for a load or a New', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(DIVIDER, DEFAULT_SETTINGS, [])).toBeNull();
+    engine.run(100);
+    expect(engine.time).toBeGreaterThan(0);
+
+    expect(engine.setCircuit(DIVIDER, DEFAULT_SETTINGS, [])).toBeNull();
+    expect(engine.time).toBe(0);
+  });
+
+  it('keeps the clock through a shape change when asked to', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(DIVIDER, DEFAULT_SETTINGS, [])).toBeNull();
+    engine.run(100);
+    const t = engine.time;
+    expect(t).toBeGreaterThan(0);
+
+    // The fifth argument is the flag the frame loop passes from its
+    // still-the-same-document gate.
+    expect(engine.setCircuit(RESHAPED, DEFAULT_SETTINGS, [], undefined, true)).toBeNull();
+    expect(engine.time).toBe(t);
+
+    // And the new element really is in the circuit, so this is a genuine
+    // topology rebuild rather than a skipped one.
+    expect(engine.indexOf(5)).toBeDefined();
+    engine.run(10);
+    expect(engine.time).toBeGreaterThan(t);
+  });
+});
+
 describe('fractional controlled-source input counts rebuild cleanly', () => {
   beforeEach(() => useStore.setState(fresh()));
 

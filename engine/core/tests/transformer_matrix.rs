@@ -50,6 +50,7 @@ fn open_secondary_v2_opts(
     dc: bool,
 ) -> f64 {
     let mut spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
             elm(2, kind, posts, params),
@@ -129,6 +130,7 @@ fn transformer_saturation_dc_pass_keeps_the_open_secondary_ratio() {
     // element voltage (V1 included), while the transient's do_step re-stamp
     // would mask it.
     let spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
             elm(
@@ -444,6 +446,7 @@ fn tapped_transformer_center_tap() {
     // tap splits the secondary into two halves of half the turns each, so each
     // half reads k·(ratio/2)·V1 = 4.95 V, one up from ground and one down.
     let spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
             elm(
@@ -528,6 +531,7 @@ fn transformer_connects_all_posts() {
     // 9.99), so the 1e-4 window covers the pin loading while still pinning the
     // full-ratio reading.
     let spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
             elm(
@@ -905,6 +909,7 @@ fn singular_linear_circuit_is_rejected_at_set_circuit() {
     // accepted at set_circuit (factorisation is lazy) and only tripped on the
     // first run. It must now be rejected at build time with an error.
     let spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
             elm(2, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 3.0)]),
@@ -927,6 +932,7 @@ fn singular_linear_circuit_is_rejected_at_set_circuit() {
 #[test]
 fn all_ground_voltage_source_is_rejected_at_set_circuit() {
     let spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 0], [0, 0]], &[("maxVoltage", 5.0)]),
             elm(2, "ground", &[[0, 0]], &[]),
@@ -961,6 +967,7 @@ fn all_ground_voltage_source_is_rejected_at_set_circuit() {
 #[test]
 fn duplicate_element_id_is_rejected_at_set_circuit() {
     let spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(
                 1,
@@ -997,6 +1004,7 @@ fn duplicate_element_id_is_rejected_at_set_circuit() {
 #[test]
 fn unique_ids_build_and_element_ids_match() {
     let spec = CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(7, "voltage", &[[0, 0], [0, 100]], &[("maxVoltage", 5.0)]),
             elm(
@@ -1033,6 +1041,7 @@ fn absurd_coordinates_are_rejected_at_set_circuit() {
         ));
     }
     let spec = CircuitSpec {
+        preserve_run: false,
         elements,
         options: Some(opts(1e-5, false)),
         scopes: Vec::new(),
@@ -1061,6 +1070,7 @@ fn absurd_coordinates_are_rejected_at_set_circuit() {
 /// `set_circuit` rejection path above.
 fn simple_resistor_spec(options: SimOptions) -> CircuitSpec {
     CircuitSpec {
+        preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 0], [0, 100]], &[("maxVoltage", 5.0)]),
             elm(

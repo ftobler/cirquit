@@ -36,6 +36,13 @@ export function overlayLiveState(elements: CircuitElement[], live: LiveState): C
  * their rebuilds refuse and seed from the new file's tokens instead. Undo and
  * redo do not bump the counter, so their rebuilds keep the live charge,
  * matching upstream whose undo snapshots carry live values.
+ *
+ * The same answer is the engine's `preserveRun` flag, because it is the same
+ * question: a rebuild that continues this document continues its run, so the
+ * clock, the adaptive step and the scope captures carry across too, and the
+ * operating point is not re-solved. Editing the shape of a running circuit
+ * must not restart it (upstream's `analyzeCircuit` never touches `t`; only
+ * `resetAction` does).
  */
 export function shouldInjectLiveState(builtDocument: number, currentDocument: number): boolean {
   return builtDocument === currentDocument;

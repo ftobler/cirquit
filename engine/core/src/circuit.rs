@@ -367,15 +367,39 @@ impl Circuit {
         self.warnings.clear();
         self.error = None;
         self.open_pinned.clear();
-        self.current_time_step = self.options.time_step;
-        self.good_iterations = 0;
         // Rebuilding is the topology path: adding, deleting or moving an
-        // element renumbers nodes, so the state vector's meaning changes.
-        // Restarting from zero is deliberate, not an oversight; carrying old
-        // voltages across would be worse.
+        // element renumbers nodes, so the state vector's meaning changes and
+        // the elements below are built fresh from the spec. The clock is not
+        // node-indexed though, and an edit mid-run must not rewind it: that is
+        // upstream's split between `analyzeCircuit`, which never touches `t`,
+        // and `resetAction`, which is the only thing that does
+        // (UIManager.java:1349-1360). `preserve_run` carries that distinction
+        // across the boundary; a fresh document sends false and starts at zero.
+        if spec.preserve_run {
+            // The adaptive step rides along, so a circuit that had shrunk its
+            // way down to a converging step does not have to re-shrink from
+            // the nominal after every edit. Clamped to the (possibly new)
+            // nominal, since an options edit is also a rebuild and the working
+            // step may never exceed `time_step`. A non-finite or non-positive
+            // carry-over cannot happen through halving and doubling, but it is
+            // floored here anyway rather than reaching the reactive companions.
+            let carried = self.current_time_step.min(self.options.time_step);
+            self.current_time_step = if carried.is_finite() && carried > 0.0 {
+                carried
+            } else {
+                self.options.time_step
+            };
+        } else {
+            self.current_time_step = self.options.time_step;
+            self.good_iterations = 0;
+        }
         self.ctx = SimCtx {
-            time: 0.0,
-            dt: self.options.time_step,
+            time: if spec.preserve_run {
+                self.ctx.time
+            } else {
+                0.0
+            },
+            dt: self.current_time_step,
             dc_analysis: false,
             subiter: 0,
         };
@@ -460,7 +484,17 @@ impl Circuit {
         self.allocate_and_stamp()?;
         self.build_scopes(spec);
 
-        if self.options.dc_operating_point {
+        // The operating-point solve is a start-of-run act: it holds every
+        // reactive element at steady state and rewinds the clock, so running
+        // it again on an edit would snap a half-charged capacitor back to its
+        // bias mid-transient. Upstream sets `dcAnalysisFlag` from
+        // `resetAction` and circuit load only, never from `needAnalyze`
+        // (UIManager.java:1352), which is what `preserve_run` carries here.
+        // The `time == 0.0` arm keeps the pre-run case: a circuit being built
+        // up before it has ever stepped has no run to preserve, and its edits
+        // must keep showing the bias point rather than a dead 0 V everywhere
+        // until Run is pressed.
+        if self.options.dc_operating_point && (!spec.preserve_run || self.ctx.time == 0.0) {
             self.solve_operating_point()?;
         }
         // Linear matrices are factored eagerly so a singular circuit (two
@@ -1001,11 +1035,43 @@ impl Circuit {
         }
     }
 
+    /// Rebuilds the scope traces for a new element list.
+    ///
+    /// On a preserving rebuild a trace whose spec came back byte-identical
+    /// keeps its captured columns and only re-resolves its element index: the
+    /// capture ring is indexed by column, not by node, so an edit elsewhere in
+    /// the circuit cannot invalidate it, and wiping it would blank every scope
+    /// on the screen every time the user nudged a wire. Upstream keeps its
+    /// plots the same way, clearing them from `resetGraphs` alone
+    /// (UIManager.java:1359). Any spec change (a different signal, speed or
+    /// window) still starts a fresh ring, because those change what a column
+    /// means.
     fn build_scopes(&mut self, spec: &CircuitSpec) {
+        let mut reusable: Vec<Option<ScopeTrace>> = if spec.preserve_run {
+            std::mem::take(&mut self.scopes)
+                .into_iter()
+                .map(Some)
+                .collect()
+        } else {
+            Vec::new()
+        };
         self.scopes = spec
             .scopes
             .iter()
-            .map(|s| ScopeTrace::new(s.clone(), self.id_index.get(&s.element_id).copied()))
+            .map(|s| {
+                let index = self.id_index.get(&s.element_id).copied();
+                let reused = reusable
+                    .iter_mut()
+                    .find(|old| old.as_ref().is_some_and(|t| t.spec == *s))
+                    .and_then(Option::take);
+                match reused {
+                    Some(mut trace) => {
+                        trace.element_index = index;
+                        trace
+                    }
+                    None => ScopeTrace::new(s.clone(), index),
+                }
+            })
             .collect();
     }
 

@@ -138,6 +138,7 @@ impl Default for SimOptions {
 
 /// A whole circuit, as handed over by the UI.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct CircuitSpec {
     #[serde(default)]
     pub elements: Vec<ElementSpec>,
@@ -146,6 +147,16 @@ pub struct CircuitSpec {
     /// Signals the UI wants sampled at full timestep resolution.
     #[serde(default)]
     pub scopes: Vec<ScopeSpec>,
+    /// True when this build continues the run already in progress, which is
+    /// every rebuild caused by an edit: moving, adding or deleting an element
+    /// renumbers nodes, but the wall clock, the adaptive step and the scope
+    /// captures are not node-indexed, so they carry across. Upstream's
+    /// `analyzeCircuit` behaves this way by construction, and only
+    /// `resetAction` rewinds (UIManager.java:1349-1360). Defaults to false so
+    /// a fresh document (a load, New, or a caller that says nothing) starts at
+    /// t = 0.
+    #[serde(default)]
+    pub preserve_run: bool,
 }
 
 /// Which quantity a scope trace follows.
@@ -191,7 +202,7 @@ pub enum TriggerMode {
 }
 
 /// Trigger configuration for one scope trace (ScopeTrigger.java).
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerSpec {
     #[serde(default)]
@@ -213,7 +224,11 @@ impl Default for TriggerSpec {
 }
 
 /// One scope trace.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+///
+/// `PartialEq` is what a preserving rebuild matches on: a trace whose spec
+/// came back identical keeps its captured columns instead of starting a new,
+/// empty ring.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScopeSpec {
     /// Element being probed.
