@@ -1895,6 +1895,11 @@ function createAppStore() {
       // inject the previous circuit's live charges into it.
       document: s.document + 1,
     }));
+    // A load is a new document on screen too: centre it the way upstream's
+    // finishReadCircuit always does unless RC_NO_CENTER is passed
+    // (CircuitLoader.java:220-235), so opening a file doesn't leave the view
+    // wherever the previous circuit happened to scroll to.
+    get().centerCircuit();
     // The loaded content is its own baseline: opening a file, a library
     // circuit or a share link is not "unsaved". `set` is synchronous, so this
     // `get()` reads the just-loaded state.
