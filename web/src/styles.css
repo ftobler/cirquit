@@ -103,7 +103,11 @@
      and tiles sit on under the pointer; `--hover-strong` is the pressed
      tier. */
   --hover: color-mix(in srgb, var(--text) calc(var(--md-state-hover) * 100%), var(--panel));
-  --hover-strong: color-mix(in srgb, var(--text) calc(var(--md-state-pressed) * 100%), var(--panel));
+  --hover-strong: color-mix(
+    in srgb,
+    var(--text) calc(var(--md-state-pressed) * 100%),
+    var(--panel)
+  );
 
   --md-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --md-duration-short: 100ms;
