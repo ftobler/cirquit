@@ -85,13 +85,25 @@
   --md-elevation-2: 0 1px 2px 0 rgb(0 0 0 / 30%), 0 2px 6px 2px rgb(0 0 0 / 15%);
   --md-elevation-3: 0 1px 3px 0 rgb(0 0 0 / 30%), 0 4px 8px 3px rgb(0 0 0 / 15%);
 
+  /* State-layer opacities, MD3's four interaction tiers. `--hover` and
+     `--hover-strong` below derive from the hover and pressed opacities, so
+     the shades track the tokens by construction. Focus uses the same wash as
+     press (a keyboard user gets as strong a layer as a press) and is wired
+     into the `:focus-visible` rules; the dragged tier is reserved for a
+     pointer-drag state layer if a DOM control ever needs one (canvas drags
+     are drawn in the engine, not as CSS state). */
+  --md-state-hover: 0.08;
+  --md-state-pressed: 0.12;
+  --md-state-focus: 0.12;
+  --md-state-dragged: 0.16;
+
   /* Hover and press tiers for the borderless surfaces: the surface text
      washed over the panel (`var(--panel)`), never a hardcoded hex, so the
      shade follows the theme's colours. `--hover` is the raised tier buttons
-     and tiles sit on under the pointer (the same 8% wash MD3's hover state
-     uses); `--hover-strong` is the pressed tier. */
-  --hover: color-mix(in srgb, var(--text) 8%, var(--panel));
-  --hover-strong: color-mix(in srgb, var(--text) 15%, var(--panel));
+     and tiles sit on under the pointer; `--hover-strong` is the pressed
+     tier. */
+  --hover: color-mix(in srgb, var(--text) calc(var(--md-state-hover) * 100%), var(--panel));
+  --hover-strong: color-mix(in srgb, var(--text) calc(var(--md-state-pressed) * 100%), var(--panel));
 
   --md-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --md-duration-short: 100ms;
@@ -207,9 +219,12 @@ body {
   background: transparent;
 }
 
-.menubar .menubar-btn:hover,
-.menubar .menubar-btn:focus-visible {
+.menubar .menubar-btn:hover {
   background: var(--hover);
+}
+
+.menubar .menubar-btn:focus-visible {
+  background: color-mix(in srgb, var(--text) calc(var(--md-state-focus) * 100%), var(--panel));
 }
 
 .menubar .menubar-btn:active {
@@ -246,10 +261,15 @@ button {
 
 /* The borderless button, per Material: rest sits flat on its surface, hover
    raises it with the shared `--hover` shade (the accent border that used to
-   carry the affordance is gone) and press dips one tier darker. */
-button:hover,
-button:focus-visible {
+   carry the affordance is gone), keyboard focus paints the focus state layer
+   (as strong as a press, so a keyboard user sees the interaction), and press
+   dips one tier darker. */
+button:hover {
   background: var(--hover);
+}
+
+button:focus-visible {
+  background: color-mix(in srgb, var(--text) calc(var(--md-state-focus) * 100%), var(--panel));
 }
 
 button:active {
