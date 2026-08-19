@@ -175,6 +175,9 @@ body {
      pixel, so its height comes from the controls themselves rather than from
      padding around them. */
   padding: 3px 10px;
+  /* One box size for every icon-only control in the bar; the coarse-pointer
+     block below raises it to the touch tier. */
+  --menubar-icon-size: 34px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
@@ -230,6 +233,22 @@ body {
   gap: 6px;
   flex: 0 0 auto; /* the run controls never shrink; the file buttons give way first */
   margin-left: auto;
+}
+
+/* The icon-only controls -- undo/redo and run/pause plus reset -- are square.
+   They carry a 20 px glyph and no label, so their box comes from the shared
+   size token instead of the text padding every other button uses, which would
+   otherwise leave them wider than tall at one height tier and narrower at
+   another. */
+.menubar .edit-group button,
+.menubar .run-group button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--menubar-icon-size);
+  height: var(--menubar-icon-size);
+  padding: 0;
+  flex: 0 0 auto;
 }
 
 /* Menubar controls: the flat end of the button spectrum. Borderless and
@@ -1523,18 +1542,10 @@ input[type='range'] {
 
   /* The menubar itself sits a tier lower. It is a permanent strip over the
      canvas rather than a list the pointer hunts through, so its controls keep
-     a 34 px floor — still comfortably larger than their ~28 px natural height,
-     and a mouse has no trouble with a full-width strip that short. */
-  .menubar .menubar-btn,
-  .menubar .run-group button {
+     a 34 px floor, matching the icon buttons' box and still comfortably larger
+     than their ~28 px natural height. */
+  .menubar .menubar-btn {
     min-height: 34px;
-  }
-
-  /* The run/pause and reset icon buttons stay square like the undo/redo
-     pair: the height alone would leave the primary's natural width matching,
-     but the min-width pins it so a content change cannot stretch one axis. */
-  .menubar .run-group button {
-    min-width: 34px;
   }
 }
 
@@ -1553,6 +1564,12 @@ input[type='range'] {
 
   .tool {
     min-width: 44px;
+  }
+
+  /* The icon-only menubar buttons grow with the rest, staying square by
+     taking the touch size on both axes. */
+  .menubar {
+    --menubar-icon-size: 44px;
   }
 
   /* 16 px or iOS auto-zooms the page when the field is focused. */
