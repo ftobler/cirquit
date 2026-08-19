@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CircuitElement } from '../model/types';
-import { postDotPoints, shouldDrawDot } from './junction';
+import { badConnectionPoints, postDotPoints, shouldDrawDot } from './junction';
 
 const el = (kind: string, x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
   id: 1,
@@ -64,5 +64,98 @@ describe('junction dots', () => {
     const counts = postDotPoints(wires);
     expect(counts.get('80,0')).toBe(4);
     expect(shouldDrawDot(counts.get('80,0')!)).toBe(true);
+  });
+});
+
+describe('bad connections', () => {
+  it('flags a wire end dropped on another wire\'s middle', () => {
+    // The move that started this: the vertical wire's lower end lands on the
+    // horizontal wire's interior, which splits nothing, so it does not connect.
+    const across = el('wire', 0, 0, 160, 0);
+    const dropped = el('wire', 80, 0, 80, 80);
+    dropped.id = 2;
+
+    expect(badConnectionPoints([across, dropped])).toEqual([{ x: 80, y: 0 }]);
+  });
+
+  it('leaves a real junction alone: a third post at the coordinate connects', () => {
+    // Two collinear wires meeting end to end plus a stub is a T-junction, not a
+    // bad connection: the coordinate carries three posts.
+    const left = el('wire', 0, 0, 80, 0);
+    const right = el('wire', 80, 0, 160, 0);
+    right.id = 2;
+    const stub = el('wire', 80, 0, 80, 80);
+    stub.id = 3;
+
+    expect(badConnectionPoints([left, right, stub])).toEqual([]);
+  });
+
+  it('leaves a dangling end in empty space alone', () => {
+    const a = el('wire', 0, 0, 80, 0);
+    const b = el('wire', 0, 80, 80, 80);
+    b.id = 2;
+
+    expect(badConnectionPoints([a, b])).toEqual([]);
+  });
+
+  it('flags an end on a routed wire segment and on a bend vertex', () => {
+    const routed = el('wire', 0, 0, 160, 0);
+    routed.route = [
+      [0, 0],
+      [0, 80],
+      [160, 80],
+      [160, 0],
+    ];
+    const onSegment = el('wire', 80, 80, 80, 160);
+    onSegment.id = 2;
+    const onBend = el('wire', 0, 80, -80, 80);
+    onBend.id = 3;
+
+    const bad = badConnectionPoints([routed, onSegment, onBend]);
+    expect(bad).toContainEqual({ x: 80, y: 80 });
+    expect(bad).toContainEqual({ x: 0, y: 80 });
+    // The routed wire's own endpoints touch nothing else.
+    expect(bad).not.toContainEqual({ x: 0, y: 0 });
+    expect(bad).not.toContainEqual({ x: 160, y: 0 });
+  });
+
+  it('flags an end landing on another element\'s body, not just on a wire', () => {
+    // Upstream tests every non-graphic element by its bounding box, so a wire
+    // end parked on a resistor's axis is just as unconnected.
+    const resistor = el('resistor', 0, 0, 160, 0);
+    const stub = el('wire', 80, 0, 80, 80);
+    stub.id = 2;
+
+    expect(badConnectionPoints([resistor, stub])).toEqual([{ x: 80, y: 0 }]);
+  });
+
+  it('ignores the decorative parts: a box has no posts and nothing to connect to', () => {
+    const box = el('box', 0, 0, 160, 160);
+    const stub = el('wire', 80, 80, 80, 160);
+    stub.id = 2;
+
+    expect(badConnectionPoints([box, stub])).toEqual([]);
+  });
+
+  it('reuses a caller-supplied post count map', () => {
+    const across = el('wire', 0, 0, 160, 0);
+    const dropped = el('wire', 80, 0, 80, 80);
+    dropped.id = 2;
+    const elements = [across, dropped];
+
+    expect(badConnectionPoints(elements, postDotPoints(elements))).toEqual([{ x: 80, y: 0 }]);
+  });
+
+  it('never treats a rail free end as a connection point', () => {
+    // A rail's free end is a control point, not a post, so it cannot join the
+    // wire it lies on: the wire end there is still a bad connection. The
+    // rail's own box covers the point too, which is the same answer.
+    const across = el('wire', 160, 0, 160, 160);
+    const dropped = el('wire', 0, 32, 160, 32);
+    dropped.id = 2;
+    const rail = el('rail', 0, 0, 160, 32);
+    rail.id = 3;
+
+    expect(badConnectionPoints([across, dropped, rail])).toContainEqual({ x: 160, y: 32 });
   });
 });

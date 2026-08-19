@@ -8,7 +8,6 @@ import {
   distanceToElement,
   distanceToSegment,
   hitTestElement,
-  invalidDropPoint,
   nearestPost,
   pointOnSegmentInterior,
   pointOnWireInterior,
@@ -358,16 +357,6 @@ describe('stem-bearing one-post family', () => {
     expect(nearestPost({ x: 30, y: 2 }, r)).toBe(2);
     expect(nearestPost({ x: 2, y: 2 }, r)).toBe(1);
   });
-
-  it('never treats a rail free end as a connection point', () => {
-    const dragged = { ...element(0, 0, 160, 32), id: 2, kind: 'wire' as const };
-    const vertical = { ...element(160, 0, 160, 160), id: 3, kind: 'wire' as const };
-    const rail = { ...element(0, 0, 160, 32), id: 4, kind: 'rail' as const };
-    // The rail's free end sits on the vertical wire's interior at (160,32).
-    // It is not a post, so it does not occupy the junction: the dragged wire
-    // end still flags as no-connect there instead of connecting.
-    expect(invalidDropPoint(dragged, 160, 32, [dragged, vertical, rail])).toEqual({ x: 160, y: 32 });
-  });
 });
 
 describe('pointOnSegmentInterior', () => {
@@ -449,70 +438,7 @@ describe('splitWire', () => {
   });
 });
 
-describe('invalidDropPoint', () => {
-  const wire = (id: number, x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
-    id,
-    kind: 'wire',
-    x1,
-    y1,
-    x2,
-    y2,
-    flags: 0,
-    params: {},
-  });
-  const resistor = (id: number, x1: number, x2: number): CircuitElement => ({
-    id,
-    kind: 'resistor',
-    x1,
-    y1: 0,
-    x2,
-    y2: 0,
-    flags: 0,
-    params: { resistance: 1000 },
-  });
-
-  it('flags a dragged end sitting on another wire interior', () => {
-    const dragged = wire(1, 0, 32, 80, 0);
-    const other = wire(2, 0, 0, 160, 0);
-    expect(invalidDropPoint(dragged, 80, 0, [dragged, other])).toEqual({ x: 80, y: 0 });
-  });
-
-  it('is null over empty canvas', () => {
-    const dragged = wire(1, 0, 32, 80, 0);
-    expect(invalidDropPoint(dragged, 80, 0, [dragged])).toBeNull();
-  });
-
-  it('is null on another wire endpoint, a real connection', () => {
-    const dragged = wire(1, 0, 32, 0, 0);
-    const other = wire(2, 0, 0, 160, 0);
-    expect(invalidDropPoint(dragged, 0, 0, [dragged, other])).toBeNull();
-  });
-
-  it('is null where a third element post already occupies the junction', () => {
-    const dragged = wire(1, 0, 32, 80, 0);
-    const other = wire(2, 0, 0, 160, 0);
-    expect(invalidDropPoint(dragged, 80, 0, [dragged, other, resistor(3, 80, 240)])).toBeNull();
-  });
-
-  it('ignores the dragged wire itself even when its own span crosses', () => {
-    const dragged = wire(1, 0, 0, 160, 0);
-    const other = wire(2, 48, 0, 48, 160);
-    // Post 2 of the dragged wire is well clear of the other wire, so no dot.
-    expect(invalidDropPoint(dragged, 160, 0, [dragged, other])).toBeNull();
-  });
-});
-
 describe('routed wires', () => {
-  const wire = (id: number, x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
-    id,
-    kind: 'wire',
-    x1,
-    y1,
-    x2,
-    y2,
-    flags: 0,
-    params: {},
-  });
   const routedWire = (x1: number, y1: number, x2: number, y2: number, route: [number, number][]) => ({
     id: 9,
     kind: 'wire' as const,
@@ -615,28 +541,5 @@ describe('routed wires', () => {
     const nextId = () => next++;
     expect(splitWire(routed, { x: 0, y: 0 }, nextId)).toBeNull();
     expect(splitWire(routed, { x: 160, y: 0 }, nextId)).toBeNull();
-  });
-
-  it('invalidDropPoint flags a drag landing on a routed wire segment', () => {
-    const dragged = wire(1, 0, 32, 80, 0);
-    const other = routedWire(0, 0, 160, 0, [
-      [0, 0],
-      [80, 80],
-      [160, 0],
-    ]);
-    expect(invalidDropPoint(dragged, 40, 40, [dragged, other])).toEqual({ x: 40, y: 40 });
-  });
-
-  it('invalidDropPoint flags a drop on a routed bend vertex like any interior point', () => {
-    // A bend vertex is not a post of the wire, so a wire end dropped there
-    // shows the red no-connect marker exactly like a drop on a segment
-    // interior; placeWireEnd still splits there on release.
-    const dragged = wire(1, 0, 32, 80, 0);
-    const other = routedWire(0, 0, 160, 0, [
-      [0, 0],
-      [80, 80],
-      [160, 0],
-    ]);
-    expect(invalidDropPoint(dragged, 80, 80, [dragged, other])).toEqual({ x: 80, y: 80 });
   });
 });

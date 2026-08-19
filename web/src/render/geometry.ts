@@ -175,37 +175,6 @@ function splitRoutedWire(
   ];
 }
 
-/**
- * The grid point where a `dragpost` drag of `e`'s post lands, when that point
- * sits on another wire's interior and therefore cannot connect: the position
- * of upstream's red no-connect dot (its `badConnectionList`, drawn at
- * UIManager.java:708-712). Returns null when the drop would connect: over an
- * endpoint, off any wire, or on a coordinate some third element's post already
- * occupies (a real junction). Only `wire` interiors count; other element
- * bodies connect at posts, not interiors.
- */
-export function invalidDropPoint(
-  e: CircuitElement,
-  x: number,
-  y: number,
-  elements: readonly CircuitElement[],
-): Point | null {
-  const p = { x, y };
-  for (const other of elements) {
-    if (other.id === e.id || other.kind !== 'wire') continue;
-    // A routed wire tests every segment and its bend vertices: none of them is
-    // a post, so a wire end dropped on any of them shows the red marker like a
-    // drop on a plain wire's interior. placeWireEnd still splits there.
-    if (!pointOnWireInterior(p, other)) continue;
-    const occupied = elements.some(
-      (q) => q.id !== e.id && q.id !== other.id && postsOf(q).some((pp) => pp.x === p.x && pp.y === p.y),
-    );
-    if (occupied) return null;
-    return p;
-  }
-  return null;
-}
-
 /** Distance from a point to an element, measured against all of its limbs. */
 export function distanceToElement(p: Point, e: CircuitElement): number {
   const posts = postsOf(e);
