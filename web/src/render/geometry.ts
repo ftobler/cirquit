@@ -191,7 +191,11 @@ export type HitRegion =
   /** One segment of a routed wire's polyline. */
   | { type: 'wire'; a: Point; b: Point }
   /** A chip's housing rectangle, a solid pick zone. */
-  | { type: 'body'; box: Box };
+  | { type: 'body'; box: Box }
+  /** An interactive part's lever, the region a press toggles in. Inside the
+   *  box the press throws the switch; the pick must reach it or the lifted
+   *  lever tip (16 units off the axis) would be invisible to the mouse. */
+  | { type: 'switch'; box: Box };
 
 /**
  * The regions `distanceToElement` measures against, in one place so the hit
@@ -238,6 +242,22 @@ export function hitRegions(e: CircuitElement): HitRegion[] {
   // measures there while leaving them to decide outside.
   const rect = defFor(e.kind)?.bodyRect?.(e);
   if (rect) regions.push({ type: 'body', box: rect });
+  // An interactive part's lever is a toggle zone as well as a pick zone: the
+  // open lever tip lifts up to 16 units off the axis, far outside the axis
+  // band's reach, so without this region a click on the handle would hit
+  // nothing and the switch could never be thrown there. Same box the press
+  // toggles in (`def.switchRect` + `rectContains`), so a pick and a toggle
+  // agree about where the lever is.
+  const def = defFor(e.kind);
+  if (def?.interactive) {
+    const lever = def.switchRect?.(e);
+    if (lever) {
+      regions.push({
+        type: 'switch',
+        box: { x0: lever.x, y0: lever.y, x1: lever.x + lever.w, y1: lever.y + lever.h },
+      });
+    }
+  }
   return regions;
 }
 
@@ -250,6 +270,7 @@ export function distanceToHitRegion(p: Point, region: HitRegion): number {
     case 'wire':
       return distanceToSegment(p, region.a, region.b);
     case 'body':
+    case 'switch':
       return distanceToBox(p, region.box);
   }
 }

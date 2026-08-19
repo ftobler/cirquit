@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GRID_SIZE, type CircuitElement } from '../model/types';
-import { defFor, postsOf } from '../model/registry';
+import { defFor, postsOf, switchLeverTip } from '../model/registry';
 import { snap } from '../state/store';
 import {
   HIT_TOLERANCE_PX,
@@ -661,6 +661,23 @@ describe('hitRegions', () => {
     ]);
   });
 
+  it('reaches the lifted lever of an interactive switch, so its handle is pickable', () => {
+    // The open lever tip rides 16 units off the axis, far beyond the 8 px
+    // reach of the axis band. The switchRect must be a pick zone or a click on
+    // the handle hits nothing and the switch can never be thrown there.
+    const e = { ...element(0, 0, 64, 0), kind: 'switch' };
+    const lever = defFor('switch')!.switchRect!(e);
+    const regions = hitRegions(e);
+    const sw = regions.find((r) => r.type === 'switch');
+    expect(sw).toEqual({
+      type: 'switch',
+      box: { x0: lever.x, y0: lever.y, x1: lever.x + lever.w, y1: lever.y + lever.h },
+    });
+    // The open lever tip (48,-16), 16 units above the lead, is inside the rect,
+    // so the pick reaches it where the axis band (8 px reach) could not.
+    expect(distanceToElement(switchLeverTip({ x: 16, y: 0 }, { x: 48, y: 0 }, false), e)).toBe(0);
+  });
+
   it('is the whole of what distanceToElement measures', () => {
     // The debug overlay draws these regions and nothing else, so a pick the
     // overlay cannot explain would be a lie. Sweep a grid of probes across a
@@ -670,6 +687,7 @@ describe('hitRegions', () => {
       element(0, 0, 96, 96),
       { ...element(0, 0, 96, 0), kind: 'dFlipFlop' },
       { ...element(0, 0, 64, 0), kind: 'transistor' },
+      { ...element(0, 0, 64, 0), kind: 'switch' },
       { ...element(0, 0, 32, 0), kind: 'ground' },
       { ...element(0, 0, 32, 32), kind: 'labeledNode' },
       routed(),

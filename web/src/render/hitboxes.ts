@@ -1,15 +1,13 @@
 /**
  * The hitbox debug overlay: draws the regions the pointer picker measures
  * against, so a mis-pick can be seen instead of guessed at. Every shape comes
- * from `hitRegions`, the same function `distanceToElement` walks, plus the
- * def's own `switchRect`, the same call `beginPointerGesture` makes. Nothing
- * here recomputes pick geometry: an overlay that drew its own idea of the
- * hitboxes would lie exactly when it is needed most.
+ * from `hitRegions`, the same function `distanceToElement` walks. Nothing here
+ * recomputes pick geometry: an overlay that drew its own idea of the hitboxes
+ * would lie exactly when it is needed most.
  *
  * Draw-only. It reads elements and the view scale and touches nothing else.
  */
 
-import { defFor } from '../model/registry';
 import type { Box, CircuitElement, Point } from '../model/types';
 import { hitRegions } from './geometry';
 
@@ -89,21 +87,17 @@ export function drawHitboxes(
         ctx.beginPath();
         ctx.arc(region.x, region.y, reach, 0, Math.PI * 2);
         ctx.stroke();
+      } else if (region.type === 'switch') {
+        // The lever's toggle test is plain containment (`rectContains`), with
+        // no tolerance, so a grown outline would overstate where a click
+        // throws the switch. Drawn exact, unlike the other zones.
+        const { x0, y0, x1, y1 } = region.box;
+        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
       } else if (region.type === 'body') {
         strokeGrownBox(ctx, region.box, reach);
       } else {
         strokeCapsule(ctx, region.a, region.b, reach);
       }
-    }
-    // The lever of an interactive part, the region a press toggles in instead
-    // of selecting (pointerDown's `def.switchRect` + `rectContains`). Drawn
-    // with no growth: that test is plain containment, with no tolerance, so a
-    // grown outline would overstate where a click throws the switch.
-    const def = defFor(e.kind);
-    const lever = def?.interactive ? def.switchRect?.(e) : undefined;
-    if (lever) {
-      ctx.strokeStyle = HITBOX_COLORS.switch;
-      ctx.strokeRect(lever.x, lever.y, lever.w, lever.h);
     }
   }
   ctx.restore();
