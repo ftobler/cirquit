@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GRID_SIZE, type CircuitElement } from '../model/types';
 import { defFor, postsOf, switchLeverTip } from '../model/registry';
+import { OPAMP_SMALL } from '../model/registry/flags';
 import { snap } from '../state/store';
 import {
   HIT_TOLERANCE_PX,
@@ -297,12 +298,12 @@ describe('chip body hit-testing', () => {
     }
   });
 
-  it('gives a solid pick body to the capacitor, voltage source and lamp', () => {
-    // These three draw a disc or plates far off the axis, so a click on the
-    // drawn body must grab the element even where the axis band cannot reach.
-    // The probe is the mid-span of the top body edge, a full reach past the
-    // axis and clear of every post.
-    for (const kind of ['capacitor', 'voltage', 'lamp']) {
+  it('gives a solid pick body to the capacitor, voltage source, lamp and op-amp', () => {
+    // These draw a disc, plates or a triangle far off the axis, so a click on
+    // the drawn body must grab the element even where the axis band cannot
+    // reach. The probe is the mid-span of the top body edge, a full reach past
+    // the axis and clear of every post.
+    for (const kind of ['capacitor', 'voltage', 'lamp', 'opamp']) {
       const e = { ...element(0, 0, 64, 0), kind };
       const rect = defFor(kind)!.bodyRect!(e);
       expect(rect, `${kind} declares a bodyRect`).toBeDefined();
@@ -314,6 +315,27 @@ describe('chip body hit-testing', () => {
       expect(bare, `${kind} probe is off-axis and clear of every post`).toBeGreaterThan(8);
       expect(distanceToElement(probe, e), `${kind} body edge midpoint hits`).toBe(0);
     }
+  });
+
+  it('the op-amp hit box matches upstream setBbox(point1, point2, opheight*2)', () => {
+    // OpAmpElm.java:92. The box spans the two posts along the axis and is
+    // grown perpendicular by opheight*2 (32 for the default size 2, 16 for the
+    // small), so the whole drawn triangle is grabbable. A point on the axis
+    // span between the posts, opheight off the axis, must read distance 0.
+    const e = { ...element(0, 0, 64, 0), kind: 'opamp' };
+    const rect = defFor('opamp')!.bodyRect!(e);
+    expect(rect.x0).toBe(0);
+    expect(rect.x1).toBe(64);
+    expect(rect.y0).toBe(-32);
+    expect(rect.y1).toBe(32);
+    // A point in the middle of the body, opheight off the axis and clear of
+    // every post and the axis band, is a solid pick.
+    expect(distanceToElement({ x: 32, y: -16 }, e)).toBe(0);
+    // The small variant halves the perpendicular extent (opheight 8 -> *2 = 16).
+    const small = { ...e, flags: OPAMP_SMALL };
+    const smallRect = defFor('opamp')!.bodyRect!(small);
+    expect(smallRect.y0).toBe(-16);
+    expect(smallRect.y1).toBe(16);
   });
 });
 

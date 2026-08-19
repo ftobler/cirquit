@@ -13,7 +13,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { OPAMP_GAIN, OPAMP_SMALL, OPAMP_SWAP } from '../flags';
-import { readParams } from '../shared';
+import { boxOfPoints, readParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
@@ -144,5 +144,18 @@ export const OPAMP_DEF: ElementDef = {
     { name: 'minOut', label: 'Min output', unit: 'V' },
     { name: 'gain', label: 'Open-loop gain' },
   ],
+  // The triangle is a solid pick zone, not just the thin axis band and the
+  // three posts: a click on the body above or below the axis grabs the part.
+  // Upstream gates the pick on its bounding box, setBbox(point1, point2,
+  // opheight*2) (OpAmpElm.java:92), the axis-aligned span of the posts grown
+  // perpendicular by the full triangle base width, and that is exactly what
+  // the box of the two endpoints and the triangle base corners is.
+  bodyRect: (e) => {
+    const [p1, p2] = endpoints(e);
+    const [lead1, lead2] = opAmpBodyLeads(e);
+    const hs = opampInputSign(e, p1, p2);
+    const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
+    return boxOfPoints([p1, p2, t1, t2]);
+  },
   draw: drawOpAmpBody,
 };
