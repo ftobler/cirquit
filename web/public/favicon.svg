@@ -4,7 +4,7 @@
        currentDot, on the menubar's dark panel disc so it reads in light and
        dark browser chrome. -->
   <circle cx="16" cy="16" r="15.5" fill="#161b22"/>
-  <g stroke="#ffff00" stroke-width="2" fill="none" stroke-linecap="butt" stroke-linejoin="sharp">
+  <g stroke="#e2d419" stroke-width="2" fill="none" stroke-linecap="butt" stroke-linejoin="sharp">
     <path d="M10 6.5 L25 16 L10 25.5 Z"/>
     <path d="M3 11.0 L10 11.0"/>
     <path d="M3 21.0 L10 21.0"/>
