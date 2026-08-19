@@ -131,11 +131,11 @@ export function ContextMenu() {
   const scopeItems: MenuItem[] = [];
   if (isElementMenu && targetDef) {
     scopeItems.push({
-      label: 'Edit',
+      label: 'Edit...',
       disabled: !editable || !targetDef.fields?.length,
       // One implementation of "edit this element" shared with the canvas
-      // double-click and touch double-tap: select and open the edit dialog,
-      // which focuses its first field.
+      // double-click and touch double-tap: select and open the properties
+      // dialog, which focuses its first field.
       action: () => useStore.getState().requestEdit(target),
     });
     scopeItems.push({

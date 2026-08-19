@@ -9,6 +9,7 @@ import { AboutDialog } from './ui/AboutDialog';
 import { CreateSubcircuitDialog } from './ui/CreateSubcircuitDialog';
 import { CircuitCanvas } from './ui/CircuitCanvas';
 import { ContextMenu } from './ui/ContextMenu';
+import { ElementPropertiesDialog } from './ui/ElementPropertiesDialog';
 import { ExportAsLinkDialog } from './ui/ExportAsLinkDialog';
 import { ExportAsTextDialog } from './ui/ExportAsTextDialog';
 import { FindComponentDialog } from './ui/FindComponentDialog';
@@ -62,6 +63,7 @@ export default function App() {
   const [engine, setEngine] = useState<SimEngine | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
   const dialog = useStore((s) => s.dialog);
+  const elementProperties = useStore((s) => s.elementProperties);
   const partsOpen = useStore((s) => s.partsOpen);
   const panelOpen = useStore((s) => s.panelOpen);
   const setPartsOpen = useStore((s) => s.setPartsOpen);
@@ -148,9 +150,9 @@ export default function App() {
       // While a dialog is open the dialog owns the keyboard: no shortcut may
       // reach the app, or Ctrl+V would paste into the circuit instead of the
       // dialog's textarea and Delete would edit the circuit behind the modal.
-      // The scope-properties modal is a store dialog of its own, so the same
-      // guard covers it.
-      if (s.dialog !== null || s.scopeProperties !== null) return;
+      // The scope-properties and element-properties modals are store dialogs
+      // of their own, so the same guard covers them.
+      if (s.dialog !== null || s.scopeProperties !== null || s.elementProperties !== null) return;
       const evLike = {
         key: ev.key,
         ctrlKey: ev.ctrlKey,
@@ -287,7 +289,7 @@ export default function App() {
       const target = ev.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
       const s = useStore.getState();
-      if (s.dialog !== null || s.scopeProperties !== null) return;
+      if (s.dialog !== null || s.scopeProperties !== null || s.elementProperties !== null) return;
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
       if (!isPrintableKey(ev.key)) return;
       s.releaseMomentaryByKey(ev.key);
@@ -358,6 +360,7 @@ export default function App() {
       {dialog === 'subcircuitManager' && <SubcircuitManagerDialog />}
       {dialog === 'otherOptions' && <OtherOptionsDialog />}
       {dialog === 'sliders' && <SliderDialog />}
+      {elementProperties !== null && <ElementPropertiesDialog engine={engine} />}
       <div className="workspace">
         <aside id="parts-drawer" className={partsOpen ? 'left open' : 'left'}>
           <Toolbox />

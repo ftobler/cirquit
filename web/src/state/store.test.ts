@@ -390,23 +390,42 @@ describe('no-op drag updates do not rebuild the engine', () => {
   });
 });
 
-describe('requestEdit selects and opens the panel', () => {
-  it('selects that id alone, opens the panel, and bumps panelFocusTick', () => {
+describe('requestEdit selects and opens the properties dialog', () => {
+  it('selects that id alone and opens the dialog on it', () => {
     const a = addResistor();
     const b = addResistor();
     useStore.getState().select([a]);
-    const before = useStore.getState().panelFocusTick;
 
     useStore.getState().requestEdit(b);
 
     const s = useStore.getState();
     expect(s.selectedIds).toEqual([b]);
+    expect(s.elementProperties).toBe(b);
     expect(s.panelOpen).toBe(true);
     expect(s.partsOpen).toBe(false);
-    expect(s.panelFocusTick).toBe(before + 1);
-    // The tick is per call, so a second edit on the same element refocuses.
+  });
+
+  it('closes the context menu it was invoked from, and closes on demand', () => {
+    const a = addResistor();
+    useStore.getState().openContextMenu(10, 20, a, { x: 0, y: 0 });
+
+    useStore.getState().requestEdit(a);
+    expect(useStore.getState().contextMenu).toBeNull();
+    expect(useStore.getState().elementProperties).toBe(a);
+
+    useStore.getState().closeElementProperties();
+    expect(useStore.getState().elementProperties).toBeNull();
+    // Closing the dialog leaves the element selected, so the side panel keeps
+    // showing the same rows.
+    expect(useStore.getState().selectedIds).toEqual([a]);
+  });
+
+  it('retargets the dialog when a second element is edited', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().requestEdit(a);
     useStore.getState().requestEdit(b);
-    expect(useStore.getState().panelFocusTick).toBe(before + 2);
+    expect(useStore.getState().elementProperties).toBe(b);
   });
 
   it('keeps the whole selection when the target is already in it', () => {
