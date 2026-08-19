@@ -65,10 +65,10 @@ const down = (patch: Partial<PointerDownInput> = {}): PointerDownInput => ({
 describe('switchRect geometry', () => {
   it('a plain switch covers the body, the open tip and the closed lever', () => {
     const rect = defFor('switch')!.switchRect!(baseEl('switch'));
-    // The union of the body and both lever positions, grown by one contact
-    // stroke width. The closed lever rides 2 units on the lift side, so the
-    // box must not hug the axis (SwitchElm.java:118-132).
-    expect(rect).toEqual({ x: 60, y: -20, w: 40, h: 24 });
+    // The tight union of the body and both lever centrelines, no margin: the
+    // closed lever rides 2 units on the lift side, so the box must not hug the
+    // axis (SwitchElm.java:118-132).
+    expect(rect).toEqual({ x: 64, y: -16, w: 32, h: 16 });
     expect(rectContains(rect, { x: 64, y: 0 })).toBe(true); // open pivot
     expect(rectContains(rect, { x: 96, y: -16 })).toBe(true); // open tip
     expect(rectContains(rect, { x: 64, y: -2 })).toBe(true); // closed pivot

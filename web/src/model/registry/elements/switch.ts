@@ -76,16 +76,14 @@ export const SWITCH_DEF: ElementDef = {
   interactive: true,
   // The clickable lever: the body between the leads plus the lever in both
   // positions, the open swing and the closed ride 2 units on the lift side
-  // (SwitchElm.java:118-132, 166-169). A box that hugs the axis would miss the
-  // closed lever, and the handle is where the user aims, so the union is grown
-  // by one contact stroke width.
+  // (SwitchElm.java:118-132, 166-169). The box is the tight union of the lever
+  // centrelines, no growth: the picker's 8-pixel reach still covers the drawn
+  // stroke, so a margin would only grab clicks the user aimed past the lever.
   switchRect: (e) => {
     const [lead1, lead2] = calcLeads(e, 32);
     const open = switchLever(lead1, lead2, false);
     const closed = switchLever(lead1, lead2, true);
-    const rect = rectOfPoints([lead1, lead2, open[0], open[1], closed[0], closed[1]]);
-    const m = CONTACT_STROKE_WIDTH;
-    return { x: rect.x - m, y: rect.y - m, w: rect.w + 2 * m, h: rect.h + 2 * m };
+    return rectOfPoints([lead1, lead2, open[0], open[1], closed[0], closed[1]]);
   },
   defaults: { position: 0, momentary: 0 },
   parse: (t, e) => {
