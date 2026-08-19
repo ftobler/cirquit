@@ -929,7 +929,9 @@ button.active,
   min-height: 0;
   display: block;
   touch-action: none;
-  cursor: crosshair;
+  /* No cursor rule: the schematic keeps the plain arrow. Nothing here ever
+     rewrote the shape per tool or per hover, so a permanent crosshair only
+     stated that the surface was a canvas. */
 }
 
 .menubar .status {
