@@ -490,10 +490,32 @@ button.active,
 }
 
 .dropdown-menu summary {
+  display: flex;
+  align-items: center;
   cursor: pointer;
-  padding: 4px 6px;
-  font-weight: 600;
+  padding: 4px 14px;
   border-radius: var(--md-shape-xs);
+}
+
+/* The default disclosure marker is suppressed once the summary becomes a flex
+   container, so the collapse/expand affordance returns as a Material icon:
+   a chevron pointing right when collapsed, down when open. */
+.dropdown-menu summary::before {
+  font-family: 'Material Icons';
+  font-size: 20px;
+  line-height: 1;
+  content: 'chevron_right';
+  margin-right: 8px;
+}
+
+.dropdown-menu details[open] summary::before {
+  content: 'expand_more';
+}
+
+/* The circuit entries under a group indent to the summary's label text, past
+   the chevron, so the nesting reads as a hierarchy. */
+.dropdown-menu details .menu-item {
+  padding-left: 50px;
 }
 
 /* The menu rows sit on #1e1e1e, lighter than the panel, so the shared
@@ -1635,14 +1657,14 @@ input[type='range'] {
    alone, so the min-height raises them without pushing them to the 48 px
    touch tier, which is reserved for coarse pointers below. */
 @media (pointer: fine) {
-  .menu-item {
-    min-height: 40px;
+  .menu-item,
+  .dropdown-menu summary {
+    min-height: 36px;
   }
 
-  /* The toolbox tiles sit tighter than the dropdown rows: each row is its
-     natural 32 px (a 24 px icon plus its 8 px of padding), so rows stack with
-     no dead space between them. The 40 px floor stays on menu items, which
-     the pointer hunts through one at a time. */
+  /* The toolbox tiles sit a hair under the menu rows: each row is a 24 px
+     icon plus its 8 px of padding, so rows stack with no dead space between
+     them. */
   .tool {
     min-height: 36px;
   }
