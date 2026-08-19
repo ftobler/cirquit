@@ -1635,9 +1635,16 @@ input[type='range'] {
    alone, so the min-height raises them without pushing them to the 48 px
    touch tier, which is reserved for coarse pointers below. */
 @media (pointer: fine) {
-  .menu-item,
-  .tool {
+  .menu-item {
     min-height: 40px;
+  }
+
+  /* The toolbox tiles sit tighter than the dropdown rows: each row is its
+     natural 32 px (a 24 px icon plus its 8 px of padding), so rows stack with
+     no dead space between them. The 40 px floor stays on menu items, which
+     the pointer hunts through one at a time. */
+  .tool {
+    min-height: 36px;
   }
 
   /* The menubar itself sits a tier lower. It is a permanent strip over the
