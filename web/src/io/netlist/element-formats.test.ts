@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseCircuit, serializeCircuit } from './index';
 import { makeElement, makeToolElement } from '../../state/store';
 import { postsOf } from '../../model/registry';
-import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE, OUTPUT_FIXED, OUTPUT_SHOW_VOLTAGE } from '../../model/registry/flags';
+import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE, OUTPUT_FIXED, OUTPUT_SHOW_VOLTAGE, OPAMP_SWAP } from '../../model/registry/flags';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
 import type { CustomLogicModel } from './types';
 import { clearSessionModels, parseCompositeModelLine, registerSessionModel } from '../subcircuits';
@@ -2841,5 +2841,69 @@ describe('built-in composite file formats (batch C)', () => {
     expect(e.flags).toBe(2);
     const out = lineFor({ ...e, id: 1 });
     expect(out).toContain('412 0 0 64 0 2 4_2.87e-11_0_0.001_0 4_1e-13_0_0.001_0 0_0.0025_0_0_0 0_6.4');
+  });
+});
+
+describe('op-amp file format and the swapped variant', () => {
+  const lineFor = (e: CircuitElement) =>
+    serializeCircuit([e], { ...DEFAULT_SETTINGS })
+      .trim()
+      .split('\n')
+      .find((l) => l.startsWith('a ')) ?? '';
+
+  it('reads an unswapped op-amp with the inverting input on top (allpass2.txt:2)', () => {
+    const [e] = parseCircuit('a 320 224 416 224 0 15.0 -15.0').elements;
+    expect(e.kind).toBe('opamp');
+    expect(e.flags & OPAMP_SWAP).toBe(0);
+    // Inverting, non-inverting, output. The unswapped part is upstream's
+    // "- on top" menu entry, so the inverting post sits 16 above the axis of
+    // a left-to-right body (OpAmpElm.java:127-133).
+    expect(postsOf(e)).toEqual([
+      { x: 320, y: 208 },
+      { x: 320, y: 240 },
+      { x: 416, y: 224 },
+    ]);
+  });
+
+  it('reads a swapped op-amp and moves only the input posts (amp-follower.txt:5)', () => {
+    // OpAmpSwapElm is a subclass that sets FLAG_SWAP and dumps as OpAmpElm,
+    // so the plus-on-top variant arrives as an ordinary `a` line with flag 1.
+    const [e] = parseCircuit('a 192 160 320 160 1 15.0 -15.0').elements;
+    expect(e.kind).toBe('opamp');
+    expect(e.flags & OPAMP_SWAP).toBe(OPAMP_SWAP);
+    // The corpus wires the feedback to (192,176) and the drive to (192,144),
+    // so the inverting post must be the lower one here.
+    expect(postsOf(e)).toEqual([
+      { x: 192, y: 176 },
+      { x: 192, y: 144 },
+      { x: 320, y: 160 },
+    ]);
+  });
+
+  it('round-trips both variants under the same dump code', () => {
+    // One dump type for both menu entries, the swap living in the flags
+    // field, is what keeps a saved file readable by upstream.
+    for (const flags of [0, 1]) {
+      const line = `a 192 160 320 160 ${flags} 15 -15 1000000 0 0 100000`;
+      const [e] = parseCircuit(line).elements;
+      expect(lineFor(e)).toBe(line);
+    }
+  });
+
+  it('an upstream line without the trailing tokens saves with the defaults', () => {
+    // The old two-token form carries no gbw, no seed voltages and no gain;
+    // the writer fills in the constructor values so the reload is stable.
+    const [e] = parseCircuit('a 192 160 320 160 1 15.0 -15.0').elements;
+    expect(lineFor(e)).toBe('a 192 160 320 160 1 15 -15 1000000 0 0 100000');
+  });
+
+  it('the Swap Inputs toggle is the only bit that moves', () => {
+    // The property edit is a plain flag flip, so a swapped op-amp saved here
+    // is byte-for-byte the line upstream writes for OpAmpSwapElm.
+    const e = makeElement('opamp', 192, 160, 320, 160);
+    const swapped = { ...e, id: 1, flags: e.flags | OPAMP_SWAP };
+    expect(lineFor({ ...e, id: 1 })).toBe('a 192 160 320 160 8 15 -15 1000000 0 0 100000');
+    expect(lineFor(swapped)).toBe('a 192 160 320 160 9 15 -15 1000000 0 0 100000');
+    expect(postsOf(swapped)[0]).toEqual({ x: 192, y: 176 });
   });
 });

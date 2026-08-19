@@ -117,7 +117,7 @@ export const OPAMP_DEF: ElementDef = {
   label: 'Op-amp',
   category: 'Active',
   dumpCode: 'a',
-  shortcut: 'a',  // OpAmpElm.java; the swapped variant 'A' has no port tool
+  shortcut: 'a',  // OpAmpElm.java; the '+ on top' variant 'A' is the Swap Inputs field
   postCount: 3,
   posts: opAmpPosts,
   canMirror: true,
@@ -134,6 +134,12 @@ export const OPAMP_DEF: ElementDef = {
     e.params.gain ?? 100000,
   ],
   fields: [
+    // Upstream ships the plus-on-top op-amp as a second menu entry
+    // (OpAmpSwapElm.java), a subclass that only sets FLAG_SWAP and dumps as
+    // OpAmpElm. One dump type, one element here, and the variant is this
+    // checkbox: a file saved with it ticked is the same 'a' line upstream
+    // writes for OpAmpSwapElm, so both directions interchange.
+    { name: 'swap', label: 'Swap Inputs', type: 'bool', flag: OPAMP_SWAP },
     { name: 'maxOut', label: 'Max output', unit: 'V' },
     { name: 'minOut', label: 'Min output', unit: 'V' },
     { name: 'gain', label: 'Open-loop gain' },
