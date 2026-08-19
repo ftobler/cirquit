@@ -1207,6 +1207,13 @@ input[type='range'] {
   color: var(--md-primary);
 }
 
+/* The element properties dialog's row list: the same stacked `.field` rows the
+   options panel shows, with the first row's top margin dropped so it lines up
+   under the dialog title. */
+.element-properties > :first-child {
+  margin-top: 0;
+}
+
 /* The create/remove rows of the element-scoped Sliders dialog: a checkbox with
    its field label on the same line, unlike the stacked `.field` form rows. */
 .slider-options {

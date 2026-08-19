@@ -158,10 +158,10 @@ export interface AppState {
    *  overlay; on desktop the flag is inert because the aside is a flex
    *  sibling. */
   panelOpen: boolean;
-  /** Bumped by `requestEdit` so the options panel's mount effect (which only
-   *  runs once) can still refocus the first field on a fresh edit request,
-   *  since the panel itself never unmounts. */
-  panelFocusTick: number;
+  /** The element whose properties dialog is open, or null. The port of
+   *  upstream's EditDialog, which edits the element under the cursor; the side
+   *  panel keeps showing the same rows for the selection behind it. */
+  elementProperties: number | null;
   /** The element the Sliders dialog is scoped to, from the context menu's
    *  Sliders... row, or null for the circuit-wide menubar dialog. The dialog
    *  shows create/remove checkboxes for this element's adjustable fields. */
@@ -248,10 +248,12 @@ export interface AppState {
    *  the port of upstream's row/column capture which reads only stored
    *  endpoints, never derived posts (MouseManager.java:1161-1187). */
   movePoint(id: number, post: 0 | 1, dx: number, dy: number): void;
-  /** Selects the element and opens the options panel, asking it to focus the
-   *  first field. The double-tap and the context menu's Edit item share this
-   *  one implementation of "edit this element". */
+  /** Selects the element and opens its properties dialog. The double-click,
+   *  the touch double-tap and the context menu's Edit... item share this one
+   *  implementation of "edit this element". */
   requestEdit(id: number): void;
+  /** Closes the element properties dialog. */
+  closeElementProperties(): void;
   /** Opens or closes the toolbox drawer (the mobile overlay). Opening it
    *  closes the options drawer, since only one mobile drawer shows at a time. */
   setPartsOpen(open: boolean): void;

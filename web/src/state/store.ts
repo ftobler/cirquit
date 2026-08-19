@@ -480,7 +480,7 @@ function createAppStore() {
   scopeProperties: null,
   partsOpen: false,
   panelOpen: false,
-  panelFocusTick: 0,
+  elementProperties: null,
   sliderElementId: null,
   clipboard: null,
   lastSaved: null,
@@ -570,10 +570,15 @@ function createAppStore() {
       selectedIds: s.selectedIds.includes(id)
         ? [id, ...s.selectedIds.filter((x) => x !== id)]
         : [id],
+      // The dialog is the edit surface, like upstream's EditDialog; the drawer
+      // opens behind it so the panel still shows the element once it closes.
+      elementProperties: id,
       panelOpen: true,
       partsOpen: false,
-      panelFocusTick: s.panelFocusTick + 1,
+      contextMenu: null,
     })),
+
+  closeElementProperties: () => set({ elementProperties: null }),
 
   setPartsOpen: (open) =>
     set((s) => ({
