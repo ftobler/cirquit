@@ -174,7 +174,7 @@ body {
   /* Tight vertical padding: the bar is chrome above a canvas that wants every
      pixel, so its height comes from the controls themselves rather than from
      padding around them. */
-  padding: 2px 10px;
+  padding: 3px 10px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
@@ -1523,18 +1523,18 @@ input[type='range'] {
 
   /* The menubar itself sits a tier lower. It is a permanent strip over the
      canvas rather than a list the pointer hunts through, so its controls keep
-     a 32 px floor — still comfortably larger than their ~28 px natural height,
+     a 34 px floor — still comfortably larger than their ~28 px natural height,
      and a mouse has no trouble with a full-width strip that short. */
   .menubar .menubar-btn,
   .menubar .run-group button {
-    min-height: 32px;
+    min-height: 34px;
   }
 
   /* The run/pause and reset icon buttons stay square like the undo/redo
      pair: the height alone would leave the primary's natural width matching,
      but the min-width pins it so a content change cannot stretch one axis. */
   .menubar .run-group button {
-    min-width: 32px;
+    min-width: 34px;
   }
 }
 
