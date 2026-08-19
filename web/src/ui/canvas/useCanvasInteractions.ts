@@ -214,13 +214,21 @@ export function useCanvasInteractions(
     return { x: clientX - rect.left, y: clientY - rect.top };
   }, [canvasRef]);
 
-  const hitTest = useCallback((p: Point): CircuitElement | null => {
-    const { elements, view } = stateRef.current;
-    // The reach is a screen-pixel distance, converted per pointer event: the
-    // circuit-space reach is the pixel tolerance over the scale, so the same
-    // on-screen slop grabs the same element at zoom 0.15 and zoom 6.
-    return hitTestElement(p, elements, view.scale, HIT_TOLERANCE_PX);
-  }, [stateRef]);
+  const hitTest = useCallback(
+    (p: Point, preferredId: number | null = null): CircuitElement | null => {
+      const { elements, view } = stateRef.current;
+      // The reach is a screen-pixel distance, converted per pointer event: the
+      // circuit-space reach is the pixel tolerance over the scale, so the same
+      // on-screen slop grabs the same element at zoom 0.15 and zoom 6. Both the
+      // hover setter and the press paths pass the current hovered id so the
+      // highlight sticks to the element the cursor was last over at a junction
+      // shared by several elements, and the press grabs that same element
+      // (the port of upstream's junction grab) rather than flipping to the
+      // topmost by array order.
+      return hitTestElement(p, elements, view.scale, HIT_TOLERANCE_PX, preferredId);
+    },
+    [stateRef],
+  );
 
   // ---- pointer handling ---------------------------------------------------
   /** The refs the pointer-down gesture decision writes through, held here so
@@ -268,14 +276,18 @@ export function useCanvasInteractions(
 
       touchArmedRef.current = false;
       touchDownClientRef.current = { x: ev.clientX, y: ev.clientY };
-      const hit = hitTest(p);
+      // Prefer the element the cursor was last hovering so a press at a shared
+      // junction grabs the highlighted one, not a different topmost pick.
+      const hit = hitTest(p, state.hoveredId);
       touchTargetRef.current = hit?.id ?? null;
       beginPointerGesture(ev, p, state, hit, true, gestureRefs);
       scheduleTouchTimers();
       return;
     }
 
-    beginPointerGesture(ev, p, state, hitTest(p), false, gestureRefs);
+    // Prefer the element the cursor was last hovering so a press at a shared
+    // junction grabs the highlighted one rather than an arbitrary topmost pick.
+    beginPointerGesture(ev, p, state, hitTest(p, state.hoveredId), false, gestureRefs);
   };
 
   const onPointerMove = (ev: React.PointerEvent<HTMLCanvasElement>) => {
@@ -307,7 +319,12 @@ export function useCanvasInteractions(
 
     // Hover tracking only applies when nothing is being dragged.
     if (drag.mode === 'none') {
-      const hit = hitTest(p);
+      // Sticky hover: prefer the element already highlighted so a cursor that
+      // settles on a junction shared by several elements keeps the one it was
+      // last over, instead of flipping to whichever is topmost by array order.
+      // The press path (below) passes the same id, so the highlighted element
+      // is the one that gets grabbed.
+      const hit = hitTest(p, state.hoveredId);
       state.setHovered(hit?.id ?? null);
       // Shift-hover over a wire highlights the whole net: every element on the
       // wire's node draws with theme.highlight (MouseManager.java:689-693).

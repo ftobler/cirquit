@@ -203,6 +203,51 @@ describe('hitTestElement', () => {
     // Both are within reach, so the later one wins.
     expect(hitTestElement({ x: 80, y: 1 }, [behind, top], 1)).toBe(top);
   });
+
+  it('prefers the hovered element over the topmost at a shared junction', () => {
+    const resistor = element(0, 0, 160, 0);
+    const wire = element(0, 0, 160, 0);
+    wire.id = 2;
+    // Both share the (0,0) node; the wire is drawn last and is the strict
+    // topmost, so without a preference it would win. A press one pixel off the
+    // node still reaches both, so the hovered resistor must win when it is
+    // passed as the preference.
+    expect(hitTestElement({ x: 1, y: 1 }, [resistor, wire], 1, HIT_TOLERANCE_PX, resistor.id)).toBe(
+      resistor,
+    );
+  });
+
+  it('a sticky hover keeps the previously highlighted element at a junction', () => {
+    const wire = element(0, 0, 160, 0);
+    const resistor = element(0, 0, 160, 0);
+    resistor.id = 2;
+    // First hover (no preference) lands on the resistor as topmost...
+    const first = hitTestElement({ x: 1, y: 1 }, [wire, resistor], 1, HIT_TOLERANCE_PX, null);
+    expect(first).toBe(resistor);
+    // ...then the cursor settles a hair toward the wire but both stay in reach;
+    // the hook re-passes the previously highlighted resistor as the preference,
+    // so the highlight (and the grab) stays on the resistor instead of flipping
+    // to the topmost wire.
+    const second = hitTestElement(
+      { x: 2, y: 2 },
+      [wire, resistor],
+      1,
+      HIT_TOLERANCE_PX,
+      first?.id ?? null,
+    );
+    expect(second).toBe(resistor);
+  });
+
+  it('ignores the hovered preference when it is out of reach', () => {
+    const wire = element(0, 0, 160, 0);
+    const resistor = element(1000, 1000, 1160, 1000);
+    resistor.id = 2;
+    // The hovered resistor sits far from the pointer, so it is out of reach and
+    // the strict topmost within reach (the wire) wins.
+    expect(
+      hitTestElement({ x: 0, y: 0 }, [wire, resistor], 1, HIT_TOLERANCE_PX, resistor.id),
+    ).toBe(wire);
+  });
 });
 
 describe('distanceToBox', () => {

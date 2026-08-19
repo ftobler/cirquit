@@ -309,9 +309,22 @@ export function hitTestElement(
   elements: readonly CircuitElement[],
   scale: number,
   tolerancePx = HIT_TOLERANCE_PX,
+  preferredId: number | null = null,
 ): CircuitElement | null {
   if (!Number.isFinite(scale) || scale <= 0) return null;
   const reach = tolerancePx / scale;
+  // Prefer the element the pointer was last hovering, so a press at a junction
+  // shared by several elements grabs the one the user saw highlighted, not an
+  // arbitrary topmost-by-array-order pick. The hover setter passes the current
+  // `hoveredId` too (useCanvasInteractions.ts), so a cursor that settles on a
+  // shared node keeps the element it was last over as both the highlight and
+  // the grab target (the port of upstream's junction grab). When the existing
+  // preference is out of reach the strict topmost search below still runs, so
+  // moving onto a genuinely different element updates the highlight normally.
+  if (preferredId != null) {
+    const pref = elements.find((e) => e.id === preferredId);
+    if (pref && distanceToElement(p, pref) <= reach) return pref;
+  }
   // The topmost element (last in `elements`) within reach wins, so walk back
   // to front and return the first hit.
   for (let i = elements.length - 1; i >= 0; i--) {
