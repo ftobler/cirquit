@@ -698,18 +698,20 @@ export function Menubar({ engine }: Props) {
             checked={!editable}
             onClick={fire(() => updateSettings({ editable: !editable }))}
           />
+          <CheckItem
+            label="Toolbar"
+            checked={partsOpen}
+            onClick={fire(() => setPartsOpen(!partsOpen))}
+          />
           {menu([
             // Upstream's display toggles the port does not implement, all real
             // checkboxes in Menus.java: Toolbar and Small Grid above the other
             // display rows, Edit Values With Mouse Wheel below Disable Editing
             // (Menus.java:207-234). The port omits the four Show rows (they live
-            // in Other Options), so the remaining unported toggles read
-            // together. Small Grid is deliberately absent: the grid spacing is
-            // fixed, so the toggle is not to be ported.
-            deferred(
-              'Toolbar',
-              'The port has no toggleable toolbar; the parts panel is always visible',
-            ),
+            // in Other Options). Small Grid is deliberately absent: the grid
+            // spacing is fixed, so the toggle is not to be ported. Toolbar is
+            // real: it toggles the parts sidebar via the same state the mobile
+            // burger uses.
             deferred(
               'Edit Values With Mouse Wheel',
               'The wheel value stepper is always on; there is no toggle',

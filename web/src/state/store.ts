@@ -434,6 +434,14 @@ function patchChangesElement(e: CircuitElement, patch: Partial<CircuitElement>):
   return false;
 }
 
+/** The parts sidebar defaults open on a wide (desktop) screen, where it is
+ *  the always-visible toolbox, and closed on narrow screens, where it is a
+ *  drawer the Parts button opens. The Toolbar Options row and the Parts
+ *  button share this same state. */
+function defaultPartsOpen(): boolean {
+  return typeof window !== 'undefined' && window.innerWidth > 768;
+}
+
 function createAppStore() {
   return create<AppState>((set, get) => ({
   elements: [],
@@ -479,7 +487,7 @@ function createAppStore() {
   contextMenu: null,
   scopeMenu: null,
   scopeProperties: null,
-  partsOpen: false,
+  partsOpen: defaultPartsOpen(),
   panelOpen: false,
   elementProperties: null,
   sliderElementId: null,

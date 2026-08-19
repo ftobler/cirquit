@@ -932,6 +932,14 @@ button.active,
   border-right: 1px solid var(--border);
 }
 
+/* On desktop the parts sidebar obeys the same `.open` state as the mobile
+   drawer: the Toolbar Options row (and the mobile Parts button) toggle it, so
+   it is hidden when closed instead of being an always-visible sibling. It
+   defaults open on a wide screen via `partsOpen` at store init. */
+.left:not(.open) {
+  display: none;
+}
+
 .right {
   width: 260px;
   border-left: 1px solid var(--border);
