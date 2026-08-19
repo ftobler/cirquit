@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SimEngine } from '../../engine/simulator';
-import { axisConstrained, constrainPostDrag, defFor, dominantAxisSnap, postCountOf } from '../../model/registry';
+import {
+  axisConstrained,
+  constrainPostDrag,
+  defFor,
+  dominantAxisSnap,
+  postCountOf,
+} from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
 import {
   isZoomOnly,
@@ -18,7 +24,13 @@ import { boxFromPoints, selectByBox } from '../../render/selection';
 import { snap, useStore } from '../../state/store';
 import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
 import { DRAG_DELAY_MS, LONG_PRESS_MS, TouchGesture, type GestureAction } from '../gestures';
-import { beginPointerGesture, finishPlacement, releaseHeldMomentary, type Drag } from './pointerDown';
+import {
+  beginPointerGesture,
+  finishPlacement,
+  finishPostDrag,
+  releaseHeldMomentary,
+  type Drag,
+} from './pointerDown';
 import { useStoreRef } from './useStoreRef';
 
 export type { Drag } from './pointerDown';
@@ -500,19 +512,7 @@ export function useCanvasInteractions(
     }
 
     finishPlacement(drag, state);
-
-    if (drag.mode === 'dragpost') {
-      const e = state.elements.find((x) => x.id === drag.id);
-      const def = e ? defFor(e.kind) : undefined;
-      // A post dragged onto its partner leaves a zero-length element, which is
-      // almost never meant. Do not delete mid-drag: the user may be passing
-      // through on the way somewhere. On release, undo the whole drag and say
-      // why.
-      if (drag.moved && e && def && postCountOf(e) > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
-        state.undo();
-        state.setStatus('Reverted: that drag would have collapsed the element to a point.');
-      }
-    }
+    finishPostDrag(drag, state);
 
     // A row or column sweep can collapse an element to a point only by moving
     // both of its posts onto the same coordinate, exactly the degenerate case

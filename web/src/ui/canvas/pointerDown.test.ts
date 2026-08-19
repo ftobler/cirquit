@@ -9,6 +9,7 @@ import { fresh } from '../../state/store.test-helpers';
 import {
   beginPointerGesture,
   finishPlacement,
+  finishPostDrag,
   releaseHeldMomentary,
   type Drag,
   type PointerDownInput,
@@ -376,5 +377,96 @@ describe('pointer-down on a switch while paused', () => {
     const r = refs();
     beginPointerGesture(down({ ctrlKey: true }), { x: 100, y: -5 }, useStore.getState(), hit(id), false, r);
     expect(r.dragRef.current?.mode).toBe('dragpost');
+  });
+});
+
+describe('finishPostDrag', () => {
+  const addWire = (x1: number, y1: number, x2: number, y2: number) =>
+    useStore.getState().addElement({ kind: 'wire', x1, y1, x2, y2, flags: 0, params: {} });
+
+  const postDrag = (id: number, post: 1 | 2, moved = true): Drag => ({
+    mode: 'dragpost',
+    id,
+    post,
+    moved,
+    start: { x: 0, y: 0 },
+  });
+
+  it('splits the wire the dropped post landed on, as one undo step with the drag', () => {
+    const crossed = addWire(0, 0, 160, 0);
+    const dragged = addWire(80, 80, 80, 80);
+    // What the drag did: commit the baseline at pointer-down, then move post 2
+    // onto the crossed wire's interior.
+    useStore.getState().commit();
+    useStore.getState().updateElement(dragged, { x2: 80, y2: 0 });
+    const baseline = useStore.getState().undoStack.length;
+
+    finishPostDrag(postDrag(dragged, 2), useStore.getState());
+
+    const spans = useStore
+      .getState()
+      .elements.filter((e) => e.kind === 'wire')
+      .map((e) => [e.x1, e.y1, e.x2, e.y2]);
+    expect(spans).toContainEqual([0, 0, 80, 0]);
+    expect(spans).toContainEqual([80, 0, 160, 0]);
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+
+    useStore.getState().undo();
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(2);
+    expect(s.elements.find((e) => e.id === crossed)).toMatchObject({ x2: 160, y2: 0 });
+    expect(s.elements.find((e) => e.id === dragged)).toMatchObject({ x2: 80, y2: 80 });
+  });
+
+  it('splits nothing when the post never moved', () => {
+    addWire(0, 0, 160, 0);
+    const dragged = addWire(80, 80, 80, 0);
+
+    finishPostDrag(postDrag(dragged, 2, false), useStore.getState());
+
+    expect(useStore.getState().elements).toHaveLength(2);
+  });
+
+  it('splits nothing for a whole-element move or a sweep', () => {
+    addWire(0, 0, 160, 0);
+    addWire(80, 80, 80, 0);
+
+    finishPostDrag({ mode: 'move', last: { x: 80, y: 0 }, moved: true }, useStore.getState());
+
+    expect(useStore.getState().elements).toHaveLength(2);
+  });
+
+  it('ignores a rail free end, which is a control point and not a post', () => {
+    // A rail's post is its (x1,y1) end; the far end carries the symbol and no
+    // terminal, so dropping it on a wire connects nothing to split.
+    addWire(160, -80, 160, 80);
+    const rail = useStore.getState().addElement({
+      kind: 'rail',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: {},
+    });
+
+    finishPostDrag(postDrag(rail, 2), useStore.getState());
+
+    expect(useStore.getState().elements).toHaveLength(2);
+  });
+
+  it('reverts a drag that collapsed the element instead of splitting', () => {
+    addWire(0, 0, 160, 0);
+    const dragged = addWire(80, 80, 80, 80);
+    useStore.getState().commit();
+    useStore.getState().updateElement(dragged, { x1: 80, y1: 0, x2: 80, y2: 0 });
+
+    finishPostDrag(postDrag(dragged, 2), useStore.getState());
+
+    const s = useStore.getState();
+    // The collapse is undone whole, and the crossed wire is left unsplit.
+    expect(s.elements.filter((e) => e.kind === 'wire')).toHaveLength(2);
+    expect(s.elements.find((e) => e.id === dragged)).toMatchObject({ y1: 80, y2: 80 });
+    expect(s.status).toMatch(/collapsed/);
   });
 });

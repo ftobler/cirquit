@@ -3323,6 +3323,158 @@ describe('convert wires to routed', () => {
   });
 });
 
+describe('wire split on a post drag', () => {
+  const addWire = (x1: number, y1: number, x2: number, y2: number) =>
+    useStore.getState().addElement({
+      kind: 'wire',
+      x1,
+      y1,
+      x2,
+      y2,
+      flags: 0,
+      params: {},
+    });
+
+  it('splits the wire a dragged post landed on', () => {
+    const crossed = addWire(0, 0, 160, 0);
+    const dragged = addWire(80, 80, 80, 0);
+
+    useStore.getState().autoSplitAt({ x: 80, y: 0 }, dragged);
+
+    const s = useStore.getState();
+    expect(s.elements.some((e) => e.id === crossed)).toBe(false);
+    const spans = s.elements.filter((e) => e.kind === 'wire').map((e) => [e.x1, e.y1, e.x2, e.y2]);
+    expect(spans).toContainEqual([0, 0, 80, 0]);
+    expect(spans).toContainEqual([80, 0, 160, 0]);
+    // The dragged wire itself is untouched.
+    expect(spans).toContainEqual([80, 80, 80, 0]);
+  });
+
+  it('splits every wire crossing the drop point, not just the first', () => {
+    // Two wires cross at (80,0) without a post there; a post dropped on the
+    // crossing has to join both, which takes two splits.
+    addWire(0, 0, 160, 0);
+    addWire(80, -80, 80, 80);
+    const dragged = addWire(0, 32, 80, 0);
+
+    useStore.getState().autoSplitAt({ x: 80, y: 0 }, dragged);
+
+    const wires = useStore.getState().elements.filter((e) => e.kind === 'wire');
+    expect(wires).toHaveLength(5);
+    const spans = wires.map((e) => [e.x1, e.y1, e.x2, e.y2]);
+    expect(spans).toContainEqual([0, 0, 80, 0]);
+    expect(spans).toContainEqual([80, 0, 160, 0]);
+    expect(spans).toContainEqual([80, -80, 80, 0]);
+    expect(spans).toContainEqual([80, 0, 80, 80]);
+  });
+
+  it('never splits the dragged element itself', () => {
+    // The dragged wire's own span passes through the drop point of its post,
+    // which must not cost it a split.
+    const dragged = addWire(0, 0, 160, 0);
+
+    useStore.getState().autoSplitAt({ x: 80, y: 0 }, dragged);
+
+    expect(useStore.getState().elements).toHaveLength(1);
+  });
+
+  it('leaves an endpoint drop and an empty-canvas drop alone', () => {
+    const crossed = addWire(0, 0, 160, 0);
+    const dragged = addWire(0, 32, 0, 0);
+
+    // Post to post is an ordinary connection, and (80,64) is on nothing.
+    useStore.getState().autoSplitAt({ x: 0, y: 0 }, dragged);
+    useStore.getState().autoSplitAt({ x: 80, y: 64 }, dragged);
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(2);
+    expect(s.elements.some((e) => e.id === crossed)).toBe(true);
+  });
+
+  it('ignores non-wire elements: they connect at posts, not along their body', () => {
+    const resistor = useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    const dragged = addWire(80, 80, 80, 0);
+
+    useStore.getState().autoSplitAt({ x: 80, y: 0 }, dragged);
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(2);
+    expect(s.elements.some((e) => e.id === resistor)).toBe(true);
+  });
+
+  it('pushes no undo entry of its own: the drag committed at pointer-down', () => {
+    const crossed = addWire(0, 0, 160, 0);
+    const dragged = addWire(80, 80, 80, 0);
+    // What a post drag does: commit the baseline, move the post, then split.
+    useStore.getState().commit();
+    useStore.getState().updateElement(dragged, { x2: 80, y2: 0 });
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().autoSplitAt({ x: 80, y: 0 }, dragged);
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+
+    useStore.getState().undo();
+
+    // One step takes the move and the split back together.
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(2);
+    expect(s.elements.find((e) => e.id === crossed)).toMatchObject({ x1: 0, y1: 0, x2: 160, y2: 0 });
+  });
+
+  it('splits a routed wire the post landed on, into two routed halves', () => {
+    const routed = useStore.getState().addElement({
+      kind: 'wire',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: {},
+      route: [
+        [0, 0],
+        [0, 80],
+        [160, 80],
+        [160, 0],
+      ],
+    });
+    const dragged = addWire(80, 160, 80, 80);
+
+    useStore.getState().autoSplitAt({ x: 80, y: 80 }, dragged);
+
+    const s = useStore.getState();
+    expect(s.elements.some((e) => e.id === routed)).toBe(false);
+    const routes = s.elements.filter((e) => e.route !== undefined).map((e) => e.route);
+    expect(routes).toContainEqual([
+      [0, 0],
+      [0, 80],
+      [80, 80],
+    ]);
+    expect(routes).toContainEqual([
+      [80, 80],
+      [160, 80],
+      [160, 0],
+    ]);
+  });
+
+  it('bumps the revision so the engine reloads with the new wires', () => {
+    const dragged = addWire(80, 80, 80, 0);
+    addWire(0, 0, 160, 0);
+    const rev = useStore.getState().revision;
+
+    useStore.getState().autoSplitAt({ x: 80, y: 0 }, dragged);
+
+    expect(useStore.getState().revision).toBe(rev + 1);
+  });
+});
+
 describe('manual wire split (Split Wire Manually)', () => {
   const addWire = (x1: number, y1: number, x2: number, y2: number) =>
     useStore.getState().addElement({
