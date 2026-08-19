@@ -222,6 +222,12 @@ export interface AppState {
    *  manual Split Wire Manually context-menu command; refuses non-wires and
    *  points off the span or on an endpoint. */
   splitWireAt(id: number, point: Point): void;
+  /** Splits every wire whose interior `point` lands on, except `exceptId`, so
+   *  the post that was just dropped there connects. Upstream's `splitWireAt`
+   *  loop, run from `endDrag` after a single post drag (MouseManager.java:
+   *  1254-1258). Pushes no undo entry: the gesture that calls it committed at
+   *  pointer-down and owns the whole drag as one step. */
+  autoSplitAt(point: Point, exceptId: number): void;
   /** Moves elements without pushing a separate undo entry per frame. */
   moveElements(ids: number[], dx: number, dy: number): void;
   /** Moves the selection by dx/dy with exactly one undo entry per call: the

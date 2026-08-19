@@ -6,7 +6,7 @@
  * a running interactive part, select, place, pan, sweep or arm a drag.
  */
 
-import { defFor, postCountOf, toolDef } from '../../model/registry';
+import { defFor, postCountOf, postsOf, toolDef } from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
 import { GRID_SIZE } from '../../model/types';
 import type { CircuitElement, Point } from '../../model/types';
@@ -105,6 +105,38 @@ export function finishPlacement(drag: Drag, state: AppState): void {
   // Placing one element then returning to select mode matches how people
   // actually build a schematic.
   state.setTool(null);
+}
+
+/** The pointer-up cleanup a single post drag owes. Two outcomes, in upstream's
+ *  order: a drag that collapsed the element to a point is undone whole, and
+ *  otherwise the dropped post splits any wire it landed on so the two connect
+ *  (endDrag, MouseManager.java:1244-1258). Only a post drag splits; moving
+ *  whole elements, one or a selection, connects nothing, which is why this
+ *  lives here and not in the move path. Extracted alongside finishPlacement so
+ *  the rule stays testable without a canvas. */
+export function finishPostDrag(drag: Drag, state: AppState): void {
+  if (drag.mode !== 'dragpost') return;
+  if (!drag.moved) return;
+  const e = state.elements.find((x) => x.id === drag.id);
+  if (!e) return;
+  const def = defFor(e.kind);
+  // A post dragged onto its partner leaves a zero-length element, which is
+  // almost never meant. Do not delete mid-drag: the user may be passing
+  // through on the way somewhere. On release, undo the whole drag and say why.
+  if (def && postCountOf(e) > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
+    state.undo();
+    state.setStatus('Reverted: that drag would have collapsed the element to a point.');
+    return;
+  }
+  const pos = drag.post === 1 ? { x: e.x1, y: e.y1 } : { x: e.x2, y: e.y2 };
+  // Only a real post connects. A ground or rail hangs its symbol off a second
+  // control point that is draggable but carries no terminal, and dropping that
+  // on a wire must not split it (upstream splits at getPost(draggingPost),
+  // which such an end is not).
+  if (!postsOf(e).some((q) => q.x === pos.x && q.y === pos.y)) return;
+  // The split lands on the commit pointer-down took, so the move and the split
+  // undo together as one drag.
+  state.autoSplitAt(pos, e.id);
 }
 
 /** A row or column sweep captures every stored endpoint on the line at

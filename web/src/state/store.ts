@@ -735,6 +735,34 @@ function createAppStore() {
     }));
   },
 
+  autoSplitAt: (point, exceptId) => {
+    // Upstream splits every wire under the dropped post, not just the first:
+    // two wires crossing at the point both get a terminal there, so the drop
+    // joins all of them (splitWireAt, MouseManager.java:597-613). The dragged
+    // element is skipped so a routed wire cannot split itself on its own bend.
+    const s = get();
+    const p = { x: Math.round(point.x), y: Math.round(point.y) };
+    const crossed = s.elements.filter(
+      (e) => e.id !== exceptId && e.kind === 'wire' && pointOnWireInterior(p, e),
+    );
+    if (crossed.length === 0) return;
+    const halves: CircuitElement[] = [];
+    const gone = new Set<number>();
+    for (const w of crossed) {
+      // A wire that refuses the split (splitWire returns null) has to survive
+      // it, so only the ones actually replaced go on the removal list.
+      const pair = splitWire(w, p, allocateId);
+      if (!pair) continue;
+      halves.push(...pair);
+      gone.add(w.id);
+    }
+    if (halves.length === 0) return;
+    set((st) => ({
+      elements: st.elements.filter((e) => !gone.has(e.id)).concat(halves),
+      ...bumpRevision(st),
+    }));
+  },
+
   splitWireAt: (id, point) => {
     const s = get();
     const target = s.elements.find((e) => e.id === id);
