@@ -171,7 +171,10 @@ body {
   align-items: center;
   flex-wrap: wrap; /* at narrow widths the run controls wrap down instead of overflowing the right edge */
   gap: 6px;
-  padding: 6px 10px;
+  /* Tight vertical padding: the bar is chrome above a canvas that wants every
+     pixel, so its height comes from the controls themselves rather than from
+     padding around them. */
+  padding: 2px 10px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
@@ -1509,24 +1512,29 @@ input[type='range'] {
 }
 
 /* Fine pointers also get a floor under interactive rows: MD3's 40 px compact
-   minimum. Menubar controls and dropdown rows measure ~28-31 px tall with
-   their padding alone, under the 40 px compact-button bar, so the min-height
-   raises them without pushing the whole bar to the 48 px touch tier, which is
-   reserved for coarse pointers below. */
+   minimum. Dropdown rows and tools measure ~28-31 px tall with their padding
+   alone, so the min-height raises them without pushing them to the 48 px
+   touch tier, which is reserved for coarse pointers below. */
 @media (pointer: fine) {
-  .menubar .menubar-btn,
-  .menubar .run-group button,
   .menu-item,
   .tool {
     min-height: 40px;
   }
 
-  /* The run/pause and reset icon buttons stay square like the undo/redo
-     pair: the 40 px height alone would leave the primary's natural 40 px
-     width matching, but the min-width pins it so a content change cannot
-     stretch one axis. */
+  /* The menubar itself sits a tier lower. It is a permanent strip over the
+     canvas rather than a list the pointer hunts through, so its controls keep
+     a 32 px floor — still comfortably larger than their ~28 px natural height,
+     and a mouse has no trouble with a full-width strip that short. */
+  .menubar .menubar-btn,
   .menubar .run-group button {
-    min-width: 40px;
+    min-height: 32px;
+  }
+
+  /* The run/pause and reset icon buttons stay square like the undo/redo
+     pair: the height alone would leave the primary's natural width matching,
+     but the min-width pins it so a content change cannot stretch one axis. */
+  .menubar .run-group button {
+    min-width: 32px;
   }
 }
 
