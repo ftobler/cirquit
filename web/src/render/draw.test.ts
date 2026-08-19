@@ -61,7 +61,7 @@ import { WIRE_DEF } from '../model/registry/elements/wire';
 import { TRANSMISSION_LINE_DEF } from '../model/registry/elements/transmissionLine';
 import { SCR_DEF, scrGeometry } from '../model/registry/elements/scr';
 import { TRIAC_DEF, triacGeometry } from '../model/registry/elements/triac';
-import { TOO_FAST, dotPhaseStep } from './dots';
+import { MIN_CURRENT_FLOW, TOO_FAST, dotPhaseStep } from './dots';
 import {
   OUTPUT_SHOW_VOLTAGE,
   SWITCH_IEC,
@@ -421,6 +421,17 @@ describe('current dots', () => {
     currentDots(context(ctx, 2), { x: 0, y: 0 }, { x: 100, y: 0 }, 1e-3);
     expect(calls).toContain('fillRect');
     expect(calls).not.toContain('stroke');
+  });
+
+  it('draws nothing below the 0.1 pA flow threshold', () => {
+    // A floating node's numerical residue is pico-scale; below the threshold
+    // the wire must not show a dot or a flow line. 0.1 pA itself shows.
+    const { ctx, calls } = mkCtx();
+    currentDots(context(ctx, 0), { x: 0, y: 0 }, { x: 100, y: 0 }, MIN_CURRENT_FLOW - 1e-18);
+    expect(calls).not.toContain('fillRect');
+    expect(calls).not.toContain('stroke');
+    currentDots(context(ctx, 0), { x: 0, y: 0 }, { x: 100, y: 0 }, MIN_CURRENT_FLOW);
+    expect(calls).toContain('fillRect');
   });
 
   it('draws each dot as a 4x4 square centred on the dot position', () => {

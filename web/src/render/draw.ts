@@ -1,7 +1,7 @@
 /** Drawing primitives shared by every element renderer. */
 
 import type { CircuitElement, DrawContext, Point, Theme, ThemeColors } from '../model/types';
-import { DOT_SPACING, dotPhaseAfter, TOO_FAST } from './dots';
+import { DOT_SPACING, dotPhaseAfter, MIN_CURRENT_FLOW, TOO_FAST } from './dots';
 
 export { dotPhaseAfter };
 
@@ -713,7 +713,7 @@ export function currentDotsFrom(
   current: number,
   phase: number,
 ): void {
-  if (!g.showCurrent || !Number.isFinite(current) || current === 0) return;
+  if (!g.showCurrent || !Number.isFinite(current) || Math.abs(current) < MIN_CURRENT_FLOW) return;
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   if (len < 1) return;
 

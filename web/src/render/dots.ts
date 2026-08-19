@@ -3,6 +3,11 @@
 /** Spacing between current-flow dots, in circuit units. */
 export const DOT_SPACING = 16;
 
+/** Below this current magnitude no flow is drawn: 0.1 pA. A leak or a floating
+ *  node's numerical residue would otherwise put a dot or a flow line on every
+ *  wire, so the animation only appears once there is a real current. */
+export const MIN_CURRENT_FLOW = 1e-13;
+
 /** Sentinel: the dots would alias, so the segment is drawn as a flow line. */
 export const TOO_FAST = Number.POSITIVE_INFINITY;
 
