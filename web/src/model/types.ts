@@ -423,6 +423,9 @@ export interface SimSettings {
   /** Read-only gate, upstream's `noEditing` (UIManager.java:116). UI-only:
    *  not a header token, so it never bumps the engine revision. */
   editable: boolean;
+  /** Allow the mouse wheel to step an element's value while hovering it,
+   *  upstream's `mouseWheelEdit` storage key (UIManager.java:143). UI-only. */
+  mouseWheelEdit: boolean;
   /** Drawn grid-snapped crosshair guide lines under the pointer. An app pref,
    *  stored like upstream's `crossHair` key (UIManager.java:219). */
   showCrosshair: boolean;
@@ -493,6 +496,7 @@ export const DEFAULT_SETTINGS: SimSettings = {
   euroResistors: true,
   euroGates: true,
   editable: true,
+  mouseWheelEdit: true,
   showCrosshair: false,
   showHitboxes: false,
   positiveColor: null,

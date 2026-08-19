@@ -59,6 +59,7 @@ describe('app prefs', () => {
       shortDecimalDigits: 1,
       decimalDigits: 3,
       wheelSensitivity: 2,
+      mouseWheelEdit: true,
     });
     // Every key that comes back is one the plan declared an app pref.
     expect(Object.keys(back).sort()).toEqual([...APP_PREF_KEYS].sort());

@@ -8,7 +8,6 @@ import { deferred, type MenuItemDef } from './menuRows';
 const UNPORTED_ROWS: readonly [label: string, reason: string][] = [
   ['Find DC Operating Point', 'The DC operating point runs on reset; the one-shot command is not ported'],
   ['Toolbar', 'The port has no toggleable toolbar; the parts panel is always visible'],
-  ['Edit Values With Mouse Wheel', 'The wheel value stepper is always on; there is no toggle'],
   ['Toggle Dev Tools', 'The port is a web app, not Electron; there is no dev tools toggle'],
 ];
 
@@ -22,7 +21,7 @@ describe('deferred', () => {
   });
 
   it('every unported row is deferred with a non-empty reason', () => {
-    expect(UNPORTED_ROWS.length).toBe(4);
+    expect(UNPORTED_ROWS.length).toBe(3);
     for (const [label, reason] of UNPORTED_ROWS) {
       const row = deferred(label, reason);
       expect(row.deferred).toBe(true);

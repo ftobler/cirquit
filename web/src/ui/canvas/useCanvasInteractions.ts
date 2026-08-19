@@ -546,13 +546,14 @@ export function useCanvasInteractions(
     const param = hit ? scrollableParam(hit.kind) : undefined;
 
     // Over a resistor/capacitor/inductor with nothing else happening, the
-    // wheel steps E12 values instead of zooming. A drag in progress keeps the
-    // wheel bound to zoom, so a mid-move scroll cannot misfire a value edit,
-    // and so does a recent zoom: once zooming starts, the wheel stays
-    // zoom-only for a second so a sweep onto an element cannot accidentally
-    // edit a value (MouseManager.java:1302-1304). The early return stops
-    // propagation, so the zoom branch below never runs. Editing disabled falls
-    // through to zoom: it must not step values or push undo
+    // wheel steps E12 values instead of zooming, but only while the Edit
+    // Values With Mouse Wheel toggle is on (MouseManager.java:1306). A drag in
+    // progress keeps the wheel bound to zoom, so a mid-move scroll cannot
+    // misfire a value edit, and so does a recent zoom: once zooming starts,
+    // the wheel stays zoom-only for a second so a sweep onto an element cannot
+    // accidentally edit a value (MouseManager.java:1302-1304). The early
+    // return stops propagation, so the zoom branch below never runs. Editing
+    // disabled falls through to zoom: it must not step values or push undo
     // (MouseManager.java:1306).
     if (
       param !== undefined &&
@@ -560,7 +561,8 @@ export function useCanvasInteractions(
       ev.deltaY !== 0 &&
       dragRef.current.mode === 'none' &&
       !isZoomOnly(zoomAtRef.current, now) &&
-      state.settings.editable
+      state.settings.editable &&
+      state.settings.mouseWheelEdit
     ) {
       ev.stopPropagation();
       // The pointer drifted back off the popover onto the canvas mid-session:

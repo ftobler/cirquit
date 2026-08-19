@@ -984,6 +984,9 @@ describe('updateSettings reload classification', () => {
     ['showPowerColor', true, false],
     ['showGrid', true, false],
     ['editable', false, false],
+    // Toggling the wheel value stepper changes only which gesture the wheel
+    // serves, never the netlist, so it must not restart the simulation.
+    ['mouseWheelEdit', false, false],
     // Dot direction is a per-frame render argument like showCurrent; flipping
     // it must not restart the simulation.
     ['conventional', false, false],
@@ -1119,6 +1122,32 @@ describe('showHitboxes debug toggle', () => {
     // The picker reads the elements, never the setting, so the same click
     // still lands on the same element with the overlay on.
     expect(hitTestElement({ x: 32, y: 0 }, useStore.getState().elements, 1)?.id).toBe(id);
+  });
+});
+
+describe('mouseWheelEdit persistence', () => {
+  it('defaults on, toggles through updateSettings and persists', () => {
+    const map = new Map<string, string>();
+    (globalThis as { localStorage?: StorageLike }).localStorage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    };
+    try {
+      // Upstream defaults the wheel value stepper on (UIManager.java:143).
+      expect(DEFAULT_SETTINGS.mouseWheelEdit).toBe(true);
+      expect(useStore.getState().settings.mouseWheelEdit).toBe(true);
+
+      useStore.getState().updateSettings({ mouseWheelEdit: false });
+      expect(useStore.getState().settings.mouseWheelEdit).toBe(false);
+      const blob = JSON.parse(map.get(APP_PREF_STORAGE_KEY) ?? '{}') as Record<string, unknown>;
+      expect(blob.mouseWheelEdit).toBe(false);
+      expect({ ...DEFAULT_SETTINGS, ...loadAppPrefs() }).toMatchObject({ mouseWheelEdit: false });
+
+      useStore.getState().updateSettings({ mouseWheelEdit: true });
+      expect(useStore.getState().settings.mouseWheelEdit).toBe(true);
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
   });
 });
 

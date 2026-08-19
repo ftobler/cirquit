@@ -183,6 +183,7 @@ export function Menubar({ engine }: Props) {
 
   const dark = useStore((s) => s.dark);
   const editable = useStore((s) => s.settings.editable);
+  const mouseWheelEdit = useStore((s) => s.settings.mouseWheelEdit);
   // Derived selectors: commit replaces the stack arrays wholesale, so
   // subscribing to the length picks up each undo/redo boundary.
   const canUndo = useStore((s) => s.undoStack.length > 0);
@@ -700,20 +701,11 @@ export function Menubar({ engine }: Props) {
             checked={partsOpen}
             onClick={fire(() => setPartsOpen(!partsOpen))}
           />
-          {menu([
-            // Upstream's display toggles the port does not implement, all real
-            // checkboxes in Menus.java: Toolbar and Small Grid above the other
-            // display rows, Edit Values With Mouse Wheel below Disable Editing
-            // (Menus.java:207-234). The port omits the four Show rows (they live
-            // in Other Options). Small Grid is deliberately absent: the grid
-            // spacing is fixed, so the toggle is not to be ported. Toolbar is
-            // real: it toggles the parts sidebar via the same state the mobile
-            // burger uses.
-            deferred(
-              'Edit Values With Mouse Wheel',
-              'The wheel value stepper is always on; there is no toggle',
-            ),
-          ])}
+          <CheckItem
+            label="Edit Values With Mouse Wheel"
+            checked={mouseWheelEdit}
+            onClick={fire(() => updateSettings({ mouseWheelEdit: !mouseWheelEdit }))}
+          />
           <div className="menu-sep" role="separator" />
           {/* A diagnostic with no upstream counterpart, in its own group so it
             does not read as one of the drawing options: it paints the regions
