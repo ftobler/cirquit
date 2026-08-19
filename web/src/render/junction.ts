@@ -1,10 +1,14 @@
-/** Junction-dot policy, kept headless so it can be unit tested: upstream draws
- *  a post dot only where the post count at a coordinate is not exactly 2, so a
- *  plain two-element pass-through connection hides while dead ends and real
- *  junctions keep theirs (makePostDrawList, SimulationManager.java:1056-1108). */
+/** Junction-dot and bad-connection policy, kept headless so it can be unit
+ *  tested: upstream draws a post dot only where the post count at a coordinate
+ *  is not exactly 2, so a plain two-element pass-through connection hides while
+ *  dead ends and real junctions keep theirs, and paints the lone posts that
+ *  merely touch another element red (makePostDrawList, SimulationManager.java:
+ *  1056-1108). */
 
-import type { CircuitElement } from '../model/types';
+import type { CircuitElement, Point } from '../model/types';
 import { postsOf } from '../model/registry';
+import { pointOnWireInterior } from './geometry';
+import { boxesIntersect, elementBox } from './selection';
 
 /** Count of element posts per `x,y` coordinate, keyed `"x,y"`. A routed wire's
  *  bend vertices are not posts and contribute nothing; only the two endpoints
@@ -24,4 +28,51 @@ export function postDotPoints(elements: readonly CircuitElement[]): Map<string, 
  *  end (1) or a junction (3+), never a pass-through. */
 export function shouldDrawDot(count: number): boolean {
   return count !== 2;
+}
+
+/**
+ * Posts that sit on another element without connecting to it: upstream's
+ * `badConnectionList`, drawn as a red dot (makePostDrawList,
+ * SimulationManager.java:1075-1108, UIManager.java:708-712). A post qualifies
+ * when it is the only post at its coordinate (count 1, so nothing shares it)
+ * and it still lands on some other element. That is the case a move creates:
+ * dropping a wire end on another wire's middle splits nothing, so the end only
+ * looks connected, and the red dot is what says otherwise.
+ *
+ * A wire is tested against its drawn path rather than its bounding box, which
+ * for a diagonal wire would paint a whole rectangle of false positives; every
+ * other element is tested against `elementBox`, this port's `boundingBox`.
+ * Parts with no posts (box, line, scope) are upstream's `GraphicElm` and are
+ * skipped: they are drawing, not circuit.
+ *
+ * `counts` is the `postDotPoints` map, taken as a parameter so a caller that
+ * already built it for the junction dots does not build it twice.
+ */
+export function badConnectionPoints(
+  elements: readonly CircuitElement[],
+  counts: Map<string, number> = postDotPoints(elements),
+): Point[] {
+  const bad: Point[] = [];
+  for (const [key, count] of counts) {
+    if (count !== 1) continue;
+    const [x, y] = key.split(',').map(Number);
+    const p = { x, y };
+    for (const other of elements) {
+      const posts = postsOf(other);
+      if (posts.length === 0) continue;
+      // The post's own element. With a count of 1 nothing else has a post
+      // here, so this skips exactly the owner, like upstream's "does this post
+      // belong to the elm" loop.
+      if (posts.some((q) => q.x === x && q.y === y)) continue;
+      const touches =
+        other.kind === 'wire'
+          ? pointOnWireInterior(p, other)
+          : boxesIntersect(elementBox(other), { x0: x, y0: y, x1: x, y1: y });
+      if (touches) {
+        bad.push(p);
+        break;
+      }
+    }
+  }
+  return bad;
 }

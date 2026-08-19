@@ -2,12 +2,11 @@ import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
 import { scopeParamsFingerprint } from '../../engine/simulator';
 import { defFor } from '../../model/registry';
-import type { DrawContext, Point } from '../../model/types';
+import type { CircuitElement, DrawContext, Point } from '../../model/types';
 import { dotPhaseStep, stepPostPhases, TOO_FAST, wrapPhase } from '../../render/dots';
 import { dragpostHandlesFrom, elementLength, makeTheme } from '../../render/draw';
 import { drawGrid } from '../../render/grid';
-import { invalidDropPoint } from '../../render/geometry';
-import { postDotPoints, shouldDrawDot } from '../../render/junction';
+import { badConnectionPoints, postDotPoints, shouldDrawDot } from '../../render/junction';
 import { scopeWidth } from '../../scope/geometry';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { GRID_SIZE } from '../../model/types';
@@ -64,6 +63,13 @@ export function useFrameLoop(
   const dotPhaseRef = useRef(new Map<number, number>());
   const postPhaseRef = useRef(new Map<number, number[]>());
   const lastFrameRef = useRef(performance.now());
+  // Last bad-connection scan, keyed by the element array it ran on. Every edit
+  // hands the store a fresh array, so an identity check is enough to know the
+  // cached points still describe what is on screen.
+  const badConnectionsRef = useRef<{ elements: readonly CircuitElement[]; points: Point[] }>({
+    elements: [],
+    points: [],
+  });
   const loadedRevision = useRef(-1);
   const appliedParamRevision = useRef(-1);
   const appliedScopeFp = useRef('');
@@ -496,12 +502,35 @@ export function useFrameLoop(
           // upstream postDrawList pass. The radius is upstream's drawPost
           // fillOval(pt.x-3, pt.y-3, 7, 7), a 7 px filled circle (CircuitElm.java:
           // 851-854), so a junction reads at the same weight as the thicker bodies.
+          const postCounts = postDotPoints(elements);
           ctx.fillStyle = theme.wire;
-          for (const [key, count] of postDotPoints(elements)) {
+          for (const [key, count] of postCounts) {
             if (!shouldDrawDot(count)) continue;
             const [x, y] = key.split(',').map(Number);
             ctx.beginPath();
             ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Bad connections: a post that only touches another element, never
+          // joins it. Moving a wire onto another one deliberately does not
+          // split it, so the end sits on the wire looking connected; upstream
+          // paints those red (badConnectionList, UIManager.java:708-712) and
+          // that dot is the only thing distinguishing them. Drawn over the
+          // junction pass, whose plain dot it replaces. Recomputed only when
+          // the element list changes, not per frame: the scan is a post count
+          // times the element list, which a running simulation should not pay
+          // sixty times a second.
+          if (badConnectionsRef.current.elements !== elements) {
+            badConnectionsRef.current = {
+              elements,
+              points: badConnectionPoints(elements, postCounts),
+            };
+          }
+          ctx.fillStyle = theme.noConnect;
+          for (const p of badConnectionsRef.current.points) {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
             ctx.fill();
           }
 
@@ -553,21 +582,6 @@ export function useFrameLoop(
                 ],
                 drag.post === 1 ? 0 : 1,
               );
-              // Red no-connect marker: a dragged wire end over another wire's
-              // interior will not connect there, so show it as upstream's
-              // bad-connection dot. Drawn after the handles so it stays visible
-              // on top of the highlight.
-              const pos =
-                drag.post === 1
-                  ? { x: dragged.x1, y: dragged.y1 }
-                  : { x: dragged.x2, y: dragged.y2 };
-              const bad = invalidDropPoint(dragged, pos.x, pos.y, elements);
-              if (bad) {
-                ctx.fillStyle = theme.noConnect;
-                ctx.beginPath();
-                ctx.arc(bad.x, bad.y, 3, 0, Math.PI * 2);
-                ctx.fill();
-              }
             }
           }
 
