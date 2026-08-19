@@ -700,14 +700,12 @@ export function Menubar({ engine }: Props) {
           />
           {menu([
             // Upstream's display toggles the port does not implement, all real
-            // checkboxes in Menus.java: Small Grid and Toolbar above the other
+            // checkboxes in Menus.java: Toolbar and Small Grid above the other
             // display rows, Edit Values With Mouse Wheel below Disable Editing
             // (Menus.java:207-234). The port omits the four Show rows (they live
-            // in Other Options), so the three unported toggles read together.
-            deferred(
-              'Small Grid',
-              'The grid spacing is fixed; the small-grid toggle is not ported',
-            ),
+            // in Other Options), so the remaining unported toggles read
+            // together. Small Grid is deliberately absent: the grid spacing is
+            // fixed, so the toggle is not to be ported.
             deferred(
               'Toolbar',
               'The port has no toggleable toolbar; the parts panel is always visible',
