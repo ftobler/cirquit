@@ -8,7 +8,7 @@ import {
   polyline,
   voltageColor,
 } from '../../../render/draw';
-import { twoPosts, readParams } from '../shared';
+import { bodyBox, twoPosts, readParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Body length upstream's `setPoints` uses for the default (non-IEC) symbol
@@ -74,5 +74,8 @@ export const FUSE_DEF: ElementDef = {
     { name: 'resistance', label: 'Resistance', unit: 'Ω' },
     { name: 'i2t', label: 'I²t rating', unit: 'A²s' },
   ],
+  // The melting-wire body spans the 16-long span at a 6-unit half-amplitude
+  // (FuseElm.java:76-80, 107-140), a solid pick zone while intact.
+  bodyRect: (e) => bodyBox(e, FUSE_BODY_LENGTH, 6),
   draw: drawFuseBody,
 };

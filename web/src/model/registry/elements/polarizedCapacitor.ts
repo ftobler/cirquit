@@ -1,7 +1,7 @@
 import { canvasFont, dsign, elementLength, endpoints, interp } from '../../../render/draw';
 import { CAP_BACK_EULER } from '../flags';
-import { twoPosts, writeParams } from '../shared';
-import { capacitorFlags, drawCapacitorBody, polarCapacitorParse } from './capacitor';
+import { boxOfPoints, twoPosts, writeParams } from '../shared';
+import { capacitorFlags, capacitorPlateGeometry, drawCapacitorBody, polarCapacitorParse } from './capacitor';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** The plain capacitor plus the polarity marker PolarCapacitorElm draws next
@@ -58,5 +58,11 @@ export const POLARIZED_CAPACITOR_DEF: ElementDef = {
     { name: 'maxNegativeVoltage', label: 'Max reverse voltage', unit: 'V', min: 0 },
     { name: 'backEuler', label: 'Backward Euler', type: 'bool', flag: CAP_BACK_EULER },
   ],
+  // Same plate pair as the plain capacitor, the whole disc area a solid pick
+  // zone (the '+' glyph is a text label, not a body, so it stays out).
+  bodyRect: (e) => {
+    const { plate1, plate2 } = capacitorPlateGeometry(e);
+    return boxOfPoints([plate1[0], plate1[1], plate2[0], plate2[1]]);
+  },
   draw: drawPolarCapacitorBody,
 };

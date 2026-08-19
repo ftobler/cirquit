@@ -10,7 +10,7 @@ import {
   ZIGZAG_HS,
   zigzagPoints,
 } from '../../../render/draw';
-import { readParams, twoPosts, writeParams } from '../shared';
+import { readParams, twoPosts, writeParams, bodyBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 function drawResistorBody(g: DrawContext, e: CircuitElement): void {
@@ -45,5 +45,9 @@ export const RESISTOR_DEF: ElementDef = {
   parse: (t, e) => readParams(t, e, ['resistance']),
   dump: writeParams(['resistance']),
   fields: [{ name: 'resistance', label: 'Resistance', unit: 'Ω' }],
+  // The body (the 32-long zigzag at ZIGZAG_HS 8, or the IEC box at half 6) is
+  // a solid pick zone; the bodyBox's 8 is the wider zigzag peak
+  // (ResistorElm.java:67's setBbox hs=6 covers only the box).
+  bodyRect: (e) => bodyBox(e, 32, ZIGZAG_HS),
   draw: drawResistorBody,
 };

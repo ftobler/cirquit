@@ -10,7 +10,7 @@ import {
   line,
   voltageColor,
 } from '../../../render/draw';
-import { elementColor, readParams } from '../shared';
+import { elementColor, readParams, boxOfPoints } from '../shared';
 import { TRIODE_FLIP, TRIODE_DSIGN_FIX } from '../flags';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -145,5 +145,15 @@ export const TRIODE_DEF: ElementDef = {
     { name: 'mu', label: 'Amplification factor (μ)' },
     { name: 'kg1', label: 'Plate scale (kg1)' },
   ],
+  // The tube envelope circle (radius 24 at point2) is a solid pick zone; the
+  // plate, grid and cathode leads hang off its rim, reached by their own posts
+  // (TriodeElm.java:85).
+  bodyRect: (e) => {
+    const p2 = endpoints(e)[1];
+    return boxOfPoints([
+      { x: p2.x - CIRCLER, y: p2.y - CIRCLER },
+      { x: p2.x + CIRCLER, y: p2.y + CIRCLER },
+    ]);
+  },
   draw: drawTriode,
 };

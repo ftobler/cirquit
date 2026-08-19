@@ -6,7 +6,7 @@ import {
   interp,
   line,
 } from '../../../render/draw';
-import { elementColor, readParams, twoPosts, writeParams } from '../shared';
+import { bodyBox, elementColor, readParams, twoPosts, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** Zigzag cycles of the memristor body, fixed at 6 like upstream
@@ -92,5 +92,9 @@ export const MEMRISTOR_DEF: ElementDef = {
     { name: 'totalWidth', label: 'Total Width', unit: 'm', min: 0 },
     { name: 'mobility', label: 'Mobility', unit: 'm²/Vs', min: 0 },
   ],
+  // The zigzag body, whose peak half-height collapses from 10 to 2 as the
+  // device dopes (MemristorElm.java:85-86); the box uses the full 10 so the
+  // symbol is grabbable in every state.
+  bodyRect: (e) => bodyBox(e, 32, 10),
   draw: drawMemristorBody,
 };

@@ -122,6 +122,19 @@ export function boxOfPoints(pts: Point[]): Box {
   return { x0, y0, x1, y1 };
 }
 
+/** Axis-aligned hit box for a body that spans `bodyLength` between its leads,
+ *  grown `hs` perpendicular on each side: the box of the four body corners, the
+ *  same solid pick zone the capacitor's plates use. Covers the drawn body, not
+ *  the bare leads out to the posts, which the axis and post regions already
+ *  reach. `hs` is the widest perpendicular extent of the symbol (a diode's
+ *  triangle base, an LDR's light arrows), so the whole drawn mark is grabbable. */
+export function bodyBox(e: CircuitElement, bodyLength: number, hs: number): Box {
+  const [lead1, lead2] = calcLeads(e, bodyLength);
+  const [a1, a2] = interp2(lead1, lead2, 0, hs);
+  const [b1, b2] = interp2(lead1, lead2, 1, hs);
+  return boxOfPoints([a1, a2, b1, b2]);
+}
+
 /** True when `p` lies on or inside the rect, with the edges inclusive. */
 export function rectContains(r: SwitchRect, p: Point): boolean {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;

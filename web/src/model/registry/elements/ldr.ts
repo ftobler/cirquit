@@ -10,7 +10,7 @@ import {
   rectCorners,
   zigzagPoints,
 } from '../../../render/draw';
-import { readParams, twoPosts } from '../shared';
+import { bodyBox, readParams, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Half-height of the LDR's resistor body, both the euro box and the
@@ -124,5 +124,8 @@ export const LDR_DEF: ElementDef = {
     { name: 'position', label: 'Slider position (light level)', min: 0, max: 1 },
     { name: 'text', label: 'Slider Text', type: 'text', target: 'text' },
   ],
+  // The resistor box plus the two light arrows that reach 26 units off the
+  // axis (LDRElm.java:79-82), so the box covers the whole symbol.
+  bodyRect: (e) => bodyBox(e, 32, 26),
   draw: drawLdrBody,
 };

@@ -22,6 +22,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
+import { boxOfPoints } from '../shared';
 
 /** FLAG_FLIP, the geometry's flip bit (UnijunctionElm.java:27). */
 export const UJT_FLIP = 2;
@@ -99,5 +100,11 @@ export const UNIJUNCTION_DEF: ElementDef = {
   canMirror: true, // UnijunctionElm.flipX/flipY toggle FLAG_FLIP
   noDiagonal: true, // UnijunctionElm.java:42
   defaultLength: 4, // the base getDragLength() of 64
+  // The whole symbol, the b1/b2 rails, the emitter lead and its filled base
+  // wedge, is a solid pick zone.
+  bodyRect: (e) => {
+    const { b1, b2, emitter, ra } = ujtGeometry(e);
+    return boxOfPoints([...b1, ...b2, ...emitter, ...ra]);
+  },
   draw: drawUjt,
 };

@@ -9,7 +9,7 @@ import {
   triangle,
   voltageColor,
 } from '../../../render/draw';
-import { elementColor, readParams } from '../shared';
+import { elementColor, readParams, boxOfPoints } from '../shared';
 import { GRID_SIZE } from '../../types';
 import { TOO_FAST } from '../../../render/dots';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
@@ -166,5 +166,12 @@ export const SCR_DEF: ElementDef = {
     { name: 'holdingI', label: 'Holding current', unit: 'A' },
     { name: 'gResistance', label: 'Gate resistance', unit: 'Ω' },
   ],
+  // The anode triangle (base at lead1, apex at lead2) is a solid pick zone; the
+  // gate lead is its own lead, reached by its post and the axis (SCRElm.java:148).
+  bodyRect: (e) => {
+    const geo = scrGeometry(e);
+    const [t1, t2] = interp2Precise(geo.lead1, geo.lead2, 0, HS);
+    return boxOfPoints([t1, t2, geo.lead2]);
+  },
   draw: drawScr,
 };

@@ -1,4 +1,4 @@
-import { readParams, twoPosts } from '../shared';
+import { bodyBox, readParams, twoPosts } from '../shared';
 import { drawDiodeBody } from './diode';
 import type { ElementDef } from '../../types';
 
@@ -63,5 +63,8 @@ export const ZENER_DEF: ElementDef = {
     { name: 'emissionCoefficient', label: 'Emission coefficient' },
     { name: 'breakdownVoltage', label: 'Zener voltage', unit: 'V' },
   ],
+  // Same triangle body as the plain diode, plus the cathode marks that ride
+  // inside it (ZenerElm.java:64).
+  bodyRect: (e) => bodyBox(e, 16, 8),
   draw: (g, e) => drawDiodeBody(g, e, true),
 };

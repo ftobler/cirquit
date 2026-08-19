@@ -11,7 +11,7 @@ import {
   line,
   triangle,
 } from '../../../render/draw';
-import { elementColor, readParams, twoPosts } from '../shared';
+import { bodyBox, elementColor, readParams, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** Body length between the leads and ring radius of the LED symbol, upstream's
@@ -157,5 +157,8 @@ export const LED_DEF: ElementDef = {
     { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
     { name: 'emissionCoefficient', label: 'Emission coefficient' },
   ],
+  // The 12-radius ring body is a solid pick zone: a click anywhere on the
+  // circle grabs the LED (LEDElm.java:105's setBbox(point1, point2, cr)).
+  bodyRect: (e) => bodyBox(e, LED_BODY, LED_RING),
   draw: drawLedBody,
 };

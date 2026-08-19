@@ -10,7 +10,7 @@ import {
   rectCorners,
   zigzagPoints,
 } from '../../../render/draw';
-import { readParams, twoPosts } from '../shared';
+import { bodyBox, readParams, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** Half-height of the thermistor's resistor body, both the euro box and the
@@ -142,5 +142,8 @@ export const THERMISTOR_DEF: ElementDef = {
     { name: 'position', label: 'Slider position', min: 0, max: 1 },
     { name: 'text', label: 'Slider Text', type: 'text', target: 'text' },
   ],
+  // The resistor box plus the temperature accent that sweeps to hs*2 = 12
+  // (ThermistorNTCElm.java:142), so the box covers the whole symbol.
+  bodyRect: (e) => bodyBox(e, 32, 12),
   draw: drawThermistorBody,
 };

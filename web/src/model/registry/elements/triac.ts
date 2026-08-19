@@ -10,7 +10,7 @@ import {
   triangle,
   voltageColor,
 } from '../../../render/draw';
-import { elementColor, readParams } from '../shared';
+import { elementColor, readParams, boxOfPoints } from '../shared';
 import { GRID_SIZE } from '../../types';
 import { TOO_FAST } from '../../../render/dots';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
@@ -180,5 +180,14 @@ export const TRIAC_DEF: ElementDef = {
     { name: 'holdingI', label: 'Holding current', unit: 'A' },
     { name: 'cresistance', label: 'Gate-MT1 resistance', unit: 'Ω' },
   ],
+  // The two plates at the lead ends span the 16-unit half-width, and the arrow
+  // triangles ride inside them, so the body box covers the plate pair
+  // (TriacElm.java:164-170); the gate lead is its own, reached by its post.
+  bodyRect: (e) => {
+    const geo = triacGeometry(e);
+    const [pa1, pa2] = interp2Precise(geo.lead1, geo.lead2, 0, HS);
+    const [pb1, pb2] = interp2Precise(geo.lead1, geo.lead2, 1, HS);
+    return boxOfPoints([pa1, pa2, pb1, pb2]);
+  },
   draw: drawTriac,
 };

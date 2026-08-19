@@ -1,5 +1,5 @@
 import { calcLeads, interp2Precise, line } from '../../../render/draw';
-import { elementColor, readParams, twoPosts } from '../shared';
+import { bodyBox, elementColor, readParams, twoPosts } from '../shared';
 import { drawDiodeBody } from './diode';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
@@ -85,5 +85,8 @@ export const VARACTOR_DEF: ElementDef = {
     { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
     { name: 'emissionCoefficient', label: 'Emission coefficient' },
   ],
+  // The diode body, whose extra plate at 0.6/7 rides inside the triangle box
+  // (VaractorElm.java inherits DiodeElm's setBbox).
+  bodyRect: (e) => bodyBox(e, 16, 8),
   draw: drawVaractorBody,
 };

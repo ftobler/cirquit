@@ -7,7 +7,7 @@ import {
   line,
   triangle,
 } from '../../../render/draw';
-import { elementColor, twoPosts } from '../shared';
+import { bodyBox, elementColor, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /**
@@ -47,5 +47,6 @@ export const TUNNEL_DIODE_DEF: ElementDef = {
   posts: twoPosts,
   // The curve is hardcoded in the engine model, so the file format carries
   // nothing after the shared x/y/flags fields: no tokens, no fields.
+  bodyRect: (e) => bodyBox(e, 16, 8),
   draw: drawTunnelDiodeBody,
 };

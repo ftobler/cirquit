@@ -170,7 +170,9 @@ describe('distanceToElement', () => {
   });
 
   it('measures against the body line for two-terminal elements', () => {
-    expect(distanceToElement({ x: 80, y: 5 }, element(0, 0, 160, 0))).toBe(5);
+    // A point on the lead, outside the resistor's solid body box (64..96
+    // across, -8..8 off the axis), is still grabbed by the axis band.
+    expect(distanceToElement({ x: 32, y: 5 }, element(0, 0, 160, 0))).toBe(5);
   });
 });
 
@@ -298,12 +300,22 @@ describe('chip body hit-testing', () => {
     }
   });
 
-  it('gives a solid pick body to the capacitor, voltage source, lamp and op-amp', () => {
-    // These draw a disc, plates or a triangle far off the axis, so a click on
-    // the drawn body must grab the element even where the axis band cannot
-    // reach. The probe is the mid-span of the top body edge, a full reach past
-    // the axis and clear of every post.
-    for (const kind of ['capacitor', 'voltage', 'lamp', 'opamp']) {
+  it('gives a solid pick body to the capacitor, voltage source, lamp, op-amp and tall 2-pole bodies', () => {
+    // These draw a disc, plates, a triangle or a tall symbol far off the axis,
+    // so a click on the drawn body must grab the element even where the axis
+    // band cannot reach. The probe is the mid-span of the top body edge, a full
+    // reach past the axis and clear of every post.
+    for (const kind of [
+      'capacitor',
+      'voltage',
+      'lamp',
+      'opamp',
+      'diac',
+      'led',
+      'thermistor',
+      'ldr',
+      'memristor',
+    ]) {
       const e = { ...element(0, 0, 64, 0), kind };
       const rect = defFor(kind)!.bodyRect!(e);
       expect(rect, `${kind} declares a bodyRect`).toBeDefined();
@@ -313,6 +325,32 @@ describe('chip body hit-testing', () => {
         ...postsOf(e).map((p) => Math.hypot(probe.x - p.x, probe.y - p.y)),
       );
       expect(bare, `${kind} probe is off-axis and clear of every post`).toBeGreaterThan(8);
+      expect(distanceToElement(probe, e), `${kind} body edge midpoint hits`).toBe(0);
+    }
+  });
+
+  it('gives the diode-family and shallow 2-pole bodies a solid pick zone', () => {
+    // The diode, resistor, fuse and their kin draw a body only 6-8 units off
+    // the axis, so their top edge is still within the axis band's reach and
+    // the bare-guard above would be soft; here the assertion is that the
+    // bodyRect exists and the body edge really is a 0-distance pick.
+    for (const kind of [
+      'resistor',
+      'diode',
+      'zener',
+      'varactor',
+      'tunnelDiode',
+      'fuse',
+      'scr',
+      'triac',
+      'polarizedCapacitor',
+      'unijunction',
+      'triode',
+    ]) {
+      const e = { ...element(0, 0, 64, 0), kind };
+      const rect = defFor(kind)!.bodyRect!(e);
+      expect(rect, `${kind} declares a bodyRect`).toBeDefined();
+      const probe = { x: (rect!.x0 + rect!.x1) / 2, y: rect!.y0 };
       expect(distanceToElement(probe, e), `${kind} body edge midpoint hits`).toBe(0);
     }
   });
@@ -652,11 +690,12 @@ describe('hitRegions', () => {
     ],
   });
 
-  it('gives a two-terminal part its axis band and a circle per terminal', () => {
+  it('gives a two-terminal part its axis band, a circle per terminal and its body', () => {
     expect(hitRegions(element(0, 0, 160, 0))).toEqual([
       { type: 'axis', a: { x: 0, y: 0 }, b: { x: 160, y: 0 } },
       { type: 'post', x: 0, y: 0 },
       { type: 'post', x: 160, y: 0 },
+      { type: 'body', box: defFor('resistor')!.bodyRect!(element(0, 0, 160, 0)) },
     ]);
   });
 

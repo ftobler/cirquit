@@ -9,7 +9,7 @@ import {
   polyline,
   triangle,
 } from '../../../render/draw';
-import { elementColor, twoPosts } from '../shared';
+import { bodyBox, elementColor, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 export function drawDiodeBody(g: DrawContext, e: CircuitElement, zener: boolean): void {
@@ -99,5 +99,8 @@ export const DIODE_DEF: ElementDef = {
     { name: 'seriesResistance', label: 'Series resistance', unit: 'Ω' },
     { name: 'emissionCoefficient', label: 'Emission coefficient' },
   ],
+  // The triangle body (base at lead1, apex at lead2) is a solid pick zone, the
+  // 16-long body grown by its 8-unit base half-width (DiodeElm.java:148).
+  bodyRect: (e) => bodyBox(e, 16, 8),
   draw: (g, e) => drawDiodeBody(g, e, false),
 };

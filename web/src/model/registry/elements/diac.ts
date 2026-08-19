@@ -8,7 +8,7 @@ import {
   line,
   polygon,
 } from '../../../render/draw';
-import { elementColor, readParams, twoPosts } from '../shared';
+import { bodyBox, elementColor, readParams, twoPosts } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /**
@@ -80,5 +80,8 @@ export const DIAC_DEF: ElementDef = {
     { name: 'breakdown', label: 'Breakdown voltage', unit: 'V' },
     { name: 'holdcurrent', label: 'Holding current', unit: 'A' },
   ],
+  // The plates and opposing arrows span the full 16-unit half-width
+  // (DiacElm.java:106-113), so the body box is the 16-long span grown by 16.
+  bodyRect: (e) => bodyBox(e, 16, 16),
   draw: drawDiac,
 };
