@@ -14,6 +14,7 @@ import {
   positionToOffset,
   pruneScaleStates,
   pruneXYScales,
+  samplesFit,
   scaleStateFor,
   seedManScale,
   setScaleState,
@@ -74,6 +75,49 @@ describe('sticky auto-scale', () => {
     expect(
       nextScaleState({ gridMax: 1, showNegative: false }, 1e-5, 0, true, { maxScale: true }),
     ).toEqual({ gridMax: 1e-4, showNegative: false });
+  });
+});
+
+describe('reduce-range band', () => {
+  const H = 150;
+
+  it('measures the band from zero, not from the display centre', () => {
+    // Upstream compares gridMult * (v - gridMid) against +/-10 - gridMid *
+    // gridMult, so gridMid cancels and the band is |gridMult * v| <= 10
+    // (Scope.java:856-857, 881-884). On a 150 px scope at gridMax 5 that is
+    // roughly +/-0.19 V.
+    const state = { gridMax: 5, showNegative: false };
+    expect(samplesFit([0.1, -0.1], state, H)).toBe(true);
+    // 2.6 V sits right by the display centre (gridMid = 2.5): a band centred
+    // there would call this reducible.
+    expect(samplesFit([2.6], state, H)).toBe(false);
+  });
+
+  it('does not halve and re-double a steady mid-scale signal frame after frame', () => {
+    // The paused-scope flicker: a steady 2.6 V read as "fits the band" halves
+    // the scale to 2.5, which the next frame's doubling pushes straight back
+    // to 5, and the trace jumps by 2x every frame. The scale must settle.
+    let state = { gridMax: 5, showNegative: false };
+    const seen: number[] = [];
+    for (let frame = 0; frame < 10; frame++) {
+      const drawn = nextScaleState(state, 2.6, 2.6, false, { maxScale: false });
+      seen.push(drawn.gridMax);
+      const fit = samplesFit([2.6], drawn, H);
+      state = nextScaleState(state, 2.6, 2.6, fit, { maxScale: false });
+    }
+    expect(seen).toEqual(new Array(10).fill(5));
+  });
+
+  it('still walks a small signal down one halving per frame', () => {
+    // The band must not be so tight that the scale stops coming down: 0.01 V
+    // on a gridMax of 5 has to zoom in until it fills the band.
+    let state = { gridMax: 5, showNegative: false };
+    for (let frame = 0; frame < 12; frame++) {
+      const drawn = nextScaleState(state, 0.01, 0, false, { maxScale: false });
+      state = nextScaleState(state, 0.01, 0, samplesFit([0.01], drawn, H), { maxScale: false });
+    }
+    expect(state.gridMax).toBeLessThan(0.2);
+    expect(state.gridMax).toBeGreaterThan(0.01);
   });
 });
 

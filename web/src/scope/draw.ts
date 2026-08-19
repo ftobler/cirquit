@@ -891,10 +891,18 @@ export function drawScope(
     const { maxSample, minSample } = scanWindow(data, win);
     const state = scaleStateFor(plot.id, plot.value);
     const opts = { maxScale: scope.maxScale && !scope.manualScale };
-    const fit = samplesFit(data, state, h, opts);
-    const next = nextScaleState(state, maxSample, minSample, fit, opts);
-    setScaleState(plot.id, next);
-    const transform = transformFor(scope, plot, next, maxSample, minSample, h);
+    // Two scales, one frame, in upstream's order. `drawn` is calcPlotScale
+    // alone -- doubling until the peak fits -- and it is what this frame
+    // renders and what the band check measures against, exactly as upstream
+    // runs calcPlotScale before the draw and checks the band on the pixels it
+    // just plotted. The halving is post-draw there (Scope.java:690-695), so it
+    // only shows up on the next frame; halving into the same frame's transform
+    // instead makes the reduced scale visible for one frame before the next
+    // frame's doubling undoes it, which reads as a flicker.
+    const drawn = nextScaleState(state, maxSample, minSample, false, opts);
+    const fit = samplesFit(data, drawn, h, opts);
+    setScaleState(plot.id, nextScaleState(state, maxSample, minSample, fit, opts));
+    const transform = transformFor(scope, plot, drawn, maxSample, minSample, h);
     const m = toMeasurable(data, win);
     return { plot, index, data, win, transform, ...m };
   });

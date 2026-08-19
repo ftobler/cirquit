@@ -60,9 +60,12 @@ export function dotPhaseAfter(phase: number, distance: number): number {
  * saturated terminal cannot drag its neighbours into `TOO_FAST` or speed them
  * up; a post that is too fast draws the flow line and is rewound to a clean
  * phase in storage so it resumes without a jump once its current drops back
- * under the threshold. The paused behaviour matches the per-element phase: the
- * stored phases stay frozen, and the drawn value is `phase + step`, which does
- * not accumulate.
+ * under the threshold. Paused, the drawn phase is the stored one: the step is
+ * proportional to the frame's wall-clock interval, so drawing `phase + step`
+ * on a frozen circuit would jitter the dots by however much that interval
+ * varies from frame to frame. The step is still computed, because its
+ * `TOO_FAST` verdict decides between dots and a flow line and that must not
+ * change under the user on pause.
  */
 export function stepPostPhases(
   phases: number[],
@@ -78,7 +81,7 @@ export function stepPostPhases(
       if (running) phases[i] = 0;
       return TOO_FAST;
     }
-    const next = wrapPhase(phase + step);
+    const next = wrapPhase(phase + (running ? step : 0));
     if (running) phases[i] = next;
     return next;
   });

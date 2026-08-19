@@ -213,4 +213,24 @@ describe('stepPostPhases', () => {
     stepPostPhases(phases, [1e-3, 1e-4], 50, dt, true, false);
     expect(phases).toEqual(before);
   });
+
+  it('draws the same paused phase whatever the frame took', () => {
+    // The dots-shift-while-stopped report: the step is proportional to the
+    // frame's wall-clock interval, so a paused frame that returned
+    // `phase + step` moved the dots by however long that frame happened to
+    // be. Two paused frames of very different lengths must draw one position.
+    const phases = [3, 7];
+    const currents = [1e-3, -2e-4];
+    const short = stepPostPhases(phases, currents, 50, dt, true, false);
+    const long = stepPostPhases(phases, currents, 50, dt * 6, true, false);
+    expect(short).toEqual([3, 7]);
+    expect(long).toEqual(short);
+  });
+
+  it('still reports TOO_FAST while paused so the flow line does not blink', () => {
+    // Pausing must not repaint a too-fast segment as dots: the step is
+    // computed on the real interval either way, only its accumulation stops.
+    const phases = [0];
+    expect(stepPostPhases(phases, [3.3e-3], 50, 1, true, false)).toEqual([TOO_FAST]);
+  });
 });

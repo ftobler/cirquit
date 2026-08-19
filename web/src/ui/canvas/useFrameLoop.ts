@@ -435,15 +435,21 @@ export function useFrameLoop(
 
             // Phase is integrated per element so changing the speed or the current
             // mid-run cannot teleport the dots. Only advance while running, so a
-            // pause freezes them in place.
+            // pause freezes them in place: the step scales with the frame's
+            // wall-clock interval, so a paused frame that still drew
+            // `stored + step` would shift the dots by whatever that interval
+            // happened to be, and the shift would change with every frame time.
+            // The step is computed either way, because `TOO_FAST` picks the
+            // flow line over dots and pausing must not repaint the element.
             const step = dotPhaseStep(
               current,
               settings.currentSpeed,
               elapsed,
               settings.conventional,
             );
+            const stored = dotPhaseRef.current.get(e.id) ?? 0;
             const phase =
-              step === TOO_FAST ? TOO_FAST : wrapPhase((dotPhaseRef.current.get(e.id) ?? 0) + step);
+              step === TOO_FAST ? TOO_FAST : wrapPhase(stored + (running ? step : 0));
             if (running) dotPhaseRef.current.set(e.id, phase === TOO_FAST ? 0 : phase);
 
             // Per-terminal phases step each post on its own current, so a

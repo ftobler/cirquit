@@ -121,8 +121,18 @@ export function calcGridParams(
 
 /**
  * The `reduceRange` band check (Scope.java:856-857, 881-884): every displayed
- * sample must sit within a 10 px band around the display centre, or the scale
- * must not come down.
+ * sample must sit within a 10 px band around *zero*, or the scale must not
+ * come down.
+ *
+ * Zero, not the display centre, even though the display centre is where the
+ * band looks like it sits upstream. Upstream compares the plotted pixel
+ * `gridMult * (v - gridMid)` against `±10 - gridMid * gridMult`, and the
+ * `gridMid` term cancels out of both sides: the surviving test is
+ * `|gridMult * v| <= 10`. Centring the band on `gridMid` instead makes a
+ * steady signal near half the grid maximum read as reducible while its own
+ * peak still needs the full scale, and the scope then halves and doubles on
+ * alternate frames -- a 60 Hz flicker that is at its most visible with the
+ * simulation paused, where the samples never change.
  */
 export function samplesFit(
   samples: ArrayLike<number>,
@@ -130,7 +140,7 @@ export function samplesFit(
   heightPx: number,
   opts: ScaleOpts = { maxScale: false },
 ): boolean {
-  const { gridMid, gridMult } = calcGridParams(
+  const { gridMult } = calcGridParams(
     state.gridMax,
     0,
     state.gridMax,
@@ -139,7 +149,7 @@ export function samplesFit(
     opts,
   );
   for (let i = 0; i < samples.length; i++) {
-    if (Math.abs(samples[i] - gridMid) * gridMult > 10) return false;
+    if (Math.abs(samples[i]) * gridMult > 10) return false;
   }
   return true;
 }
