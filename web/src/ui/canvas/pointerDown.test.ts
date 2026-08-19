@@ -4,6 +4,7 @@ import { SWITCH_IEC } from '../../model/registry/flags';
 import { rectContains } from '../../model/registry/shared';
 import { GRID_SIZE } from '../../model/types';
 import type { CircuitElement } from '../../model/types';
+import { boxFromPoints, selectByBox } from '../../render/selection';
 import { snap, useStore } from '../../state/store';
 import { fresh } from '../../state/store.test-helpers';
 import {
@@ -468,5 +469,136 @@ describe('finishPostDrag', () => {
     expect(s.elements.filter((e) => e.kind === 'wire')).toHaveLength(2);
     expect(s.elements.find((e) => e.id === dragged)).toMatchObject({ y1: 80, y2: 80 });
     expect(s.status).toMatch(/collapsed/);
+  });
+});
+
+describe('selection semantics on pointer-down', () => {
+  /** Two parts on separate rows, so a box can cover one without the other. */
+  const twoParts = () => ({
+    top: addEl('resistor'),
+    bottom: addEl('resistor', { y1: 64, y2: 64 }),
+  });
+
+  it('a plain click selects only the element under the pointer', () => {
+    const { top, bottom } = twoParts();
+    useStore.getState().select([bottom]);
+    beginPointerGesture(down(), { x: 80, y: 0 }, useStore.getState(), hit(top), false, refs());
+    expect(useStore.getState().selectedIds).toEqual([top]);
+  });
+
+  it('shift+click does not add the element to the selection', () => {
+    const { top, bottom } = twoParts();
+    useStore.getState().select([bottom]);
+    // Upstream has no shift+click multi-select; shift only makes the rubber
+    // band additive, so a shift+click is just a click.
+    beginPointerGesture(
+      down({ shiftKey: true }),
+      { x: 80, y: 0 },
+      useStore.getState(),
+      hit(top),
+      false,
+      refs(),
+    );
+    expect(useStore.getState().selectedIds).toEqual([top]);
+  });
+
+  it('shift+click on an already selected element leaves the group intact', () => {
+    const { top, bottom } = twoParts();
+    useStore.getState().select([top, bottom]);
+    // No toggle: clicking a member of the group must not drop it, or a
+    // shift-dragged group would lose the part you grabbed it by.
+    beginPointerGesture(
+      down({ shiftKey: true }),
+      { x: 80, y: 0 },
+      useStore.getState(),
+      hit(top),
+      false,
+      refs(),
+    );
+    expect(useStore.getState().selectedIds).toEqual([top, bottom]);
+  });
+
+  it('ctrl+click still adds, the port gesture that also arms a post drag', () => {
+    const { top, bottom } = twoParts();
+    useStore.getState().select([bottom]);
+    const r = refs();
+    beginPointerGesture(
+      down({ ctrlKey: true }),
+      { x: 20, y: 0 },
+      useStore.getState(),
+      hit(top),
+      false,
+      r,
+    );
+    expect(useStore.getState().selectedIds).toEqual([bottom, top]);
+    expect(r.dragRef.current.mode).toBe('dragpost');
+  });
+
+  it('a press on empty canvas clears the selection and arms a replacing box', () => {
+    const { top } = twoParts();
+    useStore.getState().select([top]);
+    const r = refs();
+    beginPointerGesture(down(), { x: 400, y: 400 }, useStore.getState(), null, false, r);
+    expect(useStore.getState().selectedIds).toEqual([]);
+    expect(r.dragRef.current).toMatchObject({ mode: 'select', shift: false });
+  });
+
+  it('a shift press on empty canvas keeps the selection and arms an additive box', () => {
+    const { top } = twoParts();
+    useStore.getState().select([top]);
+    const r = refs();
+    beginPointerGesture(
+      down({ shiftKey: true }),
+      { x: 400, y: 400 },
+      useStore.getState(),
+      null,
+      false,
+      r,
+    );
+    expect(useStore.getState().selectedIds).toEqual([top]);
+    expect(r.dragRef.current).toMatchObject({ mode: 'select', shift: true });
+  });
+
+  it('the additive box unions the earlier selection with what it covers', () => {
+    const { top, bottom } = twoParts();
+    useStore.getState().select([top]);
+    const r = refs();
+    beginPointerGesture(
+      down({ shiftKey: true }),
+      { x: -8, y: 48 },
+      useStore.getState(),
+      null,
+      false,
+      r,
+    );
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'select') throw new Error('expected a box drag');
+    // What the pointer-up does with the armed box: the same call the canvas
+    // hook makes, so the shift flag is checked end to end (selectArea's `add`).
+    const state = useStore.getState();
+    const inside = selectByBox(
+      state.elements,
+      boxFromPoints(drag.start, { x: 200, y: 80 }),
+      drag.shift,
+      state.selectedIds,
+    );
+    expect(inside).toEqual([top, bottom]);
+  });
+
+  it('a plain box replaces the earlier selection', () => {
+    const { top, bottom } = twoParts();
+    useStore.getState().select([top]);
+    const r = refs();
+    beginPointerGesture(down(), { x: -8, y: 48 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'select') throw new Error('expected a box drag');
+    const state = useStore.getState();
+    const inside = selectByBox(
+      state.elements,
+      boxFromPoints(drag.start, { x: 200, y: 80 }),
+      drag.shift,
+      state.selectedIds,
+    );
+    expect(inside).toEqual([bottom]);
   });
 });
