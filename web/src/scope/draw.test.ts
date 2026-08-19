@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Scope, ScopePlot, SimEngine } from '../engine/simulator';
 import { makeTheme } from '../render/draw';
+import { pruneScaleStates, scaleStateFor } from './scale';
 import { PHASE_COLOR } from './spectrum';
 import {
   DIVERGED_CAPTION,
@@ -223,6 +224,42 @@ const captionEngine = (diverged: boolean): SimEngine =>
     scopeData: () => new Float32Array([1, 1, 2, 2]),
     scopeDiverged: () => diverged,
   }) as unknown as SimEngine;
+
+describe('drawScope auto-scale window', () => {
+  // A ring of 2w columns: the older half (off the left edge of a w-wide
+  // canvas) holds a 4 V spike, the drawn half holds a flat 0.01 V.
+  const ringEngine = (w: number): SimEngine => {
+    const columns = 2 * w;
+    const data = new Float32Array(columns * 2);
+    for (let i = 0; i < columns; i++) {
+      const v = i < columns - w ? 4 : 0.01;
+      data[i * 2] = v;
+      data[i * 2 + 1] = v;
+    }
+    return {
+      scopeIndexOf: () => 0,
+      scopeData: () => data,
+      scopeDiverged: () => false,
+    } as unknown as SimEngine;
+  };
+
+  it('lets the scale come down once a spike has scrolled off the left edge', () => {
+    // Upstream's reduce-range check walks only the columns it plotted
+    // (Scope.java:875-884). Scanning the whole ring instead would let the
+    // off-screen 4 V spike pin the scale at 5 V forever.
+    const w = 200;
+    const h = 150;
+    const p = plot(41, 'voltage');
+    const scope = scopeOf([p]);
+    pruneScaleStates([]);
+    const engine = ringEngine(w);
+    for (let frame = 0; frame < 12; frame++) {
+      const { ctx } = mkCtx();
+      drawScope(ctx, engine, scope, w, h, emptyCursor(), 0, 5e-6, false, 3);
+    }
+    expect(scaleStateFor(p.id, p.value ?? undefined).gridMax).toBeLessThan(0.2);
+  });
+});
 
 describe('drawScope diverged caption', () => {
   const scope = scopeOf([plot(1, 'voltage')]);

@@ -14,7 +14,7 @@ import {
   positionToOffset,
   pruneScaleStates,
   pruneXYScales,
-  samplesFit,
+  extremesFit,
   scaleStateFor,
   seedManScale,
   setScaleState,
@@ -87,10 +87,10 @@ describe('reduce-range band', () => {
     // (Scope.java:856-857, 881-884). On a 150 px scope at gridMax 5 that is
     // roughly +/-0.19 V.
     const state = { gridMax: 5, showNegative: false };
-    expect(samplesFit([0.1, -0.1], state, H)).toBe(true);
+    expect(extremesFit(0.1, -0.1, state, H)).toBe(true);
     // 2.6 V sits right by the display centre (gridMid = 2.5): a band centred
     // there would call this reducible.
-    expect(samplesFit([2.6], state, H)).toBe(false);
+    expect(extremesFit(2.6, 2.6, state, H)).toBe(false);
   });
 
   it('does not halve and re-double a steady mid-scale signal frame after frame', () => {
@@ -102,7 +102,7 @@ describe('reduce-range band', () => {
     for (let frame = 0; frame < 10; frame++) {
       const drawn = nextScaleState(state, 2.6, 2.6, false, { maxScale: false });
       seen.push(drawn.gridMax);
-      const fit = samplesFit([2.6], drawn, H);
+      const fit = extremesFit(2.6, 2.6, drawn, H);
       state = nextScaleState(state, 2.6, 2.6, fit, { maxScale: false });
     }
     expect(seen).toEqual(new Array(10).fill(5));
@@ -114,7 +114,7 @@ describe('reduce-range band', () => {
     let state = { gridMax: 5, showNegative: false };
     for (let frame = 0; frame < 12; frame++) {
       const drawn = nextScaleState(state, 0.01, 0, false, { maxScale: false });
-      state = nextScaleState(state, 0.01, 0, samplesFit([0.01], drawn, H), { maxScale: false });
+      state = nextScaleState(state, 0.01, 0, extremesFit(0.01, 0, drawn, H), { maxScale: false });
     }
     expect(state.gridMax).toBeLessThan(0.2);
     expect(state.gridMax).toBeGreaterThan(0.01);

@@ -120,9 +120,17 @@ export function calcGridParams(
 }
 
 /**
- * The `reduceRange` band check (Scope.java:856-857, 881-884): every displayed
- * sample must sit within a 10 px band around *zero*, or the scale must not
- * come down.
+ * The `reduceRange` band check (Scope.java:856-857, 881-884): every sample the
+ * frame *drew* must sit within a 10 px band around *zero*, or the scale must
+ * not come down. The caller passes the extremes of the drawn window, which is
+ * all the test needs: a band is an absolute bound, so the whole window fits
+ * exactly when its largest and smallest samples do.
+ *
+ * The window, not the whole capture ring. The ring holds the next power of two
+ * columns at or above the canvas width, so up to half of it can be older than
+ * the leftmost pixel; upstream walks only the `drawWidth` columns it plotted
+ * (Scope.java:875-884), so a spike that has already scrolled off the left edge
+ * stops holding the scope zoomed out.
  *
  * Zero, not the display centre, even though the display centre is where the
  * band looks like it sits upstream. Upstream compares the plotted pixel
@@ -134,8 +142,9 @@ export function calcGridParams(
  * alternate frames -- a 60 Hz flicker that is at its most visible with the
  * simulation paused, where the samples never change.
  */
-export function samplesFit(
-  samples: ArrayLike<number>,
+export function extremesFit(
+  maxSample: number,
+  minSample: number,
   state: ScaleState,
   heightPx: number,
   opts: ScaleOpts = { maxScale: false },
@@ -148,10 +157,7 @@ export function samplesFit(
     heightPx,
     opts,
   );
-  for (let i = 0; i < samples.length; i++) {
-    if (Math.abs(samples[i]) * gridMult > 10) return false;
-  }
-  return true;
+  return Math.max(Math.abs(maxSample), Math.abs(minSample)) * gridMult <= 10;
 }
 
 /**
@@ -224,7 +230,7 @@ export function nextAxisScale(
   ).gridMax;
 }
 
-/** The X-Y band check, the 1d `samplesFit` applied to one axis: every sample
+/** The X-Y band check, the 1d `extremesFit` applied to one axis: every sample
  *  must sit within 10 px of the axis centre, or the scale must not come down. */
 export function axisSamplesFit(
   samples: ArrayLike<number>,

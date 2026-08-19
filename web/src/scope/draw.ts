@@ -19,7 +19,7 @@ import {
   gridStepY,
   nextAxisScale,
   nextScaleState,
-  samplesFit,
+  extremesFit,
   scaleStateFor,
   seedManScale,
   setScaleState,
@@ -900,7 +900,7 @@ export function drawScope(
     // instead makes the reduced scale visible for one frame before the next
     // frame's doubling undoes it, which reads as a flicker.
     const drawn = nextScaleState(state, maxSample, minSample, false, opts);
-    const fit = samplesFit(data, drawn, h, opts);
+    const fit = extremesFit(maxSample, minSample, drawn, h, opts);
     setScaleState(plot.id, nextScaleState(state, maxSample, minSample, fit, opts));
     const transform = transformFor(scope, plot, drawn, maxSample, minSample, h);
     const m = toMeasurable(data, win);
