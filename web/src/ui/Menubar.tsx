@@ -282,8 +282,10 @@ export function Menubar({ engine }: Props) {
       void document.documentElement
         .requestFullscreen()
         .then(() => {
-          // The bigger canvas deserves a centred circuit (CommandManager.java:310).
-          useStore.getState().centerCircuit();
+          // The bigger canvas deserves a centred circuit (CommandManager.java:310),
+          // but only once the browser has laid the fullscreen element out:
+          // an immediate fit would measure the windowed canvas.
+          useStore.getState().requestCenter();
         })
         .catch(() => undefined);
     }

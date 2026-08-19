@@ -2739,6 +2739,30 @@ describe('center circuit', () => {
     expect(useStore.getState().view).toEqual({ x: 5, y: 9, scale: 3 });
   });
 
+  it('requestCenter bumps the counter without touching the view', () => {
+    useStore.getState().loadNetlist(SAMPLE);
+    useStore.getState().setView({ x: 5, y: 9, scale: 3 });
+    const before = useStore.getState().centerRequest;
+
+    useStore.getState().requestCenter();
+
+    expect(useStore.getState().centerRequest).toBe(before + 1);
+    // The fit itself is the canvas's to run once it has re-measured; the
+    // request alone must not move the view.
+    expect(useStore.getState().view).toEqual({ x: 5, y: 9, scale: 3 });
+  });
+
+  it('a load asks for a second centre after the layout settles', () => {
+    // A loaded circuit can add or drop the scope strip, which resizes the
+    // canvas only on the next render: the fit the load runs itself measured
+    // the old layout, so the canvas has to re-fit once the new one is up.
+    const before = useStore.getState().centerRequest;
+
+    useStore.getState().loadNetlist(SAMPLE);
+
+    expect(useStore.getState().centerRequest).toBe(before + 1);
+  });
+
   it('on a zero-sized canvas leaves the view finite', () => {
     // The canvas a ResizeObserver measured while zero-sized: the fit must not
     // return {scale: 0, x: NaN, y: NaN} and poison every later zoom step.

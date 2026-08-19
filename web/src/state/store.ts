@@ -459,6 +459,7 @@ function createAppStore() {
   dark: true,
   view: { x: 0, y: 0, scale: 1 },
   viewSize: { w: 800, h: 600 },
+  centerRequest: 0,
   dialog: null,
   subcircuitDraft: null,
   subcircuitError: null,
@@ -851,6 +852,8 @@ function createAppStore() {
     // it (CommandManager.java:129-132) would make the first undo a no-op.
     set({ view: fitView(bounds, s.viewSize.w, s.viewSize.h) });
   },
+
+  requestCenter: () => set((s) => ({ centerRequest: s.centerRequest + 1 })),
 
   zoomToFit: () => {
     const s = get();
@@ -1973,7 +1976,14 @@ function createAppStore() {
     // finishReadCircuit always does unless RC_NO_CENTER is passed
     // (CircuitLoader.java:220-235), so opening a file doesn't leave the view
     // wherever the previous circuit happened to scroll to.
+    // The fit runs twice on purpose. The immediate one keeps the store honest
+    // on its own (headless callers, tests) and gets the first frame close;
+    // the request re-fits after React has committed the new layout, because a
+    // circuit that brings scopes with it (or drops the ones on screen) resizes
+    // the canvas by the scope strip's height, and the size read above is still
+    // the previous layout's.
     get().centerCircuit();
+    get().requestCenter();
     // The loaded content is its own baseline: opening a file, a library
     // circuit or a share link is not "unsaved". `set` is synchronous, so this
     // `get()` reads the just-loaded state.

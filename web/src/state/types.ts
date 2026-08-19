@@ -99,6 +99,13 @@ export interface AppState {
    *  zoom can target the exact screen centre like the wheel does
    *  (MouseManager.java:1339). */
   viewSize: { w: number; h: number };
+  /** Bumped whenever something asks for a fit that must wait for the layout to
+   *  settle: a load can add or drop the scope strip, which resizes the canvas
+   *  only on the render after the store changed, so the size `centerCircuit`
+   *  would read is still the previous layout's. CircuitCanvas watches this
+   *  counter, re-measures the canvas once the DOM is committed and fits
+   *  against the real viewport. */
+  centerRequest: number;
   /** The dialog currently open over the workspace, or null. Lives in the store
    *  so the menubar, App's dialog host and the Ctrl+S path share one home. */
   dialog: DialogName | null;
@@ -241,6 +248,10 @@ export interface AppState {
   /** Pans so the whole circuit fits the viewport, capped at 1.5 like upstream.
    *  A view command, so it works with editing disabled. No undo entry. */
   centerCircuit(): void;
+  /** Asks for a centre that waits for the next layout, for the callers whose
+   *  own change resizes the canvas (a load that adds or removes scopes, going
+   *  full screen). See `centerRequest`. */
+  requestCenter(): void;
   /** Fits the whole circuit with no scale cap, the context menu's "Zoom to
    *  fit" seam (context-menu.md). */
   zoomToFit(): void;
