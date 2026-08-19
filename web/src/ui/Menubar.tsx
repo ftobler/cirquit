@@ -377,7 +377,8 @@ export function Menubar({ engine }: Props) {
       ),
     },
     { label: 'Import From Text…', onClick: fire(() => openDialog('importText')) },
-    deferred('Import From Dropbox…', 'Dropbox import needs a backend service; not available'),
+    // Import From Dropbox is deliberately absent: it needs a backend service
+    // and is not to be ported, so it is omitted rather than shown disabled.
     { label: 'Save As…', onClick: fire(() => openDialog('saveAs')) },
     { label: 'Export As Link…', onClick: fire(() => openDialog('exportAsLink')) },
     { label: 'Export As Text…', onClick: fire(() => openDialog('exportAsText')) },
