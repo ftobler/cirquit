@@ -10,7 +10,7 @@ import { defFor, postCountOf, postsOf, toolDef } from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
 import { GRID_SIZE } from '../../model/types';
 import type { CircuitElement, Point } from '../../model/types';
-import { nearestPost } from '../../render/geometry';
+import { grabbedHandle, nearestPost } from '../../render/geometry';
 import { makeToolElement, nextSwitchState, snap, useStore } from '../../state/store';
 import type { AppState } from '../../state/types';
 
@@ -137,6 +137,28 @@ export function finishPostDrag(drag: Drag, state: AppState): void {
   // The split lands on the commit pointer-down took, so the move and the split
   // undo together as one drag.
   state.autoSplitAt(pos, e.id);
+}
+
+/**
+ * The endpoint handle a plain press at `p` grabs on `hit`, or null when the
+ * press takes the whole element instead. Upstream arms its post drag the same
+ * way, straight from a select-mode press that landed close to a handle
+ * (MouseManager.java:1146-1149); Ctrl is this port's extra override, not a
+ * requirement. Exported so the frame loop can light up the very handle the
+ * next press would grab, and the drawn affordance cannot promise a grab that
+ * will not happen.
+ */
+export function armedHandle(p: Point, hit: CircuitElement, state: AppState): 1 | 2 | null {
+  // With editing off or a tool armed the press is not an edit drag at all, so
+  // no handle is live.
+  if (!state.settings.editable || state.tool) return null;
+  // A press inside a multi-element selection drags the whole group, even when
+  // it lands on one member's endpoint: upstream gates its auto-grab on
+  // anySelectedButMouse for the same reason (MouseManager.java:1147,1376).
+  // Read from the caller's pre-press snapshot, which is what the press acts
+  // on; only Ctrl grows the selection, and Ctrl takes the override path.
+  if (state.selectedIds.length > 1 && state.selectedIds.includes(hit.id)) return null;
+  return grabbedHandle(p, hit, state.view.scale);
 }
 
 /** A row or column sweep captures every stored endpoint on the line at
@@ -291,15 +313,20 @@ export function beginPointerGesture(
       state.select(ev.ctrlKey ? [...state.selectedIds, hit.id] : [hit.id]);
     }
     state.commit();
-    // Ctrl does two things depending on whether the pointer moves: without
-    // a move it is a plain additive selection, done above; with one it
-    // grabs the nearer endpoint and drags only that post, stretching or
-    // rotating the element. The additive selection from pointer-down stays
-    // either way. The gate counts draggable endpoints, not posts: a ground
-    // has one connectable post but its symbol hangs off a second control
-    // point that must be stretchable too.
-    if (ev.ctrlKey && (def?.draggablePosts ?? postCountOf(hit)) > 1) {
-      const post = nearestPost(p, hit);
+    // A press that lands on an endpoint handle drags that endpoint; a press on
+    // the body moves the element whole. Ctrl is the explicit override, and
+    // grabs the nearer endpoint from anywhere on the element: it still reaches
+    // a symbol too short to arm a handle and a running switch's lever, which
+    // the interactive branch above hands over only for Ctrl. Ctrl+click
+    // without a move stays the additive selection made above. The gate counts
+    // draggable endpoints, not posts: a ground has one connectable post but
+    // its symbol hangs off a second control point that must be stretchable
+    // too.
+    const post =
+      ev.ctrlKey && (def?.draggablePosts ?? postCountOf(hit)) > 1
+        ? nearestPost(p, hit)
+        : armedHandle(p, hit, state);
+    if (post !== null) {
       dragRef.current = {
         mode: 'dragpost',
         id: hit.id,

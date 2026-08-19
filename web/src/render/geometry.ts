@@ -5,6 +5,7 @@
  */
 
 import type { Box, CircuitElement, Point } from '../model/types';
+import { GRID_SIZE } from '../model/types';
 import { defFor, postCountOf, postsOf } from '../model/registry';
 
 /** Shortest distance from `p` to the segment `a`-`b`. */
@@ -316,6 +317,54 @@ export function distanceToBox(p: Point, box: Box): number {
 export function nearestPost(p: Point, e: CircuitElement): 1 | 2 {
   const d1 = Math.hypot(p.x - e.x1, p.y - e.y1);
   const d2 = Math.hypot(p.x - e.x2, p.y - e.y2);
+  return d1 <= d2 ? 1 : 2;
+}
+
+/** The control points a post drag can move: the two stored endpoints, the
+ *  same pair `dragpostHandlesFrom` draws and `nearestPost` chooses between.
+ *  Deliberately not the `post` regions of `hitRegions`, which are the derived
+ *  terminals: a ground connects at one terminal but stretches from a second
+ *  control point that carries none, and a chip's pins are terminals no drag
+ *  moves. Empty for a part with a single draggable end, which can only ever be
+ *  moved whole (upstream's `getNumHandles`, CircuitElm.java:743-745). */
+export function handlePoints(e: CircuitElement): Point[] {
+  const def = defFor(e.kind);
+  if ((def?.draggablePosts ?? postCountOf(e)) < 2) return [];
+  return [
+    { x: e.x1, y: e.y1 },
+    { x: e.x2, y: e.y2 },
+  ];
+}
+
+/**
+ * Which endpoint handle of `e` a pointer at `p` has grabbed, or null when the
+ * pointer is on the body and the whole element is the target. Upstream's
+ * `getHandleGrabbedClose` (CircuitElm.java:763-772): within POSTGRABSQ, 5 grid
+ * units squared, of a handle, and only on an element at least MINPOSTGRABSIZE
+ * long. `tolerancePx` is the same screen-pixel reach the element picker uses,
+ * so the handle zone keeps its on-screen size at any zoom.
+ */
+export function grabbedHandle(
+  p: Point,
+  e: CircuitElement,
+  scale: number,
+  tolerancePx = HIT_TOLERANCE_PX,
+): 1 | 2 | null {
+  if (!Number.isFinite(scale) || scale <= 0) return null;
+  if (handlePoints(e).length < 2) return null;
+  const reach = tolerancePx / scale;
+  const span = Math.hypot(e.x2 - e.x1, e.y2 - e.y1);
+  // Upstream refuses to arm a handle on an element shorter than one grid
+  // (MINPOSTGRABSIZE = 256 is a squared length, MouseManager.java:71): the two
+  // grab zones would swallow the whole symbol and it could never be picked up
+  // whole. The second half carries that intent to the port's zoom-independent
+  // reach, which grows in circuit units as you zoom out, so there is always
+  // body left between the zones.
+  if (span < GRID_SIZE || span <= 2 * reach) return null;
+  const d1 = Math.hypot(p.x - e.x1, p.y - e.y1);
+  const d2 = Math.hypot(p.x - e.x2, p.y - e.y2);
+  // Inclusive at the radius, as upstream's `<= deltaSq` is.
+  if (Math.min(d1, d2) > reach) return null;
   return d1 <= d2 ? 1 : 2;
 }
 
