@@ -284,9 +284,11 @@ export function beginPointerGesture(
   if (hit) {
     const def = defFor(hit.kind);
     if (!state.selectedIds.includes(hit.id)) {
-      // Shift adds like ctrl, then starts a plain move of the whole group;
-      // ctrl alone keeps its dragpost branch below.
-      state.select(ev.ctrlKey || ev.shiftKey ? [...state.selectedIds, hit.id] : [hit.id]);
+      // Shift on an element does not join it to the selection: upstream has no
+      // shift+click multi-select, it only makes the rubber band additive
+      // (selectArea's `add`, MouseManager.java:381,645). Ctrl still adds, and
+      // keeps its dragpost branch below.
+      state.select(ev.ctrlKey ? [...state.selectedIds, hit.id] : [hit.id]);
     }
     state.commit();
     // Ctrl does two things depending on whether the pointer moves: without
@@ -314,8 +316,10 @@ export function beginPointerGesture(
     return;
   }
 
-  // A shift-drag box adds to the selection, so the old one survives the
-  // pointer-down; a plain box replaces it and clears up front.
+  // The rubber band is the only multi-select gesture, as upstream: a shift-drag
+  // box adds to the selection, so the old one survives the pointer-down, and a
+  // plain box replaces it and clears up front (selectArea's `add`,
+  // MouseManager.java:381,645).
   if (!ev.shiftKey) state.select([]);
   dragRef.current = { mode: 'select', start: p, current: p, shift: ev.shiftKey };
 }
