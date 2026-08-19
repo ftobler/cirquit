@@ -4,6 +4,7 @@ import { makeTheme } from '../render/draw';
 import { pruneScaleStates, scaleStateFor } from './scale';
 import { PHASE_COLOR } from './spectrum';
 import {
+  advanceFadeCounter,
   DIVERGED_CAPTION,
   divergedCaption,
   drawScope,
@@ -422,9 +423,23 @@ describe('trail persistence', () => {
     expect(trailStepsToSlider(trailSliderToSteps(15))).toBe(15);
   });
 
-  it('a zero persistence keeps the current hard-coded fade', () => {
-    expect(trailFadeAlpha(0, 5e-6, 42, -1)).toEqual({ alpha: 0.02, lastTrailSimTime: -1 });
-    expect(trailFadeAlpha(0, 5e-6, 42, 40)).toEqual({ alpha: 0.02, lastTrailSimTime: 40 });
+  it('a zero persistence keeps the legacy hard-coded fade', () => {
+    expect(trailFadeAlpha(0, 5e-6, 42, -1)).toEqual({ alpha: 0.01, lastTrailSimTime: -1 });
+    expect(trailFadeAlpha(0, 5e-6, 42, 40)).toEqual({ alpha: 0.01, lastTrailSimTime: 40 });
+  });
+
+  it('fades one frame in three, upstream cadence', () => {
+    // The locus is re-stroked at full brightness every frame, so the fade
+    // cadence is what sets the trail length: upstream's alphaCounter lets one
+    // frame in three through (ScopePlot2d.java:190-192).
+    let counter = 0;
+    const faded: number[] = [];
+    for (let frame = 1; frame <= 9; frame++) {
+      const tick = advanceFadeCounter(counter);
+      counter = tick.counter;
+      if (tick.fade) faded.push(frame);
+    }
+    expect(faded).toEqual([3, 6, 9]);
   });
 
   it('a positive persistence fades with timeConst = persistence * timeStep', () => {

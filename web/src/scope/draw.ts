@@ -597,7 +597,15 @@ function drawCursor(
  *  (ScopePlot2d.java:191-221). */
 const xyPersistence = new Map<
   number,
-  { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D | null; w: number; h: number; lastTrailSimTime: number }
+  {
+    canvas: HTMLCanvasElement;
+    ctx: CanvasRenderingContext2D | null;
+    w: number;
+    h: number;
+    lastTrailSimTime: number;
+    /** Frames since the last fade; see FADE_FRAME_INTERVAL. */
+    fadeCounter: number;
+  }
 >();
 
 /** Drops a scope's X-Y persistence canvas (called when a scope is removed). */
@@ -620,20 +628,36 @@ export function trailStepsToSlider(steps: number): number {
   return Math.round(Math.log10(steps) * 10);
 }
 
-/** The X-Y persistence fade alpha for one frame, the port of the fade in
+/** One in every `FADE_FRAME_INTERVAL` frames carries the X-Y trail fade;
+ *  the rest leave the offscreen canvas alone. Upstream's `alphaCounter`
+ *  gate (ScopePlot2d.java:190-192): the fade is per repaint, not per
+ *  simulated step, so a fast display would otherwise wipe the trail sooner
+ *  than the original does. */
+export const FADE_FRAME_INTERVAL = 3;
+
+/** Steps a scope's fade counter one frame, reporting whether this frame is the
+ *  one that fades. Pure, so the cadence is testable without a canvas. */
+export function advanceFadeCounter(counter: number): { counter: number; fade: boolean } {
+  const next = counter + 1;
+  return next >= FADE_FRAME_INTERVAL ? { counter: 0, fade: true } : { counter: next, fade: false };
+}
+
+/** The X-Y persistence fade alpha for one faded frame, the port of the fade in
  *  ScopePlot2d.draw (ScopePlot2d.java:191-221). A zero persistence keeps the
- *  legacy hard-coded 2% fade; a positive persistence fades exponentially with
+ *  legacy hard-coded 1% fade; a positive persistence fades exponentially with
  *  time constant `trailPersistence * timeStep` seconds, and the sub-pixel
  *  guard (alpha below 3/255) holds the last-trail time back so a slow trace
  *  keeps fading instead of stalling on an 8-bit canvas. Returns the alpha and
- *  the next last-trail time, which drawXY stores per scope. */
+ *  the next last-trail time, which drawXY stores per scope. Only called on the
+ *  frames the counter lets through, so the elapsed sim time it measures spans
+ *  the whole interval, exactly as upstream's does. */
 export function trailFadeAlpha(
   trailPersistence: number,
   timeStep: number,
   simTime: number,
   lastTrailSimTime: number,
 ): { alpha: number; lastTrailSimTime: number } {
-  if (trailPersistence <= 0) return { alpha: 0.02, lastTrailSimTime };
+  if (trailPersistence <= 0) return { alpha: 0.01, lastTrailSimTime };
   if (lastTrailSimTime < 0 || simTime < lastTrailSimTime) lastTrailSimTime = simTime;
   const elapsed = simTime - lastTrailSimTime;
   const timeConst = trailPersistence * timeStep;
@@ -696,7 +720,7 @@ function drawXY(
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
-    entry = { canvas, ctx: canvas.getContext('2d'), w, h, lastTrailSimTime: -1 };
+    entry = { canvas, ctx: canvas.getContext('2d'), w, h, lastTrailSimTime: -1, fadeCounter: 0 };
     xyPersistence.set(scope.id, entry);
   }
   const pctx = entry.ctx;
@@ -704,12 +728,19 @@ function drawXY(
   // Fade the previous trace by repainting the background with the trail alpha:
   // zero persistence keeps the legacy hard-coded fade, a positive one fades
   // exponentially with time constant trailPersistence * timeStep
-  // (ScopePlot2d.java:191-221).
-  const fade = trailFadeAlpha(scope.trailPersistence, timeStep, simTime, entry.lastTrailSimTime);
-  entry.lastTrailSimTime = fade.lastTrailSimTime;
-  if (fade.alpha > 0) {
-    pctx.fillStyle = `rgba(13, 17, 23, ${fade.alpha})`;
-    pctx.fillRect(0, 0, w, h);
+  // (ScopePlot2d.java:191-221). Only every third frame fades, upstream's
+  // alphaCounter gate: the locus is re-stroked at full brightness every frame,
+  // so fading on each one wipes the trail three times faster than the original
+  // and leaves a short signal with almost no tail.
+  const tick = advanceFadeCounter(entry.fadeCounter);
+  entry.fadeCounter = tick.counter;
+  if (tick.fade) {
+    const fade = trailFadeAlpha(scope.trailPersistence, timeStep, simTime, entry.lastTrailSimTime);
+    entry.lastTrailSimTime = fade.lastTrailSimTime;
+    if (fade.alpha > 0) {
+      pctx.fillStyle = `rgba(13, 17, 23, ${fade.alpha})`;
+      pctx.fillRect(0, 0, w, h);
+    }
   }
   pctx.strokeStyle = '#ffffff';
   pctx.lineWidth = 1;
