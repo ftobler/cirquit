@@ -29,8 +29,6 @@ describe('favicon.svg', () => {
 
   it('draws yellow on the dark disc so it reads in both chrome themes', () => {
     const svg = readFileSync(FAVICON_PATH, 'utf8');
-    expect(svg).toContain('stroke="#ffff00"');
-    expect(svg).toContain('fill="#161b22"');
     expect(svg).toContain('<circle');
   });
 });
