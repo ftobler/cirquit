@@ -1619,6 +1619,10 @@ input[type='range'] {
   .menubar {
     position: relative;
     z-index: 38;
+    /* The bar's 6 px gap is a row gap too once it wraps, which stacked on top
+       of the controls' own boxes and left the two rows drifting apart. The
+       horizontal spacing stays; only the rows close up. */
+    row-gap: 2px;
   }
 }
 
