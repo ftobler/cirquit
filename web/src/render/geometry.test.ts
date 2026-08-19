@@ -317,15 +317,16 @@ describe('chip body hit-testing', () => {
     }
   });
 
-  it('the op-amp hit box matches upstream setBbox(point1, point2, opheight*2)', () => {
-    // OpAmpElm.java:92. The box spans the two posts along the axis and is
-    // grown perpendicular by opheight*2 (32 for the default size 2, 16 for the
-    // small), so the whole drawn triangle is grabbable. A point on the axis
-    // span between the posts, opheight off the axis, must read distance 0.
+  it('the op-amp hit box covers only the triangle body', () => {
+    // The box wraps the drawn triangle alone: the base at lead1 grown
+    // perpendicular by the base width (opheight*2, 32 for size 2) and the apex
+    // at lead2. It must not span the bare input leads to the posts, so a click
+    // out on a lead falls through to the axis/post instead of grabbing the
+    // whole span.
     const e = { ...element(0, 0, 64, 0), kind: 'opamp' };
     const rect = defFor('opamp')!.bodyRect!(e);
-    expect(rect.x0).toBe(0);
-    expect(rect.x1).toBe(64);
+    expect(rect.x0).toBe(6);   // lead1, the triangle base
+    expect(rect.x1).toBe(58);  // lead2, the apex
     expect(rect.y0).toBe(-32);
     expect(rect.y1).toBe(32);
     // A point in the middle of the body, opheight off the axis and clear of
