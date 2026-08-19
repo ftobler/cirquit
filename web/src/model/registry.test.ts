@@ -671,6 +671,40 @@ describe('op-amp swapped inputs', () => {
     expect(axisSide(op, moveTos[0]) * axisSide(op, posts[0])).toBeGreaterThan(0);
     expect(axisSide(op, lineTos[0]) * axisSide(op, posts[0])).toBeGreaterThan(0);
   });
+
+  it('exposes the swap as a boolean field on the FLAG_SWAP bit', () => {
+    // Upstream ships the plus-on-top op-amp as a second menu entry that only
+    // sets FLAG_SWAP (OpAmpSwapElm.java) and dumps as an ordinary op-amp, so
+    // the port carries the variant as a per-element checkbox instead.
+    const field = OPAMP_DEF.fields?.find((f) => f.name === 'swap');
+    expect(field?.type).toBe('bool');
+    expect(field?.flag).toBe(1);
+  });
+
+  it('the swap toggle trades the two input posts and their glyphs', () => {
+    // Toggling the checkbox is a plain flag flip, so the posts and the +/-
+    // labels have to follow it together or the drawn symbol would lie about
+    // which terminal inverts.
+    const plain = element('opamp', 192, 160, 320, 160, 8);
+    const swapped = element('opamp', 192, 160, 320, 160, 9);
+    expect(postsOf(plain)).toEqual([
+      { x: 192, y: 144 },
+      { x: 192, y: 176 },
+      { x: 320, y: 160 },
+    ]);
+    expect(postsOf(swapped)).toEqual([
+      { x: 192, y: 176 },
+      { x: 192, y: 144 },
+      { x: 320, y: 160 },
+    ]);
+    // The minus glyph and the inverting post stay on the same side, and the
+    // lead anchors with them.
+    for (const e of [plain, swapped]) {
+      const inverting = postsOf(e)[0];
+      expect(axisSide(e, opAmpLabelAnchors(e)[0]) * axisSide(e, inverting)).toBeGreaterThan(0);
+      expect(axisSide(e, opAmpInputAnchors(e)[0]) * axisSide(e, inverting)).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('transformer posts', () => {

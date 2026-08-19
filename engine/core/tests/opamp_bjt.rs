@@ -46,6 +46,54 @@ fn inverting_opamp_has_the_textbook_gain() {
 }
 
 #[test]
+fn swapped_opamp_still_inverts_through_its_first_post() {
+    // Upstream's "+ on top" menu entry is not a second element: OpAmpSwapElm
+    // only sets FLAG_SWAP and dumps as OpAmpElm, so the flag moves the drawn
+    // input leads and nothing else. Post 0 is the inverting input either way,
+    // and the same inverting amplifier must come out at -Rf/Rin.
+    const FLAG_SWAP: i64 = 1;
+    const FLAG_GAIN: i64 = 8;
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[96, 224], [96, 80]], &[("maxVoltage", 0.5)]),
+            // Input resistor into the inverting node, which the swap moves to
+            // the far side of the body (amp-follower.txt geometry).
+            elm(
+                2,
+                "resistor",
+                &[[96, 80], [192, 176]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[192, 176], [320, 160]],
+                &[("resistance", 10_000.0)],
+            ),
+            // Posts stay inverting, non-inverting, output; only the two input
+            // coordinates trade sides.
+            elm_flags(
+                4,
+                "opamp",
+                &[[192, 176], [192, 144], [320, 160]],
+                &[("gain", 100_000.0), ("maxOut", 15.0), ("minOut", -15.0)],
+                FLAG_SWAP | FLAG_GAIN,
+            ),
+            elm(5, "ground", &[[192, 144]], &[]),
+            elm(6, "ground", &[[96, 224]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(30);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    // The op-amp reports volts[2] - volts[1], and the non-inverting input is
+    // grounded, so this is the output itself: 0.5 V * -10k/1k = -5 V. A swap
+    // that leaked into the stamp would land on +5 V here.
+    let out = c.element_voltages()[3];
+    assert!(close(out, -5.0, 0.01), "swapped output was {out}");
+}
+
+#[test]
 fn asymmetric_rails_idle_at_the_midpoint() {
     // The linear region centres on (maxOut+minOut)/2 (OpAmpElm.java:167,
     // :174-181), so a 5 V / 0 V op-amp with both inputs grounded idles at
