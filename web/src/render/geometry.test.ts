@@ -296,6 +296,25 @@ describe('chip body hit-testing', () => {
       expect(distanceToElement(probe, e), `${kind} body edge midpoint hits`).toBe(0);
     }
   });
+
+  it('gives a solid pick body to the capacitor, voltage source and lamp', () => {
+    // These three draw a disc or plates far off the axis, so a click on the
+    // drawn body must grab the element even where the axis band cannot reach.
+    // The probe is the mid-span of the top body edge, a full reach past the
+    // axis and clear of every post.
+    for (const kind of ['capacitor', 'voltage', 'lamp']) {
+      const e = { ...element(0, 0, 64, 0), kind };
+      const rect = defFor(kind)!.bodyRect!(e);
+      expect(rect, `${kind} declares a bodyRect`).toBeDefined();
+      const probe = { x: (rect!.x0 + rect!.x1) / 2, y: rect!.y0 };
+      const bare = Math.min(
+        distanceToSegment(probe, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }),
+        ...postsOf(e).map((p) => Math.hypot(probe.x - p.x, probe.y - p.y)),
+      );
+      expect(bare, `${kind} probe is off-axis and clear of every post`).toBeGreaterThan(8);
+      expect(distanceToElement(probe, e), `${kind} body edge midpoint hits`).toBe(0);
+    }
+  });
 });
 
 describe('ground free-end drag', () => {

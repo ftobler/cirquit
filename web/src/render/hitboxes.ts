@@ -19,8 +19,8 @@ export const HITBOX_COLORS: Record<'post' | 'axis' | 'wire' | 'body' | 'switch',
   post: '#00b8d4',  // terminal grab circles
   axis: '#ff9100',  // the body axis band between the stored endpoints
   wire: '#00c853',  // routed wire segment bands
-  body: '#d500f9',  // a chip's solid housing rect
-  switch: '#ff1744',  // an interactive part's lever rect
+  body: '#ff1744',  // a solid pick zone (chips, capacitor, voltage, lamp)
+  switch: '#ff1744',  // an interactive part's lever rect, same pink as the bodies
 };
 
 /** Alpha for the whole overlay, low enough to read the schematic through it. */
@@ -87,13 +87,11 @@ export function drawHitboxes(
         ctx.beginPath();
         ctx.arc(region.x, region.y, reach, 0, Math.PI * 2);
         ctx.stroke();
-      } else if (region.type === 'switch') {
-        // The lever's toggle test is plain containment (`rectContains`), with
-        // no tolerance, so a grown outline would overstate where a click
-        // throws the switch. Drawn exact, unlike the other zones.
-        const { x0, y0, x1, y1 } = region.box;
-        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-      } else if (region.type === 'body') {
+      } else if (region.type === 'body' || region.type === 'switch') {
+        // Every solid pick zone draws the same rounded, reach-grown level set:
+        // the box grown by `reach` with quarter-circle corners, the exact shape
+        // `distanceToBox` measures. A sharp rect would lie about the corners,
+        // where a click up to `reach` away diagonally still counts as a hit.
         strokeGrownBox(ctx, region.box, reach);
       } else {
         strokeCapsule(ctx, region.a, region.b, reach);

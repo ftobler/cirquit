@@ -18,7 +18,7 @@ import {
   voltageColor,
 } from '../../render/draw';
 import { FLAG_ESCAPE } from './flags';
-import type { CircuitElement, DrawContext, Point, SwitchRect } from '../types';
+import type { Box, CircuitElement, DrawContext, Point, SwitchRect } from '../types';
 
 /** Perpendicular offset of switch throws and transistor collector/emitter. */
 export const OPEN_HS = 16;
@@ -86,7 +86,6 @@ export const twoPosts = (e: CircuitElement): Point[] => [
 ];
 
 export const onePost = (e: CircuitElement): Point[] => [{ x: e.x1, y: e.y1 }];
-
 /** Bounding box of the given points, upstream's `new Rectangle(p).union(...)`
  *  switch-rect pattern (SwitchElm.java:166-169). */
 export function rectOfPoints(pts: Point[]): SwitchRect {
@@ -102,6 +101,25 @@ export function rectOfPoints(pts: Point[]): SwitchRect {
   }
   if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+/** Axis-aligned hit-test box enclosing the given points, for a def's `bodyRect`
+ *  when the drawn body is a plain shape around the axis (a capacitor's plates,
+ *  a lamp's bulb and filament, a source's circle): the whole body is a solid
+ *  pick zone, the same `boundingBox.contains` gate the chips use. */
+export function boxOfPoints(pts: Point[]): Box {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const p of pts) {
+    x0 = Math.min(x0, p.x);
+    y0 = Math.min(y0, p.y);
+    x1 = Math.max(x1, p.x);
+    y1 = Math.max(y1, p.y);
+  }
+  if (!Number.isFinite(x0)) return { x0: 0, y0: 0, x1: 0, y1: 0 };
+  return { x0, y0, x1, y1 };
 }
 
 /** True when `p` lies on or inside the rect, with the edges inclusive. */

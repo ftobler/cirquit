@@ -11,7 +11,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { VOLTAGE_CIRCLE_SYMBOL, VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
-import { drawSourceCircle, drawWaveformGlyph, readParams, twoPosts, writeParams } from '../shared';
+import { drawSourceCircle, drawWaveformGlyph, boxOfPoints, readParams, twoPosts, writeParams } from '../shared';
 import type { ElementDef } from '../../types';
 
 /** The duty cycle old pulse lines are stuck with (VoltageElm.java:51). */
@@ -88,6 +88,26 @@ export const VOLTAGE_DEF: ElementDef = {
     { name: 'riseTime', label: 'Rise/fall time', unit: 's' },
     { name: 'dutyCycle', label: 'Duty cycle', min: 0, max: 1 },
   ],
+  // The drawn body is a solid pick zone, so a click on the source disc or the
+  // battery plates grabs the element rather than falling through to the wires.
+  bodyRect: (e) => {
+    const [lead1, lead2] = calcLeads(e, 8);
+    const wf = e.params.waveform ?? 0;
+    if (wf === 0 && (e.flags & VOLTAGE_CIRCLE_SYMBOL) === 0) {
+      // The two-plate battery: a short plate at lead1 and a long one at lead2.
+      const [s1, s2] = interp2(lead1, lead2, 0, 10);
+      const [l1, l2] = interp2(lead1, lead2, 1, 16);
+      return boxOfPoints([s1, s2, l1, l2]);
+    }
+    // The circle symbol: a source circle of radius 12 around the body centre.
+    const mid = interp(lead1, lead2, 0.5);
+    return boxOfPoints([
+      { x: mid.x - 12, y: mid.y - 12 },
+      { x: mid.x + 12, y: mid.y - 12 },
+      { x: mid.x + 12, y: mid.y + 12 },
+      { x: mid.x - 12, y: mid.y + 12 },
+    ]);
+  },
   draw(g, e) {
     const wf = e.params.waveform ?? 0;
     if (wf === 0 && (e.flags & VOLTAGE_CIRCLE_SYMBOL) === 0) {

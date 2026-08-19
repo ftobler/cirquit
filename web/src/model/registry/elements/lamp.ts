@@ -14,8 +14,7 @@ import {
   tempColor,
   voltageColor,
 } from '../../../render/draw';
-import { readParams, twoPosts, writeParams } from '../shared';
-import type { CircuitElement, DrawContext, ElementDef } from '../../types';
+import { boxOfPoints, readParams, twoPosts, writeParams } from '../shared';import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** Lead gap, filament diagonal offset and bulb radius for the non-IEC lamp
  *  symbol (LampElm.java's `setPoints`: `llen` at :88, `filament_len` at :85,
@@ -104,5 +103,14 @@ export const LAMP_DEF: ElementDef = {
     { name: 'warmTime', label: 'Warmup Time', unit: 's', min: 0 },
     { name: 'coolTime', label: 'Cooldown Time', unit: 's', min: 0 },
   ],
+  // The bulb and filament are a solid pick zone: the bulb disc extends 20
+  // units and the filament 24 off the axis, far past the axis band's reach, so
+  // a click on the glass must still grab the lamp.
+  bodyRect: (e) => {
+    const [lead1, lead2] = calcLeads(e, LAMP_LEAD_GAP);
+    const filament0 = interp(lead1, lead2, 0, LAMP_FILAMENT_OFFSET);
+    const filament1 = interp(lead1, lead2, 1, LAMP_FILAMENT_OFFSET);
+    return boxOfPoints([filament0, filament1]);
+  },
   draw: drawLampBody,
 };

@@ -12,7 +12,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { CAP_BACK_EULER, CAP_RESISTANCE } from '../flags';
-import { readParams, twoPosts, writeParams } from '../shared';
+import { boxOfPoints, readParams, twoPosts, writeParams } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Plate gap: the leads stop 4 units short of the centre each side, upstream's
@@ -142,5 +142,11 @@ export const CAPACITOR_DEF: ElementDef = {
     // the flag is the same control with the label the right way up.
     { name: 'backEuler', label: 'Backward Euler', type: 'bool', flag: CAP_BACK_EULER },
   ],
+  // The whole plate pair is a solid pick zone, not just the thin axis band:
+  // a click between the plates on the disc area grabs the capacitor.
+  bodyRect: (e) => {
+    const { plate1, plate2 } = capacitorPlateGeometry(e);
+    return boxOfPoints([plate1[0], plate1[1], plate2[0], plate2[1]]);
+  },
   draw: drawCapacitorBody,
 };

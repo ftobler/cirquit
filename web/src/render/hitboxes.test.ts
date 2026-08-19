@@ -80,14 +80,25 @@ describe('drawHitboxes', () => {
     );
   });
 
-  it('draws a switch lever ungrown, because its test is plain containment', () => {
-    const { ctx, rects } = recordingCtx();
+  it('draws a switch lever rounded and grown like every solid pick zone', () => {
+    const { ctx, arcs } = recordingCtx();
     const e = element('switch', 0, 0, 64, 0);
     const lever = defFor('switch')!.switchRect!(e);
     drawHitboxes(ctx, [e], 8, 1);
-    expect(rects).toEqual([
-      { x: lever.x, y: lever.y, w: lever.w, h: lever.h, color: HITBOX_COLORS.switch },
-    ]);
+    // The lever is now drawn with the same reach-grown rounded level set as
+    // the body zones: four quarter-circle corners at the reach, one per box
+    // corner, in the switch hue. No sharp rect.
+    const corners = arcs.filter((a) => a.color === HITBOX_COLORS.switch);
+    expect(corners).toHaveLength(4);
+    expect(corners.every((a) => a.r === 8)).toBe(true);
+    expect(new Set(corners.map((a) => `${a.x},${a.y}`))).toEqual(
+      new Set([
+        `${lever.x},${lever.y}`,
+        `${lever.x + lever.w},${lever.y}`,
+        `${lever.x},${lever.y + lever.h}`,
+        `${lever.x + lever.w},${lever.y + lever.h}`,
+      ]),
+    );
   });
 
   it('draws one band per routed wire segment and no terminal circles', () => {
