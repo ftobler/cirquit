@@ -7,7 +7,12 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 import type { SimEngine } from '../engine/simulator';
 import { DOC_PAGES } from '../docs/pages';
 import { openCircuit } from '../io/fileIO';
-import { filterLibrary, loadLibraryCircuit, loadLibraryIndex, type LibraryGroup } from '../io/library';
+import {
+  filterLibrary,
+  loadLibraryCircuit,
+  loadLibraryIndex,
+  type LibraryGroup,
+} from '../io/library';
 import { parseCircuit } from '../io/netlist';
 import { canMirror, canRotate } from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
@@ -21,7 +26,15 @@ interface Props {
   engine: SimEngine | null;
 }
 
-function MenuItem({ label, shortcut, disabled, disabledTitle, title, onClick, deferred }: MenuItemDef) {
+function MenuItem({
+  label,
+  shortcut,
+  disabled,
+  disabledTitle,
+  title,
+  onClick,
+  deferred,
+}: MenuItemDef) {
   return (
     <button
       type="button"
@@ -41,7 +54,15 @@ function MenuItem({ label, shortcut, disabled, disabledTitle, title, onClick, de
  *  renders in the fixed 24 px leading slot (`.menu-check`), the MD3
  *  menu-with-selection-control pattern, so the icon column lines up across
  *  the whole menu. */
-function CheckItem({ label, checked, onClick }: { label: string; checked: boolean; onClick: () => void }) {
+function CheckItem({
+  label,
+  checked,
+  onClick,
+}: {
+  label: string;
+  checked: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -180,11 +201,17 @@ export function Menubar({ engine }: Props) {
   const setPanelOpen = useStore((s) => s.setPanelOpen);
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  // The mobile burger panel. On desktop the menu group is a plain run of
+  // menubar items (`display: contents`) and this flag never matters; the
+  // narrow layout turns the group into a panel the burger opens.
+  const [burgerOpen, setBurgerOpen] = useState(false);
   const [library, setLibrary] = useState<LibraryGroup[] | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
   const [libraryQuery, setLibraryQuery] = useState('');
   const [fullscreen, setFullscreen] = useState(() => document.fullscreenElement !== null);
+  const burgerRef = useRef<HTMLDivElement>(null);
+  const burgerButtonRef = useRef<HTMLButtonElement>(null);
 
   // The Full Screen row labels itself from the browser state both ways.
   useEffect(() => {
@@ -192,6 +219,29 @@ export function Menubar({ engine }: Props) {
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
+
+  // The burger panel dismisses like a dropdown: a pointerdown outside it and
+  // its trigger, or Escape. The dropdowns inside keep their own handlers, so a
+  // tap on the panel's background closes only the open submenu.
+  useEffect(() => {
+    if (!burgerOpen) return;
+    const outside = (target: EventTarget | null) =>
+      target instanceof Node &&
+      !burgerRef.current?.contains(target) &&
+      !burgerButtonRef.current?.contains(target);
+    const onPointerDown = (ev: PointerEvent) => {
+      if (outside(ev.target)) setBurgerOpen(false);
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') setBurgerOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [burgerOpen]);
 
   useEffect(() => {
     if (!libraryOpen || library) return;
@@ -201,7 +251,10 @@ export function Menubar({ engine }: Props) {
   }, [libraryOpen, library]);
 
   const toggleMenu = (name: string) => setOpenMenu((m) => (m === name ? null : name));
-  const closeMenus = () => setOpenMenu(null);
+  const closeMenus = () => {
+    setOpenMenu(null);
+    setBurgerOpen(false);
+  };
 
   // A command runs once per click: close every dropdown, then the action.
   const fire = (action: () => void) => () => {
@@ -215,6 +268,7 @@ export function Menubar({ engine }: Props) {
       setStatus(title);
       setLibraryOpen(false);
       setLibraryQuery('');
+      setBurgerOpen(false);
     } catch (e) {
       setLibraryError(e instanceof Error ? e.message : String(e));
     }
@@ -305,7 +359,11 @@ export function Menubar({ engine }: Props) {
   const fileItems: MenuItemDef[] = [
     // Upstream's New Window opens a fresh window over the running app
     // (Menus.java:105); the port is a single-window static site.
-    deferred('New Window…', 'The port is a single-window static site; there is no multi-window support', 'Ctrl+N'),
+    deferred(
+      'New Window…',
+      'The port is a single-window static site; there is no multi-window support',
+      'Ctrl+N',
+    ),
     { label: 'New Blank Circuit', onClick: fire(newCircuit) },
     {
       label: 'Open File…',
@@ -340,11 +398,18 @@ export function Menubar({ engine }: Props) {
         }
       }),
     },
-    deferred('Find DC Operating Point', 'The DC operating point runs on reset; the one-shot command is not ported'),
+    deferred(
+      'Find DC Operating Point',
+      'The DC operating point runs on reset; the one-shot command is not ported',
+    ),
     // Enabled only while a recovery exists (UIManager.java:170); the flag is
     // set once at store init and cleared by the recover, so the row stays
     // disabled for the session even though autosave keeps writing.
-    { label: 'Recover Auto-Save', disabled: !hasRecovery, onClick: fire(() => useStore.getState().recoverAutoSave()) },
+    {
+      label: 'Recover Auto-Save',
+      disabled: !hasRecovery,
+      onClick: fire(() => useStore.getState().recoverAutoSave()),
+    },
     { label: 'Print…', shortcut: 'Ctrl+P', onClick: fire(doPrint) },
     {
       label: 'Toggle Full Screen',
@@ -359,31 +424,87 @@ export function Menubar({ engine }: Props) {
   const editItems: MenuItemDef[] = [
     { label: 'Undo', shortcut: 'Ctrl+Z', disabled: !editable, onClick: fire(undo) },
     { label: 'Redo', shortcut: 'Ctrl+Y', disabled: !editable, onClick: fire(redo) },
-    { label: 'Cut', shortcut: 'Ctrl+X', disabled: !editable || !hasSelection, onClick: fire(() => useStore.getState().cutSelection()) },
-    { label: 'Copy', shortcut: 'Ctrl+C', disabled: !editable || !hasSelection, onClick: fire(() => useStore.getState().copySelection()) },
-    { label: 'Paste', shortcut: 'Ctrl+V', disabled: !editable || !canPaste, onClick: fire(() => useStore.getState().pasteFromClipboard()) },
-    { label: 'Duplicate', shortcut: 'Ctrl+D', disabled: !editable || !hasSelection, onClick: fire(() => useStore.getState().duplicateSelection()) },
-    { label: 'Select All', shortcut: 'Ctrl+A', disabled: !editable || elements.length === 0, onClick: fire(() => useStore.getState().selectAll()) },
+    {
+      label: 'Cut',
+      shortcut: 'Ctrl+X',
+      disabled: !editable || !hasSelection,
+      onClick: fire(() => useStore.getState().cutSelection()),
+    },
+    {
+      label: 'Copy',
+      shortcut: 'Ctrl+C',
+      disabled: !editable || !hasSelection,
+      onClick: fire(() => useStore.getState().copySelection()),
+    },
+    {
+      label: 'Paste',
+      shortcut: 'Ctrl+V',
+      disabled: !editable || !canPaste,
+      onClick: fire(() => useStore.getState().pasteFromClipboard()),
+    },
+    {
+      label: 'Duplicate',
+      shortcut: 'Ctrl+D',
+      disabled: !editable || !hasSelection,
+      onClick: fire(() => useStore.getState().duplicateSelection()),
+    },
+    {
+      label: 'Select All',
+      shortcut: 'Ctrl+A',
+      disabled: !editable || elements.length === 0,
+      onClick: fire(() => useStore.getState().selectAll()),
+    },
     // An edit command like the rest of the Edit menu, so the read-only gate
     // applies (CommandManager.java:22-24); the '/' key stays live because
     // upstream's "key" menu path bypasses the gate (menuPerformed "key").
-    { label: 'Find Component…', shortcut: '/', disabled: !editable, onClick: fire(() => openDialog('findComponent')) },
+    {
+      label: 'Find Component…',
+      shortcut: '/',
+      disabled: !editable,
+      onClick: fire(() => openDialog('findComponent')),
+    },
     // View commands, so they work with editing disabled like the zoom keys do.
     { label: 'Center Circuit', onClick: fire(centerCircuit) },
     { label: 'Zoom 100%', shortcut: '0', onClick: fire(zoomReset) },
     { label: 'Zoom In', shortcut: '+', onClick: fire(zoomIn) },
     { label: 'Zoom Out', shortcut: '-', onClick: fire(zoomOut) },
-    { label: 'Rotate', shortcut: 'Alt+R', disabled: !editable || !canRotateSelection, onClick: fire(() => useStore.getState().rotateSelection()) },
-    { label: 'Mirror', shortcut: 'Alt+M', disabled: !editable || !canMirrorSelection, onClick: fire(() => useStore.getState().mirrorSelection()) },
+    {
+      label: 'Rotate',
+      shortcut: 'Alt+R',
+      disabled: !editable || !canRotateSelection,
+      onClick: fire(() => useStore.getState().rotateSelection()),
+    },
+    {
+      label: 'Mirror',
+      shortcut: 'Alt+M',
+      disabled: !editable || !canMirrorSelection,
+      onClick: fire(() => useStore.getState().mirrorSelection()),
+    },
   ];
 
   const scopesItems: MenuItemDef[] = [
     // Upstream's read-only guard blocks the scopes menu too
     // (CommandManager.java:22-24), so stacking is off while editing is.
-    { label: 'Stack All', disabled: !editable, onClick: fire(() => useStore.getState().stackAllScopes()) },
-    { label: 'Unstack All', disabled: !editable, onClick: fire(() => useStore.getState().unstackAllScopes()) },
-    { label: 'Combine All', disabled: !editable, onClick: fire(() => useStore.getState().combineAllScopes()) },
-    { label: 'Separate All', disabled: !editable, onClick: fire(() => useStore.getState().separateAllScopes()) },
+    {
+      label: 'Stack All',
+      disabled: !editable,
+      onClick: fire(() => useStore.getState().stackAllScopes()),
+    },
+    {
+      label: 'Unstack All',
+      disabled: !editable,
+      onClick: fire(() => useStore.getState().unstackAllScopes()),
+    },
+    {
+      label: 'Combine All',
+      disabled: !editable,
+      onClick: fire(() => useStore.getState().combineAllScopes()),
+    },
+    {
+      label: 'Separate All',
+      disabled: !editable,
+      onClick: fire(() => useStore.getState().separateAllScopes()),
+    },
   ];
 
   const toolsItems: MenuItemDef[] = [
@@ -455,7 +576,7 @@ export function Menubar({ engine }: Props) {
       <div className="edit-group">
         <button
           type="button"
-          className="menubar-btn"
+          className="menubar-btn icon-btn"
           disabled={!editable || !canUndo}
           onClick={fire(undo)}
           title="Undo"
@@ -467,7 +588,7 @@ export function Menubar({ engine }: Props) {
         </button>
         <button
           type="button"
-          className="menubar-btn"
+          className="menubar-btn icon-btn"
           disabled={!editable || !canRedo}
           onClick={fire(redo)}
           title="Redo"
@@ -480,150 +601,215 @@ export function Menubar({ engine }: Props) {
       </div>
       <span className="sep" />
 
-      <Dropdown
-        label="File"
-        menu
-        open={openMenu === 'file'}
-        onToggle={() => toggleMenu('file')}
-        onOpen={() => setOpenMenu('file')}
-        onClose={closeMenus}
+      {/* The narrow layout folds the seven menus behind this trigger; on
+          desktop it is hidden and the group renders inline. */}
+      <button
+        ref={burgerButtonRef}
+        type="button"
+        className={
+          burgerOpen ? 'menubar-btn icon-btn burger active' : 'menubar-btn icon-btn burger'
+        }
+        aria-haspopup="true"
+        aria-expanded={burgerOpen}
+        aria-controls="menubar-menus"
+        aria-label="Menus"
+        title="Menus"
+        onClick={() => {
+          setOpenMenu(null);
+          setBurgerOpen((v) => !v);
+        }}
       >
-        {menu(fileItems)}
-      </Dropdown>
+        <span className="material-icons" aria-hidden="true">
+          menu
+        </span>
+      </button>
 
-      <Dropdown
-        label="Edit"
-        menu
-        open={openMenu === 'edit'}
-        onToggle={() => toggleMenu('edit')}
-        onOpen={() => setOpenMenu('edit')}
-        onClose={closeMenus}
+      <div
+        ref={burgerRef}
+        id="menubar-menus"
+        className={burgerOpen ? 'menu-group open' : 'menu-group'}
       >
-        {menu(editItems)}
-      </Dropdown>
+        <Dropdown
+          label="File"
+          menu
+          open={openMenu === 'file'}
+          onToggle={() => toggleMenu('file')}
+          onOpen={() => setOpenMenu('file')}
+          onClose={closeMenus}
+        >
+          {menu(fileItems)}
+        </Dropdown>
 
-      <Dropdown
-        label="Scopes"
-        menu
-        open={openMenu === 'scopes'}
-        onToggle={() => toggleMenu('scopes')}
-        onOpen={() => setOpenMenu('scopes')}
-        onClose={closeMenus}
-      >
-        {menu(scopesItems)}
-      </Dropdown>
+        <Dropdown
+          label="Edit"
+          menu
+          open={openMenu === 'edit'}
+          onToggle={() => toggleMenu('edit')}
+          onOpen={() => setOpenMenu('edit')}
+          onClose={closeMenus}
+        >
+          {menu(editItems)}
+        </Dropdown>
 
-      <Dropdown
-        label="Options"
-        menu
-        open={openMenu === 'options'}
-        onToggle={() => toggleMenu('options')}
-        onOpen={() => setOpenMenu('options')}
-        onClose={closeMenus}
-      >
-        <CheckItem label="White Background" checked={!dark} onClick={fire(() => setDark(!dark))} />
-        <CheckItem label="European Resistors" checked={euroResistors} onClick={fire(() => updateSettings({ euroResistors: !euroResistors }))} />
-        <CheckItem label="IEC Gates" checked={euroGates} onClick={fire(() => updateSettings({ euroGates: !euroGates }))} />
-        <CheckItem label="Conventional Current Motion" checked={conventional} onClick={fire(() => updateSettings({ conventional: !conventional }))} />
-        <CheckItem label="Disable Editing" checked={!editable} onClick={fire(() => updateSettings({ editable: !editable }))} />
-        {menu([
-          // Upstream's display toggles the port does not implement, all real
-          // checkboxes in Menus.java: Small Grid and Toolbar above the other
-          // display rows, Edit Values With Mouse Wheel below Disable Editing
-          // (Menus.java:207-234). The port omits the four Show rows (they live
-          // in Other Options), so the three unported toggles read together.
-          deferred('Small Grid', 'The grid spacing is fixed; the small-grid toggle is not ported'),
-          deferred('Toolbar', 'The port has no toggleable toolbar; the parts panel is always visible'),
-          deferred('Edit Values With Mouse Wheel', 'The wheel value stepper is always on; there is no toggle'),
-        ])}
-        <div className="menu-sep" role="separator" />
-        {/* A diagnostic with no upstream counterpart, in its own group so it
+        <Dropdown
+          label="Scopes"
+          menu
+          open={openMenu === 'scopes'}
+          onToggle={() => toggleMenu('scopes')}
+          onOpen={() => setOpenMenu('scopes')}
+          onClose={closeMenus}
+        >
+          {menu(scopesItems)}
+        </Dropdown>
+
+        <Dropdown
+          label="Options"
+          menu
+          open={openMenu === 'options'}
+          onToggle={() => toggleMenu('options')}
+          onOpen={() => setOpenMenu('options')}
+          onClose={closeMenus}
+        >
+          <CheckItem
+            label="White Background"
+            checked={!dark}
+            onClick={fire(() => setDark(!dark))}
+          />
+          <CheckItem
+            label="European Resistors"
+            checked={euroResistors}
+            onClick={fire(() => updateSettings({ euroResistors: !euroResistors }))}
+          />
+          <CheckItem
+            label="IEC Gates"
+            checked={euroGates}
+            onClick={fire(() => updateSettings({ euroGates: !euroGates }))}
+          />
+          <CheckItem
+            label="Conventional Current Motion"
+            checked={conventional}
+            onClick={fire(() => updateSettings({ conventional: !conventional }))}
+          />
+          <CheckItem
+            label="Disable Editing"
+            checked={!editable}
+            onClick={fire(() => updateSettings({ editable: !editable }))}
+          />
+          {menu([
+            // Upstream's display toggles the port does not implement, all real
+            // checkboxes in Menus.java: Small Grid and Toolbar above the other
+            // display rows, Edit Values With Mouse Wheel below Disable Editing
+            // (Menus.java:207-234). The port omits the four Show rows (they live
+            // in Other Options), so the three unported toggles read together.
+            deferred(
+              'Small Grid',
+              'The grid spacing is fixed; the small-grid toggle is not ported',
+            ),
+            deferred(
+              'Toolbar',
+              'The port has no toggleable toolbar; the parts panel is always visible',
+            ),
+            deferred(
+              'Edit Values With Mouse Wheel',
+              'The wheel value stepper is always on; there is no toggle',
+            ),
+          ])}
+          <div className="menu-sep" role="separator" />
+          {/* A diagnostic with no upstream counterpart, in its own group so it
             does not read as one of the drawing options: it paints the regions
             the pointer picker measures against over the schematic. Draw-only,
             and off by default. */}
-        <CheckItem
-          label="Show Hitboxes"
-          checked={showHitboxes}
-          onClick={fire(() => updateSettings({ showHitboxes: !showHitboxes }))}
-        />
-        <div className="menu-sep" role="separator" />
-        {menu([
-          { label: 'Shortcuts…', onClick: fire(() => openDialog('shortcuts')) },
-          { label: 'Other Options…', onClick: fire(() => openDialog('otherOptions')) },
-          // Electron-only upstream (Menus.java:238-239); the port is a web app.
-          deferred('Toggle Dev Tools', 'The port is a web app, not Electron; there is no dev tools toggle'),
-        ])}
-      </Dropdown>
+          <CheckItem
+            label="Show Hitboxes"
+            checked={showHitboxes}
+            onClick={fire(() => updateSettings({ showHitboxes: !showHitboxes }))}
+          />
+          <div className="menu-sep" role="separator" />
+          {menu([
+            { label: 'Shortcuts…', onClick: fire(() => openDialog('shortcuts')) },
+            { label: 'Other Options…', onClick: fire(() => openDialog('otherOptions')) },
+            // Electron-only upstream (Menus.java:238-239); the port is a web app.
+            deferred(
+              'Toggle Dev Tools',
+              'The port is a web app, not Electron; there is no dev tools toggle',
+            ),
+          ])}
+        </Dropdown>
 
-      <Dropdown
-        label="Tools"
-        menu
-        open={openMenu === 'tools'}
-        onToggle={() => toggleMenu('tools')}
-        onOpen={() => setOpenMenu('tools')}
-        onClose={closeMenus}
-      >
-        {menu(toolsItems)}
-      </Dropdown>
+        <Dropdown
+          label="Tools"
+          menu
+          open={openMenu === 'tools'}
+          onToggle={() => toggleMenu('tools')}
+          onOpen={() => setOpenMenu('tools')}
+          onClose={closeMenus}
+        >
+          {menu(toolsItems)}
+        </Dropdown>
 
-      <Dropdown
-        label="Help"
-        menu
-        open={openMenu === 'help'}
-        onToggle={() => toggleMenu('help')}
-        onOpen={() => setOpenMenu('help')}
-        onClose={closeMenus}
-      >
-        {menu(helpItems)}
-      </Dropdown>
+        <Dropdown
+          label="Help"
+          menu
+          open={openMenu === 'help'}
+          onToggle={() => toggleMenu('help')}
+          onOpen={() => setOpenMenu('help')}
+          onClose={closeMenus}
+        >
+          {menu(helpItems)}
+        </Dropdown>
 
-      <Dropdown
-        label="Circuits"
-        open={libraryOpen}
-        onToggle={() => setLibraryOpen((v) => !v)}
-        onClose={() => {
-          setLibraryOpen(false);
-          setLibraryQuery('');
-        }}
-      >
-        {libraryError && <p className="problem">{libraryError}</p>}
-        {!library && !libraryError && <p className="hint">Loading…</p>}
-        {library && (
-          <>
-            <input
-              type="text"
-              className="library-search"
-              aria-label="Search circuits"
-              placeholder="Search circuits…"
-              value={libraryQuery}
-              onChange={(e) => setLibraryQuery(e.target.value)}
-              autoFocus
-            />
-            {(() => {
-              const filtered = filterLibrary(library, libraryQuery);
-              const searching = libraryQuery.trim() !== '';
-              if (searching && filtered.length === 0) {
-                return <p className="hint">No circuits match “{libraryQuery.trim()}”</p>;
-              }
-              return filtered.map((group) => (
-                <details key={group.title} open={searching}>
-                  <summary>{group.title}</summary>
-                  {group.entries.map((entry) => (
-                    <button
-                      key={entry.file}
-                      type="button"
-                      className="menu-item"
-                      onClick={() => void openLibraryCircuit(entry.file, entry.title)}
-                    >
-                      {entry.title}
-                    </button>
-                  ))}
-                </details>
-              ));
-            })()}
-          </>
-        )}
-      </Dropdown>
+        <Dropdown
+          label="Circuits"
+          open={libraryOpen}
+          onToggle={() => setLibraryOpen((v) => !v)}
+          onClose={() => {
+            setLibraryOpen(false);
+            setLibraryQuery('');
+          }}
+        >
+          {libraryError && <p className="problem">{libraryError}</p>}
+          {!library && !libraryError && <p className="hint">Loading…</p>}
+          {library && (
+            <>
+              <input
+                type="text"
+                className="library-search"
+                aria-label="Search circuits"
+                placeholder="Search circuits…"
+                value={libraryQuery}
+                onChange={(e) => setLibraryQuery(e.target.value)}
+                autoFocus
+              />
+              {(() => {
+                const filtered = filterLibrary(library, libraryQuery);
+                const searching = libraryQuery.trim() !== '';
+                if (searching && filtered.length === 0) {
+                  return <p className="hint">No circuits match “{libraryQuery.trim()}”</p>;
+                }
+                return filtered.map((group) => (
+                  <details key={group.title} open={searching}>
+                    <summary>{group.title}</summary>
+                    {group.entries.map((entry) => (
+                      <button
+                        key={entry.file}
+                        type="button"
+                        className="menu-item"
+                        onClick={() => void openLibraryCircuit(entry.file, entry.title)}
+                      >
+                        {entry.title}
+                      </button>
+                    ))}
+                  </details>
+                ));
+              })()}
+            </>
+          )}
+        </Dropdown>
+      </div>
+
+      {/* A zero-height flex item that forces a wrap: on mobile the drawer
+          toggles and the run controls start a second row. Inert on desktop. */}
+      <span className="row-break" aria-hidden="true" />
 
       <div className="drawer-buttons">
         <button
@@ -654,7 +840,7 @@ export function Menubar({ engine }: Props) {
       <div className="run-group">
         <button
           type="button"
-          className={running ? 'primary running' : 'primary'}
+          className={running ? 'primary running icon-btn' : 'primary icon-btn'}
           onClick={toggleRunning}
           title="Run/Pause"
           aria-label={running ? 'Pause' : 'Run'}
@@ -665,7 +851,7 @@ export function Menubar({ engine }: Props) {
         </button>
         <button
           type="button"
-          className="menubar-btn"
+          className="menubar-btn icon-btn"
           onClick={() => {
             // engine.reset() rewinds runtime state in place — fuse heat/blown,
             // capacitor charge, inductor current, lamp temperature — matching

@@ -235,13 +235,12 @@ body {
   margin-left: auto;
 }
 
-/* The icon-only controls -- undo/redo and run/pause plus reset -- are square.
-   They carry a 20 px glyph and no label, so their box comes from the shared
-   size token instead of the text padding every other button uses, which would
-   otherwise leave them wider than tall at one height tier and narrower at
+/* The icon-only controls -- undo/redo, the burger, run/pause and reset -- are
+   square. They carry a 20 px glyph and no label, so their box comes from the
+   shared size token instead of the text padding every other button uses, which
+   would otherwise leave them wider than tall at one height tier and narrower at
    another. */
-.menubar .edit-group button,
-.menubar .run-group button {
+.menubar .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -450,6 +449,23 @@ button.active,
 .tool.active {
   background: var(--md-secondary-container);
   color: var(--md-on-secondary-container);
+}
+
+/* The seven command menus. On a wide screen the wrapper is not a box at all:
+   `display: contents` drops it from the layout so each dropdown stays a
+   menubar flex item, exactly as if the wrapper were not there. The narrow
+   layout further down turns it into the panel the burger opens. */
+.menu-group {
+  display: contents;
+}
+
+/* Both exist only for the narrow layout: the burger that opens that panel, and
+   the zero-height item that forces the menubar's second row. The burger is
+   scoped to `.menubar` so it outweighs the icon-button rule above, which sets
+   a display of its own; unscoped it lost, and the burger showed on desktop. */
+.menubar .burger,
+.row-break {
+  display: none;
 }
 
 .dropdown {
@@ -1516,6 +1532,78 @@ input[type='range'] {
   .drawer-buttons {
     display: flex;
     gap: 6px;
+  }
+
+  /* Two rows, and only two. Row one is the brand, undo/redo and the burger;
+     the break then sends the drawer toggles and the run controls to row two,
+     where the run group's auto margin still pins it to the right edge. Seven
+     menu triggers wrapping freely used to eat a third of a phone screen. */
+  .row-break {
+    display: block;
+    flex-basis: 100%;
+    height: 0;
+  }
+
+  .menubar .burger {
+    display: inline-flex;
+  }
+
+  /* No room for prose on a phone, and the same text is already reachable in
+     the problem banner and the drawers. */
+  .menubar .status,
+  .menubar .sep {
+    display: none;
+  }
+
+  /* The menu group becomes the burger's panel: a dropdown-shaped surface
+     anchored under the bar, closed until the trigger opens it. */
+  .menu-group {
+    display: none;
+  }
+
+  .menu-group.open {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    position: absolute;
+    top: 100%;
+    left: 6px;
+    width: 280px;
+    max-width: calc(100vw - 12px);
+    max-height: 70vh;
+    overflow-y: auto;
+    z-index: 38;
+    background: #1e1e1e;
+    border-radius: var(--md-shape-md);
+    padding: 6px;
+    box-shadow: var(--md-elevation-2);
+  }
+
+  /* Inside the panel the triggers are full-width rows, so the panel reads as
+     one list rather than a wrapped strip of chips. */
+  .menu-group.open .dropdown > button {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    text-align: left;
+  }
+
+  /* An open menu expands in place instead of floating over its own panel:
+     nesting one popup inside another leaves no way back on a touch screen.
+     The rows keep the panel's background, so their hover and press layers,
+     which are mixed over #1e1e1e, still land right. */
+  .menu-group.open .dropdown-menu {
+    position: static;
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    padding: 2px 0 2px 8px;
+    margin-left: 8px;
+    border-left: 1px solid var(--md-outline-variant);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   /* The scrim covers the viewport, so the menubar must stay above it or the
