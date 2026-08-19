@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { matchShortcut } from '../input/shortcuts';
 import { DEFAULT_SETTINGS, GRID_SIZE, type SimSettings } from '../model/types';
 import { postsOf } from '../model/registry';
+import { hitTestElement } from '../render/geometry';
 import { scopePlotsToSpecs } from '../engine/simulator';
 import { parseCircuit, serializeCircuit } from '../io/netlist';
 import { SAMPLE } from '../io/netlist/fixtures';
@@ -974,6 +975,9 @@ describe('updateSettings reload classification', () => {
     // must not restart the simulation.
     ['euroGates', false, false],
     ['showCrosshair', true, false],
+    // The hitbox overlay is a draw-only diagnostic; switching it on must not
+    // restart the simulation any more than the crosshair does.
+    ['showHitboxes', true, false],
     ['valueFontSize', 14, false],
     ['shortDecimalDigits', 2, false],
     ['decimalDigits', 4, false],
@@ -1053,6 +1057,49 @@ describe('euroGates persistence', () => {
     // A default store keeps the IEC gate shapes (the port deliberately
     // diverges from GateElm.useEuroGates).
     expect(DEFAULT_SETTINGS.euroGates).toBe(true);
+  });
+});
+
+describe('showHitboxes debug toggle', () => {
+  it('defaults off, toggles through updateSettings and persists', () => {
+    const map = new Map<string, string>();
+    (globalThis as { localStorage?: StorageLike }).localStorage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    };
+    try {
+      // The overlay is a diagnostic, so a fresh store must never show it.
+      expect(DEFAULT_SETTINGS.showHitboxes).toBe(false);
+      expect(useStore.getState().settings.showHitboxes).toBe(false);
+
+      useStore.getState().updateSettings({ showHitboxes: true });
+      expect(useStore.getState().settings.showHitboxes).toBe(true);
+      const blob = JSON.parse(map.get(APP_PREF_STORAGE_KEY) ?? '{}') as Record<string, unknown>;
+      expect(blob.showHitboxes).toBe(true);
+      expect({ ...DEFAULT_SETTINGS, ...loadAppPrefs() }).toMatchObject({ showHitboxes: true });
+
+      useStore.getState().updateSettings({ showHitboxes: false });
+      expect(useStore.getState().settings.showHitboxes).toBe(false);
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+  });
+
+  it('is draw-only: the toggle changes nothing the netlist or a pick can see', () => {
+    const id = useStore.getState().addElement(makeElement('resistor', 0, 0, 64, 0));
+    useStore.getState().select([id]);
+    const before = serializeCircuit(useStore.getState().elements, useStore.getState().settings);
+    const revision = useStore.getState().revision;
+
+    useStore.getState().updateSettings({ showHitboxes: true });
+
+    const after = serializeCircuit(useStore.getState().elements, useStore.getState().settings);
+    expect(after).toBe(before);
+    expect(useStore.getState().revision).toBe(revision);
+    expect(useStore.getState().selectedIds).toEqual([id]);
+    // The picker reads the elements, never the setting, so the same click
+    // still lands on the same element with the overlay on.
+    expect(hitTestElement({ x: 32, y: 0 }, useStore.getState().elements, 1)?.id).toBe(id);
   });
 });
 

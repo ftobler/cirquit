@@ -47,6 +47,7 @@ describe('app prefs', () => {
     const back = loadAppPrefs(storage);
     expect(back).toEqual({
       showCrosshair: false,
+      showHitboxes: false,
       euroResistors: true,
       euroGates: true,
       positiveColor: '#123456',
@@ -79,6 +80,17 @@ describe('app prefs', () => {
     // A wrong-typed stored value is dropped like any other invalid pref.
     storage.setItem(APP_PREF_STORAGE_KEY, JSON.stringify({ euroGates: 1 }));
     expect(loadAppPrefs(storage).euroGates).toBeUndefined();
+  });
+
+  it('round-trips the hitbox debug overlay toggle as a boolean, defaulting off', () => {
+    const { storage } = fakeStorage();
+    expect(DEFAULT_SETTINGS.showHitboxes).toBe(false);
+    saveAppPrefs({ ...DEFAULT_SETTINGS, showHitboxes: true }, storage);
+    expect(loadAppPrefs(storage).showHitboxes).toBe(true);
+    // A wrong-typed stored value is dropped like any other invalid pref, so a
+    // stale blob can never turn the overlay on by accident.
+    storage.setItem(APP_PREF_STORAGE_KEY, JSON.stringify({ showHitboxes: 'on' }));
+    expect(loadAppPrefs(storage).showHitboxes).toBeUndefined();
   });
 
   it('a corrupt blob is a fallback, not a crash', () => {

@@ -169,6 +169,7 @@ export function Menubar({ engine }: Props) {
   const conventional = useStore((s) => s.settings.conventional);
   const euroResistors = useStore((s) => s.settings.euroResistors);
   const euroGates = useStore((s) => s.settings.euroGates);
+  const showHitboxes = useStore((s) => s.settings.showHitboxes);
   const elements = useStore((s) => s.elements);
   const selectedIds = useStore((s) => s.selectedIds);
   const clipboard = useStore((s) => s.clipboard);
@@ -535,6 +536,16 @@ export function Menubar({ engine }: Props) {
           deferred('Toolbar', 'The port has no toggleable toolbar; the parts panel is always visible'),
           deferred('Edit Values With Mouse Wheel', 'The wheel value stepper is always on; there is no toggle'),
         ])}
+        <div className="menu-sep" role="separator" />
+        {/* A diagnostic with no upstream counterpart, in its own group so it
+            does not read as one of the drawing options: it paints the regions
+            the pointer picker measures against over the schematic. Draw-only,
+            and off by default. */}
+        <CheckItem
+          label="Show Hitboxes"
+          checked={showHitboxes}
+          onClick={fire(() => updateSettings({ showHitboxes: !showHitboxes }))}
+        />
         <div className="menu-sep" role="separator" />
         {menu([
           { label: 'Shortcuts…', onClick: fire(() => openDialog('shortcuts')) },
