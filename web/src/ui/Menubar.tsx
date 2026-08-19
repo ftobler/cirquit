@@ -359,13 +359,10 @@ export function Menubar({ engine }: Props) {
   // (menuRows.ts), so nothing half-working is ever bound.
 
   const fileItems: MenuItemDef[] = [
-    // Upstream's New Window opens a fresh window over the running app
-    // (Menus.java:105); the port is a single-window static site.
-    deferred(
-      'New Window…',
-      'The port is a single-window static site; there is no multi-window support',
-      'Ctrl+N',
-    ),
+    // New Window is deliberately absent: upstream opens a fresh Electron
+    // window over the running app (CommandManager.java:35-37), which a
+    // single-window static site cannot do, so it is omitted rather than shown
+    // disabled.
     { label: 'New Blank Circuit', onClick: fire(newCircuit) },
     {
       label: 'Open File…',

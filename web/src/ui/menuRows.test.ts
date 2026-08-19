@@ -6,7 +6,6 @@ import { deferred, type MenuItemDef } from './menuRows';
 // audit honest: a row that gets ported must be removed from Menubar.tsx and
 // from here together.
 const UNPORTED_ROWS: readonly [label: string, reason: string][] = [
-  ['New Window…', 'The port is a single-window static site; there is no multi-window support'],
   ['Find DC Operating Point', 'The DC operating point runs on reset; the one-shot command is not ported'],
   ['Toolbar', 'The port has no toggleable toolbar; the parts panel is always visible'],
   ['Edit Values With Mouse Wheel', 'The wheel value stepper is always on; there is no toggle'],
@@ -23,7 +22,7 @@ describe('deferred', () => {
   });
 
   it('every unported row is deferred with a non-empty reason', () => {
-    expect(UNPORTED_ROWS.length).toBe(5);
+    expect(UNPORTED_ROWS.length).toBe(4);
     for (const [label, reason] of UNPORTED_ROWS) {
       const row = deferred(label, reason);
       expect(row.deferred).toBe(true);
