@@ -4,10 +4,12 @@ import { SWITCH_IEC } from '../../model/registry/flags';
 import { rectContains } from '../../model/registry/shared';
 import { GRID_SIZE } from '../../model/types';
 import type { CircuitElement } from '../../model/types';
+import { HIT_TOLERANCE_PX } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
 import { snap, useStore } from '../../state/store';
 import { fresh } from '../../state/store.test-helpers';
 import {
+  armedHandle,
   beginPointerGesture,
   finishPlacement,
   finishPostDrag,
@@ -378,6 +380,102 @@ describe('pointer-down on a switch while paused', () => {
     const r = refs();
     beginPointerGesture(down({ ctrlKey: true }), { x: 100, y: -5 }, useStore.getState(), hit(id), false, r);
     expect(r.dragRef.current?.mode).toBe('dragpost');
+  });
+});
+
+describe('endpoint handle auto-grab', () => {
+  // The default test view sits at scale 1, so the screen-pixel grab radius is
+  // HIT_TOLERANCE_PX circuit units, and the test element spans (0,0)-(160,0).
+  const reach = HIT_TOLERANCE_PX;
+
+  it('a press inside the grab radius of an endpoint arms the post drag', () => {
+    const id = addEl('resistor');
+    const r = refs();
+    beginPointerGesture(down(), { x: reach - 2, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(r.dragRef.current).toMatchObject({ mode: 'dragpost', id, post: 1 });
+    // The fixed end is the other one, the anchor drag-derived params measure from.
+    expect(r.dragRef.current).toMatchObject({ start: { x: 160, y: 0 } });
+  });
+
+  it('a press near the far endpoint arms that end', () => {
+    const id = addEl('resistor');
+    const r = refs();
+    beginPointerGesture(down(), { x: 160, y: reach - 2 }, useStore.getState(), hit(id), false, r);
+    expect(r.dragRef.current).toMatchObject({ mode: 'dragpost', id, post: 2, start: { x: 0, y: 0 } });
+  });
+
+  it('a press on the body away from the endpoints still moves the whole element', () => {
+    const id = addEl('resistor');
+    const r = refs();
+    beginPointerGesture(down(), { x: 80, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(r.dragRef.current).toEqual({ mode: 'move', last: { x: 80, y: 0 }, moved: false, gated: false });
+  });
+
+  it('the grab is inclusive right at the radius and gives way to a move just past it', () => {
+    const id = addEl('resistor');
+    const at = refs();
+    beginPointerGesture(down(), { x: reach, y: 0 }, useStore.getState(), hit(id), false, at);
+    expect(at.dragRef.current).toMatchObject({ mode: 'dragpost', post: 1 });
+    const past = refs();
+    beginPointerGesture(down(), { x: reach + 0.001, y: 0 }, useStore.getState(), hit(id), false, past);
+    expect(past.dragRef.current.mode).toBe('move');
+  });
+
+  it('the radius is a screen distance, so zooming in shrinks its reach in circuit units', () => {
+    const id = addEl('resistor');
+    const s = useStore.getState();
+    s.setView({ ...s.view, scale: 2 });
+    const r = refs();
+    // Half the circuit-space reach at twice the zoom: what was a grab at scale
+    // 1 is a body press now.
+    beginPointerGesture(down(), { x: reach - 2, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(r.dragRef.current.mode).toBe('move');
+    const near = refs();
+    beginPointerGesture(down(), { x: reach / 2, y: 0 }, useStore.getState(), hit(id), false, near);
+    expect(near.dragRef.current).toMatchObject({ mode: 'dragpost', post: 1 });
+  });
+
+  it('ctrl still forces the post drag from the middle of the body', () => {
+    const id = addEl('resistor');
+    const r = refs();
+    beginPointerGesture(down({ ctrlKey: true }), { x: 100, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(r.dragRef.current).toMatchObject({ mode: 'dragpost', id, post: 2 });
+  });
+
+  it('a press inside a multi-element selection drags the group, not one endpoint', () => {
+    const id = addEl('resistor');
+    const other = addEl('resistor', { y1: 64, y2: 64 });
+    useStore.getState().select([id, other]);
+    const r = refs();
+    beginPointerGesture(down(), { x: 0, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(r.dragRef.current.mode).toBe('move');
+    expect(useStore.getState().selectedIds).toEqual([id, other]);
+  });
+
+  it('a symbol too short to leave body between the grab zones is only ever moved whole', () => {
+    // Both zones would swallow a 12-unit symbol, so it could never be picked
+    // up; upstream's MINPOSTGRABSIZE guards the same case.
+    const id = addEl('resistor', { x2: 12, y2: 0 });
+    const r = refs();
+    beginPointerGesture(down(), { x: 0, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(r.dragRef.current.mode).toBe('move');
+  });
+
+  it('a part with a single draggable end never arms a handle', () => {
+    const id = addEl('labeledNode', { x2: 32, y2: 0 });
+    const r = refs();
+    beginPointerGesture(down(), { x: 0, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(r.dragRef.current.mode).toBe('move');
+  });
+
+  it('no handle is armed while a tool is armed or editing is off', () => {
+    const id = addEl('resistor');
+    useStore.getState().setTool('wire');
+    expect(armedHandle({ x: 0, y: 0 }, hit(id), useStore.getState())).toBeNull();
+    useStore.getState().setTool(null);
+    expect(armedHandle({ x: 0, y: 0 }, hit(id), useStore.getState())).toBe(1);
+    useStore.getState().updateSettings({ editable: false });
+    expect(armedHandle({ x: 0, y: 0 }, hit(id), useStore.getState())).toBeNull();
   });
 });
 

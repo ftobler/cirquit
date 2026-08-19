@@ -8,6 +8,8 @@ import {
   distanceToElement,
   distanceToHitRegion,
   distanceToSegment,
+  grabbedHandle,
+  handlePoints,
   hitRegions,
   hitTestElement,
   nearestPost,
@@ -543,6 +545,51 @@ describe('routed wires', () => {
     const nextId = () => next++;
     expect(splitWire(routed, { x: 0, y: 0 }, nextId)).toBeNull();
     expect(splitWire(routed, { x: 160, y: 0 }, nextId)).toBeNull();
+  });
+});
+
+describe('handlePoints and grabbedHandle', () => {
+  const e = element(0, 0, 160, 0);
+
+  it('a two-ended part offers both stored endpoints as handles', () => {
+    expect(handlePoints(e)).toEqual([
+      { x: 0, y: 0 },
+      { x: 160, y: 0 },
+    ]);
+    // A ground's free end carries no terminal and is still a handle, which is
+    // why the handle set is the stored endpoints and not `postsOf`.
+    expect(handlePoints({ ...element(0, 0, 32, 0), kind: 'ground' })).toHaveLength(2);
+    expect(handlePoints({ ...element(0, 0, 32, 32), kind: 'labeledNode' })).toEqual([]);
+  });
+
+  it('grabs the endpoint the pointer is within the pixel reach of', () => {
+    expect(grabbedHandle({ x: 3, y: 3 }, e, 1)).toBe(1);
+    expect(grabbedHandle({ x: 158, y: 2 }, e, 1)).toBe(2);
+    expect(grabbedHandle({ x: 80, y: 0 }, e, 1)).toBeNull();
+  });
+
+  it('is inclusive exactly at the radius', () => {
+    expect(grabbedHandle({ x: HIT_TOLERANCE_PX, y: 0 }, e, 1)).toBe(1);
+    expect(grabbedHandle({ x: HIT_TOLERANCE_PX + 0.001, y: 0 }, e, 1)).toBeNull();
+  });
+
+  it('keeps the reach a screen distance across the zoom range', () => {
+    // Zoomed in to 2 the same on-screen radius covers half the circuit units,
+    // zoomed out to 0.5 it covers twice as many.
+    expect(grabbedHandle({ x: HIT_TOLERANCE_PX / 2, y: 0 }, e, 2)).toBe(1);
+    expect(grabbedHandle({ x: HIT_TOLERANCE_PX / 2 + 0.001, y: 0 }, e, 2)).toBeNull();
+    expect(grabbedHandle({ x: HIT_TOLERANCE_PX * 2, y: 0 }, e, 0.5)).toBe(1);
+    expect(grabbedHandle({ x: 0, y: 0 }, e, 0)).toBeNull();
+  });
+
+  it('arms nothing on a symbol with no body left between the two grab zones', () => {
+    // Shorter than one grid, upstream's MINPOSTGRABSIZE floor.
+    expect(grabbedHandle({ x: 0, y: 0 }, element(0, 0, 12, 0), 1)).toBeNull();
+    // One grid long clears that floor, but at zoom 1 the two 8-unit zones
+    // still meet, so the whole symbol must stay movable.
+    expect(grabbedHandle({ x: 0, y: 0 }, element(0, 0, GRID_SIZE, 0), 1)).toBeNull();
+    // Zoomed in, the zones separate and the handles arm.
+    expect(grabbedHandle({ x: 0, y: 0 }, element(0, 0, GRID_SIZE, 0), 2)).toBe(1);
   });
 });
 

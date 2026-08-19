@@ -15,6 +15,7 @@ import { GRID_SIZE } from '../../model/types';
 import { mergeProblem, useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
+import { armedHandle } from './pointerDown';
 import { overlayLiveState, recordBuildOnSuccess, shouldInjectLiveState } from '../../io/liveState';
 import { drawInfoBox, infoBoxX, infoBoxY, infoLines, simStatsLines } from '../../render/infoBox';
 import { readElementReadout } from '../useLiveSimReadout';
@@ -550,52 +551,79 @@ export function useFrameLoop(
           // Control-point drag handles: a filled selection-colour rect at each of
           // the dragged element's stored endpoints, the grabbed one at 9x9, so the
           // moving control point keeps its highlight (CircuitElm.drawHandles,
-          // CircuitElm.java:747-761). Drawn after the elements, like upstream's
+          // CircuitElm.java:747-761), plus the single armed handle under a
+          // hovering pointer. Drawn after the elements, like upstream's
           // overlay pass, so the rects sit on top of the symbol. The grey ovals at
           // every other element's posts (UIManager.java:674-687) are deliberately
           // not ported: they are draw-mode noise the user's complaint never asked
           // for, and a per-frame pass over all elements buys nothing here.
           const drag = dragRef.current;
+          let handles: { posts: Point[]; grabbed: number } | null = null;
           if (drag.mode === 'dragpost') {
             const dragged = elements.find((e) => e.id === drag.id);
             if (dragged) {
-              dragpostHandlesFrom(
-                {
-                  ctx,
-                  theme,
-                  voltages: [],
-                  current: 0,
-                  voltage: 0,
-                  power: 0,
-                  value: 0,
-                  state: 0,
-                  wave: [],
-                  dotPhase: 0,
-                  postCurrents: [],
-                  postDotPhases: [],
-                  showCurrent: settings.showCurrent,
-                  showValues: settings.showValues,
-                  showVoltageColor: settings.showVoltageColor,
-                  showPowerColor: settings.showPowerColor,
-                  conventional: settings.conventional,
-                  euroResistors: settings.euroResistors,
-                  euroGates: settings.euroGates,
-                  selected: false,
-                  hovered: false,
-                  onHighlightedNet: false,
-                  voltageRange: settings.voltageRange,
-                  powerRange: settings.powerRange,
-                  scale: view.scale,
-                  valueDigits: settings.shortDecimalDigits,
-                  valueFontSize: settings.valueFontSize,
-                },
-                [
+              handles = {
+                posts: [
                   { x: dragged.x1, y: dragged.y1 },
                   { x: dragged.x2, y: dragged.y2 },
                 ],
-                drag.post === 1 ? 0 : 1,
-              );
+                grabbed: drag.post === 1 ? 0 : 1,
+              };
             }
+          } else if (drag.mode === 'none' && hoveredId !== null && pointerRef.current) {
+            // Hover feedback for the automatic grab: the endpoint the next
+            // press would take shows its handle, so the armed state is visible
+            // before the drag starts. Upstream does exactly this, drawing only
+            // the handle its getHandleGrabbedClose just picked
+            // (lastHandleGrabbed, CircuitElm.java:747-761); the canvas cursor
+            // shape is fixed in CSS here, so the rect is the affordance.
+            // `armedHandle` is the same decision beginPointerGesture makes, so
+            // the rect cannot promise a grab the press will not honour.
+            const hover = elements.find((e) => e.id === hoveredId);
+            const pt = pointerRef.current;
+            const at = { x: view.x + pt.x / view.scale, y: view.y + pt.y / view.scale };
+            const post = hover ? armedHandle(at, hover, state) : null;
+            if (hover && post !== null) {
+              handles = {
+                posts: [post === 1 ? { x: hover.x1, y: hover.y1 } : { x: hover.x2, y: hover.y2 }],
+                grabbed: 0,
+              };
+            }
+          }
+          if (handles) {
+            dragpostHandlesFrom(
+              {
+                ctx,
+                theme,
+                voltages: [],
+                current: 0,
+                voltage: 0,
+                power: 0,
+                value: 0,
+                state: 0,
+                wave: [],
+                dotPhase: 0,
+                postCurrents: [],
+                postDotPhases: [],
+                showCurrent: settings.showCurrent,
+                showValues: settings.showValues,
+                showVoltageColor: settings.showVoltageColor,
+                showPowerColor: settings.showPowerColor,
+                conventional: settings.conventional,
+                euroResistors: settings.euroResistors,
+                euroGates: settings.euroGates,
+                selected: false,
+                hovered: false,
+                onHighlightedNet: false,
+                voltageRange: settings.voltageRange,
+                powerRange: settings.powerRange,
+                scale: view.scale,
+                valueDigits: settings.shortDecimalDigits,
+                valueFontSize: settings.valueFontSize,
+              },
+              handles.posts,
+              handles.grabbed,
+            );
           }
 
           // Rubber-band selection rectangle.
