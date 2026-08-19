@@ -1,6 +1,6 @@
 import { currentDots, line } from '../../../render/draw';
-import { elementColor, groundBars, onePost, readParams, writeParams } from '../shared';
-import type { CircuitElement, DrawContext, ElementDef } from '../../types';
+import { elementColor, groundBars, onePost, readParams, writeParams, boxOfPoints } from '../shared';
+import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 function drawGroundSymbol(g: DrawContext, e: CircuitElement): void {
   const p1 = { x: e.x1, y: e.y1 };
@@ -51,5 +51,14 @@ export const GROUND_DEF: ElementDef = {
       ],
     },
   ],
+  // The stem and the bars hanging off its free end are a solid pick zone: the
+  // symbol that a click has to reach to grab the ground (GroundElm.java:95).
+  bodyRect: (e) => {
+    const p1 = { x: e.x1, y: e.y1 };
+    const p2 = { x: e.x2, y: e.y2 };
+    const pts: Point[] = [p1];
+    for (const [a, b] of groundBars(p1, p2, e.params.symbolType ?? 0)) pts.push(a, b);
+    return boxOfPoints(pts);
+  },
   draw: drawGroundSymbol,
 };

@@ -1,6 +1,6 @@
 import { canvasFont, currentDots, endpoints, lead, voltageColor } from '../../../render/draw';
 import { VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
-import { onePost, readParams, writeParams } from '../shared';
+import { onePost, readParams, writeParams, endpointBox } from '../shared';
 import { railLabelAnchor, railLead } from './rail';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -103,5 +103,7 @@ export const AUDIO_INPUT_DEF: ElementDef = {
     { name: 'maxVoltage', label: 'Max Voltage', unit: 'V' },
     { name: 'startPosition', label: 'Start Position', unit: 's' },
   ],
+  // The file-name label at the free end is a solid pick zone (AudioInputElm.java).
+  bodyRect: (e) => endpointBox(e, 14),
   draw: railFileInputDraw,
 };

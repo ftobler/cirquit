@@ -8,7 +8,7 @@ import {
   interp2Precise,
   triangle,
 } from '../../../render/draw';
-import { elementColor, readParams, twoPosts } from '../shared';
+import { elementColor, readParams, twoPosts, bodyBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** Two opposing filled arrows between the leads, the spark-gap symbol
@@ -66,5 +66,8 @@ export const SPARK_GAP_DEF: ElementDef = {
     { name: 'breakdown', label: 'Breakdown voltage', unit: 'V' },
     { name: 'holdcurrent', label: 'Holding current', unit: 'A' },
   ],
+  // The two opposing arrows span the 24-unit body at an 8-unit half width
+  // (SparkGapElm.java:85).
+  bodyRect: (e) => bodyBox(e, 24, 8),
   draw: drawSparkGap,
 };

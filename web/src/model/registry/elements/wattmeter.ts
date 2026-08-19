@@ -11,7 +11,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { GRID_SIZE } from '../../types';
-import { readParams, writeParams } from '../shared';
+import { readParams, writeParams, boxOfPoints } from '../shared';
 import type { CircuitElement, ElementDef, Point } from '../../types';
 
 /** Posts for a stored width, upstream's setPoints (WattmeterElm.java:95-114):
@@ -61,6 +61,20 @@ export const WATTMETER_DEF: ElementDef = {
       ],
     },
   ],
+  // The light-gray body rectangle is a solid pick zone; the four stubs to the
+  // posts stay out of it, reached by their own posts (WattmeterElm.java:229).
+  bodyRect: (e) => {
+    const [p1, p2] = endpoints(e);
+    const dn = elementLength(e);
+    if (dn === 0) return { x0: 0, y0: 0, x1: 0, y1: 0 };
+    const ds = p2.y === p1.y ? Math.sign(p2.x - p1.x) : -Math.sign(p2.y - p1.y);
+    const width = e.params.width ?? GRID_SIZE;
+    const r1 = interp(p1, p2, GRID_SIZE / dn, ds * GRID_SIZE);
+    const r2 = interp(p1, p2, 1 - GRID_SIZE / dn, ds * GRID_SIZE);
+    const r3 = interp(p1, p2, GRID_SIZE / dn, -ds * (GRID_SIZE + width));
+    const r4 = interp(p1, p2, 1 - GRID_SIZE / dn, -ds * (GRID_SIZE + width));
+    return boxOfPoints([r1, r2, r3, r4]);
+  },
   draw(g, e) {
     const [p1, p2] = endpoints(e);
     const dn = elementLength(e);

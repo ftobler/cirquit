@@ -7,7 +7,7 @@ import {
   interp,
   label,
 } from '../../../render/draw';
-import { readParams, twoPosts, writeParams } from '../shared';
+import { readParams, twoPosts, writeParams, bodyBox } from '../shared';
 import type { ElementDef } from '../../types';
 
 export const OHMMETER_DEF: ElementDef = {
@@ -23,6 +23,8 @@ export const OHMMETER_DEF: ElementDef = {
   defaults: { current: 0.01, maxVoltage: 0 },
   parse: (t, e) => readParams(t, e, ['current', 'maxVoltage']),
   dump: writeParams(['current', 'maxVoltage']),
+  // The 12-radius disc is a solid pick zone (OhmMeterElm.java:17, :25).
+  bodyRect: (e) => bodyBox(e, 26, 12),
   draw(g, e) {
     const [lead1, lead2] = calcLeads(e, 26);  // OhmMeterElm.java:17
     drawLeads(g, e, lead1, lead2);

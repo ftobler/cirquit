@@ -11,7 +11,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { TRANSISTOR_FLIP } from '../flags';
-import { OPEN_HS } from '../shared';
+import { OPEN_HS, postsBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 function drawTransistorBody(g: DrawContext, e: CircuitElement): void {
@@ -163,5 +163,8 @@ export const TRANSISTOR_DEF: ElementDef = {
     // The model choice is upstream's edit item 3 (TransistorElm.java:619-631).
     { name: 'modelName', label: 'Model', type: 'modelChoice', target: 'modelName', modelFamily: 'transistor' },
   ],
+  // The base bar and the fanned collector/emitter leads span the whole axis at
+  // a 16-unit half width (TransistorElm.java:158).
+  bodyRect: (e) => postsBox(e, 16),
   draw: drawTransistorBody,
 };

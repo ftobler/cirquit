@@ -15,7 +15,7 @@ import {
   line,
   voltageColor,
 } from '../../../render/draw';
-import { OPEN_HS, readParams, writeParams } from '../shared';
+import { OPEN_HS, readParams, writeParams, postsBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 const FLAG_INVERT = 1;  // AnalogSwitchElm.java:26
@@ -108,5 +108,8 @@ export const ANALOG_SWITCH_DEF: ElementDef = {
     { name: 'nc', label: 'Normally closed', type: 'bool', flag: FLAG_INVERT },
     { name: 'pulldown', label: 'Pulldown resistor', type: 'bool', flag: FLAG_PULLDOWN },
   ],
+  // The closing bar lifts up to openhs (16) off the axis at the far end, so
+  // the whole signal span is a solid pick zone (AnalogSwitchElm.java:116).
+  bodyRect: (e) => postsBox(e, OPEN_HS),
   draw: drawAnalogSwitch,
 };

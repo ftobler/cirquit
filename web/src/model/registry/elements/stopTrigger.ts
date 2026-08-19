@@ -7,7 +7,7 @@ import {
   lead,
   voltageColor,
 } from '../../../render/draw';
-import { labeledNodeText, onePost, readParams, writeParams } from '../shared';
+import { labeledNodeText, onePost, readParams, writeParams, endpointBox } from '../shared';
 import type { ElementDef } from '../../types';
 
 export const STOP_TRIGGER_DEF: ElementDef = {
@@ -35,6 +35,8 @@ export const STOP_TRIGGER_DEF: ElementDef = {
     { name: 'delay', label: 'Delay (s)', unit: 's' },
     { name: 'count', label: 'Required Count' },
   ],
+  // The "trigger" label at the free end is a solid pick zone (StopTriggerElm.java).
+  bodyRect: (e) => endpointBox(e, 12),
   draw(g, e) {
     const [p1, p2] = endpoints(e);
     const dn = elementLength(e);

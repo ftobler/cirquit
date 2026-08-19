@@ -21,7 +21,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { GATE_INVERT_INPUTS, GATE_SCHMITT, GATE_SMALL } from '../flags';
-import { normalizeInputCount, readParams, warnOnClamp, writeParams } from '../shared';
+import { normalizeInputCount, readParams, warnOnClamp, writeParams, bodyBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The six gate kinds whose `inputCount` the store normalises on edit, so the
@@ -325,6 +325,12 @@ function gateDef(
       { name: 'schmitt', label: 'Schmitt inputs', type: 'bool', flag: GATE_SCHMITT },
       { name: 'invertInputs', label: 'Invert inputs', type: 'bool', flag: GATE_INVERT_INPUTS },
     ],
+    // The body (the ANSI shield or the IEC rectangle) spans the two leads at
+    // the hs2 half height, the solid pick zone GateElm.java:162 wraps.
+    bodyRect: (e) => {
+      const { ww, hs2 } = gateBody(e);
+      return bodyBox(e, ww * 2, hs2);
+    },
     draw: drawGate,
   };
 }

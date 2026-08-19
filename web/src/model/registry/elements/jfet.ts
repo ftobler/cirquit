@@ -11,7 +11,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { MOSFET_PNP } from '../flags';
-import { elementColor } from '../shared';
+import { elementColor, postsBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Terminal posts, mirroring JfetElm.setPoints (JfetElm.java:86-98): the gate
@@ -123,5 +123,8 @@ export const JFET_DEF: ElementDef = {
     { name: 'threshold', label: 'Threshold voltage (Vt)' },
     { name: 'beta', label: 'Transconductance (β)' },
   ],
+  // The gate bar and the source/drain rails span the whole axis at a 16-unit
+  // half width (JfetElm.java:53).
+  bodyRect: (e) => postsBox(e, 16),
   draw: drawJfet,
 };

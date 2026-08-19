@@ -16,7 +16,7 @@ import {
   zigzagPoints,
 } from '../../../render/draw';
 import { POT_FLIP, POT_FLIP_OFFSET, POT_SHOW_VALUES } from '../flags';
-import { elementColor, readParams } from '../shared';
+import { elementColor, readParams, bodyBox } from '../shared';
 import { GRID_SIZE } from '../../types';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -140,5 +140,9 @@ export const POTENTIOMETER_DEF: ElementDef = {
     { name: 'maxResistance', label: 'Max resistance', unit: 'Ω' },
     { name: 'position', label: 'Wiper position', min: 0, max: 1 },
   ],
+  // The resistor body (the 32-long zigzag or the IEC box), a solid pick zone;
+  // the wiper lead and arrow reach their own post, so they stay out of the box
+  // (PotElm.java:226-230's hs 6/8).
+  bodyRect: (e) => bodyBox(e, 32, 8),
   draw: drawPotBody,
 };

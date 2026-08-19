@@ -9,7 +9,7 @@ import {
   label,
 } from '../../../render/draw';
 import { IND_BACK_EULER } from '../flags';
-import { readParams, twoPosts, writeParams } from '../shared';
+import { readParams, twoPosts, writeParams, bodyBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 function drawInductorBody(g: DrawContext, e: CircuitElement): void {
@@ -49,5 +49,8 @@ export const INDUCTOR_DEF: ElementDef = {
     // same control with the label the right way up.
     { name: 'backEuler', label: 'Backward Euler', type: 'bool', flag: IND_BACK_EULER },
   ],
+  // The coil straddles the 32-long body at a 8-unit half height, the
+  // amplitude upstream's setBbox uses (InductorElm.java:83-84).
+  bodyRect: (e) => bodyBox(e, 32, 8),
   draw: drawInductorBody,
 };

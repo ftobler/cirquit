@@ -12,6 +12,7 @@
  */
 
 import { canvasFont, closedPolyline, endpoints, limbColor } from '../../../render/draw';
+import { boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The config a freshly placed scope writes: element -1 (nothing traced yet),
@@ -65,5 +66,14 @@ export const SCOPE_DEF: ElementDef = {
     if (t[0] !== undefined) e.text = t[0];
   },
   dump: (e) => [e.text ?? DEFAULT_SCOPE_CONFIG],
+  // The whole framed viewport is a solid pick zone (ScopeElm.java:121).
+  bodyRect: (e) => {
+    const [p1, p2] = endpoints(e);
+    const x0 = Math.min(p1.x, p2.x);
+    const y0 = Math.min(p1.y, p2.y);
+    const x1 = Math.max(p1.x, p2.x);
+    const y1 = Math.max(p1.y, p2.y);
+    return boxOfPoints([{ x: x0, y: y0 }, { x: x1, y: y1 }]);
+  },
   draw: drawScope,
 };

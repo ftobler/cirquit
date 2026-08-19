@@ -25,6 +25,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { CRYSTAL_SHOW_FREQ } from '../flags';
+import { boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 const DEF_PARALLEL_CAP = 28.7e-12;
@@ -118,5 +119,18 @@ export const CRYSTAL_DEF: ElementDef = {
     { name: 'resistance', label: 'Resistance', unit: 'Ω' },
     { name: 'showFreq', label: 'Show Frequency', type: 'bool', flag: CRYSTAL_SHOW_FREQ },
   ],
+  // The plate-and-sandwich body spans the two lead points, 10 units in from
+  // each post, at a 12-unit half width (CrystalElm.java:114-115's hs), the
+  // same setBbox the plates and sandwich were drawn against.
+  bodyRect: (e) => {
+    const [p1, p2] = endpoints(e);
+    const dn = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const f = (dn / 2 - 10) / dn;
+    const lead1 = interp(p1, p2, f);
+    const lead2 = interp(p1, p2, 1 - f);
+    const [a1, a2] = interp2(lead1, lead2, 0, 12);
+    const [b1, b2] = interp2(lead1, lead2, 1, 12);
+    return boxOfPoints([a1, a2, b1, b2]);
+  },
   draw: drawCrystal,
 };

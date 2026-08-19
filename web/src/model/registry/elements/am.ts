@@ -7,11 +7,11 @@ import {
   lead,
   voltageColor,
 } from '../../../render/draw';
-import { onePost, readParams, writeParams } from '../shared';
+import { onePost, readParams, writeParams, endpointBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** AM symbol radius (AMElm.java:84). */
-const AM_CIRCLE = 17;
+export const AM_CIRCLE = 17;
 
 /** Load-time only: a legacy cosine flag, cleared on load. Unlike the voltage
  *  source's bit 2 it converts nothing: the token constructor just clears it
@@ -67,6 +67,8 @@ export const AM_DEF: ElementDef = {
     { name: 'carrierFreq', label: 'Carrier Frequency', unit: 'Hz' },
     { name: 'signalFreq', label: 'Signal Frequency', unit: 'Hz' },
   ],
+  // The circled label at the free end is a solid pick zone (AMElm.java:84).
+  bodyRect: (e) => endpointBox(e, AM_CIRCLE),
   draw(g, e) {
     modulatedSourceDraw(g, e, 'AM');
   },

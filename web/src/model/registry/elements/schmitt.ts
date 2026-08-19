@@ -17,8 +17,8 @@ import {
   polyline,
   voltageColor,
 } from '../../../render/draw';
-import { readParams, writeParams, twoPosts } from '../shared';
-import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
+import { readParams, writeParams, twoPosts, boxOfPoints } from '../shared';
+import type { CircuitElement, DrawContext, ElementDef, Point, Box } from '../../types';
 
 const HS = 16;   // InvertingSchmittElm.java:101
 const WW = 16;   // InvertingSchmittElm.java:102
@@ -72,6 +72,19 @@ const SCHMITT_DEFAULTS = {
   logicOffLevel: 0,
 };
 
+/** The triangle (plus the inverting bubble) box, lead1 to lead2 grown HS
+ *  (InvertingSchmittElm.java:101-102). */
+function schmittBodyRect(e: CircuitElement, inverting: boolean): Box {
+  const [p1, p2] = endpoints(e);
+  const dn = Math.max(1, elementLength(e));
+  const ww = Math.min(WW, dn / 2);
+  const lead1 = interp(p1, p2, 0.5 - ww / dn);
+  const lead2 = interp(p1, p2, 0.5 + (inverting ? ww + 2 : ww - 3) / dn);
+  const [a1, a2] = interp2(lead1, lead2, 0, HS);
+  const [b1, b2] = interp2(lead1, lead2, 1, HS);
+  return boxOfPoints([a1, a2, b1, b2]);
+}
+
 const SCHMITT_FIELDS = [
   { name: 'lowerTrigger', label: 'Lower threshold', unit: 'V' },
   { name: 'upperTrigger', label: 'Upper threshold', unit: 'V' },
@@ -94,6 +107,7 @@ export const SCHMITT_DEF: ElementDef = {
     readParams(t, e, ['slewRate', 'lowerTrigger', 'upperTrigger', 'logicOnLevel', 'logicOffLevel']),
   dump: writeParams(['slewRate', 'lowerTrigger', 'upperTrigger', 'logicOnLevel', 'logicOffLevel']),
   fields: [...SCHMITT_FIELDS],
+  bodyRect: (e) => schmittBodyRect(e, false),
   draw: (g, e) => drawSchmitt(g, e, false),
 };
 
@@ -111,5 +125,6 @@ export const INVERTING_SCHMITT_DEF: ElementDef = {
     readParams(t, e, ['slewRate', 'lowerTrigger', 'upperTrigger', 'logicOnLevel', 'logicOffLevel']),
   dump: writeParams(['slewRate', 'lowerTrigger', 'upperTrigger', 'logicOnLevel', 'logicOffLevel']),
   fields: [...SCHMITT_FIELDS],
+  bodyRect: (e) => schmittBodyRect(e, true),
   draw: (g, e) => drawSchmitt(g, e, true),
 };

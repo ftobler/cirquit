@@ -10,7 +10,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { RAIL_CLOCK, RAIL_SHOW_VOLTAGE, VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
-import { drawWaveformGlyph, onePost, readParams, writeParams } from '../shared';
+import { drawWaveformGlyph, onePost, readParams, writeParams, endpointBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The duty cycle old pulse lines are stuck with (VoltageElm.java:51). */
@@ -152,6 +152,9 @@ export const RAIL_DEF: ElementDef = {
     { name: 'maxVoltage', label: 'Voltage', unit: 'V' },
     { name: 'frequency', label: 'Frequency', unit: 'Hz' },
   ],
+  // The waveform circle (or the DC label) at the free end is a solid pick
+  // zone: a circle radius around the far control point (RailElm.java:56).
+  bodyRect: (e) => endpointBox(e, RAIL_CIRCLE),
   draw(g, e) {
     const [p1, p2] = endpoints(e);
     const color = voltageColor(g, g.voltages[0]);

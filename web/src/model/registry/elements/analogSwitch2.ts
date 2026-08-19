@@ -19,7 +19,7 @@ import {
   line,
   voltageColor,
 } from '../../../render/draw';
-import { OPEN_HS, readParams, writeParams } from '../shared';
+import { OPEN_HS, readParams, writeParams, postsBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 const FLAG_INVERT = 1;  // AnalogSwitchElm.java:26
@@ -124,5 +124,9 @@ export const ANALOG_SWITCH2_DEF: ElementDef = {
     { name: 'nc', label: 'Normally closed', type: 'bool', flag: FLAG_INVERT },
     { name: 'pulldown', label: 'Pulldown resistor', type: 'bool', flag: FLAG_PULLDOWN },
   ],
+  // The two throws hang at ±openhs off the far end and the lever points at
+  // one of them, so the whole fan is a solid pick zone (AnalogSwitch2Elm.java:
+  // 48).
+  bodyRect: (e) => postsBox(e, OPEN_HS),
   draw: drawAnalogSwitch2,
 };

@@ -30,7 +30,7 @@ import {
 } from '../../../render/draw';
 import { GRID_SIZE } from '../../types';
 import { OPAMPREAL_SWAP } from '../flags';
-import { readParams, writeParams } from '../shared';
+import { readParams, writeParams, boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Symbol geometry constants (OpAmpRealElm.java:58-59). */
@@ -139,5 +139,13 @@ export const OPAMP_REAL_DEF: ElementDef = {
     { name: 'slewRate', label: 'Slew Rate', unit: 'V/us' },
     { name: 'currentLimit', label: 'Output Current Limit', unit: 'A' },
   ],
+  // The triangle body is a solid pick zone: the base at lead1 grown hs*2, the
+  // apex at lead2 (OpAmpRealElm.java:183).
+  bodyRect: (e) => {
+    const [lead1, lead2] = opBodyLeads(e);
+    const hs = inputSide(e);
+    const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
+    return boxOfPoints([t1, t2, lead2]);
+  },
   draw: drawOpAmpReal,
 };

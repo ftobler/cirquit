@@ -16,7 +16,7 @@ import {
   TRANSFORMER_REVERSE,
   TRANSFORMER_VERTICAL,
 } from '../flags';
-import { readParams } from '../shared';
+import { readParams, boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 const WIDTH = 32;  // primary/secondary spacing (TransformerElm.java:38, CustomTransformerElm.java:51)
@@ -180,6 +180,9 @@ export const TRANSFORMER_DEF: ElementDef = {
     { name: 'backEuler', label: 'Backward Euler', type: 'bool', flag: IND_BACK_EULER },
     { name: 'reverse', label: 'Swap secondary polarity', type: 'bool', flag: TRANSFORMER_REVERSE },
   ],
+  // The two windings and the core bars span the four corner posts, the whole
+  // symbol a solid pick zone (TransformerElm.java:147).
+  bodyRect: (e) => boxOfPoints(basicGeometry(e).ptEnds),
   draw: drawBasicTransformer,
 };
 
@@ -279,6 +282,9 @@ export const TAPPED_TRANSFORMER_DEF: ElementDef = {
     { name: 'couplingCoef', label: 'Coupling coefficient', min: 0, max: 1 },
     { name: 'backEuler', label: 'Backward Euler', type: 'bool', flag: IND_BACK_EULER },
   ],
+  // The windings and tap hang over the five posts, the whole symbol a solid
+  // pick zone (TappedTransformerElm.java:131-156).
+  bodyRect: (e) => boxOfPoints(tappedPosts(e)),
   draw: drawTappedTransformer,
 };
 
@@ -518,6 +524,9 @@ export const CUSTOM_TRANSFORMER_DEF: ElementDef = {
     { name: 'text', label: 'Description', type: 'text', target: 'text' },
     { name: 'backEuler', label: 'Backward Euler', type: 'bool', flag: IND_BACK_EULER },
   ],
+  // The stacked windings span the node points, the whole symbol a solid pick
+  // zone (CustomTransformerElm.java:270-321).
+  bodyRect: (e) => boxOfPoints(customGeometry(e)?.nodePoints ?? []),
   draw: drawCustomTransformer,
 };
 

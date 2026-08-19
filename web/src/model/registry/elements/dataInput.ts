@@ -1,5 +1,5 @@
 import { VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE, DATA_INPUT_REPEAT } from '../flags';
-import { onePost, readParams, writeParams } from '../shared';
+import { onePost, readParams, writeParams, endpointBox } from '../shared';
 import { railFileInputDraw } from './audioInput';
 import type { ElementDef } from '../../types';
 
@@ -74,5 +74,7 @@ export const DATA_INPUT_DEF: ElementDef = {
     { name: 'sampleLength', label: 'Sample Length', unit: 's' },
     { name: 'repeat', label: 'Repeat', type: 'bool', flag: DATA_INPUT_REPEAT },
   ],
+  // The file-name label at the free end is a solid pick zone (DataInputElm.java).
+  bodyRect: (e) => endpointBox(e, 14),
   draw: railFileInputDraw,
 };

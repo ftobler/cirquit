@@ -152,13 +152,14 @@ describe('distanceToElement', () => {
     expect(distanceToElement({ x: 35, y: 19 }, e)).toBeCloseTo(Math.hypot(3, 3), 9);
   });
 
-  it('measures a ground along its stem, so the free end is hittable', () => {
+  it('grabs the ground symbol as a solid body, keeping the free end hittable', () => {
     const g = element(0, 0, 32, 0);
     g.kind = 'ground';
-    // The symbol end is 32 from the post but only 5 from the stem: without
-    // the span distance the far end could never be clicked to ctrl-drag it.
-    expect(distanceToElement({ x: 32, y: 5 }, g)).toBe(5);
-    expect(distanceToElement({ x: 16, y: 3 }, g)).toBe(3);
+    // The bars box is a solid pick zone: a click on the drawn symbol, which
+    // includes the free-end control point, reads 0 where the bare stem alone
+    // used to read 5 and 3.
+    expect(distanceToElement({ x: 32, y: 5 }, g)).toBe(0);
+    expect(distanceToElement({ x: 16, y: 3 }, g)).toBe(0);
   });
 
   it('ignores the stray far endpoint of other single-post elements', () => {
@@ -355,6 +356,88 @@ describe('chip body hit-testing', () => {
     }
   });
 
+  it('covers every other drawn body with a solid pick zone', () => {
+    // The remaining pass over the element set: every body the port draws that
+    // was not already grabbable via the axis, a post or a lever gets a
+    // bodyRect. The probe is the mid-span of the top body edge; a missing or
+    // shrunken rect leaves a distance well past the hit tolerance, so the
+    // 0-hit assertion is the whole check.
+    const kinds = [
+      // two-pole passives and motors
+      'inductor',
+      'crystal',
+      'sparkGap',
+      'transmissionLine',
+      'potentiometer',
+      'dcMotor',
+      'threePhaseMotor',
+      'motorProtectionSwitch',
+      // sources and stems
+      'current',
+      'rail',
+      'varRail',
+      'extVoltage',
+      'noise',
+      'antenna',
+      'am',
+      'fm',
+      'sweep',
+      'audioInput',
+      'audioOutput',
+      'dataInput',
+      'output',
+      'testPoint',
+      'dataRecorder',
+      'stopTrigger',
+      'logicOutput',
+      // displays
+      'ammeter',
+      'ohmmeter',
+      'probe',
+      'wattmeter',
+      'scope',
+      // semiconductors and logic
+      'transistor',
+      'mosfet',
+      'jfet',
+      'darlington',
+      'comparator',
+      'ota',
+      'opampReal',
+      'triState',
+      'optocoupler',
+      'inverter',
+      'schmitt',
+      'invertingSchmitt',
+      'delayBuffer',
+      'andGate',
+      'nandGate',
+      'orGate',
+      'norGate',
+      'xorGate',
+      'xnorGate',
+      // transformers and relays
+      'transformer',
+      'tappedTransformer',
+      'customTransformer',
+      'relay',
+      'relayCoil',
+      // switches and annotations
+      'analogSwitch',
+      'analogSwitch2',
+      'ground',
+      'labeledNode',
+      'box',
+    ];
+    for (const kind of kinds) {
+      const e = { ...element(0, 0, 64, 0), kind };
+      const rect = defFor(kind)?.bodyRect?.(e);
+      expect(rect, `${kind} declares a bodyRect`).toBeDefined();
+      const probe = { x: (rect!.x0 + rect!.x1) / 2, y: rect!.y0 };
+      expect(distanceToElement(probe, e), `${kind} body edge midpoint hits`).toBe(0);
+    }
+  });
+
   it('the op-amp hit box covers only the triangle body', () => {
     // The box wraps the drawn triangle alone: the base at lead1 grown
     // perpendicular by the base width (opheight*2, 32 for size 2) and the apex
@@ -428,9 +511,9 @@ describe('stem-bearing one-post family', () => {
   it('keeps a labeled node unhittable at its stray far point', () => {
     const n = element(0, 0, 32, 32);
     n.kind = 'labeledNode';
-    // The box is drawn at (0,0); the midpoint of the stray (32,32) span is
-    // 22.6 units away, past the hit tolerance, so it never intercepts.
-    expect(distanceToElement({ x: 16, y: 16 }, n)).toBeCloseTo(Math.hypot(16, 16), 9);
+    // The label box is drawn at (0,0) and is only 20 wide, so the stray
+    // (32,32) midpoint is far past it and never a 0-distance pick.
+    expect(distanceToElement({ x: 32, y: 32 }, n)).toBeCloseTo(Math.hypot(12, 24), 9);
   });
 
   it('nearestPost targets the far endpoint of a rail, like a ground', () => {
@@ -712,18 +795,23 @@ describe('hitRegions', () => {
 
   it('gives a stem-bearing one-post part its terminal and its stem, and no free-end post', () => {
     // A ground connects only at (x1,y1); (x2,y2) is a drag handle, grabbable
-    // along the stem but never a terminal circle of its own.
-    expect(hitRegions({ ...element(0, 0, 32, 0), kind: 'ground' })).toEqual([
+    // along the stem but never a terminal circle of its own. Its bars off the
+    // stem are a body pick zone too, so the click can grab the symbol.
+    const e = { ...element(0, 0, 32, 0), kind: 'ground' };
+    expect(hitRegions(e)).toEqual([
       { type: 'post', x: 0, y: 0 },
       { type: 'axis', a: { x: 0, y: 0 }, b: { x: 32, y: 0 } },
+      { type: 'body', box: defFor('ground')!.bodyRect!(e) },
     ]);
   });
 
-  it('gives a post-only one-post part just its terminal circle', () => {
+  it('gives a post-only one-post part just its terminal circle and its label box', () => {
     // A labeled node's stray (x2,y2) is not drawn and not grabbable, so no
-    // axis band may appear for it.
-    expect(hitRegions({ ...element(0, 0, 32, 32), kind: 'labeledNode' })).toEqual([
+    // axis band may appear for it; the label box it draws is a body pick zone.
+    const e = { ...element(0, 0, 32, 32), kind: 'labeledNode' };
+    expect(hitRegions(e)).toEqual([
       { type: 'post', x: 0, y: 0 },
+      { type: 'body', box: defFor('labeledNode')!.bodyRect!(e) },
     ]);
   });
 

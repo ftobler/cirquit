@@ -1,5 +1,5 @@
 import { canvasFont, elementLength, interp, lead, limbColor, voltageColor } from '../../../render/draw';
-import { onePost, readParams, writeParams } from '../shared';
+import { onePost, readParams, writeParams, endpointBox } from '../shared';
 import type { ElementDef } from '../../types';
 
 export const AUDIO_OUTPUT_DEF: ElementDef = {
@@ -24,6 +24,8 @@ export const AUDIO_OUTPUT_DEF: ElementDef = {
     { name: 'duration', label: 'Duration', unit: 's', min: 0 },
     { name: 'samplingRate', label: 'Sampling Rate', unit: 'Hz' },
   ],
+  // The "Audio Out" label at the free end is a solid pick zone (AudioOutputElm.java).
+  bodyRect: (e) => endpointBox(e, 14),
   draw(g, e) {
     const p1 = { x: e.x1, y: e.y1 };
     const p2 = { x: e.x2, y: e.y2 };

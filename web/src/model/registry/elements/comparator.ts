@@ -26,6 +26,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { COMPARATOR_SMALL, COMPARATOR_SWAP } from '../flags';
+import { boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Symbol geometry constants, the size-scaled op-amp pair (ComparatorElm.java:
@@ -122,5 +123,14 @@ export const COMPARATOR_DEF: ElementDef = {
     e.model = t;
   },
   dump: (e) => (Array.isArray(e.model) ? e.model : []),
+  // The triangle body is a solid pick zone: the base at lead1 grown hs*2, the
+  // apex at lead2, the same box upstream's setBbox(opheight*2) wraps
+  // (ComparatorElm.java:44).
+  bodyRect: (e) => {
+    const [lead1, lead2] = opBodyLeads(e);
+    const hs = inputSide(e);
+    const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
+    return boxOfPoints([t1, t2, lead2]);
+  },
   draw: drawComparator,
 };

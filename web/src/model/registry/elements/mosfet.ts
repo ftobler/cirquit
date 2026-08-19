@@ -11,6 +11,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { MOSFET_FLIP, MOSFET_PNP } from '../flags';
+import { postsBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Terminal posts, mirroring MosfetElm.setPoints (MosfetElm.java:391-402):
@@ -135,5 +136,8 @@ export const MOSFET_DEF: ElementDef = {
     { name: 'threshold', label: 'Threshold voltage (Vt)' },
     { name: 'beta', label: 'Transconductance (β)' },
   ],
+  // The channel, the bulk line and the gate bar span the whole axis at a
+  // 16-unit half width (MosfetElm.java:25, 391-402).
+  bodyRect: (e) => postsBox(e, 16),
   draw: drawMosfet,
 };

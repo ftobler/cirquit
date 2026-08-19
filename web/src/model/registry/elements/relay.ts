@@ -21,7 +21,7 @@ import {
   RELAY_SHOW_BOX,
   RELAY_SWAP_COIL,
 } from '../flags';
-import { CONTACT_STROKE_WIDTH, OPEN_HS, readParams, rectOfPoints, twoPosts } from '../shared';
+import { CONTACT_STROKE_WIDTH, OPEN_HS, readParams, rectOfPoints, twoPosts, boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Coil placement encoded in the flags, upstream's `coilStyleFromFlags`
@@ -260,6 +260,10 @@ export const RELAY_DEF: ElementDef = {
     { name: 'coilR', label: 'Coil resistance', unit: 'Ω' },
     { name: 'switchingTime', label: 'Switching time', unit: 's' },
   ],
+  // The drawn box (or, without the box flag, the switch bank and coil) is a
+  // solid pick zone: the outline's four corners wrap it (RelayElm.java:283,
+  // :349-357).
+  bodyRect: (e) => boxOfPoints(relayGeometry(e).outline),
   draw: drawRelay,
 };
 
@@ -415,6 +419,8 @@ export const RELAY_COIL_DEF: ElementDef = {
     { name: 'switchingTime', label: 'Switching time', unit: 's' },
     { name: 'label', label: 'Label (for linking)', type: 'text', target: 'text' },
   ],
+  // The coil's box outline is a solid pick zone (RelayCoilElm.java:237-240).
+  bodyRect: (e) => boxOfPoints(relayCoilGeometry(e).outline),
   draw: drawRelayCoil,
 };
 

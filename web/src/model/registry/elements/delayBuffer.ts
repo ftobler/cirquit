@@ -15,7 +15,7 @@ import {
   lead,
   voltageColor,
 } from '../../../render/draw';
-import { readParams, writeParams, twoPosts } from '../shared';
+import { readParams, writeParams, twoPosts, boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 const HS = 16;    // DelayBufferElm.java:79
@@ -78,5 +78,17 @@ export const DELAY_BUFFER_DEF: ElementDef = {
     { name: 'threshold', label: 'Threshold', unit: 'V' },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
   ],
+  // The triangle or IEC rectangle spans lead1 to lead2 at a 16-unit half
+  // height (DelayBufferElm.java:79-80).
+  bodyRect: (e) => {
+    const [p1, p2] = endpoints(e);
+    const dn = Math.max(1, elementLength(e));
+    const ww = Math.min(WW, dn / 2);
+    const lead1 = interp(p1, p2, 0.5 - ww / dn);
+    const lead2 = interp(p1, p2, 0.5 + ww / dn);
+    const [a1, a2] = interp2(lead1, lead2, 0, HS);
+    const [b1, b2] = interp2(lead1, lead2, 1, HS);
+    return boxOfPoints([a1, a2, b1, b2]);
+  },
   draw: drawDelayBuffer,
 };

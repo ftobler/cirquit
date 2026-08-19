@@ -1,4 +1,5 @@
 import { limbColor } from '../../../render/draw';
+import { boxOfPoints } from '../shared';
 import type { ElementDef } from '../../types';
 
 export const BOX_DEF: ElementDef = {
@@ -11,6 +12,12 @@ export const BOX_DEF: ElementDef = {
   postCount: 0,
   posts: () => [],
   // The `b` line carries no tokens after the flags (BoxElm.java:31-37).
+  // The whole dashed rectangle is a solid pick zone (BoxElm.java:54-62).
+  bodyRect: (e) =>
+    boxOfPoints([
+      { x: Math.min(e.x1, e.x2), y: Math.min(e.y1, e.y2) },
+      { x: Math.max(e.x1, e.x2), y: Math.max(e.y1, e.y2) },
+    ]),
   draw(g, e) {
     g.ctx.strokeStyle = limbColor(g, g.theme.text);
     g.ctx.lineWidth = 2;

@@ -227,6 +227,12 @@ export function hitRegions(e: CircuitElement): HitRegion[] {
     if ((def?.draggablePosts ?? postCountOf(e)) > 1) {
       regions.push({ type: 'axis', a: { x: e.x1, y: e.y1 }, b: { x: e.x2, y: e.y2 } });
     }
+    // A one-post part's drawn symbol (a ground's bars, a rail's circle, a
+    // label box) is a solid pick zone too: upstream's `boundingBox.contains`
+    // gate (MouseManager.java:813) covers every element, one-post or not, so
+    // the mark off the bare stem grabs a click exactly like a chip's housing.
+    const rect = def?.bodyRect?.(e);
+    if (rect) regions.push({ type: 'body', box: rect });
     return regions;
   }
   const regions: HitRegion[] = [

@@ -1,5 +1,5 @@
 import { arrowHead, formatValueShort, interp, label, line } from '../../../render/draw';
-import { drawSourceCircle, readParams, twoPosts, writeParams } from '../shared';
+import { drawSourceCircle, readParams, twoPosts, writeParams, bodyBox } from '../shared';
 import type { ElementDef } from '../../types';
 
 export const CURRENT_DEF: ElementDef = {
@@ -21,6 +21,9 @@ export const CURRENT_DEF: ElementDef = {
     { name: 'current', label: 'Current', unit: 'A' },
     { name: 'maxVoltage', label: 'Max voltage (0=unlimited)', unit: 'V' },
   ],
+  // The 12-radius source circle is a solid pick zone (CurrentElm.java, the
+  // shared source circle).
+  bodyRect: (e) => bodyBox(e, 24, 12),
   draw(g, e) {
     const [lead1, lead2] = drawSourceCircle(g, e, 12);
     const a = interp(lead1, lead2, 0.5 - 0.28);

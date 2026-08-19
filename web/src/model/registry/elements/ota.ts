@@ -38,6 +38,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
+import { bodyBox } from '../shared';
 
 /** Symbol geometry constants, OTAElm.java:17-20. */
 const OPHEIGHT = 32;
@@ -192,5 +193,8 @@ export const OTA_DEF: ElementDef = {
     { name: 'posVolt', label: 'Positive Supply Voltage', unit: 'V' },
     { name: 'negVolt', label: 'Negative Supply Voltage', unit: 'V' },
   ],
+  // The triangle and the two output circles span the fixed body length at a
+  // 3*opheight/2 = 48 half width, upstream's setBbox (OTAElm.java:60).
+  bodyRect: (e) => bodyBox(e, WTOT, (3 * OPHEIGHT) / 2),
   draw: drawOta,
 };

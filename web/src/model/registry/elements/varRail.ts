@@ -1,6 +1,6 @@
 import { canvasFont, currentDots, endpoints, lead, voltageColor } from '../../../render/draw';
 import { VOLTAGE_SHOW_VOLTAGE } from '../flags';
-import { onePost, readParams } from '../shared';
+import { onePost, readParams, endpointBox } from '../shared';
 import { railLabelAnchor, railLead, railText } from './rail';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -52,6 +52,8 @@ export const VAR_RAIL_DEF: ElementDef = {
     { name: 'maxVoltage', label: 'Max Voltage', unit: 'V' },
     { name: 'text', label: 'Slider Text', type: 'text', target: 'text' },
   ],
+  // The voltage label at the free end is a solid pick zone (VarRailElm.java).
+  bodyRect: (e) => endpointBox(e, 14),
   draw(g, e) {
     const [p1, p2] = endpoints(e);
     const color = voltageColor(g, g.voltages[0]);

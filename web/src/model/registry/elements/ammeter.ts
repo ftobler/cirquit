@@ -16,7 +16,7 @@ import {
   lead,
   voltageColor,
 } from '../../../render/draw';
-import { readParams, twoPosts, writeParams } from '../shared';
+import { readParams, twoPosts, writeParams, bodyBox } from '../shared';
 import type { ElementDef } from '../../types';
 
 // AmmeterElm.java:85-86. Kept local: these two bits are the ammeter's own
@@ -65,6 +65,10 @@ export const AMMETER_DEF: ElementDef = {
     },
     { name: 'circular', label: 'Circular Symbol', type: 'bool', flag: AMMETER_CIRCLE },
   ],
+  // The 12-radius disc of the circular symbol (AmmeterElm.java:172, :204) is
+  // a solid pick zone; the arrow form rides the axis, which the axis band and
+  // posts already reach.
+  bodyRect: (e) => bodyBox(e, 24, 12),
   draw(g, e) {
     const [p1, p2] = endpoints(e);
     if ((e.flags & AMMETER_CIRCLE) !== 0) {

@@ -1,5 +1,5 @@
-import { onePost, readParams, writeParams } from '../shared';
-import { modulatedSourceDraw } from './am';
+import { onePost, readParams, writeParams, endpointBox } from '../shared';
+import { modulatedSourceDraw, AM_CIRCLE } from './am';
 import type { ElementDef } from '../../types';
 
 /** Load-time only: a legacy cosine flag, cleared on load. Like the AM source's
@@ -33,6 +33,9 @@ export const FM_DEF: ElementDef = {
     { name: 'signalFreq', label: 'Signal Frequency', unit: 'Hz' },
     { name: 'deviation', label: 'Deviation', unit: 'Hz' },
   ],
+  // The circled label at the free end is a solid pick zone (FMElm.java, the
+  // AM circle radius).
+  bodyRect: (e) => endpointBox(e, AM_CIRCLE),
   draw(g, e) {
     modulatedSourceDraw(g, e, 'FM');
   },

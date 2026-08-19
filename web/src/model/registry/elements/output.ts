@@ -9,7 +9,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { OUTPUT_FIXED, OUTPUT_SHOW_VOLTAGE } from '../flags';
-import { onePost, readParams, writeParams } from '../shared';
+import { onePost, readParams, writeParams, endpointBox } from '../shared';
 import type { ElementDef } from '../../types';
 
 /** The value body of a fixed-scale readout: `toFixed`'s trailing zeros are
@@ -61,6 +61,8 @@ export const OUTPUT_DEF: ElementDef = {
     },
     { name: 'fixed', label: 'Fixed Precision', type: 'bool', flag: OUTPUT_FIXED },
   ],
+  // The readout at the free end is a solid pick zone (OutputElm.java).
+  bodyRect: (e) => endpointBox(e, 12),
   // A fresh output draws the literal `out`: upstream's constructor leaves
   // flags 0, so `defaultFlags` stays unset and Show Voltage is the edit toggle
   // (OutputElm.java:31-34, :66). That is what the corpus's flagless lines mean.

@@ -135,6 +135,32 @@ export function bodyBox(e: CircuitElement, bodyLength: number, hs: number): Box 
   return boxOfPoints([a1, a2, b1, b2]);
 }
 
+/** Axis-aligned hit box of the whole stored span between the two endpoints,
+ *  grown `hs` perpendicular on each side: the four-corner box of `e.x1,y1` to
+ *  `e.x2,y2`. The solid pick zone for a body that spans the whole element, not
+ *  just a calcLeads-length window, upstream's `setBbox(point1, point2, hs)`
+ *  for the transistor, mosfet and their kin, whose bodies run from one post to
+ *  the other. */
+export function postsBox(e: CircuitElement, hs: number): Box {
+  const [a1, a2] = interp2({ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }, 0, hs);
+  const [b1, b2] = interp2({ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }, 1, hs);
+  return boxOfPoints([a1, a2, b1, b2]);
+}
+
+/** Axis-aligned hit box around the free-end control point `(x2, y2)`, `hs` to
+ *  every side: the pick zone for a one-post stem part whose symbol (a circle,
+ *  a label, a glyph) hangs off the far end, upstream's small symbol box. The
+ *  axis band already reaches along the stem, so this only widens the grab
+ *  around the drawn mark that sits at or past `point2`. */
+export function endpointBox(e: CircuitElement, hs: number): Box {
+  return {
+    x0: e.x2 - hs,
+    y0: e.y2 - hs,
+    x1: e.x2 + hs,
+    y1: e.y2 + hs,
+  };
+}
+
 /** True when `p` lies on or inside the rect, with the edges inclusive. */
 export function rectContains(r: SwitchRect, p: Point): boolean {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;

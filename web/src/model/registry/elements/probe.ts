@@ -9,7 +9,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { PROBE_CIRCLE, PROBE_SHOW_VOLTAGE } from '../flags';
-import { readParams, twoPosts, writeParams } from '../shared';
+import { readParams, twoPosts, writeParams, bodyBox } from '../shared';
 import type { ElementDef } from '../../types';
 
 export const PROBE_DEF: ElementDef = {
@@ -50,6 +50,8 @@ export const PROBE_DEF: ElementDef = {
     },
     { name: 'resistance', label: 'Series resistance', unit: 'Ω' },
   ],
+  // The 9-radius disc is a solid pick zone (ProbeElm.java:232).
+  bodyRect: (e) => bodyBox(e, 16, 9),
   draw(g, e) {
     const [lead1, lead2] = calcLeads(e, 16);
     lead(g, { x: e.x1, y: e.y1 }, lead1, voltageColor(g, g.voltages[0]));

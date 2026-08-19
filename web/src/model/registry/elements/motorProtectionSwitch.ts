@@ -11,7 +11,7 @@
  */
 
 import { canvasFont, closedPolyline, currentDots, lead, line, voltageColor } from '../../../render/draw';
-import { readParams } from '../shared';
+import { readParams, boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Column spacing between the three pole pairs (MotorProtectionSwitchElm.java:136). */
@@ -194,5 +194,8 @@ export const MOTOR_PROTECTION_SWITCH_DEF: ElementDef = {
     { name: 'resistance', label: 'On resistance', unit: 'Ω' },
     { name: 'label', label: 'Label (for linking)', type: 'text', target: 'text' },
   ],
+  // The whole switch bank, three channels high, is a solid pick zone: a click
+  // anywhere on the body grabs it (MotorProtectionSwitchElm.java:90-101).
+  bodyRect: (e) => boxOfPoints(motorProtectionSwitchPosts(e)),
   draw: drawMotorProtectionSwitch,
 };

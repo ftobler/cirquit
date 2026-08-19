@@ -18,7 +18,7 @@ import {
   isHighlighted,
   line,
 } from '../../../render/draw';
-import { readParams, twoPosts } from '../shared';
+import { readParams, twoPosts, bodyBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Motor body radius (DCMotorElm.java:174). */
@@ -115,5 +115,7 @@ export const DC_MOTOR_DEF: ElementDef = {
     { name: 'b', label: 'Friction coefficient', unit: 'Nms/rad' },
     { name: 'gearRatio', label: 'Gear Ratio' },
   ],
+  // The 18-radius rotor disc is a solid pick zone (DCMotorElm.java:176).
+  bodyRect: (e) => bodyBox(e, 36, CR),
   draw: drawDcMotor,
 };

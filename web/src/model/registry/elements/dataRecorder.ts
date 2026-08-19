@@ -8,7 +8,7 @@ import {
   limbColor,
   voltageColor,
 } from '../../../render/draw';
-import { labeledNodeText, onePost, readParams, writeParams } from '../shared';
+import { labeledNodeText, onePost, readParams, writeParams, endpointBox } from '../shared';
 import type { ElementDef } from '../../types';
 
 export const DATA_RECORDER_DEF: ElementDef = {
@@ -28,6 +28,8 @@ export const DATA_RECORDER_DEF: ElementDef = {
     // come from the engine on demand (DataRecorderElm.java:99-125).
     { name: 'download', label: 'Download data', type: 'download' },
   ],
+  // The "export" label at the free end is a solid pick zone (DataRecorderElm.java).
+  bodyRect: (e) => endpointBox(e, 12),
   draw(g, e) {
     const [p1, p2] = endpoints(e);
     const dn = elementLength(e);

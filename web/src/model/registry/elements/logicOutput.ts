@@ -6,7 +6,7 @@ import {
   limbColor,
   voltageColor,
 } from '../../../render/draw';
-import { onePost, readParams, writeParams } from '../shared';
+import { onePost, readParams, writeParams, endpointBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** LogicOutputElm.java:26-28. All three flags are display-only as far as this
@@ -46,6 +46,8 @@ export const LOGIC_OUTPUT_DEF: ElementDef = {
   parse: (t, e) => readParams(t, e, ['threshold']),
   dump: writeParams(['threshold']),
   fields: [{ name: 'threshold', label: 'Threshold', unit: 'V' }],
+  // The L/H glyph at the free end is a solid pick zone (LogicOutputElm.java).
+  bodyRect: (e) => endpointBox(e, 12),
   draw(g, e) {
     const p1 = { x: e.x1, y: e.y1 };
     const p2 = { x: e.x2, y: e.y2 };

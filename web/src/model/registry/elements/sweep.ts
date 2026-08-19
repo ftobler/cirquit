@@ -1,5 +1,5 @@
 import { circle, currentDots, elementLength, endpoints, lead, voltageColor } from '../../../render/draw';
-import { drawWaveformGlyph, onePost, readParams, writeParams } from '../shared';
+import { drawWaveformGlyph, onePost, readParams, writeParams, endpointBox } from '../shared';
 import type { ElementDef } from '../../types';
 
 /** Sweep symbol radius (SweepElm.java:49). */
@@ -32,6 +32,8 @@ export const SWEEP_DEF: ElementDef = {
     { name: 'log', label: 'Log Sweep', type: 'bool', flag: FLAG_LOG },
     { name: 'bidir', label: 'Bidirectional', type: 'bool', flag: FLAG_BIDIR },
   ],
+  // The waveform circle at the free end is a solid pick zone (SweepElm.java:49).
+  bodyRect: (e) => endpointBox(e, SWEEP_CIRCLE),
   draw(g, e) {
     const [p1, p2] = endpoints(e);
     const color = voltageColor(g, g.voltages[0]);

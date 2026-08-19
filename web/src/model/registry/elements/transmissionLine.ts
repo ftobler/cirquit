@@ -1,5 +1,5 @@
 import { currentDotsFrom, interp, interpPrecise, lead, line, voltageColor } from '../../../render/draw';
-import { readParams, writeParams } from '../shared';
+import { readParams, writeParams, boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Half the grid, the gap between the body rectangle's near and far edges
@@ -105,5 +105,9 @@ export const TRANSMISSION_LINE_DEF: ElementDef = {
     { name: 'delay', label: 'Delay (s)', unit: 's' },
     { name: 'imped', label: 'Impedance', unit: 'Ω' },
   ],
+  // The body is the offset rectangle between the near and far conductor edges
+  // (TransLineElm.java:131-132), a solid pick zone; the bare leads to the four
+  // posts stay out of it, reached by their own posts and the axis.
+  bodyRect: (e) => boxOfPoints(lineGeometry(e).inner),
   draw: drawTransmissionLine,
 };

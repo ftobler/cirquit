@@ -10,7 +10,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { TESTPOINT_LABEL } from '../flags';
-import { onePost, readParams } from '../shared';
+import { onePost, readParams, endpointBox } from '../shared';
 import type { DrawContext, ElementDef } from '../../types';
 
 /** The value caption per meter mode, formatted from the engine's `value()`
@@ -125,6 +125,9 @@ export const TEST_POINT_DEF: ElementDef = {
     },
     { name: 'text', label: 'Label', type: 'text', target: 'text' },
   ],
+  // The label and value text at the free end are a solid pick zone
+  // (TestPointElm.java:139-163).
+  bodyRect: (e) => endpointBox(e, 16),
   draw(g, e) {
     const [p1, p2] = endpoints(e);
     const selected = isHighlighted(g);

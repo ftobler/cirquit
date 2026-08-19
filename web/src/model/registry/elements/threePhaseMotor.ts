@@ -17,7 +17,7 @@ import {
   line,
   voltageColor,
 } from '../../../render/draw';
-import { elementColor, readParams } from '../shared';
+import { elementColor, readParams, boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Motor body radius (ThreePhaseMotorElm.java:272). */
@@ -175,5 +175,14 @@ export const THREE_PHASE_MOTOR_DEF: ElementDef = {
     { name: 'b', label: 'Friction coefficient', unit: 'Nms/rad' },
     { name: 'J', label: 'Moment of inertia', unit: 'kg·m²' },
   ],
+  // The 37-radius rotor disc is a solid pick zone (ThreePhaseMotorElm.java:278).
+  bodyRect: (e) => {
+    const [p1, p2] = endpoints(e);
+    const center = interp(p1, p2, 0.5);
+    return boxOfPoints([
+      { x: center.x - CR, y: center.y - CR },
+      { x: center.x + CR, y: center.y + CR },
+    ]);
+  },
   draw: drawMotor,
 };

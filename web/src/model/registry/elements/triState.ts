@@ -16,7 +16,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { TRI_STATE_FLIP } from '../flags';
-import { readParams, writeParams } from '../shared';
+import { readParams, writeParams, boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 const HS = 16;   // TriStateElm.java:109
@@ -96,5 +96,12 @@ export const TRI_STATE_DEF: ElementDef = {
     { name: 'r_off_ground', label: 'Output pulldown resistance', unit: 'Ω' },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
   ],
+  // The triangle body is a solid pick zone: the base at lead1 grown HS+2, the
+  // apex at lead2 (TriStateElm.java:128-129).
+  bodyRect: (e) => {
+    const { lead1, lead2, apex } = triStateBody(e);
+    const [t0, t1] = interp2(lead1, lead2, 0, HS + 2);
+    return boxOfPoints([t0, t1, apex]);
+  },
   draw: drawTriState,
 };

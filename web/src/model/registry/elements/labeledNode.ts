@@ -1,5 +1,5 @@
 import { canvasFont, limbColor, voltageColor } from '../../../render/draw';
-import { escapeFlags, onePost } from '../shared';
+import { escapeFlags, onePost, boxOfPoints } from '../shared';
 import type { ElementDef } from '../../types';
 
 export const LABELED_NODE_DEF: ElementDef = {
@@ -19,6 +19,17 @@ export const LABELED_NODE_DEF: ElementDef = {
   },
   dump: (e) => [e.text ?? ''],
   dumpFlags: escapeFlags,
+  // The label box is a solid pick zone, roughly its drawn extent: an 11px
+  // glyph is about 9 units wide per character plus the 10-unit pad, so the
+  // box scales with the text (LabeledNodeElm.java's rect at y-8, h 16).
+  bodyRect: (e) => {
+    const p = { x: e.x1, y: e.y1 };
+    const w = Math.max(20, (e.text?.length ?? 1) * 9 + 10);
+    return boxOfPoints([
+      { x: p.x, y: p.y - 8 },
+      { x: p.x + w, y: p.y + 8 },
+    ]);
+  },
   draw(g, e) {
     const p = { x: e.x1, y: e.y1 };
     const text = e.text ?? '';

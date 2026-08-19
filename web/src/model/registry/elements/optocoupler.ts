@@ -23,6 +23,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { CHIP_FLIP_X, CHIP_FLIP_Y } from './dFlipFlop';
+import { boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 const cspc = 16;
@@ -158,5 +159,15 @@ export const OPTOCOUPLER_DEF: ElementDef = {
   },
   dump: (e) => [...(Array.isArray(e.model) ? e.model : []), e.params.ctr ?? 1],
   fields: [{ name: 'ctr', label: 'CTR Scale', min: 1 }],
+  // The housing rectangle is a solid pick zone (OptocouplerElm.java:133-139);
+  // the LED and phototransistor sit inside it.
+  bodyRect: (e) => {
+    const xr = e.x1 + cspc2 - cspc;
+    const yr = e.y1 - cspc / 2;
+    return boxOfPoints([
+      { x: xr, y: yr },
+      { x: xr + xs, y: yr + ys },
+    ]);
+  },
   draw: drawOptocoupler,
 };

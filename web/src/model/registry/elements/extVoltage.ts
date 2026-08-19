@@ -1,7 +1,7 @@
 import { canvasFont, currentDots, endpoints, lead, voltageColor } from '../../../render/draw';
 import { railLabelAnchor, railLead } from './rail';
 import { VOLTAGE_SHOW_VOLTAGE } from '../flags';
-import { onePost, readParams } from '../shared';
+import { onePost, readParams, endpointBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The name a fresh or name-less extVoltage carries (ExtVoltageElm.java:27). */
@@ -67,6 +67,8 @@ export const EXT_VOLTAGE_DEF: ElementDef = {
     { name: 'text', label: 'Name', type: 'text', target: 'text' },
     { name: 'voltage', label: 'External voltage', unit: 'V' },
   ],
+  // The name at the free end is a solid pick zone (ExtVoltageElm.java).
+  bodyRect: (e) => endpointBox(e, 14),
   draw(g, e) {
     const [p1, p2] = endpoints(e);
     const color = voltageColor(g, g.voltages[0]);

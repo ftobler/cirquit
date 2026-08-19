@@ -18,7 +18,7 @@ import {
   polygon,
   voltageColor,
 } from '../../../render/draw';
-import { elementColor } from '../shared';
+import { elementColor, postsBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** One internal transistor's opaque state token on a fresh part: flags, pnp,
@@ -153,5 +153,8 @@ export const DARLINGTON_DEF: ElementDef = {
       ],
     },
   ],
+  // The base bar and the collector/emitter fork span the whole axis at a
+  // 16-unit half width (DarlingtonElm.java:65).
+  bodyRect: (e) => postsBox(e, 16),
   draw: drawDarlington,
 };
