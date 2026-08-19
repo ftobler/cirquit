@@ -376,7 +376,11 @@ export default function App() {
             // of each other.
             <div className="app-banner-stack">
               {problem && (
-                <div className="problem app-banner" role="alert">
+                // The whole banner is the dismiss target, not just the ×: it
+                // overlays the canvas, so a tap that means "get out of the
+                // way" should not have to find a 20 px glyph. The × stays for
+                // the keyboard and for anyone who reads it as the affordance.
+                <div className="problem app-banner" role="alert" onClick={() => setProblem(null)}>
                   <span className="app-banner-text">{problem}</span>
                   <button
                     type="button"
@@ -401,6 +405,7 @@ export default function App() {
                   key={notice}
                   className="notice app-banner"
                   role="status"
+                  onClick={() => setNotice(null)}
                   onAnimationEnd={() => setNotice(null)}
                 >
                   <span className="app-banner-text">{notice}</span>
