@@ -439,7 +439,14 @@ function patchChangesElement(e: CircuitElement, patch: Partial<CircuitElement>):
  *  drawer the Parts button opens. The Toolbar Options row and the Parts
  *  button share this same state. */
 function defaultPartsOpen(): boolean {
-  return typeof window !== 'undefined' && window.innerWidth > 768;
+  return !isNarrow();
+}
+
+/** True on the narrow (mobile) layout where the side panels stop being flex
+ *  siblings and become edge-anchored overlays, so only one can be shown at a
+ *  time without stacking two popovers over the canvas. */
+function isNarrow(): boolean {
+  return typeof window !== 'undefined' && window.innerWidth <= 768;
 }
 
 function createAppStore() {
@@ -579,11 +586,14 @@ function createAppStore() {
       selectedIds: s.selectedIds.includes(id)
         ? [id, ...s.selectedIds.filter((x) => x !== id)]
         : [id],
-      // The dialog is the edit surface, like upstream's EditDialog; the drawer
-      // opens behind it so the panel still shows the element once it closes.
+      // The dialog is the edit surface, like upstream's EditDialog; the options
+      // panel opens behind it so it still shows the element once it closes. On
+      // the narrow layout the panels are overlays and only one may show, so the
+      // parts drawer closes to avoid two popovers; on the wide layout they are
+      // side-by-side siblings with room for both, so the toolbox stays put.
       elementProperties: id,
       panelOpen: true,
-      partsOpen: false,
+      partsOpen: isNarrow() ? false : s.partsOpen,
       contextMenu: null,
     })),
 

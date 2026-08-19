@@ -395,14 +395,24 @@ describe('requestEdit selects and opens the properties dialog', () => {
     const a = addResistor();
     const b = addResistor();
     useStore.getState().select([a]);
+    // Force the wide layout so the parts drawer is expected to stay open.
+    const original = (globalThis as { window?: Window }).window;
+    (globalThis as { window?: Window }).window = {
+      innerWidth: 1200,
+    } as unknown as Window;
+    useStore.getState().setPartsOpen(true);
+    try {
+      useStore.getState().requestEdit(b);
 
-    useStore.getState().requestEdit(b);
-
-    const s = useStore.getState();
-    expect(s.selectedIds).toEqual([b]);
-    expect(s.elementProperties).toBe(b);
-    expect(s.panelOpen).toBe(true);
-    expect(s.partsOpen).toBe(false);
+      const s = useStore.getState();
+      expect(s.selectedIds).toEqual([b]);
+      expect(s.elementProperties).toBe(b);
+      expect(s.panelOpen).toBe(true);
+      // On the wide layout the parts drawer is left open.
+      expect(s.partsOpen).toBe(true);
+    } finally {
+      (globalThis as { window?: Window }).window = original;
+    }
   });
 
   it('closes the context menu it was invoked from, and closes on demand', () => {
@@ -441,13 +451,39 @@ describe('requestEdit selects and opens the properties dialog', () => {
     expect(useStore.getState().panelOpen).toBe(true);
   });
 
-  it('opens the options drawer and closes the parts drawer', () => {
+  it('opens the options drawer and closes the parts drawer on the narrow layout', () => {
     addResistor();
     useStore.getState().setPartsOpen(true);
-    useStore.getState().requestEdit(useStore.getState().elements[0].id);
-    const s = useStore.getState();
-    expect(s.panelOpen).toBe(true);
-    expect(s.partsOpen).toBe(false);
+    // Simulate the mobile breakpoint so the parts drawer is expected to close.
+    const original = (globalThis as { window?: Window }).window;
+    (globalThis as { window?: Window }).window = {
+      innerWidth: 400,
+    } as unknown as Window;
+    try {
+      useStore.getState().requestEdit(useStore.getState().elements[0].id);
+      const s = useStore.getState();
+      expect(s.panelOpen).toBe(true);
+      expect(s.partsOpen).toBe(false);
+    } finally {
+      (globalThis as { window?: Window }).window = original;
+    }
+  });
+
+  it('opens the options drawer but leaves the parts drawer open on the wide layout', () => {
+    addResistor();
+    useStore.getState().setPartsOpen(true);
+    const original = (globalThis as { window?: Window }).window;
+    (globalThis as { window?: Window }).window = {
+      innerWidth: 1200,
+    } as unknown as Window;
+    try {
+      useStore.getState().requestEdit(useStore.getState().elements[0].id);
+      const s = useStore.getState();
+      expect(s.panelOpen).toBe(true);
+      expect(s.partsOpen).toBe(true);
+    } finally {
+      (globalThis as { window?: Window }).window = original;
+    }
   });
 });
 
