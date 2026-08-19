@@ -426,6 +426,11 @@ export interface SimSettings {
   /** Drawn grid-snapped crosshair guide lines under the pointer. An app pref,
    *  stored like upstream's `crossHair` key (UIManager.java:219). */
   showCrosshair: boolean;
+  /** Draw the pointer hit-test regions over the schematic, so a mis-pick can
+   *  be seen rather than guessed at. A diagnostic overlay with no upstream
+   *  counterpart: draw-only, so it changes nothing about hit testing,
+   *  selection, saving or the netlist. An app pref, defaulting off. */
+  showHitboxes: boolean;
   /** Overrides for the five theme colours; null means the theme default. */
   positiveColor: string | null;
   negativeColor: string | null;
@@ -489,6 +494,7 @@ export const DEFAULT_SETTINGS: SimSettings = {
   euroGates: true,
   editable: true,
   showCrosshair: false,
+  showHitboxes: false,
   positiveColor: null,
   negativeColor: null,
   neutralColor: null,

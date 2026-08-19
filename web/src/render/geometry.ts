@@ -175,42 +175,91 @@ function splitRoutedWire(
   ];
 }
 
-/** Distance from a point to an element, measured against all of its limbs. */
-export function distanceToElement(p: Point, e: CircuitElement): number {
-  const posts = postsOf(e);
+/**
+ * One primitive the element hit test measures a pointer against. The picker
+ * takes the smallest distance over an element's regions, so this list is the
+ * whole truth about what a click is compared to: nothing outside it decides a
+ * pick. Exported so the hitbox debug overlay can draw the very shapes the
+ * picker consults instead of a second copy that would drift from them.
+ */
+export type HitRegion =
+  /** A terminal, or the single anchor point of a one-post part. */
+  | { type: 'post'; x: number; y: number }
+  /** The body axis, the span between the two stored endpoints. */
+  | { type: 'axis'; a: Point; b: Point }
+  /** One segment of a routed wire's polyline. */
+  | { type: 'wire'; a: Point; b: Point }
+  /** A chip's housing rectangle, a solid pick zone. */
+  | { type: 'body'; box: Box };
+
+/**
+ * The regions `distanceToElement` measures against, in one place so the hit
+ * test and the debug overlay cannot disagree about what is grabbable. Pure:
+ * no canvas, no store, geometry only.
+ */
+export function hitRegions(e: CircuitElement): HitRegion[] {
   if (e.kind === 'wire' && e.route && e.route.length >= 2) {
     // A routed wire hit-tests every segment: the stored span between the two
     // posts would miss a polyline that detours far off the straight line.
-    let best = Infinity;
     const pts = wirePoints(e);
+    const segments: HitRegion[] = [];
     for (let i = 0; i < pts.length - 1; i++) {
-      best = Math.min(best, distanceToSegment(p, pts[i], pts[i + 1]));
+      segments.push({ type: 'wire', a: pts[i], b: pts[i + 1] });
     }
-    return best;
+    return segments;
   }
+  const posts = postsOf(e);
   if (posts.length <= 1) {
-    const near = Math.hypot(p.x - e.x1, p.y - e.y1);
+    // The stored start point, which for a one-post part is its terminal. A
+    // kind this build does not draw has no posts at all and still anchors
+    // here, so a click can reach it.
+    const regions: HitRegion[] = [{ type: 'post', x: e.x1, y: e.y1 }];
     // A ground's free end is a draggable control point, not a post, so its
     // stem must be hittable along the whole span or the far end could never
     // be clicked to ctrl-drag it. Other single-post parts (text, readouts)
     // keep their stray `x2, y2` out of hit-testing.
     const def = defFor(e.kind);
     if ((def?.draggablePosts ?? postCountOf(e)) > 1) {
-      return Math.min(near, distanceToSegment(p, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }));
+      regions.push({ type: 'axis', a: { x: e.x1, y: e.y1 }, b: { x: e.x2, y: e.y2 } });
     }
-    return near;
+    return regions;
   }
-  const body = distanceToSegment(p, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 });
-  // Multi-terminal parts have limbs off the main axis, so also test each
-  // terminal by its own distance; the nearer of the body line and a post wins.
-  const nearPost = Math.min(...posts.map((q) => Math.hypot(p.x - q.x, p.y - q.y)));
+  const regions: HitRegion[] = [
+    { type: 'axis', a: { x: e.x1, y: e.y1 }, b: { x: e.x2, y: e.y2 } },
+    // Multi-terminal parts have limbs off the main axis, so also test each
+    // terminal by its own distance; the nearer of the body line and a post wins.
+    ...posts.map((q): HitRegion => ({ type: 'post', x: q.x, y: q.y })),
+  ];
   // A chip's body rect is a solid pick zone: upstream gates the pick on
   // `boundingBox.contains` (MouseManager.java:813), so the drawn housing must
   // grab a click anywhere on it, not just on the thin axis and the pins. The
   // box distance is 0 for an interior point, so it wins over the axis/post
   // measures there while leaving them to decide outside.
   const rect = defFor(e.kind)?.bodyRect?.(e);
-  return rect ? Math.min(body, nearPost, distanceToBox(p, rect)) : Math.min(body, nearPost);
+  if (rect) regions.push({ type: 'body', box: rect });
+  return regions;
+}
+
+/** Distance from `p` to one hit region, in circuit units. */
+export function distanceToHitRegion(p: Point, region: HitRegion): number {
+  switch (region.type) {
+    case 'post':
+      return Math.hypot(p.x - region.x, p.y - region.y);
+    case 'axis':
+    case 'wire':
+      return distanceToSegment(p, region.a, region.b);
+    case 'body':
+      return distanceToBox(p, region.box);
+  }
+}
+
+/** Distance from a point to an element, measured against all of its limbs. */
+export function distanceToElement(p: Point, e: CircuitElement): number {
+  let best = Infinity;
+  for (const region of hitRegions(e)) {
+    best = Math.min(best, distanceToHitRegion(p, region));
+  }
+  return best;
 }
 
 /** Screen-pixel radius within which a pointer hits an element, at any zoom.

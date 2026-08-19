@@ -6,7 +6,9 @@ import {
   HIT_TOLERANCE_PX,
   distanceToBox,
   distanceToElement,
+  distanceToHitRegion,
   distanceToSegment,
+  hitRegions,
   hitTestElement,
   nearestPost,
   pointOnSegmentInterior,
@@ -541,5 +543,100 @@ describe('routed wires', () => {
     const nextId = () => next++;
     expect(splitWire(routed, { x: 0, y: 0 }, nextId)).toBeNull();
     expect(splitWire(routed, { x: 160, y: 0 }, nextId)).toBeNull();
+  });
+});
+
+describe('hitRegions', () => {
+  const routed = (): CircuitElement => ({
+    id: 9,
+    kind: 'wire',
+    x1: 0,
+    y1: 0,
+    x2: 160,
+    y2: 0,
+    flags: 0,
+    params: {},
+    route: [
+      [0, 0],
+      [80, 80],
+      [160, 0],
+    ],
+  });
+
+  it('gives a two-terminal part its axis band and a circle per terminal', () => {
+    expect(hitRegions(element(0, 0, 160, 0))).toEqual([
+      { type: 'axis', a: { x: 0, y: 0 }, b: { x: 160, y: 0 } },
+      { type: 'post', x: 0, y: 0 },
+      { type: 'post', x: 160, y: 0 },
+    ]);
+  });
+
+  it('gives a chip its axis, one circle per pin and its housing rect', () => {
+    const e = { ...element(0, 0, 96, 0), kind: 'dFlipFlop' };
+    const regions = hitRegions(e);
+    expect(regions.filter((r) => r.type === 'axis')).toHaveLength(1);
+    expect(regions.filter((r) => r.type === 'post')).toHaveLength(postsOf(e).length);
+    // The overlay must draw the def's own rect, not a redrawn guess at it.
+    expect(regions.filter((r) => r.type === 'body')).toEqual([
+      { type: 'body', box: defFor('dFlipFlop')!.bodyRect!(e) },
+    ]);
+  });
+
+  it('gives a stem-bearing one-post part its terminal and its stem, and no free-end post', () => {
+    // A ground connects only at (x1,y1); (x2,y2) is a drag handle, grabbable
+    // along the stem but never a terminal circle of its own.
+    expect(hitRegions({ ...element(0, 0, 32, 0), kind: 'ground' })).toEqual([
+      { type: 'post', x: 0, y: 0 },
+      { type: 'axis', a: { x: 0, y: 0 }, b: { x: 32, y: 0 } },
+    ]);
+  });
+
+  it('gives a post-only one-post part just its terminal circle', () => {
+    // A labeled node's stray (x2,y2) is not drawn and not grabbable, so no
+    // axis band may appear for it.
+    expect(hitRegions({ ...element(0, 0, 32, 32), kind: 'labeledNode' })).toEqual([
+      { type: 'post', x: 0, y: 0 },
+    ]);
+  });
+
+  it('gives a routed wire one band per polyline segment and nothing else', () => {
+    expect(hitRegions(routed())).toEqual([
+      { type: 'wire', a: { x: 0, y: 0 }, b: { x: 80, y: 80 } },
+      { type: 'wire', a: { x: 80, y: 80 }, b: { x: 160, y: 0 } },
+    ]);
+  });
+
+  it('gives a plain wire the same axis-and-posts treatment as any two-post part', () => {
+    expect(hitRegions({ ...element(0, 0, 160, 0), kind: 'wire' })).toEqual([
+      { type: 'axis', a: { x: 0, y: 0 }, b: { x: 160, y: 0 } },
+      { type: 'post', x: 0, y: 0 },
+      { type: 'post', x: 160, y: 0 },
+    ]);
+  });
+
+  it('is the whole of what distanceToElement measures', () => {
+    // The debug overlay draws these regions and nothing else, so a pick the
+    // overlay cannot explain would be a lie. Sweep a grid of probes across a
+    // sample of shapes and pin the two to the same number.
+    const samples: CircuitElement[] = [
+      element(0, 0, 160, 0),
+      element(0, 0, 96, 96),
+      { ...element(0, 0, 96, 0), kind: 'dFlipFlop' },
+      { ...element(0, 0, 64, 0), kind: 'transistor' },
+      { ...element(0, 0, 32, 0), kind: 'ground' },
+      { ...element(0, 0, 32, 32), kind: 'labeledNode' },
+      routed(),
+    ];
+    for (const e of samples) {
+      for (let x = -48; x <= 208; x += 16) {
+        for (let y = -48; y <= 128; y += 16) {
+          const p = { x, y };
+          const viaRegions = Math.min(
+            ...hitRegions(e).map((r) => distanceToHitRegion(p, r)),
+          );
+          expect(distanceToElement(p, e), `${e.kind} at ${x},${y}`).toBeCloseTo(viaRegions, 12);
+        }
+      }
+    }
   });
 });

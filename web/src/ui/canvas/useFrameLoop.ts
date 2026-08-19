@@ -5,7 +5,9 @@ import { defFor } from '../../model/registry';
 import type { CircuitElement, DrawContext, Point } from '../../model/types';
 import { dotPhaseStep, stepPostPhases, TOO_FAST, wrapPhase } from '../../render/dots';
 import { dragpostHandlesFrom, elementLength, makeTheme } from '../../render/draw';
+import { HIT_TOLERANCE_PX } from '../../render/geometry';
 import { drawGrid } from '../../render/grid';
+import { drawHitboxes } from '../../render/hitboxes';
 import { badConnectionPoints, postDotPoints, shouldDrawDot } from '../../render/junction';
 import { scopeWidth } from '../../scope/geometry';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
@@ -532,6 +534,17 @@ export function useFrameLoop(
             ctx.beginPath();
             ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
             ctx.fill();
+          }
+
+          // The hitbox debug overlay, off by default: the regions the pointer
+          // picker measures against, grown by the same reach a click gets
+          // (HIT_TOLERANCE_PX over the zoom). Drawn from `hitRegions`, the very
+          // function `distanceToElement` walks, so it cannot drift from the
+          // picker and start lying about a mis-pick. Over the symbols, under
+          // the drag handles; the hairline is asked for in circuit units so it
+          // stays one screen pixel at any zoom.
+          if (settings.showHitboxes) {
+            drawHitboxes(ctx, elements, HIT_TOLERANCE_PX / view.scale, 1 / view.scale);
           }
 
           // Control-point drag handles: a filled selection-colour rect at each of
