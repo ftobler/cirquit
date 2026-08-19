@@ -5,7 +5,7 @@ import { defFor } from '../../model/registry';
 import type { CircuitElement, DrawContext, Point } from '../../model/types';
 import { dotPhaseStep, stepPostPhases, TOO_FAST, wrapPhase } from '../../render/dots';
 import { dragpostHandlesFrom, elementLength, makeTheme } from '../../render/draw';
-import { HIT_TOLERANCE_PX } from '../../render/geometry';
+import { handlePoints, HIT_TOLERANCE_PX } from '../../render/geometry';
 import { drawGrid } from '../../render/grid';
 import { drawHitboxes } from '../../render/hitboxes';
 import { badConnectionPoints, postDotPoints, shouldDrawDot } from '../../render/junction';
@@ -564,17 +564,32 @@ export function useFrameLoop(
           // not ported: they are draw-mode noise the user's complaint never asked
           // for, and a per-frame pass over all elements buys nothing here.
           const drag = dragRef.current;
-          let handles: { posts: Point[]; grabbed: number } | null = null;
+          let handles: { posts: Point[]; grabbed: number }[] = [];
           if (drag.mode === 'dragpost') {
             const dragged = elements.find((e) => e.id === drag.id);
             if (dragged) {
-              handles = {
-                posts: [
-                  { x: dragged.x1, y: dragged.y1 },
-                  { x: dragged.x2, y: dragged.y2 },
-                ],
-                grabbed: drag.post === 1 ? 0 : 1,
-              };
+              handles = [
+                {
+                  posts: [
+                    { x: dragged.x1, y: dragged.y1 },
+                    { x: dragged.x2, y: dragged.y2 },
+                  ],
+                  grabbed: drag.post === 1 ? 0 : 1,
+                },
+              ];
+            }
+          } else if (drag.mode === 'move') {
+            // While the whole element (or selection) is being moved, every
+            // moving element's endpoints show their handles, upstream's
+            // drawHandles on a body drag (CircuitElm.java:747-761). None is the
+            // grabbed point: the drag moves the element as a unit, so no handle
+            // is enlarged.
+            for (const id of selectedIds) {
+              const moved = elements.find((e) => e.id === id);
+              if (!moved) continue;
+              const posts = handlePoints(moved);
+              if (posts.length === 0) continue;
+              handles.push({ posts, grabbed: -1 });
             }
           } else if (drag.mode === 'none' && hoveredId !== null && pointerRef.current) {
             // Hover feedback for the automatic grab: the endpoint the next
@@ -590,13 +605,15 @@ export function useFrameLoop(
             const at = { x: view.x + pt.x / view.scale, y: view.y + pt.y / view.scale };
             const post = hover ? armedHandle(at, hover, state) : null;
             if (hover && post !== null) {
-              handles = {
-                posts: [post === 1 ? { x: hover.x1, y: hover.y1 } : { x: hover.x2, y: hover.y2 }],
-                grabbed: 0,
-              };
+              handles = [
+                {
+                  posts: [post === 1 ? { x: hover.x1, y: hover.y1 } : { x: hover.x2, y: hover.y2 }],
+                  grabbed: 0,
+                },
+              ];
             }
           }
-          if (handles) {
+          for (const h of handles) {
             dragpostHandlesFrom(
               {
                 ctx,
@@ -627,8 +644,8 @@ export function useFrameLoop(
                 valueDigits: settings.shortDecimalDigits,
                 valueFontSize: settings.valueFontSize,
               },
-              handles.posts,
-              handles.grabbed,
+              h.posts,
+              h.grabbed,
             );
           }
 
