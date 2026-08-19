@@ -22,7 +22,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { SWITCH_IEC, SWITCH_LABEL } from '../flags';
-import { CONTACT_STROKE_WIDTH, OPEN_HS, rectOfPoints } from '../shared';
+import { OPEN_HS, rectOfPoints } from '../shared';
 import { labelFlags, switchTokens } from './switch';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -160,13 +160,14 @@ export const DPDT_SWITCH_DEF: ElementDef = {
   // the pole fan.
   canMirror: true,
   // The clickable bank spans the levers: the first pole's lead and the
-  // extreme throws of the fan (DPDTSwitchElm.java:162-164).
+  // extreme throws of the fan (DPDTSwitchElm.java:162-164). The box is the
+  // tight union of the lever centrelines, no growth: the picker's 8-pixel
+  // reach still covers the drawn stroke, so a margin would only grab clicks
+  // the user aimed past the lever.
   switchRect: (e) => {
     const geo = dpdtGeometry(e);
     const last = geo.poles * 4 - 4;
-    const rect = rectOfPoints([geo.poleLeads[0], geo.throwLeads[1], geo.throwLeads[last]]);
-    const m = CONTACT_STROKE_WIDTH;
-    return { x: rect.x - m, y: rect.y - m, w: rect.w + 2 * m, h: rect.h + 2 * m };
+    return rectOfPoints([geo.poleLeads[0], geo.throwLeads[1], geo.throwLeads[last]]);
   },
   noDiagonal: true, // every DPDTSwitchElm constructor sets it
   defaults: { position: 0, momentary: 0, poleCount: 2, resistance: 0 },

@@ -81,14 +81,15 @@ describe('switchRect geometry', () => {
 
   it('an SPDT covers the fan from the pivot to both throw poles', () => {
     const rect = defFor('switch2')!.switchRect!(baseEl('switch2'));
-    // The fan of the pivot lead and the first and last throw poles, grown by
-    // one contact stroke width (Switch2Elm.java:121-123).
-    expect(rect).toEqual({ x: 60, y: -20, w: 40, h: 40 });
+    // The tight union of the pivot lead and the first and last throw poles, no
+    // margin (Switch2Elm.java:121-123).
+    expect(rect).toEqual({ x: 64, y: -16, w: 32, h: 32 });
     expect(rectContains(rect, { x: 64, y: 0 })).toBe(true); // pivot lead1
     expect(rectContains(rect, { x: 96, y: -16 })).toBe(true); // throw pole 0
     expect(rectContains(rect, { x: 96, y: 16 })).toBe(true); // last throw pole
     expect(rectContains(rect, { x: 96, y: 0 })).toBe(true); // center-off rest, lead2
     expect(rectContains(rect, { x: 96, y: -15 })).toBe(true); // the lever on a throw
+    expect(rectContains(rect, { x: 96, y: 20 })).toBe(false); // past the margin
     expect(rectContains(rect, { x: 30, y: 0 })).toBe(false);
   });
 
@@ -98,6 +99,19 @@ describe('switchRect geometry', () => {
       baseEl('switch2', { state: 2, params: { position: 2, momentary: 0, throwCount: 2 } }),
     );
     expect(centered).toEqual(rect);
+  });
+
+  it('a DPDT covers the lever bank from the first pole to the last throw', () => {
+    const rect = defFor('dpdtSwitch')!.switchRect!(baseEl('dpdtSwitch'));
+    // The tight union of the first pole's lead and the extreme throws of the
+    // fan, no margin (DPDTSwitchElm.java:162-164).
+    expect(rect).toEqual({ x: 64, y: -16, w: 32, h: 80 });
+    expect(rectContains(rect, { x: 64, y: 0 })).toBe(true); // first pole lead
+    expect(rectContains(rect, { x: 96, y: -16 })).toBe(true); // first pole upper throw
+    expect(rectContains(rect, { x: 96, y: 64 })).toBe(true); // last pole lower throw
+    expect(rectContains(rect, { x: 64, y: 48 })).toBe(true); // last pole lead
+    expect(rectContains(rect, { x: 96, y: 68 })).toBe(false); // past the margin
+    expect(rectContains(rect, { x: 30, y: 0 })).toBe(false);
   });
 
   it('a logic input covers the glyph, not the lead', () => {
