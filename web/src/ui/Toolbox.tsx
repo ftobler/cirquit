@@ -63,8 +63,9 @@ export function Toolbox() {
       })}
       {searching && tools.length === 0 && <p className="hint">No tools match “{query.trim()}”</p>}
       <p className="hint">
-        Pick a part, then drag on the canvas to place it. Shift-drag pans, the wheel zooms, and
-        clicking a switch while running throws it.
+        Pick a part, then click the canvas to drop it, or drag to size it by hand. Space turns it
+        before it lands. Shift-drag pans, the wheel zooms, and clicking a switch while running
+        throws it.
       </p>
     </div>
   );

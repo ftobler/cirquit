@@ -1,7 +1,9 @@
 /** Pure store helpers: grid snapping, dirty tracking and element construction. */
 
-import { defFor, toolboxEntry } from '../model/registry';
+import { defFor, toolboxEntry, toolDef } from '../model/registry';
+import { rotateElement } from '../model/transform';
 import { GRID_SIZE } from '../model/types';
+import type { CircuitElement } from '../model/types';
 import { getModel, modelToEngineSpec } from '../io/subcircuits';
 import type { CompositeEngineSpec } from '../io/netlist/types';
 
@@ -108,4 +110,47 @@ export function makeToolElement(tool: string, x1: number, y1: number, x2: number
     text: def?.defaultText,
     state: def?.interactive ? 0 : undefined,
   });
+}
+
+/** The length a click-placed part gets when its def declares no
+ *  `defaultLength`: upstream's base `getDragLength()` of 64 px. Four grid
+ *  squares and not three, even though 48 px is the commoner resistor length
+ *  in the bundled corpus, because `L/2` is the settled-selection rotate's
+ *  pivot and it has to land on the grid: 64/2 = 32 = 2*GRID_SIZE, while
+ *  48/2 = 24 is not a multiple of 16 (transform.ts, `rotateElement`). A
+ *  click-place leaves the part selected with the tool cleared, so the very
+ *  next Space is a midpoint rotate: an odd length would put every second turn
+ *  off grid. `renderToolIcon` needs the same fallback for its own reasons, so
+ *  both read this constant and cannot drift apart. */
+export const DEFAULT_PLACEMENT_LENGTH = 4;
+
+/** The element an armed tool would place at the grid-snapped point `(x,y)`,
+ *  turned `turns` quarter turns about that point. `(x,y)` is post 1, exactly
+ *  where a placement drag anchors it, so the ghost the user sees and the part
+ *  the press creates are the same element and it cannot jump under the cursor
+ *  on click. The turn goes through `rotateElement` rather than raw coordinate
+ *  arithmetic so the orientation flags come with it: an op-amp, transistor,
+ *  mosfet, relay, triode, transformer, UJT, comparator or opampReal placed
+ *  turned carries the same flag bit it would have carried had it been placed
+ *  flat and then rotated. */
+export function makeGhostElement(
+  tool: string,
+  x: number,
+  y: number,
+  turns: number,
+): Omit<CircuitElement, 'id'> {
+  const def = toolDef(tool);
+  const len = (def?.defaultLength ?? DEFAULT_PLACEMENT_LENGTH) * GRID_SIZE;
+  // Grounds and voltage sources drop vertically, the rest horizontally,
+  // matching upstream's getDragVertical override.
+  const x2 = def?.vertical ? x : x + len;
+  const y2 = def?.vertical ? y + len : y;
+  // `rotateElement` takes a stored element, so the turn runs on a placeholder
+  // id the caller replaces: the press hands the result to `addElement`, which
+  // assigns the real one, and the ghost draw substitutes -1.
+  let e: CircuitElement = { ...makeToolElement(tool, x, y, x2, y2), id: 0 };
+  const n = ((turns % 4) + 4) % 4;
+  for (let i = 0; i < n; i++) e = rotateElement(e, { x, y });
+  const { id: _id, ...rest } = e;
+  return rest;
 }

@@ -4,7 +4,6 @@ import {
   axisConstrained,
   constrainPostDrag,
   defFor,
-  dominantAxisSnap,
   postCountOf,
 } from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
@@ -22,12 +21,14 @@ import { GRID_SIZE } from '../../model/types';
 import { HIT_TOLERANCE_PX, hitTestElement, postAt, postPatch } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
 import { snap, useStore } from '../../state/store';
+import type { AppState } from '../../state/types';
 import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
 import { DRAG_DELAY_MS, LONG_PRESS_MS, TouchGesture, type GestureAction } from '../gestures';
 import {
   beginPointerGesture,
   finishPlacement,
   finishPostDrag,
+  placementPoint,
   releaseHeldMomentary,
   type Drag,
 } from './pointerDown';
@@ -46,6 +47,7 @@ export function useCanvasInteractions(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   dragRef: React.MutableRefObject<Drag>,
   pointerRef: React.MutableRefObject<Point | null>,
+  hoverRef: React.MutableRefObject<Point | null>,
   forceRender: React.Dispatch<React.SetStateAction<number>>,
   engine: SimEngine | null,
 ) {
@@ -88,6 +90,16 @@ export function useCanvasInteractions(
     if (dragDelayTimerRef.current !== null) clearTimeout(dragDelayTimerRef.current);
   }, []);
 
+  /** Disarms the drag and lowers the store's gesture flag together. The two
+   *  must never come apart: a stale `elementGesture` would make the next
+   *  rotate skip its commit and silently cost the user an undo entry, so every
+   *  teardown path (abort, double-tap, pointer-up, pointer-cancel) goes
+   *  through here rather than assigning `mode: 'none'` on its own. */
+  const clearDrag = (state: AppState) => {
+    dragRef.current = { mode: 'none' };
+    state.endElementGesture();
+  };
+
   const clearTouchTimers = () => {
     if (longPressTimerRef.current !== null) {
       clearTimeout(longPressTimerRef.current);
@@ -118,7 +130,7 @@ export function useCanvasInteractions(
             .getState()
             .openContextMenu(down.x, down.y, target, toCircuit(down.x, down.y));
           touchArmedRef.current = false;
-          dragRef.current = { mode: 'none' };
+          clearDrag(useStore.getState());
           pinchPrevMidRef.current = null;
         }
       }
@@ -249,6 +261,9 @@ export function useCanvasInteractions(
     pointerRef.current = toClient(ev.clientX, ev.clientY);
 
     if (isTouch) {
+      // A finger has no hover, so the ghost stands down for the whole touch
+      // gesture: tap-to-place still works, it just gets no preview.
+      hoverRef.current = null;
       const g = gestureRef.current!;
       const { actions } = g.down(ev.pointerId, ev.clientX, ev.clientY);
       let primary = false;
@@ -265,7 +280,7 @@ export function useCanvasInteractions(
         // into the saved netlist.
         const drag = dragRef.current;
         if (drag.mode === 'place') finishPlacement(drag, state);
-        dragRef.current = { mode: 'none' };
+        clearDrag(state);
         clearTouchTimers();
         touchArmedRef.current = false;
         pinchPrevMidRef.current = null;
@@ -296,6 +311,7 @@ export function useCanvasInteractions(
     const state = useStore.getState();
     const p = toCircuit(ev.clientX, ev.clientY);
     pointerRef.current = toClient(ev.clientX, ev.clientY);
+    if (!isTouch) hoverRef.current = pointerRef.current;
     const grid = GRID_SIZE;
 
     if (isTouch) {
@@ -350,22 +366,17 @@ export function useCanvasInteractions(
         break;
       }
       case 'place': {
-        let x2 = snap(p.x, grid);
-        let y2 = snap(p.y, grid);
         const placed = state.elements.find((q) => q.id === drag.id);
         if (placed !== undefined) {
-          const def = defFor(placed.kind);
-          // A drag-derived parameter (the wattmeter's width) is the weaker
-          // drag component; the axis snap below discards it, so capture it
-          // from the snapped pointer first (WattmeterElm.java:75-89).
-          const extra = def?.dragParams?.(drag.start, { x: x2, y: y2 });
-          if (axisConstrained(placed)) {
-            // A multi-post part snaps to the dominant axis, so a transistor,
-            // op-amp or SPDT cannot end up diagonal (CircuitElm.java:560-566).
-            const snapped = dominantAxisSnap(drag.start, x2, y2);
-            x2 = snapped.x;
-            y2 = snapped.y;
-          }
+          // Space banks quarter turns while the placement is in flight, so the
+          // endpoint is re-derived from the cursor and the banked turns on
+          // every move; otherwise the next move would erase the turn.
+          const { x2, y2, extra } = placementPoint(
+            drag.start,
+            { x: snap(p.x, grid), y: snap(p.y, grid) },
+            state.elementGesture?.placeTurns ?? 0,
+            placed,
+          );
           // A no-op update would bump `revision` and make the engine reload
           // mid-cell, so only touch the store when the second post actually
           // moved or a drag-derived parameter (the wattmeter's width) really
@@ -506,7 +517,7 @@ export function useCanvasInteractions(
           // A double-tap early-returns before the shared up-handling below, so
           // the release a momentary switch's second press owes it runs here.
           releaseHeldMomentary(ev.pointerId, gestureRefs);
-          dragRef.current = { mode: 'none' };
+          clearDrag(state);
           canvasRef.current?.releasePointerCapture(ev.pointerId);
           forceRender((n) => n + 1);
           return;
@@ -550,7 +561,7 @@ export function useCanvasInteractions(
     // If the switch vanished mid-hold there is nothing to toggle back.
     releaseHeldMomentary(ev.pointerId, gestureRefs);
 
-    dragRef.current = { mode: 'none' };
+    clearDrag(state);
     canvasRef.current?.releasePointerCapture(ev.pointerId);
     forceRender((n) => n + 1);
   };
@@ -657,12 +668,13 @@ export function useCanvasInteractions(
       clearTouchTimers();
       touchArmedRef.current = false;
       pinchPrevMidRef.current = null;
-      dragRef.current = { mode: 'none' };
-      releaseHeldMomentary(ev.pointerId, gestureRefs);
       // The pointer is gone, so the crosshair and transient highlights go with
       // it, mirroring onPointerLeave and the shared up path.
       const state = useStore.getState();
+      clearDrag(state);
+      releaseHeldMomentary(ev.pointerId, gestureRefs);
       pointerRef.current = null;
+      hoverRef.current = null;
       state.setHovered(null);
       state.setHighlightedNode(null);
       canvasRef.current?.releasePointerCapture(ev.pointerId);
@@ -679,6 +691,7 @@ export function useCanvasInteractions(
     // must go with it.
     const state = useStore.getState();
     pointerRef.current = null;
+    hoverRef.current = null;
     state.setHovered(null);
     state.setHighlightedNode(null);
   };

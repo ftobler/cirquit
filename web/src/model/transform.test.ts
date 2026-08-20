@@ -1,6 +1,14 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { postsOf } from './registry';
-import { canMirror, canRotate, canSwap, mirrorElement, rotateElement, swapTerminalOrder } from './transform';
+import {
+  canMirror,
+  canRotate,
+  canSwap,
+  mirrorElement,
+  rotateElement,
+  swapTerminalOrder,
+  turnPointAbout,
+} from './transform';
 import {
   clearSessionModels,
   modelToEngineSpec,
@@ -476,5 +484,120 @@ describe('routed wire transforms drop the route', () => {
       [0, 80],
       [160, 0],
     ]);
+  });
+});
+
+describe('turnPointAbout', () => {
+  it('turns a quarter per unit and closes the circle on the fourth', () => {
+    const pivot = { x: 0, y: 0 };
+    const p = { x: 32, y: 0 };
+    // The same sense as rotateElement: relative to the pivot, (dx,dy) goes to
+    // (dy,-dx), which on a y-down canvas walks the point anticlockwise.
+    expect(turnPointAbout(p, pivot, 0)).toEqual({ x: 32, y: 0 });
+    expect(turnPointAbout(p, pivot, 1)).toEqual({ x: 0, y: -32 });
+    expect(turnPointAbout(p, pivot, 2)).toEqual({ x: -32, y: 0 });
+    expect(turnPointAbout(p, pivot, 3)).toEqual({ x: 0, y: 32 });
+    expect(turnPointAbout(p, pivot, 4)).toEqual({ x: 32, y: 0 });
+  });
+
+  it('takes the turn count mod 4, in both directions', () => {
+    const pivot = { x: 0, y: 0 };
+    const p = { x: 32, y: 0 };
+    // The placement's banked turns are already reduced mod 4, but a negative
+    // or oversized count must still land somewhere sane rather than loop.
+    expect(turnPointAbout(p, pivot, 5)).toEqual(turnPointAbout(p, pivot, 1));
+    expect(turnPointAbout(p, pivot, -1)).toEqual(turnPointAbout(p, pivot, 3));
+    expect(turnPointAbout(p, pivot, -4)).toEqual({ x: 32, y: 0 });
+  });
+
+  it('holds the pivot itself still, wherever it is', () => {
+    for (const pivot of [
+      { x: 0, y: 0 },
+      { x: -48, y: -112 },
+      { x: 96, y: -16 },
+    ]) {
+      for (let t = 0; t < 4; t++) expect(turnPointAbout(pivot, pivot, t)).toEqual(pivot);
+    }
+  });
+
+  it('turns about a negative-coordinate pivot without drifting', () => {
+    const pivot = { x: -32, y: -64 };
+    const p = { x: 0, y: -64 };  // 32 to the pivot's right
+    expect(turnPointAbout(p, pivot, 1)).toEqual({ x: -32, y: -96 });  // straight above
+    expect(turnPointAbout(p, pivot, 2)).toEqual({ x: -64, y: -64 });
+    expect(turnPointAbout(p, pivot, 4)).toEqual(p);
+  });
+
+  it('rounds once at the end, so a half-coordinate pivot cannot compound', () => {
+    // An element midpoint is a half coordinate whenever the span is odd; four
+    // turns about it must still be the identity, which per-turn rounding would
+    // break.
+    const pivot = { x: 90.5, y: 10 };
+    const p = { x: 10, y: 20 };
+    expect(turnPointAbout(p, pivot, 4)).toEqual(p);
+    expect(Number.isInteger(turnPointAbout(p, pivot, 1).x)).toBe(true);
+    expect(Number.isInteger(turnPointAbout(p, pivot, 1).y)).toBe(true);
+  });
+});
+
+describe('rotate about an explicit pivot', () => {
+  it('holds the anchor still and drops a horizontal part below it', () => {
+    // The placement path: (x1,y1) is the point the user pressed, so it must not
+    // move, and the free end swings to the perpendicular.
+    const e = element('resistor', 0, 0, 160, 0);
+    const r = rotateElement(e, { x: e.x1, y: e.y1 });
+    expect([r.x1, r.y1]).toEqual([0, 0]);
+    expect([r.x2, r.y2]).toEqual([0, -160]);
+  });
+
+  it('is the identity after four turns about the anchor', () => {
+    let r = element('resistor', 16, 32, 176, 32);
+    const original = r;
+    for (let i = 0; i < 4; i++) r = rotateElement(r, { x: r.x1, y: r.y1 });
+    expect(r).toEqual(original);
+  });
+
+  it('walks the free end round all four quadrants of the anchor', () => {
+    const e = element('wire', 48, 48, 48 + 64, 48);
+    let r = rotateElement(e, { x: 48, y: 48 });
+    expect([r.x2, r.y2]).toEqual([48, 48 - 64]);
+    r = rotateElement(r, { x: 48, y: 48 });
+    expect([r.x2, r.y2]).toEqual([48 - 64, 48]);
+    r = rotateElement(r, { x: 48, y: 48 });
+    expect([r.x2, r.y2]).toEqual([48, 48 + 64]);
+    r = rotateElement(r, { x: 48, y: 48 });
+    expect([r.x2, r.y2]).toEqual([48 + 64, 48]);
+  });
+
+  it('leaves the default-pivot result byte-identical, flags included', () => {
+    // The pivot parameter must not have moved the settled-selection path a
+    // single unit: these are the pre-pivot outputs for a plain two-post part,
+    // a horizontal op-amp (flag toggles) and a vertical mosfet (flag cancels).
+    expect(rotateElement(element('resistor', 0, 0, 160, 0))).toMatchObject({
+      x1: 80,
+      y1: 80,
+      x2: 80,
+      y2: -80,
+      flags: 0,
+    });
+    const opamp = rotateElement(element('opamp', 0, 0, 160, 0, 0));
+    expect([opamp.x1, opamp.y1, opamp.x2, opamp.y2]).toEqual([80, 80, 80, -80]);
+    expect(opamp.flags & 1).toBe(1);  // horizontal: flipXY toggles, flipY does not
+    const mosfet = rotateElement(element('mosfet', 0, 0, 0, 160, 8));
+    expect([mosfet.x1, mosfet.y1, mosfet.x2, mosfet.y2]).toEqual([-80, 80, 80, 80]);
+    expect(mosfet.flags).toBe(8);  // vertical: the two flips cancel
+  });
+
+  it('applies the same orientation flag whichever pivot is used', () => {
+    // rotateFlags reads the pre-turn endpoints, so the pivot cannot reach it.
+    const opamp = element('opamp', 0, 0, 160, 0, 0);
+    expect(rotateElement(opamp, { x: 0, y: 0 }).flags).toBe(rotateElement(opamp).flags);
+    const vertical = element('opamp', 0, 0, 0, 160, 1);
+    expect(rotateElement(vertical, { x: 0, y: 0 }).flags).toBe(rotateElement(vertical).flags);
+  });
+
+  it('refuses a post-only annotation whatever the pivot', () => {
+    const text = element('decoration', 8, 8, 8, 8);
+    expect(rotateElement(text, { x: 0, y: 0 })).toBe(text);
   });
 });

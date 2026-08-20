@@ -6,13 +6,14 @@ import { GRID_SIZE } from '../../model/types';
 import type { CircuitElement } from '../../model/types';
 import { HIT_TOLERANCE_PX } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
-import { snap, useStore } from '../../state/store';
+import { makeGhostElement, snap, useStore } from '../../state/store';
 import { fresh } from '../../state/store.test-helpers';
 import {
   armedHandle,
   beginPointerGesture,
   finishPlacement,
   finishPostDrag,
+  placementPoint,
   releaseHeldMomentary,
   type Drag,
   type PointerDownInput,
@@ -334,11 +335,57 @@ describe('touch gating', () => {
   });
 });
 
-describe('finishPlacement cancelling a zero-length drop', () => {
-  // The resistor tool has no defaultLength, so a pointer-down with no drag
-  // already places it at zero length; the drop lands back on its own start
-  // point with no move needed. Single-click and double-tap both funnel their
-  // cancel through this one finishPlacement, so one test covers both triggers.
+describe('click-place: a press with no drag', () => {
+  // Every kind now gets a length from `makeGhostElement`, so a press that
+  // never moves leaves a real part standing instead of the zero-length stray
+  // finishPlacement used to have to delete. The resistor is the case that
+  // changed: it declares no defaultLength, so before the ghost this press
+  // produced a point and the click looked like it did nothing.
+  it('keeps the placed element and returns to select mode', () => {
+    useStore.getState().setTool('resistor');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
+
+    finishPlacement(drag, useStore.getState());
+
+    const placed = useStore.getState().elements;
+    expect(placed).toHaveLength(1);
+    expect(placed[0].x1 === placed[0].x2 && placed[0].y1 === placed[0].y2).toBe(false);
+    // The tool clears after one placement, so the ghost goes with it.
+    expect(useStore.getState().tool).toBeNull();
+    expect(useStore.getState().selectedIds).toEqual([placed[0].id]);
+  });
+
+  it('places exactly the element the ghost drew, turns and all', () => {
+    // The "must not jump on click" guarantee: the ghost the user aimed with
+    // and the part the press creates come from the same builder.
+    useStore.getState().setTool('opAmp');
+    useStore.getState().turnTool();
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+
+    const placed = useStore.getState().elements[0];
+    const snapped = { x: snap(100, GRID_SIZE), y: snap(100, GRID_SIZE) };
+    const { id: _id, ...stored } = placed;
+    expect(stored).toEqual(makeGhostElement('opAmp', snapped.x, snapped.y, 1));
+  });
+
+  it('places the pre-ghost geometry when nothing has been turned', () => {
+    useStore.getState().setTool('wire');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+
+    const placed = useStore.getState().elements[0];
+    const len = (defFor('wire')?.defaultLength ?? 0) * GRID_SIZE;
+    expect([placed.x1, placed.y1, placed.x2, placed.y2]).toEqual([96, 96, 96 + len, 96]);
+  });
+});
+
+describe('finishPlacement cancelling a collapsed drop', () => {
+  // A drag that returns to its own anchor still collapses the part to a point,
+  // which is the case this cancel exists for.
   it('one Ctrl+Z after the cancel restores the pre-placement circuit, not the stray element', () => {
     useStore.getState().setTool('resistor');
     const r = refs();
@@ -349,6 +396,9 @@ describe('finishPlacement cancelling a zero-length drop', () => {
     expect(useStore.getState().elements).toHaveLength(1);
     // addElement's own commit is the gesture's only undo baseline so far.
     expect(useStore.getState().undoStack.length).toBe(before + 1);
+    // The drag dragged the free end back onto the press anchor, exactly what
+    // the place branch's pointer-move would have written.
+    useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
 
     finishPlacement(drag, useStore.getState());
 
@@ -712,5 +762,109 @@ describe('selection semantics on pointer-down', () => {
       state.selectedIds,
     );
     expect(inside).toEqual([bottom]);
+  });
+});
+
+describe('arming the store gesture flag', () => {
+  // The flag is what lets a Space rotate mid-drag fold into the gesture's own
+  // undo entry, and what tells the placement's pointer-move to re-apply the
+  // banked turns. Only the two modes that hold a real element raise it.
+  it('a placement arm raises a place gesture with no turns banked yet', () => {
+    useStore.getState().setTool('resistor');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    expect(r.dragRef.current.mode).toBe('place');
+    expect(useStore.getState().elementGesture).toEqual({ kind: 'place', placeTurns: 0 });
+  });
+
+  it('a move arm raises a move gesture', () => {
+    const id = addEl('resistor');
+    const r = refs();
+    beginPointerGesture(down(), { x: 80, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(r.dragRef.current.mode).toBe('move');
+    expect(useStore.getState().elementGesture).toEqual({ kind: 'move', placeTurns: 0 });
+  });
+
+  it('an endpoint drag leaves it null, because a turn there has no meaning', () => {
+    // The next pointer-move drags that post straight back to the cursor, so a
+    // rotate would be erased; Space falls through to the settled path instead.
+    const id = addEl('resistor');
+    const r = refs();
+    beginPointerGesture(down({ ctrlKey: true }), { x: 80, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(r.dragRef.current.mode).toBe('dragpost');
+    expect(useStore.getState().elementGesture).toBeNull();
+  });
+
+  it('a rubber band, a pan and a row sweep all leave it null', () => {
+    const id = addEl('resistor');
+    const band = refs();
+    beginPointerGesture(down(), { x: 400, y: 400 }, useStore.getState(), null, false, band);
+    expect(band.dragRef.current.mode).toBe('select');
+    expect(useStore.getState().elementGesture).toBeNull();
+
+    const pan = refs();
+    beginPointerGesture(down({ altKey: true }), { x: 400, y: 400 }, useStore.getState(), null, false, pan);
+    expect(pan.dragRef.current.mode).toBe('pan');
+    expect(useStore.getState().elementGesture).toBeNull();
+
+    const row = refs();
+    beginPointerGesture(
+      down({ altKey: true, shiftKey: true }),
+      { x: 0, y: 0 },
+      useStore.getState(),
+      hit(id),
+      false,
+      row,
+    );
+    expect(row.dragRef.current.mode).toBe('rowcol');
+    expect(useStore.getState().elementGesture).toBeNull();
+  });
+});
+
+describe('placementPoint', () => {
+  const start = { x: 0, y: 0 };
+
+  it('follows the cursor untouched when no turn is banked', () => {
+    expect(placementPoint(start, { x: 160, y: 0 }, 0, baseEl('resistor'))).toEqual({
+      x2: 160,
+      y2: 0,
+    });
+  });
+
+  it('turns the cursor-derived end about the anchor, a quarter per banked turn', () => {
+    const e = baseEl('resistor');
+    expect(placementPoint(start, { x: 160, y: 0 }, 1, e)).toEqual({ x2: 0, y2: -160 });
+    expect(placementPoint(start, { x: 160, y: 0 }, 2, e)).toEqual({ x2: -160, y2: 0 });
+    expect(placementPoint(start, { x: 160, y: 0 }, 3, e)).toEqual({ x2: 0, y2: 160 });
+    // The cursor sets the length and the drag axis; the banked turns set the
+    // orientation on top of it, so the part points away from the cursor.
+    expect(placementPoint(start, { x: 160, y: 0 }, 4, e)).toEqual({ x2: 160, y2: 0 });
+  });
+
+  it('snaps the turned point to the dominant axis, not the raw cursor', () => {
+    // A multi-post part must never land diagonal. Turning after the snap would
+    // reintroduce the diagonal, so the order is asserted here: the cursor is
+    // 160 across and 48 down, and one turn makes the strong component vertical.
+    const opamp = baseEl('opamp');
+    expect(placementPoint(start, { x: 160, y: 48 }, 0, opamp)).toEqual({ x2: 160, y2: 0 });
+    expect(placementPoint(start, { x: 160, y: 48 }, 1, opamp)).toEqual({ x2: 0, y2: -160 });
+  });
+
+  it('takes a drag-derived width from the turned point, not the unturned cursor', () => {
+    // The wattmeter's width is the weaker drag component (WattmeterElm.java:
+    // 75-89). With one turn banked the weak component has changed axis, so a
+    // width read before the turn would be the length instead.
+    const w = baseEl('wattmeter');
+    expect(placementPoint(start, { x: 160, y: 32 }, 0, w).extra).toEqual({ width: 32 });
+    // One turn maps (160,32) to (32,-160): the weak component is now x, and
+    // its magnitude is unchanged, which is exactly the invariance a rotation
+    // owes. Reading dragParams after the axis snap would report 16 instead.
+    expect(placementPoint(start, { x: 160, y: 32 }, 1, w).extra).toEqual({ width: 32 });
+  });
+
+  it('omits extra entirely for a part with no drag-derived params', () => {
+    // The caller keys "did anything change" off `extra === undefined`, so a
+    // plain part must not hand back an empty object.
+    expect(placementPoint(start, { x: 160, y: 0 }, 1, baseEl('resistor')).extra).toBeUndefined();
   });
 });

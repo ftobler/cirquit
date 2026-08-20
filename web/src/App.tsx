@@ -190,6 +190,11 @@ export default function App() {
       // Every matched chord is an app command, so prevent its browser default;
       // unbound keys keep theirs, notably Ctrl+= and Ctrl+- page zoom.
       ev.preventDefault();
+      // A held rotate key turns once, not at the key-repeat rate: Space is
+      // rotate now, and a resting thumb would otherwise spin the part. The
+      // guard sits after preventDefault so the page still cannot scroll. The
+      // nudge, delete and zoom keys keep repeating by design.
+      if (ev.repeat && action.type === 'rotate') return;
       switch (action.type) {
         case 'undo':
           s.undo();

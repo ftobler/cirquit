@@ -6,12 +6,19 @@
  * a running interactive part, select, place, pan, sweep or arm a drag.
  */
 
-import { defFor, postCountOf, postsOf, toolDef } from '../../model/registry';
+import {
+  axisConstrained,
+  defFor,
+  dominantAxisSnap,
+  postCountOf,
+  postsOf,
+} from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
 import { GRID_SIZE } from '../../model/types';
 import type { CircuitElement, Point } from '../../model/types';
+import { turnPointAbout } from '../../model/transform';
 import { grabbedHandle, nearestPost } from '../../render/geometry';
-import { makeToolElement, nextSwitchState, snap, useStore } from '../../state/store';
+import { makeGhostElement, nextSwitchState, snap, useStore } from '../../state/store';
 import type { AppState } from '../../state/types';
 
 /** The armed gesture a pointer-down leaves behind. `gated` marks the touch
@@ -73,6 +80,39 @@ export function releaseHeldMomentary(pointerId: number, refs: PointerDownRefs): 
   heldMomentaryPointerRef.current = null;
   const e = useStore.getState().elements.find((q) => q.id === id);
   if (e) useStore.getState().setElementState(id, ((e.state ?? 0) + 1) % 2);
+}
+
+/**
+ * Where a placement drag's free end lands, given the grid-snapped cursor.
+ *
+ * The three steps are one function because their order is the whole point.
+ * The quarter turns Space banked during the drag are applied first, about the
+ * press anchor, so both the drag-derived params and the dominant-axis snap see
+ * the turned point: applying the turn last would take a turned wattmeter's
+ * width from the unturned cursor and could leave a multi-post part diagonal.
+ * The anchor `(x1,y1)` never moves, so only the free end is returned.
+ */
+export function placementPoint(
+  start: Point,
+  snapped: Point,
+  turns: number,
+  placed: CircuitElement,
+): { x2: number; y2: number; extra?: Record<string, number> } {
+  const turned = turns === 0 ? snapped : turnPointAbout(snapped, start, turns);
+  const def = defFor(placed.kind);
+  // A drag-derived parameter (the wattmeter's width) is the weaker drag
+  // component; the axis snap below discards it, so capture it from the turned
+  // pointer first (WattmeterElm.java:75-89).
+  const extra = def?.dragParams?.(start, turned);
+  let { x: x2, y: y2 } = turned;
+  if (axisConstrained(placed)) {
+    // A multi-post part snaps to the dominant axis, so a transistor, op-amp or
+    // SPDT cannot end up diagonal (CircuitElm.java:560-566).
+    const axis = dominantAxisSnap(start, x2, y2);
+    x2 = axis.x;
+    y2 = axis.y;
+  }
+  return extra === undefined ? { x2, y2 } : { x2, y2, extra };
 }
 
 /** The pointer-up cleanup a placement owes: drop a zero-length element,
@@ -291,14 +331,17 @@ export function beginPointerGesture(
     const grid = GRID_SIZE;
     const x = snap(p.x, grid);
     const y = snap(p.y, grid);
-    const def = toolDef(state.tool);
-    const len = (def?.defaultLength ?? 0) * grid;
-    // Grounds and voltage sources drop vertically, the rest horizontally,
-    // matching upstream's getDragVertical override.
-    const x2 = def?.vertical ? x : x + len;
-    const y2 = def?.vertical ? y + len : y;
-    const id = state.addElement(makeToolElement(state.tool, x, y, x2, y2));
+    // The same builder the ghost draws from, so the part cannot shift under
+    // the cursor when the click lands, and every kind now gets a length: the
+    // ~150 defs that declare none used to place as a point and be deleted
+    // again by finishPlacement, which is what made a click look like nothing
+    // happened.
+    const id = state.addElement(makeGhostElement(state.tool, x, y, state.toolTurns));
     dragRef.current = { mode: 'place', start: { x, y }, id };
+    // The addElement commit above is this gesture's whole undo baseline, so
+    // raise the flag before anything else can commit: a Space rotate mid-drag
+    // must fold into it, and it must turn about this press anchor.
+    state.beginElementGesture('place');
     state.select([id]);
     return;
   }
@@ -339,6 +382,12 @@ export function beginPointerGesture(
       };
     } else {
       dragRef.current = { mode: 'move', last: p, moved: false, gated };
+      // Same one-gesture-one-undo-entry reasoning as the placement above: the
+      // state.commit() before this branch is the move's baseline, and a Space
+      // rotate mid-move rides along with it. An endpoint drag raises nothing:
+      // the next pointer-move drags that post straight back to the cursor, so
+      // a turn there would have no meaning.
+      state.beginElementGesture('move');
     }
     return;
   }

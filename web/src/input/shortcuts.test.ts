@@ -100,10 +100,30 @@ describe('space, P and Escape', () => {
     expect(matchShortcut(ev({ key: 'Escape' }))).toEqual({ type: 'escape' });
   });
 
-  it('space is select mode, which pins the spacebar decision', () => {
-    // Upstream: Space is temporary select mode, run/pause has no key
-    // (UIManager.java:1285-1291). Space must never mean run/pause here.
-    expect(matchShortcut(ev({ key: ' ' }))).toEqual({ type: 'selectMode' });
+  it('space is rotate, which pins the spacebar decision', () => {
+    // The owner's call: Space turns the grabbed or selected element. Upstream's
+    // Space (temporary select mode) is dropped because Escape already does
+    // that job. Space must never mean run/pause here, upstream has no key for
+    // it at all (UIManager.java:1285-1291).
+    expect(matchShortcut(ev({ key: ' ' }))).toEqual({ type: 'rotate' });
+  });
+
+  it('space with a modifier is unbound, so browser and app chords stay apart', () => {
+    // Alt is its own matcher dimension and the row carries an explicit
+    // shift: false, so neither Alt+Space nor Shift+Space rotates. Space is not
+    // a placement char either, so nothing catches them further down.
+    expect(matchShortcut(ev({ key: ' ', altKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: ' ', shiftKey: true }))).toBeNull();
+    expect(matchShortcut(ev({ key: ' ', ctrlKey: true }))).toBeNull();
+  });
+
+  it('select mode keeps its action arm, reachable only by assigning it a key', () => {
+    // The table row is gone but the action stays assignable, so a user who
+    // wants upstream's Space behaviour can put it back. actionForChord runs
+    // before the table, so the assignment beats the rotate row.
+    expect(matchShortcut(ev({ key: ' ' }), { selectMode: 'Space' })).toEqual({
+      type: 'selectMode',
+    });
   });
 
   it('p and P arm the PNP and P-MOSFET tools, so run/pause stays button-only', () => {
@@ -450,9 +470,12 @@ describe('chord signatures', () => {
   it('rowsFromOverlay shows the table default when nothing is assigned', () => {
     const rows = rowsFromOverlay({});
     expect(rows.find((r) => r.action === 'undo')?.chord).toBe('Ctrl+z');
-    expect(rows.find((r) => r.action === 'selectMode')?.chord).toBe('Space');
-    // The geometry commands' plain letters moved to Alt for placement parity.
-    expect(rows.find((r) => r.action === 'rotate')?.chord).toBe('Alt+r');
+    // Space became rotate, so select mode shows an empty assignable row like
+    // toggleRunning does.
+    expect(rows.find((r) => r.action === 'selectMode')?.chord).toBe('');
+    // Rotate has two table rows, Space first and Alt+r behind it; the dialog
+    // names the first.
+    expect(rows.find((r) => r.action === 'rotate')?.chord).toBe('Space');
     expect(rows.find((r) => r.action === 'mirror')?.chord).toBe('Alt+m');
     expect(rows.find((r) => r.action === 'swap')?.chord).toBe('Alt+t');
     expect(rows.find((r) => r.action === 'toggleRunning')?.chord).toBe('');
@@ -481,6 +504,7 @@ describe('chord signatures', () => {
     const rows = [
       { action: 'delete' as const, chord: 'Delete' },  // the default
       { action: 'zoomIn' as const, chord: '+' },  // the default
+      { action: 'rotate' as const, chord: 'Space' },  // the default
       { action: 'undo' as const, chord: 'Ctrl+y' },  // a real override
       { action: 'toggleRunning' as const, chord: 'p' },
       { action: 'redo' as const, chord: '' },
@@ -494,6 +518,13 @@ describe('default bindings and the Default button', () => {
     expect(defaultBindingFor('delete')).toBe('Delete');
     expect(defaultBindingFor('undo')).toBe('Ctrl+z');
     expect(defaultBindingFor('toggleRunning')).toBe('');
+    // Two rotate rows, Space first: the dialog names the first, and Alt+r
+    // stays a live second default that no row advertises.
+    expect(defaultBindingFor('rotate')).toBe('Space');
+    // Select mode lost its table row when Space became rotate, so it reads as
+    // unassigned and an empty row for it is at its default.
+    expect(defaultBindingFor('selectMode')).toBe('');
+    expect(isDefaultBinding({ action: 'selectMode', chord: '' })).toBe(true);
   });
 
   it('isDefaultBinding reports a row at its default and rejects a genuine override', () => {

@@ -144,6 +144,18 @@ export interface AppState {
    *  holds, so the whole gesture collapses into one undo entry. Transient: it
    *  is not part of `Snapshot`, so it never touches undo dedup. */
   scopeGesture: boolean;
+  /** The in-flight canvas pointer gesture, mirrored from the canvas drag ref so
+   *  the keyboard path can act on the grabbed element. `place` carries the
+   *  anchor-relative quarter turns Space has applied, which the placement's
+   *  pointer-move re-applies to the cursor-derived endpoint. Transient: not
+   *  part of `Snapshot`, so it never reaches the undo stack or `snapshotKey`. */
+  elementGesture: { kind: 'place' | 'move'; placeTurns: number } | null;
+  /** Quarter turns applied to the armed tool's ghost, before any press. Reset
+   *  by `setTool`, so arming a part always starts flat and the counter cannot
+   *  survive into the next placement. Transient: not part of `Snapshot`, so it
+   *  never reaches the undo stack or `snapshotKey`, exactly like
+   *  `elementGesture` and `scopeGesture`. */
+  toolTurns: number;
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
   revision: number;
   /** Bumped by scope capture-parameter edits (speed), which the frame loop
@@ -210,6 +222,11 @@ export interface AppState {
   setRunning(running: boolean): void;
   toggleRunning(): void;
   setTool(tool: string | null): void;
+  /** Turns the armed tool's ghost a quarter turn, the pre-press half of
+   *  `rotateSelection`. A no-op with no tool armed or on a part `canRotate`
+   *  refuses, so the counter cannot drift on a ghost Space does nothing to.
+   *  Commits nothing: the ghost is not in the document. */
+  turnTool(): void;
   setView(view: ViewTransform): void;
   setViewSize(w: number, h: number): void;
   setStatus(status: string): void;
@@ -281,7 +298,10 @@ export interface AppState {
    *  baseline, so this must not push a second one. Every other caller
    *  omits it and gets the normal pre-delete commit. */
   deleteSelected(skipCommit?: boolean): void;
-  /** Rotates the selection 90 degrees about each element's midpoint. */
+  /** Rotates the selection 90 degrees about each element's midpoint, one undo
+   *  entry. Under an `elementGesture` it skips the commit (the gesture's
+   *  pointer-down commit is the baseline) and a placement turns about its press
+   *  anchor instead, banking the turn in `elementGesture.placeTurns`. */
   rotateSelection(): void;
   /** Mirrors the selection across each element's vertical centre axis. */
   mirrorSelection(): void;
@@ -440,6 +460,14 @@ export interface AppState {
   /** Ends a scope editing gesture, lowering `scopeGesture` so the scope setters
    *  resume committing. The gesture's whole edit is one undo entry. */
   endScopeGesture(): void;
+  /** Begins a canvas pointer gesture on an element: raises `elementGesture` so
+   *  a keyboard rotate mid-drag folds into the gesture's single undo entry.
+   *  Unlike `beginScopeGesture` this does not commit: both callers (a placement
+   *  arm and a move arm) have already committed their own baseline. */
+  beginElementGesture(kind: 'place' | 'move'): void;
+  /** Ends the canvas pointer gesture, lowering `elementGesture` so the next
+   *  command commits normally again. Every drag teardown owes this call. */
+  endElementGesture(): void;
   /** Records the current state so the next change can be undone. */
   commit(): void;
   /** Marks the start of an edit session (a field focus or a pointer-down on a

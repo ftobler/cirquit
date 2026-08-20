@@ -76,6 +76,7 @@ import { loadShortcutOverlay, normalizeKey, saveShortcutOverlay } from '../input
 import {
   hasUnsavedChanges,
   makeElement,
+  makeGhostElement,
   makeToolElement,
   RECOVERED_UNSAVED,
   resolveCompositeModel,
@@ -487,6 +488,8 @@ function createAppStore() {
   undoStack: [],
   redoStack: [],
   scopeGesture: false,
+  elementGesture: null,
+  toolTurns: 0,
   revision: 0,
   scopeRevision: 0,
   paramRevision: 0,
@@ -506,7 +509,17 @@ function createAppStore() {
 
   setRunning: (running) => set({ running }),
   toggleRunning: () => set((s) => ({ running: !s.running })),
-  setTool: (tool) => set({ tool }),
+  // Arming a tool always starts the ghost flat: a turn belongs to the part the
+  // user just picked, never to the next one.
+  setTool: (tool) => set({ tool, toolTurns: 0 }),
+  turnTool: () => {
+    const { tool, toolTurns } = get();
+    if (tool === null) return;
+    // The same guard the settled command uses, so Space over a ghost the menu
+    // greys out banks nothing and the keyboard cannot drift from the menu.
+    if (!canRotate({ ...makeGhostElement(tool, 0, 0, 0), id: -1 })) return;
+    set({ toolTurns: (toolTurns + 1) % 4 });
+  },
   setView: (view) => {
     // Reject a poisoned view outright: a NaN view written once would be
     // rewritten by every later zoomAbout, which derives x/y from the stored
@@ -652,6 +665,13 @@ function createAppStore() {
   // No commit here: the post-gesture state is the live one and the baseline is
   // already on the stack, so undo restores the whole gesture in a single step.
   endScopeGesture: () => set({ scopeGesture: false }),
+
+  // No commit here, unlike beginScopeGesture: both callers (the placement arm
+  // and the move arm in pointerDown) have already pushed the gesture's undo
+  // baseline, and a second commit would split one drag across two undo steps.
+  beginElementGesture: (kind) => set({ elementGesture: { kind, placeTurns: 0 } }),
+
+  endElementGesture: () => set({ elementGesture: null }),
 
   beginEdit: () => get().commit(),
 
@@ -926,7 +946,35 @@ function createAppStore() {
     }));
   },
 
-  rotateSelection: () => transformSelected(canRotate, rotateElement),
+  rotateSelection: () => {
+    const { elementGesture: gesture, tool } = get();
+    // An armed tool with nothing grabbed turns its ghost, ahead of the
+    // selection: arming a tool does not clear the selection, so after a
+    // click-place the part just dropped is still selected while the next
+    // shortcut arms a fresh ghost, and turning that selection would turn the
+    // wrong thing.
+    if (gesture === null && tool !== null) {
+      get().turnTool();
+      return;
+    }
+    // Nothing grabbed: the settled-selection command, one undo entry.
+    if (gesture === null) {
+      transformSelected(canRotate, rotateElement);
+      return;
+    }
+    if (gesture.kind === 'move') {
+      // The pointer-down commit is this drag's whole baseline, so the turn
+      // rides along with it: one Ctrl+Z undoes the move and the turns together.
+      transformSelected(canRotate, rotateElement, true);
+      return;
+    }
+    // A placement turns about its own (x1,y1), which is the press anchor: the
+    // place branch only ever writes (x2,y2), so the anchor stays under the
+    // point the user pressed. The turn is banked so the next pointer-move
+    // re-applies it to the cursor-derived endpoint instead of erasing it.
+    const turned = transformSelected(canRotate, (e) => rotateElement(e, { x: e.x1, y: e.y1 }), true);
+    if (turned) set({ elementGesture: { ...gesture, placeTurns: (gesture.placeTurns + 1) % 4 } });
+  },
   mirrorSelection: () => transformSelected(canMirror, mirrorElement),
   swapTerminals: () => transformSelected(canSwap, swapTerminalOrder),
 
@@ -2312,21 +2360,36 @@ function modelLinesFor(s: AppState, elements: CircuitElement[]): string[] {
  * One-undo-step geometry command over the selection. Refuses to touch a mixed
  * or unsupported selection, which keeps the menu's disabled state and the
  * keyboard path from diverging: if the menu would grey the item out, the same
- * `guard` makes the command a no-op here.
+ * `guard` makes the command a no-op here. Returns whether it applied, so a
+ * caller banking gesture state (the placement's quarter turns) does not count
+ * a refused command.
  */
 function transformSelected(
   guard: (e: CircuitElement) => boolean,
   apply: (e: CircuitElement) => CircuitElement,
-): void {
+  skipCommit = false,
+): boolean {
   const s = useStore.getState();
   const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
-  if (selected.length === 0 || !selected.every(guard)) return;
-  s.commit();
+  if (selected.length === 0 || !selected.every(guard)) return false;
+  // skipCommit is the in-flight pointer gesture's escape hatch, the same
+  // reasoning as deleteSelected(true): the drag already committed its baseline
+  // at pointer-down, and a second commit here would cost the gesture an extra
+  // undo entry that reverts to a half-turned element.
+  if (!skipCommit) s.commit();
   useStore.setState((st) => ({
     elements: st.elements.map((e) => (st.selectedIds.includes(e.id) ? apply(e) : e)),
     ...bumpRevision(st),
   }));
+  return true;
 }
 
 export type { AppState, ViewTransform };
-export { hasUnsavedChanges, makeElement, makeToolElement, RECOVERED_UNSAVED, snap };
+export {
+  hasUnsavedChanges,
+  makeElement,
+  makeGhostElement,
+  makeToolElement,
+  RECOVERED_UNSAVED,
+  snap,
+};

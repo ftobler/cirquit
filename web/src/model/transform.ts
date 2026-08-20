@@ -13,7 +13,7 @@
 
 import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP, postCountOf } from './registry';
 import { COMPARATOR_SWAP, OPAMPREAL_SWAP } from './registry/flags';
-import type { CircuitElement } from './types';
+import type { CircuitElement, Point } from './types';
 
 /** Whether the element can turn a quarter turn. A stem-bearing one-post part
  *  (ground, rails, logic inputs) rotates about its own midpoint like any
@@ -54,10 +54,32 @@ function flipDpdtPosition(e: CircuitElement): CircuitElement {
   return { ...e, state: position, params: { ...e.params, position } };
 }
 
-const centre = (e: CircuitElement) => ({
-  cx: (e.x1 + e.x2) / 2,
-  cy: (e.y1 + e.y2) / 2,
+const centre = (e: CircuitElement): Point => ({
+  x: (e.x1 + e.x2) / 2,
+  y: (e.y1 + e.y2) / 2,
 });
+
+/**
+ * One quarter turn per unit about `pivot`, the same sense as `rotateElement`:
+ * relative to the pivot, `(dx,dy)` becomes `(dy,-dx)`. `turns` is taken mod 4
+ * and a negative count turns the other way. The turns are accumulated exactly
+ * and rounded once at the end, so a half-coordinate pivot (an element's own
+ * midpoint) cannot compound its rounding error across turns.
+ *
+ * Shared by `rotateElement` and the canvas placement drag, which re-applies
+ * the turns Space has banked to the cursor-derived endpoint every move.
+ */
+export function turnPointAbout(p: Point, pivot: Point, turns: number): Point {
+  let { x, y } = p;
+  const n = ((turns % 4) + 4) % 4;
+  for (let i = 0; i < n; i++) {
+    const nx = y + pivot.x - pivot.y;
+    const ny = pivot.y + pivot.x - x;
+    x = nx;
+    y = ny;
+  }
+  return { x: Math.round(x), y: Math.round(y) };
+}
 
 /** A routed wire's polyline is valid only for its exact endpoints; once a
  *  transform moves those, the route is dropped. Upstream re-routes in
@@ -69,23 +91,29 @@ const withoutRoute = (e: CircuitElement): CircuitElement => {
 };
 
 /**
- * A 90 degree turn about the element's own midpoint, equivalent to upstream's
- * flipXY-then-flipY. The arithmetic is exact for grid-aligned input, but an
+ * A 90 degree turn about `pivot`, the element's own midpoint by default,
+ * equivalent to upstream's flipXY-then-flipY. A placement drag passes its
+ * press anchor instead, so Space turns the part about the point the user
+ * pressed on rather than dragging that anchor away from under the cursor.
+ * `rotateFlags` is pivot-independent: its vertical test reads the pre-turn
+ * endpoints. The arithmetic is exact for grid-aligned input, but an
  * element whose endpoints have mismatched parity (e.g. from a hand-edited
  * netlist) would land on half coordinates, so each result is rounded to keep
  * the store invariant "every stored endpoint is an integer" intact. For
  * grid-aligned input the rounding is identity.
  */
-export function rotateElement(e: CircuitElement): CircuitElement {
+export function rotateElement(e: CircuitElement, pivot: Point = centre(e)): CircuitElement {
   if (!canRotate(e)) return e;
-  const { cx, cy } = centre(e);
-  const turn = (x: number, y: number): [number, number] => [
-    Math.round(y + cx - cy),
-    Math.round(cy + cx - x),
-  ];
-  const [x1, y1] = turn(e.x1, e.y1);
-  const [x2, y2] = turn(e.x2, e.y2);
-  const base = { ...withoutRoute(e), x1, y1, x2, y2, flags: rotateFlags(e) };
+  const p1 = turnPointAbout({ x: e.x1, y: e.y1 }, pivot, 1);
+  const p2 = turnPointAbout({ x: e.x2, y: e.y2 }, pivot, 1);
+  const base = {
+    ...withoutRoute(e),
+    x1: p1.x,
+    y1: p1.y,
+    x2: p2.x,
+    y2: p2.y,
+    flags: rotateFlags(e),
+  };
   // The DPDT's flips invert the throw pairing (DPDTSwitchElm.java:256-277), so
   // a turned DPDT throws to each pole's other throw, like every flip().
   return e.kind === 'dpdtSwitch' ? flipDpdtPosition(base) : base;

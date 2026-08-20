@@ -13,7 +13,7 @@ import { defFor, type ToolboxEntry } from '../model/registry';
 import { toolShortcut } from '../model/search';
 import type { SimSettings } from '../model/types';
 import { canMirror, canRotate, canSwap } from '../model/transform';
-import { useStore } from '../state/store';
+import { makeGhostElement, useStore } from '../state/store';
 import { canCreateSlider, canSplitWire, paletteGroups } from './contextMenuRows';
 import { ToolIcon } from './ToolIcon';
 
@@ -34,6 +34,7 @@ export function ContextMenu() {
   const clipboard = useStore((s) => s.clipboard);
   const closeContextMenu = useStore((s) => s.closeContextMenu);
   const selectedIds = useStore((s) => s.selectedIds);
+  const tool = useStore((s) => s.tool);
   const elements = useStore((s) => s.elements);
   const scopes = useStore((s) => s.scopes);
   const editable = useStore((s) => s.settings.editable);
@@ -100,7 +101,13 @@ export function ContextMenu() {
   const selected = elements.filter((e) => selectedIds.includes(e.id));
   // A command is enabled only when every selected element can do it, matching
   // the store actions, which refuse a mixed or unsupported selection.
-  const canRotateSelection = selected.length > 0 && selected.every(canRotate);
+  // A ghost the armed tool is about to drop counts as rotatable, and takes
+  // precedence over the selection exactly as Space does (store.rotateSelection):
+  // arming a tool does not clear the selection, so the row must not go grey
+  // while the key still turns something, nor turn the old selection when the
+  // key turns the ghost.
+  const canRotateGhost = tool !== null && canRotate({ ...makeGhostElement(tool, 0, 0, 0), id: -1 });
+  const canRotateSelection = canRotateGhost || (selected.length > 0 && selected.every(canRotate));
   const canMirrorSelection = selected.length > 0 && selected.every(canMirror);
   const canSwapSelection = selected.length > 0 && selected.every(canSwap);
 
@@ -218,7 +225,7 @@ export function ContextMenu() {
     },
     {
       label: 'Rotate',
-      shortcut: 'Alt+R',
+      shortcut: 'Space',
       disabled: !editable || !canRotateSelection,
       action: () => useStore.getState().rotateSelection(),
     },

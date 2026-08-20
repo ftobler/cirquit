@@ -186,7 +186,11 @@ export interface ElementDef {
    *  selects and drags. Absent means the whole element toggles, so the fallback
    *  regresses nothing silently. */
   switchRect?(e: CircuitElement): SwitchRect;
-  /** Default length in grid units when dragged out from the toolbox. */
+  /** Length in grid units the part is created with, both for a toolbox drag
+   *  and for a single click (`makeGhostElement`). Absent falls back to
+   *  `DEFAULT_PLACEMENT_LENGTH` (4). Keep any value here even: the length's
+   *  half is the settled-selection rotate's pivot, and an odd one puts the
+   *  turned endpoints off grid (state/helpers.ts, `rotateElement`). */
   defaultLength?: number;
   /** Elements upstream forces vertical on toolbar placement (ground, voltage). */
   vertical?: boolean;

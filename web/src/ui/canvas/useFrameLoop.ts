@@ -5,6 +5,7 @@ import { defFor } from '../../model/registry';
 import type { CircuitElement, DrawContext, Point } from '../../model/types';
 import { dotPhaseStep, stepPostPhases, TOO_FAST, wrapPhase } from '../../render/dots';
 import { dragpostHandlesFrom, elementLength, makeTheme } from '../../render/draw';
+import { neutralDrawContext } from '../../render/drawContext';
 import { handlePoints, HIT_TOLERANCE_PX } from '../../render/geometry';
 import { drawGrid } from '../../render/grid';
 import { drawHitboxes } from '../../render/hitboxes';
@@ -12,7 +13,7 @@ import { badConnectionPoints, postDotPoints, shouldDrawDot } from '../../render/
 import { scopeWidth } from '../../scope/geometry';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { GRID_SIZE } from '../../model/types';
-import { mergeProblem, useStore } from '../../state/store';
+import { mergeProblem, makeGhostElement, useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
 import { armedHandle } from './pointerDown';
@@ -32,6 +33,11 @@ export function frameSafely(body: () => void, report: (message: string) => void)
     report(err instanceof Error ? err.message : String(err));
   }
 }
+
+/** Opacity of the armed tool's ghost: half, the same weight the renderer's
+ *  other preview overlays use (render/draw.ts's half-alpha convention), so it
+ *  reads as "not placed yet" over both the grid and an existing symbol. */
+const GHOST_ALPHA = 0.5;
 
 /** Resolves each scope's measured canvas width, for engine ring sizing. */
 const widthOf = (id: number): number | undefined => scopeWidth(id);
@@ -62,6 +68,7 @@ export function useFrameLoop(
   engine: SimEngine | null,
   dragRef: React.MutableRefObject<Drag>,
   pointerRef: React.MutableRefObject<Point | null>,
+  hoverRef: React.MutableRefObject<Point | null>,
 ): void {
   const dotPhaseRef = useRef(new Map<number, number>());
   const postPhaseRef = useRef(new Map<number, number[]>());
@@ -138,6 +145,8 @@ export function useFrameLoop(
             scopes,
             hoveredId,
             highlightedNode,
+            tool,
+            toolTurns,
           } = state;
 
           // Drop sticky auto-scale state for plots that no longer exist (a removed
@@ -554,6 +563,50 @@ export function useFrameLoop(
             drawHitboxes(ctx, elements, HIT_TOLERANCE_PX / view.scale, 1 / view.scale);
           }
 
+          // The armed tool's ghost: the part a single click would drop, at the
+          // grid-snapped cursor, turned by the quarter turns Space has banked.
+          // Built by the same `makeGhostElement` the press uses, so the part
+          // cannot shift under the cursor when the click lands. It is not in
+          // `elements`, so the engine never sees it: no revision bump, and no
+          // undo entry exists until the press. Drawn after the symbols and
+          // before the handles, the slot upstream draws its own in-flight
+          // `mouse.dragElm` in (UIManager.java:703-706).
+          //
+          // `hoverRef` and not `pointerRef`: only a hovering mouse or pen
+          // writes it, so a ghost never sticks to the spot a finger last
+          // tapped. A drag in flight has a real element under the cursor
+          // already, so the ghost stands down. Editing off hides it too: the
+          // toolbox tiles are already disabled and the press is refused, but
+          // the placement shortcut and Find Component can still arm a tool,
+          // and a ghost that promises a drop the app will refuse would lie.
+          if (
+            settings.editable &&
+            tool !== null &&
+            dragRef.current.mode === 'none' &&
+            hoverRef.current
+          ) {
+            const pt = hoverRef.current;
+            const gx = Math.round((view.x + pt.x / view.scale) / grid) * grid;
+            const gy = Math.round((view.y + pt.y / view.scale) / grid) * grid;
+            const ghost: CircuitElement = {
+              ...makeGhostElement(tool, gx, gy, toolTurns),
+              // Nothing may collide with a real element id. The ghost never
+              // reaches `elements`, the engine or the store, so the id is only
+              // here to satisfy the type.
+              id: -1,
+            };
+            const ghostDef = defFor(ghost.kind);
+            if (ghostDef) {
+              ctx.save();
+              ctx.globalAlpha = GHOST_ALPHA;
+              // Neither selected nor hovered, and no live values: an all-zero
+              // context is what makes the ghost read as a preview instead of a
+              // dead part sitting at 0 V.
+              ghostDef.draw(neutralDrawContext(ctx, theme, settings, view.scale), ghost);
+              ctx.restore();
+            }
+          }
+
           // Control-point drag handles: a filled selection-colour rect at each of
           // the dragged element's stored endpoints, the grabbed one at 9x9, so the
           // moving control point keeps its highlight (CircuitElm.drawHandles,
@@ -614,36 +667,11 @@ export function useFrameLoop(
             }
           }
           for (const h of handles) {
+            // The handles ride on the live canvas, so the user's display
+            // toggles come through: the rects themselves carry no readout, but
+            // the context is the one every neighbouring element is drawn with.
             dragpostHandlesFrom(
-              {
-                ctx,
-                theme,
-                voltages: [],
-                current: 0,
-                voltage: 0,
-                power: 0,
-                value: 0,
-                state: 0,
-                wave: [],
-                dotPhase: 0,
-                postCurrents: [],
-                postDotPhases: [],
-                showCurrent: settings.showCurrent,
-                showValues: settings.showValues,
-                showVoltageColor: settings.showVoltageColor,
-                showPowerColor: settings.showPowerColor,
-                conventional: settings.conventional,
-                euroResistors: settings.euroResistors,
-                euroGates: settings.euroGates,
-                selected: false,
-                hovered: false,
-                onHighlightedNet: false,
-                voltageRange: settings.voltageRange,
-                powerRange: settings.powerRange,
-                scale: view.scale,
-                valueDigits: settings.shortDecimalDigits,
-                valueFontSize: settings.valueFontSize,
-              },
+              neutralDrawContext(ctx, theme, settings, view.scale, 'settings'),
               h.posts,
               h.grabbed,
             );
@@ -698,5 +726,5 @@ export function useFrameLoop(
     return () => cancelAnimationFrame(raf);
     // The refs are stable for the life of the component, so this runs once per
     // engine just like the inline effect it was extracted from.
-  }, [engine, canvasRef, dragRef, stateRef, pointerRef]);
+  }, [engine, canvasRef, dragRef, stateRef, pointerRef, hoverRef]);
 }

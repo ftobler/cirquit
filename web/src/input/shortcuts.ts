@@ -84,7 +84,6 @@ export const SHORTCUTS: ShortcutEntry[] = [
   // above are exclusive, so a held ctrl unmatches these plain rows, which is
   // the deliberate consequence of the exact-match matcher.
   { mod: false, key: 'Escape', action: { type: 'escape' } },
-  { mod: false, key: ' ', action: { type: 'selectMode' } },
   { mod: false, key: 'Delete', action: { type: 'delete' } },
   { mod: false, key: 'Backspace', action: { type: 'delete' } },
   { mod: false, key: 'ArrowUp', action: { type: 'nudge', dx: 0, dy: -1 } },
@@ -114,6 +113,14 @@ export const SHORTCUTS: ShortcutEntry[] = [
   // the way Ctrl is (UIManager's modifier chords). m is free upstream too, and
   // joining it keeps the three letters memorable. Alt+Shift+r stays unbound:
   // the shift guard excludes it like the other letter chords.
+  //
+  // Space is rotate, the owner's call: it turns whatever is grabbed mid-drag
+  // or selected. Upstream's Space (temporary select mode) is dropped, because
+  // Escape already returns to select mode and Space would otherwise be the one
+  // overloaded key in this table. It sits before the Alt+r row so
+  // defaultBindingFor('rotate') reports Space; Alt+r stays a second default.
+  // The shift guard keeps Shift+Space unbound, like the letter rows.
+  { mod: false, shift: false, key: ' ', action: { type: 'rotate' } },
   { mod: false, alt: true, shift: false, key: 'r', action: { type: 'rotate' } },
   { mod: false, alt: true, shift: false, key: 'm', action: { type: 'mirror' } },
   { mod: false, alt: true, shift: false, key: 't', action: { type: 'swap' } },
@@ -170,7 +177,7 @@ export const ACTION_LABELS: Record<AssignableAction, string> = {
   zoomOut: 'Zoom Out',
   zoomReset: 'Zoom 100%',
   escape: 'Escape to select mode',
-  selectMode: 'Space select mode',
+  selectMode: 'Select mode',
   toggleRunning: 'Start/Stop Simulation',
 };
 
@@ -275,8 +282,10 @@ export function matchShortcut(
 }
 
 /** The chord the SHORTCUTS table binds an action to by default, or '' when
- *  none (toggleRunning). The dialog shows it in a row the user has not
- *  reassigned, so the table is the single source of truth for the defaults. */
+ *  none (toggleRunning, and selectMode since Space became rotate). The dialog
+ *  shows it in a row the user has not reassigned, so the table is the single
+ *  source of truth for the defaults. An action with two table rows (rotate:
+ *  Space and Alt+r) reports the first, so the dialog names one binding. */
 export function defaultBindingFor(type: AssignableAction): string {
   for (const entry of SHORTCUTS) {
     if (entry.action.type === type) return chordFromEntry(entry);

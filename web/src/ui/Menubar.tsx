@@ -17,7 +17,7 @@ import { parseCircuit } from '../io/netlist';
 import { canMirror, canRotate } from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
-import { useStore } from '../state/store';
+import { makeGhostElement, useStore } from '../state/store';
 import { menubarButtonClass } from './controlClasses';
 import { useMenuKeyboard } from './menuKeyboard';
 import { deferred, type MenuItemDef } from './menuRows';
@@ -166,6 +166,7 @@ function Dropdown({
 
 export function Menubar({ engine }: Props) {
   const running = useStore((s) => s.running);
+  const tool = useStore((s) => s.tool);
   const toggleRunning = useStore((s) => s.toggleRunning);
   const status = useStore((s) => s.status);
   const newCircuit = useStore((s) => s.newCircuit);
@@ -340,7 +341,13 @@ export function Menubar({ engine }: Props) {
   const canConvertWires = hasSelection
     ? plainWires.some((e) => selectedIds.includes(e.id))
     : plainWires.length > 0;
-  const canRotateSelection = selected.length > 0 && selected.every(canRotate);
+  // A ghost the armed tool is about to drop counts as rotatable, and takes
+  // precedence over the selection exactly as Space does (store.rotateSelection):
+  // arming a tool does not clear the selection, so the row must not go grey
+  // while the key still turns something, nor turn the old selection when the
+  // key turns the ghost.
+  const canRotateGhost = tool !== null && canRotate({ ...makeGhostElement(tool, 0, 0, 0), id: -1 });
+  const canRotateSelection = canRotateGhost || (selected.length > 0 && selected.every(canRotate));
   const canMirrorSelection = selected.length > 0 && selected.every(canMirror);
   // The clipboard only ever holds text this app serialised, but guard anyway:
   // a manual garbage string must grey out Paste. Memoized like the context
@@ -471,7 +478,7 @@ export function Menubar({ engine }: Props) {
     { label: 'Zoom Out', shortcut: '-', onClick: fire(zoomOut) },
     {
       label: 'Rotate',
-      shortcut: 'Alt+R',
+      shortcut: 'Space',
       disabled: !editable || !canRotateSelection,
       onClick: fire(() => useStore.getState().rotateSelection()),
     },

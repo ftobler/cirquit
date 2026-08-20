@@ -20,11 +20,23 @@ export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
   // Last pointer position in circuit space, shared with the frame loop so the
   // crosshair guide lines can follow the cursor without a 60 Hz setState.
   const pointerRef = useRef<Point | null>(null);
+  // Where a hovering mouse or pen is, in the same canvas-relative pixels. The
+  // armed tool's ghost follows this and not `pointerRef`, which the touch path
+  // also writes and which survives a finger lifting: a ghost must not stay
+  // stuck under the spot the last tap landed on.
+  const hoverRef = useRef<Point | null>(null);
   const [, forceRender] = useState(0);
   const setViewSize = useStore((s) => s.setViewSize);
   const centerRequest = useStore((s) => s.centerRequest);
-  useFrameLoop(canvasRef, engine, dragRef, pointerRef);
-  const interactions = useCanvasInteractions(canvasRef, dragRef, pointerRef, forceRender, engine);
+  useFrameLoop(canvasRef, engine, dragRef, pointerRef, hoverRef);
+  const interactions = useCanvasInteractions(
+    canvasRef,
+    dragRef,
+    pointerRef,
+    hoverRef,
+    forceRender,
+    engine,
+  );
 
   // Keep the store's canvas size in step with the element so keyboard zoom can
   // target the exact screen centre (MouseManager.java:1339).

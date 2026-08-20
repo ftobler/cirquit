@@ -3,11 +3,12 @@
  *  substitute. Headless-testable: the helper takes a surface, not a DOM canvas,
  *  so the node suite can hand it the mkCtx fake. */
 
-import type { CircuitElement, Context2D, DrawContext, ElementDef, SimSettings } from '../model/types';
+import type { CircuitElement, Context2D, ElementDef, SimSettings } from '../model/types';
 import { GRID_SIZE } from '../model/types';
 import { toolDef } from '../model/registry';
-import { makeToolElement } from '../state/helpers';
+import { DEFAULT_PLACEMENT_LENGTH, makeToolElement } from '../state/helpers';
 import { makeTheme } from './draw';
+import { neutralDrawContext } from './drawContext';
 import { elementBox } from './selection';
 
 /** Pixel side of a toolbox icon canvas, upstream's 24 px toolbar icons
@@ -66,14 +67,13 @@ export function renderToolIcon(
   const def = toolDef(toolId);
   if (!def) return;
   const grid = GRID_SIZE;
-  // A kind with no `defaultLength` places as a point, which the icon cannot
-  // afford: `interp` ignores its perpendicular offset when the segment length
-  // is 0 (draw.ts:45-55), so every body built from interp points collapses to
-  // a 3 px dot. Fall back to the wire's default (4, upstream's 64 px
-  // getDragLength), kept inside the icon helper so live placement geometry is
-  // untouched. The vertical kinds carry their own defaultLength, so their
-  // drop is unaffected.
-  const len = (def.defaultLength ?? 4) * grid;
+  // A kind with no `defaultLength` would place as a point, which the icon
+  // cannot afford: `interp` ignores its perpendicular offset when the segment
+  // length is 0 (draw.ts:45-55), so every body built from interp points
+  // collapses to a 3 px dot. The shared click-place fallback covers it, and
+  // reading the same constant keeps the icon and the part it places the same
+  // size.
+  const len = (def.defaultLength ?? DEFAULT_PLACEMENT_LENGTH) * grid;
   const x2 = def.vertical ? 0 : len;
   const y2 = def.vertical ? len : 0;
   const e: CircuitElement = { ...makeToolElement(toolId, 0, 0, x2, y2), id: 0 };
@@ -92,39 +92,8 @@ export function renderToolIcon(
     fit.ty * pixelRatio,
   );
 
-  const g: DrawContext = {
-    ctx,
-    theme,
-    voltages: [],
-    current: 0,
-    voltage: 0,
-    power: 0,
-    value: 0,
-    state: 0,
-    wave: [],
-    dotPhase: 0,
-    postCurrents: [],
-    postDotPhases: [],
-    showCurrent: false,
-    showValues: false,
-    showVoltageColor: false,
-    showPowerColor: false,
-    conventional: true,
-    // The app defaults to the IEC symbols, so the icon matches a freshly
-    // placed part (DEFAULT_SETTINGS euroResistors/euroGates true). The
-    // settings object flows through like every other makeTheme call site
-    // (useFrameLoop.ts:223, export.ts), so the user's custom theme colours
-    // and symbol choices paint into the icons too.
-    euroResistors: settings?.euroResistors ?? true,
-    euroGates: settings?.euroGates ?? true,
-    selected: false,
-    hovered: false,
-    onHighlightedNet: false,
-    voltageRange: 5,
-    powerRange: 50,
-    scale: 1,
-    valueDigits: 1,
-    valueFontSize: 12,
-  };
+  // Neutral by design: an icon has no simulation behind it, and its readouts
+  // are off so a value label or a current dot cannot clutter a 24 px box.
+  const g = neutralDrawContext(ctx, theme, settings, 1);
   def.draw(g, e);
 }
