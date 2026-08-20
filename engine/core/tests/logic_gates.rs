@@ -1143,4 +1143,138 @@ fn memristor_biased_with_constant_current_integrates_linearly() {
     );
 }
 
+/// The defining memristor behaviour: under a sinusoidal drive the I-V locus is
+/// a *pinched* hysteresis loop, not a straight line. This port reproduces
+/// upstream's Strukov-style model exactly (MemristorElm.java:119-127): the
+/// state variable `dopeWidth` integrates the previous step's current and is
+/// clamped to [0, `totalWidth`], which is upstream's boundary-confinement
+/// mechanism (there is no separate window function in `MemristorElm`). The
+/// loop area (∮ V dI) is therefore non-zero, the state stays bounded and
+/// drifts in the direction of the current, and the loop is pinched at the
+/// origin where the current falls to zero with the voltage.
+#[test]
+fn memristor_sinusoidal_drive_gives_pinched_hysteresis_loop() {
+    let dt = 1e-6;
+    let freq = 1e3;
+    let vpk = 5.0;
+    let total_width = 4e-8;
+    let r_on = 100.0;
+    let r_off = 16000.0;
+    let spp = (1.0 / (freq * dt)) as u32; // steps per period
+
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[100, 0], [200, 0]],
+                &[("maxVoltage", vpk), ("waveform", 1.0), ("frequency", freq)],
+            ),
+            elm(
+                2,
+                "memristor",
+                &[[100, 0], [200, 0]],
+                &[("totalWidth", total_width)],
+            ),
+            elm(3, "ground", &[[200, 0]], &[]),
+        ],
+        opts(dt, false),
+    );
+
+    // Warm up to the steady-state limit cycle before sampling one period.
+    c.run(5 * spp);
+
+    let mut v = Vec::with_capacity(spp as usize);
+    let mut i = Vec::with_capacity(spp as usize);
+    let mut dw = Vec::with_capacity(spp as usize);
+    for _ in 0..spp {
+        c.run(1);
+        v.push(c.element_voltages()[1]);
+        i.push(c.element_currents()[1]);
+        let toks = &c.state_tokens()[1];
+        dw.push(
+            toks.iter()
+                .find(|(n, _)| n == "dopeWidth")
+                .map(|(_, val)| *val)
+                .unwrap_or(0.0),
+        );
+    }
+
+    let vmax = v.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+    let imax = i.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+    let dwmin = dw.iter().cloned().fold(f64::INFINITY, f64::min);
+    let dwmax = dw.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+    // Loop area ∮ V dI over the sampled period; a plain resistor gives 0.
+    let mut area = 0.0f64;
+    for k in 0..spp as usize {
+        let n = (k + 1) % (spp as usize);
+        area += (v[n] - v[k]) * (i[n] + i[k]) / 2.0;
+    }
+
+    // 1. Pinched hysteresis: the loop encloses a non-zero area, clearly above
+    //    numerical noise and a small fraction of the bounding box.
+    assert!(
+        area.abs() > 0.01 * vmax * imax,
+        "memristor I-V loop area {area} is not a pinched hysteresis loop (vmax={vmax}, imax={imax})"
+    );
+
+    // 2. Boundary confinement: the state stays inside [0, totalWidth] (the
+    //    clamp that stands in for upstream's window function).
+    assert!(dwmin >= -1e-12, "dopeWidth {dwmin} went below 0");
+    assert!(
+        dwmax <= total_width + 1e-12,
+        "dopeWidth {dwmax} exceeded totalWidth {total_width}"
+    );
+
+    // 3. The state actually switched (non-degenerate loop), and the resistance
+    //    blend stayed inside [r_on, r_off].
+    assert!(
+        dwmax - dwmin > 0.5 * total_width,
+        "dopeWidth range {} too small for a real loop",
+        dwmax - dwmin
+    );
+    for k in 0..spp as usize {
+        if i[k].abs() > 1e-12 {
+            let r = v[k].abs() / i[k].abs();
+            assert!(r >= r_on - 1.0, "resistance {r} below r_on {r_on}");
+            assert!(r <= r_off + 1.0, "resistance {r} above r_off {r_off}");
+        }
+    }
+
+    // 4. Drift direction: dopeWidth moves in the direction of the current
+    //    (dx/dt ∝ I), so it rises while current is positive and falls while
+    //    negative, the memory that creates the loop.
+    for k in 0..spp as usize {
+        let n = (k + 1) % (spp as usize);
+        let dwc = dw[n] - dw[k];
+        if i[k] > 1e-12 {
+            assert!(
+                dwc >= -1e-15,
+                "dopeWidth fell {dwc} while current was positive"
+            );
+        } else if i[k] < -1e-12 {
+            assert!(
+                dwc <= 1e-15,
+                "dopeWidth rose {dwc} while current was negative"
+            );
+        }
+    }
+
+    // 5. Pinch at the origin: near the voltage zero-crossing the current is
+    //    near zero, so the two lobes meet at (0,0).
+    let zi = v
+        .iter()
+        .enumerate()
+        .min_by(|a, b| a.1.abs().partial_cmp(&b.1.abs()).unwrap())
+        .map(|(k, _)| k)
+        .unwrap();
+    assert!(
+        v[zi].abs() <= 0.2 * vmax && i[zi].abs() <= 0.2 * imax,
+        "loop not pinched at origin: V={}, I={} (vmax={vmax}, imax={imax})",
+        v[zi],
+        i[zi]
+    );
+}
+
 // ─── Digital chip family ───

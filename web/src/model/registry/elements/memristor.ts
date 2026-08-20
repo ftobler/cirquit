@@ -29,8 +29,7 @@ const MEMRISTOR_SEGMENTS = 6;
 function drawMemristorBody(g: DrawContext, e: CircuitElement): void {
   const [lead1, lead2] = calcLeads(e, 32);
   drawLeads(g, e, lead1, lead2);
-  const total = Math.max(1e-9, e.params.totalWidth ?? 1e-8);
-  const ratio = Math.min(1, Math.max(0, (e.params.dopeWidth ?? 0) / total));
+  const ratio = Math.min(1, Math.max(0, g.state ?? 0));
   const hs = 2 + Math.round(8 * (1 - ratio));
   const segf = 1 / MEMRISTOR_SEGMENTS;
   let ox = 0;

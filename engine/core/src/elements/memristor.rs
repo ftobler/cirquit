@@ -91,6 +91,9 @@ impl Element for Memristor {
     /// converged current (`base.current`), clamped to [0, `total_width`].
     /// The order matters, the same way the lamp's does: swapping it would
     /// make the stamped resistance react to the charge a step early.
+    /// The clamp is upstream's *only* boundary confinement: `MemristorElm`
+    /// has no window function (no Biolek/Joglekar term). A windowed dopant
+    /// drift would diverge from upstream and must not be added here.
     fn start_iteration(&mut self, ctx: &SimCtx) {
         let wd = self.dope_width / self.total_width;
         self.dope_width +=
@@ -114,6 +117,13 @@ impl Element for Memristor {
 
     fn state_tokens(&self) -> Vec<(String, f64)> {
         vec![("dopeWidth".into(), self.dope_width)]
+    }
+
+    /// The live dopant ratio `dope_width/total_width`, surfaced over the same
+    /// per-element channel the lamp, fuse and motor use so the frontend can
+    /// render the device's instantaneous state without round-tripping params.
+    fn display_state(&self) -> f64 {
+        self.dope_width / self.total_width
     }
 
     fn set_param(&mut self, name: &str, value: f64) -> bool {
