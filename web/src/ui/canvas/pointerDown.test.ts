@@ -412,6 +412,41 @@ describe('finishPlacement cancelling a collapsed drop', () => {
     // resurrect the just-deleted element.
     expect(useStore.getState().elements).toHaveLength(0);
   });
+
+  it('rejects a single-post element collapsed to a point, not only multi-post', () => {
+    // A ground is a single-post part (postCount 1), so the old guard that
+    // checked postCount > 1 let it serialize at length 0. Dragging its free
+    // end back onto the press anchor must still delete it.
+    useStore.getState().setTool('ground');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
+    useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
+
+    finishPlacement(drag, useStore.getState());
+
+    expect(useStore.getState().elements).toHaveLength(0);
+  });
+
+  it('keeps a point decoration placed at length 0', () => {
+    // A drawn box has no terminals (postCount 0) and is drawn at a single
+    // coordinate by design, so a zero-length placement is legal and must
+    // survive finishPlacement.
+    useStore.getState().setTool('box');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
+    useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
+
+    finishPlacement(drag, useStore.getState());
+
+    const placed = useStore.getState().elements;
+    expect(placed).toHaveLength(1);
+    expect(placed[0].x1).toBe(placed[0].x2);
+    expect(placed[0].y1).toBe(placed[0].y2);
+  });
 });
 
 describe('pointer-down on a switch while paused', () => {

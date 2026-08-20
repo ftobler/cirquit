@@ -4,7 +4,6 @@ import {
   axisConstrained,
   constrainPostDrag,
   defFor,
-  postCountOf,
 } from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
 import {
@@ -26,6 +25,7 @@ import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
 import { DRAG_DELAY_MS, LONG_PRESS_MS, TouchGesture, type GestureAction } from '../gestures';
 import {
   beginPointerGesture,
+  collapsedToPoint,
   finishPlacement,
   finishPostDrag,
   placementPoint,
@@ -548,7 +548,7 @@ export function useCanvasInteractions(
     if (drag.mode === 'rowcol') {
       const collapsed = drag.captured.some((c) => {
         const e = state.elements.find((q) => q.id === c.id);
-        return e !== undefined && postCountOf(e) > 1 && e.x1 === e.x2 && e.y1 === e.y2;
+        return e !== undefined && collapsedToPoint(e);
       });
       if (collapsed) {
         state.undo();

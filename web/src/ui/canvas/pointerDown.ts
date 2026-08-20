@@ -16,6 +16,16 @@ import {
 import { rectContains } from '../../model/registry/shared';
 import { GRID_SIZE } from '../../model/types';
 import type { CircuitElement, Point } from '../../model/types';
+
+/** An element whose two ends sit on the same point is degenerate: it has no
+ *  body to draw or simulate, and upstream never lets one serialize. Only
+ *  point decorations (postCount 0, e.g. text or a drawn box) are exempt,
+ *  because they are drawn at a single coordinate by design. Every element
+ *  with at least one terminal, including single-post parts like a ground or
+ *  logic input, must not collapse to a point. */
+export function collapsedToPoint(e: CircuitElement): boolean {
+  return postCountOf(e) >= 1 && e.x1 === e.x2 && e.y1 === e.y2;
+}
 import { turnPointAbout } from '../../model/transform';
 import { grabbedHandle, nearestPost } from '../../render/geometry';
 import { makeGhostElement, nextSwitchState, snap, useStore } from '../../state/store';
@@ -126,7 +136,7 @@ export function finishPlacement(drag: Drag, state: AppState): void {
   if (drag.mode !== 'place') return;
   const e = state.elements.find((x) => x.id === drag.id);
   const def = e ? defFor(e.kind) : undefined;
-  if (e && def && postCountOf(e) > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
+  if (e && def && collapsedToPoint(e)) {
     state.select([e.id]);
     // skipCommit: the addElement commit at pointer-down is the single undo
     // baseline for this whole gesture. Without it, deleteSelected's own
@@ -163,7 +173,7 @@ export function finishPostDrag(drag: Drag, state: AppState): void {
   // A post dragged onto its partner leaves a zero-length element, which is
   // almost never meant. Do not delete mid-drag: the user may be passing
   // through on the way somewhere. On release, undo the whole drag and say why.
-  if (def && postCountOf(e) > 1 && e.x1 === e.x2 && e.y1 === e.y2) {
+  if (def && collapsedToPoint(e)) {
     state.undo();
     state.setStatus('Reverted: that drag would have collapsed the element to a point.');
     return;
