@@ -56,7 +56,7 @@ describe('app prefs', () => {
       selectionColor: null,
       currentColor: null,
       valueFontSize: 12,
-      shortDecimalDigits: 1,
+      shortDecimalDigits: 2,
       decimalDigits: 3,
       wheelSensitivity: 2,
       mouseWheelEdit: true,
@@ -112,11 +112,11 @@ describe('app prefs', () => {
     expect(loadAppPrefs(storage)).toEqual({});
   });
 
-  it('drops parseable-but-invalid values so they can never reach toFixed', () => {
+  it('drops parseable-but-invalid values so they can never reach formatValue', () => {
     const { storage } = fakeStorage();
-    // A negative digit count would make formatValue's toFixed(-5) throw
-    // RangeError; a string digit count and an out-of-range font size are just
-    // as unusable. Each must fall back to the default, not merge in.
+    // A negative digit count and a string digit count are both unusable by
+    // formatValue's significant-figure rounding; an out-of-range font size is
+    // just as unusable. Each must fall back to the default, not merge in.
     storage.setItem(
       APP_PREF_STORAGE_KEY,
       JSON.stringify({

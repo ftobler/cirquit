@@ -133,7 +133,7 @@ const context = (ctx: CtxStub, overrides: Partial<DrawContext> = {}): DrawContex
   voltageRange: 5,
   powerRange: 50,
   scale: 1,
-  valueDigits: 1,
+  valueDigits: 2,
   valueFontSize: 12,
   ...overrides,
 });

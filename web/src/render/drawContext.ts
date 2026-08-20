@@ -61,7 +61,7 @@ export function neutralDrawContext(
     voltageRange: live ? settings.voltageRange : 5,
     powerRange: live ? settings.powerRange : 50,
     scale,
-    valueDigits: live ? settings.shortDecimalDigits : 1,
+    valueDigits: live ? settings.shortDecimalDigits : 2,
     valueFontSize: live ? settings.valueFontSize : 12,
   };
 }
