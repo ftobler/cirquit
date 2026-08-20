@@ -10,7 +10,7 @@
  * its kind there, then add a definition here in `elements/`.
  */
 
-import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP } from './flags';
+import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, OPAMP_SWAP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP } from './flags';
 import { switchLever, switchLeverTip, switchIecPoints, groundBars } from './shared';
 import { WIRE_DEF } from './elements/wire';
 import { ADC_DEF } from './elements/adc';
@@ -348,6 +348,11 @@ export interface ToolboxEntry {
    *  Only the four split semiconductors have it: NPN/PNP and N-/P-channel
    *  each need their own key, so the char lives where the flavour does. */
   shortcut?: string;
+  /** Flag bits set on every placed part, on top of the def's `defaultFlags`:
+   *  the swapped op-amp reuses the `opamp` kind and dump code `a` but is placed
+   *  with `OPAMP_SWAP` already on, upstream's `OpAmpSwapElm` (OpAmpSwapElm.java).
+   *  Params cannot carry a flag, so a flag-only variant needs its own slot. */
+  flags?: number;
 }
 
 const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
@@ -413,6 +418,21 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
   },
 ];
 
+/** The swapped op-amp reuses the `opamp` kind and dump code `a`; the only
+ *  difference from the plain op-amp is `FLAG_SWAP` set on placement, upstream's
+ *  `OpAmpSwapElm` (OpAmpSwapElm.java). One kind, two menu tools, and both dump
+ *  as `a`, so a file written by either reloads as the right one via the flag. */
+const SWAPPED_OPAMPS: ToolboxEntry[] = [
+  {
+    id: 'opampSwap',
+    kind: 'opamp',
+    label: 'Swapped Op-Amp',
+    category: 'Active',
+    shortcut: 'A',  // OpAmpSwapElm.java getShortcut
+    flags: OPAMP_SWAP,
+  },
+];
+
 /** Every pickable tool, in display order within each category. */
 export const TOOLBOX: ToolboxEntry[] = [
   ...ELEMENT_DEFS.filter((d) => d.kind !== 'transistor' && d.kind !== 'mosfet' && d.kind !== 'jfet' && d.kind !== 'darlington').map((d) => ({
@@ -422,6 +442,7 @@ export const TOOLBOX: ToolboxEntry[] = [
     category: d.category,
   })),
   ...SPLIT_SEMICONDUCTORS,
+  ...SWAPPED_OPAMPS,
 ];
 
 const TOOLBOX_BY_ID = new Map(TOOLBOX.map((t) => [t.id, t]));

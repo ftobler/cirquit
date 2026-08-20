@@ -103,7 +103,7 @@ export function makeToolElement(tool: string, x1: number, y1: number, x2: number
     y1: Math.round(y1),
     x2: Math.round(x2),
     y2: Math.round(y2),
-    flags: def?.defaultFlags ?? 0,
+    flags: (def?.defaultFlags ?? 0) | (entry.flags ?? 0),
     params: { ...(def?.defaults ?? {}), ...(entry.defaults ?? {}) },
     text: def?.defaultText,
     state: def?.interactive ? 0 : undefined,

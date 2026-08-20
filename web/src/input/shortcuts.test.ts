@@ -220,9 +220,9 @@ describe('element placement chars', () => {
     expect(matchShortcut(ev({ key: 'v' }))).toEqual({ type: 'place', kind: 'voltage' });
     expect(matchShortcut(ev({ key: 'V', shiftKey: true }))).toEqual({ type: 'place', kind: 'rail' });
     expect(matchShortcut(ev({ key: 'a' }))).toEqual({ type: 'place', kind: 'opamp' });
-    // A (swapped op-amp) and W (routed wire) have no port tool, so they stay
-    // unbound rather than aliasing their lowercase element.
-    expect(matchShortcut(ev({ key: 'A', shiftKey: true }))).toBeNull();
+    // A is the swapped op-amp; W (routed wire) has no port tool, so it stays
+    // unbound rather than aliasing its lowercase element.
+    expect(matchShortcut(ev({ key: 'A', shiftKey: true }))).toEqual({ type: 'place', kind: 'opampSwap' });
     expect(matchShortcut(ev({ key: 'W', shiftKey: true }))).toBeNull();
     expect(matchShortcut(ev({ key: 'w' }))).toEqual({ type: 'place', kind: 'wire' });
     expect(matchShortcut(ev({ key: 'l' }))).toEqual({ type: 'place', kind: 'led' });

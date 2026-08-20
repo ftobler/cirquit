@@ -23,8 +23,10 @@ import { FUSE_DEF } from './registry/elements/fuse';
 import { LAMP_DEF } from './registry/elements/lamp';
 import { OPAMP_DEF } from './registry/elements/opamp';
 import { THREE_PHASE_MOTOR_DEF } from './registry/elements/threePhaseMotor';
-import { snap } from '../state/helpers';
-import { GRID_SIZE } from './types';
+import { OPAMP_SWAP } from './registry/flags';
+import { makeToolElement, snap } from '../state/helpers';
+import { parseCircuit, serializeCircuit } from '../io/netlist';
+import { DEFAULT_SETTINGS, GRID_SIZE } from './types';
 import type { CircuitElement, DrawContext, ElementDef, Point } from './types';
 
 const element = (
@@ -704,6 +706,58 @@ describe('op-amp swapped inputs', () => {
       expect(axisSide(e, opAmpLabelAnchors(e)[0]) * axisSide(e, inverting)).toBeGreaterThan(0);
       expect(axisSide(e, opAmpInputAnchors(e)[0]) * axisSide(e, inverting)).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('swapped op-amp toolbox tool', () => {
+  // Upstream's OpAmpSwapElm is an OpAmpElm with FLAG_SWAP set and shortcut 'A';
+  // it shares the 'a' dump, so a file written by either reloads as the right
+  // one through the flag bit. The port adds it as a second toolbox entry that
+  // reuses the opamp kind and dump code, placed with OPAMP_SWAP on.
+  it('places an op-amp with OPAMP_SWAP already set', () => {
+    const entry = TOOLBOX.find((t) => t.id === 'opampSwap');
+    expect(entry).toBeDefined();
+    expect(entry?.kind).toBe('opamp');
+    expect(entry?.shortcut).toBe('A');
+    expect((entry?.flags ?? 0) & OPAMP_SWAP).not.toBe(0);
+
+    const placed = { ...makeToolElement('opampSwap', 192, 160, 320, 160), id: 1 };
+    expect(placed.kind).toBe('opamp');
+    expect(placed.flags & OPAMP_SWAP).not.toBe(0);
+    // The gain flag travels with it, as for a plain op-amp.
+    expect(placed.flags & 8).not.toBe(0);
+  });
+
+  it('dumps as the op-amp "a" line with the swap bit set', () => {
+    const placed = { ...makeToolElement('opampSwap', 192, 160, 320, 160), id: 1 };
+    const text = serializeCircuit([placed], { ...DEFAULT_SETTINGS });
+    const line = text.split('\n').find((l) => l.startsWith('a '));
+    expect(line).toBeDefined();
+    const flags = Number(line!.split(' ')[5]);
+    expect(flags & OPAMP_SWAP).not.toBe(0);
+  });
+
+  it('round-trips through the file format as a swapped op-amp', () => {
+    const placed = { ...makeToolElement('opampSwap', 192, 160, 320, 160), id: 1 };
+    const text = serializeCircuit([placed], { ...DEFAULT_SETTINGS });
+    const back = parseCircuit(text).elements[0];
+    expect(back.kind).toBe('opamp');
+    expect(back.flags & OPAMP_SWAP).not.toBe(0);
+    // Same geometry as if the bit had been toggled on the plain op-amp: the
+    // two input posts are swapped with respect to the default.
+    const plain = element('opamp', 192, 160, 320, 160, 8);
+    const swapped = element('opamp', 192, 160, 320, 160, 9);
+    expect(postsOf(back)).toEqual(postsOf(swapped));
+    expect(postsOf(back)).not.toEqual(postsOf(plain));
+  });
+
+  it('leaves the base op-amp unaffected', () => {
+    // The default op-amp tool still places without the swap bit, and its
+    // "Swap Inputs" checkbox is the only thing that adds it.
+    const placed = makeToolElement('opamp', 192, 160, 320, 160);
+    expect(placed.flags & OPAMP_SWAP).toBe(0);
+    const entry = TOOLBOX.find((t) => t.id === 'opamp');
+    expect(entry?.flags).toBeUndefined();
   });
 });
 
