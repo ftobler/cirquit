@@ -191,11 +191,11 @@ fn dc_motor_reaches_the_analytic_steady_state_and_spins() {
     // electromechanical operating point. With the constructor defaults
     // L = 0.5, R = 1, K = Kb = 0.15, J = 0.02, b = 0.05 and a 10 V drive,
     // the steady-state armature current is I = V*b/(K*Kb + b*R) and the shaft
-    // speed magnitude is |omega| = K*V/(K*Kb + b*R). The current comes out
-    // positive; the speed sign is upstream-faithful (the torque source drives
-    // the inertia loop as `voltage_source_value(+K*I)` with the friction on
-    // the return leg, DCMotorElm.java:152-155), so the assertion uses the
-    // magnitude.
+    // speed is omega = K*V/(K*Kb + b*R). Under a forward drive (the + terminal
+    // on post 0) the armature current is positive and the rotor advances in the
+    // positive angle direction, the same sense upstream integrates
+    // (angle += speed*dt, DCMotorElm.java:136), so the sign of the angle delta
+    // is asserted, not just its magnitude.
     let v = 10.0;
     let r = 1.0;
     let k = 0.15;
@@ -240,18 +240,86 @@ fn dc_motor_reaches_the_analytic_steady_state_and_spins() {
     );
     assert!(i > 0.0, "armature current should be positive, was {i}");
 
-    // The rotor angle advances at the settled speed: measure the delta over a
-    // fresh batch of steps, long after the transient has settled.
+    // The rotor angle advances at the settled speed: measure the signed delta
+    // over a fresh batch of steps, long after the transient has settled.
     let before = c.element_states()[2];
     let n = 1000u32;
     let report = c.run(n);
     assert!(report.converged, "did not converge: {:?}", report.error);
     let after = c.element_states()[2];
     let expected_delta = omega_ss * n as f64 * dt;
-    let delta = (after - before).abs();
+    let delta = after - before;
     assert!(
         close(delta, expected_delta, expected_delta * 0.03),
         "angle advanced {delta} over {n} steps, expected {expected_delta} within 3%"
+    );
+    assert!(
+        delta > 0.0,
+        "forward drive should spin the rotor forward, saw {delta}"
+    );
+}
+
+#[test]
+fn dc_motor_reverses_when_the_drive_is_reversed() {
+    // Reversing the armature supply flips both the armature current and the
+    // rotor's spin direction: the angle must now advance in the negative
+    // direction, mirroring upstream's sign-coupled speed and current.
+    let v = 10.0;
+    let r = 1.0;
+    let k = 0.15;
+    let kb = 0.15;
+    let b = 0.05;
+    let denom = k * kb + b * r;
+    let i_ss = v * b / denom;
+    let omega_ss = k * v / denom;
+    let dt = 1e-3;
+    let c = &mut build(
+        vec![
+            // + terminal on post 1, so post 0 is grounded.
+            elm(1, "voltage", &[[96, -64], [96, 0]], &[("maxVoltage", v)]),
+            elm(2, "ground", &[[96, -64]], &[]),
+            elm(
+                3,
+                "dcMotor",
+                &[[0, 0], [96, 0]],
+                &[
+                    ("inductance", 0.5),
+                    ("resistance", r),
+                    ("K", k),
+                    ("Kb", kb),
+                    ("J", 0.02),
+                    ("b", b),
+                    ("gearRatio", 1.0),
+                    ("tau", 0.0),
+                ],
+            ),
+            elm(4, "ground", &[[0, 0]], &[]),
+        ],
+        opts(dt, false),
+    );
+    let report = c.run(20000);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let i = c.element_currents()[2];
+    // Current now leaves post 0, so the element current reads negative under
+    // the port's post-0-in convention.
+    assert!(
+        close(i, -i_ss, i_ss * 0.03),
+        "reversed armature current settled to {i}, expected {} within 3%",
+        -i_ss
+    );
+    let before = c.element_states()[2];
+    let n = 1000u32;
+    c.run(n);
+    let after = c.element_states()[2];
+    let delta = after - before;
+    let expected_delta = -omega_ss * n as f64 * dt;
+    assert!(
+        close(delta, expected_delta, expected_delta.abs() * 0.03),
+        "reversed drive advanced angle {delta}, expected {expected_delta} within 3%"
+    );
+    assert!(
+        delta < 0.0,
+        "reversed drive should spin the rotor backward, saw {delta}"
     );
 }
 

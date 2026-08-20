@@ -177,8 +177,12 @@ impl Element for DcMotor {
         self.inertia.do_step(ctx, s);
         // The back-EMF of the spinning rotor opposes the armature drive and
         // the torque source drives the inertia loop (DCMotorElm.java:151-155).
-        s.voltage_source_value(self.base.vs_base, self.inertia_current * self.kb);
-        s.voltage_source_value(self.base.vs_base + 1, self.coil_current * self.k);
+        // Upstream's `stampVoltageSource(n1, n2, v)` constrains V(n1) - V(n2)
+        // = v, the opposite of this port's `voltage_source` (V(n2) - V(n1) = v),
+        // so the values are negated to keep the physics and the rotor's spin
+        // direction identical to upstream's.
+        s.voltage_source_value(self.base.vs_base, -self.inertia_current * self.kb);
+        s.voltage_source_value(self.base.vs_base + 1, -self.coil_current * self.k);
     }
 
     fn calculate_current(&mut self, ctx: &SimCtx) {
