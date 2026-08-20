@@ -1139,17 +1139,17 @@ describe('op-amp body fill', () => {
     return ctx;
   };
 
-  it('fills the triangle in the panel colour when idle', () => {
-    expect(draw().fills).toEqual([makeTheme().panel]);
+  it('never fills the triangle, leaving the body transparent', () => {
+    expect(draw().fills).toEqual([]);
   });
 
-  it('drops the triangle fill on hover, keeping the highlighted outline', () => {
+  it('keeps the highlighted outline on hover', () => {
     const ctx = draw({ hovered: true });
     expect(ctx.fills).toEqual([]);
     expect(ctx.strokes).toContain(makeTheme().highlight);
   });
 
-  it('drops the triangle fill when selected, keeping the selection outline', () => {
+  it('keeps the selection outline when selected', () => {
     const ctx = draw({ selected: true });
     expect(ctx.fills).toEqual([]);
     expect(ctx.strokes).toContain(makeTheme().selection);

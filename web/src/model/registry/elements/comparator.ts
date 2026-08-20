@@ -20,9 +20,7 @@ import {
   endpoints,
   interp,
   interp2,
-  isHighlighted,
   lead,
-  triangle,
   voltageColor,
 } from '../../../render/draw';
 import { COMPARATOR_SMALL, COMPARATOR_SWAP } from '../flags';
@@ -103,9 +101,8 @@ function drawComparator(g: DrawContext, e: CircuitElement): void {
   lead(g, lead2, p2, voltageColor(g, g.voltages[2]));
 
   // The triangle, a stroked outline exactly like the op-amp's
-  // (ComparatorElm.java:51, 83-85).
+  // (ComparatorElm.java:51, 83-85). No fill, so the body stays transparent.
   const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
-  if (!isHighlighted(g)) triangle(g, t1, t2, lead2, g.theme.panel);
   closedPolyline(g, [t1, t2, lead2, t1], g.theme.wire);
 
   // The minus on the inverting side two pixels up, the plus on the other, and

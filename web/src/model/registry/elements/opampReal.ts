@@ -23,9 +23,7 @@ import {
   endpoints,
   interp,
   interp2,
-  isHighlighted,
   lead,
-  triangle,
   voltageColor,
 } from '../../../render/draw';
 import { GRID_SIZE } from '../../types';
@@ -91,10 +89,9 @@ function drawOpAmpReal(g: DrawContext, e: CircuitElement): void {
   lead(g, rail1, rail1b, voltageColor(g, g.voltages[3]));
   lead(g, rail2, rail2b, voltageColor(g, g.voltages[4]));
 
-  // The triangle outline, panel-filled like the plain op-amp's
-  // (OpAmpRealElm.java:196, 240-242).
+  // The triangle outline, drawn like the plain op-amp's
+  // (OpAmpRealElm.java:196, 240-242). No fill, so the body stays transparent.
   const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
-  if (!isHighlighted(g)) triangle(g, t1, t2, lead2, g.theme.panel);
   closedPolyline(g, [t1, t2, lead2, t1], g.theme.wire);
 
   const [minus, plus] = interp2(lead1, lead2, 0.2, hs);

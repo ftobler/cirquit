@@ -7,9 +7,7 @@ import {
   endpoints,
   interp,
   interp2,
-  isHighlighted,
   lead,
-  triangle,
   voltageColor,
 } from '../../../render/draw';
 import { OPAMP_GAIN, OPAMP_SMALL, OPAMP_SWAP } from '../flags';
@@ -29,12 +27,8 @@ function drawOpAmpBody(g: DrawContext, e: CircuitElement): void {
   lead(g, lead2, p2, voltageColor(g, g.voltages[2]));
 
   const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
-  // The panel fill is a port addition, upstream only strokes the triangle
-  // (OpAmpElm.java:101), so it stays for the idle body but must not flood it
-  // with the selection or hover colour when the part is picked.
-  if (!isHighlighted(g)) triangle(g, t1, t2, lead2, g.theme.panel);
   // The triangle outline is a drawThickPolygon upstream (OpAmpElm.java:101),
-  // the 3-unit body weight.
+  // the 3-unit body weight. No fill, so the body stays transparent.
   closedPolyline(g, [t1, t2, lead2, t1], g.theme.wire);
 
   // The minus glyph sits on the inverting input, the plus on the other. The

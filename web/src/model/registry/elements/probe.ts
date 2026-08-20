@@ -50,18 +50,19 @@ export const PROBE_DEF: ElementDef = {
     },
     { name: 'resistance', label: 'Series resistance', unit: 'Ω' },
   ],
-  // The 9-radius disc is a solid pick zone (ProbeElm.java:232).
-  bodyRect: (e) => bodyBox(e, 16, 9),
+  // The 12-radius disc is a solid pick zone, the same circleSize as the
+  // ammeter's circular symbol (ProbeElm.java:239, AmmeterElm.java:204).
+  bodyRect: (e) => bodyBox(e, 24, 12),
   draw(g, e) {
-    const [lead1, lead2] = calcLeads(e, 16);
+    const [lead1, lead2] = calcLeads(e, 24);
     lead(g, { x: e.x1, y: e.y1 }, lead1, voltageColor(g, g.voltages[0]));
     lead(g, lead2, { x: e.x2, y: e.y2 }, voltageColor(g, g.voltages[1]));
     const mid = interp(lead1, lead2, 0.5);
     // The circle is a drawThickCircle upstream (ProbeElm.java:232), the
-    // 3-unit body weight.
-    circle(g, mid, 9, g.theme.wire, false);
+    // 3-unit body weight, matching the ammeter's circle.
+    circle(g, mid, 12, g.theme.wire, false);
     g.ctx.fillStyle = g.theme.text;
-    g.ctx.font = canvasFont(9);
+    g.ctx.font = canvasFont(10);
     g.ctx.textAlign = 'center';
     g.ctx.textBaseline = 'middle';
     g.ctx.fillText('V', mid.x, mid.y);
