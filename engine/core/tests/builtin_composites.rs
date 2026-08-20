@@ -310,6 +310,61 @@ fn optocoupler_transfers_led_current_to_the_collector_through_the_ctr_curve() {
     );
 }
 
+/// The LED forward drop at a known LED current: a current source pins the LED
+/// current, and the voltage between the two LED posts is exactly that current's
+/// forward drop (the CCCS sense pair shorts the LED cathode to the LED-return
+/// post, so `V(post0) - V(post1)` is the junction drop). The phototransistor
+/// side is left open.
+fn opto_led_forward_drop(led_current: f64) -> f64 {
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "current",
+                &[[0, 100], [0, 0]],
+                &[("current", led_current), ("maxVoltage", 5.0)],
+            ),
+            // Posts: LED anode, LED return, collector, emitter.
+            elm_composite(
+                2,
+                "optocoupler",
+                &[[0, 0], [0, 100], [300, 0], [300, 100]],
+                &[],
+                &[],
+            ),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(30);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let n0 = post_node(c, 2); // optocoupler post 0 (offset 2 + 0)
+    let n1 = post_node(c, 3); // optocoupler post 1 (offset 2 + 1)
+    let v = c.node_voltages();
+    v[n0] - v[n1]
+}
+
+#[test]
+fn optocoupler_led_uses_the_default_optocoupler_led_model() {
+    // Upstream forces the internal LED to `default-optocoupler-led`
+    // (DiodeModel.java:92: Is = 1.714e-7, n = 4.077). The port default diode is
+    // Is = 1.714e-7 but n = 2, so at a given current its forward drop is ~half;
+    // this test pins the drop and would fail against n = 2.
+    const VT: f64 = 0.025_865;
+    let is = 1.714e-7;
+    let n = 4.077;
+    let vscale = n * VT;
+    for &i in &[0.001, 0.003, 0.01] {
+        let expected = vscale * (i / is + 1.0_f64).ln();
+        let measured = opto_led_forward_drop(i);
+        assert!(
+            close(measured, expected, expected * 0.03),
+            "LED drop at {i} A was {measured} V, expected about {expected} \
+             (default-optocoupler-led, n={n})"
+        );
+    }
+}
+
 // ─── 409 realistic op-amp ───
 
 #[test]

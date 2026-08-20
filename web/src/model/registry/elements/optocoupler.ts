@@ -125,7 +125,7 @@ function drawOptocoupler(g: DrawContext, e: CircuitElement): void {
   const tA = { x: posts[2].x - 40 * dx, y: midp };
   const tB = { x: posts[2].x - 24 * dx, y: midp };
   line(g, stub2, tA, voltageColor(g, g.voltages[2]));
-  line(g, stub3, tA, voltageColor(g, g.voltages[3]));
+  line(g, stub3, tB, voltageColor(g, g.voltages[3]));
   line(g, { x: tA.x, y: tA.y - 8 }, { x: tA.x, y: tA.y + 8 }, g.theme.wire);
   line(g, tA, { x: tB.x, y: tB.y - 8 }, g.theme.wire);
   line(g, tA, { x: tB.x, y: tB.y + 8 }, g.theme.wire);

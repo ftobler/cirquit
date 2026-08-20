@@ -35,6 +35,14 @@ const CTR_BASE: &str = "max(0,min(.0001, select(i-.003, \
 
 pub fn from_spec(spec: &ElementSpec) -> Option<Composite> {
     let mut opto = Composite::from_model(MODEL, EXTERNAL, None, "optocoupler");
+    // Upstream forces the internal LED to its own `default-optocoupler-led`
+    // model (OptocouplerElm.java:25, DiodeModel.java:92:
+    // (1.714e-7, 0., 4.077, 0., null)). Only the emission coefficient (4.077
+    // vs the port default's 2) differs from `default`, but that shifts the LED
+    // forward drop at a given current and therefore the current a fixed input
+    // voltage drives; the CTR polynomial itself is model-independent.
+    opto.set_child_param(0, "saturationCurrent", 1.714e-7);
+    opto.set_child_param(0, "emissionCoefficient", 4.077);
     let ctr = spec.param("ctr", 1.0);
     opto.set_child_string(1, "expr", &format!("{ctr}*{CTR_BASE}"));
     opto.set_child_param(2, "beta", 700.0);

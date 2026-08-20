@@ -479,9 +479,9 @@ stubs, 32 px from the body axis (upstream `rail1p[0]`).
 For the `407` row the three tokens are the `_`-joined dumps of the LED model,
 the CCCS and the phototransistor; the port appends a `ctr` scale token after
 them because upstream's text save drops it (the stop-trigger precedent). A
-tokenless `407` line (no trailing ctr) keeps the default ctr of 1. The LED uses
-the port's default diode model, not upstream's `default-optocoupler-led`
-library entry.
+tokenless `407` line (no trailing ctr) keeps the default ctr of 1. The internal
+LED is forced to upstream's `default-optocoupler-led` model (Is = 1.714e-7,
+n = 4.077, optocoupler.rs), matching OptocouplerElm.java:25.
 
 For the `401` row the token stream is the `_`-joined dumps of the internal
 op-amp, the analog switch and the ground child, carried raw like the OTA's. The
