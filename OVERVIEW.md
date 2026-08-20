@@ -229,12 +229,14 @@ fetch it).
   sliders, and degrades routed wires to straight `w` segments. The XML-only
   element classes (Clock, Gyrator, NortonAmp, BusTransceiver, RoutedWire,
   BusLogicInput, CustomCompositeChip) stay unrealized: a converted document
-  keeps them as `#` comment lines so nothing is lost. Nine of the 38 convert
+  keeps them as `#` comment lines so nothing is lost. Seven of the 38 convert
   but do not simulate (bus splitters joining separate-bit signals, composite
-  children the engine has no model for, and derivative/clamped controlled
-  sources); they are tracked in the corpus `DIAGNOSED_SIM_FAILURES` with the
-  engine feature each one waits on. The text format remains what the `cct`
-  and plain-text share links use.
+  children the engine has no model for, and one saturating clamped VCVS whose
+  secant derivative collapses at the rails); they are tracked in the corpus
+  `DIAGNOSED_SIM_FAILURES` with the engine feature each one waits on. The two
+  derivative-driven controlled sources that used to sit there, cs-varicap and
+  cs-varinduct, fell to the `ExprState` step-length fix. The text format
+  remains what the `cct` and plain-text share links use.
 - **The DC operating point runs per the `autoDC` setting, not always.** The
   solve runs before the first timestep and on every reset only when `autoDC`
   is on: the header's flag bit 128 drives it (CirSim.java:440-444), and a new

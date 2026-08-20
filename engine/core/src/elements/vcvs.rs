@@ -91,6 +91,10 @@ impl Element for Vcvs {
         }
         if let Some(expr) = &self.cs.expr {
             self.cs.state.t = ctx.time;
+            // `dadt`/`dcdt` divide by the step length, so the state must carry
+            // it; otherwise the derivative is infinite and the matrix singular
+            // (Expr.java:145-146).
+            self.cs.state.time_step = ctx.dt;
             for i in 0..self.cs.input_count {
                 self.cs.state.values[i] = self.base.volts[i];
             }

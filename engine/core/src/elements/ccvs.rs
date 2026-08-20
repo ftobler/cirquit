@@ -119,6 +119,10 @@ impl Element for Ccvs {
         }
         if let Some(expr) = &self.cs.expr {
             self.cs.state.t = ctx.time;
+            // `dadt`/`dcdt` divide by the step length, so the state must carry
+            // it; otherwise the derivative is infinite and the matrix singular
+            // (Expr.java:145-146).
+            self.cs.state.time_step = ctx.dt;
             for i in 0..self.cs.input_count {
                 set_current_value(&mut self.cs.state, i, self.base.vs_currents[i]);
             }

@@ -122,6 +122,10 @@ impl Element for Vccs {
             // and the port's current-source sign (VCCSElm.java:132): a
             // positive expression pushes current from C- into C+.
             self.cs.state.t = ctx.time;
+            // `dadt`/`dcdt` divide by the step length, so the state must carry
+            // it; otherwise the derivative is infinite and the matrix singular
+            // (Expr.java:145-146). Set alongside `t`, as the source is built.
+            self.cs.state.time_step = ctx.dt;
             for i in 0..self.cs.input_count {
                 self.cs.state.values[i] = self.base.volts[i];
             }

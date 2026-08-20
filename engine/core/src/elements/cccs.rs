@@ -152,6 +152,10 @@ impl Element for Cccs {
             // The delivered current is +expr, upstream's own sign for this
             // source: `rs` flows O- to O+ (CCCSElm.java:121-122).
             self.cs.state.t = ctx.time;
+            // `dadt`/`dcdt` divide by the step length, so the state must carry
+            // it; otherwise the derivative is infinite and the matrix singular
+            // (Expr.java:145-146).
+            self.cs.state.time_step = ctx.dt;
             for i in 0..self.cs.input_count {
                 set_current_value(&mut self.cs.state, i, self.base.vs_currents[i]);
             }

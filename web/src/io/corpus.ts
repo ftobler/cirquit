@@ -89,12 +89,8 @@ export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {
   'td4-ctr.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
   'td4-ctr-dn.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
   'td4-ctr-up-dn.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
-  'cs-varicap.txt':
-    'the VCCS output current depends on dadt/dcdt voltage derivatives through its own input node; the port Newton matrix goes singular on the capacitive feedback loop',
-  'cs-varinduct.txt':
-    'the CCVS sense-current expression depends on a dadt voltage derivative; the port Newton matrix goes singular on the inductive feedback loop',
   'cs-opamprail.txt':
-    'the clamped VCVS (clamp((a-b)*1000,d,c)) saturates hard against the +/-10 V rails and the Newton iteration cannot settle it',
+    'the clamped gain-1000 VCVS saturates against its +/-10 V rails, where the secant derivative VCVSElm takes across both sample points collapses to the 1e-6 floor and the linearised source becomes a constant, so Newton flip-flops between the rails; upstream breaks the same limit cycle in OpAmpElm with randomised hysteresis, which VCVSElm has no equivalent for, and only the adaptive timestep this file leaves off settles it',
 };
 
 /**

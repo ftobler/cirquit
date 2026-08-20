@@ -1007,9 +1007,8 @@
     "missing": [],
     "sliderLines": 1,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-varinduct.txt",
@@ -1018,9 +1017,8 @@
     "missing": [],
     "sliderLines": 1,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "cs-varyresistor.txt",
