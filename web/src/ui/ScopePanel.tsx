@@ -30,6 +30,7 @@ import { clearXYScale, dragPlotYPosition } from '../scope/scale';
 import { useStore } from '../state/store';
 import { ScopeMenu } from './ScopeMenu';
 import { ScopeProperties } from './ScopeProperties';
+import { SimInfoPanel } from './SimInfoPanel';
 
 interface Props {
   engine: SimEngine | null;
@@ -351,16 +352,19 @@ export function ScopePanel({ engine }: Props) {
 
   return (
     <>
-      <div className="scopes">
-        {positions.map((pos) => (
-          <div key={pos} className="scope-col">
-            {scopes
-              .filter((x) => x.position === pos)
-              .map((scope) => (
-                <ScopeTraceCanvas key={scope.id} engine={engine} scope={scope} />
-              ))}
-          </div>
-        ))}
+      <div className="bottom-strip">
+        <div className="scopes">
+          {positions.map((pos) => (
+            <div key={pos} className="scope-col">
+              {scopes
+                .filter((x) => x.position === pos)
+                .map((scope) => (
+                  <ScopeTraceCanvas key={scope.id} engine={engine} scope={scope} />
+                ))}
+            </div>
+          ))}
+        </div>
+        <SimInfoPanel engine={engine} />
       </div>
       <ScopeMenu engine={engine} nameOf={(plot) => elementNameOf(elements, plot.elementId)} />
       {scopeProperties !== null && (
