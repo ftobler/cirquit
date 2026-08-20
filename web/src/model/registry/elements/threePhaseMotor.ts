@@ -90,14 +90,17 @@ function drawMotor(g: DrawContext, e: CircuitElement): void {
   circle(g, center, CR, bodyColor, filled);
   circle(g, center, Math.trunc(CR / 2.2), g.theme.text, filled);
 
-  // The three rotor spoke lines. The port's draw context carries no rotor
-  // angle (live state stays in the engine), so the spokes are drawn at a fixed
-  // orientation; the phase leads' current dots carry the motion cue instead.
+  // The three rotor spoke lines, rotated by the live rotor angle the engine
+  // ships in `g.state` (the same channel the DC motor uses). The angle is
+  // rounded to 1/300 rad like upstream's `angleAux`
+  // (ThreePhaseMotorElm.java:299) so a slow frame cannot make the spokes
+  // jitter.
   const dn = Math.hypot(p2.x - p1.x, p2.y - p1.y);
   if (dn > 0) {
     const qs = 0.28 * 1.7 * (36 / dn) * (CR / 27);  // ThreePhaseMotorElm.java:303
+    const angle = Math.round((g.state ?? 0) * 300) / 300;
     for (let k = 0; k < 3; k++) {
-      const a = (k * Math.PI) / 3;
+      const a = angle + (k * Math.PI) / 3;
       const s1 = interpFix(p1, p2, 0.5 + qs * Math.cos(a), qs * Math.sin(a));
       const s2 = interpFix(p1, p2, 0.5 - qs * Math.cos(a), -qs * Math.sin(a));
       line(g, s1, s2, g.theme.text, 6);

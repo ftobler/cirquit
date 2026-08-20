@@ -46,6 +46,11 @@ pub struct ThreePhaseMotor {
     b: f64,
     j: f64,
     speed: f64,
+    /// Rotor angle, integrated from the speed every step and shipped to the
+    /// frontend as the live `state` so the drawn spokes can rotate
+    /// (DCMotorElm.java:33, `angle = angle + speed*dt`). Seeded at `pi/2` like
+    /// upstream (ThreePhaseMotorElm.java:33,41) so the spokes start off-axis.
+    angle: f64,
     /// Winding currents, the state carried across steps.
     coil_currents: [f64; COIL_COUNT],
     /// Companion current-source values, copied from the coil currents in
@@ -70,6 +75,7 @@ impl ThreePhaseMotor {
             b: spec.param("b", 0.05),
             j: spec.param("J", 1.0),
             speed: 0.0,
+            angle: std::f64::consts::PI / 2.0,
             coil_currents: [0.0; COIL_COUNT],
             source_values: [0.0; COIL_COUNT],
             a: [[0.0; COIL_COUNT]; COIL_COUNT],
@@ -246,6 +252,9 @@ impl Element for ThreePhaseMotor {
         // (ThreePhaseMotorElm.java:218-220).
         let torque = POLE_PAIRS * SQRT3_OVER_2 * self.lm * ((i1 - i2) * i3 - SQRT3 * i0 * i4);
         self.speed += ctx.dt * (torque - self.b * self.speed) / self.j;
+        // The rotor advances with the speed, the angle the frontend rotates
+        // the spokes by (ThreePhaseMotorElm.java:220).
+        self.angle += self.speed * ctx.dt;
         // Back EMF of the rotating rotor flux seen by the two rotor coils
         // (ThreePhaseMotorElm.java:222-223).
         self.vs1 =
@@ -285,6 +294,12 @@ impl Element for ThreePhaseMotor {
         self.base.current = self.coil_currents[0];
     }
 
+    fn display_state(&self) -> f64 {
+        // The rotor angle drives the drawn spokes, the same channel the DC
+        // motor uses (DCMotorElm.java:33,220 and dcMotor.rs display_state).
+        self.angle
+    }
+
     fn current_into_node(&self, post: usize) -> f64 {
         // Upstream's getCurrentIntoNode (ThreePhaseMotorElm.java:388-392):
         // the phase current enters the winding's first post and leaves its
@@ -312,6 +327,7 @@ impl Element for ThreePhaseMotor {
     fn reset(&mut self) {
         self.base.reset();
         self.speed = 0.0;
+        self.angle = std::f64::consts::PI / 2.0;
         self.coil_currents = [0.0; COIL_COUNT];
         self.source_values = [0.0; COIL_COUNT];
         self.vs1 = 0.0;

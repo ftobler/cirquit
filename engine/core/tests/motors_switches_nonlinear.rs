@@ -801,6 +801,176 @@ fn wye_motor_on_rails_without_a_ground_symbol_runs() {
     }
 }
 
+/// Builds the bundled 3motor.txt machine driven by three 220 V, 50 Hz sine
+/// rails 120 degrees apart on the phase-1 posts (0, 2, 4), the phase-2 posts
+/// (1, 3, 5) grounded. `swap` reverses the V/W phase feeds, flipping the
+/// sequence from ABC to ACB. The small `J` spins the shaft up inside the test
+/// run; the physics is upstream's reduced-order model, untouched by this port.
+fn abc_motor_circuit(swap: bool) -> Circuit {
+    let (vb, wb) = if swap {
+        (2.0 * PI / 3.0, -2.0 * PI / 3.0)
+    } else {
+        (-2.0 * PI / 3.0, 2.0 * PI / 3.0)
+    };
+    build(
+        vec![
+            elm(
+                1,
+                "rail",
+                &[[608, 192]],
+                &[
+                    ("waveform", 1.0),
+                    ("frequency", 50.0),
+                    ("maxVoltage", 220.0),
+                    ("phaseShift", 0.0),
+                ],
+            ),
+            elm(
+                2,
+                "rail",
+                &[[608, 224]],
+                &[
+                    ("waveform", 1.0),
+                    ("frequency", 50.0),
+                    ("maxVoltage", 220.0),
+                    ("phaseShift", vb),
+                ],
+            ),
+            elm(
+                3,
+                "rail",
+                &[[608, 256]],
+                &[
+                    ("waveform", 1.0),
+                    ("frequency", 50.0),
+                    ("maxVoltage", 220.0),
+                    ("phaseShift", wb),
+                ],
+            ),
+            elm(
+                4,
+                "threePhaseMotor",
+                &[
+                    [608, 192],
+                    [752, 256],
+                    [608, 224],
+                    [752, 224],
+                    [608, 256],
+                    [752, 192],
+                ],
+                &[
+                    ("Rs", 0.067),
+                    ("Rr", 0.032),
+                    ("Ls", 0.0294),
+                    ("Lr", 0.0297),
+                    ("lm", 0.0287),
+                    ("b", 0.05),
+                    ("J", 0.005),
+                ],
+            ),
+            elm(5, "ground", &[[752, 192]], &[]),
+            elm(6, "ground", &[[752, 224]], &[]),
+            elm(7, "ground", &[[752, 256]], &[]),
+        ],
+        opts(5e-6, false),
+    )
+}
+
+/// The motor is element id 4, which lands at index 3 in element order; it is
+/// the only element whose `display_state` is non-zero (the rotor angle). The
+/// build warm-up may already have spun it, so this only identifies the motor,
+/// it does not assume a starting angle.
+fn motor_angle(c: &mut Circuit) -> f64 {
+    let s = c.element_states();
+    let rest: f64 = s
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != 3)
+        .map(|(_, v)| v.abs())
+        .sum();
+    assert!(
+        rest < 1e-9,
+        "only the motor (index 3) should have a live state, rest={rest} (states {:?})",
+        s
+    );
+    s[3]
+}
+
+#[test]
+fn three_phase_motor_spins_forward_under_abc_drive() {
+    // A balanced 3-phase ABC supply must turn the rotor the forward way
+    // (angle increasing) and keep accelerating to a steady speed instead of
+    // stalling. The angle is the engine's integrated `speed*dt`, so a positive
+    // per-window delta is exactly a positive shaft speed.
+    let mut c = abc_motor_circuit(false);
+    let a0 = motor_angle(&mut c);
+    let dt = 5e-6;
+    let n = 15000u32; // 75 ms per window
+    c.run(n);
+    let a1 = motor_angle(&mut c);
+    c.run(n);
+    let a2 = motor_angle(&mut c);
+    c.run(n);
+    let a3 = motor_angle(&mut c);
+    c.run(n);
+    let a4 = motor_angle(&mut c);
+    let w1 = (a1 - a0) / (n as f64 * dt);
+    let w2 = (a2 - a1) / (n as f64 * dt);
+    let w3 = (a3 - a2) / (n as f64 * dt);
+    let w4 = (a4 - a3) / (n as f64 * dt);
+    assert!(
+        w4 > 0.0,
+        "ABC drive should spin the rotor forward, saw {w4}"
+    );
+    assert!(
+        w1 > 0.0 && w2 > 0.0 && w3 > 0.0,
+        "every window should advance forward, saw {w1},{w2},{w3}"
+    );
+    // The shaft spins up then settles: the last two windows agree to 25%,
+    // confirming a steady rotation rather than a stall or runaway.
+    assert!(
+        close(w4, w3, 0.25 * w4.abs().max(1.0)),
+        "speed not settling: window3 {w3}, window4 {w4}"
+    );
+    // It also keeps accelerating off the line (does not stall immediately).
+    assert!(
+        w4 > 0.5 * w1,
+        "rotor should keep spinning up, not stall: {w1} vs {w4}"
+    );
+}
+
+#[test]
+fn three_phase_motor_reverses_when_phase_order_swapped() {
+    // Swapping the V and W feeds reverses the rotating-field sequence, so the
+    // rotor must advance the other way: negative angle delta, the mirror of the
+    // ABC case.
+    let mut c = abc_motor_circuit(true);
+    let a0 = motor_angle(&mut c);
+    let dt = 5e-6;
+    let n = 15000u32;
+    c.run(n);
+    let a1 = motor_angle(&mut c);
+    c.run(n);
+    let a2 = motor_angle(&mut c);
+    c.run(n);
+    let a3 = motor_angle(&mut c);
+    let w1 = (a1 - a0) / (n as f64 * dt);
+    let w2 = (a2 - a1) / (n as f64 * dt);
+    let w3 = (a3 - a2) / (n as f64 * dt);
+    assert!(
+        w3 < 0.0,
+        "reversed phase order should spin the rotor backward, saw {w3}"
+    );
+    assert!(
+        w1 < 0.0 && w2 < 0.0,
+        "every window should advance backward, saw {w1},{w2}"
+    );
+    assert!(
+        close(w3, w2, 0.25 * w3.abs().max(1.0)),
+        "speed not settling: window2 {w2}, window3 {w3}"
+    );
+}
+
 #[test]
 fn current_source_matrix_connects_keeps_the_companion_in_one_closure() {
     // The Norton companion of a voltage-limited source stamps a resistance
