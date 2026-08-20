@@ -283,7 +283,10 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **119 of ~200**.
+a test. Done so far: **125 kinds implemented** (the `KINDS` list in
+`engine/core/src/elements/mod.rs`); the only upstream types still absent are the
+permanently-deferred XML-only classes (Clock, Gyrator, NortonAmp,
+BusTransceiver, RoutedWire, BusLogicInput, CustomCompositeChip).
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, transformer, tapped transformer, custom transformer, fuse,
@@ -322,7 +325,7 @@ symbol toggle, which is on by default.
 
 **Instruments and annotation** — done: labeled node, output,
 voltmeter, text, ammeter, box, line, scope-as-element, ohmmeter, test point,
-wattmeter, data recorder, stop trigger.
+wattmeter, data recorder, stop trigger, instruction display.
 
 **Electromechanical** — done: three-phase motor, DC motor, time-delay relay.
 
