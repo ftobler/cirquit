@@ -34,10 +34,10 @@ export function frameSafely(body: () => void, report: (message: string) => void)
   }
 }
 
-/** Opacity of the armed tool's ghost: half, the same weight the renderer's
- *  other preview overlays use (render/draw.ts's half-alpha convention), so it
- *  reads as "not placed yet" over both the grid and an existing symbol. */
-const GHOST_ALPHA = 0.5;
+/** Opacity of the armed tool's ghost: a thin wash, lighter than the renderer's
+ *  half-alpha preview overlays (render/draw.ts) so it reads as "not placed yet"
+ *  rather than as a near-real part laid over the grid and existing symbols. */
+const GHOST_ALPHA = 0.3;
 
 /** Resolves each scope's measured canvas width, for engine ring sizing. */
 const widthOf = (id: number): number | undefined => scopeWidth(id);
