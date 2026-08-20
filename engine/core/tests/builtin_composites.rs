@@ -151,7 +151,9 @@ fn sine_peak(c: &circuit_core::Circuit, i: usize) -> f64 {
     let snap = c.scopes()[i].snapshot();
     assert!(snap.len() >= 4, "scope captured nothing");
     let tail = &snap[snap.len() / 2..];
-    tail.chunks_exact(2)
+    tail.as_chunks::<2>()
+        .0
+        .iter()
         .map(|ch| ch[1] as f64)
         .fold(0.0f64, f64::max)
 }
