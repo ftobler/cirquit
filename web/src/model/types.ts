@@ -234,6 +234,19 @@ export interface Theme {
    *  analog switch bar, the one mechanical part that does not carry a
    *  terminal voltage (RelayElm.java:263-264, AnalogSwitchElm.java:120-123). */
   lightGray: string;
+  /** Upstream's `CircuitElm.lightGrayColor`, the theme-dependent one: light
+   *  gray normally, black when printable (ImageExporter.java:192-196). The
+   *  scope's drag-start cursor line draws in it (Scope.java:1024), where the
+   *  fixed `lightGray` constant above would vanish on a white background. */
+  lightGrayText: string;
+  /** The scope canvas's own minor gridline, upstream's `#404040` / `#D0D0D0`
+   *  printable (Scope.java:798-806). Separate from `grid`, which is the
+   *  schematic's dot grid: the two are drawn by different code at different
+   *  weights and must be tunable apart. */
+  scopeGridMinor: string;
+  /** The scope canvas's major gridline (the centre line and every tenth time
+   *  line), upstream's `#A0A0A0` / `#808080` printable (Scope.java:798-806). */
+  scopeGridMajor: string;
   text: string;
   selection: string;
   highlight: string;

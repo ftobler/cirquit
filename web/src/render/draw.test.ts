@@ -392,6 +392,25 @@ describe('theme colour overrides', () => {
     expect(theme.selection).toBe(theme.highlight); // not Color.cyan any more
   });
 
+  it('pins the scope grid and the theme-dependent lightGray in both themes', () => {
+    // The scope draws its own grid, not the schematic's dot grid: upstream's
+    // minor/major pair is #404040 / #A0A0A0, and its printable mode swaps in
+    // #D0D0D0 / #808080 (Scope.java:798-806). lightGrayText is upstream's
+    // CircuitElm.lightGrayColor, which the printable theme flips to black
+    // (ImageExporter.java:192-196), unlike the fixed Color.lightGray above.
+    const dark = makeTheme();
+    expect(dark.scopeGridMinor).toBe('#404040');
+    expect(dark.scopeGridMajor).toBe('#a0a0a0');
+    expect(dark.lightGrayText).toBe('#c0c0c0');
+    const light = makeTheme(false);
+    expect(light.scopeGridMinor).toBe('#d0d0d0');
+    expect(light.scopeGridMajor).toBe('#808080');
+    expect(light.lightGrayText).toBe('#000000');
+    // The schematic grid stays its own role in both themes.
+    expect(dark.grid).not.toBe(dark.scopeGridMinor);
+    expect(light.grid).not.toBe(light.scopeGridMinor);
+  });
+
   it('paints hover and selection identically in both themes', () => {
     // Upstream paints the hovered element, the selection and the highlighted
     // net all in the single selectColor (CircuitElm.needsHighlight:1308-1313

@@ -8,7 +8,7 @@
  */
 
 import type { Scope, ScopePlot, ScopeValue, SimEngine } from '../engine/simulator';
-import { canvasFont, formatValue, makeTheme } from '../render/draw';
+import { canvasFont, formatValue, makeTheme, parseRgb } from '../render/draw';
 import type { Theme, ThemeColors } from '../model/types';
 import { defFor } from '../model/registry';
 import { MIN_SETTINGS_WHEEL_SIZE, scopeSpeed, timeToX } from './geometry';
@@ -79,10 +79,7 @@ export function emptyCursor(): ScopeCursor {
 
 export const MAN_DIVISIONS = 8;
 
-const GRID_MINOR = '#1b2230';
-const GRID_MAJOR = '#2b3648';
 const TRIGGER_COLOR = '#ff8000';
-const TRACE_COLORS = ['#ff5555', '#ffd866', '#ff7edb', '#58a6ff', '#a371f7', '#56d4dd', '#7ee787'];
 
 export const isDrawable = (plot: ScopePlot): plot is DrawablePlot =>
   plot.elementId !== null && plot.value !== null;
@@ -124,14 +121,71 @@ function showPlot(scope: Scope, p: ScopePlot): boolean {
   return true;
 }
 
-function colorOf(plot: ScopePlot, dark: boolean, colors?: ThemeColors): string {
-  // The default V/I palette mirrors upstream (ScopePlot.assignColor): voltage
-  // is the theme's positive green, current the theme's current yellow. Extra
-  // plots cycle. The current colour rides the theme's `currentDot`, which the
-  // light palette re-tunes for a white background.
-  if (plot.value === 'voltage') return makeTheme(dark, colors).positive;
-  if (plot.value === 'current') return makeTheme(dark, colors).currentDot;
-  return TRACE_COLORS[(plot.id % TRACE_COLORS.length)];
+/** Upstream's fixed eight-colour trace palette (ScopePlot.java:139-142), in
+ *  upstream's order. Spelt lower case to match the rest of the port's
+ *  palettes; the values are upstream's. */
+export const PLOT_COLORS = [
+  '#ff0000',
+  '#ff8000',
+  '#ff00ff',
+  '#7f00ff',
+  '#0000ff',
+  '#0080ff',
+  '#ffff00',
+  '#00ffff',
+];
+
+/** The port of `assignColor` (ScopePlot.java:144-160). `count` is the plot's
+ *  ordinal within its own category among the visible plots, so the first
+ *  voltage trace is green and the second is red, exactly as upstream. The
+ *  three `count == 0` colours route through the theme rather than upstream's
+ *  literals: the White Background palette re-tunes positive and currentDot for
+ *  legibility, and its whiteColor is already black, which is what upstream's
+ *  printable branch hardcodes. */
+export function assignColor(value: ScopeValue, count: number, theme: Theme): string {
+  if (count > 0) return PLOT_COLORS[(count - 1) % PLOT_COLORS.length];
+  if (value === 'voltage') return theme.positive;
+  if (value === 'current') return theme.currentDot;
+  return theme.whiteColor;
+}
+
+/** Plot id to trace colour for one frame, the port of the three category
+ *  counters in `calcVisiblePlots` (Scope.java:291-311). Rebuilt every frame
+ *  because the counters run over the visible plots only: turning showI off
+ *  must not shift the voltage traces' colours. Keying the result by id rather
+ *  than by index lets every draw site look its plot up without re-deriving the
+ *  ordinal, and colour stays a function of position, never of the id itself
+ *  (a session-unique handle, so indexing a palette by it would repaint a saved
+ *  circuit differently on every load).
+ *
+ *  Unlike upstream, X-Y mode assigns colours too. Upstream's 2D branch skips
+ *  `assignColor` and leaves `plot.color` null, which its own manual-scale
+ *  bullets would then draw with; `visiblePlotsOf` already returns every plot
+ *  in X-Y mode, so assigning over it costs nothing and avoids the hole.
+ *
+ *  A plot whose value the port could not map is skipped: it never draws, so
+ *  giving it a counter slot would only shift the colours of the plots that
+ *  do. */
+export function plotColors(scope: Scope, theme: Theme): Map<number, string> {
+  const colors = new Map<number, string>();
+  let voltageCount = 0;
+  let currentCount = 0;
+  let otherCount = 0;
+  for (const p of visiblePlotsOf(scope)) {
+    if (p.value === null) continue;
+    if (p.value === 'voltage') colors.set(p.id, assignColor(p.value, voltageCount++, theme));
+    else if (p.value === 'current') colors.set(p.id, assignColor(p.value, currentCount++, theme));
+    else colors.set(p.id, assignColor(p.value, otherCount++, theme));
+  }
+  return colors;
+}
+
+/** One plot's colour from the frame's assignment map. The fallback is
+ *  unreachable for a drawn plot, since the map and every draw loop walk the
+ *  same `visiblePlotsOf` list; it exists so a lookup miss paints something
+ *  visible instead of throwing. */
+function traceColor(colors: Map<number, string>, plot: ScopePlot, theme: Theme): string {
+  return colors.get(plot.id) ?? theme.whiteColor;
 }
 
 /** Which columns of a trace's snapshot to draw, given the trigger anchor or
@@ -310,6 +364,7 @@ function drawGridLines(
   speed: number,
   timeStep: number,
   allSameUnits: boolean,
+  theme: Theme,
   triggerAnchor?: { time: number } | null,
 ): void {
   const maxy = Math.floor((h - 1) / 2);
@@ -321,7 +376,7 @@ function drawGridLines(
     if (ll !== 0 && !showH) continue;
     const yl = maxy - (ll * t.stepY - t.gridMid) * t.gridMult;
     if (yl < 0 || yl >= h - 1) continue;
-    ctx.strokeStyle = ll === 0 ? GRID_MAJOR : GRID_MINOR;
+    ctx.strokeStyle = ll === 0 ? theme.scopeGridMajor : theme.scopeGridMinor;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, yl);
@@ -341,7 +396,7 @@ function drawGridLines(
     if (gx < 0) break;
     if (gx >= w || tl < 0) continue;
     const major = (tl + stepX / 4) % (stepX * 10) < stepX;
-    ctx.strokeStyle = major ? GRID_MAJOR : GRID_MINOR;
+    ctx.strokeStyle = major ? theme.scopeGridMajor : theme.scopeGridMinor;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(gx, 0);
@@ -352,9 +407,14 @@ function drawGridLines(
 
 /** The scope's own label as a title line, in the theme text colour, drawn
  *  only when it is set (ScopeOverlays.draw / Scope.getScopeLabelOrText). */
-function drawScopeLabel(ctx: CanvasRenderingContext2D, scope: Scope, h: number): void {
+function drawScopeLabel(
+  ctx: CanvasRenderingContext2D,
+  scope: Scope,
+  h: number,
+  theme: Theme,
+): void {
   if (!scope.label) return;
-  drawInfo(ctx, [{ text: scope.label, y: 4 }], h);
+  drawInfo(ctx, [{ text: scope.label, y: 4 }], h, theme.whiteColor);
 }
 
 /** The trigger-stabilized time anchor for a scope's canvas: the sim time at
@@ -390,7 +450,8 @@ function drawHeader(
   speed: number,
   timeStep: number,
   h: number,
-  dark: boolean,
+  theme: Theme,
+  traceColors: Map<number, string>,
   decimalDigits: number,
   kindOf: (elementId: number) => string | null,
 ): void {
@@ -428,11 +489,11 @@ function drawHeader(
       ctx.font = canvasFont(10);
       const width = ctx.measureText(s).width + 20;
       if (x + width > ctx.canvas.width) break;
-      ctx.fillStyle = colorOf(p, dark);
+      ctx.fillStyle = traceColor(traceColors, p, theme);
       ctx.beginPath();
       ctx.arc(4 + x + 8, y + 5, 4, 0, Math.PI * 2);
       ctx.fill();
-      lines.push({ text: s, y, color: '#8b949e' });
+      lines.push({ text: s, y });
       x += width;
     }
   } else {
@@ -444,7 +505,7 @@ function drawHeader(
         : ` V=${formatValue(firstTransform.stepY, UNIT[firstPlot.value], decimalDigits)}/div`;
     lines.push({ text: hs + vs, y });
   }
-  drawInfo(ctx, lines, h);
+  drawInfo(ctx, lines, h, theme.whiteColor);
 }
 
 function drawMeasurements(
@@ -454,6 +515,7 @@ function drawMeasurements(
   h: number,
   speed: number,
   timeStep: number,
+  theme: Theme,
   decimalDigits: number,
 ): void {
   if (first.count === 0) return;
@@ -486,7 +548,7 @@ function drawMeasurements(
     const f = estimateFrequency(first.min, first.max, first.count, speed, timeStep);
     if (f !== 0) push(formatValue(f, 'Hz', decimalDigits));
   }
-  drawInfo(ctx, lines, h);
+  drawInfo(ctx, lines, h, theme.whiteColor);
 }
 
 interface MeasurableState {
@@ -523,8 +585,9 @@ function drawCursor(
   timeStep: number,
   w: number,
   h: number,
+  theme: Theme,
+  traceColors: Map<number, string>,
   triggerAnchor?: { time: number } | null,
-  dark = true,
   decimalDigits = 3,
 ): void {
   if (!cursor.hover || cursor.cursorTime < 0 || states.length === 0) return;
@@ -536,7 +599,9 @@ function drawCursor(
     states[cursor.selectedPlot >= 0 && cursor.selectedPlot < states.length ? cursor.selectedPlot : 0];
   const x = timeToX(cursor.cursorTime, simTime, w, speed, timeStep, triggerAnchor);
   if (x < 0 || x >= w) return;
-  ctx.strokeStyle = '#ffffff';
+  // The cursor line is upstream's whiteColor (Scope.java:1059), so it flips to
+  // black with White Background on instead of vanishing into the panel.
+  ctx.strokeStyle = theme.whiteColor;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x, 0);
@@ -549,7 +614,7 @@ function drawCursor(
   const cursorValue = k >= 0 && k < selected.count ? selected.max[k] : null;
   if (cursorValue !== null) {
     const dotY = yOf(selected.transform, maxy, cursorValue);
-    ctx.fillStyle = colorOf(selected.plot, dark);
+    ctx.fillStyle = traceColor(traceColors, selected.plot, theme);
     ctx.beginPath();
     ctx.arc(x, dotY, 2.5, 0, Math.PI * 2);
     ctx.fill();
@@ -563,7 +628,9 @@ function drawCursor(
   if (cursor.dragStartTime >= 0) {
     const dragX = timeToX(cursor.dragStartTime, simTime, w, speed, timeStep, triggerAnchor);
     if (dragX >= 0 && dragX < w) {
-      ctx.strokeStyle = '#c0c0c0';
+      // Upstream's theme-dependent lightGrayColor (Scope.java:1024), black in
+      // printable mode.
+      ctx.strokeStyle = theme.lightGrayText;
       ctx.beginPath();
       ctx.moveTo(dragX, 0);
       ctx.lineTo(dragX, h);
@@ -585,7 +652,7 @@ function drawCursor(
     }
   }
   lines.push({ text: formatValue(cursor.cursorTime, 's', decimalDigits), y: (y += 15) });
-  drawInfo(ctx, lines, h);
+  drawInfo(ctx, lines, h, theme.whiteColor);
 }
 
 /** Draws the FFT spectrum overlay (ScopeFFT.java), from `fft.ts`'s windowing
@@ -667,6 +734,20 @@ export function trailFadeAlpha(
   return { alpha, lastTrailSimTime };
 }
 
+/** The X-Y centre cross colours (ScopePlot2d.java:226-230): the horizontal
+ *  line always takes the positive colour, and so does the vertical one in X-Y
+ *  mode, while upstream's V-vs-I 2D mode draws the vertical in yellow. The
+ *  port folds upstream's `plot2d.enabled` and `plot2d.plotXY` bits into the
+ *  single `scope.plotXY` flag (scopeLine.ts:183-184), so only the X-Y branch
+ *  is reachable today; the whole rule is kept so a later V-vs-I mode inherits
+ *  it rather than re-deriving it. */
+export function xyCrossColors(
+  plotXY: boolean,
+  theme: Theme,
+): { horizontal: string; vertical: string } {
+  return { horizontal: theme.positive, vertical: plotXY ? theme.positive : theme.currentDot };
+}
+
 /** Draws the X-Y locus from the recent-sample rings (ScopePlot2d.java). */
 function drawXY(
   ctx: CanvasRenderingContext2D,
@@ -676,6 +757,7 @@ function drawXY(
   h: number,
   simTime: number,
   timeStep: number,
+  theme: Theme,
 ): void {
   const plots = scope.plots
     .filter(isDrawable)
@@ -738,11 +820,17 @@ function drawXY(
     const fade = trailFadeAlpha(scope.trailPersistence, timeStep, simTime, entry.lastTrailSimTime);
     entry.lastTrailSimTime = fade.lastTrailSimTime;
     if (fade.alpha > 0) {
-      pctx.fillStyle = `rgba(13, 17, 23, ${fade.alpha})`;
+      // The fade repaints the panel's own background, black normally and white
+      // when printable (ScopePlot2d.java:210-217); a fixed dark fill would
+      // paint a dark rectangle over a White Background scope.
+      const [fr, fg, fb] = parseRgb(theme.background);
+      pctx.fillStyle = `rgba(${fr}, ${fg}, ${fb}, ${fade.alpha})`;
       pctx.fillRect(0, 0, w, h);
     }
   }
-  pctx.strokeStyle = '#ffffff';
+  // The locus is upstream's whiteColor pair, white on black and black on white
+  // (ScopePlot2d.java:85).
+  pctx.strokeStyle = theme.whiteColor;
   pctx.lineWidth = 1;
   pctx.beginPath();
   for (let i = 0; i < n; i++) {
@@ -753,15 +841,18 @@ function drawXY(
   }
   pctx.stroke();
   ctx.drawImage(entry.canvas, 0, 0);
-  // Centre cross (ScopePlot2d.java:227-230).
-  ctx.strokeStyle = GRID_MAJOR;
-  ctx.beginPath();
-  ctx.moveTo(w / 2, 0);
-  ctx.lineTo(w / 2, h);
-  ctx.stroke();
+  // Centre cross (ScopePlot2d.java:226-230), horizontal line first, matching
+  // upstream's order so the vertical wins the overlap at the centre pixel.
+  const cross = xyCrossColors(scope.plotXY, theme);
+  ctx.strokeStyle = cross.horizontal;
   ctx.beginPath();
   ctx.moveTo(0, h / 2);
   ctx.lineTo(w, h / 2);
+  ctx.stroke();
+  ctx.strokeStyle = cross.vertical;
+  ctx.beginPath();
+  ctx.moveTo(w / 2, 0);
+  ctx.lineTo(w / 2, h);
   ctx.stroke();
 }
 
@@ -883,9 +974,14 @@ export function drawScope(
     ctx.fillText(caption, w - 4, 4);
   }
 
+  // Every trace colour for this frame, assigned once from the visible-plot
+  // ordinals so each draw site below reads the same map instead of deriving a
+  // colour of its own (and dropping the user's overrides on the way).
+  const traceColors = plotColors(scope, theme);
+
   if (scope.plotXY) {
-    drawXY(ctx, engine, scope, w, h, simTime, timeStep);
-    drawScopeLabel(ctx, scope, h);
+    drawXY(ctx, engine, scope, w, h, simTime, timeStep, theme);
+    drawScopeLabel(ctx, scope, h, theme);
     drawSettingsWheel(ctx, cursor, w, h, theme);
     return;
   }
@@ -945,7 +1041,18 @@ export function drawScope(
   const triggerAnchor = trigInfo && trigInfo.triggered ? { time: trigInfo.time } : null;
 
   // The grid is drawn once, from the first plot's transform.
-  drawGridLines(ctx, first.transform, w, h, simTime, speed, timeStep, allSameUnits, triggerAnchor);
+  drawGridLines(
+    ctx,
+    first.transform,
+    w,
+    h,
+    simTime,
+    speed,
+    timeStep,
+    allSameUnits,
+    theme,
+    triggerAnchor,
+  );
   drawTrigger(ctx, scope, first.transform, trigInfo, w, h);
 
   const maxy = Math.floor((h - 1) / 2);
@@ -954,7 +1061,7 @@ export function drawScope(
   // (Scope.java:615-618 then 666-681).
   const traces = states.map((s) => ({ value: s.plot.value, data: s.data }));
   if (scope.fftPlot) {
-    drawFFT(ctx, scope, traces, w, h, speed, timeStep, cursor, decimalDigits);
+    drawFFT(ctx, scope, traces, w, h, speed, timeStep, cursor, theme, decimalDigits);
   }
   // The per-bin phase band is its own overlay, drawn whenever Show Phase
   // Angle is on and independent of the spectrum itself: upstream calls
@@ -966,20 +1073,20 @@ export function drawScope(
   }
   // Traces underneath: current first, voltage on top (Scope.java:666-681).
   for (const s of [...states].reverse()) {
-    drawTrace(ctx, s.data, s.win, s.transform, maxy, colorOf(s.plot, dark, colors));
+    drawTrace(ctx, s.data, s.win, s.transform, maxy, traceColor(traceColors, s.plot, theme));
   }
   // Manual scale draws a zero marker per plot (Scope.java:865-869).
   if (scope.manualScale) {
     for (const s of states) {
       const y0 = yOf(s.transform, maxy, 0);
       if (y0 < 0 || y0 >= h) continue;
-      ctx.strokeStyle = colorOf(s.plot, dark, colors);
+      ctx.strokeStyle = traceColor(traceColors, s.plot, theme);
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(0, y0);
       ctx.lineTo(8, y0);
       ctx.stroke();
-      ctx.fillStyle = '#8b949e';
+      ctx.fillStyle = theme.whiteColor;
       ctx.font = canvasFont(9);
       ctx.fillText('0', 0, y0 - 2);
     }
@@ -994,13 +1101,27 @@ export function drawScope(
       speed,
       timeStep,
       h,
-      dark,
+      theme,
+      traceColors,
       decimalDigits,
       kindOf ?? (() => null),
     );
   }
-  drawMeasurements(ctx, scope, states[0], h, speed, timeStep, decimalDigits);
-  drawCursor(ctx, cursor, states, simTime, speed, timeStep, w, h, triggerAnchor, dark, decimalDigits);
+  drawMeasurements(ctx, scope, states[0], h, speed, timeStep, theme, decimalDigits);
+  drawCursor(
+    ctx,
+    cursor,
+    states,
+    simTime,
+    speed,
+    timeStep,
+    w,
+    h,
+    theme,
+    traceColors,
+    triggerAnchor,
+    decimalDigits,
+  );
   // The settings wheel draws on top of the traces, like the HTML close button.
   drawSettingsWheel(ctx, cursor, w, h, theme);
 }

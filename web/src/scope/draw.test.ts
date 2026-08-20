@@ -1,20 +1,26 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Scope, ScopePlot, SimEngine } from '../engine/simulator';
+import type { ThemeColors } from '../model/types';
 import { makeTheme } from '../render/draw';
 import { pruneScaleStates, scaleStateFor } from './scale';
 import { PHASE_COLOR } from './spectrum';
 import {
   advanceFadeCounter,
+  assignColor,
+  clearXYPersistence,
   DIVERGED_CAPTION,
   divergedCaption,
   drawScope,
   emptyCursor,
   isDrawable,
+  PLOT_COLORS,
+  plotColors,
   trailFadeAlpha,
   trailSliderToSteps,
   trailStepsToSlider,
   triggerTimeAnchor,
   visiblePlotsOf,
+  xyCrossColors,
   type ScopeCursor,
 } from './draw';
 
@@ -188,10 +194,13 @@ describe('divergedCaption', () => {
   });
 });
 
-/** Minimal canvas stub recording every drawn text, enough for drawScope. */
-const mkCtx = (): { ctx: CanvasRenderingContext2D; texts: string[] } => {
+/** Minimal canvas stub recording every drawn text, enough for drawScope. The
+ *  `canvas` stub carries the width the manual-scale header measures its
+ *  bullets against. */
+const mkCtx = (w = 200, h = 150): { ctx: CanvasRenderingContext2D; texts: string[] } => {
   const texts: string[] = [];
   const ctx = {
+    canvas: { width: w, height: h },
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 0,
@@ -209,6 +218,7 @@ const mkCtx = (): { ctx: CanvasRenderingContext2D; texts: string[] } => {
     fill: vi.fn(),
     arc: vi.fn(),
     setLineDash: vi.fn(),
+    drawImage: vi.fn(),
     fillText: vi.fn((text: string) => {
       texts.push(text);
     }),
@@ -278,25 +288,83 @@ describe('drawScope diverged caption', () => {
   });
 });
 
-/** Runs `drawScope` while recording the stroke style of every stroke call, so
- *  a test can assert the colour of the last-drawn overlay. */
+/** Every drawScope knob a colour test needs to vary. `dark` is the White
+ *  Background flag inverted, `themeColors` the user's Other Options overrides,
+ *  and `simTime` matters because the time grid and the cursor are both
+ *  anchored on it: at t = 0 no vertical gridline and no cursor lands on the
+ *  canvas. */
+interface DrawOpts {
+  dark?: boolean;
+  themeColors?: ThemeColors;
+  simTime?: number;
+}
+
+/** Runs `drawScope` while recording the stroke style of every `stroke()` and
+ *  the fill style of every `fill()`/`fillText()`, so a test can assert the
+ *  colour of any overlay. */
+const recordDraw = (
+  engine: SimEngine,
+  scope: Scope,
+  w: number,
+  h: number,
+  cursor: ScopeCursor,
+  opts: DrawOpts = {},
+): { ctx: CanvasRenderingContext2D; strokes: string[]; fills: string[] } => {
+  const { ctx } = mkCtx(w, h);
+  const strokes: string[] = [];
+  const fills: string[] = [];
+  const stroke = ctx.stroke;
+  ctx.stroke = vi.fn(() => {
+    strokes.push(ctx.strokeStyle as string);
+    stroke();
+  }) as unknown as CanvasRenderingContext2D['stroke'];
+  const fill = ctx.fill;
+  ctx.fill = vi.fn(() => {
+    fills.push(ctx.fillStyle as string);
+    fill();
+  }) as unknown as CanvasRenderingContext2D['fill'];
+  const fillText = ctx.fillText;
+  ctx.fillText = vi.fn((text: string, x: number, y: number) => {
+    fills.push(ctx.fillStyle as string);
+    fillText(text, x, y);
+  }) as unknown as CanvasRenderingContext2D['fillText'];
+  drawScope(
+    ctx,
+    engine,
+    scope,
+    w,
+    h,
+    cursor,
+    opts.simTime ?? 0,
+    5e-6,
+    opts.dark ?? false,
+    3,
+    opts.themeColors,
+  );
+  return { ctx, strokes, fills };
+};
+
 const strokeColorsOf = (
   engine: SimEngine,
   scope: Scope,
   w: number,
   h: number,
   cursor: ScopeCursor,
+  opts: DrawOpts = {},
 ): { ctx: CanvasRenderingContext2D; colors: string[] } => {
-  const { ctx } = mkCtx();
-  const colors: string[] = [];
-  const stroke = ctx.stroke;
-  ctx.stroke = vi.fn(() => {
-    colors.push(ctx.strokeStyle as string);
-    stroke();
-  }) as unknown as CanvasRenderingContext2D['stroke'];
-  drawScope(ctx, engine, scope, w, h, cursor, 0, 5e-6, false, 3);
-  return { ctx, colors };
+  const r = recordDraw(engine, scope, w, h, cursor, opts);
+  return { ctx: r.ctx, colors: r.strokes };
 };
+
+/** Overrides with only `positiveColor` set; the other four keys are required
+ *  by `ThemeColors` and a null keeps the palette value. */
+const onlyPositive = (color: string): ThemeColors => ({
+  positiveColor: color,
+  negativeColor: null,
+  neutralColor: null,
+  selectionColor: null,
+  currentColor: null,
+});
 
 /** Whether the settings wheel's circle was drawn: an arc of radius 5 centred
  *  on (18, h-18). No other overlay uses that radius at that corner. */
@@ -456,5 +524,269 @@ describe('trail persistence', () => {
     const r = trailFadeAlpha(10, 1e-3, 0.000001, 0);
     expect(r.alpha).toBe(0);
     expect(r.lastTrailSimTime).toBe(0);
+  });
+});
+
+describe('assignColor', () => {
+  const dark = makeTheme();
+  const light = makeTheme(false);
+
+  it('gives the first plot of a category its theme colour', () => {
+    // ScopePlot.assignColor's count == 0 branch (ScopePlot.java:148-159):
+    // voltage takes positiveColor, current yellow, anything else white.
+    expect(assignColor('voltage', 0, dark)).toBe('#00ff00');
+    expect(assignColor('current', 0, dark)).toBe('#ffff00');
+    expect(assignColor('power', 0, dark)).toBe('#ffffff');
+    // Upstream's printable branch hardcodes black for the other bucket, which
+    // is exactly what the light theme's whiteColor already is.
+    expect(assignColor('power', 0, light)).toBe('#000000');
+  });
+
+  it('walks the fixed palette from the second plot on, and wraps after eight', () => {
+    expect(PLOT_COLORS).toHaveLength(8);
+    expect(assignColor('voltage', 1, dark)).toBe('#ff0000');
+    expect(assignColor('current', 8, dark)).toBe('#00ffff');
+    expect(assignColor('power', 9, dark)).toBe('#ff0000');
+  });
+});
+
+describe('plotColors', () => {
+  const dark = makeTheme();
+
+  it('counts per category, so a second voltage plot does not take the current slot', () => {
+    const scope = scopeOf([
+      plot(1, 'voltage'),
+      plot(2, 'voltage'),
+      plot(3, 'current'),
+      plot(4, 'voltage'),
+      plot(5, 'power'),
+    ]);
+    const colors = plotColors(scope, dark);
+    expect([1, 2, 3, 4, 5].map((id) => colors.get(id))).toEqual([
+      '#00ff00',
+      '#ff0000',
+      '#ffff00',
+      '#ff8000',
+      '#ffffff',
+    ]);
+  });
+
+  it('skips hidden plots without disturbing the visible counters', () => {
+    // Upstream advances vc/ac/oc only inside the showV/showI branches
+    // (Scope.java:293-308), so turning the current trace off must not shift
+    // the voltage traces' colours.
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current'), plot(3, 'voltage')], {
+      showI: false,
+    });
+    const colors = plotColors(scope, dark);
+    expect(colors.has(2)).toBe(false);
+    expect(colors.get(1)).toBe('#00ff00');
+    expect(colors.get(3)).toBe('#ff0000');
+  });
+
+  it('is a function of position, never of the plot id', () => {
+    // The regression test for the old `plot.id % 7` palette: plot ids are
+    // session-unique handles, so indexing a palette by one repainted the same
+    // saved circuit differently on every load.
+    const a = plotColors(scopeOf([plot(1, 'voltage'), plot(2, 'power')]), dark);
+    const b = plotColors(scopeOf([plot(97, 'voltage'), plot(3, 'power')]), dark);
+    expect([...a.values()]).toEqual([...b.values()]);
+  });
+
+  it('assigns a colour to every plot in X-Y mode', () => {
+    // Upstream's 2D branch skips assignColor and leaves plot.color null
+    // (Scope.java:311-314), which its own manual-scale bullets would then
+    // draw with; the port assigns over the whole list instead.
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], {
+      plotXY: true,
+      showV: false,
+    });
+    expect(plotColors(scope, dark).size).toBe(2);
+  });
+});
+
+describe('drawScope trace and grid colours', () => {
+  const engine = twoTraceEngine([1, 1, 2, 2], [1, 1, 2, 2]);
+  // Far enough into the run that the whole 200 px window has elapsed, so the
+  // time gridlines and the cursor both land on the canvas.
+  const simTime = 0.064;
+
+  it('draws two voltage plots in green and red, not two greens', () => {
+    // drawTrace strokes twice per plot, the midline polyline and the min/max
+    // spans, so one green trace is two green strokes.
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'voltage')]);
+    const { colors } = strokeColorsOf(engine, scope, 200, 120, emptyCursor(), { dark: true });
+    expect(colors.filter((c) => c === '#00ff00')).toHaveLength(2);
+    expect(colors.filter((c) => c === PLOT_COLORS[0])).toHaveLength(2);
+  });
+
+  it('draws the scope grid in the light palette with White Background on', () => {
+    const scope = scopeOf([plot(1, 'voltage')]);
+    const theme = makeTheme(false);
+    const { colors } = strokeColorsOf(engine, scope, 200, 120, emptyCursor(), { simTime });
+    expect(colors).toContain(theme.scopeGridMinor);
+    expect(colors).toContain(theme.scopeGridMajor);
+    // The dark-only literals the grid used to carry unconditionally.
+    expect(colors).not.toContain('#1b2230');
+    expect(colors).not.toContain('#2b3648');
+  });
+});
+
+describe('drawScope cursor colours', () => {
+  const engine = twoTraceEngine([1, 1, 2, 2], [1, 1, 2, 2]);
+  const scope = scopeOf([plot(1, 'voltage')]);
+  const simTime = 0.064;
+  const hovering = (dragStartTime = -1): ScopeCursor => ({
+    ...emptyCursor(),
+    hover: true,
+    cursorTime: 0.032,
+    dragStartTime,
+  });
+
+  it('strokes the cursor line in whiteColor, so it flips to black on white', () => {
+    // Scope.java:1059 draws it in CircuitElm.whiteColor; a hardcoded white
+    // line is invisible with White Background on.
+    const light = strokeColorsOf(engine, scope, 200, 120, hovering(), { simTime });
+    expect(light.colors).toContain('#000000');
+    expect(light.colors).not.toContain('#ffffff');
+    const dark = strokeColorsOf(engine, scope, 200, 120, hovering(), { simTime, dark: true });
+    expect(dark.colors).toContain('#ffffff');
+  });
+
+  it('strokes the drag-start line in the theme-dependent lightGray', () => {
+    // Upstream's lightGrayColor is black when printable (Scope.java:1024,
+    // ImageExporter.java:192). On the light theme it therefore shares the
+    // cursor line's black, so the test counts the extra black stroke the drag
+    // adds rather than looking for a distinct colour.
+    const blacks = (cursor: ScopeCursor) =>
+      strokeColorsOf(engine, scope, 200, 120, cursor, { simTime }).colors.filter(
+        (c) => c === '#000000',
+      ).length;
+    expect(blacks(hovering(0.048))).toBe(blacks(hovering()) + 1);
+    const dark = { simTime, dark: true };
+    expect(strokeColorsOf(engine, scope, 200, 120, hovering(0.048), dark).colors).toContain(
+      '#c0c0c0',
+    );
+    expect(strokeColorsOf(engine, scope, 200, 120, hovering(), dark).colors).not.toContain(
+      '#c0c0c0',
+    );
+  });
+});
+
+/** The X-Y trail lives on an offscreen canvas `drawXY` builds through
+ *  `document.createElement`. The test environment is node with no DOM, so the
+ *  canvas is stubbed and its recorder handed to the body: the locus stroke and
+ *  the fade fill land there, never on the visible context. */
+const withTrailCanvas = <T>(body: (trail: { strokes: string[]; fills: string[] }) => T): T => {
+  const strokes: string[] = [];
+  const fills: string[] = [];
+  const pctx = {
+    fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 0,
+    globalAlpha: 1,
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    fillRect: vi.fn(() => {
+      fills.push(pctx.fillStyle);
+    }),
+    stroke: vi.fn(() => {
+      strokes.push(pctx.strokeStyle);
+    }),
+  };
+  const host = globalThis as { document?: unknown };
+  const previous = 'document' in host ? host.document : undefined;
+  const had = 'document' in host;
+  host.document = { createElement: () => ({ width: 0, height: 0, getContext: () => pctx }) };
+  try {
+    return body({ strokes, fills });
+  } finally {
+    if (had) host.document = previous;
+    else delete host.document;
+  }
+};
+
+describe('drawScope X-Y colours', () => {
+  const xyEngine = (): SimEngine =>
+    ({
+      scopeIndexOf: (id: number) => (id === 1 ? 0 : 1),
+      scopeData: () => new Float32Array([1, 1, 2, 2]),
+      scopeDiverged: () => false,
+      recentSamples: (index: number) => new Float32Array(index === 0 ? [0, 1, 2, 3] : [3, 2, 1, 0]),
+    }) as unknown as SimEngine;
+
+  const xyScope = () => scopeOf([plot(1, 'voltage'), plot(2, 'voltage')], { plotXY: true });
+
+  it('strokes the locus in whiteColor and fades to the theme background', () => {
+    // ScopePlot2d.java:85 and 210-217: the locus and the fade are the black/
+    // white pair, so a White Background scope fades to white, not to the dark
+    // panel colour the port used to paint over it.
+    clearXYPersistence(1);
+    const trail = withTrailCanvas((rec) => {
+      // The fade runs one frame in three (advanceFadeCounter), so three frames
+      // are needed before any background repaint happens.
+      for (let frame = 0; frame < 3; frame++) {
+        recordDraw(xyEngine(), xyScope(), 200, 150, emptyCursor());
+      }
+      return rec;
+    });
+    expect(trail.strokes).toContain('#000000');
+    expect(trail.fills).toHaveLength(1);
+    // The alpha is time-dependent, so only the colour prefix is pinned.
+    expect(trail.fills[0].startsWith('rgba(255, 255, 255')).toBe(true);
+  });
+
+  it('draws the centre cross in the positive colour on both axes in X-Y mode', () => {
+    clearXYPersistence(1);
+    const theme = makeTheme(false);
+    const colors = withTrailCanvas(
+      () => strokeColorsOf(xyEngine(), xyScope(), 200, 150, emptyCursor()).colors,
+    );
+    expect(colors.filter((c) => c === theme.positive)).toHaveLength(2);
+  });
+
+  it('keeps upstream yellow for the vertical line of the V-vs-I 2D mode', () => {
+    // Only reachable through the helper: the port folds upstream's
+    // plot2d.enabled and plot2d.plotXY into one flag, so drawScope always
+    // takes the X-Y branch (ScopePlot2d.java:226-230).
+    const theme = makeTheme(false);
+    expect(xyCrossColors(true, theme)).toEqual({
+      horizontal: theme.positive,
+      vertical: theme.positive,
+    });
+    expect(xyCrossColors(false, makeTheme())).toEqual({
+      horizontal: '#00ff00',
+      vertical: '#ffff00',
+    });
+  });
+});
+
+describe('drawScope spectrum colours', () => {
+  it('draws the FFT trace and its labels in upstream red', () => {
+    // ScopeFFT.java:35-38, 69, 93-98 draw the trace and every label in plain
+    // red; the port used a lighter #ff5555.
+    const scope = scopeOf([plot(1, 'voltage')], { fftPlot: true });
+    const engine = twoTraceEngine([1, 1, 2, 2], [1, 1, 2, 2]);
+    const { strokes, fills } = recordDraw(engine, scope, 200, 120, emptyCursor());
+    expect(strokes).toContain('#ff0000');
+    expect(strokes).not.toContain('#ff5555');
+    expect(fills).toContain('#ff0000');
+    expect(fills).not.toContain('#ff5555');
+  });
+});
+
+describe('drawScope colour overrides', () => {
+  it('routes a custom positiveColor into both the trace and the header bullet', () => {
+    // The manual-scale header bullet used to call the colour helper without
+    // the user's overrides, so a custom trace colour got a stock green bullet
+    // beside it. Both now read the one per-frame assignment map.
+    const scope = scopeOf([plot(1, 'voltage')], { manualScale: true });
+    const engine = twoTraceEngine([1, 1, 2, 2], [1, 1, 2, 2]);
+    const { strokes, fills } = recordDraw(engine, scope, 200, 150, emptyCursor(), {
+      themeColors: onlyPositive('#123456'),
+    });
+    expect(strokes).toContain('#123456');
+    expect(fills).toContain('#123456');
   });
 });

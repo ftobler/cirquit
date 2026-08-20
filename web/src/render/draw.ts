@@ -155,8 +155,10 @@ export function tempColor(temp: number): string {
 }
 
 /** Parses the hex or `rgb(r,g,b)` colours the theme and `mix` produce into
- *  their channels, for a blend that needs the numbers rather than the string. */
-function parseRgb(color: string): [number, number, number] {
+ *  their channels, for a blend that needs the numbers rather than the string.
+ *  Exported for the scope's X-Y trail fade, which repaints the theme
+ *  background at a fractional alpha. */
+export function parseRgb(color: string): [number, number, number] {
   const hex = /^#([0-9a-f]{6})$/i.exec(color);
   if (hex) {
     const n = parseInt(hex[1], 16);
@@ -970,6 +972,14 @@ function lightTheme(): Theme {
     // Upstream's Color.lightGray, same constant both themes: the relay blade
     // and the analog switch bar.
     lightGray: '#c0c0c0',
+    // Upstream's lightGrayColor flips to black when printable
+    // (ImageExporter.java:192): the scope's drag-start cursor line has to stay
+    // visible on white.
+    lightGrayText: '#000000',
+    // The scope grid in upstream's printable palette (Scope.java:800-806),
+    // inverted against the dark theme so the minor lines stay the fainter pair.
+    scopeGridMinor: '#d0d0d0',
+    scopeGridMajor: '#808080',
     text: '#24292f',
     // Upstream's Color.dark_gray, the scope settings wheel's rest state
     // (Scope.java:536); same constant as darkGray.
@@ -1009,6 +1019,13 @@ function darkTheme(): Theme {
     // Upstream's Color.lightGray (Color.java:31), the exact constant the dark
     // theme carries: the relay blade and the analog switch bar.
     lightGray: '#c0c0c0',
+    // Upstream's lightGrayColor in the normal theme is Color.lightGray
+    // (ImageExporter.java:196), the same value; it is a separate role only
+    // because the printable theme flips it to black.
+    lightGrayText: '#c0c0c0',
+    // The scope grid, upstream's normal palette (Scope.java:799-800).
+    scopeGridMinor: '#404040',
+    scopeGridMajor: '#a0a0a0',
     text: '#8b949e',
     // Upstream's Color.dark_gray, the scope settings wheel's rest state
     // (Scope.java:536); same constant as darkGray.

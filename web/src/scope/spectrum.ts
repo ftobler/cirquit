@@ -4,6 +4,7 @@
  *  overlay. */
 
 import type { Scope, ScopeValue } from '../engine/simulator';
+import type { Theme } from '../model/types';
 import type { ScopeCursor } from './draw';
 import { canvasFont, formatValue } from '../render/draw';
 import { dbOf, fft, spectrumMagnitudes } from './fft';
@@ -12,6 +13,16 @@ import { drawInfo, type InfoLine } from './info';
 /** The phase overlay's stroke colour, distinct from the red spectrum body and
  *  the dark-red grid so a test can tell the phase lines apart. */
 export const PHASE_COLOR = '#ffb000';
+
+/** Upstream draws the spectrum trace and every label in plain red
+ *  (ScopeFFT.java:35-38, 69, 93-98). */
+const SPECTRUM_COLOR = '#ff0000';
+
+/** The spectrum's gridlines, upstream's dark red (ScopeFFT.java:64, 89). It is
+ *  nearly as dark as the trace on a white background; upstream has the same
+ *  problem in printable mode, so the quirk is kept rather than silently
+ *  retuned. */
+const SPECTRUM_GRID_COLOR = '#880000';
 
 /** One drawable trace's snapshot for the FFT overlay. The spectrum body uses
  *  the first trace; the phase overlay needs the voltage and current traces. */
@@ -31,6 +42,7 @@ export function drawFFT(
   speed: number,
   timeStep: number,
   cursor: ScopeCursor,
+  theme: Theme,
   decimalDigits: number,
 ): void {
   const first = traces[0];
@@ -62,13 +74,13 @@ export function drawFFT(
     const sWidth = ctx.measureText(s).width;
     prevEnd = x + sWidth + 4;
     if (i > 0) {
-      ctx.strokeStyle = '#880000';
+      ctx.strokeStyle = SPECTRUM_GRID_COLOR;
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h);
       ctx.stroke();
     }
-    ctx.fillStyle = '#ff5555';
+    ctx.fillStyle = SPECTRUM_COLOR;
     ctx.fillText(s, x + 2, h - 4);
   }
 
@@ -83,7 +95,7 @@ export function drawFFT(
     if (fftIndex >= 0 && fftIndex < mag.length && maxM > 0) {
       lines.push({ text: `${Math.round(dbOf(mag[fftIndex], maxM))} dB`, y: 19 });
     }
-    drawInfo(ctx, lines, h);
+    drawInfo(ctx, lines, h, theme.whiteColor);
   }
 }
 
@@ -152,7 +164,7 @@ export function drawPhaseBand(
   const bandCenter = h - 10;
   const bandHalf = 8;
   // The zero-degree reference line across the band.
-  ctx.strokeStyle = '#880000';
+  ctx.strokeStyle = SPECTRUM_GRID_COLOR;
   ctx.beginPath();
   ctx.moveTo(0, bandCenter);
   ctx.lineTo(w, bandCenter);
@@ -184,7 +196,7 @@ function drawSpectrumBody(
   logSpectrum: boolean,
 ): void {
   if (!logSpectrum) {
-    ctx.strokeStyle = '#ff5555';
+    ctx.strokeStyle = SPECTRUM_COLOR;
     ctx.beginPath();
     const y0 = h - 12;
     let prevX = 0;
@@ -209,16 +221,16 @@ function drawSpectrumBody(
     for (let db = -20; db >= -80; db -= 20) {
       const y = topMargin + -db * pixelsPerDb;
       if (y < 0 || y >= h) continue;
-      ctx.strokeStyle = '#880000';
+      ctx.strokeStyle = SPECTRUM_GRID_COLOR;
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(w, y);
       ctx.stroke();
-      ctx.fillStyle = '#ff5555';
+      ctx.fillStyle = SPECTRUM_COLOR;
       ctx.font = canvasFont(9);
       ctx.fillText(`${db} dB`, 2, y - 2);
     }
-    ctx.strokeStyle = '#ff5555';
+    ctx.strokeStyle = SPECTRUM_COLOR;
     ctx.beginPath();
     let prevX = 0;
     let prevY = 0;
