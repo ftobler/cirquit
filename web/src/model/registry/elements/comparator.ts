@@ -60,6 +60,28 @@ function inputSide(e: CircuitElement): number {
   return hs;
 }
 
+/** The three child dumps a freshly constructed upstream comparator would
+ *  hold, in `modelString` order (ComparatorElm.java:7): the op-amp, the analog
+ *  switch, the ground. `CompositeElm.loadComposite` calls `st.nextToken()`
+ *  once per child (CompositeElm.java:85-91), so a 401 line that stops after
+ *  the flags makes upstream throw and drop the element; these are the tokens
+ *  that keep it loadable.
+ *
+ *  Values come from the children's own constructors:
+ *  - op-amp `flags_maxOut_minOut_gbw_volts0_volts1_gain`, fresh flags
+ *    FLAG_GAIN = 8, 15 / -15 / 1e6 / 0 / 0 / 100000 (OpAmpElm.java:32-40).
+ *    The current upstream checkout has no text `dump()` on OpAmpElm, so it
+ *    would write the flags alone today, but its reader takes all six fields
+ *    in one `try` (OpAmpElm.java:50-58); the long form parses cleanly and
+ *    carries more, so that is what the port writes.
+ *  - analog switch `flags_r_on_r_off_threshold`, fresh flags FLAG_PULLDOWN = 2,
+ *    20 / 1e10 / 2.5 (AnalogSwitchElm.java:37-44, dump at :58-60). GWT renders
+ *    1e10 as `10000000000`, which is also what `String(1e10)` gives here.
+ *  - ground `flags_symbolType`, FLAG_OLD_STYLE = 1 because `loadComposite`
+ *    calls `setOldStyle()` on every GroundElm child (CompositeElm.java:98-99),
+ *    and symbolType 0 (GroundElm.java:46-48). */
+const FRESH_CHILDREN = ['8_15_-15_1000000_0_0_100000', '2_20_10000000000_2.5', '1_0'];
+
 function comparatorPosts(e: CircuitElement): Point[] {
   const p1 = endpoints(e)[0];
   const p2 = endpoints(e)[1];
@@ -122,7 +144,11 @@ export const COMPARATOR_DEF: ElementDef = {
   parse: (t, e) => {
     e.model = t;
   },
-  dump: (e) => (Array.isArray(e.model) ? e.model : []),
+  // A carried token list always wins, so a loaded file round-trips
+  // byte-for-byte. The fallback is keyed on an empty list rather than on "is
+  // this element fresh" so that a bare, already-broken `401 ... flags` line
+  // gets repaired on the next save instead of staying unloadable upstream.
+  dump: (e) => (Array.isArray(e.model) && e.model.length > 0 ? e.model : FRESH_CHILDREN),
   // The triangle body is a solid pick zone: the base at lead1 grown hs*2, the
   // apex at lead2, the same box upstream's setBbox(opheight*2) wraps
   // (ComparatorElm.java:44).

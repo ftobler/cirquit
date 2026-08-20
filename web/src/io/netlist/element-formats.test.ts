@@ -2418,6 +2418,15 @@ describe('ota file format', () => {
   /** ota-gain.txt:2 verbatim, the composite's full 18-child dump. */
   const otaLine = readFileSync(join(CIRCUITS_DIR, 'ota-gain.txt'), 'utf8').split('\n')[1].trim();
 
+  /** Serialises one element and returns its `402` line. */
+  const lineFor = (e: CircuitElement): string => {
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return out.split('\n').find((l) => l.startsWith('402 ')) ?? '';
+  };
+
+  /** The child dump tokens of a `402` line, everything after the flags. */
+  const childTokens = (line: string): string[] => line.split(/\s+/).slice(6);
+
   it('parses the corpus 402 line and re-emits it byte-for-byte', () => {
     const [e] = parseCircuit(otaLine).elements;
     expect(e.kind).toBe('ota');
@@ -2451,12 +2460,60 @@ describe('ota file format', () => {
     expect(e.params.negVolt).toBe(-9);
   });
 
-  it('a bare 402 line round-trips its empty token list', () => {
-    const line = '402 512 528 624 528 0';
-    const [e] = parseCircuit(line).elements;
+  it('a fresh OTA dumps the eighteen child tokens upstream demands', () => {
+    // `CompositeElm.loadComposite` calls `stIn.nextToken()` once per
+    // modelString child (CompositeElm.java:85-91) and the OTA's has eighteen
+    // (OTAElm.java:8): two rails, then five N, six P and five more N
+    // transistors. A line that stops after the flags makes that throw, and
+    // `CircuitLoader` silently drops the element (CircuitLoader.java:207-211).
+    const e = makeElement('ota', 0, 0, 128, 0);
+    const tokens = childTokens(lineFor({ ...e, id: 1 }));
+    expect(tokens).toHaveLength(18);
+    expect(tokens[0]).toBe('0_0_40_-9_0_0_0.5');  // rail 0 carries negVolt
+    expect(tokens[1]).toBe('0_0_40_9_0_0_0.5');  // rail 1 carries posVolt
+    // Fresh transistors: zero junction state, beta 100, pnp the only
+    // difference (TransistorElm.java:53-54).
+    expect(tokens.slice(2)).toEqual([
+      ...Array<string>(5).fill('0_1_0_0_100'),
+      ...Array<string>(6).fill('0_-1_0_0_100'),
+      ...Array<string>(5).fill('0_1_0_0_100'),
+    ]);
+  });
+
+  it('an edited supply voltage reaches the two rail tokens', () => {
+    // Upstream reads negVolt back off child 0 and posVolt off child 1
+    // (OTAElm.java:41-42), so the params have to be re-derived into those two
+    // tokens on every save or an edited supply never survives the file.
+    const e = makeElement('ota', 0, 0, 128, 0);
+    e.params.posVolt = 12;
+    e.params.negVolt = -12;
+    const tokens = childTokens(lineFor({ ...e, id: 1 }));
+    expect(tokens[0]).toBe('0_0_40_-12_0_0_0.5');
+    expect(tokens[1]).toBe('0_0_40_12_0_0_0.5');
+  });
+
+  it('guards a non-finite supply back to the defaults', () => {
+    // A param edited to NaN must not write `NaN` into the rail token: upstream
+    // would parse it as a NaN supply and the rail would never settle
+    // (otaChildTokens, railToken).
+    const e = makeElement('ota', 0, 0, 128, 0);
+    e.params.posVolt = Number.NaN;
+    e.params.negVolt = Number.POSITIVE_INFINITY;
+    const tokens = childTokens(lineFor({ ...e, id: 1 }));
+    expect(tokens[0]).toBe('0_0_40_-9_0_0_0.5');
+    expect(tokens[1]).toBe('0_0_40_9_0_0_0.5');
+  });
+
+  it('repairs a bare 402 line on save rather than preserving it', () => {
+    // A knowing exception to "never lose data on a round trip": the preserved
+    // bytes are a file upstream cannot open, and the tokens written back are
+    // the defaults upstream would have constructed anyway, so nothing is lost
+    // and the line becomes loadable.
+    const [e] = parseCircuit('402 512 528 624 528 0').elements;
     expect(e.model).toEqual([]);
-    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
-    expect(out.split('\n').find((l) => l.startsWith('402 ')) ?? '').toBe(line);
+    const line = lineFor(e);
+    expect(line.split(/\s+/).slice(0, 6)).toEqual(['402', '512', '528', '624', '528', '0']);
+    expect(childTokens(line)).toHaveLength(18);
   });
 
   it('places the five posts where the ota-gain wires connect', () => {
@@ -2761,9 +2818,28 @@ describe('built-in composite file formats (batch C)', () => {
     expect(lineFor(e)).toContain(line);
   });
 
-  it('a fresh comparator dumps an empty child token list', () => {
+  it('a fresh comparator dumps the three child tokens upstream demands', () => {
+    // Three children (ComparatorElm.java:7), three mandatory tokens
+    // (CompositeElm.java:85-91). The values are the children's own
+    // constructor defaults: op-amp FLAG_GAIN with 15/-15/1e6/0/0/100000
+    // (OpAmpElm.java:32-40), analog switch FLAG_PULLDOWN with 20/1e10/2.5
+    // (AnalogSwitchElm.java:37-44), old-style ground with symbol 0
+    // (CompositeElm.java:98-99, GroundElm.java:46-48).
     const e = makeElement('comparator', 0, 0, 64, 0);
-    expect(lineFor({ ...e, id: 1 })).toContain('401 0 0 64 0 0');
+    expect(lineFor({ ...e, id: 1 })).toContain(
+      '401 0 0 64 0 0 8_15_-15_1000000_0_0_100000 2_20_10000000000_2.5 1_0',
+    );
+  });
+
+  it('repairs a bare 401 line on save, keeping its flags', () => {
+    // The reported unloadable line: legal FLAG_SWAP, no child tokens, so
+    // upstream's `nextToken()` throws and the element is dropped
+    // (CircuitLoader.java:207-211). Saving it again has to add the children.
+    const [e] = parseCircuit('401 208 64 320 64 4').elements;
+    expect(e.model).toEqual([]);
+    expect(lineFor(e)).toContain(
+      '401 208 64 320 64 4 8_15_-15_1000000_0_0_100000 2_20_10000000000_2.5 1_0',
+    );
   });
 
   it('409 realistic op-amp round-trips slew rate, cap value, limit and model', () => {
@@ -2842,6 +2918,47 @@ describe('built-in composite file formats (batch C)', () => {
     const out = lineFor({ ...e, id: 1 });
     expect(out).toContain('412 0 0 64 0 2 4_2.87e-11_0_0.001_0 4_1e-13_0_0.001_0 0_0.0025_0_0_0 0_6.4');
   });
+});
+
+describe('every composite dumps the child tokens upstream demands', () => {
+  // The regression guard for the whole family. `CompositeElm.loadComposite`
+  // calls `stIn.nextToken()` once per modelString child
+  // (CompositeElm.java:85-91); one token short and the call throws,
+  // `CircuitLoader`'s per-line catch logs and `break`s
+  // (CircuitLoader.java:207-211), and the element is silently missing from the
+  // loaded circuit. Any composite added without child dumps fails here.
+  const COMPOSITES: { code: string; kind: string; children: number }[] = [
+    { code: '400', kind: 'darlington', children: 3 },  // DarlingtonElm.java:31-33, two children plus pnp
+    { code: '401', kind: 'comparator', children: 3 },  // ComparatorElm.java:7, undumped at :25
+    { code: '402', kind: 'ota', children: 18 },  // OTAElm.java:8, undumped at :38-39
+    // The optocoupler passes `st = null` into loadComposite
+    // (OptocouplerElm.java:29-31), so upstream never reads a child token and
+    // rebuilds the children from defaults. It is the one exempt composite,
+    // which is also why the port's appended `ctr` token is harmless.
+    { code: '407', kind: 'optocoupler', children: 0 },
+    { code: '412', kind: 'crystal', children: 4 },  // CrystalElm.java:44-45
+  ];
+
+  /** The tokens a serialised line carries after the flags field. */
+  const childTokens = (e: CircuitElement, code: string): string[] => {
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const line = out.split('\n').find((l) => l.startsWith(`${code} `)) ?? '';
+    expect(line).not.toBe('');
+    return line.split(/\s+/).slice(6);
+  };
+
+  for (const { code, kind, children } of COMPOSITES) {
+    it(`a freshly placed ${kind} writes its ${children} child tokens`, () => {
+      const e = makeElement(kind, 0, 0, 128, 0);
+      expect(childTokens({ ...e, id: 1 }, code).length).toBeGreaterThanOrEqual(children);
+    });
+
+    it(`a bare ${code} line gains its ${children} child tokens on save`, () => {
+      const [e] = parseCircuit(`${code} 0 0 128 0 0`).elements;
+      expect(e.kind).toBe(kind);
+      expect(childTokens(e, code).length).toBeGreaterThanOrEqual(children);
+    });
+  }
 });
 
 describe('op-amp file format and the swapped variant', () => {

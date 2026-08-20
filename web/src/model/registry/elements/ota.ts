@@ -18,7 +18,9 @@
  * children's `maxVoltage`. They are deliberately not read from the file: the
  * composite dump has no dedicated supply tokens, the rails carry their
  * voltages inside the first two child dumps, and the engine applies the params
- * to those rails itself, so parsing them here would duplicate that work.
+ * to those rails itself, so parsing them here would duplicate that work. They
+ * are written back, though, whenever there are no carried tokens to re-emit
+ * (otaChildTokens below), so a freshly placed OTA saves its real supplies.
  */
 
 import {
@@ -122,6 +124,51 @@ export function otaGeometry(e: CircuitElement): OtaGeometry {
   };
 }
 
+/** The LM13700 supply defaults (OTAElm.java:29-30), also the `defaults` below. */
+const DEF_POS_VOLT = 9;
+const DEF_NEG_VOLT = -9;
+
+/** The eighteen child dumps a freshly constructed upstream OTA would hold, in
+ *  `modelString` order (OTAElm.java:8): two rails, then five N, six P and five
+ *  more N transistors. `CompositeElm.loadComposite` calls `st.nextToken()`
+ *  once per child (CompositeElm.java:85-91), so a 402 line that stops after
+ *  the flags makes upstream throw and drop the element.
+ *
+ *  The two rails are the only tokens that are not constant: upstream reads
+ *  negVolt back off child 0 and posVolt off child 1 (OTAElm.java:41-42), so
+ *  they are re-derived from the params on every save, the crystal's pattern,
+ *  and an edited supply voltage reaches the file. Rail token shape is
+ *  `flags_waveform_frequency_maxVoltage_bias_phaseShift_dutyCycle`
+ *  (VoltageElm.java:69-75); like OpAmpElm, VoltageElm has no text `dump()` in
+ *  the current upstream checkout, but its reader takes all six fields in one
+ *  `try` and the long form is what the real corpus lines carry
+ *  (public/circuits/ota-gain.txt:2).
+ *
+ *  Transistor token shape is `flags_pnp_lastvbe_lastvbc_beta`
+ *  (TransistorElm.java:58-68); junction state is zero on a fresh part and beta
+ *  is 100, so the N children are `0_1_0_0_100` and the P children
+ *  `0_-1_0_0_100`. */
+const FRESH_N_TRANSISTOR = '0_1_0_0_100';
+const FRESH_P_TRANSISTOR = '0_-1_0_0_100';
+
+function railToken(v: number | undefined, fallback: number): string {
+  // A param edited to NaN or wiped out of the file must not write `NaN` into
+  // the token: upstream would parse it as a NaN supply and the rail would
+  // never settle.
+  const volts = v !== undefined && Number.isFinite(v) ? v : fallback;
+  return `0_0_40_${volts}_0_0_0.5`;
+}
+
+function otaChildTokens(e: CircuitElement): string[] {
+  return [
+    railToken(e.params.negVolt, DEF_NEG_VOLT),
+    railToken(e.params.posVolt, DEF_POS_VOLT),
+    ...Array<string>(5).fill(FRESH_N_TRANSISTOR),
+    ...Array<string>(6).fill(FRESH_P_TRANSISTOR),
+    ...Array<string>(5).fill(FRESH_N_TRANSISTOR),
+  ];
+}
+
 function otaPosts(e: CircuitElement): Point[] {
   const g = otaGeometry(e);
   return [g.in1[0], g.in2[0], g.in3[0], g.in4[0], g.point2bis];
@@ -174,7 +221,7 @@ export const OTA_DEF: ElementDef = {
   postCount: 5,
   posts: otaPosts,
   noDiagonal: true,  // OTAElm.java:34
-  defaults: { posVolt: 9, negVolt: -9 },
+  defaults: { posVolt: DEF_POS_VOLT, negVolt: DEF_NEG_VOLT },
   // The line is `... flags <child dump token>...`, one `_`-joined token per
   // composite child (CompositeElm.dump + dumpElements). The tokens are raw on
   // both sides, like the darlington's: upstream escapes them with the
@@ -188,7 +235,11 @@ export const OTA_DEF: ElementDef = {
     // parses them itself; the frontend stores the list and nothing else.
     e.model = t;
   },
-  dump: (e) => (Array.isArray(e.model) ? e.model : []),
+  // A carried token list always wins, so a loaded file round-trips
+  // byte-for-byte. The fallback is keyed on an empty list rather than on "is
+  // this element fresh" so that a bare, already-broken `402 ... flags` line
+  // gets repaired on the next save instead of staying unloadable upstream.
+  dump: (e) => (Array.isArray(e.model) && e.model.length > 0 ? e.model : otaChildTokens(e)),
   fields: [
     { name: 'posVolt', label: 'Positive Supply Voltage', unit: 'V' },
     { name: 'negVolt', label: 'Negative Supply Voltage', unit: 'V' },
