@@ -139,6 +139,11 @@ export interface AppState {
   notice: string | null;
   undoStack: Snapshot[];
   redoStack: Snapshot[];
+  /** True while a scope editing gesture (a plot-Y drag or a speed wheel burst)
+   *  is in progress. The scope setters skip their per-call `commit()` while it
+   *  holds, so the whole gesture collapses into one undo entry. Transient: it
+   *  is not part of `Snapshot`, so it never touches undo dedup. */
+  scopeGesture: boolean;
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
   revision: number;
   /** Bumped by scope capture-parameter edits (speed), which the frame loop
@@ -428,6 +433,13 @@ export interface AppState {
    *  no-op when no recovery exists. */
   recoverAutoSave(): void;
 
+  /** Begins a scope editing gesture: commits the pre-gesture baseline once,
+   *  then raises `scopeGesture` so the scope setters stop committing until
+   *  `endScopeGesture`. Mirrors `beginEdit` for element drags. */
+  beginScopeGesture(): void;
+  /** Ends a scope editing gesture, lowering `scopeGesture` so the scope setters
+   *  resume committing. The gesture's whole edit is one undo entry. */
+  endScopeGesture(): void;
   /** Records the current state so the next change can be undone. */
   commit(): void;
   /** Marks the start of an edit session (a field focus or a pointer-down on a

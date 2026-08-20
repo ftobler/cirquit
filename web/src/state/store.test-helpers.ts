@@ -28,6 +28,7 @@ export const fresh = () => ({
   highlightedNode: null,
   undoStack: [],
   redoStack: [],
+  scopeGesture: false,
   revision: 0,
   paramRevision: 0,
   pendingParams: new Map(),

@@ -486,6 +486,7 @@ function createAppStore() {
   highlightedNode: null,
   undoStack: [],
   redoStack: [],
+  scopeGesture: false,
   revision: 0,
   scopeRevision: 0,
   paramRevision: 0,
@@ -637,6 +638,20 @@ function createAppStore() {
         redoStack: [],
       };
     }),
+
+  // The pre-gesture state is already the top of the undo stack (nothing has
+  // mutated since the last commit), so this commit dedups against it and the
+  // real baseline is left in place; raising the flag then lets the setters
+  // mutate freely until the gesture ends. If the stack was empty, this pushes
+  // the baseline so the gesture has something to undo back to.
+  beginScopeGesture: () => {
+    get().commit();
+    set({ scopeGesture: true });
+  },
+
+  // No commit here: the post-gesture state is the live one and the baseline is
+  // already on the stack, so undo restores the whole gesture in a single step.
+  endScopeGesture: () => set({ scopeGesture: false }),
 
   beginEdit: () => get().commit(),
 
@@ -1551,7 +1566,7 @@ function createAppStore() {
     // do would still patch the engine; committing it would also push a
     // spurious undo entry.
     if (!scope || scope.speed === clamped) return;
-    s.commit();
+    if (!s.scopeGesture) s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) => (x.id === id ? { ...x, speed: clamped } : x)),
       scopeRevision: st.scopeRevision + 1,
@@ -1572,7 +1587,7 @@ function createAppStore() {
     ) {
       return;
     }
-    s.commit();
+    if (!s.scopeGesture) s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) => (x.id === id ? { ...x, trigger } : x)),
       // The trigger is part of the engine spec, so it must reload.
@@ -1587,7 +1602,7 @@ function createAppStore() {
     // A patch whose keys already hold their values changes nothing; skipping
     // it avoids both the notify and a spurious undo entry.
     if (Object.entries(patch).every(([k, v]) => scope[k as keyof Scope] === v)) return;
-    s.commit();
+    if (!s.scopeGesture) s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) => (x.id === id ? { ...x, ...patch } : x)),
     }));
@@ -1629,7 +1644,7 @@ function createAppStore() {
     // repeat of the same state changes nothing and must not push an undo
     // entry.
     if (!plot || plot.acCoupled === (acCoupled && plot.value === 'voltage')) return;
-    s.commit();
+    if (!s.scopeGesture) s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) =>
         x.id === scopeId
@@ -1656,7 +1671,7 @@ function createAppStore() {
     // A repeat of the current scale changes nothing and must not push an undo
     // entry.
     if (plot.manScale === manScale) return;
-    s.commit();
+    if (!s.scopeGesture) s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) => ({
         ...x,
@@ -1674,7 +1689,7 @@ function createAppStore() {
     // A repeat of the current position (a drag frame that clamped to the same
     // value) changes nothing and must not push an undo entry.
     if (plot.manVPosition === clamped) return;
-    s.commit();
+    if (!s.scopeGesture) s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) => ({
         ...x,
@@ -2106,6 +2121,9 @@ function createAppStore() {
       undoStack: s.undoStack.slice(0, -1),
       redoStack: [...s.redoStack, clone(s)],
       selectedIds: [],
+      // An in-flight gesture cannot survive a state revert; drop the flag so it
+      // does not strand a single undo entry open.
+      scopeGesture: false,
       ...bumpRevision(s),
     });
     // The `.` lines that came back define library models, so the session half
@@ -2123,6 +2141,7 @@ function createAppStore() {
       redoStack: s.redoStack.slice(0, -1),
       undoStack: [...s.undoStack, clone(s)],
       selectedIds: [],
+      scopeGesture: false,
       ...bumpRevision(s),
     });
     syncSessionModels(s.passthrough, next.passthrough);

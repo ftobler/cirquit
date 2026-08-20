@@ -45,6 +45,13 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
   // Wheel deltas accumulate and only zoom past a threshold, so trackpad
   // micro-deltas do not hammer the time base (Scope.java:1378-1388).
   const wheelDeltaRef = useRef(0);
+  // A wheel burst (trackpad inertia, a held wheel) fires many events; the
+  // gesture flag coalesces the whole burst into one undo entry, and this timer
+  // ends it after a short idle so the next burst starts a fresh entry.
+  const wheelGestureTimerRef = useRef<number | null>(null);
+  // The pointer id captured for a plot-Y drag, so the capture can be released
+  // on pointer-up regardless of where the release lands (Scope.java:1222).
+  const dragPointerIdRef = useRef<number | null>(null);
   // The draw loop reads the scope every frame, so a fresh copy (a speed zoom,
   // an overlay toggle) must be visible without restarting the loop.
   const scopeRef = useRef(scope);
@@ -155,6 +162,12 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
         cursor.draggingPlotY = true;
         cursor.dragPlotYStart = y;
         cursor.dragPlotYInitial = target.manVPosition ?? 0;
+        // Capture the pointer so moves keep arriving even if the cursor leaves
+        // the canvas, then commit the pre-drag baseline once and let the moves
+        // mutate without committing, like an element drag.
+        dragPointerIdRef.current = e.pointerId;
+        canvasRef.current?.setPointerCapture(e.pointerId);
+        useStore.getState().beginScopeGesture();
         return;
       }
     }
@@ -192,6 +205,15 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     cursor.dragStartTime = -1;
     cursor.hoverSettingsWheel = false;
     settingsWheelPressRef.current = false;
+    // Release the capture taken at drag start, wherever the pointer ended up.
+    const pid = dragPointerIdRef.current;
+    if (pid !== null) {
+      canvasRef.current?.releasePointerCapture(pid);
+      dragPointerIdRef.current = null;
+    }
+    // A plot-Y drag ends here, closing its single undo entry. A wheel burst is
+    // ended by its own idle timer, so this is a no-op for those.
+    useStore.getState().endScopeGesture();
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -217,6 +239,24 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     cursor.dragStartTime = -1;
     cursor.hoverSettingsWheel = false;
     settingsWheelPressRef.current = false;
+    // With pointer capture set at drag start, a plot-Y drag keeps receiving
+    // moves and ends on pointer-up, so leaving the canvas needs no gesture
+    // flag handling here.
+  };
+
+  // A wheel burst is one undo gesture: open it on the first zoom of the burst
+  // and keep it open until the burst goes idle, so the whole burst is one
+  // entry rather than one per threshold crossing.
+  const extendWheelGesture = () => {
+    const st = useStore.getState();
+    if (!st.scopeGesture) st.beginScopeGesture();
+    if (wheelGestureTimerRef.current !== null) clearTimeout(wheelGestureTimerRef.current);
+    wheelGestureTimerRef.current = window.setTimeout(() => {
+      // Only end the wheel gesture: a plot-Y drag is still in flight and must
+      // keep its single undo entry until pointer-up releases it.
+      if (!cursorRef.current.draggingPlotY) useStore.getState().endScopeGesture();
+      wheelGestureTimerRef.current = null;
+    }, 500);
   };
 
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -228,12 +268,24 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     wheelDeltaRef.current += e.deltaY * settings.wheelSensitivity;
     if (wheelDeltaRef.current > 5) {
       wheelDeltaRef.current = 0;
+      extendWheelGesture();
       useStore.getState().setScopeSpeed(scope.id, speed * 2);
     } else if (wheelDeltaRef.current < -5) {
       wheelDeltaRef.current = 0;
+      extendWheelGesture();
       useStore.getState().setScopeSpeed(scope.id, speed / 2);
     }
   };
+
+  // An unmount (panel closed, circuit reloaded) during a drag or wheel burst
+  // must not strand the gesture flag, so the cleanup ends the gesture and
+  // clears the wheel timer.
+  useEffect(() => {
+    return () => {
+      if (wheelGestureTimerRef.current !== null) clearTimeout(wheelGestureTimerRef.current);
+      useStore.getState().endScopeGesture();
+    };
+  }, []);
 
   const onContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
