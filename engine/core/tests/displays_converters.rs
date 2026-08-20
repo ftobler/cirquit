@@ -1,9 +1,75 @@
 //! Decimal display, DAC, noise source, seven-segment reader, LED array, ADC, multiplexer, demultiplexer and VCO.
 
+use circuit_core::elements::instruction_display::InstructionDisplay;
 use circuit_core::{Circuit, ScopeSpec, ScopeValue};
 
 mod common;
 use common::*;
+
+#[test]
+fn instruction_display_maps_the_value_through_the_lookup_table() {
+    let lookup = "0=text0\n1=text1\n0x2-0xF=other ({a})\n";
+    assert_eq!(InstructionDisplay::display_text(0, lookup), "text0");
+    assert_eq!(InstructionDisplay::display_text(1, lookup), "text1");
+    // 5 falls in the 0x2-0xF range; the `{a}` placeholder renders the value.
+    assert_eq!(InstructionDisplay::display_text(5, lookup), "other (5)");
+    // No matching entry falls back to the decimal value.
+    assert_eq!(InstructionDisplay::display_text(20, lookup), "20");
+
+    // Binary keys (0b10 == 2) must parse in base 2, not fall back to hex.
+    let bin = "0b10=two\n0b11=three\n0x10=sixteen\n";
+    assert_eq!(InstructionDisplay::display_text(2, bin), "two");
+    assert_eq!(InstructionDisplay::display_text(3, bin), "three");
+    assert_eq!(InstructionDisplay::display_text(16, bin), "sixteen");
+}
+
+#[test]
+fn instruction_display_reads_its_bus_value_from_the_input_levels() {
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "logicInput",
+                &[[0, 0]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                2,
+                "logicInput",
+                &[[0, 32]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                3,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+            elm(
+                4,
+                "logicInput",
+                &[[0, 96]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+            ),
+            elm(
+                5,
+                "instructionDisplay",
+                &[[0, 0], [0, 32], [0, 64], [0, 96]],
+                &[("busWidth", 4.0), ("threshold", 2.5)],
+            ),
+            elm(6, "ground", &[[0, 132]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    // Bits 0 and 2 high, bits 1 and 3 low: 0b0101 = 5. A readout contributes
+    // zero matrix unknowns, so the bus value is exactly the thresholded input.
+    assert!(
+        close(c.element_values()[4], 5.0, 1e-9),
+        "bus value was {}",
+        c.element_values()[4]
+    );
+}
 
 #[test]
 fn decimal_display_reads_its_input_bits_as_a_binary_number() {

@@ -118,6 +118,7 @@ import { CUSTOM_COMPOSITE_DEF } from './elements/customComposite';
 import { SPARK_GAP_DEF } from './elements/sparkGap';
 import { TRI_STATE_DEF } from './elements/triState';
 import { LABELED_NODE_DEF } from './elements/labeledNode';
+import { INSTRUCTION_DISPLAY_DEF } from './elements/instructionDisplay';
 import { OUTPUT_DEF } from './elements/output';
 import { LOGIC_OUTPUT_DEF } from './elements/logicOutput';
 import { PROBE_DEF } from './elements/probe';
@@ -256,6 +257,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   LABELED_NODE_DEF,
   OUTPUT_DEF,
   LOGIC_OUTPUT_DEF,
+  INSTRUCTION_DISPLAY_DEF,
   PROBE_DEF,
   AMMETER_DEF,
   OHMMETER_DEF,

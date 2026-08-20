@@ -52,6 +52,7 @@ pub mod fuse;
 pub mod ground;
 pub mod half_adder;
 pub mod inductor;
+pub mod instruction_display;
 pub mod inverter;
 pub mod jfet;
 pub mod jk_flip_flop;
@@ -193,6 +194,7 @@ pub const KINDS: &[&str] = &[
     "optocoupler",
     "crystal",
     "phaseComp",
+    "instructionDisplay",
     "inverter",
     "delayBuffer",
     "logicInput",
@@ -344,6 +346,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         }
         "phaseComp" => Box::new(phase_comp::PhaseComp::new(spec)),
         "inverter" => Box::new(inverter::Inverter::new(spec)),
+        "instructionDisplay" => Box::new(instruction_display::InstructionDisplay::new(spec)),
         "delayBuffer" => Box::new(delay_buffer::DelayBuffer::new(spec)),
         "logicInput" => Box::new(logic_input::LogicInput::new(spec)),
         "andGate" => Box::new(logic::Gate::new(spec, logic::GateKind::And)),
