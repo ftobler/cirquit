@@ -217,6 +217,69 @@ fn crystal_impedance_vanishes_at_series_resonance() {
     );
 }
 
+/// The analytic series-resonance frequency of the motional arm: the inductance
+/// and series capacitance cancel at fs = 1/(2π√(L·Cs)), so the crystal reads
+/// its bare resistance and the divider drops the least voltage across it.
+fn series_resonance(inductance: f64, series_cap: f64) -> f64 {
+    1.0 / (2.0 * std::f64::consts::PI * (inductance * series_cap).sqrt())
+}
+
+#[test]
+fn crystal_resonates_at_series_resonance_frequency() {
+    // Drive the crystal with a swept sine and read its steady-state amplitude:
+    // the amplitude is smallest where its impedance is smallest, which is the
+    // motional series resonance. The minimum must land on fs = 1/(2π√(L·Cs)),
+    // and there the divider leaves just 5·R/(R+1k) across the crystal.
+    let params = [
+        ("seriesCapacitance", 1e-6),
+        ("inductance", 0.02533),
+        ("resistance", 100.0),
+        ("parallelCapacitance", 28.7e-12),
+    ];
+    let fs = series_resonance(0.02533, 1e-6);
+    let expected = 5.0 * 100.0 / (100.0 + 1000.0);
+
+    let mut amp = Vec::new();
+    for &f in &[fs * 0.8, fs * 0.9, fs, fs * 1.1, fs * 1.2] {
+        let c = &mut crystal_circuit(&params, f, false);
+        let report = c.run(2000);
+        assert!(
+            report.converged,
+            "run at {f} Hz did not converge: {:?}",
+            report.error
+        );
+        amp.push((f, sine_peak(c, 0)));
+    }
+
+    // The minimum amplitude sits at series resonance.
+    let min = amp
+        .iter()
+        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+        .unwrap();
+    assert!(
+        close(min.0, fs, fs * 0.05),
+        "resonance was at {0} Hz, expected about {fs} Hz (1/(2π√LCs))",
+        min.0
+    );
+    // And at resonance the crystal is just its resistance in the divider.
+    let at_fs = amp.iter().find(|(f, _)| close(*f, fs, 1e-9)).unwrap().1;
+    assert!(
+        close(at_fs, expected, 0.1),
+        "crystal voltage at series resonance was {at_fs}, expected about {expected}"
+    );
+    // Off-resonance (the series capacitance or inductance dominates) the
+    // amplitude rises above the resistive minimum.
+    let low = amp
+        .iter()
+        .find(|(f, _)| close(*f, fs * 0.8, 1e-9))
+        .unwrap()
+        .1;
+    assert!(
+        low > at_fs + 0.05,
+        "crystal voltage at 0.8·fs was {low}, expected above the resonant {at_fs}"
+    );
+}
+
 // ─── 407 optocoupler ───
 
 /// The optocoupler test circuit: a 1 mA current source drives the LED, and

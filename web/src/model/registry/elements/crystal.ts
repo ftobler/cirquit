@@ -15,6 +15,7 @@
  */
 
 import {
+  currentDotsPath,
   endpoints,
   formatValueShort,
   interp,
@@ -58,6 +59,12 @@ function drawCrystal(g: DrawContext, e: CircuitElement): void {
   const sandwich = [s0, s1, s2, s3, s0];
   const mid = voltageColor(g, (g.voltages[0] + g.voltages[1]) / 2);
   for (let i = 0; i < 4; i++) line(g, sandwich[i], sandwich[i + 1], mid);
+
+  // Animated current on both leads, matching upstream's drawDots on
+  // point1→lead1 and point2→lead2 (CrystalElm.java:136-140). Positive
+  // g.current flows post 0 to post 1, so the post-2 dot runs the other way.
+  currentDotsPath(g, [p1, lead1], g.current);
+  currentDotsPath(g, [p2, lead2], -g.current);
 
   // The series-resonance frequency caption, 1/(2π√(L·Cs)) (CrystalElm.java:
   // 142-146), under FLAG_SHOW_FREQ.
