@@ -552,12 +552,33 @@ describe('unblowFuses is a run-mode reset, not an undoable edit', () => {
 describe('context menu state', () => {
   it('openContextMenu stores coordinates, the circuit point and an element target', () => {
     useStore.getState().openContextMenu(10, 20, 7, { x: 3, y: 4 });
-    expect(useStore.getState().contextMenu).toEqual({ x: 10, y: 20, target: 7, circuit: { x: 3, y: 4 } });
+    expect(useStore.getState().contextMenu).toEqual({
+      x: 10,
+      y: 20,
+      target: 7,
+      circuit: { x: 3, y: 4 },
+      focusSearch: false,
+    });
   });
 
   it('openContextMenu over empty canvas stores a null target', () => {
     useStore.getState().openContextMenu(5, 6, null, { x: 0, y: 0 });
-    expect(useStore.getState().contextMenu).toEqual({ x: 5, y: 6, target: null, circuit: { x: 0, y: 0 } });
+    expect(useStore.getState().contextMenu).toEqual({
+      x: 5,
+      y: 6,
+      target: null,
+      circuit: { x: 0, y: 0 },
+      focusSearch: false,
+    });
+  });
+
+  it("the '/' key's open asks for the search box to take focus", () => {
+    // The keyboard path has no pointer and no click, so the menu has to land
+    // the caret in the element search itself; a right-click must not.
+    useStore.getState().openContextMenu(5, 6, null, { x: 0, y: 0 }, true);
+    expect(useStore.getState().contextMenu?.focusSearch).toBe(true);
+    useStore.getState().openContextMenu(5, 6, null, { x: 0, y: 0 });
+    expect(useStore.getState().contextMenu?.focusSearch).toBe(false);
   });
 
   it('closeContextMenu clears it', () => {
@@ -569,7 +590,13 @@ describe('context menu state', () => {
   it('opening twice replaces rather than stacks', () => {
     useStore.getState().openContextMenu(10, 20, 1, { x: 0, y: 0 });
     useStore.getState().openContextMenu(30, 40, null, { x: 9, y: 8 });
-    expect(useStore.getState().contextMenu).toEqual({ x: 30, y: 40, target: null, circuit: { x: 9, y: 8 } });
+    expect(useStore.getState().contextMenu).toEqual({
+      x: 30,
+      y: 40,
+      target: null,
+      circuit: { x: 9, y: 8 },
+      focusSearch: false,
+    });
   });
 
   it('right-clicking an element outside the selection selects it alone', () => {

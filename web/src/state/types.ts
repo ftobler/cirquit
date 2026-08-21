@@ -24,7 +24,6 @@ export type DialogName =
   | 'exportAsSvg'
   | 'about'
   | 'shortcuts'
-  | 'findComponent'
   | 'createSubcircuit'
   | 'subcircuitManager'
   | 'otherOptions'
@@ -169,10 +168,16 @@ export interface AppState {
   pendingStates: Map<number, number>;
   /** Menu shown by a right-click, or null when closed. `circuit` is the
    *  screen point projected into circuit space at open time, so commands that
-   *  act on the click location (Split Wire Manually) do not need the canvas. */
-  contextMenu:
-    | { x: number; y: number; target: number | null; circuit: Point }
-    | null;
+   *  act on the click location (Split Wire Manually) do not need the canvas.
+   *  `focusSearch` is set only by the '/' key, which opens the menu with no
+   *  pointer involved and so must land the caret in the element search. */
+  contextMenu: {
+    x: number;
+    y: number;
+    target: number | null;
+    circuit: Point;
+    focusSearch: boolean;
+  } | null;
   /** Whether the toolbox drawer is open. Only the mobile layout renders it as
    *  an overlay; on desktop the flag is inert because the aside is a flex
    *  sibling. */
@@ -276,8 +281,8 @@ export interface AppState {
    *  A view command, so it works with editing disabled. No undo entry. */
   centerCircuit(): void;
   /** Asks for a centre that waits for the next layout, for the callers whose
-   *  own change resizes the canvas (a load that adds or removes scopes, going
-   *  full screen). See `centerRequest`. */
+   *  own change resizes the canvas (a load that adds or removes scopes). See
+   *  `centerRequest`. */
   requestCenter(): void;
   /** Fits the whole circuit with no scale cap, the context menu's "Zoom to
    *  fit" seam (context-menu.md). */
@@ -487,7 +492,13 @@ export interface AppState {
   undo(): void;
   redo(): void;
 
-  openContextMenu(x: number, y: number, target: number | null, circuit: Point): void;
+  openContextMenu(
+    x: number,
+    y: number,
+    target: number | null,
+    circuit: Point,
+    focusSearch?: boolean,
+  ): void;
   closeContextMenu(): void;
   openScopeMenu(x: number, y: number, scopeId: number, plotId: number): void;
   closeScopeMenu(): void;

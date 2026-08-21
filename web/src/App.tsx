@@ -12,9 +12,9 @@ import { ContextMenu } from './ui/ContextMenu';
 import { ElementPropertiesDialog } from './ui/ElementPropertiesDialog';
 import { ExportAsLinkDialog } from './ui/ExportAsLinkDialog';
 import { ExportAsTextDialog } from './ui/ExportAsTextDialog';
-import { FindComponentDialog } from './ui/FindComponentDialog';
 import { ImportFromTextDialog } from './ui/ImportFromTextDialog';
 import { Menubar } from './ui/Menubar';
+import { paletteAnchor } from './ui/paletteAnchor';
 import { OptionsPanel } from './ui/OptionsPanel';
 import { OtherOptionsDialog } from './ui/OtherOptionsDialog';
 import { SaveAsDialog } from './ui/SaveAsDialog';
@@ -215,7 +215,7 @@ export default function App() {
           break;
         case 'place':
           // A placement char arms the element, the same setTool the toolbox
-          // button and Find Component use: upstream's MODE_ADD_ELM
+          // button and the palette menu use: upstream's MODE_ADD_ELM
           // (UIManager.java:1273-1284). The split semiconductors carry their
           // toolbox id here (pnp, pmos), so the N/P flavour arms exactly.
           s.setTool(action.kind);
@@ -282,8 +282,16 @@ export default function App() {
           // (CommandManager.java:73-74).
           printCircuit(s.elements, s.settings, false, engineRef.current);
           break;
-        case 'findComponent':
-          s.openDialog('findComponent');
+        case 'openPalette':
+          // The port has no Find Component dialog; the right-click menu is
+          // where the element search lives, so '/' opens that, under the
+          // cursor when there is one and centred on the window when there is
+          // not. Target null forces the empty-canvas (palette) form even if
+          // the cursor happens to rest on an element.
+          {
+            const at = paletteAnchor({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+            s.openContextMenu(at.client.x, at.client.y, null, at.circuit);
+          }
           break;
       }
     };
@@ -360,7 +368,6 @@ export default function App() {
       {dialog === 'exportAsSvg' && <SaveAsImageDialog engine={engine} format="svg" />}
       {dialog === 'about' && <AboutDialog />}
       {dialog === 'shortcuts' && <ShortcutsDialog />}
-      {dialog === 'findComponent' && <FindComponentDialog />}
       {dialog === 'createSubcircuit' && <CreateSubcircuitDialog />}
       {dialog === 'subcircuitManager' && <SubcircuitManagerDialog />}
       {dialog === 'otherOptions' && <OtherOptionsDialog />}

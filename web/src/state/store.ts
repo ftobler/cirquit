@@ -2296,14 +2296,14 @@ function createAppStore() {
     syncSessionModels(s.passthrough, next.passthrough);
   },
 
-  openContextMenu: (x, y, target, circuit) =>
+  openContextMenu: (x, y, target, circuit, focusSearch = false) =>
     set((s) => {
       // Right-clicking an element outside the selection selects it alone so
       // the menu's copy and delete act on it; one already selected keeps the
       // whole group. Empty canvas leaves the selection untouched.
       const selectedIds =
         target !== null && !s.selectedIds.includes(target) ? [target] : s.selectedIds;
-      return { contextMenu: { x, y, target, circuit }, selectedIds };
+      return { contextMenu: { x, y, target, circuit, focusSearch }, selectedIds };
     }),
 
   closeContextMenu: () => set({ contextMenu: null }),

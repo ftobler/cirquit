@@ -22,6 +22,7 @@ import { boxFromPoints, selectByBox } from '../../render/selection';
 import { snap, useStore } from '../../state/store';
 import type { AppState } from '../../state/types';
 import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
+import { clearPaletteAnchor, setPaletteAnchor } from '../paletteAnchor';
 import { DRAG_DELAY_MS, LONG_PRESS_MS, TouchGesture, type GestureAction } from '../gestures';
 import {
   beginPointerGesture,
@@ -312,6 +313,10 @@ export function useCanvasInteractions(
     const p = toCircuit(ev.clientX, ev.clientY);
     pointerRef.current = toClient(ev.clientX, ev.clientY);
     if (!isTouch) hoverRef.current = pointerRef.current;
+    // The '/' key opens the palette menu where the cursor last was, so record
+    // it in viewport pixels (what the menu is positioned with) alongside the
+    // circuit point under it.
+    setPaletteAnchor({ x: ev.clientX, y: ev.clientY }, p);
     const grid = GRID_SIZE;
 
     if (isTouch) {
@@ -690,6 +695,7 @@ export function useCanvasInteractions(
     // The pointer is gone, so the transient highlights and the crosshair guide
     // must go with it.
     const state = useStore.getState();
+    clearPaletteAnchor();
     pointerRef.current = null;
     hoverRef.current = null;
     state.setHovered(null);

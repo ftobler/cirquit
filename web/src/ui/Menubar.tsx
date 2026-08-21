@@ -50,6 +50,63 @@ function MenuItem({
   );
 }
 
+/** The Edit menu's zoom control: one row carrying all three zoom commands
+ *  instead of three rows that each dismiss the menu after a single step. The
+ *  minus and plus buttons step the view and deliberately leave the menu open,
+ *  so a zoom can be nudged several notches in one visit; the readout between
+ *  them shows the current factor and is itself the reset button. The row is
+ *  not a `.menu-item`, so the arrow-key menu cursor steps over it rather than
+ *  landing on a row with three targets in it; its buttons are reachable by
+ *  Tab like any other control. */
+function ZoomItem({
+  scale,
+  onIn,
+  onOut,
+  onReset,
+}: {
+  scale: number;
+  onIn: () => void;
+  onOut: () => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="zoom-item" role="group" aria-label="Zoom">
+      <span className="zoom-label">Zoom</span>
+      <button
+        type="button"
+        className="menubar-btn icon-btn"
+        onClick={onOut}
+        title="Zoom out (-)"
+        aria-label="Zoom out"
+      >
+        <span className="material-icons" aria-hidden="true">
+          remove
+        </span>
+      </button>
+      <button
+        type="button"
+        className="zoom-readout"
+        onClick={onReset}
+        title="Zoom 100% (0)"
+        aria-label="Zoom 100%"
+      >
+        {Math.round(scale * 100)}%
+      </button>
+      <button
+        type="button"
+        className="menubar-btn icon-btn"
+        onClick={onIn}
+        title="Zoom in (+)"
+        aria-label="Zoom in"
+      >
+        <span className="material-icons" aria-hidden="true">
+          add
+        </span>
+      </button>
+    </div>
+  );
+}
+
 /** A checkbox-style menu row: the two Options rows this plan owns. The check
  *  renders in the fixed 24 px leading slot (`.menu-check`), the MD3
  *  menu-with-selection-control pattern, so the icon column lines up across
@@ -181,6 +238,8 @@ export function Menubar({ engine }: Props) {
   const zoomIn = useStore((s) => s.zoomIn);
   const zoomOut = useStore((s) => s.zoomOut);
   const zoomReset = useStore((s) => s.zoomReset);
+  // Only the factor, not the whole view: a pan must not re-render the menubar.
+  const scale = useStore((s) => s.view.scale);
 
   const dark = useStore((s) => s.dark);
   const editable = useStore((s) => s.settings.editable);
@@ -211,16 +270,8 @@ export function Menubar({ engine }: Props) {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
   const [libraryQuery, setLibraryQuery] = useState('');
-  const [fullscreen, setFullscreen] = useState(() => document.fullscreenElement !== null);
   const burgerRef = useRef<HTMLDivElement>(null);
   const burgerButtonRef = useRef<HTMLButtonElement>(null);
-
-  // The Full Screen row labels itself from the browser state both ways.
-  useEffect(() => {
-    const onChange = () => setFullscreen(document.fullscreenElement !== null);
-    document.addEventListener('fullscreenchange', onChange);
-    return () => document.removeEventListener('fullscreenchange', onChange);
-  }, []);
 
   // The burger panel dismisses like a dropdown: a pointerdown outside it and
   // its trigger, or Escape. The dropdowns inside keep their own handlers, so a
@@ -273,23 +324,6 @@ export function Menubar({ engine }: Props) {
       setBurgerOpen(false);
     } catch (e) {
       setLibraryError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
-  const toggleFullScreen = () => {
-    closeMenus();
-    if (document.fullscreenElement) {
-      void document.exitFullscreen();
-    } else {
-      void document.documentElement
-        .requestFullscreen()
-        .then(() => {
-          // The bigger canvas deserves a centred circuit (CommandManager.java:310),
-          // but only once the browser has laid the fullscreen element out:
-          // an immediate fit would measure the windowed canvas.
-          useStore.getState().requestCenter();
-        })
-        .catch(() => undefined);
     }
   };
 
@@ -419,13 +453,6 @@ export function Menubar({ engine }: Props) {
       onClick: fire(() => useStore.getState().recoverAutoSave()),
     },
     { label: 'Print…', shortcut: 'Ctrl+P', onClick: fire(doPrint) },
-    {
-      label: 'Toggle Full Screen',
-      onClick: toggleFullScreen,
-      // The label is the command either way; the tooltip says which way it
-      // currently points, kept fresh by the fullscreenchange listener.
-      title: fullscreen ? 'Exit full screen' : 'Enter full screen',
-    },
     { label: 'About…', onClick: fire(() => openDialog('about')) },
   ];
 
@@ -462,20 +489,10 @@ export function Menubar({ engine }: Props) {
       disabled: !editable || elements.length === 0,
       onClick: fire(() => useStore.getState().selectAll()),
     },
-    // An edit command like the rest of the Edit menu, so the read-only gate
-    // applies (CommandManager.java:22-24); the '/' key stays live because
-    // upstream's "key" menu path bypasses the gate (menuPerformed "key").
-    {
-      label: 'Find Component…',
-      shortcut: '/',
-      disabled: !editable,
-      onClick: fire(() => openDialog('findComponent')),
-    },
-    // View commands, so they work with editing disabled like the zoom keys do.
+    // A view command, so it works with editing disabled like the zoom keys do.
+    // The three zoom commands are not rows: they share the ZoomItem control
+    // rendered after this list.
     { label: 'Center Circuit', onClick: fire(centerCircuit) },
-    { label: 'Zoom 100%', shortcut: '0', onClick: fire(zoomReset) },
-    { label: 'Zoom In', shortcut: '+', onClick: fire(zoomIn) },
-    { label: 'Zoom Out', shortcut: '-', onClick: fire(zoomOut) },
     {
       label: 'Rotate',
       shortcut: 'Space',
@@ -657,6 +674,8 @@ export function Menubar({ engine }: Props) {
           onClose={closeMenus}
         >
           {menu(editItems)}
+          <div className="menu-sep" role="separator" />
+          <ZoomItem scale={scale} onIn={zoomIn} onOut={zoomOut} onReset={zoomReset} />
         </Dropdown>
 
         <Dropdown
@@ -727,11 +746,6 @@ export function Menubar({ engine }: Props) {
           {menu([
             { label: 'Shortcuts…', onClick: fire(() => openDialog('shortcuts')) },
             { label: 'Other Options…', onClick: fire(() => openDialog('otherOptions')) },
-            // Electron-only upstream (Menus.java:238-239); the port is a web app.
-            deferred(
-              'Toggle Dev Tools',
-              'The port is a web app, not Electron; there is no dev tools toggle',
-            ),
           ])}
         </Dropdown>
 

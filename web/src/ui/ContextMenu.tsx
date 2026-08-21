@@ -42,6 +42,7 @@ export function ContextMenu() {
   const settings = useStore((s) => s.settings);
   const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // The menu mounts only while contextMenu is set. Measure it before paint and
   // pull it inside the viewport, so a right-click near an edge does not open a
@@ -54,6 +55,19 @@ export function ContextMenu() {
     const h = el.offsetHeight;
     el.style.left = `${Math.max(4, Math.min(contextMenu.x, window.innerWidth - w - 4))}px`;
     el.style.top = `${Math.max(4, Math.min(contextMenu.y, window.innerHeight - h - 4))}px`;
+  }, [contextMenu]);
+
+  // Opened by the '/' key there is no pointer and no click: the caret goes
+  // into the element search so the menu is ready to type into, which is the
+  // whole point of the key. A right-click leaves focus alone.
+  useEffect(() => {
+    if (contextMenu?.focusSearch) searchRef.current?.focus();
+  }, [contextMenu]);
+
+  // A fresh open starts from the whole palette; a stale query from the last
+  // open would hide most of the parts with no visible cause.
+  useEffect(() => {
+    if (contextMenu) setQuery('');
   }, [contextMenu]);
 
   // Dismissal: a pointerdown anywhere outside the menu, Escape, and losing
@@ -339,30 +353,36 @@ export function ContextMenu() {
   const groups = paletteGroups(query);
   const searching = query.trim() !== '';
 
+  // Two columns over the empty canvas: the commands on the left, the element
+  // palette on the right. Each column scrolls on its own, so a long palette
+  // never pushes the commands out of reach, and the search box sits outside
+  // the palette's scroller and stays put while the list moves under it.
   return (
     <div
       ref={ref}
-      className="dropdown-menu context-menu"
+      className={isElementMenu ? 'dropdown-menu context-menu' : 'dropdown-menu context-menu wide'}
       role="menu"
       style={{ left: contextMenu.x, top: contextMenu.y }}
     >
-      {scopeItems.length > 0 && (
-        <>
-          {scopeItems.map(item)}
-          <div className="menu-sep" role="separator" />
-        </>
-      )}
-      {(isElementMenu ? selectionItems : canvasItems).map(item)}
-      {isElementMenu && wireItems.length > 0 && (
-        <>
-          <div className="menu-sep" role="separator" />
-          {wireItems.map(item)}
-        </>
-      )}
+      <div className="context-commands">
+        {scopeItems.length > 0 && (
+          <>
+            {scopeItems.map(item)}
+            <div className="menu-sep" role="separator" />
+          </>
+        )}
+        {(isElementMenu ? selectionItems : canvasItems).map(item)}
+        {isElementMenu && wireItems.length > 0 && (
+          <>
+            <div className="menu-sep" role="separator" />
+            {wireItems.map(item)}
+          </>
+        )}
+      </div>
       {!isElementMenu && (
-        <>
-          <div className="menu-sep" role="separator" />
+        <div className="context-palette">
           <input
+            ref={searchRef}
             type="text"
             className="tool-search"
             aria-label="Search tools"
@@ -370,16 +390,18 @@ export function ContextMenu() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          {groups.map((group) => (
-            <section key={group.category}>
-              <h3>{group.category}</h3>
-              {group.entries.map((t) => paletteItem(t, dark, settings))}
-            </section>
-          ))}
-          {searching && groups.length === 0 && (
-            <p className="hint">No tools match “{query.trim()}”</p>
-          )}
-        </>
+          <div className="context-palette-list">
+            {groups.map((group) => (
+              <section key={group.category}>
+                <h3>{group.category}</h3>
+                {group.entries.map((t) => paletteItem(t, dark, settings))}
+              </section>
+            ))}
+            {searching && groups.length === 0 && (
+              <p className="hint">No tools match “{query.trim()}”</p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

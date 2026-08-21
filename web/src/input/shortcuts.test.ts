@@ -175,9 +175,9 @@ describe('geometry keys', () => {
   });
 });
 
-describe('find component key', () => {
-  it('/ opens the search, with modifiers unbound', () => {
-    expect(matchShortcut(ev({ key: '/' }))).toEqual({ type: 'findComponent' });
+describe('palette key', () => {
+  it('/ opens the palette menu, with modifiers unbound', () => {
+    expect(matchShortcut(ev({ key: '/' }))).toEqual({ type: 'openPalette' });
     expect(matchShortcut(ev({ key: '/', ctrlKey: true }))).toBeNull();
     expect(matchShortcut(ev({ key: '/', metaKey: true }))).toBeNull();
     // A shifted slash is '?' on most layouts and must not open the search.
@@ -347,7 +347,7 @@ describe('no conflicts in the SHORTCUTS table', () => {
     'mirror',
     'swap',
     'print',
-    'findComponent',
+    'openPalette',
     'place',
   ]);
 
@@ -436,13 +436,13 @@ describe('the user-assigned overlay', () => {
     expect(matchShortcut(ev({ key: 'p' }))).toEqual({ type: 'place', kind: 'pnp' });
   });
 
-  it('a user assignment to / beats the hardcoded findComponent row', () => {
+  it('a user assignment to / beats the hardcoded palette row', () => {
     // The overlay is consulted before the table, so assigning '/' to another
     // command wins over the default search binding (UIManager.java:1174).
     const overlay: ShortcutOverlay = { copy: '/' };
     expect(matchShortcut(ev({ key: '/' }), overlay)).toEqual({ type: 'copy' });
     // Without the assignment the default still opens the search.
-    expect(matchShortcut(ev({ key: '/' }))).toEqual({ type: 'findComponent' });
+    expect(matchShortcut(ev({ key: '/' }))).toEqual({ type: 'openPalette' });
   });
 });
 

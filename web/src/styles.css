@@ -582,6 +582,44 @@ button.active,
   margin: 4px 6px;
 }
 
+/* The Edit menu's unified zoom control: the label on the left, then minus,
+   the percentage readout and plus, sharing one row instead of three. Row
+   padding matches `.menu-item` so it lines up with the rows above it. */
+.zoom-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 14px;
+}
+
+.zoom-item .zoom-label {
+  flex: 1;
+}
+
+.zoom-item .icon-btn {
+  /* Tighter than a menubar icon button: three controls share one menu row. */
+  padding: 2px;
+  min-width: 0;
+}
+
+.zoom-item .icon-btn .material-icons {
+  font-size: 18px;
+}
+
+/* The readout doubles as Zoom 100%, so it is a button, sized wide enough that
+   stepping between 90% and 100% does not shuffle the buttons beside it. */
+.zoom-readout {
+  min-width: 52px;
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  border-radius: var(--md-shape-xs);
+}
+
 /* A checkbox-style menu row: the Options rows that toggle a setting. The
    checkmark lives in a fixed 24 px leading slot, so every row in the menu
    lines its selection icon up in the same column instead of the glyph
@@ -763,47 +801,6 @@ button.active,
   border-color: var(--danger);
 }
 
-/* The Find Component dialog: a scrollable match list, each row clickable and
-   the current selection highlighted. */
-.find-list {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  max-height: 260px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--md-shape-sm);
-  background: var(--md-surface-container-lowest);
-}
-
-.find-list button {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
-  text-align: left;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  padding: 5px 8px;
-  /* Full-bleed rows: the list's own rounded corners clip the first and last,
-     so a per-row radius would only show as notches mid-list. */
-  border-radius: 0;
-}
-
-/* The selected row is a container-tinted state, not a state layer, so it
-   survives the pointer moving to another row. */
-.find-list button.selected {
-  background: var(--md-primary-container);
-  color: var(--md-on-primary-container);
-}
-
-.find-list .find-category {
-  color: var(--muted);
-  font-size: 11px;
-}
-
 /* The Subcircuit Manager: a scrollable row list, one model per row with its
    pin count and Edit/Delete buttons. */
 .subcircuit-list {
@@ -876,9 +873,48 @@ button.active,
 .context-menu {
   position: fixed;
   width: 240px;
-  max-height: 82vh;
-  overflow-y: auto;
+  max-height: 70vh;
   padding: 4px;
+  /* The columns own their scrolling, so the shell must not scroll too: a
+     second scroller here would let the sticky search box slide away. */
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+/* Over empty canvas the menu is two columns: commands, then the element
+   palette. Wide enough that a tool label and its placement key both fit
+   without wrapping, and still well inside a narrow laptop viewport. */
+.context-menu.wide {
+  width: 470px;
+}
+
+/* The command column. Fixed width so the palette takes the rest, and its own
+   scroller for the element menu's long Add to Existing Scope run. */
+.context-commands {
+  flex: 0 0 226px;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* The palette column: a search box pinned at the top and a scroller under it,
+   so the box stays reachable however far the list is scrolled. */
+.context-palette {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 4px;
+  border-left: 1px solid var(--md-outline-variant);
+}
+
+.context-palette-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* The palette section of the empty-canvas context menu: category headers and
@@ -951,13 +987,41 @@ button.active,
 .right {
   flex: 0 0 auto;
   width: 220px;
-  overflow-y: auto;
   background: var(--panel);
   padding: 10px;
 }
 
+.right {
+  overflow-y: auto;
+}
+
+/* The parts sidebar does not scroll itself: the toolbox inside splits into a
+   pinned search box and its own scroller, so the box stays on top however far
+   the palette is scrolled. */
 .left {
   border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.toolbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.toolbox > .tool-search {
+  flex: 0 0 auto;
+}
+
+.toolbox-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* On desktop the parts sidebar obeys the same `.open` state as the mobile
@@ -1609,9 +1673,14 @@ input[type='range'] {
     right: 0;
   }
 
-  .left.open,
   .right.open {
     display: block;
+  }
+
+  /* The parts drawer keeps its pinned-search column layout when it opens as
+     an overlay, so `display: block` here would undo the split. */
+  .left.open {
+    display: flex;
   }
 
   /* A full-screen tap target: tapping anywhere outside the drawer dismisses

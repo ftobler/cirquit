@@ -29,7 +29,7 @@ export type ShortcutAction =
   | { type: 'swap' }
   | { type: 'toggleRunning' }
   | { type: 'print' }
-  | { type: 'findComponent' }
+  | { type: 'openPalette' }
   | { type: 'place'; kind: string };
 
 export interface KeyEventLike {
@@ -125,10 +125,12 @@ export const SHORTCUTS: ShortcutEntry[] = [
   { mod: false, alt: true, shift: false, key: 'm', action: { type: 'mirror' } },
   { mod: false, alt: true, shift: false, key: 't', action: { type: 'swap' } },
 
-  // Find Component: '/' opens the search dialog (UIManager.java:1103-1110).
+  // Upstream's '/' opens the Find Component dialog (UIManager.java:1103-1110).
+  // The port has no such dialog: the right-click menu already carries the
+  // element search, so '/' opens that menu instead, focused on its search box.
   // A shifted '/' is '?' on most layouts, a different key, so no shift guard
   // is needed.
-  { mod: false, key: '/', action: { type: 'findComponent' } },
+  { mod: false, key: '/', action: { type: 'openPalette' } },
 ];
 
 /** The commands the ShortcutsDialog can rebind: upstream's assignable menu

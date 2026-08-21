@@ -563,7 +563,7 @@ export function useFrameLoop(
           // tapped. A drag in flight has a real element under the cursor
           // already, so the ghost stands down. Editing off hides it too: the
           // toolbox tiles are already disabled and the press is refused, but
-          // the placement shortcut and Find Component can still arm a tool,
+          // the placement shortcut and the palette menu can still arm a tool,
           // and a ghost that promises a drop the app will refuse would lie.
           if (
             settings.editable &&

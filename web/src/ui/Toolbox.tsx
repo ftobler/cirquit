@@ -29,44 +29,48 @@ export function Toolbox() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
-      {CATEGORIES.map((category) => {
-        const entries = tools.filter((t) => t.category === category);
-        if (entries.length === 0) return null;
-        return (
-          <section key={category}>
-            <h3>{category}</h3>
-            <div className="tool-grid">
-              {entries.map((t) => {
-                const shortcut = toolShortcut(t);
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className={toolTileClass(tool === t.id)}
-                    disabled={!editable}
-                    onClick={() => setTool(tool === t.id ? null : t.id)}
-                    title={editable ? `Place a ${t.label.toLowerCase()}` : 'Editing is disabled'}
-                  >
-                    <ToolIcon toolId={t.id} dark={dark} settings={settings} />
-                    <span className="tool-label">{t.label}</span>
-                    {shortcut && (
-                      <kbd className="tool-shortcut" aria-hidden="true">
-                        {shortcut}
-                      </kbd>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })}
-      {searching && tools.length === 0 && <p className="hint">No tools match “{query.trim()}”</p>}
-      <p className="hint">
-        Pick a part, then click the canvas to drop it, or drag to size it by hand. Space turns it
-        before it lands. Shift-drag pans, the wheel zooms, and clicking a switch while running
-        throws it.
-      </p>
+      {/* Only the list scrolls. The search box is the sibling above it, so it
+        stays reachable however far down the palette the user has scrolled. */}
+      <div className="toolbox-list">
+        {CATEGORIES.map((category) => {
+          const entries = tools.filter((t) => t.category === category);
+          if (entries.length === 0) return null;
+          return (
+            <section key={category}>
+              <h3>{category}</h3>
+              <div className="tool-grid">
+                {entries.map((t) => {
+                  const shortcut = toolShortcut(t);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={toolTileClass(tool === t.id)}
+                      disabled={!editable}
+                      onClick={() => setTool(tool === t.id ? null : t.id)}
+                      title={editable ? `Place a ${t.label.toLowerCase()}` : 'Editing is disabled'}
+                    >
+                      <ToolIcon toolId={t.id} dark={dark} settings={settings} />
+                      <span className="tool-label">{t.label}</span>
+                      {shortcut && (
+                        <kbd className="tool-shortcut" aria-hidden="true">
+                          {shortcut}
+                        </kbd>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+        {searching && tools.length === 0 && <p className="hint">No tools match “{query.trim()}”</p>}
+        <p className="hint">
+          Pick a part, then click the canvas to drop it, or drag to size it by hand. Space turns it
+          before it lands. Shift-drag pans, the wheel zooms, and clicking a switch while running
+          throws it.
+        </p>
+      </div>
     </div>
   );
 }
