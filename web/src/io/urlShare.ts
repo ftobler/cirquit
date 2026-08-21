@@ -31,6 +31,12 @@ export function circuitFromUrl(href: string = window.location.href): string | nu
   return null;
 }
 
+/** Upstream's own hosted simulator, the base for a link that opens the circuit
+ *  there instead of in this app. It reads the same `ctz` parameter this port
+ *  writes, so only the base differs (ExportAsUrlDialog.java:96-99, which
+ *  substitutes exactly this URL when upstream runs outside a browser tab). */
+export const FALSTAD_BASE = 'https://www.falstad.com/circuit/circuitjs.html';
+
 /** Builds a shareable link containing the circuit. */
 export function circuitToUrl(netlist: string, base: string = window.location.href): string {
   const url = new URL(base);

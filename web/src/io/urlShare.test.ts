@@ -6,6 +6,7 @@ import {
   circuitToUrlFromFile,
   compressCircuit,
   decompressCircuit,
+  FALSTAD_BASE,
   isLongUrl,
   startupSource,
 } from './urlShare';
@@ -58,6 +59,16 @@ describe('circuitToUrl', () => {
     expect(u.hash).toBe('');
     expect(u.searchParams.get('startCircuit')).toBeNull();
     expect(u.searchParams.get('ctz')).not.toBeNull();
+  });
+
+  it('builds an upstream link off FALSTAD_BASE, same token', () => {
+    // The Export As Link dialog's upstream toggle: only the base changes, so
+    // the two links carry an identical ctz and open the same circuit.
+    const mine = circuitToUrl(SAMPLE, 'https://host/falstad-cirquit/');
+    const theirs = circuitToUrl(SAMPLE, FALSTAD_BASE);
+    expect(theirs.startsWith('https://www.falstad.com/circuit/circuitjs.html?ctz=')).toBe(true);
+    expect(new URL(theirs).searchParams.get('ctz')).toBe(new URL(mine).searchParams.get('ctz'));
+    expect(decompressCircuit(new URL(theirs).searchParams.get('ctz') ?? '')).toBe(SAMPLE);
   });
 });
 
