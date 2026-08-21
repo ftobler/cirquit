@@ -71,6 +71,8 @@ import { ANALOG_SWITCH_DEF } from './elements/analogSwitch';
 import { ANALOG_SWITCH2_DEF } from './elements/analogSwitch2';
 import { ANALOG_MUX_DEF } from './elements/analogMux';
 import { BUS_SPLITTER_DEF } from './elements/busSplitter';
+import { BUS_LOGIC_INPUT_DEF } from './elements/busLogicInput';
+import { BUS_TRANSCEIVER_DEF } from './elements/busTransceiver';
 import { TRANSFORMER_DEF, TAPPED_TRANSFORMER_DEF, CUSTOM_TRANSFORMER_DEF } from './elements/transformer';
 import { TRANSMISSION_LINE_DEF } from './elements/transmissionLine';
 import { TIMER_DEF } from './elements/timer';
@@ -236,6 +238,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   INVERTER_DEF,
   DELAY_BUFFER_DEF,
   LOGIC_INPUT_DEF,
+  BUS_LOGIC_INPUT_DEF,
   SCHMITT_DEF,
   INVERTING_SCHMITT_DEF,
   SEVEN_SEG_DEF,
@@ -254,6 +257,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   TRIAC_DEF,
   SPARK_GAP_DEF,
   TRI_STATE_DEF,
+  BUS_TRANSCEIVER_DEF,
   LABELED_NODE_DEF,
   OUTPUT_DEF,
   LOGIC_OUTPUT_DEF,

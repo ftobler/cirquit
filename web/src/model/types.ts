@@ -358,6 +358,11 @@ export interface DrawContext {
   /** Per-terminal dot phase, for elements that animate each lead on its own
    *  current. Indexed like `posts()`. */
   postDotPhases: number[];
+  /** The element's effective bus width, resolved from topology by the same
+   *  pass the engine sees (upstream's detectBusWidths): a plain wire drawn
+   *  onto a wide pin renders as the bus it became. Absent or 1 means a plain
+   *  single-signal part. */
+  busWidth?: number;
   showCurrent: boolean;
   showValues: boolean;
   showVoltageColor: boolean;

@@ -52,6 +52,8 @@ import { normalizeCounter2Bits } from '../model/registry/elements/counter2';
 import { FULL_ADDER_BITS, normalizeFullAdderBits } from '../model/registry/elements/fullAdder';
 import { normalizePisoBits } from '../model/registry/elements/pisoShift';
 import { normalizeBusSplitterBits } from '../model/registry/elements/busSplitter';
+import { normalizeBusLogicInputWidth } from '../model/registry/elements/busLogicInput';
+import { normalizeTransceiverBits } from '../model/registry/elements/busTransceiver';
 import { normalizeSramBits } from '../model/registry/elements/sram';
 import { normalizeAnalogMuxSelects } from '../model/registry/elements/analogMux';
 import { normalizeSipoBits } from '../model/registry/elements/sipoShift';
@@ -115,6 +117,8 @@ const BITS_NORMALIZERS: Readonly<Record<string, (value: number) => number>> = {
   'sipoShift:bits': normalizeSipoBits,
   'ringCounter:bits': normalizeRingBits,
   'busSplitter:bits': normalizeBusSplitterBits,
+  'busLogicInput:busWidth': normalizeBusLogicInputWidth,
+  'busTransceiver:bits': normalizeTransceiverBits,
   'sram:addressBits': normalizeSramBits,
   'sram:dataBits': normalizeSramBits,
   'rom:addressBits': normalizeSramBits,
@@ -2407,6 +2411,12 @@ export function nextSwitchState(e: CircuitElement): number {
   const throwCount = Math.max(2, e.params.throwCount ?? 2);
   if (e.kind === 'logicInput' && (e.flags & LOGIC_INPUT_TERNARY) !== 0) {
     return ((e.state ?? 0) + 1) % 3;
+  }
+  if (e.kind === 'busLogicInput') {
+    // The word cycles 0..2^width-1, upstream's toggle()
+    // (BusLogicInputElm.java:116-120).
+    const max = 2 ** Math.min(31, Math.max(2, Math.trunc(e.params.busWidth ?? 4)));
+    return (((e.state ?? e.params.value ?? 0) + 1) % max + max) % max;
   }
   if (e.kind === 'mbbSwitch') return ((e.state ?? 0) + 1) % 4;
   return ((e.state ?? 0) + 1) % (e.kind === 'switch' || e.kind === 'dpdtSwitch' ? 2 : throwCount);

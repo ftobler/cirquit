@@ -176,15 +176,16 @@ export function instructionDisplayText(value: number, lookup: string): string {
   return String(value);
 }
 
-/** The bus posts: a vertical stack centred on the anchor (x1, y1), one node
- *  per bit so wires connect to individual bits. */
+/** The bus posts: all N sit on the anchor (x1, y1), one node per bit, exactly
+ *  upstream's `getPost(n) = new Point(x, y, n)`
+ *  (InstructionDisplayElm.java:53-55). The engine tags each post with its bit
+ *  index, so a splitter's bus side or a bus wire meets every bit at once;
+ *  individual bits are reached through a splitter. */
 export function instructionDisplayPosts(e: CircuitElement): Point[] {
   const n = busWidth(e);
-  const grid = 16;
-  const top = e.y1 - ((n - 1) * grid) / 2;
   const posts: Point[] = [];
   for (let i = 0; i < n; i++) {
-    posts.push({ x: e.x1, y: Math.round(top + i * grid) });
+    posts.push({ x: e.x1, y: e.y1 });
   }
   return posts;
 }

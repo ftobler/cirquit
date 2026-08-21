@@ -191,6 +191,39 @@ pub trait Element {
         false
     }
 
+    /// The number of post pairs an ideal-short element merges into single
+    /// nodes before stamping. Defaults to one pair (a plain wire or a closed
+    /// switch); the bus splitter overrides with its bit count. Kept as a
+    /// count plus [`Element::removable_wire_pair`] rather than a returned
+    /// collection because both callers run every accepted step on every
+    /// removable element, where an allocation apiece would be pure churn.
+    fn removable_wire_pair_count(&self) -> usize {
+        1
+    }
+
+    /// The `k`-th of [`Element::removable_wire_pair_count`] merge pairs,
+    /// expressed as terminal indices into this element's posts.
+    fn removable_wire_pair(&self, k: usize) -> (usize, usize) {
+        let _ = k;
+        (0, 1)
+    }
+
+    /// The bus bit a terminal carries at its coordinate, upstream's `Point.z`
+    /// (`ChipElm.Pin.busZ`, ChipElm.java:708). Terminals merge into one node
+    /// only when both the coordinate and the bit match, which is what keeps a
+    /// bus wire's N signals apart where N wide pins overlap. Plain posts are
+    /// bit 0, the same default upstream gives every non-bus post.
+    fn post_bus_z(&self, _post: usize) -> usize {
+        0
+    }
+
+    /// Receives one recovered wire current, for removable wires that span
+    /// more than one node pair (a bus wire's bits). `pair` indexes
+    /// [`Element::removable_wire_pair`]; single-pair shorts ignore the index
+    /// and keep the base-class behaviour of writing `base.current` directly,
+    /// which the recovery does itself.
+    fn set_recovered_pair_current(&mut self, _pair: usize, _current: f64) {}
+
     /// Current flowing into the node at `post` from this element, used by the
     /// wire-current recovery. For a two-terminal element positive current
     /// enters post 0, so post 0 drains `current` and post 1 injects it.

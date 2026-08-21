@@ -30,12 +30,13 @@ describe('filterTools', () => {
   });
 
   it('keeps the category grouping and display order of the toolbox', () => {
-    // 'input' hits the audio and data inputs in Sources and the logic input in
-    // Logic; the hits must keep the toolbox order, so no Logic entry jumps
-    // ahead of a Sources one and the relative order within a category is the
-    // palette's, never flattened or sorted alphabetically.
+    // 'input' hits the audio and data inputs in Sources and the logic input
+    // plus the bus logic input in Logic; the hits must keep the toolbox
+    // order, so no Logic entry jumps ahead of a Sources one and the relative
+    // order within a category is the palette's, never flattened or sorted
+    // alphabetically.
     const hits = filterTools('input');
-    expect(hits.map((t) => t.id)).toEqual(['audioInput', 'dataInput', 'logicInput']);
+    expect(hits.map((t) => t.id)).toEqual(['audioInput', 'dataInput', 'logicInput', 'busLogicInput']);
 
     // A wider net keeps every hit at its toolbox index: grouped by category,
     // in display order.

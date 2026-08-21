@@ -83,11 +83,14 @@ export const OUTPUT_SHOW_VOLTAGE = 1;  // OutputElm.java:28
 export const OUTPUT_FIXED = 2;         // OutputElm.java:29
 /** The Show Current and Show Voltage checkboxes of a wire (WireElm.java:35-36,
  *  :160-175): each draws the live value beside the wire, current as `|I|` in
- *  amps and voltage in volts, joined with a space. Upstream's bus-value
- *  toggles, FLAG_SHOW_BUS_VALUE = 4 and FLAG_SHOW_BUS_VALUE_HEX = 8, are not
- *  ported: this build has no bus wire, so only the two value bits exist. */
+ *  amps and voltage in volts, joined with a space. */
 export const WIRE_SHOW_CURRENT = 1;    // WireElm.java:35
 export const WIRE_SHOW_VOLTAGE = 2;    // WireElm.java:36
+/** The bus-value captions (WireElm.java:37-38): decimal and hex readings of
+ *  the integer the bit levels form. Only meaningful on a wire whose effective
+ *  width exceeds one; a plain wire with the bit set draws no caption. */
+export const WIRE_SHOW_BUS_VALUE = 4;      // WireElm.java:37
+export const WIRE_SHOW_BUS_VALUE_HEX = 8;  // WireElm.java:38
 export const CAP_BACK_EULER = 2;       // CapacitorElm.java:32
 export const IND_BACK_EULER = 2;       // Inductor.java:23, same bit as the capacitor's flag
 export const CAP_RESISTANCE = 4;       // CapacitorElm.java:33

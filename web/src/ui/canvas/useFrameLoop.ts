@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
 import { scopeParamsFingerprint } from '../../engine/simulator';
 import { defFor, toolDef } from '../../model/registry';
+import { cachedBusWidths, postsForRender } from '../../model/busWidths';
+import { storedBusWidth } from '../../model/registry/elements/wire';
 import type { CircuitElement, DrawContext, Point } from '../../model/types';
 import { dotPhaseStep, stepPostPhases, TOO_FAST, wrapPhase } from '../../render/dots';
 import { dragpostHandlesFrom, elementLength, makeTheme } from '../../render/draw';
@@ -142,6 +144,10 @@ export function useFrameLoop(
             tool,
             toolTurns,
           } = state;
+
+          // Bus widths are a netlist property, resolved once per element list
+          // (memoised on identity) and read per wire at draw time.
+          const busWidths = cachedBusWidths(elements);
 
           // Drop sticky auto-scale state for plots that no longer exist (a removed
           // scope), keeping the map bounded across a session.
@@ -389,7 +395,10 @@ export function useFrameLoop(
 
             const idx = engine?.indexOf(e.id);
             const offset = engine?.postOffset(e.id);
-            const posts = def.posts(e);
+            // A bus wire's terminal list follows the resolved width, matching
+            // what the engine built, so per-bit reads see every bit.
+            const posts =
+              e.kind === 'wire' ? postsForRender(e, busWidths) : def.posts(e);
             const voltages = posts.map((_, i) => {
               if (!nodeVoltages || !elementNodes || offset === undefined) return 0;
               const node = elementNodes[offset + i];
@@ -399,7 +408,15 @@ export function useFrameLoop(
             const postCs = posts.map((_, i) =>
               offset !== undefined && postCurrents ? (postCurrents[offset + i] ?? 0) : 0,
             );
-            const voltage = voltages.length >= 2 ? voltages[0] - voltages[1] : (voltages[0] ?? 0);
+            // A bus wire's terminals run N at the near end then N at the far
+            // end, so bit 0's end-to-end difference sits at indices 0 and
+            // width; every other element diffs its first two posts.
+            const voltage =
+              voltages.length > 2
+                ? voltages[0] - voltages[voltages.length / 2]
+                : voltages.length >= 2
+                  ? voltages[0] - voltages[1]
+                  : (voltages[0] ?? 0);
             const value = idx !== undefined && values ? (values[idx] ?? 0) : 0;
             const state = idx !== undefined && states ? (states[idx] ?? 0) : 0;
 
@@ -488,6 +505,10 @@ export function useFrameLoop(
               dotPhase: phase,
               postCurrents: postCs,
               postDotPhases,
+              busWidth:
+                e.kind === 'wire'
+                  ? Math.max(busWidths.get(e.id) ?? 1, storedBusWidth(e))
+                  : undefined,
               showCurrent: settings.showCurrent,
               showValues: settings.showValues,
               showVoltageColor: settings.showVoltageColor,

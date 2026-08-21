@@ -29,6 +29,7 @@
 //! after the underlying `voltage_source`.
 
 use crate::closure::Closure;
+use std::collections::HashSet;
 
 /// The reference node. Never allocated a matrix row.
 pub const GROUND: usize = 0;
@@ -66,6 +67,10 @@ pub struct Stamper<'a> {
     /// values per iteration, which is exactly the case the elimination wants
     /// to cache).
     record: Option<&'a mut Vec<(usize, usize, usize)>>,
+    /// Voltage sources whose two terminals merged into one node this epoch.
+    /// Their constraint rows are identities on their own unknowns and their
+    /// value updates are dropped (see `voltage_source`).
+    collapsed_vs: HashSet<usize>,
 }
 
 impl<'a> Stamper<'a> {
@@ -90,6 +95,7 @@ impl<'a> Stamper<'a> {
             current: 0,
             failing: Vec::new(),
             record: None,
+            collapsed_vs: HashSet::new(),
         }
     }
 
@@ -100,6 +106,21 @@ impl<'a> Stamper<'a> {
     #[inline]
     pub fn set_recording(&mut self, buf: &'a mut Vec<(usize, usize, usize)>) {
         self.record = Some(buf);
+    }
+
+    /// Hands the caller the collapsed-source set this Stamper discovered
+    /// during the stamp pass. `restamp` stores it on the [`Circuit`](crate::circuit::Circuit)
+    /// and hands it back to every step-loop Stamper via
+    /// [`Stamper::set_collapsed_sources`], so a source detected once stays
+    /// collapsed for value updates across all Newton iterations.
+    pub fn take_collapsed_sources(&mut self) -> HashSet<usize> {
+        std::mem::take(&mut self.collapsed_vs)
+    }
+
+    /// Installs a previously collected collapsed-source set (see
+    /// [`Stamper::take_collapsed_sources`]).
+    pub fn set_collapsed_sources(&mut self, collapsed: HashSet<usize>) {
+        self.collapsed_vs = collapsed;
     }
 
     /// Records one coefficient touch `(closure, row, col)`, value-independent:
@@ -206,6 +227,17 @@ impl<'a> Stamper<'a> {
     }
 
     /// An ideal voltage source holding `V(n2) - V(n1) = v`.
+    ///
+    /// A source whose two terminals both merged onto the reference plane
+    /// constrains nothing: upstream's stamp lands entirely on the dropped
+    /// ground row and vanishes. This port must still give the unknown a
+    /// solvable row, so it becomes an identity carrying zero: the unknown
+    /// reads 0 for the rest of the run and later `voltage_source_value`
+    /// updates are dropped, which keeps a chip output accidentally tied to
+    /// ground (the td4 registers' Q pins) from singling the whole closure.
+    /// A source shorted across one non-ground node keeps the old behaviour:
+    /// its constraint cancels to an unsatisfiable row and the solve fails
+    /// loudly, which is the honest report for a genuinely broken circuit.
     pub fn voltage_source(&mut self, n1: usize, n2: usize, vs: usize, v: f64) {
         let c = self.vs_closure[vs];
         let vn = self.vs_row[vs];
@@ -219,6 +251,13 @@ impl<'a> Stamper<'a> {
         } else {
             Some(self.node_row[n2])
         };
+        if r1.is_none() && r2.is_none() {
+            self.collapsed_vs.insert(vs);
+            self.record_touch(c, vn, vn);
+            let sys = &mut self.closures[c].sys;
+            sys.add(vn, vn, 1.0);
+            return;
+        }
         // Recorded before the `sys` borrow, which the touch recorder would
         // otherwise conflict with.
         if let Some(r) = r1 {
@@ -250,6 +289,11 @@ impl<'a> Stamper<'a> {
     /// every timestep by time-varying sources, which leaves the matrix (and
     /// therefore its LU factors) untouched.
     pub fn voltage_source_value(&mut self, vs: usize, v: f64) {
+        // A collapsed source carries no constraint (see `voltage_source`), so
+        // its value updates are dropped along with the original stamp.
+        if self.collapsed_vs.contains(&vs) {
+            return;
+        }
         let c = self.vs_closure[vs];
         self.closures[c].sys.add_rhs(self.vs_row[vs], v);
     }

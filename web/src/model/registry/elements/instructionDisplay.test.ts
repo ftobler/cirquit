@@ -50,13 +50,15 @@ describe('instruction display', () => {
     expect(back.text).toBe('0=a\n1=b');
   });
 
-  it('lays out one post per bus bit, vertically centred on the anchor', () => {
+  it('stacks every post on the anchor, one per bus bit', () => {
+    // Upstream's getPost(n) = new Point(x, y, n): all N posts share the
+    // anchor coordinate and the engine tells the bits apart by index.
     const e = mk();
     e.params.busWidth = 4;
     const posts = instructionDisplayPosts(e);
     expect(posts).toHaveLength(4);
-    expect(posts[0]).toEqual({ x: 0, y: -24 });
-    expect(posts[3]).toEqual({ x: 0, y: 24 });
+    expect(posts[0]).toEqual({ x: 0, y: 0 });
+    expect(posts[3]).toEqual({ x: 0, y: 0 });
   });
 
   it('postCountOf equals the bus width', () => {

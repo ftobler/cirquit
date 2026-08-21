@@ -6,6 +6,8 @@
  *  live canvas. */
 
 import type { SimEngine } from '../engine/simulator';
+import { cachedBusWidths, postsForRender } from '../model/busWidths';
+import { storedBusWidth } from '../model/registry/elements/wire';
 import { defFor } from '../model/registry';
 import type { CircuitElement, Context2D, DrawContext, SimSettings, Theme } from '../model/types';
 import { CENTER_MARGIN_H, CENTER_MARGIN_W, circuitBounds, type Rect } from '../state/view';
@@ -52,20 +54,29 @@ export function drawAllElements(
   const currents = engine?.elementCurrents() ?? null;
   const values = engine?.elementValues() ?? null;
   const states = engine?.elementStates() ?? null;
+  const busWidths = cachedBusWidths(elements);
 
   for (const e of elements) {
     const def = defFor(e.kind);
     if (!def) continue;
     const idx = engine?.indexOf(e.id);
     const offset = engine?.postOffset(e.id);
-    const posts = def.posts(e);
+    // Same resolved-width terminal list as the live frame loop, so an export
+    // of a bus wire reads every bit's level.
+    const posts =
+      e.kind === 'wire' ? postsForRender(e, busWidths) : def.posts(e);
     const voltages = posts.map((_, i) => {
       if (!nodeVoltages || !elementNodes || offset === undefined) return 0;
       const node = elementNodes[offset + i];
       return node === undefined ? 0 : (nodeVoltages[node] ?? 0);
     });
     const current = idx !== undefined && currents ? (currents[idx] ?? 0) : 0;
-    const voltage = voltages.length >= 2 ? voltages[0] - voltages[1] : (voltages[0] ?? 0);
+    const voltage =
+      voltages.length > 2
+        ? voltages[0] - voltages[voltages.length / 2]
+        : voltages.length >= 2
+          ? voltages[0] - voltages[1]
+          : (voltages[0] ?? 0);
     const value = idx !== undefined && values ? (values[idx] ?? 0) : 0;
     const state = idx !== undefined && states ? (states[idx] ?? 0) : 0;
 
@@ -86,6 +97,10 @@ export function drawAllElements(
       // phases are handed as zeros like the scalar phase.
       postCurrents: [],
       postDotPhases: [],
+      busWidth:
+        e.kind === 'wire'
+          ? Math.max(busWidths.get(e.id) ?? 1, storedBusWidth(e))
+          : undefined,
       showCurrent: false,
       showValues: settings.showValues,
       showVoltageColor: settings.showVoltageColor,

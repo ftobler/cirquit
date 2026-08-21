@@ -448,78 +448,11 @@ fn seven_seg_decoder_lights_the_segments_for_the_input_digit() {
     );
 }
 
-#[test]
-fn bus_splitter_fans_the_bus_out_to_independent_bits() {
-    // A 2-bit splitter: the two bus pins share one node, each individual pin
-    // ties to it through its own 0 V source. Driving the bus at 5 V must put
-    // 5 V on every individual pin, and each bit carries only its own load
-    // current: the per-pin currents sum to the bus injection.
-    let c = &mut build(
-        vec![
-            elm(
-                1,
-                "logicInput",
-                &[[0, 0]],
-                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
-            ),
-            elm(
-                2,
-                "busSplitter",
-                &[[0, 0], [0, 0], [96, 32], [96, 0]],
-                &[("bits", 2.0)],
-            ),
-            elm(
-                3,
-                "resistor",
-                &[[96, 32], [96, 112]],
-                &[("resistance", 2000.0)],
-            ),
-            elm(4, "ground", &[[96, 112]], &[]),
-            elm(
-                5,
-                "resistor",
-                &[[96, 0], [96, 80]],
-                &[("resistance", 1000.0)],
-            ),
-            elm(6, "ground", &[[96, 80]], &[]),
-        ],
-        opts(1e-5, false),
-    );
-    c.run(3);
-    let v = c.element_voltages();
-    assert!(
-        close(v[2], 5.0, 1e-9),
-        "individual pin 0 did not follow the bus"
-    );
-    assert!(
-        close(v[4], 5.0, 1e-9),
-        "individual pin 1 did not follow the bus"
-    );
-    let p = c.element_post_currents();
-    // The two bus pins drain their own bit's current from the shared node and
-    // the individual pins deliver it: 5/2000 and 5/1000 respectively.
-    assert!(
-        close(p[1], -2.5e-3, 1e-9),
-        "bus pin 0 drained the wrong current"
-    );
-    assert!(
-        close(p[2], -5.0e-3, 1e-9),
-        "bus pin 1 drained the wrong current"
-    );
-    assert!(
-        close(p[3], 2.5e-3, 1e-9),
-        "individual pin 0 delivered the wrong current"
-    );
-    assert!(
-        close(p[4], 5.0e-3, 1e-9),
-        "individual pin 1 delivered the wrong current"
-    );
-    // The driving source injects the sum, closing KCL at the bus node.
-    assert!(
-        close(p[0], 7.5e-3, 1e-9),
-        "the source current did not sum to both bits"
-    );
-}
+// The old `bus_splitter_fans_the_bus_out_to_independent_bits` test lived
+// here: it drove the splitter's two bus pins (one shared node) from a single
+// logic input. Real bus support split that shared node into per-bit nodes, so
+// the scenario moved to tests/bus.rs, where the bus pins are driven per bit
+// and the fan-out is asserted without shorting.
 
 #[test]
 fn sram_stores_and_reads_back_the_data_bits() {

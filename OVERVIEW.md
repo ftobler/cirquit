@@ -175,10 +175,21 @@ fetch it).
   `voltDiff` and series resistance, inductor current, junction voltages, relay
   and logic-latch state. Event-driven (save and rebuild only), so it adds no
   per-frame crossing.
-- 459 Rust tests, of which 386 are the end-to-end circuit checks against
+- Multi-bit buses, matching upstream's model: a wire whose width exceeds one
+  carries N independent signals on N node pairs (`w` lines take an optional
+  trailing width token; widths also propagate from wide pins through wire
+  chains at build time, upstream's `detectBusWidths`), terminals merge by
+  coordinate *and* bit index (upstream's `Point.z`), the bus splitter really
+  fans out (its bit pairs merge like wires, one pair per bit, with per-bit
+  currents recovered for the dots), and the two remaining XML-only classes
+  exist as engine elements: the bus logic input (dump 435) and the bus
+  transceiver (437). The instruction display presents its pins the way
+  upstream does now, all N on one coordinate tagged per bit. The corpus
+  alu74181 simulates again; see the XML circuits bullet for what still waits.
+- 464 Rust tests, of which 391 are the end-to-end circuit checks against
   analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
-   was split into topic files), plus 72 in-module unit tests and one doctest.
-   2386 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
+  was split into topic files), plus 72 in-module unit tests and one doctest.
+  2406 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
   tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -240,20 +251,21 @@ fetch it).
   `xmlToText.ts`), so those circuits load and save as ordinary text. The
   converter maps each element tag's attributes to the port's own text tokens,
   carries the device models (`dm`/`tm`/`mm`/`ccm`), re-encodes scopes and
-  sliders, and degrades routed wires to straight `w` segments. The XML-only
-  element classes (Clock, Gyrator, NortonAmp, BusTransceiver, RoutedWire,
-  BusLogicInput, CustomCompositeChip) stay unrealized: a converted document
-  keeps them as `#` comment lines so nothing is lost. Six of the 38 convert
-  but do not simulate (bus splitters joining separate-bit signals and composite
-  children the engine has no model for); they are tracked in the corpus
-  `DIAGNOSED_SIM_FAILURES` with the engine feature each one waits on. The
-  derivative-driven controlled sources that used to sit there, cs-varicap and
-  cs-varinduct, fell to the `ExprState` step-length fix, and cs-opamprail, a
-  clamped gain-1000 VCVS whose secant collapsed at its rails and flip-flopped
-  under Newton, fell to the controlled sources stamping a fixed value for the
-  first solve after a reset (`ExprSource::primed`), so the solver establishes
-  the operating point before the secant sees the clamp limits. The text format
-  remains what the `cct` and plain-text share links use.
+  sliders, converts the bus elements (`bli` to 435, `bt` to 437, and an `rw`
+  bus wire's `bw` onto every straight segment it becomes), and degrades
+  routed wires to straight `w` segments. The XML-only element classes still
+  unrealized (Clock, Gyrator, NortonAmp, RoutedWire, CustomCompositeChip) stay
+  as `#` comment lines so nothing is lost. Five of the 38 convert but do not
+  simulate (the td4 family: ground symbols drawn directly onto counter output
+  pins in the source document, plus overlapping register pin rows); they are
+  tracked in the corpus `DIAGNOSED_SIM_FAILURES` with the details. alu74181,
+  which used to wait on bus support, simulates again. The derivative-driven
+  controlled sources that used to sit there, cs-varicap and cs-varinduct,
+  fell to the `ExprState` step-length fix, and cs-opamprail, a clamped
+  gain-1000 VCVS whose secant collapsed at its rails and flip-flopped under
+  Newton, fell to the controlled sources stamping a fixed value for the first
+  solve after a reset (`ExprSource::primed`). The text format remains what
+  the `cct` and plain-text share links use.
 - **The DC operating point runs per the `autoDC` setting, not always.** The
   solve runs before the first timestep and on every reset only when `autoDC`
   is on: the header's flag bit 128 drives it (CirSim.java:440-444), and a new
@@ -302,10 +314,10 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **125 kinds implemented** (the `KINDS` list in
-`engine/core/src/elements/mod.rs`); the only upstream types still absent are the
-permanently-deferred XML-only classes (Clock, Gyrator, NortonAmp,
-BusTransceiver, RoutedWire, BusLogicInput, CustomCompositeChip).
+a test. Done so far: **127 kinds implemented** (the `KINDS` list in
+`engine/core/src/elements/mod.rs`); the only upstream types still absent are
+the permanently-deferred XML-only classes (Clock, Gyrator, NortonAmp,
+RoutedWire, CustomCompositeChip).
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, transformer, tapped transformer, custom transformer, fuse,
@@ -340,6 +352,7 @@ symbol toggle, which is on by default.
 - [x] Counters, shift registers (SIPO/PISO), ring counter, sequence generator
 - [x] Multiplexer, demultiplexer, adders, seven-segment and decoders
 - [x] SRAM, ROM, delay buffer, bus splitter
+- [x] Bus splitter real fan-out, bus logic input (435), bus transceiver (437)
 - [x] Custom logic (the `!` model line and the `208` element)
 
 **Instruments and annotation** — done: labeled node, output,
@@ -389,7 +402,7 @@ Dump codes implemented so far, with their trailing field order:
 
 | Code  | Kind           | Fields after `flags`                                       |
 | ----- | -------------- | ---------------------------------------------------------- |
-| `w`   | wire           | —                                                          |
+| `w`   | wire           | [busWidth] (port extension: a trailing width token, written only when above one; a bus wire presents N terminals per endpoint) |
 | `g`   | ground         | symbolType                                                 |
 | `r`   | resistor       | resistance                                                 |
 | `c`   | capacitor      | capacitance, voltDiff, [initialVoltage], [seriesResistance] |
@@ -442,6 +455,8 @@ Dump codes implemented so far, with their trailing field order:
 | `182` | Schmitt trigger (non-inverting) | slewRate, lowerTrigger, upperTrigger, logicOnLevel, logicOffLevel |
 | `183` | Schmitt trigger (inverting) | same as `182`                                    |
 | `208` | custom logic   | modelName (escaped), then one outputVoltage per output pin |
+| `435` | bus logic input| busWidth, value, hiV, loV                                  |
+| `437` | bus transceiver| bits, [highVoltage] (the standard chip stream)             |
 
 For the gate rows the `inputCount` token is the post count minus one (1 to 8
 inputs); `lastOutputVoltage` restores the gate's output state on load
@@ -475,6 +490,27 @@ voltage source to ground; a model with a `_` in any right side is tri-state,
 needing an internal node and a 1e8/1e-3 ohm resistor per output. The model
 reaches the engine as a serialised blob in `spec.model`, separate from the
 label, which carries the model name.
+
+Bus wires and the bus chips: terminals merge into one node only when both the
+coordinate and a per-post bus bit index match, which is upstream's `Point`
+equality including `z` (Point.java:61-67, `ChipElm.Pin.busZ` at
+ChipElm.java:708). Plain posts are bit 0, so circuits with no wide elements
+behave exactly as before. The bus splitter's N west pins share one coordinate
+with bits 0..N-1; its bit pairs merge out of the matrix like wires (`isRemovableWire`,
+one pair per bit) and the wire-current recovery reports each bit's current.
+The `435` row is the port's own text form of BusLogicInputElm (upstream saves
+it only as XML): width, then the driven word, then hiV and loV written
+unconditionally so the line is self-describing. All N posts sit on the anchor
+coordinate tagged per bit, matching upstream's `getPost(n) = new Point(x, y,
+n)`; clicking cycles the word through 0..2^width-1. The `437` row is the bus
+transceiver in the standard chip stream (the XML attribute is `db`), OE
+active-low at top-left, DIR top-right, A and B banks MSB first down the sides;
+its A/B pins are individual, upstream's default outside bus mode. Wire widths:
+a saved token above one is honoured, but widths also propagate from wide pins
+through wire chains on every build (`web/src/model/busWidths.ts`, mirroring
+upstream's `detectBusWidths`), so a plain wire drawn onto a splitter becomes a
+bus without any token. Upstream's own text format never saves wire widths at
+all.
 
 For the `402` row the OTA is a `CompositeElm` of two rails and sixteen
 transistors (OTAElm.java:8-9), and every token after the flags is one composite

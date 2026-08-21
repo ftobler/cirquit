@@ -250,9 +250,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "amdetect.txt",

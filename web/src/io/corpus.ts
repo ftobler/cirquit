@@ -75,20 +75,33 @@ export const SIM_TIMEOUT_MS = 60_000;
  *  converges and the entry is gone.
  *
  * The XML-to-text migration (feature/xml-to-text.md) converted the 38 bundled
- * XML circuits, and every one now loads. The nine that still fail to
- * simulate are port limitations, not conversion bugs: the converted text is
- * what upstream's own text save would have written. Each named cause is the
- * engine feature that would retire the entry.
+ * XML circuits, and every one now loads. The failures that remain are port
+ * limitations, not conversion bugs: the converted text is what upstream's own
+ * text save would have written. Each named cause is the engine feature or fix
+ * that would retire the entry.
+ *
+ * alu74181 left this list when real bus support landed (bus-width wires,
+ * per-bit splitter fan-out, the bus logic input): its 5-bit splitter now
+ * feeds the S0-S3/M labeled nodes and the instruction display without
+ * shorting the bits together.
+ *
+ * The td4 family still fails for a reason that predates and outlives the bus
+ * work: with every bus element removed the circuit is still singular. The
+ * four counter2 registers sit 192 px apart, so each chip's last pin row
+ * coincides with the next chip's first (register #15's CLK lands on register
+ * #11's EnP and its RCO output on #11's EnT), three of the four registers
+ * also carry ground symbols drawn directly onto a Q output pin and an I
+ * input pin, and deleting any one of the first three registers still leaves
+ * the matrix singular while deleting #15 or all of them solves. Root-causing
+ * that overlap is its own feature; it is not a bus problem.
  */
 export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {
-  'alu74181.txt':
-    'the 5-bit bus splitter feeds the separate S0-S3 and M signals, but the port has no bus support, so all bits join one node and the differently-driven logic inputs short',
   'td4.txt':
-    'the bus splitters and bus logic inputs are dropped, so the microprocessor is structurally broken; its command-decoder composite itself now builds, gate children and all',
-  'td4-add2.txt': 'same bus-splitter limitation as td4.txt',
-  'td4-ctr.txt': 'same bus-splitter limitation as td4.txt',
-  'td4-ctr-dn.txt': 'same bus-splitter limitation as td4.txt',
-  'td4-ctr-up-dn.txt': 'same bus-splitter limitation as td4.txt',
+    'pre-existing, not bus-related: removing every bus element leaves the circuit singular; the four counter2 registers overlap pin rows (register #15 CLK/RCO share coordinates with #11 EnP/EnT) and three registers carry grounds drawn directly onto Q/I pins',
+  'td4-add2.txt': 'same counter-overlap limitation as td4.txt',
+  'td4-ctr.txt': 'same counter-overlap limitation as td4.txt',
+  'td4-ctr-dn.txt': 'same counter-overlap limitation as td4.txt',
+  'td4-ctr-up-dn.txt': 'same counter-overlap limitation as td4.txt',
 };
 
 /**

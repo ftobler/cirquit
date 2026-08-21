@@ -153,6 +153,13 @@ pub struct Circuit {
     /// Solved closure vectors of the last committed step, one per closure, so
     /// a rejected attempt can restore it.
     last_x: Vec<Vec<f64>>,
+    /// Voltage sources whose two terminals both merged onto the reference
+    /// plane, discovered during the stamp pass. The set lives here rather
+    /// than on the Stamper because the step loop builds a fresh Stamper per
+    /// Newton iteration: a set captured only at stamp time would be lost, and
+    /// the collapsed unknowns' value updates would leak back in as phantom
+    /// currents. Cleared and rebuilt by every `restamp`.
+    collapsed_vs: HashSet<usize>,
     nonlinear: bool,
     /// Nodes whose effectively-open current-source output is pinned to ground
     /// this run, so the pin survives the iterations where the node's voltage
@@ -197,6 +204,7 @@ impl Circuit {
             current_time_step: SimOptions::default().time_step,
             good_iterations: 0,
             last_x: Vec::new(),
+            collapsed_vs: HashSet::new(),
             nonlinear: false,
             open_pinned: HashSet::new(),
             scopes: Vec::new(),
@@ -533,11 +541,18 @@ impl Circuit {
         }
 
         let mut uf = UnionFind::new(total.max(1));
-        let mut by_coord: HashMap<[i32; 2], usize> = HashMap::new();
+        // Two terminals merge when they share the coordinate AND the bus bit,
+        // upstream's Point equality including z (Point.java:61-67): the N pins
+        // of a wide element sit at one coordinate and stay N separate nodes
+        // because each carries its own bit. Plain posts are bit 0, so a
+        // circuit with no wide elements keys exactly as before.
+        let mut by_coord: HashMap<([i32; 2], usize), usize> = HashMap::new();
         for (ei, es) in specs.iter().enumerate() {
+            let elm = &self.elements[ei];
             for (pi, post) in es.posts.iter().enumerate() {
                 let gi = offsets[ei] + pi;
-                match by_coord.entry(*post) {
+                let key = (*post, elm.post_bus_z(pi));
+                match by_coord.entry(key) {
                     std::collections::hash_map::Entry::Occupied(o) => uf.union(gi, *o.get()),
                     std::collections::hash_map::Entry::Vacant(v) => {
                         v.insert(gi);
@@ -560,15 +575,19 @@ impl Circuit {
             }
         }
 
-        // Wires and closed switches are ideal shorts: merge their two endpoints
+        // Wires and closed switches are ideal shorts: merge their endpoints
         // so the matrix never sees them, exactly as upstream's wire closure
         // does. Unioning the coordinate-merged roots collapses chains, rings
-        // and parallel wires into one node each.
+        // and parallel wires into one node each. A bus wire hands in one pair
+        // per bit, so each bit's endpoints merge while the bits stay apart.
         for (ei, elm) in self.elements.iter().enumerate() {
             if elm.removable_wire() && elm.post_count() >= 2 {
-                let r0 = uf.find(offsets[ei]);
-                let r1 = uf.find(offsets[ei] + 1);
-                uf.union(r0, r1);
+                for k in 0..elm.removable_wire_pair_count() {
+                    let (a, b) = elm.removable_wire_pair(k);
+                    let r0 = uf.find(offsets[ei] + a);
+                    let r1 = uf.find(offsets[ei] + b);
+                    uf.union(r0, r1);
+                }
             }
         }
 
@@ -879,6 +898,7 @@ impl Circuit {
         self.vs_closure = Vec::new();
         self.vs_row = Vec::new();
         self.element_closure = Vec::new();
+        self.collapsed_vs.clear();
         self.node_voltages = Vec::new();
         self.last_x = Vec::new();
     }
@@ -955,6 +975,9 @@ impl Circuit {
                 s.set_current(ei);
                 elm.stamp(&ctx, &mut s);
             }
+            // The set survives onto the circuit so the step loop's fresh
+            // Stampers keep treating these sources as collapsed.
+            self.collapsed_vs = s.take_collapsed_sources();
         }
         for c in self.closures.iter_mut() {
             c.sys.snapshot();
@@ -1184,6 +1207,7 @@ impl Circuit {
                     &self.vs_row,
                     &self.element_closure,
                 );
+                s.set_collapsed_sources(self.collapsed_vs.clone());
                 if subiter == 0 && detect {
                     s.set_recording(&mut touches);
                 }
@@ -1361,17 +1385,33 @@ impl Circuit {
     /// ideal shorts. Upstream reports "wire loop detected" on such loops;
     /// minimum-norm is the port's deliberate improvement.
     fn recover_wire_currents(&mut self) {
-        let mut coords: Vec<[i32; 2]> = Vec::new();
-        let mut coord_id: HashMap<[i32; 2], usize> = HashMap::new();
+        // Coordinates are (position, bus bit) pairs, so a bus wire's bits
+        // resolve as independent edges between independent nodes even though
+        // every pin shares one raw coordinate.
+        let mut coords: Vec<([i32; 2], usize)> = Vec::new();
+        let mut coord_id: HashMap<([i32; 2], usize), usize> = HashMap::new();
         let mut edges: Vec<[usize; 2]> = Vec::new();
-        let mut edge_elm: Vec<usize> = Vec::new();
+        // (element index, which of its removable-wire pairs this edge is).
+        let mut edge_owner: Vec<(usize, usize)> = Vec::new();
 
         for (ei, elm) in self.elements.iter().enumerate() {
             if elm.removable_wire() && elm.post_count() >= 2 {
-                let c0 = coord_of(&mut coord_id, &mut coords, elm.base().posts[0]);
-                let c1 = coord_of(&mut coord_id, &mut coords, elm.base().posts[1]);
-                edges.push([c0, c1]);
-                edge_elm.push(ei);
+                let count = elm.removable_wire_pair_count();
+                for pair in 0..count {
+                    let (a, b) = elm.removable_wire_pair(pair);
+                    let c0 = coord_of(
+                        &mut coord_id,
+                        &mut coords,
+                        (elm.base().posts[a], elm.post_bus_z(a)),
+                    );
+                    let c1 = coord_of(
+                        &mut coord_id,
+                        &mut coords,
+                        (elm.base().posts[b], elm.post_bus_z(b)),
+                    );
+                    edges.push([c0, c1]);
+                    edge_owner.push((ei, pair));
+                }
             }
         }
         if !edges.is_empty() {
@@ -1385,7 +1425,8 @@ impl Circuit {
                     continue;
                 }
                 for pi in 0..elm.post_count() {
-                    let Some(&c) = coord_id.get(&elm.base().posts[pi]) else {
+                    let key = (elm.base().posts[pi], elm.post_bus_z(pi));
+                    let Some(&c) = coord_id.get(&key) else {
                         continue;
                     };
                     injection[c] += elm.current_into_node(pi);
@@ -1407,7 +1448,8 @@ impl Circuit {
             let mut has_non_ground = vec![false; coords.len()];
             for elm in self.elements.iter() {
                 for pi in 0..elm.post_count() {
-                    let Some(&c) = coord_id.get(&elm.base().posts[pi]) else {
+                    let key = (elm.base().posts[pi], elm.post_bus_z(pi));
+                    let Some(&c) = coord_id.get(&key) else {
                         continue;
                     };
                     if elm.is_ground() {
@@ -1450,8 +1492,16 @@ impl Circuit {
                 resolve_stuck_wires(&edges, &mut resolved, &mut currents, &injection);
             }
 
-            for (i, &ei) in edge_elm.iter().enumerate() {
-                self.elements[ei].base_mut().current = currents[i];
+            for (i, &(ei, pair)) in edge_owner.iter().enumerate() {
+                let elm = &mut self.elements[ei];
+                elm.set_recovered_pair_current(pair, currents[i]);
+                // The single-pair shorts (plain wires, closed switches) keep
+                // the historical channel: their one current is what animates
+                // the dots. A multi-pair element sums its own bits inside the
+                // hook.
+                if elm.removable_wire_pair_count() == 1 {
+                    elm.base_mut().current = currents[i];
+                }
             }
         }
         self.recover_ground_currents();
@@ -1465,20 +1515,27 @@ impl Circuit {
     /// skips grounds. Grounds sharing a coordinate split the coordinate's net
     /// evenly, a deterministic choice that sums back to the true total.
     fn recover_ground_currents(&mut self) {
-        let mut by_coord: HashMap<[i32; 2], Vec<usize>> = HashMap::new();
+        // A ground pins bit 0 of its coordinate (its post carries no bus
+        // bit), so both the key and the sum are bit-scoped: a ground sitting
+        // on a bus coordinate collects only what the circuit delivers to bit
+        // 0, never the other bits' currents.
+        let mut by_coord: HashMap<([i32; 2], usize), Vec<usize>> = HashMap::new();
         for (ei, elm) in self.elements.iter().enumerate() {
             if elm.is_ground() {
-                by_coord.entry(elm.base().posts[0]).or_default().push(ei);
+                by_coord
+                    .entry((elm.base().posts[0], elm.post_bus_z(0)))
+                    .or_default()
+                    .push(ei);
             }
         }
-        for (coord, grounds) in by_coord {
+        for (key, grounds) in by_coord {
             let mut net = 0.0;
             for elm in self.elements.iter() {
                 if elm.is_ground() {
                     continue;
                 }
                 for pi in 0..elm.post_count() {
-                    if elm.base().posts[pi] == coord {
+                    if (elm.base().posts[pi], elm.post_bus_z(pi)) == key {
                         net += elm.current_into_node(pi);
                     }
                 }
@@ -1816,18 +1873,18 @@ impl Circuit {
     }
 }
 
-/// Index for a coordinate, allocating one on first sight.
+/// Index for a (coordinate, bus bit) key, allocating one on first sight.
 fn coord_of(
-    coord_id: &mut HashMap<[i32; 2], usize>,
-    coords: &mut Vec<[i32; 2]>,
-    c: [i32; 2],
+    coord_id: &mut HashMap<([i32; 2], usize), usize>,
+    coords: &mut Vec<([i32; 2], usize)>,
+    key: ([i32; 2], usize),
 ) -> usize {
-    if let Some(&i) = coord_id.get(&c) {
+    if let Some(&i) = coord_id.get(&key) {
         i
     } else {
         let i = coords.len();
-        coord_id.insert(c, i);
-        coords.push(c);
+        coord_id.insert(key, i);
+        coords.push(key);
         i
     }
 }

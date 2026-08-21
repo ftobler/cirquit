@@ -106,6 +106,43 @@ describe('xml to text conversion', () => {
     expect(parsed.elements).toHaveLength(3);
   });
 
+  it('carries a routed bus wire bw onto every converted segment', () => {
+    // A bus routed wire keeps its width through conversion: each `w` segment
+    // gets the trailing width token, so the saved text pins the bus even
+    // before the engine's own width pass re-derives it.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <rw x="304 160 560 160" f="4" bw="4">304,160;560,160</rw>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('w 304 160 560 160 4 4');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements[0].params.busWidth).toBe(4);
+  });
+
+  it('converts a bus logic input to a real 435 line carrying its width', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <bli x="752 416 752 496" f="0" bw="4" va="5"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('435 752 416 752 496 0 4 5 5 0');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['busLogicInput']);
+    expect(parsed.elements[0].params.busWidth).toBe(4);
+    expect(parsed.elements[0].params.value).toBe(5);
+  });
+
+  it('converts a bus transceiver to a real 437 line', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <bt x="304 160 416 160" f="0" db="2"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('437 304 160 416 160 0 2');
+    expect(parseCircuit(text).elements.map((e) => e.kind)).toEqual(['busTransceiver']);
+  });
+
   it('keeps XML-only kinds as comment lines so nothing is lost', () => {
     const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
   <Gyrator x="304 160 416 160" f="0"/>

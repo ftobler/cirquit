@@ -12,7 +12,7 @@ import init, {
   supportedKinds,
   TriggerInfo,
 } from '../wasm/circuit_engine';
-import { postsOf } from '../model/registry';
+import { postsForRender, resolveBusWidths } from '../model/busWidths';
 import type { CircuitElement, SimSettings } from '../model/types';
 import { modelJsonFor } from '../model/sampleCache';
 import type { LiveState } from '../io/liveState';
@@ -310,13 +310,18 @@ export class SimEngine {
     preserveRun = false,
   ): string | null {
     const usable = elements.filter((e) => this.supports(engineKindOf(e)));
+    // Bus widths are a property of the whole netlist: wide pins seed them and
+    // they flood through wire chains (upstream's detectBusWidths), so the
+    // pass runs over the usable list before any post list is laid out. A bus
+    // wire then hands the engine one terminal per bit at each endpoint.
+    const busWidths = resolveBusWidths(usable);
     this.order = usable.map((e) => e.id);
     this.indexById = new Map(this.order.map((id, i) => [id, i]));
     this.postOffsetById = new Map();
     let offset = 0;
     for (const e of usable) {
       this.postOffsetById.set(e.id, offset);
-      offset += postsOf(e).length;
+      offset += postsForRender(e, busWidths).length;
     }
 
     // One spec per plot, in store order, so a two-plot line fills two engine
@@ -328,16 +333,26 @@ export class SimEngine {
       elements: usable.map((e) => {
         const params = { ...e.params };
         // A switch's live position rides in as `position`, a fuse's live blown
-        // as `blown`: both are interactive state the engine must see on a
-        // rebuild, since `params` only carries the last value the file had.
-        if (e.state !== undefined) params[e.kind === 'fuse' ? 'blown' : 'position'] = e.state;
+        // as `blown`, a bus logic input's live word as `value`: all interactive
+        // state the engine must see on a rebuild, since `params` only carries
+        // the last value the file had.
+        if (e.state !== undefined) {
+          params[e.kind === 'fuse' ? 'blown' : e.kind === 'busLogicInput' ? 'value' : 'position'] =
+            e.state;
+        }
+        // The resolved width travels with the wire so the engine builds the
+        // same bus the offsets above were laid out for.
+        if (e.kind === 'wire') {
+          const w = busWidths.get(e.id);
+          if (w !== undefined && w > 1) params.busWidth = w;
+        }
         return {
           id: e.id,
           kind: engineKindOf(e),
           // Round at the boundary as the last line of defence: the store keeps
           // endpoints integral, but a future writer that bypasses it must not
           // reach serde's `[i32; 2]` with a fraction.
-          posts: postsOf(e).map((p) => [Math.round(p.x), Math.round(p.y)]),
+          posts: postsForRender(e, busWidths).map((p) => [Math.round(p.x), Math.round(p.y)]),
           // Drop non-finite params: JSON.stringify turns them into null,
           // which serde rejects for an `f64`. The store guard makes this
           // unreachable today; it is a second, independent wall.

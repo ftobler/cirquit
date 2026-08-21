@@ -939,6 +939,61 @@ describe('bus splitter posts', () => {
   });
 });
 
+describe('bus logic input', () => {
+  it('stacks every post on the anchor, one per bit', () => {
+    // getPost(n) = new Point(x, y, n): all N pins share the coordinate and
+    // the engine separates them by bit index.
+    const e = element('busLogicInput', 64, 32, 128, 32, 0, {});
+    expect(postsOf(e)).toHaveLength(4);
+    expect(postsOf(e)).toEqual([
+      { x: 64, y: 32 },
+      { x: 64, y: 32 },
+      { x: 64, y: 32 },
+      { x: 64, y: 32 },
+    ]);
+  });
+
+  it('round-trips width, word and levels through 435 lines', () => {
+    const e = element('busLogicInput', 0, 0, 96, 0, 0, {});
+    e.params.busWidth = 8;
+    e.params.value = 5;
+    e.params.hiV = 3.3;
+    const line = serializeCircuit([e], DEFAULT_SETTINGS)
+      .split('\n')
+      .find((l) => l.startsWith('435 '));
+    expect(line).toBe('435 0 0 96 0 0 8 5 3.3 0');
+    const [back] = parseCircuit(serializeCircuit([e], DEFAULT_SETTINGS)).elements;
+    expect(back.params.busWidth).toBe(8);
+    expect(back.params.value).toBe(5);
+    expect(back.params.hiV).toBe(3.3);
+  });
+});
+
+describe('bus transceiver posts', () => {
+  it('puts OE/DIR on top and the A/B banks MSB first down the sides', () => {
+    const e = element('busTransceiver', 0, 0, 96, 0, 0, { bits: 2 });
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: 0 },   // OE
+      { x: 96, y: 0 },  // DIR
+      { x: 0, y: 64 },  // A1 (MSB), row 2
+      { x: 0, y: 96 },  // A0 (LSB), row 3
+      { x: 96, y: 64 }, // B1 (MSB)
+      { x: 96, y: 96 }, // B0 (LSB)
+    ]);
+  });
+
+  it('round-trips its bit count through a 437 line', () => {
+    const e = element('busTransceiver', 0, 0, 96, 0, 0, { bits: 6 });
+    const line = serializeCircuit([e], DEFAULT_SETTINGS)
+      .split('\n')
+      .find((l) => l.startsWith('437 '));
+    expect(line).toBe('437 0 0 96 0 0 6');
+    const [back] = parseCircuit(serializeCircuit([e], DEFAULT_SETTINGS)).elements;
+    expect(back.params.bits).toBe(6);
+    expect(postsOf(back)).toHaveLength(14);
+  });
+});
+
 describe('analog mux posts', () => {
   it('places the select pins across the south and Z at the east top', () => {
     // 2 select bits means 4 inputs and a 5-row body: the selects sit at rows

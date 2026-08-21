@@ -17,7 +17,9 @@ pub mod antenna;
 pub mod audio_input;
 pub mod audio_output;
 pub mod r#box;
+pub mod bus_logic_input;
 pub mod bus_splitter;
+pub mod bus_transceiver;
 pub mod capacitor;
 pub mod cc2;
 pub mod cccs;
@@ -233,6 +235,8 @@ pub const KINDS: &[&str] = &[
     "sram",
     "rom",
     "busSplitter",
+    "busLogicInput",
+    "busTransceiver",
     "labeledNode",
     "output",
     "logicOutput",
@@ -384,6 +388,8 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "sram" => Box::new(sram::Sram::new(spec, true)),
         "rom" => Box::new(sram::Sram::new(spec, false)),
         "busSplitter" => Box::new(bus_splitter::BusSplitter::new(spec)),
+        "busLogicInput" => Box::new(bus_logic_input::BusLogicInput::new(spec)),
+        "busTransceiver" => Box::new(bus_transceiver::BusTransceiver::new(spec)),
         "labeledNode" => Box::new(labeled_node::LabeledNode::new(spec)),
         "output" => Box::new(meter::Meter::new_output(spec)),
         "logicOutput" => Box::new(logic_output::LogicOutput::new(spec)),

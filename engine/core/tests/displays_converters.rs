@@ -25,39 +25,27 @@ fn instruction_display_maps_the_value_through_the_lookup_table() {
 
 #[test]
 fn instruction_display_reads_its_bus_value_from_the_input_levels() {
+    // Upstream stacks all N posts on the anchor coordinate with bit tags
+    // (InstructionDisplayElm.getPost), so the driver here is a bus logic
+    // input whose posts coincide with the display's.
     let c = &mut build(
         vec![
             elm(
                 1,
-                "logicInput",
-                &[[0, 0]],
-                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+                "busLogicInput",
+                &[[0, 0], [0, 0], [0, 0], [0, 0]],
+                &[("busWidth", 4.0), ("value", 5.0), ("hiV", 5.0)],
             ),
             elm(
                 2,
-                "logicInput",
-                &[[0, 32]],
-                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
-            ),
-            elm(
-                3,
-                "logicInput",
-                &[[0, 64]],
-                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
-            ),
-            elm(
-                4,
-                "logicInput",
-                &[[0, 96]],
-                &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
-            ),
-            elm(
-                5,
                 "instructionDisplay",
-                &[[0, 0], [0, 32], [0, 64], [0, 96]],
+                &[[0, 0], [0, 0], [0, 0], [0, 0]],
                 &[("busWidth", 4.0), ("threshold", 2.5)],
             ),
-            elm(6, "ground", &[[0, 132]], &[]),
+            // A real ground reference off bit 0, so the build does not fall
+            // back to grounding the driver's own output node.
+            elm(3, "resistor", &[[0, 0], [64, 64]], &[("resistance", 1e9)]),
+            elm(4, "ground", &[[64, 64]], &[]),
         ],
         opts(1e-5, false),
     );
@@ -65,9 +53,9 @@ fn instruction_display_reads_its_bus_value_from_the_input_levels() {
     // Bits 0 and 2 high, bits 1 and 3 low: 0b0101 = 5. A readout contributes
     // zero matrix unknowns, so the bus value is exactly the thresholded input.
     assert!(
-        close(c.element_values()[4], 5.0, 1e-9),
+        close(c.element_values()[1], 5.0, 1e-9),
         "bus value was {}",
-        c.element_values()[4]
+        c.element_values()[1]
     );
 }
 

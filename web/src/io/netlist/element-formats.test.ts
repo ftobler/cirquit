@@ -79,6 +79,35 @@ describe('wire file format', () => {
     expect(e.flags & (WIRE_SHOW_CURRENT | WIRE_SHOW_VOLTAGE)).toBe(3);
     expect(elementLine).toBe('w 0 0 64 0 3');
   });
+
+  it('parses the optional bus-width token and saves it byte-for-byte', () => {
+    // The port's own extension: a trailing width token on a `w` line
+    // (upstream's text format never saves a wire's busWidth). A width above
+    // one also doubles the terminal count, N copies of each endpoint.
+    const { e, elementLine } = wireLine('w 32 96 160 96 0 4');
+    expect(e.params.busWidth).toBe(4);
+    expect(elementLine).toBe('w 32 96 160 96 0 4');
+    expect(postsOf(e)).toHaveLength(8);
+    const first = postsOf(e).slice(0, 4);
+    for (const p of first) expect(p).toEqual({ x: 32, y: 96 });
+    for (const p of postsOf(e).slice(4)) expect(p).toEqual({ x: 160, y: 96 });
+  });
+
+  it('a width-1 token is canonicalised away', () => {
+    // One is the plain-wire default, so the token has nothing to say and the
+    // writer omits it; keeping it would make the next save change the file.
+    // The first `1` is the Show Current flag, the second the width.
+    const { e, elementLine } = wireLine('w 0 0 64 0 1 1');
+    expect(e.flags & WIRE_SHOW_CURRENT).toBe(WIRE_SHOW_CURRENT);
+    expect(e.params.busWidth).toBeUndefined();
+    expect(elementLine).toBe('w 0 0 64 0 1');
+  });
+
+  it('clamps an out-of-range width and reports the loss', () => {
+    const parsed = parseCircuit('w 0 0 64 0 0 99');
+    expect(parsed.elements[0].params.busWidth).toBe(32);
+    expect(parsed.warnings.some((w) => w.includes('busWidth'))).toBe(true);
+  });
 });
 
 describe('diode file format', () => {

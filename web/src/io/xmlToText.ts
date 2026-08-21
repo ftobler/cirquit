@@ -13,9 +13,15 @@
  * already Java `Double.toString` output, which JS `String()` reproduces for
  * the same value. Fields the port does not model have no text token and are
  * dropped, exactly as if upstream had saved a text file. The XML-only element
- * classes (Gyrator, NortonAmp, BusLogicInput, InstructionDisplay) become `#`
- * comment lines so nothing is lost; a routed wire's path is electrically
- * identical to straight `w` segments, so those convert to real wires.
+ * classes that still have no port model (Gyrator, NortonAmp, RoutedWire,
+ * CustomCompositeChip) become `#` comment lines so nothing is lost; a routed
+ * wire's path is electrically identical to straight `w` segments, so those
+ * convert to real wires. The bus classes convert for real now: a `bli`
+ * becomes the port's 435 line and a `bt` its 437 line, each carrying its
+ * width token, and an `rw` whose `bw` attribute exceeds one appends it to
+ * every segment it becomes. Plain wires without a token need none: the
+ * engine-side width pass re-derives their width from the wide pins they
+ * touch, exactly as upstream's detectBusWidths does.
  */
 
 import { parseXml, type XmlNode } from './xml';
@@ -122,6 +128,19 @@ const WRITERS: Record<string, Writer> = {
   },
   ln: (n) => [n.attrs.te ?? ''],
   bs: (n) => chipTail(n, true, []),
+  bli: (n) => [
+    // The port's 435 stream: width, word, then the two levels. hiV/loV are
+    // written unconditionally so the line is self-describing (the stop-trigger
+    // precedent of carrying what upstream's text format would have dropped).
+    attr(n, 'bw', 4),
+    attr(n, 'va', 0),
+    attr(n, 'hi', 5),
+    attr(n, 'lo', 0),
+  ],
+  bt: (n) =>
+    // The port's 437 stream: the needsBits bit count (the XML attribute is
+    // `db`) plus the optional high voltage.
+    chipTail(n, true, []).map((tok, i) => (i === 0 ? attr(n, 'db', 4) : tok)),
   And: gateTokens,
   Nand: gateTokens,
   Or: gateTokens,
@@ -228,6 +247,7 @@ const DUMP_CODES: Record<string, string> = {
   w: 'w', g: 'g', r: 'r', c: 'c', pc: '209', l: 'l',
   R: 'R', v: 'v', i: 'i', d: 'd', t: 't', f: 'f', I: 'I', a: 'a', O: 'O',
   L: 'L', M: 'M', p: 'p', x: 'x', LED: '162', ln: '207', bs: '433',
+  bli: '435', bt: '437',
   Line: '423',
   And: '150', Nand: '151', Or: '152', Nor: '153', Xor: '154',
   DFlipFlop: '155', PhaseComp: '161', VCO: '158', ADC: '167',
@@ -243,6 +263,7 @@ const KIND_BY_TAG: Record<string, string> = {
   f: 'mosfet', I: 'inverter', a: 'opamp', O: 'output',   L: 'logicInput', M: 'logicOutput', p: 'probe',
   Line: 'line',
   x: 'decoration', LED: 'led', ln: 'labeledNode', bs: 'busSplitter',
+  bli: 'busLogicInput', bt: 'busTransceiver',
   And: 'andGate', Nand: 'nandGate', Or: 'orGate', Nor: 'norGate', Xor: 'xorGate',
   DFlipFlop: 'dFlipFlop', PhaseComp: 'phaseComp', VCO: 'vco', ADC: 'adc',
   FullAdder: 'fullAdder', SevenSegDecoder: 'sevenSegDecoder', ssd: 'sevenSeg',
@@ -269,7 +290,7 @@ function flagsFor(node: XmlNode): number {
   if (
     (tag === 'DFlipFlop' || tag === 'PhaseComp' || tag === 'VCO' || tag === 'ADC' ||
       tag === 'FullAdder' || tag === 'SevenSegDecoder' || tag === 'ssd' || tag === 'mux' ||
-      tag === 'ctr2' || tag === 'dd' || tag === 'ROM' || tag === 'bs') &&
+      tag === 'ctr2' || tag === 'dd' || tag === 'ROM' || tag === 'bs' || tag === 'bt') &&
     hv !== undefined &&
     Number(hv) !== 5
   ) {
@@ -290,15 +311,20 @@ function elementLines(node: XmlNode, ctx: ConvertContext): string[] | null {
   const tag = node.tag;
   if (tag === 'rw') {
     // A routed wire is electrically identical to straight segments; emit one
-    // `w` per consecutive point pair so the circuit actually connects.
+    // `w` per consecutive point pair so the circuit actually connects. A bus
+    // routed wire (bw > 1) carries its width on every segment it becomes; a
+    // tokenless one needs none, because the width pass re-derives it from the
+    // wide pins the segments touch.
     const points = node.text
       .split(';')
       .map((p) => p.split(','))
       .filter((p) => p.length === 2 && p.every((v) => Number.isFinite(Number(v))));
     if (points.length < 2) return null;
+    const bw = attr(node, 'bw', 1);
     const lines: string[] = [];
     for (let i = 0; i + 1 < points.length; i++) {
-      lines.push(['w', ...points[i], ...points[i + 1], attr(node, 'f', 0)].join(' '));
+      const head = ['w', ...points[i], ...points[i + 1], attr(node, 'f', 0)];
+      lines.push((bw > 1 ? [...head, bw] : head).join(' '));
     }
     return lines;
   }

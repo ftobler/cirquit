@@ -1277,3 +1277,72 @@ fn element_post_currents_matches_the_post_major_layout() {
         "terminal currents did not sum to zero: {pb} {pc} {pe}"
     );
 }
+
+#[test]
+fn voltage_source_shorted_to_ground_degrades_to_a_no_op() {
+    // A source whose both terminals merge onto the reference plane (a chip
+    // output pin sitting on a ground symbol, as the bundled td4 registers
+    // have) must not single its closure: the constraint degenerates to a
+    // no-op and the rest of the circuit solves normally. The divider here is
+    // the witness that solving still works with the collapsed unknown
+    // present.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 0], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "ground", &[[0, 0]], &[]),
+            // A square-wave source shorted the same way exercises the
+            // do_step value-update path, which a DC source skips entirely.
+            elm(
+                3,
+                "voltage",
+                &[[32, 0], [32, 0]],
+                &[
+                    ("maxVoltage", 5.0),
+                    ("waveform", 2.0),
+                    ("frequency", 1000.0),
+                ],
+            ),
+            elm(4, "ground", &[[32, 0]], &[]),
+            elm(
+                5,
+                "voltage",
+                &[[-64, 96], [-64, 0]],
+                &[("maxVoltage", 10.0)],
+            ),
+            elm(6, "ground", &[[-64, 96]], &[]),
+            elm(
+                7,
+                "resistor",
+                &[[-64, 0], [64, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                8,
+                "resistor",
+                &[[64, 0], [64, 64]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[64, 64]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    c.run(3);
+    let v = c.element_voltages();
+    // The divider's midpoint: element 7 is the top resistor; its grounded far
+    // end makes element 8's difference the midpoint voltage.
+    assert!(close(v[7], 5.0, 1e-9), "divider midpoint read {}", v[7]);
+    // Neither collapsed source carries a phantom current: their unknowns read
+    // zero rather than the driven level, which a lost collapsed-source set
+    // would surface as a 5 A report through calculate_current.
+    let currents = c.element_currents();
+    assert!(
+        close(currents[0], 0.0, 1e-12),
+        "shorted DC source reported {} A",
+        currents[0]
+    );
+    assert!(
+        close(currents[2], 0.0, 1e-12),
+        "shorted square-wave source reported {} A",
+        currents[2]
+    );
+}

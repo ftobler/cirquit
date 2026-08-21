@@ -190,6 +190,13 @@ impl Element for InstructionDisplay {
     fn post_count(&self) -> usize {
         self.bus_width
     }
+    /// Upstream stacks all N posts on one coordinate with bit tags
+    /// (`getPost(n) = new Point(x, y, n)`, InstructionDisplayElm.java:53-55);
+    /// the frontend now sends them coincident, so the bit tags are what keep
+    /// the inputs apart.
+    fn post_bus_z(&self, post: usize) -> usize {
+        post
+    }
     /// Each post is an independent input; the part draws no current, so its
     /// terminals do not couple (like the meter/readout family).
     fn connects(&self, _a: usize, _b: usize) -> bool {
