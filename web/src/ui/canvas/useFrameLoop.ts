@@ -9,7 +9,7 @@ import { neutralDrawContext } from '../../render/drawContext';
 import { handlePoints, HIT_TOLERANCE_PX } from '../../render/geometry';
 import { drawGrid } from '../../render/grid';
 import { drawHitboxes } from '../../render/hitboxes';
-import { badConnectionPoints, postDotPoints, shouldDrawDot } from '../../render/junction';
+import { cachedBadConnectionPoints, postDotPoints, shouldDrawDot } from '../../render/junction';
 import { scopeWidth } from '../../scope/geometry';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { GRID_SIZE } from '../../model/types';
@@ -73,13 +73,6 @@ export function useFrameLoop(
   const dotPhaseRef = useRef(new Map<number, number>());
   const postPhaseRef = useRef(new Map<number, number[]>());
   const lastFrameRef = useRef(performance.now());
-  // Last bad-connection scan, keyed by the element array it ran on. Every edit
-  // hands the store a fresh array, so an identity check is enough to know the
-  // cached points still describe what is on screen.
-  const badConnectionsRef = useRef<{ elements: readonly CircuitElement[]; points: Point[] }>({
-    elements: [],
-    points: [],
-  });
   const loadedRevision = useRef(-1);
   const appliedParamRevision = useRef(-1);
   const appliedScopeFp = useRef('');
@@ -535,18 +528,11 @@ export function useFrameLoop(
           // split it, so the end sits on the wire looking connected; upstream
           // paints those red (badConnectionList, UIManager.java:708-712) and
           // that dot is the only thing distinguishing them. Drawn over the
-          // junction pass, whose plain dot it replaces. Recomputed only when
-          // the element list changes, not per frame: the scan is a post count
-          // times the element list, which a running simulation should not pay
-          // sixty times a second.
-          if (badConnectionsRef.current.elements !== elements) {
-            badConnectionsRef.current = {
-              elements,
-              points: badConnectionPoints(elements, postCounts),
-            };
-          }
+          // junction pass, whose plain dot it replaces. The scan is memoised
+          // on the element array, so it is recomputed only when the list
+          // changes and the info area's count reuses this frame's result.
           ctx.fillStyle = theme.noConnect;
-          for (const p of badConnectionsRef.current.points) {
+          for (const p of cachedBadConnectionPoints(elements, postCounts)) {
             ctx.beginPath();
             ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
             ctx.fill();

@@ -76,3 +76,29 @@ export function badConnectionPoints(
   }
   return bad;
 }
+
+/** Last bad-connection scan, keyed by the element array it ran on. Every edit
+ *  hands the store a fresh array, so an identity check is enough to know the
+ *  cached points still describe what is on screen.
+ *
+ *  The memo is shared rather than one ref per caller: the frame loop paints the
+ *  red dots and the info area counts them in the same frame, and the scan is a
+ *  post count times the element list, which a running simulation should not pay
+ *  twice, let alone sixty times a second. */
+let lastScan: { elements: readonly CircuitElement[]; points: Point[] } = {
+  elements: [],
+  points: [],
+};
+
+/** `badConnectionPoints`, memoised on the element array's identity. `counts`
+ *  is only consulted on a miss, so a caller that already built the post map
+ *  can hand it over without forcing a rescan. */
+export function cachedBadConnectionPoints(
+  elements: readonly CircuitElement[],
+  counts?: Map<string, number>,
+): Point[] {
+  if (lastScan.elements !== elements) {
+    lastScan = { elements, points: badConnectionPoints(elements, counts) };
+  }
+  return lastScan.points;
+}

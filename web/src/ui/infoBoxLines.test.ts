@@ -49,4 +49,32 @@ describe('infoBoxLines', () => {
   it('reads a null engine as t = 0', () => {
     expect(infoBoxLines(null, [], null, settings)).toEqual(['t = 0 s', 'time step = 5µ s']);
   });
+
+  it('appends the bad-connection tally under the sim stats', () => {
+    // The vertical wire's lower end sits on the horizontal wire's interior,
+    // which splits nothing: one bad connection, reported singular.
+    const across = el(1, 'wire', {});
+    const dropped = { ...el(2, 'wire', {}), x1: 80, y1: 0, x2: 80, y2: 80 };
+
+    expect(infoBoxLines(null, [across, dropped], engine, settings)).toEqual([
+      't = 10m s',
+      'time step = 5µ s',
+      '1 bad connection',
+    ]);
+  });
+
+  it('pluralises the tally and keeps it under a hovered element readout', () => {
+    const across = el(1, 'wire', {});
+    const dropped = { ...el(2, 'wire', {}), x1: 80, y1: 0, x2: 80, y2: 80 };
+    const alsoDropped = { ...el(3, 'wire', {}), x1: 40, y1: 0, x2: 40, y2: 80 };
+    const elements = [across, dropped, alsoDropped];
+
+    expect(infoBoxLines(null, elements, engine, settings).at(-1)).toBe('2 bad connections');
+    expect(infoBoxLines(1, elements, engine, settings)).toEqual([
+      'wire',
+      'I = 50m A',
+      'Vd = 2.5 V',
+      '2 bad connections',
+    ]);
+  });
 });
