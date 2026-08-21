@@ -1,13 +1,17 @@
 /** The docs layout: a header bar in the app's style with the brand linking
- *  back to the simulator, a small nav of the sibling pages from the registry,
- *  the page body, and the GPL-2.0 attribution footer.
+ *  back to the simulator, then two columns, a sidebar listing every docs page
+ *  grouped by section and the page body beside it, and the GPL-2.0
+ *  attribution footer underneath. The sidebar is the navigation for the whole
+ *  docs set, so a reader can cross from a calculator to a reference page
+ *  without going back through the index; it collapses above the prose on a
+ *  screen too narrow for two columns.
  *
  *  The entry HTML files live under `web/pages/`, so Vite emits them to
  *  `dist/pages/` and every link here carries the `pages/` prefix after
  *  BASE_URL. */
 
 import type { ReactNode } from 'react';
-import { DOC_PAGES } from './pages';
+import { docsNavGroups } from './docsNav';
 
 interface Props {
   id: string;
@@ -18,14 +22,7 @@ interface Props {
 export function DocsLayout({ id, title, children }: Props) {
   const base = import.meta.env.BASE_URL;
   const page = (file: string) => `${base}pages/${file}`;
-  // The nav lists the other pages of the current page's group, so the reader
-  // can hop across the reference or calculator pages without going through
-  // the index.
-  const current = DOC_PAGES.find((p) => p.id === id);
-  const siblings =
-    current === undefined
-      ? []
-      : DOC_PAGES.filter((p) => p.id !== 'docs' && p.id !== id && p.group === current.group);
+  const groups = docsNavGroups();
 
   return (
     <div className="docs-app">
@@ -35,20 +32,45 @@ export function DocsLayout({ id, title, children }: Props) {
         </a>
         <nav className="docs-nav">
           <a href={page('docs.html')}>Documentation</a>
-          {siblings.map((p) => (
-            <a key={p.id} href={page(p.file)}>
-              {p.title}
-            </a>
-          ))}
         </nav>
       </header>
-      <main className="docs-body">
-        <h1>{title}</h1>
-        {children}
-      </main>
+      <div className="docs-columns">
+        <nav className="docs-sidebar" aria-label="Documentation">
+          <a
+            className={id === 'docs' ? 'docs-sidebar-home current' : 'docs-sidebar-home'}
+            href={page('docs.html')}
+            aria-current={id === 'docs' ? 'page' : undefined}
+          >
+            All documentation
+          </a>
+          {groups.map((group) => (
+            <section key={group.key}>
+              <h2>{group.title}</h2>
+              <ul>
+                {group.pages.map((p) => (
+                  <li key={p.id}>
+                    <a
+                      className={p.id === id ? 'current' : undefined}
+                      // The page the reader is on is marked for assistive tech
+                      // too, not only by the highlight.
+                      aria-current={p.id === id ? 'page' : undefined}
+                      href={page(p.file)}
+                    >
+                      {p.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </nav>
+        <main className="docs-body">
+          <h1>{title}</h1>
+          {children}
+        </main>
+      </div>
       <footer className="docs-footer">
-        Documentation adapted from CircuitJS1, GPL-2.0, Paul Falstad and
-        contributors.
+        Documentation adapted from CircuitJS1, GPL-2.0, Paul Falstad and contributors.
       </footer>
     </div>
   );
