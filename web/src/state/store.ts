@@ -25,7 +25,7 @@ import {
   saveModel,
   syncSessionModels,
 } from '../io/subcircuits';
-import { pointOnWireInterior, splitWire } from '../render/geometry';
+import { leadPostAt, pointOnWireInterior, splitWire } from '../render/geometry';
 import { convertWires } from '../render/wireConverter';
 import { lShapeRoute, routeWire, routingObstacles } from '../render/wireRouter';
 import {
@@ -851,7 +851,6 @@ function createAppStore() {
     const crossed = s.elements.filter(
       (e) => e.id !== exceptId && e.kind === 'wire' && pointOnWireInterior(p, e),
     );
-    if (crossed.length === 0) return;
     const halves: CircuitElement[] = [];
     const gone = new Set<number>();
     for (const w of crossed) {
@@ -862,9 +861,35 @@ function createAppStore() {
       halves.push(...pair);
       gone.add(w.id);
     }
+    // The other half of upstream's `splitAt`: a post dropped on the bare lead
+    // between another part's terminal and its drawn body (splitLeadsAt,
+    // MouseManager.java:615-636). The lead is pulled in to the drop point and
+    // a wire fills what it gave up, so the picture is unchanged and the drop
+    // point becomes a real terminal instead of a bad connection.
+    const stubs = new Map<number, 0 | 1>();
+    for (const e of s.elements) {
+      if (e.id === exceptId) continue;
+      const post = leadPostAt(p, e);
+      if (post !== null) stubs.set(e.id, post);
+    }
+    for (const [id, post] of stubs) {
+      const e = s.elements.find((x) => x.id === id)!;
+      const old = post === 0 ? { x: e.x1, y: e.y1 } : { x: e.x2, y: e.y2 };
+      halves.push({
+        ...makeElement('wire', p.x, p.y, old.x, old.y),
+        id: allocateId(),
+      });
+    }
     if (halves.length === 0) return;
     set((st) => ({
-      elements: st.elements.filter((e) => !gone.has(e.id)).concat(halves),
+      elements: st.elements
+        .filter((e) => !gone.has(e.id))
+        .map((e) => {
+          const post = stubs.get(e.id);
+          if (post === undefined) return e;
+          return post === 0 ? { ...e, x1: p.x, y1: p.y } : { ...e, x2: p.x, y2: p.y };
+        })
+        .concat(halves),
       ...bumpRevision(st),
     }));
   },

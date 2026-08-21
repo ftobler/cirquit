@@ -36,6 +36,67 @@ export function pointOnSegmentInterior(
   return distanceToSegment(p, a, b) <= tolerance;
 }
 
+/**
+ * Which endpoint's lead stub `p` lands on, or null when it lands on none.
+ * Upstream's `getLeadPost` (CircuitElm.java:366-378): the bare wire between a
+ * post and the drawn body, the stretch where a dropped terminal looks
+ * connected but is not. The caller splits the stub by pulling the post in to
+ * `p` and filling the rest with a wire (`splitLeadsAt`, MouseManager.java:
+ * 615-636).
+ *
+ * The port has no stored `lead1`/`lead2`: a body's extent along the axis lives
+ * in the def's `bodyRect`, which is built from the same `calcLeads` call the
+ * symbol is drawn with, so reading the stubs off that box cannot drift from
+ * what is on screen. That box is axis-aligned, so it only describes the body
+ * of an axis-aligned part; a diagonal one is refused rather than guessed at,
+ * and refusing costs nothing because a split point is always grid-snapped.
+ *
+ * A one-post part with a stem (ground, rails, labelled nodes) has no body
+ * window to subtract, so its whole stored span is the lead, upstream's
+ * `lead1 == null && getPostCount() == 1` case; a point inside its drawn mark
+ * is excluded so a drop on a rail's circle is not read as a drop on its stem.
+ * Wires split through `splitWire` instead, and a part whose posts are not its
+ * stored endpoints (transistors, op-amps, chips) has limbs this straight-axis
+ * reasoning does not describe, so both are refused.
+ */
+export function leadPostAt(p: Point, e: CircuitElement): 0 | 1 | null {
+  if (e.kind === 'wire') return null;
+  const def = defFor(e.kind);
+  const p1 = { x: e.x1, y: e.y1 };
+  const p2 = { x: e.x2, y: e.y2 };
+  if (e.x1 !== e.x2 && e.y1 !== e.y2) return null;
+  const posts = postsOf(e);
+  const box = def?.bodyRect?.(e);
+  if (posts.length === 1) {
+    if ((def?.draggablePosts ?? postCountOf(e)) < 2) return null;
+    if (box && boxContains(box, p)) return null;
+    return pointOnSegmentInterior(p, p1, p2) ? 0 : null;
+  }
+  if (posts.length !== 2) return null;
+  const anchored =
+    posts[0].x === p1.x && posts[0].y === p1.y && posts[1].x === p2.x && posts[1].y === p2.y;
+  if (!anchored || !box) return null;
+  // The body window along the axis, from the box edge nearer post 0 to the one
+  // nearer post 1. A body that fills the whole span leaves both stubs empty,
+  // which `pointOnSegmentInterior` then rejects on its own.
+  const [lead1, lead2] =
+    e.y1 === e.y2
+      ? e.x1 < e.x2
+        ? [{ x: box.x0, y: e.y1 }, { x: box.x1, y: e.y2 }]
+        : [{ x: box.x1, y: e.y1 }, { x: box.x0, y: e.y2 }]
+      : e.y1 < e.y2
+        ? [{ x: e.x1, y: box.y0 }, { x: e.x2, y: box.y1 }]
+        : [{ x: e.x1, y: box.y1 }, { x: e.x2, y: box.y0 }];
+  if (pointOnSegmentInterior(p, p1, lead1)) return 0;
+  if (pointOnSegmentInterior(p, lead2, p2)) return 1;
+  return null;
+}
+
+/** Whether the box covers `p`, edges included. */
+function boxContains(box: Box, p: Point): boolean {
+  return p.x >= box.x0 && p.x <= box.x1 && p.y >= box.y0 && p.y <= box.y1;
+}
+
 /** The corner polyline of a wire: its route when routed, else the straight
  *  span between the two stored endpoints. */
 export function wirePoints(wire: CircuitElement): Point[] {

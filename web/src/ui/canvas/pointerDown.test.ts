@@ -383,6 +383,46 @@ describe('click-place: a press with no drag', () => {
   });
 });
 
+describe('finishPlacement splitting what the new part landed on', () => {
+  // Upstream splits at both endpoints of the element it is about to add
+  // (endDrag, MouseManager.java:1276-1280), so a part dropped across a wire or
+  // onto another part's lead comes out connected instead of merely touching.
+  const addWire = (x1: number, y1: number, x2: number, y2: number) =>
+    useStore.getState().addElement({ kind: 'wire', x1, y1, x2, y2, flags: 0, params: {} });
+
+  it('splits a wire a placed resistor ends on', () => {
+    const crossed = addWire(96, 0, 96, 160);
+    useStore.getState().setTool('resistor');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
+
+    finishPlacement(drag, useStore.getState());
+
+    const s = useStore.getState();
+    expect(s.elements.some((e) => e.id === crossed)).toBe(false);
+    const spans = s.elements.filter((e) => e.kind === 'wire').map((e) => [e.x1, e.y1, e.x2, e.y2]);
+    expect(spans).toContainEqual([96, 0, 96, 96]);
+    expect(spans).toContainEqual([96, 96, 96, 160]);
+  });
+
+  it('leaves a ground alone when only its free end lands on a wire', () => {
+    // A ground's second point is a control point, not a terminal, so a drop
+    // there connects nothing and must not split the wire under it.
+    const crossed = addWire(0, 128, 192, 128);
+    useStore.getState().setTool('ground');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
+
+    finishPlacement(drag, useStore.getState());
+
+    expect(useStore.getState().elements.some((e) => e.id === crossed)).toBe(true);
+  });
+});
+
 describe('finishPlacement cancelling a collapsed drop', () => {
   // A drag that returns to its own anchor still collapses the part to a point,
   // which is the case this cancel exists for.

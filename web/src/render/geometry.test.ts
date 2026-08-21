@@ -13,6 +13,7 @@ import {
   handlePoints,
   hitRegions,
   hitTestElement,
+  leadPostAt,
   nearestPost,
   pointOnSegmentInterior,
   pointOnWireInterior,
@@ -917,5 +918,67 @@ describe('hitRegions', () => {
         }
       }
     }
+  });
+});
+
+describe('leadPostAt', () => {
+  const kinded = (kind: string, x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
+    ...element(x1, y1, x2, y2),
+    kind,
+  });
+
+  it('finds each lead stub of a horizontal resistor', () => {
+    // The 32-long body of an 80-long resistor leaves a 24-long stub at each
+    // end, so 16 is on post 0's lead and 64 on post 1's.
+    const r = kinded('resistor', 0, 0, 80, 0);
+    expect(leadPostAt({ x: 16, y: 0 }, r)).toBe(0);
+    expect(leadPostAt({ x: 64, y: 0 }, r)).toBe(1);
+  });
+
+  it('refuses the body, the two posts and anything off the axis', () => {
+    const r = kinded('resistor', 0, 0, 80, 0);
+    expect(leadPostAt({ x: 40, y: 0 }, r)).toBeNull();  // inside the zigzag
+    expect(leadPostAt({ x: 0, y: 0 }, r)).toBeNull();  // the post itself
+    expect(leadPostAt({ x: 80, y: 0 }, r)).toBeNull();
+    expect(leadPostAt({ x: 16, y: 16 }, r)).toBeNull();  // beside the lead
+  });
+
+  it('reads the stubs off the drawn body whichever way the part points', () => {
+    const flipped = kinded('resistor', 80, 0, 0, 0);
+    expect(leadPostAt({ x: 64, y: 0 }, flipped)).toBe(0);
+    expect(leadPostAt({ x: 16, y: 0 }, flipped)).toBe(1);
+
+    const down = kinded('resistor', 0, 0, 0, 80);
+    expect(leadPostAt({ x: 0, y: 16 }, down)).toBe(0);
+    expect(leadPostAt({ x: 0, y: 64 }, down)).toBe(1);
+
+    const up = kinded('resistor', 0, 80, 0, 0);
+    expect(leadPostAt({ x: 0, y: 64 }, up)).toBe(0);
+    expect(leadPostAt({ x: 0, y: 16 }, up)).toBe(1);
+  });
+
+  it('refuses a diagonal part, whose axis-aligned body box cannot describe it', () => {
+    expect(leadPostAt({ x: 16, y: 16 }, kinded('resistor', 0, 0, 80, 80))).toBeNull();
+  });
+
+  it('refuses wires, and parts whose posts are not their endpoints', () => {
+    // A wire has no body and splits through splitWire instead; a transistor's
+    // limbs leave the axis, so the straight-stub reasoning does not hold.
+    expect(leadPostAt({ x: 16, y: 0 }, kinded('wire', 0, 0, 80, 0))).toBeNull();
+    expect(leadPostAt({ x: 16, y: 0 }, kinded('transistor', 0, 0, 80, 0))).toBeNull();
+  });
+
+  it('treats a rail stem as one long lead, up to the drawn mark', () => {
+    // A one-post part has no body window to subtract from its span, so the
+    // whole stem is the lead, minus whatever the symbol itself covers.
+    const rail = kinded('rail', 0, 0, 80, 0);
+    expect(leadPostAt({ x: 16, y: 0 }, rail)).toBe(0);
+    expect(leadPostAt({ x: 40, y: 0 }, rail)).toBe(0);
+    // Inside the circle at the far end: that is the mark, not the lead.
+    expect(leadPostAt({ x: 72, y: 0 }, rail)).toBeNull();
+  });
+
+  it('refuses a text annotation, whose second point is not a control point', () => {
+    expect(leadPostAt({ x: 16, y: 0 }, kinded('decoration', 0, 0, 80, 0))).toBeNull();
   });
 });

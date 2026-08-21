@@ -145,12 +145,26 @@ export function finishPlacement(drag: Drag, state: AppState): void {
     // same one-gesture-one-undo-entry reasoning behind beginPointerGesture's
     // switch-toggle commit below.
     state.deleteSelected(true);
-  } else if (e && e.kind === 'wire') {
-    // A wire end dropped on another wire's interior splits that wire so the
-    // two connect, matching upstream's splitWireAt on placement
-    // (MouseManager.java:597-613). The addElement commit at pointer-down is
-    // the single undo baseline for the whole drop.
-    state.placeWireEnd(e.id, e.x2, e.y2);
+  } else if (e) {
+    if (e.kind === 'wire') {
+      // A wire end dropped on another wire's interior splits that wire so the
+      // two connect, matching upstream's splitWireAt on placement
+      // (MouseManager.java:597-613). The addElement commit at pointer-down is
+      // the single undo baseline for the whole drop.
+      state.placeWireEnd(e.id, e.x2, e.y2);
+    }
+    // Upstream splits at both endpoints of the element it is about to add,
+    // parts as well as wires (endDrag, MouseManager.java:1276-1280), so a
+    // resistor dropped with an end on a wire or on another part's lead comes
+    // out connected. Only a real terminal splits, the same rule the post drag
+    // follows: a ground's or rail's second control point carries no terminal,
+    // and a drop there must connect nothing. The wire case above has already
+    // split what it crossed, so the second call finds an endpoint there and
+    // does nothing.
+    const posts = postsOf(e);
+    for (const q of [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }]) {
+      if (posts.some((r) => r.x === q.x && r.y === q.y)) state.autoSplitAt(q, e.id);
+    }
   }
   // Placing one element then returning to select mode matches how people
   // actually build a schematic.

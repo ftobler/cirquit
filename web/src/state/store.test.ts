@@ -3606,7 +3606,9 @@ describe('wire split on a post drag', () => {
     expect(s.elements.some((e) => e.id === crossed)).toBe(true);
   });
 
-  it('ignores non-wire elements: they connect at posts, not along their body', () => {
+  it("ignores a drop on a part's drawn body: only its bare leads split", () => {
+    // (80,0) is the middle of the zigzag, not a lead, so nothing connects
+    // there and the resistor keeps its span.
     const resistor = useStore.getState().addElement({
       kind: 'resistor',
       x1: 0,
@@ -3622,7 +3624,91 @@ describe('wire split on a post drag', () => {
 
     const s = useStore.getState();
     expect(s.elements).toHaveLength(2);
-    expect(s.elements.some((e) => e.id === resistor)).toBe(true);
+    expect(s.elements.find((e) => e.id === resistor)).toMatchObject({ x1: 0, x2: 160 });
+  });
+
+  it("splits a part's lead, pulling the post in and filling the rest with a wire", () => {
+    // Upstream's splitLeadsAt (MouseManager.java:615-636): the picture does
+    // not change, but the drop point becomes a real terminal instead of a bad
+    // connection. A 160-long resistor's body is 32 long about its middle, so
+    // (32,0) is on post 0's lead.
+    const resistor = useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    const dragged = addWire(32, 80, 32, 0);
+
+    useStore.getState().autoSplitAt({ x: 32, y: 0 }, dragged);
+
+    const s = useStore.getState();
+    expect(s.elements.find((e) => e.id === resistor)).toMatchObject({
+      x1: 32,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+    });
+    // The wire that fills what the lead gave up, from the drop point back to
+    // where the post was.
+    const spans = s.elements.filter((e) => e.kind === 'wire').map((e) => [e.x1, e.y1, e.x2, e.y2]);
+    expect(spans).toContainEqual([32, 0, 0, 0]);
+    // The dragged wire is untouched, and nothing else was added.
+    expect(spans).toContainEqual([32, 80, 32, 0]);
+    expect(s.elements).toHaveLength(3);
+  });
+
+  it('splits the far lead too, and never the element being dragged', () => {
+    const resistor = useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    const dragged = addWire(128, 80, 128, 0);
+
+    useStore.getState().autoSplitAt({ x: 128, y: 0 }, dragged);
+
+    const s = useStore.getState();
+    expect(s.elements.find((e) => e.id === resistor)).toMatchObject({ x2: 128, y2: 0 });
+    const spans = s.elements.filter((e) => e.kind === 'wire').map((e) => [e.x1, e.y1, e.x2, e.y2]);
+    expect(spans).toContainEqual([128, 0, 160, 0]);
+
+    // A second drop at the same point now lands on the new wire's endpoint and
+    // on the resistor's post, so nothing more happens.
+    const count = s.elements.length;
+    useStore.getState().autoSplitAt({ x: 128, y: 0 }, dragged);
+    expect(useStore.getState().elements).toHaveLength(count);
+  });
+
+  it('takes the lead split back with the drag, in one undo step', () => {
+    const resistor = useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    const dragged = addWire(32, 80, 32, 0);
+    useStore.getState().commit();
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().autoSplitAt({ x: 32, y: 0 }, dragged);
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+
+    useStore.getState().undo();
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(2);
+    expect(s.elements.find((e) => e.id === resistor)).toMatchObject({ x1: 0, x2: 160 });
   });
 
   it('pushes no undo entry of its own: the drag committed at pointer-down', () => {
