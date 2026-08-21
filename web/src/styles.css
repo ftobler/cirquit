@@ -1606,13 +1606,14 @@ input[type='range'] {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 50;
-  /* A dialog like the rest, so it takes the same neutral floating grey. */
+  /* A dialog like the rest, so it takes the same neutral floating grey and
+     the same padding, min-width and corner radius. */
   background: var(--menu-surface);
   border-radius: var(--md-shape-lg);
-  padding: 12px;
+  padding: 14px 16px;
   max-height: 85vh;
   overflow-y: auto;
-  min-width: 320px;
+  min-width: 360px;
   max-width: 560px;
   box-shadow: var(--md-elevation-3);
 }
@@ -1648,8 +1649,10 @@ input[type='range'] {
 }
 
 .scope-props h3 {
-  margin: 0 0 8px;
-  font: var(--md-type-title-large);
+  margin: 0 0 10px;
+  /* The dialog title on the same tier as the other dialogs' h2, so this
+     overlay reads as one of the app's modals rather than a small panel. */
+  font: var(--md-type-headline-small);
   text-transform: none;
   letter-spacing: normal;
   color: var(--text);
@@ -1657,19 +1660,24 @@ input[type='range'] {
 
 .scope-props fieldset {
   border: 1px solid var(--border);
-  margin: 8px 0;
-  padding: 8px;
+  margin: 0 0 10px;
+  padding: 8px 10px 10px;
   border-radius: var(--md-shape-xs);
 }
 
 .scope-props legend {
   font-size: 12px;
   padding: 0 4px;
+  color: var(--muted);
 }
 
 .scope-props label {
-  display: block;
-  margin: 4px 0;
+  /* A control row, not a block: the radio/checkbox text sits centred on the
+     box instead of riding its top edge, and the whole dialog's rows line up. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
   font-size: 12px;
 }
 
@@ -1678,6 +1686,23 @@ input[type='range'] {
   gap: 8px;
   align-items: center;
   margin: 4px 0;
+  /* The trigger and manual-scale rows carry several controls; on a narrow
+     dialog they wrap instead of clipping. */
+  flex-wrap: wrap;
+}
+
+/* The dialog's row buttons are compact, not stretched: the global
+   `.row button { flex: 1 }` is for the options sidebar, and a full-width
+   stepper with a single triangle in it reads as a mistake. */
+.scope-props .row button {
+  flex: 0 0 auto;
+}
+
+.scope-props .row button[aria-label*='max value'] {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+  line-height: 1;
 }
 
 .scope-props input[type='range'] {

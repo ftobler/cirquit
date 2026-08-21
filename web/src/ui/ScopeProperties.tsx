@@ -188,28 +188,30 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
 
       <fieldset>
         <legend>Vertical Scale</legend>
-        <label>
-          <input type="radio" name="scale" checked={scaleMode === 'auto'} onChange={() => setScaleMode('auto')} />
-          Auto
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="scale"
-            checked={scaleMode === 'maxScale'}
-            onChange={() => setScaleMode('maxScale')}
-          />
-          Auto (Max Scale)
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="scale"
-            checked={scaleMode === 'manual'}
-            onChange={() => setScaleMode('manual')}
-          />
-          Manual
-        </label>
+        <div className="row">
+          <label>
+            <input type="radio" name="scale" checked={scaleMode === 'auto'} onChange={() => setScaleMode('auto')} />
+            Auto
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="scale"
+              checked={scaleMode === 'maxScale'}
+              onChange={() => setScaleMode('maxScale')}
+            />
+            Auto (Max Scale)
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="scale"
+              checked={scaleMode === 'manual'}
+              onChange={() => setScaleMode('manual')}
+            />
+            Manual
+          </label>
+        </div>
         <div className="row">
           <label htmlFor="divisions">Divisions</label>
           <input
