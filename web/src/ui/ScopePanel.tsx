@@ -368,7 +368,15 @@ export function ScopePanel({ engine }: Props) {
       </div>
       <ScopeMenu engine={engine} nameOf={(plot) => elementNameOf(elements, plot.elementId)} />
       {scopeProperties !== null && (
-        <ScopeProperties scopeId={scopeProperties} onClose={closeScopeProperties} />
+        // Keyed by the scope: the stack tabs switch which scope the open
+        // dialog edits, and the label and trigger-level boxes hold their text
+        // in local state, so the panel has to remount rather than keep the
+        // previous scope's text over the new scope's values.
+        <ScopeProperties
+          key={scopeProperties}
+          scopeId={scopeProperties}
+          onClose={closeScopeProperties}
+        />
       )}
     </>
   );

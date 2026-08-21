@@ -1616,6 +1616,32 @@ input[type='range'] {
   outline: 2px solid var(--accent);
 }
 
+/* The stack tabs: one per scope sharing this scope's column, so the dialog can
+   be pointed at any of them without hitting a sliver of canvas. The strip is
+   absent for an unstacked scope, so this never shows a single dead tab. */
+.scope-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+
+/* Rest is the panel's own grey so an inactive tab reads as unselected without
+   a border; the selected one takes the accent-tinted container, MD3's way of
+   marking the active item. */
+.scope-tab {
+  background: color-mix(in srgb, var(--text) 8%, var(--menu-surface));
+  color: var(--muted);
+  font: var(--md-type-label-large);
+}
+
+.scope-props .scope-tab.current,
+.scope-props .scope-tab.current:hover,
+.scope-props .scope-tab.current:focus-visible {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+
 .scope-props h3 {
   margin: 0 0 8px;
   font: var(--md-type-title-large);

@@ -14,6 +14,7 @@ import { MAN_DIVISIONS, trailSliderToSteps, trailStepsToSlider, UNIT } from '../
 import { saveScopeDefaults } from '../state/scopeDefaults';
 import { useStore } from '../state/store';
 import { useFocusTrap } from './useFocusTrap';
+import { stackTabs } from './scopeTabs';
 
 interface Props {
   scopeId: number;
@@ -24,6 +25,7 @@ type FlagKey = Parameters<ReturnType<typeof useStore.getState>['setScopeFlags']>
 
 export function ScopeProperties({ scopeId, onClose }: Props) {
   const scope = useStore((s) => s.scopes.find((x) => x.id === scopeId));
+  const scopes = useStore((s) => s.scopes);
   const timeStep = useStore((s) => s.settings.timeStep);
   const [labelText, setLabelText] = useState(scope?.label ?? '');
   const [levelText, setLevelText] = useState(String(scope?.trigger.level ?? 0));
@@ -41,6 +43,8 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
   }, [onClose]);
 
   if (!scope) return null;
+
+  const tabs = stackTabs(scopes, scopeId);
 
   const setFlags = (patch: Parameters<ReturnType<typeof useStore.getState>['setScopeFlags']>[1]) =>
     useStore.getState().setScopeFlags(scope.id, patch);
@@ -160,6 +164,27 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
   return (
     <div className="scope-props" role="dialog" aria-modal="true" aria-label="Scope properties" tabIndex={-1} ref={panelRef}>
       <h3>Scope Properties</h3>
+
+      {/* Stacked scopes share a column, so each canvas is a sliver and its
+        settings wheel is nearly unhittable. With the dialog open, every scope
+        stacked with this one is one tab away. Absent entirely when the scope
+        has its column to itself. */}
+      {tabs.length > 0 && (
+        <div className="scope-tabs" role="tablist" aria-label="Scopes in this stack">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={tab.current}
+              className={tab.current ? 'scope-tab current' : 'scope-tab'}
+              onClick={() => useStore.getState().openScopeProperties(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <fieldset>
         <legend>Vertical Scale</legend>
