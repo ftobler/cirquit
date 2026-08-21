@@ -41,28 +41,14 @@
 
   --md-surface: #0d1117;
   --md-surface-container-lowest: #010409;
-  --md-surface-container: #161b22;
-  /* Tonal elevation: higher tiers mix in a wash of the surface-tint hue, same
-     mechanic as MD3's surface-tint-at-elevation, so it stays in step with
-     whatever --md-primary is. */
-  --md-surface-container-high: color-mix(
-    in srgb,
-    var(--md-surface-container) 92%,
-    var(--md-surface-tint) 8%
-  );
-  --md-surface-container-highest: color-mix(
-    in srgb,
-    var(--md-surface-container) 85%,
-    var(--md-surface-tint) 15%
-  );
 
   --md-on-surface: #c9d1d9;
   --md-on-surface-variant: #8b949e;
   /* The decorative outline is below WCAG 2.4.11's 3:1 bar for component
      boundaries; the interactive outline above it is the border for form
      controls, which must be findable. It clears 3:1 even on the brightest
-     surface a control sits on, the dialog panel (surface-container-highest),
-     where #59616b would fall to 2.14:1. */
+     surface a control sits on, the floating --menu-surface panels, where
+     #59616b would fall to 2.14:1. */
   --md-outline: #30363d;
   --md-outline-variant: #21262d;
   --md-outline-interactive: #7a8490;
@@ -70,6 +56,13 @@
 
   --bg: var(--md-surface);
   --panel: #141414;
+  /* The floating-surface grey the dropdown menus, the right-click menu and
+     the dialogs all sit on. Deliberately neutral, not one of the tonal
+     surface-container tiers: those mix in 15% of the blue --md-surface-tint,
+     which read as a blue panel rather than a raised one. Every state layer
+     over a floating surface is mixed against this, so the three surfaces
+     cannot drift apart. */
+  --menu-surface: #1e1e1e;
   --border: var(--md-outline);
   --text: var(--md-on-surface);
   --muted: var(--md-on-surface-variant);
@@ -483,7 +476,7 @@ button.active,
   width: 280px;
   max-height: 70vh;
   overflow: auto;
-  background: #1e1e1e;
+  background: var(--menu-surface);
   border-radius: var(--md-shape-md);
   padding: 6px;
   box-shadow: var(--md-elevation-2);
@@ -525,18 +518,18 @@ button.active,
   padding-left: 18px;
 }
 
-/* The menu rows sit on #1e1e1e, lighter than the panel, so the shared
+/* The menu rows sit on --menu-surface, lighter than the panel, so the shared
    `--hover` wash derived from the panel is nearly invisible there. Give the
    dropdown its own state layers mixed over the menu background: hover raises
    a tier, press dips one tier deeper. */
 .dropdown-menu summary:hover,
 .dropdown-menu .menu-item:hover {
-  background: color-mix(in srgb, var(--text) 14%, #1e1e1e);
+  background: color-mix(in srgb, var(--text) 14%, var(--menu-surface));
 }
 
 .dropdown-menu summary:active,
 .dropdown-menu .menu-item:active {
-  background: color-mix(in srgb, var(--text) 20%, #1e1e1e);
+  background: color-mix(in srgb, var(--text) 20%, var(--menu-surface));
 }
 
 .library-search {
@@ -662,7 +655,10 @@ button.active,
 }
 
 .dialog {
-  background: var(--md-surface-container-highest);
+  /* The same neutral grey the menus float on, not a tonal surface tier: the
+     tinted tiers mix the blue surface-tint in, and a modal filling most of
+     the screen with it read as a blue panel. */
+  background: var(--menu-surface);
   border-radius: var(--md-shape-lg);
   padding: 14px 16px;
   min-width: 360px;
@@ -766,6 +762,59 @@ button.active,
 
 .dialog-actions button {
   min-width: 64px;
+}
+
+/* Inside a dialog a button is a real button, not a borderless one. A modal is
+   dense enough that a flat label reads as body text, so every button in one
+   rests on a raised surface instead of on nothing. The affordance is that
+   background, never a CSS border: the fill is a neutral wash of the text
+   colour over the panel, so it stays a grey button on a grey panel and does
+   not reintroduce the tint the panel just lost. The three tiers are the same
+   hover/press progression the menu rows use. */
+.dialog button,
+.scope-props button {
+  background: color-mix(in srgb, var(--text) 12%, var(--menu-surface));
+}
+
+.dialog button:hover,
+.dialog button:focus-visible,
+.scope-props button:hover,
+.scope-props button:focus-visible {
+  background: color-mix(in srgb, var(--text) 18%, var(--menu-surface));
+}
+
+.dialog button:active,
+.scope-props button:active {
+  background: color-mix(in srgb, var(--text) 24%, var(--menu-surface));
+}
+
+/* A disabled button keeps its rest fill: the dimming is what says disabled,
+   and the app-wide rule that drops it to transparent would make it borderless
+   again, exactly what this section is undoing. */
+.dialog button:disabled,
+.dialog button:disabled:hover,
+.dialog button:disabled:active,
+.scope-props button:disabled,
+.scope-props button:disabled:hover,
+.scope-props button:disabled:active {
+  background: color-mix(in srgb, var(--text) 12%, var(--menu-surface));
+}
+
+/* The confirming action keeps the accent fill; the rules above are later in
+   the cascade than `button.primary` and would otherwise grey it out. */
+.dialog button.primary,
+.dialog button.primary:hover,
+.dialog button.primary:focus-visible,
+.scope-props button.primary,
+.scope-props button.primary:hover,
+.scope-props button.primary:focus-visible {
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+}
+
+.dialog button.primary:active,
+.scope-props button.primary:active {
+  background: color-mix(in srgb, var(--md-primary) 88%, var(--md-on-primary));
 }
 
 /* The Shortcuts dialog: a command-per-row table. A duplicated chord turns the
@@ -947,7 +996,7 @@ button.active,
   position: fixed;
   z-index: 30;
   min-width: 96px;
-  background: var(--md-surface-container-high);
+  background: var(--menu-surface);
   border-radius: var(--md-shape-md);
   padding: 6px 8px;
   text-align: center;
@@ -1552,7 +1601,8 @@ input[type='range'] {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 50;
-  background: var(--md-surface-container-highest);
+  /* A dialog like the rest, so it takes the same neutral floating grey. */
+  background: var(--menu-surface);
   border-radius: var(--md-shape-lg);
   padding: 12px;
   max-height: 85vh;
@@ -1749,7 +1799,7 @@ input[type='range'] {
     max-height: 70vh;
     overflow-y: auto;
     z-index: 38;
-    background: #1e1e1e;
+    background: var(--menu-surface);
     border-radius: var(--md-shape-md);
     padding: 6px;
     box-shadow: var(--md-elevation-2);
@@ -1767,7 +1817,7 @@ input[type='range'] {
   /* An open menu expands in place instead of floating over its own panel:
      nesting one popup inside another leaves no way back on a touch screen.
      The rows keep the panel's background, so their hover and press layers,
-     which are mixed over #1e1e1e, still land right. */
+     which are mixed over --menu-surface, still land right. */
   .menu-group.open .dropdown-menu {
     position: static;
     width: auto;
