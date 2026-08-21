@@ -684,6 +684,34 @@ button.active,
   color: var(--accent);
 }
 
+/* Other Options: five short sections that used to stack into a scroll taller
+   than the panel. The panel widens and the sections flow into columns, one
+   per 250 px of width, so a desktop dialog shows the whole option set at once
+   and a phone drawer still gets a single readable column. `column-width`
+   rather than a fixed count: the break point is the content's, not a media
+   query's, so the layout cannot disagree with the panel's own max-width. */
+.dialog.options-dialog {
+  max-width: 880px;
+}
+
+.options-columns {
+  column-width: 250px;
+  column-gap: 24px;
+}
+
+/* A section split across a column break would put its heading on one column
+   and its controls on the next, so each stays whole. The top margin is zeroed
+   on the first line of every column: `h3`'s own 12 px would otherwise push
+   only the leading section down. */
+.options-columns > section {
+  break-inside: avoid;
+  margin-bottom: 12px;
+}
+
+.options-columns > section > h3:first-child {
+  margin-top: 0;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

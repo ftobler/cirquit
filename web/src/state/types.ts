@@ -233,6 +233,11 @@ export interface AppState {
   setProblem(problem: string | null): void;
   setNotice(notice: string | null): void;
   updateSettings(patch: Partial<SimSettings>): void;
+  /** Puts every setting the Other Options dialog shows back to its default,
+   *  through `updateSettings`, so the app-pref keys persist and the timestep
+   *  keys rebuild exactly as a hand edit would. Settings carry no undo entry,
+   *  so the dialog confirms first. */
+  resetSettings(): void;
   /** White-background on (false) or off (true); see `dark`. */
   setDark(dark: boolean): void;
   openDialog(name: DialogName): void;

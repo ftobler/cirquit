@@ -67,6 +67,7 @@ import {
   GRID_SIZE,
   UNMODELLED_HEADER,
   type CircuitElement,
+  type SimSettings,
 } from '../model/types';
 import type { AppState, Slider, Snapshot, ViewTransform } from './types';
 import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
@@ -312,6 +313,37 @@ function makePlot(id: number, elementId: number | null, value: ScopeValue | null
   const manVPosition = value === 'power' || value === 'charge' ? -100 : 0;
   return { id, elementId, value, manScale: null, manVPosition, acCoupled: false };
 }
+
+/** The settings the Other Options dialog owns, and therefore the ones its
+ *  Reset to Defaults button puts back. Listed rather than derived from
+ *  `DEFAULT_SETTINGS` so a new setting has to be opted in: a key the dialog
+ *  does not show must not be reset from behind it. */
+const RESETTABLE_SETTINGS = [
+  'timeStep',
+  'stepsPerFrame',
+  'voltageRange',
+  'powerRange',
+  'currentSpeed',
+  'minTimeStep',
+  'adaptiveTimeStep',
+  'autoDC',
+  'showCurrent',
+  'showValues',
+  'showVoltageColor',
+  'showPowerColor',
+  'showGrid',
+  'conventional',
+  'showCrosshair',
+  'positiveColor',
+  'negativeColor',
+  'neutralColor',
+  'selectionColor',
+  'currentColor',
+  'valueFontSize',
+  'shortDecimalDigits',
+  'decimalDigits',
+  'wheelSensitivity',
+] as const satisfies readonly (keyof SimSettings)[];
 
 function defaultTrigger(): ScopeTrigger {
   return { mode: 'freeRun', edge: 'rising', level: 0 };
@@ -584,6 +616,17 @@ function createAppStore() {
         patch.autoDC !== undefined;
       return { settings: merged, ...(reload ? bumpRevision(s) : {}) };
     });
+  },
+
+  resetSettings: () => {
+    // Only what the Other Options dialog shows. `editable`, `mouseWheelEdit`,
+    // the symbol standards and `showHitboxes` live behind other menus, and a
+    // reset here must not silently re-enable editing on a circuit someone
+    // published read-only.
+    const patch = Object.fromEntries(
+      RESETTABLE_SETTINGS.map((k) => [k, DEFAULT_SETTINGS[k]]),
+    ) as Partial<SimSettings>;
+    get().updateSettings(patch);
   },
 
   select: (ids) => set({ selectedIds: ids }),

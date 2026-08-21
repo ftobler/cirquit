@@ -1070,6 +1070,66 @@ describe('updateSettings reload classification', () => {
   });
 });
 
+describe('resetSettings', () => {
+  it('puts the dialog\'s settings back to their defaults', () => {
+    useStore.getState().updateSettings({
+      timeStep: 1e-4,
+      stepsPerFrame: 320,
+      voltageRange: 20,
+      showGrid: true,
+      showValues: false,
+      conventional: false,
+      positiveColor: '#ff0000',
+      wheelSensitivity: 4,
+      valueFontSize: 20,
+    });
+
+    useStore.getState().resetSettings();
+
+    const s = useStore.getState().settings;
+    expect(s.timeStep).toBe(DEFAULT_SETTINGS.timeStep);
+    expect(s.stepsPerFrame).toBe(DEFAULT_SETTINGS.stepsPerFrame);
+    expect(s.voltageRange).toBe(DEFAULT_SETTINGS.voltageRange);
+    expect(s.showGrid).toBe(DEFAULT_SETTINGS.showGrid);
+    expect(s.showValues).toBe(DEFAULT_SETTINGS.showValues);
+    expect(s.conventional).toBe(DEFAULT_SETTINGS.conventional);
+    expect(s.positiveColor).toBeNull();
+    expect(s.wheelSensitivity).toBe(DEFAULT_SETTINGS.wheelSensitivity);
+    expect(s.valueFontSize).toBe(DEFAULT_SETTINGS.valueFontSize);
+  });
+
+  it('leaves the settings the dialog does not show alone', () => {
+    // Read-only mode, the symbol standards, the wheel stepper and the hitbox
+    // overlay live behind other menus: a reset in Other Options must not reach
+    // across and re-enable editing on a circuit shared read-only.
+    useStore.getState().updateSettings({
+      editable: false,
+      euroResistors: false,
+      euroGates: false,
+      mouseWheelEdit: false,
+      showHitboxes: true,
+      iterCount: 42,
+    });
+
+    useStore.getState().resetSettings();
+
+    const s = useStore.getState().settings;
+    expect(s.editable).toBe(false);
+    expect(s.euroResistors).toBe(false);
+    expect(s.euroGates).toBe(false);
+    expect(s.mouseWheelEdit).toBe(false);
+    expect(s.showHitboxes).toBe(true);
+    expect(s.iterCount).toBe(42);
+  });
+
+  it('rebuilds once, because the timestep is among the keys it restores', () => {
+    useStore.getState().updateSettings({ timeStep: 1e-4 });
+    const before = useStore.getState().revision;
+    useStore.getState().resetSettings();
+    expect(useStore.getState().revision - before).toBe(1);
+  });
+});
+
 describe('euroResistors persistence', () => {
   it('survives a simulated reload: updateSettings stores it, re-init reads it', () => {
     // Node has no localStorage, so inject one for the duration, exactly the

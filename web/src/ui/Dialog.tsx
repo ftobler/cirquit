@@ -11,6 +11,9 @@ interface DialogProps {
   children: ReactNode;
   /** The button row (OK/Cancel); rendered below the body. */
   actions?: ReactNode;
+  /** Extra class on the panel, for a dialog that needs its own width or
+   *  layout (Other Options widens to hold its column grid). */
+  className?: string;
   /** Takes over Escape while an inline editor inside the dialog owns the key,
    *  so the press cancels that editor instead of closing the dialog (the
    *  Subcircuit Manager's rename row). It has to be an override on this one
@@ -24,7 +27,7 @@ interface DialogProps {
   onEscape?: () => void;
 }
 
-export function Dialog({ title, onClose, children, actions, onEscape }: DialogProps) {
+export function Dialog({ title, onClose, children, actions, className, onEscape }: DialogProps) {
   // Focus management for the modal: moves focus onto the panel when no child
   // autofocuses (a child's `autoFocus` runs first and wins), traps Tab, and
   // returns focus to the opener on close. The trap replaces the old inline
@@ -44,7 +47,7 @@ export function Dialog({ title, onClose, children, actions, onEscape }: DialogPr
     <div className="dialog-backdrop" onPointerDown={onClose}>
       <div
         ref={panelRef}
-        className="dialog"
+        className={className ? `dialog ${className}` : 'dialog'}
         role="dialog"
         aria-modal="true"
         aria-label={title}
