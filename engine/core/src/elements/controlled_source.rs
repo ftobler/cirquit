@@ -107,6 +107,14 @@ pub struct ExprSource {
     /// The value the element stamped last step, re-reported by
     /// `calculate_current` and zeroed for a broken source.
     pub output: f64,
+    /// True until the first `do_step` after a reset: the very first solve
+    /// starts from the artificial zero state, where a clamped expression sits
+    /// exactly on its (unsolved) limits and the secant stamps a spurious
+    /// coupling through them, which can blow the first solve into saturation.
+    /// The first iteration stamps the source at its current value with no
+    /// couplings, letting the solver establish the operating point before the
+    /// derivatives start.
+    pub primed: bool,
 }
 
 impl ExprSource {
@@ -120,6 +128,7 @@ impl ExprSource {
             state: ExprState::new(),
             last_volts: vec![0.0; input_count],
             output: 0.0,
+            primed: true,
         }
     }
 
@@ -128,5 +137,6 @@ impl ExprSource {
         self.state.reset();
         self.last_volts.fill(0.0);
         self.output = 0.0;
+        self.primed = true;
     }
 }

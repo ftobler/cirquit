@@ -106,16 +106,24 @@ impl Element for Vcvs {
                 s.not_converged();
             }
             let mut rs = v0;
-            for i in 0..self.cs.input_count {
-                // The constraint row picks up `-dx*V(input)`; the constant
-                // part rides in the right-hand side (VCVSElm.java:86-88).
-                let dx = input_derivative(expr, &mut self.cs.state, &self.cs.last_volts, i);
-                let row = s.vs_row(self.base.vs_base);
-                if let Some(c) = s.node_row(self.base.nodes[i]) {
-                    s.raw(row, c, -dx);
+            // The very first solve of a run starts from the reset state, where
+            // a clamped expression sits exactly on its unsolved limits and the
+            // secant stamps a spurious coupling through them; stamp the source
+            // at its value with no couplings until the operating point is
+            // established (see `ExprSource::primed`).
+            if !self.cs.primed {
+                for i in 0..self.cs.input_count {
+                    // The constraint row picks up `-dx*V(input)`; the constant
+                    // part rides in the right-hand side (VCVSElm.java:86-88).
+                    let dx = input_derivative(expr, &mut self.cs.state, &self.cs.last_volts, i);
+                    let row = s.vs_row(self.base.vs_base);
+                    if let Some(c) = s.node_row(self.base.nodes[i]) {
+                        s.raw(row, c, -dx);
+                    }
+                    rs -= dx * self.base.volts[i];
                 }
-                rs -= dx * self.base.volts[i];
             }
+            self.cs.primed = false;
             s.raw_rhs(s.vs_row(self.base.vs_base), rs);
             self.cs.output = v0;
         }

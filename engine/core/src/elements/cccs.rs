@@ -161,19 +161,24 @@ impl Element for Cccs {
             }
             let v0 = expr.eval(&self.cs.state);
             let mut rs = v0;
-            for i in 0..self.cs.input_count {
-                let cur = self.base.vs_currents[i];
-                // dv clamped to the distance from the previous iterate, the
-                // same floor the voltage-controlled sources use
-                // (CCCSElm.java:126-128).
-                let mut dv = cur - self.cs.last_volts[i];
-                if dv.abs() < 1e-6 {
-                    dv = 1e-6;
+            // The first solve of a run starts from the reset state; see
+            // `ExprSource::primed` for why its couplings are skipped.
+            if !self.cs.primed {
+                for i in 0..self.cs.input_count {
+                    let cur = self.base.vs_currents[i];
+                    // dv clamped to the distance from the previous iterate, the
+                    // same floor the voltage-controlled sources use
+                    // (CCCSElm.java:126-128).
+                    let mut dv = cur - self.cs.last_volts[i];
+                    if dv.abs() < 1e-6 {
+                        dv = 1e-6;
+                    }
+                    let dx = current_derivative(expr, &mut self.cs.state, i, cur, dv);
+                    s.cccs(om, op, self.base.vs_base + i, dx);
+                    rs -= dx * cur;
                 }
-                let dx = current_derivative(expr, &mut self.cs.state, i, cur, dv);
-                s.cccs(om, op, self.base.vs_base + i, dx);
-                rs -= dx * cur;
             }
+            self.cs.primed = false;
             s.current_source(om, op, rs);
             self.cs.output = v0;
         }

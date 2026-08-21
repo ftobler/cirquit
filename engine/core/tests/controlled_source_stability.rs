@@ -325,27 +325,28 @@ fn cccs_dadt_feedback_runs_dynamically() {
 /// `cs-opamprail.txt`: a non-inverting amplifier built from a gain-1000 VCVS
 /// clamped to a +/-10 V rail pair, `clamp((a-b)*1000, d, c)`.
 ///
-/// This is the port's remaining `cs-*` corpus failure, and the cause is not the
-/// clamp itself but the secant derivative around it. `VCVSElm.doStep` slopes
-/// each input as `(expr(v) - expr(v - dv))/dv` with `dv` the distance from the
-/// previous iterate (VCVSElm.java:71-83, ported in
-/// `controlled_source::input_derivative`). Once the amplifier is driven past a
-/// rail both sample points sit in saturation, the slope collapses to the
-/// `1e-6` floor, and the linearised source becomes a constant. Newton then
-/// solves the feedback divider against a constant `-10`, lands at `+3.33 V` on
-/// the inverting input, saturates the other way, and flip-flops between the
-/// rails forever. Upstream hits the same limit cycle in `OpAmpElm.doStep` and
-/// breaks it with randomised hysteresis (`app.getrand(4) == 1`,
-/// OpAmpElm.java:176-181); `VCVSElm` has no equivalent, so a fixed-step run
-/// exhausts its Newton budget.
+/// This used to be the port's remaining `cs-*` corpus failure, a Newton limit
+/// cycle on the hard clamp. `VCVSElm.doStep` slopes each input as
+/// `(expr(v) - expr(v - dv))/dv` with `dv` the distance from the previous
+/// iterate (VCVSElm.java:71-83, ported in
+/// `controlled_source::input_derivative`). The very first solve starts from
+/// the reset state, where the rail inputs read 0 and the clamped expression
+/// sits exactly on its limits, so the secant stamps a spurious coupling
+/// through the limits (`dx = +1` on the `c` input) that blows the first solve
+/// into saturation. Once past a rail both sample points sit in the flat
+/// region, the slope collapses, and Newton flip-flops between the rails
+/// forever. Upstream breaks the same limit cycle in `OpAmpElm.doStep` with
+/// randomised hysteresis (`app.getrand(4) == 1`, OpAmpElm.java:176-181), which
+/// a generic expression source has no equivalent for.
 ///
-/// The adaptive timestep is what settles it: halving the step shrinks the
-/// per-iteration excursion until the two secant samples straddle the knee
-/// again. `cs-opamprail.txt`'s own header leaves flag bit 64 clear, so the
-/// corpus runs it fixed-step and it fails there; this pins the behaviour the
-/// engine does have, and that the clamp maths is right on both sides of it.
+/// The port's fix is to stamp the controlled sources at their current value
+/// with no couplings for the first solve after a reset (`ExprSource::primed`):
+/// the solver establishes the operating point, the rail inputs stop reading
+/// zero, and the next iteration's secant sees the clamp limits where they
+/// really are. The fixed-step run then converges, and the adaptive path is
+/// unchanged. This pins the clamp maths on both sides of the knee.
 #[test]
-fn clamped_high_gain_amplifier_needs_the_adaptive_step() {
+fn clamped_high_gain_amplifier_converges_fixed_step() {
     let elements = || {
         vec![
             elm(
@@ -392,21 +393,34 @@ fn clamped_high_gain_amplifier_needs_the_adaptive_step() {
         ]
     };
 
-    // Fixed step: the saturation flip-flop, still the corpus failure.
+    // Fixed step: converges now, where the pre-fix engine burned its whole
+    // Newton budget on the saturation flip-flop.
     let fixed = &mut build(elements(), opts_budget(5e-6, false, 1000));
     let report = fixed.run(100);
     assert!(
-        !report.converged,
-        "the fixed-step run converged; cs-opamprail.txt can leave \
-         DIAGNOSED_SIM_FAILURES"
+        report.converged,
+        "fixed-step run did not converge: {:?}",
+        report.error
     );
-
-    // Adaptive step: converges, and the clamp is exact on both sides.
-    let c = &mut build(elements(), adaptive_opts(5e-6, 5e-11, 1000));
-    // 600 steps of 5 us is 3 ms of the 40 Hz sine, still inside the linear
+    // 100 steps of 5 us is 0.5 ms of the 40 Hz sine, still inside the linear
     // region; the closed-loop gain is 3000/1003 = 2.991 with the 1000x
     // forward gain, not the ideal 3.
-    let report = c.run(600);
+    let a = v_of(fixed, VCVS_POSTS, 0);
+    let vout = v_of(fixed, VCVS_POSTS, 4) - v_of(fixed, VCVS_POSTS, 5);
+    assert!(
+        close(vout, 2.991 * a, 0.01),
+        "fixed-step vout {} did not track the 2.991a amplifier gain for a = {}",
+        vout,
+        a
+    );
+
+    // The adaptive path is unchanged and gives the same linear region. The
+    // primed first stamp means it converges without the initial halving run,
+    // so 400 steps is a full 2 ms in: 5*sin(0.503) = 2.41 V on the input,
+    // still inside the linear region where the closed-loop gain is
+    // 3000/1003 = 2.991 with the 1000x forward gain, not the ideal 3.
+    let c = &mut build(elements(), adaptive_opts(5e-6, 5e-11, 1000));
+    let report = c.run(400);
     assert!(
         report.converged,
         "adaptive linear region did not converge: {:?}",
@@ -416,12 +430,12 @@ fn clamped_high_gain_amplifier_needs_the_adaptive_step() {
     let vout = v_of(c, VCVS_POSTS, 4) - v_of(c, VCVS_POSTS, 5);
     assert!(
         close(vout, 2.991 * a, 0.01),
-        "vout {} did not track the 2.991a amplifier gain for a = {}",
+        "adaptive vout {} did not track the 2.991a amplifier gain for a = {}",
         vout,
         a
     );
 
-    // By 1000 steps (5 ms) the input is past 3.34 V and the output is pinned
+    // By 800 steps (4 ms) the input is past 3.34 V and the output is pinned
     // at the rail the `c` input carries, exactly, like upstream's hard clamp.
     let report = c.run(400);
     assert!(

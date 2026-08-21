@@ -131,13 +131,18 @@ impl Element for Vccs {
             }
             let v0 = -expr.eval(&self.cs.state);
             let mut rs = v0;
-            for i in 0..self.cs.input_count {
-                // The slope is d(-expr)/dv; `input_derivative` returns
-                // d(expr)/dv, so negate.
-                let dx = -input_derivative(expr, &mut self.cs.state, &self.cs.last_volts, i);
-                s.vccs(cp, cm, self.base.nodes[i], GROUND, dx);
-                rs -= dx * self.base.volts[i];
+            // The first solve of a run starts from the reset state; see
+            // `ExprSource::primed` for why its couplings are skipped.
+            if !self.cs.primed {
+                for i in 0..self.cs.input_count {
+                    // The slope is d(-expr)/dv; `input_derivative` returns
+                    // d(expr)/dv, so negate.
+                    let dx = -input_derivative(expr, &mut self.cs.state, &self.cs.last_volts, i);
+                    s.vccs(cp, cm, self.base.nodes[i], GROUND, dx);
+                    rs -= dx * self.base.volts[i];
+                }
             }
+            self.cs.primed = false;
             s.current_source(cp, cm, rs);
             self.cs.output = -v0;
         }

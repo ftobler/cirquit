@@ -128,18 +128,23 @@ impl Element for Ccvs {
             }
             let v0 = expr.eval(&self.cs.state);
             let mut rs = v0;
-            for i in 0..self.cs.input_count {
-                let cur = self.base.vs_currents[i];
-                // The output source row picks up `-dx*I(sense)`; the constant
-                // part rides in the right-hand side (CCVSElm.java:132-139).
-                // The CCVS fixes the derivative perturbation at 1e-9
-                // (CCVSElm.java:124).
-                let dx = current_derivative(expr, &mut self.cs.state, i, cur, 1e-9);
-                let row = s.vs_row(self.base.vs_base + self.cs.input_count);
-                let col = s.vs_row(self.base.vs_base + i);
-                s.raw(row, col, -dx);
-                rs -= dx * cur;
+            // The first solve of a run starts from the reset state; see
+            // `ExprSource::primed` for why its couplings are skipped.
+            if !self.cs.primed {
+                for i in 0..self.cs.input_count {
+                    let cur = self.base.vs_currents[i];
+                    // The output source row picks up `-dx*I(sense)`; the constant
+                    // part rides in the right-hand side (CCVSElm.java:132-139).
+                    // The CCVS fixes the derivative perturbation at 1e-9
+                    // (CCVSElm.java:124).
+                    let dx = current_derivative(expr, &mut self.cs.state, i, cur, 1e-9);
+                    let row = s.vs_row(self.base.vs_base + self.cs.input_count);
+                    let col = s.vs_row(self.base.vs_base + i);
+                    s.raw(row, col, -dx);
+                    rs -= dx * cur;
+                }
             }
+            self.cs.primed = false;
             s.raw_rhs(s.vs_row(self.base.vs_base + self.cs.input_count), rs);
         }
         for i in 0..self.cs.input_count {
