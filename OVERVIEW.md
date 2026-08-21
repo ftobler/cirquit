@@ -172,10 +172,10 @@ fetch it).
   `voltDiff` and series resistance, inductor current, junction voltages, relay
   and logic-latch state. Event-driven (save and rebuild only), so it adds no
   per-frame crossing.
-- 449 Rust tests, of which 381 are the end-to-end circuit checks against
+- 459 Rust tests, of which 386 are the end-to-end circuit checks against
   analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
-   was split into topic files), plus 67 in-module unit tests and one doctest.
-   2343 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
+   was split into topic files), plus 72 in-module unit tests and one doctest.
+   2344 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
   tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
