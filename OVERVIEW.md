@@ -144,8 +144,9 @@ fetch it).
 
 - MNA solver: dense LU with partial pivoting and row scaling, cached
   factorisation, singularity detection. Closures of 150 rows or more route to
-  the sparse left-looking LU (column partial pivoting, monotone pair set)
-  automatically, matching upstream's `solverType` threshold.
+  the sparse left-looking LU (column partial pivoting, monotone pair set,
+  minimum-degree column ordering) automatically, matching upstream's
+  `solverType` threshold.
 - Constant-row elimination for nonlinear dense closures: rows `do_step` never
   rewrites are factored once per build and each Newton iteration solves a
   small reduced system instead of refactoring the whole matrix (see
@@ -197,10 +198,18 @@ fetch it).
   `simplify` SimOptions flag (on by default) disables it for tests. Sparse
   closures are deliberately not simplified: their refactor is already cheap
   and the dense reduced system would not pay for itself.
-- **Sparse matrix ordering.** The sparse LU has no column ordering, so it
-  fills on a dense 2D mesh (`O(n²)` for the fan families it was tuned on, more
-  on a true grid). A benchmark-gated minimum-degree ordering is the noted
-  follow-up; the thousands-of-nodes goal is met without it.
+- **Sparse matrix ordering** is a minimum-degree column order over the
+  symmetric pattern of `A + A'` (`engine/core/src/ordering.rs`), computed once
+  per structural change alongside the CSC pattern and reused by every factor
+  after it. Degree buckets with lazy deletion pick each step's node, so the
+  pass costs about what the pattern build does rather than the `O(n²)` a
+  rescan-per-step would; a pattern whose cliques outgrow a fill budget
+  abandons the order and hands back the identity, which is exactly the old
+  behaviour. The wins on the benchmark rows: the 30x30 mesh factors 910,598
+  flops in the natural order and 239,849 ordered (3.8x), and the fan families
+  halve (100x100: 19,600 to 9,800). No supernodes, no mass elimination, no
+  column-count refinement: AMD's speedups matter at a scale a per-closure
+  matrix of a few thousand rows never reaches.
 - **Device model libraries.** The built-in diode, transistor and MOSFET/JFET
   model tables are ported (`web/src/model/deviceModels.ts`): a named model
   with no `34`/`32` line resolves from the table at load, the file's model

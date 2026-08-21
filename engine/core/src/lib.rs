@@ -34,6 +34,7 @@ pub mod element;
 pub mod elements;
 pub mod expr;
 pub mod matrix;
+mod ordering;
 pub mod scope;
 mod simplified;
 pub mod sparse;

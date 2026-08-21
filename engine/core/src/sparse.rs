@@ -158,6 +158,10 @@ pub(crate) struct SparseLU {
     u_values: Vec<f64>,
     /// `pinv[row]` = the pivot column where `row` is the diagonal of L and U.
     pinv: Vec<usize>,
+    /// Fill-reducing column order: step `k` of the factor eliminates A's
+    /// column `q[k]`. Recomputed with the pattern, so a value-only change
+    /// keeps it. The identity when the ordering declines the pattern.
+    q: Vec<usize>,
     /// Scratch: the forward-substitution vector for the current column.
     x: Vec<f64>,
     /// Scratch: DFS stack and reach, rows `top..n` after each column pass.
@@ -184,6 +188,7 @@ impl SparseLU {
             u_row_ids: Vec::new(),
             u_values: Vec::new(),
             pinv: vec![usize::MAX; n],
+            q: (0..n).collect(),
             x: vec![0.0; n],
             xi: vec![0; n],
             w: vec![0; 2 * n],
@@ -223,6 +228,11 @@ impl SparseLU {
                 cursor[c] += 1;
             }
         }
+        // The elimination order is a property of the pattern, so it is
+        // recomputed exactly here, with it. Every factor afterwards, and every
+        // Newton iteration inside them, reuses the same order.
+        let (col_ptr, row_ids) = (&self.a_col_ptr, &self.a_row_ids);
+        self.q = crate::ordering::min_degree_order(n, |c| &row_ids[col_ptr[c]..col_ptr[c + 1]]);
         self.pattern_version = matrix.version;
     }
 
@@ -260,8 +270,10 @@ impl SparseLU {
         for k in 0..n {
             // `l_col_ptr[k]` must hold the start of column k before the reach,
             // whose DFS reads `l_col_ptr[pinv[row] + 1]` (up to k) for the
-            // already-pivoted rows of the reach.
-            let top = self.solve_col_b(matrix, k);
+            // already-pivoted rows of the reach. Step k eliminates A's column
+            // `q[k]`: the L and U columns stay in step order, so only the
+            // column read from A moves, and the solve unpermutes at the end.
+            let top = self.solve_col_b(matrix, self.q[k]);
             let mut ipiv = usize::MAX;
             let mut largest = 0.0f64;
             for &i in &self.xi[top..n] {
@@ -466,6 +478,9 @@ pub struct SparseSystem {
     lu: SparseLU,
     factored: bool,
     pub x: Vec<f64>,
+    /// Scratch for the triangular solves, which work in elimination-step
+    /// order; `solve` scatters it into `x` through the column order.
+    z: Vec<f64>,
 }
 
 impl Default for SparseSystem {
@@ -484,6 +499,7 @@ impl SparseSystem {
             lu: SparseLU::new(0),
             factored: false,
             x: Vec::new(),
+            z: Vec::new(),
         }
     }
 
@@ -503,6 +519,7 @@ impl SparseSystem {
         self.lu = SparseLU::new(n);
         self.factored = false;
         self.x = vec![0.0; n];
+        self.z = vec![0.0; n];
         Ok(())
     }
 
@@ -580,15 +597,21 @@ impl SparseSystem {
             return Ok(());
         }
         // x = P b: the row permutation the factorization's pivot choices
-        // imply, `Pb[j] = b[pinv^-1(j)]`. The factors satisfy L U = P A, so
-        // solving L U x = P b yields the natural-order solution directly, the
-        // same way the dense path permutes only `b`.
+        // imply, `Pb[j] = b[pinv^-1(j)]`. The factors satisfy `L U = P A Q`,
+        // so the triangular solves yield `z = Q^-1 x`, the solution in
+        // elimination-step order.
         let pinv = &self.lu.pinv;
         for (k, &p) in pinv.iter().enumerate() {
-            self.x[p] = self.b[k];
+            self.z[p] = self.b[k];
         }
-        self.lu.solve_l(&mut self.x);
-        self.lu.solve_u(&mut self.x);
+        self.lu.solve_l(&mut self.z);
+        self.lu.solve_u(&mut self.z);
+        // x = Q z: step k solved for A's column `q[k]`, so that is the unknown
+        // the k-th entry belongs to. With no ordering `q` is the identity and
+        // this is a plain copy.
+        for (k, &col) in self.lu.q.iter().enumerate() {
+            self.x[col] = self.z[k];
+        }
         for v in self.x.iter() {
             if !v.is_finite() {
                 return Err(SolveError::Singular);
@@ -666,6 +689,86 @@ mod tests {
         assert!((sys.x[0] - 3.0).abs() < 1e-12);
         assert!((sys.x[1] - 1.5).abs() < 1e-12);
         assert!((sys.x[2] - 1.5).abs() < 1e-12);
+    }
+
+    /// Stamps an `n` by `n` resistor mesh of 1 ohm edges: the shape whose
+    /// natural elimination order fills, and the reason the column ordering
+    /// exists. Row `y*n + x` is the node at `(x, y)`, and every node carries a
+    /// 100 ohm leak to ground so the system is non-singular, which is what a
+    /// real mesh's ground return does.
+    fn stamp_mesh<F: FnMut(usize, usize, f64)>(n: usize, mut add: F) {
+        let at = |x: usize, y: usize| y * n + x;
+        for y in 0..n {
+            for x in 0..n {
+                let i = at(x, y);
+                add(i, i, 0.01);
+                for (dx, dy) in [(1usize, 0usize), (0, 1)] {
+                    if x + dx >= n || y + dy >= n {
+                        continue;
+                    }
+                    let j = at(x + dx, y + dy);
+                    add(i, i, 1.0);
+                    add(j, j, 1.0);
+                    add(i, j, -1.0);
+                    add(j, i, -1.0);
+                }
+            }
+        }
+    }
+
+    fn make_mesh(n: usize) -> SparseSystem {
+        let mut sys = SparseSystem::new();
+        sys.resize(n * n).unwrap();
+        stamp_mesh(n, |r, c, v| sys.add(r, c, v));
+        sys.add_rhs(0, 1.0);
+        sys
+    }
+
+    #[test]
+    fn the_column_ordering_cuts_the_mesh_fill_and_keeps_the_answer() {
+        // The ordering is only worth its pass if it changes the order and the
+        // answer survives it, so this pins both: the mesh order is not the
+        // identity, its factor is far cheaper than the natural order's, and
+        // the solution still matches the dense backend to 1e-9.
+        let n = 24;
+        let mut sparse = make_mesh(n);
+        sparse.factor().unwrap();
+        let q = sparse.lu.q.clone();
+        assert_eq!(q.len(), n * n);
+        let mut seen = vec![false; n * n];
+        for &v in &q {
+            assert!(!seen[v], "column {v} ordered twice");
+            seen[v] = true;
+        }
+        assert_ne!(q, (0..n * n).collect::<Vec<_>>(), "order was the identity");
+        let ordered_flops = sparse.flops();
+
+        sparse.solve().unwrap();
+        let mut dense = crate::matrix::LinearSystem::new();
+        dense.resize(n * n).unwrap();
+        stamp_mesh(n, |r, c, v| dense.add(r, c, v));
+        dense.add_rhs(0, 1.0);
+        dense.solve().unwrap();
+        for i in 0..n * n {
+            assert!(
+                (sparse.x[i] - dense.x[i]).abs() < 1e-9,
+                "row {i}: sparse {} dense {}",
+                sparse.x[i],
+                dense.x[i]
+            );
+        }
+
+        // The same matrix factored in the natural order, for the comparison
+        // the ordering is justified by.
+        let mut natural = make_mesh(n);
+        natural.lu.symbolic(&natural.matrix);
+        natural.lu.q = (0..n * n).collect();
+        natural.lu.numeric(&natural.matrix).unwrap();
+        assert!(
+            ordered_flops * 2 < natural.flops(),
+            "ordered factor was {ordered_flops} flops, natural {}: expected less than half",
+            natural.flops()
+        );
     }
 
     #[test]

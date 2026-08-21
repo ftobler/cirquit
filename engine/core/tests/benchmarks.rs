@@ -231,9 +231,11 @@ fn bench_linear_circuits_keep_the_factors_once_property() {
 fn bench_sparse_beats_dense_on_the_40x40_fan() {
     // Re-homes the old `sparse_factor_flops_are_much_smaller_than_dense` ratio
     // assertion so the expensive dense factor runs exactly once in the gate.
-    // The 40x40 fan (1561 node rows plus the source row) factors 11,289x
-    // cheaper on the sparse path, and both paths converge to the same 0.5 V
-    // far corners.
+    // The 40x40 fan (1561 node rows plus the source row) factors more than
+    // 20,000x cheaper on the sparse path, and both paths converge to the same
+    // 0.5 V far corners. The minimum-degree column order halved the sparse
+    // half of that: each chain is a path, and eliminating a path from its far
+    // end never fills.
     let sparse = row(
         "fan 40x40 (Sparse)",
         fan(40, 40, 20.0, 1),
@@ -265,8 +267,8 @@ fn bench_sparse_beats_dense_on_the_40x40_fan() {
         dense.build_flops
     );
     assert!(
-        (2000.0..6000.0).contains(&(sparse.build_flops as f64)),
-        "sparse 40x40 factor was {} flops, expected ~3,040",
+        (1000.0..3000.0).contains(&(sparse.build_flops as f64)),
+        "sparse 40x40 factor was {} flops, expected ~1,520",
         sparse.build_flops
     );
     assert!(sparse.converged && dense.converged);
@@ -309,8 +311,8 @@ fn bench_thousands_of_nodes_fit_the_budget() {
     assert_eq!(r.node_count, 9902);
     assert_eq!(r.closure_flops.iter().sum::<u64>(), r.build_flops);
     assert!(
-        (10_000.0..10_000_000.0).contains(&(r.build_flops as f64)),
-        "the 100x100 fan factored {} flops, expected ~19,600",
+        (5_000.0..10_000_000.0).contains(&(r.build_flops as f64)),
+        "the 100x100 fan factored {} flops, expected ~9,800",
         r.build_flops
     );
     assert!(r.converged, "did not converge: {:?}", r.circuit.error());
@@ -325,10 +327,11 @@ fn bench_thousands_of_nodes_fit_the_budget() {
 
 #[test]
 fn bench_mesh_30x30_stays_within_fill_budget() {
-    // The true 2D mesh the fan families were not: without column ordering it
-    // fills, but stays inside the 4e6 flop guard. The two analytic facts pin
-    // the geometry: the driven corner reads 10 V, and by the 180 degree
-    // symmetry of the drive the center reads exactly 5 V.
+    // The true 2D mesh the fan families were not, and the shape the column
+    // ordering exists for: the natural order fills to ~910k flops, the
+    // minimum-degree order to ~240k. The two analytic facts pin the geometry:
+    // the driven corner reads 10 V, and by the 180 degree symmetry of the
+    // drive the center reads exactly 5 V.
     let n = 30;
     let r = row("mesh 30x30 (Auto)", resistor_mesh(n), opts(1e-5, false), 10);
     assert_eq!(r.closure_backends, vec![SolverBackend::Sparse]);
@@ -336,8 +339,8 @@ fn bench_mesh_30x30_stays_within_fill_budget() {
     assert_eq!(r.node_count, 961);
     assert_eq!(r.closure_flops.iter().sum::<u64>(), r.build_flops);
     assert!(
-        (100_000.0..4_000_000.0).contains(&(r.build_flops as f64)),
-        "the 30x30 mesh factored {} flops, expected ~800k",
+        (50_000.0..500_000.0).contains(&(r.build_flops as f64)),
+        "the 30x30 mesh factored {} flops, expected ~240k",
         r.build_flops
     );
     assert!(r.converged, "did not converge: {:?}", r.circuit.error());
