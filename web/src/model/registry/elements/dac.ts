@@ -71,7 +71,7 @@ export const DAC_DEF: ElementDef = {
   dump: (e) => chipDump(e, dacPins(e), true),
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 2, max: 30 },
+    { name: 'bits', label: '# of Bits', min: 2, max: 30, integer: true },
     // Upstream's DAC dialog skips the high logic voltage (isDigitalChip is
     // false), but the threshold it sets lives in the file format under
     // FLAG_CUSTOM_VOLTAGE, so it is exposed here like every other chip.

@@ -320,7 +320,7 @@ function gateDef(
     },
     dump: writeParams(['inputCount', 'lastOutputVoltage', 'highVoltage']),
     fields: [
-      { name: 'inputCount', label: '# of Inputs', min: 1, max: 8 },
+      { name: 'inputCount', label: '# of Inputs', min: 1, max: 8, integer: true },
       { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
       { name: 'schmitt', label: 'Schmitt inputs', type: 'bool', flag: GATE_SCHMITT },
       { name: 'invertInputs', label: 'Invert inputs', type: 'bool', flag: GATE_INVERT_INPUTS },

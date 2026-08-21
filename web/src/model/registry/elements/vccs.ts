@@ -12,7 +12,7 @@
  */
 
 import { chipBodyRect, chipDumpFlags, chipPosts, drawChip } from './dFlipFlop';
-import { csDump, csParse, csPins, csSizeY, CS_FIELDS } from './vcvs';
+import { csDump, csParse, csPins, csSizeY, CS_FIELDS, DEFAULT_EXPR } from './vcvs';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 function drawVccs(g: DrawContext, e: CircuitElement): void {
@@ -30,6 +30,10 @@ export const VCCS_DEF: ElementDef = {
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { inputCount: 2 },
+  // A fresh part carries upstream's constructor expression, so the Output
+  // Function box opens filled in and the source does something on drop
+  // instead of evaluating an empty string (VCCSElm.java:45).
+  defaultText: DEFAULT_EXPR,
   parse: csParse,
   dump: csDump,
   dumpFlags: chipDumpFlags,

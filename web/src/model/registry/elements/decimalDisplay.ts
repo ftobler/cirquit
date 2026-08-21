@@ -164,7 +164,7 @@ export const DECIMAL_DISPLAY_DEF: ElementDef = {
   },
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 1, max: 8 },
+    { name: 'bits', label: '# of Bits', min: 1, max: 8, integer: true },
     {
       name: 'displayMode',
       label: 'Display Mode',

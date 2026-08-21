@@ -92,7 +92,7 @@ export const FULL_ADDER_DEF: ElementDef = {
   },
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 1, max: 16 },
+    { name: 'bits', label: '# of Bits', min: 1, max: 16, integer: true },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
   ],
   draw: drawFullAdder,

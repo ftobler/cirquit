@@ -130,8 +130,8 @@ export const LED_ARRAY_DEF: ElementDef = {
   ],
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'sizeX', label: 'Grid Width', min: 2, max: 16 },
-    { name: 'sizeY', label: 'Grid Height', min: 2, max: 16 },
+    { name: 'sizeX', label: 'Grid Width', min: 2, max: 16, integer: true },
+    { name: 'sizeY', label: 'Grid Height', min: 2, max: 16, integer: true },
   ],
   draw: drawLedArray,
 };

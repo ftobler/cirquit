@@ -226,7 +226,7 @@ export const INSTRUCTION_DISPLAY_DEF: ElementDef = {
   },
   dump: (e) => [busWidth(e), e.params.threshold ?? 2.5, e.text ?? DEFAULT_LOOKUP],
   fields: [
-    { name: 'busWidth', label: 'Bus Width', min: 1, max: 32 },
+    { name: 'busWidth', label: 'Bus Width', min: 1, max: 32, integer: true },
     { name: 'threshold', label: 'Threshold Voltage', unit: 'V' },
     { name: 'lookup', label: 'Lookup Table', type: 'text', target: 'text' },
   ],

@@ -94,7 +94,7 @@ export function csDump(e: CircuitElement): (string | number)[] {
 
 /** Both flavours expose the input count and the output function string. */
 export const CS_FIELDS = [
-  { name: 'inputCount', label: '# of Inputs', min: 1, max: 8 },
+  { name: 'inputCount', label: '# of Inputs', min: 1, max: 8, integer: true },
   { name: 'exprString', label: 'Output Function', type: 'text' as const, target: 'text' as const },
 ];
 
@@ -113,6 +113,10 @@ export const VCVS_DEF: ElementDef = {
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { inputCount: 2 },
+  // A fresh part carries upstream's constructor expression, so the Output
+  // Function box opens filled in and the source does something on drop
+  // instead of evaluating an empty string (VCCSElm.java:45).
+  defaultText: DEFAULT_EXPR,
   parse: csParse,
   dump: csDump,
   dumpFlags: chipDumpFlags,

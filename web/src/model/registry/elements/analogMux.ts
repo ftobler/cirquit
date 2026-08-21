@@ -99,7 +99,7 @@ export const ANALOG_MUX_DEF: ElementDef = {
   },
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'selectBitCount', label: '# of Select Bits', min: 1, max: 6 },
+    { name: 'selectBitCount', label: '# of Select Bits', min: 1, max: 6, integer: true },
     { name: 'r_on', label: 'On resistance', unit: 'Ω' },
     { name: 'r_off', label: 'Off resistance', unit: 'Ω' },
     { name: 'threshold', label: 'Threshold', unit: 'V' },

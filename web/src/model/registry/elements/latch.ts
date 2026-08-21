@@ -114,7 +114,7 @@ export const LATCH_DEF: ElementDef = {
   dump: (e) => chipDump(e, latchPins(e), true),
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 2, max: 32 },
+    { name: 'bits', label: '# of Bits', min: 2, max: 32, integer: true },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     { name: 'level', label: 'Level triggered', type: 'bool', flag: LATCH_NO_EDGE },
     { name: 'reset', label: 'Reset Pin', type: 'bool', flag: LATCH_RESET },

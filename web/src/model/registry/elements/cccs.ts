@@ -11,7 +11,7 @@
  */
 
 import { chipBodyRect, chipDumpFlags, chipPosts, drawChip } from './dFlipFlop';
-import { ccsDump, ccsPairPins, ccsSizeY } from './ccvs';
+import { ccsDump, ccsPairPins, ccsSizeY, CCS_DEFAULT_EXPR } from './ccvs';
 import { csParse, CS_FIELDS } from './vcvs';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
@@ -30,6 +30,10 @@ export const CCCS_DEF: ElementDef = {
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { inputCount: 2 },
+  // A fresh part carries upstream's constructor expression, so the Output
+  // Function box opens filled in and the source does something on drop
+  // instead of evaluating an empty string (CCCSElm.java:38).
+  defaultText: CCS_DEFAULT_EXPR,
   parse: csParse,
   dump: ccsDump,
   dumpFlags: chipDumpFlags,

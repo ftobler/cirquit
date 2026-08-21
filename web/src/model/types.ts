@@ -104,6 +104,13 @@ export interface FieldDef {
   choices?: { value: number; label: string }[];
   min?: number;
   max?: number;
+  /** A whole-number field: an input count, a bit width, a grid size. Rendered
+   *  as a spinner stepping by one and clamped to `min`/`max`, never as the
+   *  continuous slider a bounded field otherwise gets. Upstream's
+   *  `setDimensionless()` on these EditInfos means the same thing: a plain
+   *  +/-1 step rather than the E12 series (EditInfo.java:56-58). Without it a
+   *  slider hands the engine 3.47 inputs. */
+  integer?: boolean;
   /** Bit of `e.flags` this field toggles, rather than a `params` entry. Only
    *  meaningful for `bool`. A flag edit goes through `updateElement`, so the
    *  engine rebuilds: file flags are read at build time and can change the

@@ -87,7 +87,7 @@ export const RING_COUNTER_DEF: ElementDef = {
   dump: (e) => chipDump(e, ringPins(e), true, 10),
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 2, max: 32 },
+    { name: 'bits', label: '# of Bits', min: 2, max: 32, integer: true },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     { name: 'resetHigh', label: 'Reset active high', type: 'bool', flag: RING_RESET_HIGH },
   ],

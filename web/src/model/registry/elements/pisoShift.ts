@@ -98,7 +98,7 @@ export const PISO_SHIFT_DEF: ElementDef = {
   },
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 1, max: 32 },
+    { name: 'bits', label: '# of Bits', min: 1, max: 32, integer: true },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     { name: 'newBehavior', label: 'New behavior', type: 'bool', flag: PISO_NEW_BEHAVIOR },
   ],

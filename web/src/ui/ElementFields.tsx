@@ -12,7 +12,7 @@ import { saveBlob } from '../io/fileIO';
 import { selectableModels } from '../model/deviceModels';
 import type { CircuitElement, FieldDef } from '../model/types';
 import { useStore } from '../state/store';
-import { applyFieldChange, fieldRows } from './elementFields';
+import { applyFieldChange, clampInteger, fieldRows } from './elementFields';
 import { UnitNumberInput } from './UnitNumberInput';
 
 function Field({
@@ -152,6 +152,32 @@ function Field({
             </option>
           )}
         </select>
+      </label>
+    );
+  }
+
+  if (field.integer) {
+    // A whole-number field (an input count, a bit width): a spinner stepping
+    // by one, clamped to the def's range. A slider here would post fractions
+    // the engine then truncates, so the shown value and the built circuit
+    // would disagree.
+    return (
+      <label className="field">
+        <span>{field.label}</span>
+        <input
+          type="number"
+          value={v}
+          min={field.min}
+          max={field.max}
+          step={1}
+          onFocus={onBeginEdit}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            // An empty box reads as NaN mid-edit; leave the value alone until
+            // a number is there rather than snapping it to the minimum.
+            if (Number.isFinite(n)) onChange(clampInteger(n, field));
+          }}
+        />
       </label>
     );
   }

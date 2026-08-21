@@ -76,7 +76,7 @@ export const ADC_DEF: ElementDef = {
   dump: (e) => chipDump(e, adcPins(e), true, 4),
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 2, max: 30 },
+    { name: 'bits', label: '# of Bits', min: 2, max: 30, integer: true },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
   ],
   draw: drawAdc,

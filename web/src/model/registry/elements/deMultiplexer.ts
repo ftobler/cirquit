@@ -96,7 +96,7 @@ export const DEMULTIPLEXER_DEF: ElementDef = {
   dump: (e) => [...chipDump(e, demuxPins(e), false), e.params.selectBits ?? 2],
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'selectBits', label: '# of Select Bits', min: 1, max: 6 },
+    { name: 'selectBits', label: '# of Select Bits', min: 1, max: 6, integer: true },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     { name: 'busSelect', label: 'Bus Select', type: 'bool', flag: DEMUX_BUS_SELECT },
     {

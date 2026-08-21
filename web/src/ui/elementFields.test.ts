@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { defFor } from '../model/registry';
 import type { CircuitElement, FieldDef } from '../model/types';
-import { applyFieldChange, fieldRows, fieldValue, type FieldEditActions } from './elementFields';
+import {
+  applyFieldChange,
+  clampInteger,
+  fieldRows,
+  fieldValue,
+  type FieldEditActions,
+} from './elementFields';
 
 function elm(patch: Partial<CircuitElement> & { kind: string }): CircuitElement {
   return {
@@ -133,5 +139,75 @@ describe('field change dispatch', () => {
     const same = recorder();
     applyFieldChange(elm({ kind: 'voltage', params: { waveform: 5 } }), waveform, 5, same.actions);
     expect(same.calls).toEqual([['setParam', 1, 'waveform', 5]]);
+  });
+});
+
+describe('clampInteger', () => {
+  it('rounds to a whole number', () => {
+    expect(clampInteger(3.4, { min: 1, max: 8 })).toBe(3);
+    expect(clampInteger(3.6, { min: 1, max: 8 })).toBe(4);
+    expect(clampInteger(-2.5, {})).toBe(-2);
+  });
+
+  it('holds the value inside the field range', () => {
+    expect(clampInteger(0, { min: 1, max: 8 })).toBe(1);
+    expect(clampInteger(99, { min: 1, max: 8 })).toBe(8);
+    expect(clampInteger(5, { min: 1, max: 8 })).toBe(5);
+  });
+
+  it('leaves an open-ended field alone', () => {
+    expect(clampInteger(1e6, {})).toBe(1e6);
+    expect(clampInteger(4, { min: 2 })).toBe(4);
+    expect(clampInteger(1, { min: 2 })).toBe(2);
+  });
+});
+
+describe('whole-number fields', () => {
+  // The controlled sources and every bit-width chip count things; a slider
+  // would post 3.47 inputs, which the engine then truncates behind the
+  // shown value. The def has to say so, and this is the guard that it does.
+  const COUNTING_FIELDS: [kind: string, field: string][] = [
+    ['vccs', 'inputCount'],
+    ['vcvs', 'inputCount'],
+    ['ccvs', 'inputCount'],
+    ['cccs', 'inputCount'],
+    ['andGate', 'inputCount'],
+    ['counter', 'bits'],
+    ['adc', 'bits'],
+    ['dac', 'bits'],
+    ['rom', 'addressBits'],
+    ['sram', 'dataBits'],
+    ['ledArray', 'sizeX'],
+    ['multiplexer', 'bits'],
+  ];
+
+  it('are marked integer, so they render as a spinner and not a slider', () => {
+    for (const [kind, name] of COUNTING_FIELDS) {
+      const f = defFor(kind)?.fields?.find((x) => x.name === name);
+      expect(f, `${kind}.${name}`).toBeDefined();
+      expect(f?.integer, `${kind}.${name}`).toBe(true);
+    }
+  });
+
+  it('leaves the genuinely continuous bounded fields as sliders', () => {
+    for (const [kind, name] of [
+      ['potentiometer', 'position'],
+      ['voltage', 'dutyCycle'],
+      ['transformer', 'couplingCoef'],
+    ] as [string, string][]) {
+      const f = defFor(kind)?.fields?.find((x) => x.name === name);
+      expect(f?.integer, `${kind}.${name}`).toBeUndefined();
+    }
+  });
+});
+
+describe('controlled-source defaults', () => {
+  // A fresh source with no expression evaluates an empty string, so the part
+  // does nothing at all when dropped (VCCSElm.java:45, CCVSElm.java:39).
+  it('gives every controlled source upstream\'s constructor expression', () => {
+    expect(defFor('vccs')?.defaultText).toBe('.1*(a-b)');
+    expect(defFor('vcvs')?.defaultText).toBe('.1*(a-b)');
+    expect(defFor('ccvs')?.defaultText).toBe('2*a');
+    expect(defFor('cccs')?.defaultText).toBe('2*a');
   });
 });

@@ -33,6 +33,16 @@ export function fieldRows(e: CircuitElement): FieldRow[] {
   return (def?.fields ?? []).map((field) => ({ field, value: fieldValue(e, field) }));
 }
 
+/** Rounds an integer field's typed value and holds it inside the def's range,
+ *  so the store never sees a fraction or an out-of-range count even though a
+ *  number input lets both be typed. */
+export function clampInteger(v: number, field: Pick<FieldDef, 'min' | 'max'>): number {
+  const n = Math.round(v);
+  const lo = field.min ?? Number.NEGATIVE_INFINITY;
+  const hi = field.max ?? Number.POSITIVE_INFINITY;
+  return Math.min(hi, Math.max(lo, n));
+}
+
 /** The store actions a property edit can reach. Passed in rather than read
  *  from the store so the dispatch below stays a pure function of its inputs
  *  and can be tested without a store or a DOM. */

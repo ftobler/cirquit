@@ -80,6 +80,10 @@ export const CCVS_DEF: ElementDef = {
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32
   defaults: { inputCount: 2 },
+  // A fresh part carries upstream's constructor expression, so the Output
+  // Function box opens filled in and the source does something on drop
+  // instead of evaluating an empty string (CCVSElm.java:39).
+  defaultText: CCS_DEFAULT_EXPR,
   parse: csParse,
   dump: ccsDump,
   dumpFlags: chipDumpFlags,

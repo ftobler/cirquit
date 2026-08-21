@@ -111,7 +111,7 @@ export const MULTIPLEXER_DEF: ElementDef = {
   dump: (e) => [...chipDump(e, muxPins(e), false), e.params.bits ?? 2],
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Select Bits', min: 1, max: 6 },
+    { name: 'bits', label: '# of Select Bits', min: 1, max: 6, integer: true },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     {
       name: 'invertedOutput',
