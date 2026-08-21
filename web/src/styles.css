@@ -501,7 +501,12 @@ button.active,
   margin-right: 8px;
 }
 
-.dropdown-menu details[open] summary::before {
+/* The child combinator matters: a descendant selector here would paint the
+   down arrow on a collapsed subgroup that sits inside an open parent, because
+   it matches any summary with an open details anywhere up its ancestry.
+   `>` ties the arrow to the summary's own details, which is the one that is
+   actually toggling. */
+.dropdown-menu details[open] > summary::before {
   content: 'expand_more';
 }
 
