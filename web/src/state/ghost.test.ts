@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TOOLBOX, toolDef } from '../model/registry';
+import { postsOf, TOOLBOX, toolDef } from '../model/registry';
 import { rotateElement } from '../model/transform';
 import { GRID_SIZE } from '../model/types';
 import type { CircuitElement } from '../model/types';
@@ -78,16 +78,48 @@ describe('makeGhostElement', () => {
   });
 
   it('keeps every coordinate on the grid, for the fallback and every declared length', () => {
-    // The reason DEFAULT_PLACEMENT_LENGTH is 4 and not 3. An anchor turn is
-    // exact for any length, so this also passes for odd declared ones here;
-    // the midpoint rotate that follows a click-place is what needs even, and
-    // the odd-length kinds are a known open case (feature backlog).
+    // The reason DEFAULT_PLACEMENT_LENGTH is 4 and not 3: the ghost's anchor
+    // turn is exact for any length, but the midpoint rotate that follows a
+    // click-place is not, so the fallback length has to halve onto the grid.
     for (const t of TOOLBOX) {
       for (let turns = 0; turns < 4; turns++) {
         const e = makeGhostElement(t.id, 5 * GRID_SIZE, 7 * GRID_SIZE, turns);
         expect(
           [e.x1, e.y1, e.x2, e.y2].every(onGrid),
           `${t.id} at ${turns} turns: ${e.x1},${e.y1} ${e.x2},${e.y2}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('survives the midpoint rotate that follows a click-place, odd lengths too', () => {
+    // A click-place leaves the part selected with the tool cleared, so the
+    // very next Space is a settled-selection rotate about the part's own
+    // midpoint. The ten odd-`defaultLength` kinds (the 3-grid chips, the
+    // 9-grid three-phase motor, the 11-grid PISO shift register) have that
+    // midpoint half a square off the grid; `rotateElement` snaps the turn axis
+    // the way upstream does, so they stay reachable by a wire instead of
+    // landing between grid lines.
+    const odd = TOOLBOX.filter((t) => ((toolDef(t.id)?.defaultLength ?? 0) % 2) === 1);
+    expect(odd.length).toBeGreaterThan(0);
+
+    const oddIds = new Set(odd.map((t) => t.id));
+    for (const t of TOOLBOX) {
+      let e: CircuitElement = { ...makeGhostElement(t.id, 5 * GRID_SIZE, 7 * GRID_SIZE, 0), id: 1 };
+      for (let turns = 1; turns <= 4; turns++) {
+        e = rotateElement(e);
+        expect(
+          [e.x1, e.y1, e.x2, e.y2].every(onGrid),
+          `${t.id} after ${turns} turns: ${e.x1},${e.y1} ${e.x2},${e.y2}`,
+        ).toBe(true);
+        // The odd kinds are all chips, whose pins sit at whole grid steps off
+        // the body, so a turned one has to stay wire-reachable. Not asserted
+        // for every kind: the OTA's inputs straddle its axis by half a square
+        // in upstream too, turned or not.
+        if (!oddIds.has(t.id)) continue;
+        expect(
+          postsOf(e).every((p) => onGrid(p.x) && onGrid(p.y)),
+          `${t.id} posts after ${turns} turns`,
         ).toBe(true);
       }
     }

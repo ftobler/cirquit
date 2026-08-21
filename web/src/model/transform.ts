@@ -13,7 +13,7 @@
 
 import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP, postCountOf } from './registry';
 import { COMPARATOR_SWAP, OPAMPREAL_SWAP } from './registry/flags';
-import type { CircuitElement, Point } from './types';
+import { GRID_SIZE, type CircuitElement, type Point } from './types';
 
 /** Whether the element can turn a quarter turn. A stem-bearing one-post part
  *  (ground, rails, logic inputs) rotates about its own midpoint like any
@@ -54,10 +54,41 @@ function flipDpdtPosition(e: CircuitElement): CircuitElement {
   return { ...e, state: position, params: { ...e.params, position } };
 }
 
-const centre = (e: CircuitElement): Point => ({
-  x: (e.x1 + e.x2) / 2,
-  y: (e.y1 + e.y2) / 2,
-});
+/** Upstream's grid snap, `(v + gridSize/2 - 1) & ~(gridSize - 1)`
+ *  (UIManager.java:989-991, CirSim.java:536-538). It floors rather than
+ *  rounds, so an exact half square lands on the lower grid line and a negative
+ *  coordinate snaps the same way; `state/helpers.ts`'s `snap` rounds instead,
+ *  which is what a cursor wants but would not reproduce this axis. */
+function snapGrid(v: number): number {
+  return Math.floor((v + GRID_SIZE / 2 - 1) / GRID_SIZE) * GRID_SIZE;
+}
+
+/**
+ * The quarter turn a settled selection gets: upstream's rotate, a diagonal
+ * flip about the snapped axis `x - y = xmy` followed by a vertical flip about
+ * the element's centre line (CommandManager.java:414-429, `flipXY` then
+ * `flipY`, CircuitElm.java:688-703). Composed, the two are exactly the turn
+ * `turnPointAbout` performs about the element's midpoint, with one difference
+ * that is the whole point of doing it this way: the axis is snapped to the
+ * grid first.
+ *
+ * That snap is what keeps an odd-length part on the grid. A 3-grid chip or the
+ * 9-grid three-phase motor has its midpoint half a square off the grid, and a
+ * turn about that point lands both endpoints between grid lines, where no wire
+ * can reach them. Snapping the axis translates the turned part by up to one
+ * grid square instead, which is what upstream does and what the placement
+ * kinds with odd `defaultLength` need. For an even-length part the snap is
+ * identity and the result is bit-for-bit the old midpoint turn.
+ *
+ * The centres truncate because Java's integer division does (`(minx+maxx)/2`),
+ * and both flips read the truncated value.
+ */
+function upstreamTurn(e: CircuitElement): (p: Point) => Point {
+  const cx = Math.trunc((e.x1 + e.x2) / 2);
+  const cy = Math.trunc((e.y1 + e.y2) / 2);
+  const xmy = snapGrid(cx - cy);
+  return (p) => ({ x: p.y + xmy, y: 2 * cy - (p.x - xmy) });
+}
 
 /**
  * One quarter turn per unit about `pivot`, the same sense as `rotateElement`:
@@ -91,21 +122,28 @@ const withoutRoute = (e: CircuitElement): CircuitElement => {
 };
 
 /**
- * A 90 degree turn about `pivot`, the element's own midpoint by default,
- * equivalent to upstream's flipXY-then-flipY. A placement drag passes its
- * press anchor instead, so Space turns the part about the point the user
- * pressed on rather than dragging that anchor away from under the cursor.
+ * A 90 degree turn. With no pivot it is upstream's rotate about the element's
+ * own snapped axis (`upstreamTurn`), the settled-selection command. A
+ * placement drag passes its press anchor as the pivot instead, so Space turns
+ * the part about the point the user pressed on rather than dragging that
+ * anchor away from under the cursor; that path stays on the exact
+ * `turnPointAbout`, which is already grid-exact because the anchor is a
+ * snapped grid point.
+ *
  * `rotateFlags` is pivot-independent: its vertical test reads the pre-turn
- * endpoints. The arithmetic is exact for grid-aligned input, but an
- * element whose endpoints have mismatched parity (e.g. from a hand-edited
- * netlist) would land on half coordinates, so each result is rounded to keep
+ * endpoints. The pivot path's arithmetic is exact for grid-aligned input, but
+ * an element whose endpoints have mismatched parity (e.g. from a hand-edited
+ * netlist) would land on half coordinates, so `turnPointAbout` rounds to keep
  * the store invariant "every stored endpoint is an integer" intact. For
  * grid-aligned input the rounding is identity.
  */
-export function rotateElement(e: CircuitElement, pivot: Point = centre(e)): CircuitElement {
+export function rotateElement(e: CircuitElement, pivot?: Point): CircuitElement {
   if (!canRotate(e)) return e;
-  const p1 = turnPointAbout({ x: e.x1, y: e.y1 }, pivot, 1);
-  const p2 = turnPointAbout({ x: e.x2, y: e.y2 }, pivot, 1);
+  const turn = pivot
+    ? (p: Point) => turnPointAbout(p, pivot, 1)
+    : upstreamTurn(e);
+  const p1 = turn({ x: e.x1, y: e.y1 });
+  const p2 = turn({ x: e.x2, y: e.y2 });
   const base = {
     ...withoutRoute(e),
     x1: p1.x,

@@ -116,12 +116,12 @@ export function makeToolElement(tool: string, x1: number, y1: number, x2: number
  *  `defaultLength`: upstream's base `getDragLength()` of 64 px. Four grid
  *  squares and not three, even though 48 px is the commoner resistor length
  *  in the bundled corpus, because `L/2` is the settled-selection rotate's
- *  pivot and it has to land on the grid: 64/2 = 32 = 2*GRID_SIZE, while
- *  48/2 = 24 is not a multiple of 16 (transform.ts, `rotateElement`). A
- *  click-place leaves the part selected with the tool cleared, so the very
- *  next Space is a midpoint rotate: an odd length would put every second turn
- *  off grid. `renderToolIcon` needs the same fallback for its own reasons, so
- *  both read this constant and cannot drift apart. */
+ *  pivot and a part whose half-length lands on the grid turns in place:
+ *  64/2 = 32 = 2*GRID_SIZE, while 48/2 = 24 is not a multiple of 16. An odd
+ *  length still stays on the grid (`rotateElement` snaps the turn axis, as
+ *  upstream does), but it shifts up to one square per turn, which the default
+ *  has no reason to pay. `renderToolIcon` needs the same fallback for its own
+ *  reasons, so both read this constant and cannot drift apart. */
 export const DEFAULT_PLACEMENT_LENGTH = 4;
 
 /** The element an armed tool would place at the grid-snapped point `(x,y)`,

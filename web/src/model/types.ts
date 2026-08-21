@@ -188,9 +188,10 @@ export interface ElementDef {
   switchRect?(e: CircuitElement): SwitchRect;
   /** Length in grid units the part is created with, both for a toolbox drag
    *  and for a single click (`makeGhostElement`). Absent falls back to
-   *  `DEFAULT_PLACEMENT_LENGTH` (4). Keep any value here even: the length's
-   *  half is the settled-selection rotate's pivot, and an odd one puts the
-   *  turned endpoints off grid (state/helpers.ts, `rotateElement`). */
+   *  `DEFAULT_PLACEMENT_LENGTH` (4). An odd value is allowed: the
+   *  settled-selection rotate snaps its axis to the grid the way upstream
+   *  does, so a part whose half-length is not a grid step stays on the grid,
+   *  at the cost of shifting up to one square per turn (`rotateElement`). */
   defaultLength?: number;
   /** Elements upstream forces vertical on toolbar placement (ground, voltage). */
   vertical?: boolean;

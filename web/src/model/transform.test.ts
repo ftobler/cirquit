@@ -156,6 +156,41 @@ describe('rotateElement', () => {
     for (const v of [r.x1, r.y1, r.x2, r.y2]) expect(Math.abs(v % 16)).toBe(0);
   });
 
+  it('keeps an odd-length part on the grid by snapping the turn axis', () => {
+    // A 3-grid chip (bus splitter, half adder, ROM and the rest of the
+    // odd-`defaultLength` kinds) has its midpoint half a square off the grid.
+    // Turning about that exact point put both endpoints between grid lines,
+    // where no wire can reach them; upstream snaps the flip axis first, which
+    // shifts the turned part by up to one square and keeps it on the grid.
+    const chip = element('busSplitter', 80, 112, 128, 112);
+    // The explicit first turn is upstream's own arithmetic: cx 104, cy 112,
+    // xmy = snapGrid(-8) = -16, then flipXY followed by flipY about 2*cy.
+    expect(rotateElement(chip)).toMatchObject({ x1: 96, y1: 128, x2: 96, y2: 80 });
+
+    let e: CircuitElement = chip;
+    for (let turn = 1; turn <= 4; turn++) {
+      e = rotateElement(e);
+      for (const v of [e.x1, e.y1, e.x2, e.y2]) {
+        expect(Math.abs(v % 16), `turn ${turn}: ${e.x1},${e.y1} ${e.x2},${e.y2}`).toBe(0);
+      }
+      // A rigid turn: the span keeps its length, whatever the axis snap did to
+      // the part's position.
+      expect(Math.hypot(e.x2 - e.x1, e.y2 - e.y1)).toBe(48);
+    }
+  });
+
+  it('leaves an even-length part exactly where the midpoint turn put it', () => {
+    // The axis snap is identity when the midpoint is already on the grid, so
+    // every even-length kind (which is every other kind) turns bit-for-bit as
+    // it did before the odd-length fix.
+    expect(rotateElement(element('resistor', 80, 112, 240, 112))).toMatchObject({
+      x1: 160,
+      y1: 192,
+      x2: 160,
+      y2: 32,
+    });
+  });
+
   it('rotates an op-amp as a rigid body, matching upstream orientation', () => {
     const a = element('opamp', 0, 0, 160, 0);
     const r = rotateElement(a);
