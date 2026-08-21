@@ -1,10 +1,11 @@
 /**
  * The bundled example-circuit library.
  *
- * `setuplist.txt` is a flat file of groups and entries copied from upstream:
- * a line starting with `+` opens a group, `-` closes it, and everything else
- * is `<filename> <title>`. A leading `>` marks the circuit upstream opens on
- * startup; it is displayed like any other entry.
+ * `setuplist.txt` is a file of groups and entries copied from upstream: a line
+ * starting with `+` opens a group, `-` closes it, and everything else is
+ * `<filename> <title>`. Groups nest, up to three deep in upstream's file, and
+ * a group may hold both circuits and subgroups. A leading `>` marks the
+ * circuit upstream opens on startup; it is displayed like any other entry.
  */
 
 export interface LibraryEntry {
@@ -18,13 +19,17 @@ export interface LibraryEntry {
 export interface LibraryGroup {
   title: string;
   entries: LibraryEntry[];
+  /** Subgroups opened by a nested `+` before this group's `-`. Upstream nests
+   *  three deep (Other Passive Circuits > Transformers > Saturable Core), so
+   *  the tree is kept rather than flattened. Empty for a leaf group. */
+  groups: LibraryGroup[];
 }
 
 /** Where the circuit files live, relative to the deployed site. */
 const CIRCUITS_BASE = `${import.meta.env.BASE_URL}circuits/`;
 
 export function parseSetupList(text: string): LibraryGroup[] {
-  const groups: LibraryGroup[] = [];
+  const roots: LibraryGroup[] = [];
   const stack: LibraryGroup[] = [];
   // Upstream keeps the first `>` it sees and ignores any later one
   // (Menus.processSetupList, the `startCircuit == null` guard).
@@ -35,9 +40,12 @@ export function parseSetupList(text: string): LibraryGroup[] {
     if (!line || line.startsWith('#')) continue;
 
     if (line.startsWith('+')) {
-      const group: LibraryGroup = { title: line.slice(1).trim(), entries: [] };
-      // Nested groups are flattened; the extra depth adds little here.
-      groups.push(group);
+      const group: LibraryGroup = { title: line.slice(1).trim(), entries: [], groups: [] };
+      // A `+` inside an open group opens a subgroup of it, so the file's three
+      // levels survive as a tree instead of collapsing into one flat run.
+      const parent = stack[stack.length - 1];
+      if (parent) parent.groups.push(group);
+      else roots.push(group);
       stack.push(group);
       continue;
     }
@@ -61,7 +69,15 @@ export function parseSetupList(text: string): LibraryGroup[] {
     if (current) current.entries.push(entry);
   }
 
-  return groups.filter((g) => g.entries.length > 0);
+  return prune(roots);
+}
+
+/** Drops groups that carry neither an entry of their own nor a surviving
+ *  subgroup, so an empty `+`/`-` pair never renders as a dead row. */
+function prune(groups: LibraryGroup[]): LibraryGroup[] {
+  return groups
+    .map((g) => ({ ...g, groups: prune(g.groups) }))
+    .filter((g) => g.entries.length > 0 || g.groups.length > 0);
 }
 
 export async function loadLibraryIndex(): Promise<LibraryGroup[]> {
@@ -77,12 +93,15 @@ export async function loadLibraryCircuit(file: string): Promise<string> {
 }
 
 /** The entry the setup list marks with `>`, which is what upstream opens when
- *  no circuit was requested. Null when the list carries no marker. */
+ *  no circuit was requested. Null when the list carries no marker. Searches
+ *  subgroups too: nothing pins the marker to a top-level group. */
 export function defaultLibraryEntry(groups: LibraryGroup[]): LibraryEntry | null {
   for (const group of groups) {
     for (const entry of group.entries) {
       if (entry.isDefault) return entry;
     }
+    const nested = defaultLibraryEntry(group.groups);
+    if (nested) return nested;
   }
   return null;
 }
@@ -104,13 +123,21 @@ export async function loadDefaultCircuit(): Promise<{ entry: LibraryEntry; netli
 export function filterLibrary(groups: LibraryGroup[], query: string): LibraryGroup[] {
   const q = query.trim().toLowerCase();
   if (q === '') return groups;
+  return keep(groups, q, false);
+}
+
+/** The recursive half of `filterLibrary`. `inherited` is true once an ancestor
+ *  group's own title matched, which keeps that whole subtree: the user named
+ *  the group, so every circuit under it is what they meant. */
+function keep(groups: LibraryGroup[], q: string, inherited: boolean): LibraryGroup[] {
   return groups
     .map((g) => {
-      const groupHits = g.title.toLowerCase().includes(q);
-      const entries = groupHits
-        ? g.entries
-        : g.entries.filter((e) => e.title.toLowerCase().includes(q));
-      return { title: g.title, entries };
+      const hit = inherited || g.title.toLowerCase().includes(q);
+      return {
+        title: g.title,
+        entries: hit ? g.entries : g.entries.filter((e) => e.title.toLowerCase().includes(q)),
+        groups: keep(g.groups, q, hit),
+      };
     })
-    .filter((g) => g.entries.length > 0);
+    .filter((g) => g.entries.length > 0 || g.groups.length > 0);
 }

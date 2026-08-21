@@ -518,6 +518,13 @@ button.active,
   padding-left: 50px;
 }
 
+/* A group nested inside another (upstream's setup list goes three deep) steps
+   in by one level, carrying its own circuits and any further subgroups with
+   it, so each level of the tree reads as one step further in. */
+.dropdown-menu .library-subgroup {
+  padding-left: 18px;
+}
+
 /* The menu rows sit on #1e1e1e, lighter than the panel, so the shared
    `--hover` wash derived from the panel is nearly invisible there. Give the
    dropdown its own state layers mixed over the menu background: hover raises

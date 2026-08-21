@@ -16,12 +16,20 @@ const groups: LibraryGroup[] = [
       { file: 'ohms.txt', title: "Ohm's Law" },
       { file: 'lrc.txt', title: 'LRC Circuit' },
     ],
+    groups: [],
   },
   {
     title: 'Transistors',
     entries: [
       { file: 'npn.txt', title: 'NPN Transistor' },
       { file: 'pnp.txt', title: 'PNP Transistor' },
+    ],
+    groups: [
+      {
+        title: 'Multivibrators',
+        entries: [{ file: 'astable.txt', title: 'Astable Multivibrator' }],
+        groups: [],
+      },
     ],
   },
 ];
@@ -48,9 +56,59 @@ describe('parseSetupList', () => {
           { file: 'ohms.txt', title: "Ohm's Law" },
           { file: 'lrc.txt', title: 'LRC Circuit', isDefault: true },
         ],
+        groups: [],
       },
-      { title: 'Transistors', entries: [{ file: 'npn.txt', title: 'NPN Transistor' }] },
+      {
+        title: 'Transistors',
+        entries: [{ file: 'npn.txt', title: 'NPN Transistor' }],
+        groups: [],
+      },
     ]);
+  });
+
+  it('nests a group opened inside another, three deep like upstream', () => {
+    // Upstream's own list nests this far: Other Passive Circuits holds
+    // Transformers, which holds Saturable Core. A parent keeps both its own
+    // circuits and its subgroups.
+    const nested = [
+      '+Other Passive',
+      'series.txt Series',
+      '+Transformers',
+      'xfmr.txt Transformer',
+      '+Saturable Core',
+      'satcore.txt Saturable Core',
+      '-',
+      '-',
+      '-',
+    ].join('\n');
+    expect(parseSetupList(nested)).toEqual([
+      {
+        title: 'Other Passive',
+        entries: [{ file: 'series.txt', title: 'Series' }],
+        groups: [
+          {
+            title: 'Transformers',
+            entries: [{ file: 'xfmr.txt', title: 'Transformer' }],
+            groups: [
+              {
+                title: 'Saturable Core',
+                entries: [{ file: 'satcore.txt', title: 'Saturable Core' }],
+                groups: [],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('drops a group that is empty all the way down', () => {
+    expect(parseSetupList('+Outer\n+Inner\n-\n-')).toEqual([]);
+  });
+
+  it('finds the default marker inside a subgroup', () => {
+    const nested = ['+Outer', '+Inner', '>deep.txt Deep', '-', '-'].join('\n');
+    expect(defaultLibraryEntry(parseSetupList(nested))?.file).toBe('deep.txt');
   });
 
   it('marks only the first > entry as the default, like upstream', () => {
@@ -75,6 +133,17 @@ describe('the bundled setup list', () => {
     expect(entry?.file).toBe('lrc.txt');
     expect(existsSync(join(CIRCUITS_DIR, entry!.file))).toBe(true);
   });
+
+  it('is three levels deep, as upstream ships it', () => {
+    const parsed = parseSetupList(readFileSync(join(CIRCUITS_DIR, 'setuplist.txt'), 'utf8'));
+    const depth = (gs: LibraryGroup[]): number =>
+      gs.length === 0 ? 0 : 1 + Math.max(...gs.map((g) => depth(g.groups)));
+    expect(depth(parsed)).toBe(3);
+    // The nesting the flat parser used to lose: a subgroup under a subgroup.
+    const passive = parsed.find((g) => g.title === 'Other Passive Circuits');
+    const transformers = passive?.groups.find((g) => g.title === 'Transformers');
+    expect(transformers?.groups.map((g) => g.title)).toEqual(['Saturable Core']);
+  });
 });
 
 describe('filterLibrary', () => {
@@ -86,7 +155,30 @@ describe('filterLibrary', () => {
   it('keeps only the entries whose title matches', () => {
     const hits = filterLibrary(groups, 'circuit');
     expect(hits).toEqual([
-      { title: 'Basics', entries: [{ file: 'lrc.txt', title: 'LRC Circuit' }] },
+      { title: 'Basics', entries: [{ file: 'lrc.txt', title: 'LRC Circuit' }], groups: [] },
+    ]);
+  });
+
+  it('searches subgroups and keeps the path down to a hit', () => {
+    const hits = filterLibrary(groups, 'astable');
+    expect(hits).toEqual([
+      {
+        title: 'Transistors',
+        entries: [],
+        groups: [
+          {
+            title: 'Multivibrators',
+            entries: [{ file: 'astable.txt', title: 'Astable Multivibrator' }],
+            groups: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('a matching subgroup title keeps everything under it', () => {
+    expect(filterLibrary(groups, 'multivibrator')).toEqual([
+      { title: 'Transistors', entries: [], groups: groups[1].groups },
     ]);
   });
 

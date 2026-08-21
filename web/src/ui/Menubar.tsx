@@ -11,6 +11,7 @@ import {
   filterLibrary,
   loadLibraryCircuit,
   loadLibraryIndex,
+  type LibraryEntry,
   type LibraryGroup,
 } from '../io/library';
 import { parseCircuit } from '../io/netlist';
@@ -47,6 +48,44 @@ function MenuItem({
       <span>{label}</span>
       {shortcut && <span className="menu-shortcut">{shortcut}</span>}
     </button>
+  );
+}
+
+/** One circuit-library group and everything under it. Upstream's setup list
+ *  nests three deep, so a group renders its own circuits and then its
+ *  subgroups, each as another collapsible of the same shape. `depth` only
+ *  drives the indent; there is no limit on how far the list may nest. */
+function LibraryGroupRows({
+  group,
+  depth,
+  open,
+  onPick,
+}: {
+  group: LibraryGroup;
+  depth: number;
+  /** Force every level open, which the search does so hits are visible without
+   *  the user expanding each ancestor by hand. */
+  open: boolean;
+  onPick: (entry: LibraryEntry) => void;
+}) {
+  return (
+    <details open={open} className={depth === 0 ? undefined : 'library-subgroup'}>
+      <summary>{group.title}</summary>
+      {group.entries.map((entry) => (
+        <button key={entry.file} type="button" className="menu-item" onClick={() => onPick(entry)}>
+          {entry.title}
+        </button>
+      ))}
+      {group.groups.map((child) => (
+        <LibraryGroupRows
+          key={child.title}
+          group={child}
+          depth={depth + 1}
+          open={open}
+          onPick={onPick}
+        />
+      ))}
+    </details>
   );
 }
 
@@ -296,12 +335,23 @@ export function Menubar({ engine }: Props) {
     };
   }, [burgerOpen]);
 
+  // The index is a single small text file, so it is fetched once at startup
+  // rather than on the first open of the Circuits menu: opening the menu used
+  // to show "Loading…" and then reflow under the pointer. It runs in the
+  // background and nothing waits on it.
   useEffect(() => {
-    if (!libraryOpen || library) return;
+    let cancelled = false;
     loadLibraryIndex()
-      .then(setLibrary)
-      .catch((e: unknown) => setLibraryError(e instanceof Error ? e.message : String(e)));
-  }, [libraryOpen, library]);
+      .then((groups) => {
+        if (!cancelled) setLibrary(groups);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setLibraryError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toggleMenu = (name: string) => setOpenMenu((m) => (m === name ? null : name));
   const closeMenus = () => {
@@ -800,19 +850,13 @@ export function Menubar({ engine }: Props) {
                   return <p className="hint">No circuits match “{libraryQuery.trim()}”</p>;
                 }
                 return filtered.map((group) => (
-                  <details key={group.title} open={searching}>
-                    <summary>{group.title}</summary>
-                    {group.entries.map((entry) => (
-                      <button
-                        key={entry.file}
-                        type="button"
-                        className="menu-item"
-                        onClick={() => void openLibraryCircuit(entry.file, entry.title)}
-                      >
-                        {entry.title}
-                      </button>
-                    ))}
-                  </details>
+                  <LibraryGroupRows
+                    key={group.title}
+                    group={group}
+                    depth={0}
+                    open={searching}
+                    onPick={(entry) => void openLibraryCircuit(entry.file, entry.title)}
+                  />
                 ));
               })()}
             </>
