@@ -159,7 +159,9 @@ fetch it).
 - Per-timestep scope capture with min/max column aggregation.
 - Canvas renderer: voltage colouring, animated current dots, pan/zoom, grid.
 - Editing: place, select, rubber-band, drag, delete, undo/redo, live parameter
-  edits, interactive switches.
+  edits, interactive switches. A dropped or placed terminal splits what it
+  lands on, wires and bare component leads alike, and the posts that only touch
+  another element are drawn red and tallied in the info area.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
 - Adaptive timestep: halve-and-retry with step rejection on a non-convergent
@@ -169,10 +171,10 @@ fetch it).
   `voltDiff` and series resistance, inductor current, junction voltages, relay
   and logic-latch state. Event-driven (save and rebuild only), so it adds no
   per-frame crossing.
-- 383 Rust tests, of which 337 are the end-to-end circuit checks against
+- 449 Rust tests, of which 381 are the end-to-end circuit checks against
   analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
-   was split into topic files), plus 45 in-module unit tests and one doctest.
-   2113 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
+   was split into topic files), plus 67 in-module unit tests and one doctest.
+   2343 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
   tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
