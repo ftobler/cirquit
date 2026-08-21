@@ -1705,6 +1705,45 @@ input[type='range'] {
   line-height: 1;
 }
 
+/* The per-trace channel selector: one chip per trace, its colour as a dot,
+   the selected one raised. The selector chips stay flat in their rest state
+   (the raised `scope-props button` fill would make every trace look selected),
+   and hover gives the unselected ones a whisper of the shared hover wash. */
+.scope-props .scope-channels {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.scope-props .scope-channel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--muted);
+  padding: 2px 8px;
+  border-radius: var(--md-shape-sm);
+}
+
+.scope-props .scope-channel:hover,
+.scope-props .scope-channel:focus-visible {
+  background: color-mix(in srgb, var(--text) 8%, var(--menu-surface));
+}
+
+.scope-props .scope-channel.current,
+.scope-props .scope-channel.current:hover,
+.scope-props .scope-channel.current:focus-visible {
+  background: color-mix(in srgb, var(--text) 14%, var(--menu-surface));
+  color: var(--text);
+}
+
+.scope-props .channel-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
 .scope-props input[type='range'] {
   flex: 1;
 }

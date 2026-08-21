@@ -117,6 +117,34 @@ describe('scope line display-field fidelity', () => {
     useStore.getState().loadNetlist(netlist);
     expect(useStore.getState().scopes[0].manDivisions).toBe(6);
   });
+
+  it('a per-trace edit on a combined scope lands on that trace alone', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    const [sa, sb] = useStore.getState().scopes;
+    useStore.getState().combineScopes(sa.id, sb.id);
+    const combined = useStore.getState().scopes[0];
+    // Each scope carries a voltage trace and its current companion.
+    expect(combined.plots).toHaveLength(4);
+    const pa = combined.plots.find((p) => p.value === 'voltage')!;
+    const pb = combined.plots.find((p) => p.value === 'current')!;
+
+    // The channel selector edits one trace at a time: position, max value and
+    // coupling must each change only the targeted plot's per-plot state.
+    useStore.getState().setPlotManPosition(pa.id, 120);
+    useStore.getState().setPlotManScale(pb.id, 4);
+    useStore.getState().setPlotCoupling(combined.id, pa.id, true);
+    const after = useStore.getState().scopes[0];
+    const qa = after.plots.find((p) => p.id === pa.id)!;
+    const qb = after.plots.find((p) => p.id === pb.id)!;
+    expect(qa.manVPosition).toBe(120);
+    expect(qb.manVPosition).toBe(0);
+    expect(qb.manScale).toBe(4);
+    expect(qa.acCoupled).toBe(true);
+    expect(qb.acCoupled).toBe(false);
+  });
 });
 
 describe('scope plot visibility (showV/showI)', () => {

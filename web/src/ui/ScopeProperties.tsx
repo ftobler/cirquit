@@ -9,8 +9,8 @@
 import { useEffect, useState } from 'react';
 import type { ScopeValue } from '../engine/simulator';
 import { seedManScale, barToSpeed, speedToBar, gridStepX, scaleStateFor, nextHighestScale, nextLowestScale } from '../scope/scale';
-import { formatValue } from '../render/draw';
-import { MAN_DIVISIONS, trailSliderToSteps, trailStepsToSlider, UNIT } from '../scope/draw';
+import { formatValue, makeTheme } from '../render/draw';
+import { MAN_DIVISIONS, trailSliderToSteps, trailStepsToSlider, UNIT, plotColors, visiblePlotsOf } from '../scope/draw';
 import { saveScopeDefaults } from '../state/scopeDefaults';
 import { useStore } from '../state/store';
 import { useFocusTrap } from './useFocusTrap';
@@ -27,8 +27,12 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
   const scope = useStore((s) => s.scopes.find((x) => x.id === scopeId));
   const scopes = useStore((s) => s.scopes);
   const timeStep = useStore((s) => s.settings.timeStep);
+  const dark = useStore((s) => s.dark);
   const [labelText, setLabelText] = useState(scope?.label ?? '');
   const [levelText, setLevelText] = useState(String(scope?.trigger.level ?? 0));
+  // The channel selector's chosen trace, by id so a re-render survives plot
+  // list changes; the derived `selected` falls back to the first visible one.
+  const [selectedPlotId, setSelectedPlotId] = useState<number | null>(null);
   // Modal focus handling like the Dialog shell: Trap Tab, return focus to the
   // opener on close. The opener (a scope-menu row) is usually gone by then,
   // so the trap's restore guards against a detached element.
@@ -45,6 +49,14 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
   if (!scope) return null;
 
   const tabs = stackTabs(scopes, scopeId);
+
+  // The channel selector lists the same plots the canvas draws, so each
+  // button's dot matches the trace colour; `selected` is the one being edited.
+  const visibleChannels = visiblePlotsOf(scope);
+  const theme = makeTheme(dark);
+  const traceColors = plotColors(scope, theme);
+  const selected =
+    visibleChannels.find((p) => p.id === selectedPlotId) ?? visibleChannels[0] ?? null;
 
   const setFlags = (patch: Parameters<ReturnType<typeof useStore.getState>['setScopeFlags']>[1]) =>
     useStore.getState().setScopeFlags(scope.id, patch);
@@ -226,71 +238,102 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
 
       <fieldset>
         <legend>Channels</legend>
-        {scope.plots.map((plot) => (
-          <div key={plot.id} className="scope-props-channel">
+        {/* The per-trace selector: one button per trace, marked with its
+          colour, so a combined scope's dialog can be pointed at any one of
+          them. A single-trace scope skips the strip and edits directly. */}
+        {visibleChannels.length > 1 && (
+          <div className="row scope-channels" role="group" aria-label="Select a channel">
+            {visibleChannels.map((plot, i) => (
+              <button
+                key={plot.id}
+                type="button"
+                className={plot.id === selected?.id ? 'scope-channel current' : 'scope-channel'}
+                onClick={() => setSelectedPlotId(plot.id)}
+              >
+                <span
+                  className="channel-dot"
+                  style={{ background: traceColors.get(plot.id) ?? theme.whiteColor }}
+                />
+                {`CH ${i + 1} (${channelLetter(plot.value)})`}
+              </button>
+            ))}
+          </div>
+        )}
+        {selected && (
+          <div className="scope-props-channel">
             <div className="row">
-              <span>{`CH ${channelLetter(plot.value)}`}</span>
+              <span>Coupling</span>
               <label>
                 <input
                   type="radio"
-                  name={`coupling-${plot.id}`}
-                  checked={!plot.acCoupled}
-                  onChange={() => useStore.getState().setPlotCoupling(scope.id, plot.id, false)}
+                  name="channel-coupling"
+                  checked={!selected.acCoupled}
+                  onChange={() => useStore.getState().setPlotCoupling(scope.id, selected.id, false)}
                 />
                 DC
               </label>
               <label>
                 <input
                   type="radio"
-                  name={`coupling-${plot.id}`}
-                  disabled={plot.value !== 'voltage'}
-                  checked={plot.acCoupled}
-                  onChange={() => useStore.getState().setPlotCoupling(scope.id, plot.id, true)}
+                  name="channel-coupling"
+                  disabled={selected.value !== 'voltage'}
+                  checked={selected.acCoupled}
+                  onChange={() => useStore.getState().setPlotCoupling(scope.id, selected.id, true)}
                 />
                 AC
               </label>
             </div>
             {scope.manualScale && (
-              <div className="row">
-                <span>{`Max Value (${unitOf(plot.value)})`}</span>
-                <button type="button" aria-label="Decrease max value" onClick={() => stepManScale(plot.id, -1)}>
-                  &#9660;
-                </button>
-                <input
-                  className="scalebox"
-                  type="text"
-                  aria-label="Max value per division"
-                  defaultValue={plot.manScale?.toString() ?? ''}
-                  onBlur={(e) => setManScaleText(plot.id, e.target.value)}
-                />
-                <button type="button" aria-label="Increase max value" onClick={() => stepManScale(plot.id, 1)}>
-                  &#9650;
-                </button>
-                <span>/div</span>
-              </div>
-            )}
-            {scope.manualScale && (
-              <div className="row">
-                <input
-                  type="range"
-                  min={-200}
-                  max={200}
-                  value={plot.manVPosition}
-                  onChange={(e) =>
-                    useStore.getState().setPlotManPosition(plot.id, Number(e.target.value))
-                  }
-                />
-                <span>{plot.manVPosition}</span>
-                <button
-                  type="button"
-                  onClick={() => useStore.getState().setPlotManPosition(plot.id, 0)}
-                >
-                  Reset
-                </button>
-              </div>
+              <>
+                <div className="row">
+                  <span>{`Max Value (${unitOf(selected.value)})`}</span>
+                  <button
+                    type="button"
+                    aria-label="Decrease max value"
+                    onClick={() => stepManScale(selected.id, -1)}
+                  >
+                    &#9660;
+                  </button>
+                  <input
+                    key={selected.id}
+                    className="scalebox"
+                    type="text"
+                    aria-label="Max value per division"
+                    defaultValue={selected.manScale?.toString() ?? ''}
+                    onBlur={(e) => setManScaleText(selected.id, e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    aria-label="Increase max value"
+                    onClick={() => stepManScale(selected.id, 1)}
+                  >
+                    &#9650;
+                  </button>
+                  <span>/div</span>
+                </div>
+                <div className="row">
+                  <span>Position</span>
+                  <input
+                    type="range"
+                    min={-200}
+                    max={200}
+                    value={selected.manVPosition}
+                    onChange={(e) =>
+                      useStore.getState().setPlotManPosition(selected.id, Number(e.target.value))
+                    }
+                  />
+                  <span>{selected.manVPosition}</span>
+                  <button
+                    type="button"
+                    onClick={() => useStore.getState().setPlotManPosition(selected.id, 0)}
+                  >
+                    Reset
+                  </button>
+                </div>
+              </>
             )}
           </div>
-        ))}
+        )}
       </fieldset>
 
       <fieldset>
