@@ -77,6 +77,7 @@ import {
   drawChip,
   type ChipPinDef,
 } from '../model/registry/elements/dFlipFlop';
+import { DEFAULT_SETTINGS } from '../model/types';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../model/types';
 
 interface CtxStub {
@@ -282,29 +283,20 @@ describe('value formatting', () => {
   });
 
   it('honours the fraction-digit count, the upstream ####.# pattern', () => {
-    // One significant figure rounds 55.5 to 60 (toPrecision(1) would render
-    // it as "6e+1"): the pattern must give "60m" (CircuitElm.java:163-167).
-    expect(formatValue(0.0555, 'V', 1)).toBe('60m V');
-    expect(formatValue(0.05556, 'V', 1)).toBe('60m V');
+    // toPrecision(1) would render 55.5 as "6e+1"; the fraction-digit pattern
+    // must give "55.5m" and "55.6m" (CircuitElm.java:163-167).
+    expect(formatValue(0.0555, 'V', 1)).toBe('55.5m V');
+    expect(formatValue(0.05556, 'V', 1)).toBe('55.6m V');
     expect(formatValue(4700, 'Ω', 0)).toBe('5k Ω');
-    // Three significant figures keeps the integer part and drops the fraction:
-    // 123.456k becomes 123k.
-    expect(formatValue(123456, 'V', 3)).toBe('123k V');
+    // A three-digit scaled value above 100 no longer forces integers: the
+    // pattern keeps the fraction digits (upstream renders the same).
+    expect(formatValue(123456, 'V', 3)).toBe('123.456k V');
   });
 
   it('keeps the default three-digit behaviour after the toFixed change', () => {
     expect(formatValue(0.0555, 'V')).toBe('55.5m V');
     expect(formatValue(4700, 'Ω')).toBe('4.7k Ω');
     expect(formatValue(0.000001, 'F')).toBe('1µ F');
-  });
-
-  it('counts significant figures, not digits after the dot', () => {
-    expect(formatValue(1.234, 'V', 4)).toBe('1.234 V');
-    expect(formatValue(12.34, 'V', 4)).toBe('12.34 V');
-    // 0.1234 V scales to 123.4m: still four significant figures.
-    expect(formatValue(0.1234, 'V', 4)).toBe('123.4m V');
-    // Four figures through a kilo prefix: 1234 V -> 1.234k.
-    expect(formatValue(1234, 'V', 4)).toBe('1.234k V');
   });
 });
 
@@ -338,9 +330,18 @@ describe('canvas value formatting (short form)', () => {
     expect(formatValueShort(-2.5, 'V')).toBe('-2.5V');
   });
 
-  it('honours the significant-digit count like formatValue', () => {
-    expect(formatValueShort(0.0555, 'V', 1)).toBe('60mV');
+  it('honours the fraction-digit count like formatValue', () => {
+    expect(formatValueShort(0.0555, 'V', 1)).toBe('55.5mV');
     expect(formatValueShort(4700, 'Ω', 0)).toBe('5k');
+  });
+
+  it('keeps a part value intact at the default short-format digit count', () => {
+    // The label of a 6.8 µF capacitor must stay "6.8µF" at the default one
+    // digit: one *fraction* digit, not one significant figure, which would
+    // have rounded the part number away to "7µF".
+    expect(formatValueShort(6.8e-6, 'F', DEFAULT_SETTINGS.shortDecimalDigits)).toBe('6.8µF');
+    expect(formatValueShort(4.7e3, 'Ω', DEFAULT_SETTINGS.shortDecimalDigits)).toBe('4.7k');
+    expect(formatValueShort(2.2e-9, 'F', DEFAULT_SETTINGS.shortDecimalDigits)).toBe('2.2nF');
   });
 });
 
@@ -903,7 +904,7 @@ describe('output element readout', () => {
 
 describe('output readout text', () => {
   it('uses the engineering-prefix short form at auto scale', () => {
-    expect(outputText(0.0555, 0, false, 1)).toBe('60mV');
+    expect(outputText(0.0555, 0, false, 1)).toBe('55.5mV');
     expect(outputText(5, 0, false, 1)).toBe('5V');
   });
 
@@ -922,7 +923,7 @@ describe('output readout text', () => {
     expect(outputText(0, 1, false, 3)).toBe('0V');
     expect(outputText(0, 0, false, 3)).toBe('0V');
     expect(outputText(-2.5, 1, false, 3)).toBe('-2.5V');
-    expect(outputText(-0.0555, 0, false, 1)).toBe('-60mV');
+    expect(outputText(-0.0555, 0, false, 1)).toBe('-55.5mV');
   });
 });
 
@@ -3076,7 +3077,7 @@ describe('value label text', () => {
   ): string => {
     const { ctx, texts } = mkCtx();
     def.draw(
-      { ...context(ctx, 0), showValues: true, voltages: [0, 0], valueDigits: 2 },
+      { ...context(ctx, 0), showValues: true, voltages: [0, 0] },
       { id: 1, kind: 'resistor', x1: 0, y1: 0, x2: 64, y2: 0, flags: 0, params },
     );
     // The value caption is the only fillText these bodies emit.

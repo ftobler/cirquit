@@ -819,10 +819,10 @@ const PREFIXES_ASCII: typeof PREFIXES = PREFIXES.map((p) =>
 );
 
 /** The spaced-form body shared by the µ and ASCII formatters. `digits` is the
- *  significant-figure count: round to that many significant digits after the
- *  prefix, then trim trailing zeroes. `toPrecision` cannot express the
- *  pattern without falling into exponential notation for large values, which
- *  is why 55.5 with one digit is "60m" and not "6e+1m". */
+ *  fraction-digit count, upstream's `####.#` pattern (`getUnitText`,
+ *  CircuitElm.java:157-186): round to that many digits after the prefix, then
+ *  trim trailing zeroes. `toPrecision` cannot express the pattern, which is
+ *  why 55.5 with one digit must be "55.5m" and not "6e+1m". */
 function formatValueWith(v: number, unit: string, digits: number, prefixes: typeof PREFIXES): string {
   if (!Number.isFinite(v)) return '--';
   if (v === 0) return `0 ${unit}`.trim();
@@ -843,35 +843,16 @@ export function formatValueAscii(v: number, unit = '', digits = 3): string {
   return formatValueWith(v, unit, digits, PREFIXES_ASCII);
 }
 
-/** The number with its engineering prefix, trailing zeroes trimmed: the body
- *  the two formatters share. `digits` is the significant-figure count, so
- *  `1.234`, `12.34` and `123.4` all carry four figures regardless of where the
- *  decimal point lands. `toPrecision` would emit exponential notation for big
- *  values, so the fixed decimal places are computed from the exponent instead. */
+/** The number with its engineering prefix, trailing zeroes trimmed: the
+ *  `####.#` body the two formatters share. */
 function formatScaled(v: number, digits: number, prefixes: typeof PREFIXES): string {
   const abs = Math.abs(v);
   const p = prefixes.find((x) => abs >= x.limit) ?? prefixes[prefixes.length - 1];
   const scaled = v / p.scale;
-  const text = formatSignificant(scaled, digits);
-  return `${text}${p.suffix}`;
-}
-
-/** Rounds `v` to `digits` significant figures and trims trailing zeroes,
- *  without ever using exponential notation. `digits <= 0` rounds to the
- *  nearest integer, preserving the old fraction-digit behaviour at the edge. */
-function formatSignificant(v: number, digits: number): string {
-  if (digits <= 0) return v.toFixed(0);
-  const exp = Math.floor(Math.log10(Math.abs(v)));
-  const places = digits - 1 - exp;
-  let text: string;
-  if (places >= 0) {
-    text = v.toFixed(places);
-  } else {
-    const factor = Math.pow(10, -places);
-    text = `${Math.round(v / factor) * factor}`;
-  }
-  // Trim trailing zeroes, but keep integers intact.
-  return text.includes('.') ? text.replace(/\.?0+$/, '') : text;
+  const text = scaled.toFixed(digits);
+  // Trim trailing zeroes left by toFixed, but keep integers intact.
+  const trimmed = text.includes('.') ? text.replace(/\.?0+$/, '') : text;
+  return `${trimmed}${p.suffix}`;
 }
 
 /** The on-canvas value-label formatter, `formatValue`'s no-space sibling

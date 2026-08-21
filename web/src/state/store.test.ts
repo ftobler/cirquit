@@ -1407,7 +1407,7 @@ describe('simulation settings', () => {
     // standards.
     expect(DEFAULT_SETTINGS.euroResistors).toBe(DEFAULT_SETTINGS.euroGates);
     expect(DEFAULT_SETTINGS.valueFontSize).toBe(12);
-    expect(DEFAULT_SETTINGS.shortDecimalDigits).toBe(2);
+    expect(DEFAULT_SETTINGS.shortDecimalDigits).toBe(1);
     expect(DEFAULT_SETTINGS.decimalDigits).toBe(3);
     expect(DEFAULT_SETTINGS.wheelSensitivity).toBe(1);
     expect(DEFAULT_SETTINGS.positiveColor).toBeNull();

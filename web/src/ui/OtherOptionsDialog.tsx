@@ -240,7 +240,7 @@ export function OtherOptionsDialog() {
         <section>
           <h3>Format</h3>
           <UnitNumberInput
-            label="Significant digits (short format)"
+            label="Decimal digits (short format)"
             value={settings.shortDecimalDigits}
             min={0}
             max={6}
@@ -248,7 +248,7 @@ export function OtherOptionsDialog() {
             onCommit={(n) => updateSettings({ shortDecimalDigits: n })}
           />
           <UnitNumberInput
-            label="Significant digits (long format)"
+            label="Decimal digits (long format)"
             value={settings.decimalDigits}
             min={0}
             max={6}

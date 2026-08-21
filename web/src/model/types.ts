@@ -460,11 +460,11 @@ export interface SimSettings {
   currentColor: string | null;
   /** Pixel size for element value labels (CircuitElm.java:53). */
   valueFontSize: number;
-  /** Significant figures for element value labels (upstream
-   *  `shortDecimalDigits`, CircuitElm.java:138-139). */
-  shortDecimalDigits: number;
-  /** Significant figures for readouts (upstream `decimalDigits`,
+  /** Fraction digits for element value labels (upstream `shortDecimalDigits`,
    *  CircuitElm.java:138-139). */
+  shortDecimalDigits: number;
+  /** Fraction digits for readouts (upstream `decimalDigits`, CircuitElm.java:
+   *  138-139). */
   decimalDigits: number;
   /** Scales the per-notch wheel zoom (MouseManager.java:84); 1 is unchanged. */
   wheelSensitivity: number;
@@ -523,7 +523,7 @@ export const DEFAULT_SETTINGS: SimSettings = {
   selectionColor: null,
   currentColor: null,
   valueFontSize: 12,
-  shortDecimalDigits: 2,
+  shortDecimalDigits: 1,
   decimalDigits: 3,
   wheelSensitivity: 1,
 };

@@ -54,7 +54,7 @@ describe('neutralDrawContext', () => {
     expect(g.conventional).toBe(true);
     expect(g.voltageRange).toBe(5);
     expect(g.powerRange).toBe(50);
-    expect(g.valueDigits).toBe(2);
+    expect(g.valueDigits).toBe(1);
     expect(g.valueFontSize).toBe(12);
     expect(g.scale).toBe(1);
     // The symbol set is the exception: an icon must show the body the user
