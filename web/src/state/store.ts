@@ -314,6 +314,10 @@ function makePlot(id: number, elementId: number | null, value: ScopeValue | null
   return { id, elementId, value, manScale: null, manVPosition, acCoupled: false };
 }
 
+/** The horizontal zoom a scope created in the UI starts at, before any stored
+ *  default overrides it. Upstream's Scope constructor speed (Scope.java:270). */
+const UI_SCOPE_SPEED = 64;
+
 /** The settings the Other Options dialog owns, and therefore the ones its
  *  Reset to Defaults button puts back. Listed rather than derived from
  *  `DEFAULT_SETTINGS` so a new setting has to be opted in: a key the dialog
@@ -1593,7 +1597,7 @@ function createAppStore() {
         plots.push(makePlot(allocateId(), elementId, 'current'));
       }
       return {
-        scopes: [...s.scopes, makeScope(id, null, plots, 64, s.scopes.length)],
+        scopes: [...s.scopes, makeScope(id, null, plots, UI_SCOPE_SPEED, s.scopes.length)],
         ...bumpRevision(s),
       };
     });
@@ -1696,6 +1700,35 @@ function createAppStore() {
     if (!s.scopeGesture) s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    }));
+  },
+
+  resetScopeToDefaults: (id) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.id === id);
+    if (!scope) return;
+    s.commit();
+    // The traces stay: a reset is about how the panel is drawn, not about what
+    // it watches. Only the per-plot state the dialog can set by hand (manual
+    // scale, vertical position, coupling) goes back to automatic, and
+    // `makePlot`'s rule that a power or charge trace starts at the bottom of
+    // the manual screen is reapplied rather than zeroed.
+    const plots = scope.plots.map((p) => ({
+      ...p,
+      manScale: null,
+      manVPosition: makePlot(p.id, p.elementId, p.value).manVPosition,
+      acCoupled: false,
+    }));
+    // `makeScope` is what a fresh panel goes through, stored defaults and all,
+    // so "default" here means the same thing the Save as Default button writes:
+    // the two buttons sit side by side and must agree.
+    const fresh = makeScope(scope.id, scope.raw, plots, UI_SCOPE_SPEED, scope.position);
+    set((st) => ({
+      scopes: st.scopes.map((x) => (x.id === id ? fresh : x)),
+      // The trigger and the plot set are part of the engine spec, and the speed
+      // is part of the scope patch, so both revisions move.
+      scopeRevision: st.scopeRevision + 1,
+      ...bumpRevision(st),
     }));
   },
 

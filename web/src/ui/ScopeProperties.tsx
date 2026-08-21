@@ -382,6 +382,13 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
         <button type="button" onClick={() => saveScopeDefaults(scope)}>
           Save as Default
         </button>
+        <button
+          type="button"
+          title="Put this scope's display settings, speed and trigger back to the default"
+          onClick={() => useStore.getState().resetScopeToDefaults(scope.id)}
+        >
+          Reset to Default
+        </button>
         <button type="button" onClick={onClose}>
           Close
         </button>

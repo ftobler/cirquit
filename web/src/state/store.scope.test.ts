@@ -6,6 +6,27 @@ import type { StorageLike } from './appPrefs';
 
 beforeEach(() => useStore.setState(fresh()));
 
+/** A plain-object storage standing in for the DOM localStorage, injected via
+ *  the global so makeScope's loadScopeDefaults reads it. */
+const injectStorage = (blob: string | null): StorageLike & { restore: () => void } => {
+  const map = new Map<string, string>();
+  if (blob !== null) map.set(SCOPE_DEFAULTS_STORAGE_KEY, blob);
+  const storage = {
+    getItem: (k: string) => map.get(k) ?? null,
+    setItem: (k: string, v: string) => void map.set(k, v),
+  } as StorageLike;
+  const prior = (globalThis as { localStorage?: StorageLike }).localStorage;
+  (globalThis as { localStorage?: StorageLike }).localStorage = storage;
+  return {
+    ...storage,
+    restore: () => {
+      if (prior === undefined) delete (globalThis as { localStorage?: StorageLike }).localStorage;
+      else (globalThis as { localStorage?: StorageLike }).localStorage = prior;
+    },
+  };
+};
+
+
 describe('scope line display-field fidelity', () => {
   // Flags 266244 = showMax off (bit 4) + FLAG_PLOTS + FLAG_PERPLOTFLAGS, so
   // the scope has showMax off, an AC-coupled plot and an escaped label.
@@ -215,26 +236,6 @@ describe('charge scope value', () => {
 });
 
 describe('stored scope defaults seed a new scope', () => {
-  /** A plain-object storage standing in for the DOM localStorage, injected via
-   *  the global so makeScope's loadScopeDefaults reads it. */
-  const injectStorage = (blob: string | null): StorageLike & { restore: () => void } => {
-    const map = new Map<string, string>();
-    if (blob !== null) map.set(SCOPE_DEFAULTS_STORAGE_KEY, blob);
-    const storage = {
-      getItem: (k: string) => map.get(k) ?? null,
-      setItem: (k: string, v: string) => void map.set(k, v),
-    } as StorageLike;
-    const prior = (globalThis as { localStorage?: StorageLike }).localStorage;
-    (globalThis as { localStorage?: StorageLike }).localStorage = storage;
-    return {
-      ...storage,
-      restore: () => {
-        if (prior === undefined) delete (globalThis as { localStorage?: StorageLike }).localStorage;
-        else (globalThis as { localStorage?: StorageLike }).localStorage = prior;
-      },
-    };
-  };
-
   it('loadDefaults applies the stored flags, speed and trigger level', () => {
     const storage = injectStorage(
       JSON.stringify({ flags: 8392706, speed: 32, level: 2.5 }),  // 1<<23 + showV + FLAG_PLOTS
@@ -279,5 +280,85 @@ describe('stored scope defaults seed a new scope', () => {
     } finally {
       storage.restore();
     }
+  });
+});
+
+describe('reset a scope to the defaults', () => {
+  it('puts the display fields, speed, trigger and plot state back', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    useStore.getState().setScopeFlags(scope.id, {
+      showRMS: true,
+      showMax: false,
+      fftPlot: true,
+      label: 'Renamed',
+    });
+    useStore.getState().setScopeSpeed(scope.id, 256);
+    useStore.getState().setScopeTrigger(scope.id, { mode: 'auto', level: 3 });
+    useStore.getState().setPlotManScale(scope.plots[0].id, 12);
+    useStore.getState().setPlotManPosition(scope.plots[0].id, -80);
+
+    useStore.getState().resetScopeToDefaults(scope.id);
+
+    const reset = useStore.getState().scopes[0];
+    expect(reset.id).toBe(scope.id);
+    expect(reset.showRMS).toBe(false);
+    expect(reset.showMax).toBe(true);
+    expect(reset.fftPlot).toBe(false);
+    expect(reset.label).toBe('');
+    expect(reset.speed).toBe(64);
+    expect(reset.trigger).toEqual({ mode: 'freeRun', edge: 'rising', level: 0 });
+    // The traces survive: a reset changes how the panel draws, not what it
+    // watches.
+    expect(reset.plots.map((p) => p.id)).toEqual(scope.plots.map((p) => p.id));
+    expect(reset.plots[0].manScale).toBeNull();
+    expect(reset.plots[0].manVPosition).toBe(0);
+  });
+
+  it('a power plot returns to the bottom of the manual screen, not to zero', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'power');
+    const scope = useStore.getState().scopes[0];
+    expect(scope.plots[0].manVPosition).toBe(-100);
+    useStore.getState().setPlotManPosition(scope.plots[0].id, 40);
+
+    useStore.getState().resetScopeToDefaults(scope.id);
+
+    expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(-100);
+  });
+
+  it('resets to the stored default, the same one Save as Default writes', () => {
+    const storage = injectStorage(JSON.stringify({ flags: 8392706, speed: 32, level: 2.5 }));
+    try {
+      const r = addResistor();
+      useStore.getState().addScope(r, 'voltage');
+      const scope = useStore.getState().scopes[0];
+      useStore.getState().setScopeFlags(scope.id, { showPhaseAngle: false });
+      useStore.getState().setScopeSpeed(scope.id, 256);
+
+      useStore.getState().resetScopeToDefaults(scope.id);
+
+      const reset = useStore.getState().scopes[0];
+      expect(reset.showPhaseAngle).toBe(true);
+      expect(reset.speed).toBe(32);
+      expect(reset.trigger.level).toBe(2.5);
+    } finally {
+      storage.restore();
+    }
+  });
+
+  it('is one undo entry', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    useStore.getState().setScopeFlags(scope.id, { showRMS: true, label: 'Renamed' });
+
+    useStore.getState().resetScopeToDefaults(scope.id);
+    useStore.getState().undo();
+
+    const back = useStore.getState().scopes[0];
+    expect(back.showRMS).toBe(true);
+    expect(back.label).toBe('Renamed');
   });
 });

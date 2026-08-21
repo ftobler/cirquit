@@ -415,6 +415,11 @@ export interface AppState {
   setScopeTrigger(id: number, patch: Partial<ScopeTrigger>): void;
   /** Display flags (overlays, scale mode, FFT/X-Y); never forces a reload. */
   setScopeFlags(id: number, patch: Partial<Omit<Scope, 'id' | 'raw' | 'plots' | 'trigger'>>): void;
+  /** Puts one scope's display settings, speed and trigger back to what a
+   *  freshly created panel gets, stored scope defaults included: the Reset to
+   *  Default button beside Save as Default. Keeps the traces and the column
+   *  position; one undo entry. */
+  resetScopeToDefaults(id: number): void;
   /** Shows or hides every voltage (showV) or current (showI) plot, the
    *  Properties dialog's Show Voltage / Show Current boxes (Scope.java:115-134).
    *  Enabling a value with no plot of it present adds one for the scope's first
