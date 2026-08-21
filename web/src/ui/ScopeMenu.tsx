@@ -168,7 +168,10 @@ export function ScopeMenu({ engine, nameOf }: Props) {
       role="menu"
       style={{ left: scopeMenu.x, top: scopeMenu.y }}
     >
-      {items.map(item)}
+      {/* The same command-column wrapper the canvas context menu uses: the
+        shared shell is a flex row (it holds two columns over empty canvas),
+        so a bare run of rows in it would lay out sideways and be clipped. */}
+      <div className="context-commands">{items.map(item)}</div>
     </div>
   );
 }
