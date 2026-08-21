@@ -12,10 +12,12 @@ import {
   dominantAxisSnap,
   postCountOf,
   postsOf,
+  toolDef,
 } from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
 import { GRID_SIZE } from '../../model/types';
 import type { CircuitElement, Point } from '../../model/types';
+import { wireSegments, type WireAxis } from '../../model/wirePlacement';
 
 /** An element whose two ends sit on the same point is degenerate: it has no
  *  body to draw or simulate, and upstream never lets one serialize. Only
@@ -38,6 +40,12 @@ import type { AppState } from '../../state/types';
 export type Drag =
   | { mode: 'none' }
   | { mode: 'place'; start: Point; id: number }
+  /** A wire drag. Nothing is in the store until the pointer lifts: a run is 0,
+   *  1 or 2 wires depending on where the cursor ends up, so building it
+   *  incrementally would mean adding and removing elements under the hand.
+   *  `axis` latches the direction the drag first moved, which is what decides
+   *  which way the L bends (model/wirePlacement.ts). */
+  | { mode: 'wire'; start: Point; current: Point; axis: WireAxis | null }
   | { mode: 'move'; last: Point; moved: boolean; gated?: boolean }
   | {
       mode: 'dragpost';
@@ -168,6 +176,24 @@ export function finishPlacement(drag: Drag, state: AppState): void {
   }
   // Placing one element then returning to select mode matches how people
   // actually build a schematic.
+  state.setTool(null);
+}
+
+/** The pointer-up cleanup a wire drag owes: insert the run the drag traced
+ *  and return to select mode. Nothing was in the store during the drag, so a
+ *  drag that never left its anchor inserts nothing and leaves no undo entry,
+ *  and an abort (a cancelled pointer, a second finger) simply never calls
+ *  this. Sits beside finishPlacement so both cleanups stay testable without a
+ *  canvas. */
+export function finishWireDrag(drag: Drag, state: AppState): void {
+  if (drag.mode !== 'wire') return;
+  // No latched axis means the pointer never left the anchor cell: a click with
+  // the wire tool armed draws nothing rather than dropping a default-length
+  // wire, because a wire's length is the whole of what the user is choosing.
+  const ids =
+    drag.axis === null ? [] : state.addWires(wireSegments(drag.start, drag.current, drag.axis));
+  if (ids.length > 0) state.select(ids);
+  // Placing one run then returning to select mode, like every other placement.
   state.setTool(null);
 }
 
@@ -355,6 +381,13 @@ export function beginPointerGesture(
     const grid = GRID_SIZE;
     const x = snap(p.x, grid);
     const y = snap(p.y, grid);
+    if (toolDef(state.tool)?.kind === 'wire') {
+      // A wire run is built on release, not on press: how many wires it is
+      // (none, one, or the two of an L) is not known until the drag ends, and
+      // there is nothing useful to select or turn in the meantime.
+      dragRef.current = { mode: 'wire', start: { x, y }, current: { x, y }, axis: null };
+      return;
+    }
     // The same builder the ghost draws from, so the part cannot shift under
     // the cursor when the click lands, and every kind now gets a length: the
     // ~150 defs that declare none used to place as a point and be deleted

@@ -6,6 +6,7 @@ import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
 import type { ShortcutOverlay } from '../input/shortcuts';
 import type { CircuitElement, Point, SimSettings } from '../model/types';
+import type { WireSegment } from '../model/wirePlacement';
 
 export interface ViewTransform {
   /** Circuit-space coordinate at the canvas origin. */
@@ -256,6 +257,14 @@ export interface AppState {
   /** Finishes a wire placement: records the snapped end and, when it lands on
    *  another wire's interior, splits that wire so the two connect. */
   placeWireEnd(id: number, x: number, y: number): void;
+  /** Inserts a whole wire run as one edit: the 0, 1 or 2 segments a wire drag
+   *  produced (`model/wirePlacement.ts`). One undo entry covers the run
+   *  however many segments it is, and the run's two free ends split whatever
+   *  they landed on, the same connect-on-drop rule a dragged part follows. The
+   *  corner between two segments is left alone: it is this gesture's own
+   *  junction, and upstream splits only at the dragged element's own ends.
+   *  Returns the new ids, empty when the run had no length. */
+  addWires(segments: WireSegment[]): number[];
   /** Splits the wire at `id` at `point` (circuit coordinates, snapped to the
    *  grid here like upstream's doSplit), replacing it with the two halves. The
    *  manual Split Wire Manually context-menu command; refuses non-wires and

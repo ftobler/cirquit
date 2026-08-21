@@ -803,6 +803,29 @@ function createAppStore() {
       };
     }),
 
+  addWires: (segments) => {
+    if (segments.length === 0) return [];
+    // One commit for the whole run: the two segments of an L are one gesture,
+    // so one Ctrl+Z must take both back. The splits below deliberately do not
+    // commit again, for the same reason (see placeWireEnd).
+    get().commit();
+    const made = segments.map((seg) => ({
+      ...makeElement('wire', seg.x1, seg.y1, seg.x2, seg.y2),
+      id: allocateId(),
+    }));
+    set((s) => ({ elements: [...s.elements, ...made], ...bumpRevision(s) }));
+    // The run's two free ends connect to what they landed on, exactly as a
+    // dragged single wire does (finishPlacement, pointerDown.ts). The corner
+    // between two segments is skipped: it is this gesture's own junction, and
+    // splitting there would have the second segment split the first.
+    const first = made[0];
+    const last = made[made.length - 1];
+    get().placeWireEnd(last.id, last.x2, last.y2);
+    get().autoSplitAt({ x: first.x1, y: first.y1 }, first.id);
+    get().autoSplitAt({ x: last.x2, y: last.y2 }, last.id);
+    return made.map((e) => e.id);
+  },
+
   placeWireEnd: (id, x, y) => {
     // The placement's undo baseline is the commit `addElement` took at
     // pointer-down, so the whole gesture (drop and split) is one undo step.

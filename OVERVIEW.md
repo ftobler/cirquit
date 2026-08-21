@@ -162,7 +162,10 @@ fetch it).
 - Editing: place, select, rubber-band, drag, delete, undo/redo, live parameter
   edits, interactive switches. A dropped or placed terminal splits what it
   lands on, wires and bare component leads alike, and the posts that only touch
-  another element are drawn red and tallied in the info area.
+  another element are drawn red and tallied in the info area. The wire tool has
+  its own placement rule (`model/wirePlacement.ts`): no pre-press ghost, and a
+  drag inserts 0, 1 or 2 wires, never a diagonal one, with the corner of the L
+  on whichever axis the drag first moved along.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
 - Adaptive timestep: halve-and-retry with step rejection on a non-convergent
@@ -175,7 +178,7 @@ fetch it).
 - 459 Rust tests, of which 386 are the end-to-end circuit checks against
   analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
    was split into topic files), plus 72 in-module unit tests and one doctest.
-   2344 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
+   2373 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
   tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps

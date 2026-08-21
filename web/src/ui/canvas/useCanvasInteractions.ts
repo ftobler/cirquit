@@ -16,6 +16,7 @@ import {
 } from '../../model/scrollValue';
 import type { ScrollValueSession } from '../../model/scrollValue';
 import type { CircuitElement, Point } from '../../model/types';
+import { wireDragAxis } from '../../model/wirePlacement';
 import { GRID_SIZE } from '../../model/types';
 import { HIT_TOLERANCE_PX, hitTestElement, postAt, postPatch } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
@@ -29,6 +30,7 @@ import {
   collapsedToPoint,
   finishPlacement,
   finishPostDrag,
+  finishWireDrag,
   placementPoint,
   releaseHeldMomentary,
   type Drag,
@@ -398,6 +400,21 @@ export function useCanvasInteractions(
         }
         break;
       }
+      case 'wire': {
+        // Nothing reaches the store here: the run is drawn from the drag state
+        // by the frame loop and inserted on release, so a drag that wanders
+        // does not add and remove elements under the hand. The axis latches
+        // on the first move off the anchor and holds for the gesture, which is
+        // what keeps the corner from flipping when the cursor crosses the
+        // diagonal.
+        const current = { x: snap(p.x, grid), y: snap(p.y, grid) };
+        dragRef.current = {
+          ...drag,
+          current,
+          axis: drag.axis ?? wireDragAxis(drag.start, current),
+        };
+        break;
+      }
       case 'move': {
         // A touch move may not apply until the recognizer armed the drag, so a
         // tap on an element never drags it (MouseManager.java:383-386). The
@@ -545,6 +562,7 @@ export function useCanvasInteractions(
     }
 
     finishPlacement(drag, state);
+    finishWireDrag(drag, state);
     finishPostDrag(drag, state);
 
     // A row or column sweep can collapse an element to a point only by moving

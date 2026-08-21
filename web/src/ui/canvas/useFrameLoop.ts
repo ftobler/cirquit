@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
 import { scopeParamsFingerprint } from '../../engine/simulator';
-import { defFor } from '../../model/registry';
+import { defFor, toolDef } from '../../model/registry';
 import type { CircuitElement, DrawContext, Point } from '../../model/types';
 import { dotPhaseStep, stepPostPhases, TOO_FAST, wrapPhase } from '../../render/dots';
 import { dragpostHandlesFrom, elementLength, makeTheme } from '../../render/draw';
@@ -13,6 +13,7 @@ import { cachedBadConnectionPoints, postDotPoints, shouldDrawDot } from '../../r
 import { scopeWidth } from '../../scope/geometry';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { GRID_SIZE } from '../../model/types';
+import { wireSegments } from '../../model/wirePlacement';
 import { mergeProblem, makeGhostElement, useStore } from '../../state/store';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
@@ -565,9 +566,16 @@ export function useFrameLoop(
           // toolbox tiles are already disabled and the press is refused, but
           // the placement shortcut and the palette menu can still arm a tool,
           // and a ghost that promises a drop the app will refuse would lie.
+          //
+          // The wire is the one exception: a wire's whole meaning is where its
+          // two ends go, and a default-length stub following the cursor
+          // promises a drop the wire tool does not make (a click inserts
+          // nothing; only a drag does). Its in-flight run is drawn below
+          // instead.
           if (
             settings.editable &&
             tool !== null &&
+            toolDef(tool)?.kind !== 'wire' &&
             dragRef.current.mode === 'none' &&
             hoverRef.current
           ) {
@@ -589,6 +597,26 @@ export function useFrameLoop(
               // context is what makes the ghost read as a preview instead of a
               // dead part sitting at 0 V.
               ghostDef.draw(neutralDrawContext(ctx, theme, settings, view.scale), ghost);
+              ctx.restore();
+            }
+          }
+
+          // The wire run a drag is tracing. It is not in `elements` yet (see
+          // the 'wire' Drag mode): the run is 0, 1 or 2 wires depending on
+          // where the cursor is, so it is built on release and only drawn
+          // here. Same slot and same wash as the ghost above, because it is
+          // the same promise: this is what a release would insert.
+          if (dragRef.current.mode === 'wire') {
+            const w = dragRef.current;
+            const wireDef = defFor('wire');
+            const segments = w.axis === null ? [] : wireSegments(w.start, w.current, w.axis);
+            if (wireDef && segments.length > 0) {
+              ctx.save();
+              ctx.globalAlpha = GHOST_ALPHA;
+              const preview = neutralDrawContext(ctx, theme, settings, view.scale);
+              for (const seg of segments) {
+                wireDef.draw(preview, { ...seg, id: -1, kind: 'wire', flags: 0, params: {} });
+              }
               ctx.restore();
             }
           }

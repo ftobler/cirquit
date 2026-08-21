@@ -7,12 +7,14 @@ import type { CircuitElement } from '../../model/types';
 import { HIT_TOLERANCE_PX } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
 import { makeGhostElement, snap, useStore } from '../../state/store';
+import { DEFAULT_PLACEMENT_LENGTH } from '../../state/helpers';
 import { fresh } from '../../state/store.test-helpers';
 import {
   armedHandle,
   beginPointerGesture,
   finishPlacement,
   finishPostDrag,
+  finishWireDrag,
   placementPoint,
   releaseHeldMomentary,
   type Drag,
@@ -373,13 +375,97 @@ describe('click-place: a press with no drag', () => {
   });
 
   it('places the pre-ghost geometry when nothing has been turned', () => {
-    useStore.getState().setTool('wire');
+    useStore.getState().setTool('inductor');
     const r = refs();
     beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
 
     const placed = useStore.getState().elements[0];
-    const len = (defFor('wire')?.defaultLength ?? 0) * GRID_SIZE;
+    const len = (defFor('inductor')?.defaultLength ?? DEFAULT_PLACEMENT_LENGTH) * GRID_SIZE;
     expect([placed.x1, placed.y1, placed.x2, placed.y2]).toEqual([96, 96, 96 + len, 96]);
+  });
+});
+
+describe('the wire tool draws a run instead of placing a part', () => {
+  // A wire is placed by its own rule: nothing lands on press, the run is 0, 1
+  // or 2 wires, and it is never diagonal (model/wirePlacement.ts).
+  const wireDrag = (from: { x: number; y: number }) => {
+    useStore.getState().setTool('wire');
+    const r = refs();
+    beginPointerGesture(down(), from, useStore.getState(), null, false, r);
+    return r;
+  };
+
+  it('arms a wire drag and adds nothing on press', () => {
+    const r = wireDrag({ x: 100, y: 100 });
+    expect(r.dragRef.current).toEqual({
+      mode: 'wire',
+      start: { x: 96, y: 96 },
+      current: { x: 96, y: 96 },
+      axis: null,
+    });
+    expect(useStore.getState().elements).toHaveLength(0);
+  });
+
+  it('inserts nothing for a press that never moved', () => {
+    const r = wireDrag({ x: 100, y: 100 });
+    finishWireDrag(r.dragRef.current, useStore.getState());
+    expect(useStore.getState().elements).toHaveLength(0);
+    // The tool still stands down, so a stray click does not leave it armed.
+    expect(useStore.getState().tool).toBeNull();
+  });
+
+  it('inserts one wire for a straight drag', () => {
+    const r = wireDrag({ x: 100, y: 100 });
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'wire') throw new Error('expected a wire drag');
+    finishWireDrag(
+      { ...drag, current: { x: 224, y: 96 }, axis: 'h' },
+      useStore.getState(),
+    );
+    const wires = useStore.getState().elements;
+    expect(wires).toHaveLength(1);
+    expect([wires[0].x1, wires[0].y1, wires[0].x2, wires[0].y2]).toEqual([96, 96, 224, 96]);
+  });
+
+  it('inserts an L of two wires for a diagonal drag, bending along the latched axis', () => {
+    const r = wireDrag({ x: 100, y: 100 });
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'wire') throw new Error('expected a wire drag');
+    finishWireDrag(
+      { ...drag, current: { x: 224, y: 160 }, axis: 'h' },
+      useStore.getState(),
+    );
+    const wires = useStore.getState().elements;
+    expect(wires).toHaveLength(2);
+    expect(wires.every((w) => w.kind === 'wire')).toBe(true);
+    // Across first, then down: the corner is on the latched axis.
+    expect([wires[0].x1, wires[0].y1, wires[0].x2, wires[0].y2]).toEqual([96, 96, 224, 96]);
+    expect([wires[1].x1, wires[1].y1, wires[1].x2, wires[1].y2]).toEqual([224, 96, 224, 160]);
+    expect(useStore.getState().selectedIds).toEqual(wires.map((w) => w.id));
+  });
+
+  it('takes the whole L back in one undo', () => {
+    const r = wireDrag({ x: 100, y: 100 });
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'wire') throw new Error('expected a wire drag');
+    finishWireDrag({ ...drag, current: { x: 224, y: 160 }, axis: 'v' }, useStore.getState());
+    expect(useStore.getState().elements).toHaveLength(2);
+    useStore.getState().undo();
+    expect(useStore.getState().elements).toHaveLength(0);
+  });
+
+  it('splits a wire the run ends on, so the drop connects', () => {
+    const crossed = useStore
+      .getState()
+      .addElement({ kind: 'wire', x1: 224, y1: 0, x2: 224, y2: 320, flags: 0, params: {} });
+    const r = wireDrag({ x: 100, y: 100 });
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'wire') throw new Error('expected a wire drag');
+    finishWireDrag({ ...drag, current: { x: 224, y: 96 }, axis: 'h' }, useStore.getState());
+    const elements = useStore.getState().elements;
+    // The crossed wire is gone, replaced by its two halves, plus the new run.
+    expect(elements.some((e) => e.id === crossed)).toBe(false);
+    expect(elements).toHaveLength(3);
   });
 });
 
