@@ -178,7 +178,7 @@ fetch it).
 - 459 Rust tests, of which 386 are the end-to-end circuit checks against
   analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
    was split into topic files), plus 72 in-module unit tests and one doctest.
-   2378 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
+   2385 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
   tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
