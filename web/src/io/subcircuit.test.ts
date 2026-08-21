@@ -574,6 +574,40 @@ describe('building a model from a selection', () => {
     );
   });
 
+  it('builds a model carrying logic children, the input count riding the dump', () => {
+    // A selection holding gates used to be refused outright, so no subcircuit
+    // could contain logic at all. The gate's model line names one node per
+    // input plus the output, and its dump's first field is the input count,
+    // which is what lets the engine rebuild a wide gate.
+    const gate = {
+      ...makeElement('nandGate', 0, 0, 96, 0),
+      id: nextId++,
+      params: { inputCount: 3, highVoltage: 5 },
+    } as CircuitElement;
+    const inverter = { ...makeElement('inverter', 96, 0, 192, 0), id: nextId++ } as CircuitElement;
+    const elements = [
+      gate,
+      inverter,
+      label('a', 0, -16, -32, 0),
+      label('b', 0, 0, -32, 0),
+      label('c', 0, 16, -32, 0),
+      label('out', 192, 0, 32, 0),
+    ];
+    const built = buildModelFromSelection(elements, []);
+
+    expect(built.unsupported).toEqual([]);
+    const lines = built.model!.nodeList.split('\r');
+    // Three inputs then the output, then the inverter hanging off it.
+    expect(lines[0].split(' ')).toHaveLength(5);
+    expect(lines[0].startsWith('NandGateElm ')).toBe(true);
+    expect(lines[1].startsWith('InverterElm ')).toBe(true);
+    // The gate's own output node is the inverter's input.
+    expect(lines[0].split(' ').at(-1)).toBe(lines[1].split(' ')[1]);
+    // inputCount, last output voltage, high level; then the inverter's slew
+    // rate and high level.
+    expect(built.model!.elmDump.split(' ')[0]).toBe('0\\s3\\s0\\s5');
+  });
+
   it('builds a model carrying capacitor, diode and inductor children', () => {
     // These kinds used to refuse the build outright; now they become child
     // model lines and their numeric dump fields ride the `.` line round trip

@@ -776,3 +776,141 @@ fn ota_parses_the_corpus_child_dump_tokens() {
 }
 
 // ─── Live state read-back (`Circuit::state_tokens`) ───
+
+// ─── logic children ───
+
+/// Output voltage of a composite whose model is one gate, driven by rails on
+/// the input posts and loaded by 1k to ground on the output post. `model` and
+/// `dumps` are the child model line and its dump token, exactly as a `.` line
+/// carries them. The posts are laid out left to right; the last is the output.
+fn composite_gate_output(model: &str, dumps: &[&str], inputs: &[f64]) -> f64 {
+    let mut specs = Vec::new();
+    let mut posts = Vec::new();
+    for (i, &v) in inputs.iter().enumerate() {
+        let y = i as i32 * 32;
+        specs.push(elm(i as u32 + 1, "rail", &[[0, y]], &[("maxVoltage", v)]));
+        posts.push([0, y]);
+    }
+    let out = [200, 0];
+    posts.push(out);
+    let external: Vec<usize> = (1..=posts.len()).collect();
+    let composite_id = inputs.len() as u32 + 1;
+    specs.push(elm_composite(composite_id, &posts, model, &external, dumps));
+    specs.push(elm(
+        composite_id + 1,
+        "resistor",
+        &[out, [200, 200]],
+        &[("resistance", 1000.0)],
+    ));
+    specs.push(elm(composite_id + 2, "ground", &[[200, 200]], &[]));
+    let load = specs.len() - 2;
+    let mut c = build(specs, opts(1e-5, false));
+    c.run(5);
+    c.element_voltages()[load]
+}
+
+#[test]
+fn composite_and_gate_child_follows_its_truth_table() {
+    // A gate inside a subcircuit is what the `.`-line decoders in the corpus
+    // are built from, and what a user's own Create Subcircuit selection needs
+    // before it can hold logic at all.
+    let model = "AndGateElm 1 2 3";
+    let dump = ["0_2_0_5"];
+    assert!(close(
+        composite_gate_output(model, &dump, &[5.0, 5.0]),
+        5.0,
+        1e-9
+    ));
+    assert!(close(
+        composite_gate_output(model, &dump, &[5.0, 0.0]),
+        0.0,
+        1e-9
+    ));
+    assert!(close(
+        composite_gate_output(model, &dump, &[0.0, 0.0]),
+        0.0,
+        1e-9
+    ));
+}
+
+#[test]
+fn composite_gate_child_takes_its_input_count_from_the_dump() {
+    // The dump's first field is the gate's input count (GateElm.java:55), so
+    // a three-input NAND inside a composite must read all three.
+    let model = "NandGateElm 1 2 3 4";
+    let dump = ["0_3_0_5"];
+    assert!(close(
+        composite_gate_output(model, &dump, &[5.0, 5.0, 5.0]),
+        0.0,
+        1e-9
+    ));
+    assert!(close(
+        composite_gate_output(model, &dump, &[5.0, 5.0, 0.0]),
+        5.0,
+        1e-9
+    ));
+}
+
+#[test]
+fn composite_gate_child_infers_its_input_count_from_the_model_line() {
+    // With no dump token the gate would default to two inputs and its
+    // post-count check would then throw the line away. The node list names
+    // every post, so it is the input count the model meant.
+    let three_in = circuit_core::elements::composite::Composite::from_model(
+        "OrGateElm 1 2 3 4",
+        &[1, 2, 3, 4],
+        None,
+        "composite",
+    );
+    assert_eq!(three_in.post_count(), 4);
+    assert!(close(
+        composite_gate_output("OrGateElm 1 2 3 4", &[], &[0.0, 0.0, 5.0]),
+        5.0,
+        1e-9
+    ));
+    assert!(close(
+        composite_gate_output("OrGateElm 1 2 3 4", &[], &[0.0, 0.0, 0.0]),
+        0.0,
+        1e-9
+    ));
+}
+
+#[test]
+fn composite_inverter_child_inverts_and_carries_its_high_level() {
+    // The inverter's dump is slew rate then high level (InverterElm.java), so
+    // a child at 3.3 V logic must swing to 3.3, not to the 5 V default.
+    assert!(close(
+        composite_gate_output("InverterElm 1 2", &["0_0.5_5"], &[0.0]),
+        5.0,
+        1e-6
+    ));
+    assert!(close(
+        composite_gate_output("InverterElm 1 2", &["0_0.5_5"], &[5.0]),
+        0.0,
+        1e-6
+    ));
+    assert!(close(
+        composite_gate_output("InverterElm 1 2", &["0_0.5_3.3"], &[0.0]),
+        3.3,
+        1e-6
+    ));
+}
+
+#[test]
+fn composite_gates_chain_through_an_internal_node() {
+    // Two gates wired to each other inside the model: a NAND feeding an
+    // inverter is an AND, and the internal node between them is the composite's
+    // own, never a post.
+    let model = "NandGateElm 1 2 4\rInverterElm 4 3";
+    let dumps = ["0_2_0_5", "0_0.5_5"];
+    assert!(close(
+        composite_gate_output(model, &dumps, &[5.0, 5.0]),
+        5.0,
+        1e-6
+    ));
+    assert!(close(
+        composite_gate_output(model, &dumps, &[5.0, 0.0]),
+        0.0,
+        1e-6
+    ));
+}

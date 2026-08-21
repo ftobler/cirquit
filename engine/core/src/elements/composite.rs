@@ -70,10 +70,35 @@ fn child_kind(model_type: &str) -> Option<(&'static str, Vec<(&'static str, f64)
         // to a ground child's node; the optocoupler's light path is a CCCS
         // whose expression the parent sets after build. A ground child pins
         // its post's model node to the reference (see the node-mapping pass).
+        // Logic children. A gate's post count is its input count plus the
+        // output, and the input count is the first dump field, so a gate whose
+        // model line carries no dump falls back to the node count (see
+        // `gate_input_count`).
+        "AndGateElm" => Some(("andGate", Vec::new())),
+        "NandGateElm" => Some(("nandGate", Vec::new())),
+        "OrGateElm" => Some(("orGate", Vec::new())),
+        "NorGateElm" => Some(("norGate", Vec::new())),
+        "XorGateElm" => Some(("xorGate", Vec::new())),
+        "XnorGateElm" => Some(("xnorGate", Vec::new())),
+        "InverterElm" => Some(("inverter", Vec::new())),
         "OpAmpElm" => Some(("opamp", Vec::new())),
         "AnalogSwitchElm" => Some(("analogSwitch", Vec::new())),
         "GroundElm" => Some(("ground", Vec::new())),
         "CCCSElm" => Some(("cccs", Vec::new())),
+        _ => None,
+    }
+}
+
+/// The input count a gate child's model line implies: one post per input plus
+/// the output. `None` for a child that is not a gate, and for a node list too
+/// short to name even one input, which `from_model`'s post-count check refuses
+/// anyway. The count is clamped to the model's own 1..=8 range so a malformed
+/// line cannot allocate an absurd gate.
+fn gate_input_count(child_kind: &str, nodes: usize) -> Option<f64> {
+    match child_kind {
+        "andGate" | "nandGate" | "orGate" | "norGate" | "xorGate" | "xnorGate" => {
+            (nodes >= 2).then(|| (nodes - 1).min(8) as f64)
+        }
         _ => None,
     }
 }
@@ -124,6 +149,12 @@ fn dump_fields(kind: &str) -> Option<&'static [&'static str]> {
         // child has nothing numeric to apply (the port's ground ignores all
         // params), and the CCCS's expression is a string the parent sets
         // directly, not a dump field.
+        // GateElm.java:55-61 reads inputCount, the last output voltage and the
+        // high level, which is the frontend registry's dump order too.
+        "andGate" | "nandGate" | "orGate" | "norGate" | "xorGate" | "xnorGate" => {
+            Some(&["inputCount", "lastOutputVoltage", "highVoltage"])
+        }
+        "inverter" => Some(&["slewRate", "highVoltage"]),
         "opamp" => Some(&["maxOut", "minOut", "gbw", "volts0", "volts1", "gain"]),
         "analogSwitch" => Some(&["r_on", "r_off", "threshold"]),
         "cccs" => Some(&["inputCount"]),
@@ -251,6 +282,15 @@ impl Composite {
             // override it.
             if (child_kind == "jfet" || child_kind == "mosfet") && flags & MOSFET_PNP != 0 {
                 params.insert("pnp".into(), -1.0);
+            }
+            // A gate's post count is `inputCount + 1`, and a model line that
+            // carries no dump token (a hand-written model, or one whose
+            // writer left the gates at their defaults) would build a 2-input
+            // gate for a node list of any width, which the post-count check
+            // below then throws away. The node list names every post, so it
+            // is the input count the model meant.
+            if let Some(inputs) = gate_input_count(child_kind, nodes.len()) {
+                params.entry("inputCount".into()).or_insert(inputs);
             }
             // A switch child cannot rely on the top-level wire merging that
             // shorts a closed switch's terminals, so it must know it is in a

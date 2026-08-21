@@ -509,9 +509,12 @@ function compositeModel(node: XmlNode): string {
     if (className !== undefined && child.attrs.nn !== undefined) {
       const nodes = child.attrs.nn.split(' ').map((v) => Number(v));
       lines.push(`${className} ${nodes.join(' ')}`);
+      // The engine indexes the dump tokens by model-line position
+      // (composite.rs, `dumps.get(i)`), so the two lists have to stay in step:
+      // a child that contributes no line contributes no dump either, and one
+      // whose tag carries no fields still contributes its flags.
+      dumps.push(escapeChildField(childDumpToken(child) ?? String(attr(child, 'f', 0))));
     }
-    const dump = childDumpToken(child);
-    if (dump !== null) dumps.push(escapeChildField(dump));
   }
   return [
     '.',

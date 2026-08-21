@@ -508,6 +508,16 @@ const KIND_TO_CLASS: Record<string, (e: CircuitElement) => string> = {
   transistor: (e) => ((e.params.pnp ?? 1) < 0 ? 'PTransistorElm' : 'NTransistorElm'),
   jfet: (e) => ((e.params.pnp ?? 1) < 0 ? 'PJfetElm' : 'NJfetElm'),
   mosfet: (e) => ((e.params.pnp ?? 1) < 0 ? 'PMosfetElm' : 'NMosfetElm'),
+  // The logic children. A gate's model line names one node per input plus the
+  // output, and its dump carries the input count, so a wide gate survives the
+  // round trip; the engine reads the same three fields the registry dumps.
+  andGate: () => 'AndGateElm',
+  nandGate: () => 'NandGateElm',
+  orGate: () => 'OrGateElm',
+  norGate: () => 'NorGateElm',
+  xorGate: () => 'XorGateElm',
+  xnorGate: () => 'XnorGateElm',
+  inverter: () => 'InverterElm',
 };
 
 /** Kinds that are not child model lines and are not gaps in the model either.

@@ -84,11 +84,11 @@ export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {
   'alu74181.txt':
     'the 5-bit bus splitter feeds the separate S0-S3 and M signals, but the port has no bus support, so all bits join one node and the differently-driven logic inputs short',
   'td4.txt':
-    'the decoder composite is built from gates, which the composite engine has no child model for, and the bus splitters and bus logic inputs are dropped, so the microprocessor is structurally broken',
-  'td4-add2.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
-  'td4-ctr.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
-  'td4-ctr-dn.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
-  'td4-ctr-up-dn.txt': 'same decoder composite and bus-splitter limitation as td4.txt',
+    'the bus splitters and bus logic inputs are dropped, so the microprocessor is structurally broken; its command-decoder composite itself now builds, gate children and all',
+  'td4-add2.txt': 'same bus-splitter limitation as td4.txt',
+  'td4-ctr.txt': 'same bus-splitter limitation as td4.txt',
+  'td4-ctr-dn.txt': 'same bus-splitter limitation as td4.txt',
+  'td4-ctr-up-dn.txt': 'same bus-splitter limitation as td4.txt',
   'cs-opamprail.txt':
     'the clamped gain-1000 VCVS saturates against its +/-10 V rails, where the secant derivative VCVSElm takes across both sample points collapses to the 1e-6 floor and the linearised source becomes a constant, so Newton flip-flops between the rails; upstream breaks the same limit cycle in OpAmpElm with randomised hysteresis, which VCVSElm has no equivalent for, and only the adaptive timestep this file leaves off settles it',
 };
