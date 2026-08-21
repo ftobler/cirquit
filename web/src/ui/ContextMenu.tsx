@@ -65,9 +65,12 @@ export function ContextMenu() {
   }, [contextMenu]);
 
   // A fresh open starts from the whole palette; a stale query from the last
-  // open would hide most of the parts with no visible cause.
+  // open would hide most of the parts with no visible cause. Cleared on close
+  // rather than on open: the menu renders nothing while closed, so the height
+  // change cannot land after the layout effect above has already measured and
+  // placed it.
   useEffect(() => {
-    if (contextMenu) setQuery('');
+    if (!contextMenu) setQuery('');
   }, [contextMenu]);
 
   // Dismissal: a pointerdown anywhere outside the menu, Escape, and losing
