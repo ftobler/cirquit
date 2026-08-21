@@ -33,7 +33,7 @@ export const STOP_TRIGGER_DEF: ElementDef = {
       ],
     },
     { name: 'delay', label: 'Delay (s)', unit: 's' },
-    { name: 'count', label: 'Required Count' },
+    { name: 'count', label: 'Required Count', min: 1, integer: true },
   ],
   // The "trigger" label at the free end is a solid pick zone (StopTriggerElm.java).
   bodyRect: (e) => endpointBox(e, 12),

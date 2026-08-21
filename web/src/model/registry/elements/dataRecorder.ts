@@ -23,7 +23,7 @@ export const DATA_RECORDER_DEF: ElementDef = {
   parse: (t, e) => readParams(t, e, ['dataCount']),
   dump: writeParams(['dataCount']),
   fields: [
-    { name: 'dataCount', label: '# of Data Points' },
+    { name: 'dataCount', label: '# of Data Points', min: 1, integer: true },
     // A button, not a value: the panel renders the download and the samples
     // come from the engine on demand (DataRecorderElm.java:99-125).
     { name: 'download', label: 'Download data', type: 'download' },

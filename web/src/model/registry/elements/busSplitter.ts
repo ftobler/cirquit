@@ -67,7 +67,7 @@ export const BUS_SPLITTER_DEF: ElementDef = {
   dump: (e) => chipDump(e, busSplitterPins(e), true),
   dumpFlags: chipDumpFlags,
   fields: [
-    { name: 'bits', label: '# of Bits', min: 2 },
+    { name: 'bits', label: '# of Bits', min: 2, integer: true },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
   ],
   draw: drawBusSplitter,

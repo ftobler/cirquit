@@ -187,7 +187,7 @@ export const DPDT_SWITCH_DEF: ElementDef = {
   dump: (e) => [...switchTokens(e), e.params.poleCount ?? 2],
   dumpFlags: labelFlags,
   fields: [
-    { name: 'poleCount', label: '# of Poles' },
+    { name: 'poleCount', label: '# of Poles', min: 1, integer: true },
     { name: 'iec', label: 'IEC Symbol', type: 'bool', flag: SWITCH_IEC },
     { name: 'resistance', label: 'On Resistance', unit: 'Ω' },
     { name: 'keyShortcut', label: 'Keyboard Shortcut', type: 'text', target: 'keyShortcut' },

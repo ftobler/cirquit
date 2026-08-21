@@ -37,7 +37,7 @@ import {
   swapTerminalOrder,
 } from '../model/transform';
 import { LOGIC_INPUT_TERNARY, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
-import { postsOf } from '../model/registry';
+import { defFor, postsOf } from '../model/registry';
 import { chipPinsOf } from '../model/registry/chips';
 import { CS_INPUT_COUNT_KINDS } from '../model/registry/elements/vcvs';
 import { GATE_INPUT_COUNT_KINDS } from '../model/registry/elements/gate';
@@ -84,6 +84,7 @@ import {
   snap,
 } from './helpers';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
+import { clampInteger } from '../ui/elementFields';
 
 /** The element kinds whose `inputCount` `setParam` normalises on edit: the
  *  controlled sources and the six basic gates, all of whose engines truncate
@@ -1259,6 +1260,17 @@ function createAppStore() {
         // and a rebuild never trips the post-count guard (circuit.rs:261-269).
         const normalize = BITS_NORMALIZERS[`${target.kind}:${name}`];
         if (normalize !== undefined) pending = normalize(value);
+        else {
+          // The catch-all for every other counting field: the def says the
+          // value is a whole number (FieldDef.integer), so no path may store a
+          // fraction in it. The two rules above are the kinds whose engine
+          // needs a specific truncate-or-round with its own range; this covers
+          // the rest, and in particular a slider bound to one of them, which
+          // reaches setParam without passing the edit dialog's own guard and
+          // would otherwise write 7.34 into a saved netlist token.
+          const field = defFor(target.kind)?.fields?.find((f) => f.name === name);
+          if (field?.integer) pending = clampInteger(pending, field);
+        }
       }
       return {
         elements: s.elements.map((e) => {

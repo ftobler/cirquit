@@ -97,7 +97,7 @@ export const COUNTER2_DEF: ElementDef = {
   dumpFlags: chipDumpFlags,
   fields: [
     { name: 'bits', label: '# of Bits', min: 2, max: 32, integer: true },
-    { name: 'modulus', label: 'Modulus' },
+    { name: 'modulus', label: 'Modulus', min: 0, integer: true },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
   ],
   draw: drawCounter2,

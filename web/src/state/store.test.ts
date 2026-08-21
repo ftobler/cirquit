@@ -2005,6 +2005,53 @@ describe('chip bit-width edits are normalised', () => {
   });
 });
 
+describe('FieldDef.integer catch-all normalises every other counting field', () => {
+  const add = (kind: string, params: Record<string, number>) =>
+    useStore.getState().addElement({
+      kind,
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params,
+    });
+
+  it.each([
+    ['counter', { bits: 3, modulus: 10 }, 'modulus', 10.5, 11],
+    ['counter2', { bits: 3, modulus: 10 }, 'modulus', 10.5, 11],
+    ['dataRecorder', { dataCount: 1024 }, 'dataCount', 1024.5, 1025],
+    ['relay', { poleCount: 2 }, 'poleCount', 2.5, 3],
+    ['stopTrigger', { count: 1 }, 'count', 1.5, 2],
+  ])(
+    'setParam rounds a fractional %s %s to a whole number',
+    (kind, params, name, given, expected) => {
+      // A slider can hand these a fraction through setParam without passing
+      // the spinner's own guard. The catch-all clamps to the field's range the
+      // same way the spinner does, so the saved netlist token is never
+      // fractional.
+      const id = add(kind, params);
+      useStore.getState().setParam(id, name, given);
+      const after = useStore.getState();
+      const e = after.elements.find((x) => x.id === id);
+      expect(e?.params[name]).toBe(expected);
+      expect(after.pendingParams.get(`${id}:${name}`)?.value).toBe(expected);
+    },
+  );
+
+  it('clamps an integer field to its def minimum', () => {
+    const id = add('relay', { poleCount: 2 });
+    useStore.getState().setParam(id, 'poleCount', 0.5);
+    expect(useStore.getState().elements.find((e) => e.id === id)?.params.poleCount).toBe(1);
+  });
+
+  it('leaves a continuous field untouched', () => {
+    const id = add('counter', { bits: 3, modulus: 10 });
+    useStore.getState().setParam(id, 'highVoltage', 4.7);
+    expect(useStore.getState().elements.find((e) => e.id === id)?.params.highVoltage).toBe(4.7);
+  });
+});
+
 describe('undo parity', () => {
   const addSwitch = () =>
     useStore.getState().addElement({

@@ -251,7 +251,7 @@ export const RELAY_DEF: ElementDef = {
     e.params.position ?? 0,
   ],
   fields: [
-    { name: 'poleCount', label: 'Poles' },
+    { name: 'poleCount', label: 'Poles', min: 1, integer: true },
     { name: 'inductance', label: 'Inductance', unit: 'H' },
     { name: 'r_on', label: 'On resistance', unit: 'Ω' },
     { name: 'r_off', label: 'Off resistance', unit: 'Ω' },
