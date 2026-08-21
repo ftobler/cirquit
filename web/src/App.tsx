@@ -290,7 +290,10 @@ export default function App() {
           // the cursor happens to rest on an element.
           {
             const at = paletteAnchor({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-            s.openContextMenu(at.client.x, at.client.y, null, at.circuit);
+            // The trailing true is the whole point of the key: there is no
+            // click behind this open, so the menu has to put the caret in its
+            // element search itself.
+            s.openContextMenu(at.client.x, at.client.y, null, at.circuit, true);
           }
           break;
       }
