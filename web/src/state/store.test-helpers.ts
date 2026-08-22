@@ -45,6 +45,7 @@ export const fresh = () => ({
   hasRecovery: false,
   liveStateProvider: null,
   document: 0,
+  undocked: null,
 });
 
 export const addResistor = () =>

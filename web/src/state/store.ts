@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Scope, ScopePlot, ScopeTrigger, ScopeValue } from '../engine/simulator';
-import { scopeSpeed } from '../scope/geometry';
+import { scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 import { positionToOffset } from '../scope/scale';
 import {
   allocateId,
@@ -86,6 +86,12 @@ import {
   snap,
 } from './helpers';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
+import {
+  attachUndockedWindow,
+  detachUndockedWindow,
+  undockedWindow,
+  undockedWindowOuterSize,
+} from '../undocked/opener';
 import { clampInteger } from '../ui/elementFields';
 
 /** The element kinds whose `inputCount` `setParam` normalises on edit: the
@@ -547,6 +553,7 @@ function createAppStore() {
   lastSaved: null,
   liveStateProvider: null,
   document: 0,
+  undocked: null,
 
   setRunning: (running) => set({ running }),
   toggleRunning: () => set((s) => ({ running: !s.running })),
@@ -2084,6 +2091,68 @@ function createAppStore() {
       }
       return { scopes: out, ...bumpRevision(st) };
     });
+  },
+
+  openUndockedScope: (elementId) => {
+    const s = get();
+    // One undocked window at a time: the mirror pushes a copied snapshot per
+    // frame, and two windows would double that for little gain. The menu row
+    // greys out for the same rule; this is the backstop for races.
+    if (s.undocked) {
+      s.setNotice('An undocked scope window is already open');
+      return;
+    }
+    // The open must happen inside the click's user gesture or the browser's
+    // popup blocker refuses it, so nothing may await before this call. The
+    // canvas starts at the width the mirror computes trigger state against:
+    // a fresh scope has no measured panel yet, so this is the same default
+    // the frame loop's trigger computation falls back to, and the popup and
+    // the dock align until the user resizes one of them.
+    const size = undockedWindowOuterSize(DEFAULT_SCOPE_WIDTH);
+    const win = window.open(
+      `${import.meta.env.BASE_URL}pages/scopewin.html`,
+      '_blank',
+      `width=${size.width},height=${size.height}`,
+    );
+    if (!win) {
+      s.setNotice('The browser blocked the pop-up window; allow pop-ups to undock a scope');
+      return;
+    }
+    attachUndockedWindow(win, () => get().closeUndockedScope());
+    s.commit();
+    set((st) => {
+      // Upstream's identically named command drops a floating scope element
+      // onto the schematic near the clicked element (CommandManager.java:
+      // 192-198); this port re-interprets the row as a display-only second
+      // window instead. What carries over is upstream's always-fresh-scope
+      // rule: no dedup against existing panels, because redocking one would
+      // surprise whoever docked it. The plot shape is addScope's
+      // voltage-plus-current-companion pair.
+      const id = allocateId();
+      const plots: ScopePlot[] = [makePlot(id, elementId, 'voltage')];
+      const kind = st.elements.find((e) => e.id === elementId)?.kind;
+      if (
+        st.settings.showCurrent &&
+        kind !== undefined &&
+        !OUTPUT_LIKE.has(kind)
+      ) {
+        plots.push(makePlot(allocateId(), elementId, 'current'));
+      }
+      return {
+        scopes: [...st.scopes, makeScope(id, null, plots, UI_SCOPE_SPEED, st.scopes.length)],
+        ...bumpRevision(st),
+        undocked: { scopeId: id, windowRef: undockedWindow() },
+      };
+    });
+  },
+
+  closeUndockedScope: () => {
+    if (!get().undocked) return;
+    // Closing the popup first reads best: the window disappears with the
+    // click rather than after the state update lands. The bridge drops its
+    // own attachment here, so the frame loop stops pushing immediately.
+    detachUndockedWindow(true);
+    set({ undocked: null });
   },
 
   loadNetlist: (text) => {

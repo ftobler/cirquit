@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Undocked Scope - Circuit Simulator</title>
+    <!-- %BASE_URL% is Vite's html env replacement, so the icon resolves under
+         the configurable deploy base (/cirquit/ on Pages) and at / in dev. -->
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+  </head>
+  <body class="scope-win">
+    <canvas id="scope-win-canvas"></canvas>
+    <div id="scope-win-waiting" class="scope-win-waiting" hidden>
+      Not receiving samples: run or focus the simulator window.
+    </div>
+    <script type="module" src="/src/undocked/scopewin.ts"></script>
+  </body>
+</html>

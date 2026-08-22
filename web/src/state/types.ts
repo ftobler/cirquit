@@ -224,6 +224,25 @@ export interface AppState {
    *  before the hardcoded combos. Not part of the undo Snapshot: it is an
    *  app setting, and undoing a circuit edit must not rewrite a shortcut. */
   shortcuts: ShortcutOverlay;
+  /** The open undocked scope window: the id of the scope it mirrors and the
+   *  handle postMessage pushes go to. Transient UI state like `dialog`: never
+   *  part of Snapshot, no undo entry, dropped when the child window closes or
+   *  the mirrored scope disappears under it (a remove, an undo, a load). */
+  undocked: { scopeId: number; windowRef: Window | null } | null;
+
+  /**
+   * The "View in New Undocked Scope" command. The port's own interpretation
+   * of upstream's identically named menu row: there it drops a floating scope
+   * element onto the schematic near the clicked element (CommandManager.java:
+   * 192-198), here it opens a display-only second window mirroring a freshly
+   * created scope for that element. The menu row has no scope to name, so
+   * this takes the element and creates the scope itself; the entry records
+   * the created scope's id. Refuses while one window is up, and falls back to
+   * a notice when the browser blocks the pop-up.
+   */
+  openUndockedScope(elementId: number): void;
+  /** Closes the undocked scope window and drops the entry. A no-op when none. */
+  closeUndockedScope(): void;
 
   setRunning(running: boolean): void;
   toggleRunning(): void;

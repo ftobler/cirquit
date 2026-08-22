@@ -17,6 +17,7 @@ import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { GRID_SIZE } from '../../model/types';
 import { wireSegments } from '../../model/wirePlacement';
 import { mergeProblem, makeGhostElement, useStore } from '../../state/store';
+import { pushUndockedScopeFrame } from '../../undocked/opener';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
 import { armedHandle } from './pointerDown';
@@ -336,6 +337,20 @@ export function useFrameLoop(
             // pauses below still records true; the pause is seen next frame.
             wasRunningRef.current = running;
           }
+
+          // Mirror the undocked scope window, if one is up: one copied
+          // snapshot of the same trace rings the dock draws from, over
+          // postMessage. The child is a display client with no engine; this is
+          // a flat-array copy per trace, not a per-element crossing, and it is
+          // also how the mirror notices its window or scope is gone.
+          pushUndockedScopeFrame({
+            source: engine,
+            scopes,
+            elements,
+            settings,
+            dark: state.dark,
+            scopeId: state.undocked?.scopeId,
+          });
 
           // ---- render ----
           const dpr = window.devicePixelRatio || 1;

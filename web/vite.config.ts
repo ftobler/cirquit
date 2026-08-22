@@ -19,6 +19,11 @@ const docsInput = Object.fromEntries(
   DOC_PAGES.map((p) => [p.id, resolve(root, 'pages', p.file)]),
 );
 
+// The undocked scope window: a display-only page (no React, no engine) that
+// mirrors one scope from its opener over postMessage. Not a docs page, so it
+// stays out of DOC_PAGES and joins the inputs directly.
+const scopewinInput = { scopewin: resolve(root, 'pages', 'scopewin.html') };
+
 // GPL-2.0 asks that the licence travel with the distributed work, so the
 // repository LICENSE and README are emitted into the build output. Emitting
 // them as bundle assets rather than copying afterwards means every artifact a
@@ -52,6 +57,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(root, 'index.html'),
+        ...scopewinInput,
         ...docsInput,
       },
     },

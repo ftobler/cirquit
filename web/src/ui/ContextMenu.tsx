@@ -14,7 +14,7 @@ import { toolShortcut } from '../model/search';
 import type { SimSettings } from '../model/types';
 import { canMirror, canRotate, canSwap } from '../model/transform';
 import { makeGhostElement, useStore } from '../state/store';
-import { canCreateSlider, canSplitWire, paletteGroups } from './contextMenuRows';
+import { canCreateSlider, canSplitWire, elementScopeCommands, paletteGroups } from './contextMenuRows';
 import { ToolIcon } from './ToolIcon';
 
 interface MenuItem {
@@ -154,53 +154,30 @@ export function ContextMenu() {
 
   const scopeItems: MenuItem[] = [];
   if (isElementMenu && targetDef) {
-    scopeItems.push({
-      label: 'Edit...',
-      disabled: !editable || !targetDef.fields?.length,
-      // One implementation of "edit this element" shared with the canvas
-      // double-click and touch double-tap: select and open the properties
-      // dialog, which focuses its first field.
-      action: () => useStore.getState().requestEdit(target),
-    });
-    scopeItems.push({
-      label: 'View in New Scope',
-      disabled: !editable,
-      action: () => useStore.getState().addScope(target, 'voltage'),
-    });
-    // The port has no undocked (floating) scope windows; a scoped trace cannot
-    // leave the panel. Same red-strikethrough treatment the menubar gives its
-    // unported rows, so the absent feature reads as absent.
-    scopeItems.push({
-      label: 'View in New Undocked Scope',
-      deferred: true,
-      disabled: true,
-      disabledTitle: 'The port has no undocked scope windows; scopes stay docked',
-      action: () => undefined,
-    });
-    // Add to Existing Scope, upstream's addToScope submenu flattened inline
-    // (MouseManager.java:944-954). Each entry adds a voltage plot to that
-    // scope; with no scope yet there is nothing to add to.
-    if (scopes.length === 0) {
-      scopeItems.push({
-        label: 'Add to Existing Scope',
-        disabled: true,
-        disabledTitle: 'There are no existing scopes yet',
-        action: () => undefined,
-      });
-    } else {
-      scopes.forEach((scope, i) => {
-        scopeItems.push({
-          label: `Add to Existing Scope: Scope ${i + 1}`,
-          disabled: !editable,
-          action: () => useStore.getState().addToScope(target, scope.id, 'voltage'),
-        });
-      });
-    }
-    scopeItems.push({
-      label: 'Add Current Scope',
-      disabled: !editable,
-      action: () => useStore.getState().addScope(target, 'current'),
-    });
+    const undockedOpen = useStore.getState().undocked !== null;
+    scopeItems.push(
+      // The row definitions live in the pure module; this only wires the
+      // store actions behind them.
+      ...elementScopeCommands({
+        editable,
+        hasEditableFields: Boolean(targetDef.fields?.length),
+        scopeIds: scopes.map((s) => s.id),
+        undockedOpen,
+        commands: {
+          edit: () => useStore.getState().requestEdit(target),
+          viewInScope: () => useStore.getState().addScope(target, 'voltage'),
+          viewUndocked: () => useStore.getState().openUndockedScope(target),
+          addTo: (scopeId) => useStore.getState().addToScope(target, scopeId, 'voltage'),
+          addCurrent: () => useStore.getState().addScope(target, 'current'),
+        },
+      }).map((row) => ({
+        label: row.label,
+        disabled: row.disabled,
+        disabledTitle: row.disabledTitle,
+        deferred: row.deferred,
+        action: row.run,
+      })),
+    );
   }
 
   const selectionItems: MenuItem[] = [

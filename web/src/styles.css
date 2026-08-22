@@ -1519,6 +1519,35 @@ input[type='range'] {
 
 /* ---- scopes ---- */
 
+/* The undocked scope window (pages/scopewin.html): a canvas covering the
+   whole popup, plus the hint shown when frames stop arriving (the simulator
+   window closed or is backgrounded). The page shares the app stylesheet for
+   the theme variables and the font stack the canvas text uses. */
+.scope-win {
+  overflow: hidden;
+}
+
+.scope-win-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.scope-win-waiting {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text);
+  pointer-events: none;
+}
+
 /* The bottom strip: the scope columns with the info area (the `t =` /
    `time step =` readout and the hovered element's lines) sitting to their
    right, upstream's drawBottomArea split between the scope strip and the

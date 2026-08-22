@@ -7,7 +7,13 @@
  * so it survives frame redraws here.
  */
 
-import type { Scope, ScopePlot, ScopeValue, SimEngine } from '../engine/simulator';
+import type {
+  Scope,
+  ScopeDrawSource,
+  ScopePlot,
+  ScopeValue,
+  TriggerInfoLike,
+} from '../engine/simulator';
 import { canvasFont, formatValue, makeTheme, parseRgb } from '../render/draw';
 import type { Theme, ThemeColors } from '../model/types';
 import { defFor } from '../model/registry';
@@ -97,7 +103,7 @@ const DIVERGED_COLOR = '#ff6b6b';
  *  stayed finite. Maps each drawable plot to its engine trace and reads the
  *  engine's diverged flag, so the caption appears whenever the engine reports
  *  one (and only then). */
-export function divergedCaption(engine: SimEngine, scope: Scope): string | null {
+export function divergedCaption(engine: ScopeDrawSource, scope: Scope): string | null {
   for (const plot of visiblePlotsOf(scope).filter(isDrawable)) {
     const index = engine.scopeIndexOf(plot.id);
     if (index !== undefined && engine.scopeDiverged(index)) return DIVERGED_CAPTION;
@@ -207,20 +213,6 @@ function plainWindow(data: Float32Array, w: number): Window {
   // w - 1, matching the grid's timeToX (right edge is sim time). Once the
   // ring is full the newest w columns fill the canvas and xOffset is 0.
   return { count, xOffset: w - count, posOf: (k) => start + k };
-}
-
-interface TriggerInfoLike {
-  start_index: number;
-  valid_count: number;
-  columns: number;
-  snapshot_start: number;
-  written: number;
-  state: number;
-  triggered: boolean;
-  /** Armed with no trigger yet, the WAIT status (ScopeTrigger.java:198-204). */
-  waiting: boolean;
-  /** Sim time at the trigger, for anchored time conversions. */
-  time: number;
 }
 
 function triggerWindow(data: Float32Array, info: TriggerInfoLike, w: number): Window {
@@ -422,7 +414,7 @@ function drawScopeLabel(
  *  not fired (Scope.java:910-915). Returns null for a free-run scope or one
  *  whose trigger is still waiting. */
 export function triggerTimeAnchor(
-  engine: SimEngine,
+  engine: ScopeDrawSource,
   scope: Scope,
   w: number,
 ): { time: number } | null {
@@ -751,7 +743,7 @@ export function xyCrossColors(
 /** Draws the X-Y locus from the recent-sample rings (ScopePlot2d.java). */
 function drawXY(
   ctx: CanvasRenderingContext2D,
-  engine: SimEngine,
+  engine: ScopeDrawSource,
   scope: Scope,
   w: number,
   h: number,
@@ -944,7 +936,7 @@ function drawSettingsWheel(
  *  user's colour overrides, both from the Other Options settings. */
 export function drawScope(
   ctx: CanvasRenderingContext2D,
-  engine: SimEngine,
+  engine: ScopeDrawSource,
   scope: Scope,
   w: number,
   h: number,
@@ -1129,7 +1121,7 @@ export function drawScope(
 /** Index of the plot whose trace is nearest the pointer, for manual-mode
  *  vertical dragging and the Remove Plot command (Scope.java:937-969). */
 export function selectPlotAt(
-  engine: SimEngine,
+  engine: ScopeDrawSource,
   scope: Scope,
   x: number,
   y: number,
@@ -1166,7 +1158,7 @@ export function selectPlotAt(
 /** CSV rows for the visible window of every plot, for the Export CSV command
  *  (Scope.exportCSV, Scope.java:1143-1178). */
 export function exportScopeCsv(
-  engine: SimEngine,
+  engine: ScopeDrawSource,
   scope: Scope,
   nameOf: (plot: DrawablePlot) => string,
   w: number,

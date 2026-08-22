@@ -27,6 +27,8 @@ import { SubcircuitManagerDialog } from './ui/SubcircuitManagerDialog';
 import { Toolbox } from './ui/Toolbox';
 import { useAutoPause } from './ui/useAutoPause';
 import { hasUnsavedChanges, useStore } from './state/store';
+import { noteUndockedHello } from './undocked/opener';
+import { UNDOCKED_HELLO_TYPE } from './undocked/protocol';
 import { startAutoSave } from './state/recovery';
 import { GRID_SIZE } from './model/types';
 
@@ -334,7 +336,9 @@ export default function App() {
   }, []);
 
   // Ask before the page reloads or closes with unsaved changes. The browser
-  // draws its own "leave site?" prompt; `returnValue` is what arms it.
+  // draws its own "leave site?" prompt; `returnValue` is what arms it. This
+  // handler must stay prompt-only: it fires before the user has chosen, so
+  // any teardown here would run even for a navigation they cancel.
   useEffect(() => {
     const onBeforeUnload = (ev: BeforeUnloadEvent) => {
       const s = useStore.getState();
@@ -345,6 +349,30 @@ export default function App() {
     };
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
+
+  // A real reload or close strands the undocked scope as a frozen orphan
+  // window; close it while we still hold the handle. `pagehide` and not
+  // `beforeunload`: it fires only once the page is actually going away (and
+  // covers bfcache eviction), so a cancelled leave dialog cannot kill the
+  // popup while the app keeps running.
+  useEffect(() => {
+    const onPageHide = () => useStore.getState().closeUndockedScope();
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
+
+  // The undocked scope page announces itself when it finishes loading; the
+  // per-frame push starts then, so nothing is posted into a half-loaded child.
+  // The event travels whole: the bridge accepts a hello only from the window
+  // we opened, never from an arbitrary tab or iframe.
+  useEffect(() => {
+    const onMessage = (ev: MessageEvent) => {
+      const data = ev.data as { type?: string } | null;
+      if (data?.type === UNDOCKED_HELLO_TYPE) noteUndockedHello(ev);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
   }, []);
 
   if (engineError) {

@@ -186,10 +186,22 @@ fetch it).
   transceiver (437). The instruction display presents its pins the way
   upstream does now, all N on one coordinate tagged per bit. The corpus
   alu74181 simulates again; see the XML circuits bullet for what still waits.
+- Undocked scope window: the port's own interpretation of the element context
+  menu's View in New Undocked Scope row. Upstream's identically named command
+  drops a floating scope element onto the schematic near the clicked element
+  (its separate-window command is File > New Window); this port instead opens
+  a `scopewin.html` popup (a second Vite entry) that mirrors a freshly created
+  scope as a pure display client. The engine stays in the main window; each
+  frame copies the trace snapshots it already read back into one postMessage
+  carrying the samples and the full draw state, so properties-dialog edits
+  reach the child on the next frame and both windows draw through the same
+  `drawScope`. One window at a time; Escape closes it, an actual reload of the
+  main window closes it, and a window whose scope disappears under it (remove,
+  undo, load) closes itself.
 - 464 Rust tests, of which 391 are the end-to-end circuit checks against
   analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
   was split into topic files), plus 72 in-module unit tests and one doctest.
-  2406 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
+  2438 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
   tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps

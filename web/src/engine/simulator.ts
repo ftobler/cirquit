@@ -185,6 +185,46 @@ export interface ScopeTraceSpec {
   displayWidth: number;
 }
 
+/** Structural shape of the wasm `TriggerInfo` the scope renderer reads. The
+ *  wasm class satisfies it directly; a snapshot copy (the undocked scope
+ *  window's, which receives trigger state over postMessage) carries the same
+ *  fields and frees nothing. */
+export interface TriggerInfoLike {
+  /** Ring capacity. */
+  columns: number;
+  /** Ring index of the first slot returned by `scopeData`. */
+  snapshot_start: number;
+  /** Ring index where the display window starts. */
+  start_index: number;
+  state: number;
+  /** Sim time at the trigger, so time conversions anchor at the
+   *  trigger-stabilized window centre (Scope.java:910-915). */
+  time: number;
+  triggered: boolean;
+  /** Columns of valid post-trigger data to draw. */
+  valid_count: number;
+  /** Armed with no trigger yet, the WAIT status (ScopeTrigger.java:198-204). */
+  waiting: boolean;
+  /** Columns actually written, capped at capacity. */
+  written: number;
+}
+
+/**
+ * The read-only slice of the engine the scope renderer consumes: one flat
+ * min/max array per trace plus the trigger anchor, and nothing else. SimEngine
+ * satisfies it directly; the undocked scope window feeds the same surface from
+ * per-frame postMessage snapshots (`undocked/snapshotSource`), so docked and
+ * floating scopes draw through one `drawScope`.
+ */
+export interface ScopeDrawSource {
+  readonly time: number;
+  scopeIndexOf(plotId: number): number | undefined;
+  scopeData(index: number): Float32Array;
+  scopeDiverged(index: number): boolean;
+  triggerInfo(index: number, width: number): TriggerInfoLike & { free(): void };
+  recentSamples(index: number): Float32Array;
+}
+
 /** A scope's capture width for engine sizing: its registered canvas width, or
  *  a sane fallback before the panel has measured it. */
 export type WidthResolver = (scopeId: number) => number | undefined;
