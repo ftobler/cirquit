@@ -6,6 +6,7 @@
 
 import { defFor } from '../model/registry';
 import { adjustableFields, resolveParam } from '../model/sliders';
+import { fieldLabel } from '../model/types';
 import { useStore } from '../state/store';
 import { Dialog } from './Dialog';
 import { SliderPanel } from './SliderPanel';
@@ -56,13 +57,13 @@ export function SliderDialog() {
                     checked={existing !== undefined}
                     onChange={(e) => {
                       if (e.target.checked) {
-                        addSlider(target.id, editItem, field.label);
+                        addSlider(target.id, editItem, fieldLabel(target, field));
                       } else if (existing) {
                         removeSlider(existing.id);
                       }
                     }}
                   />
-                  <span>{field.label}</span>
+                  <span>{fieldLabel(target, field)}</span>
                 </label>
               );
             })

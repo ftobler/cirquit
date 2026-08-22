@@ -152,13 +152,13 @@ export const OPAMP_REAL_DEF: ElementDef = {
       // The 324v2's compensation is fixed in its netlist (getCapacitor returns
       // null, OpAmpRealElm.java:149-153), so upstream hides these two rows on
       // it (:288-289); the 741 and the old 324 keep them.
-      when: (e) => e.params.modelType !== 2,
+      visible: (e) => e.params.modelType !== 2,
     },
     {
       name: 'currentLimit',
       label: 'Output Current Limit',
       unit: 'A',
-      when: (e) => e.params.modelType !== 2,
+      visible: (e) => e.params.modelType !== 2,
     },
   ],
   // The triangle body is a solid pick zone: the base at lead1 grown hs*2, the

@@ -4,6 +4,7 @@
 
 import { useStore } from '../state/store';
 import { resolveParam, sliderPositionToValue, sliderValueToPosition } from '../model/sliders';
+import { fieldLabel } from '../model/types';
 import { formatValue } from '../render/draw';
 
 export function SliderPanel({ elementId }: { elementId?: number }) {
@@ -32,7 +33,7 @@ export function SliderPanel({ elementId }: { elementId?: number }) {
       {rows.map(({ slider, element, resolved }) => {
         const value = element.params[resolved.name] ?? 0;
         const position = sliderValueToPosition(value, slider.min, slider.max, slider.logarithmic);
-        const label = slider.text || resolved.field.label;
+        const label = slider.text || fieldLabel(element, resolved.field);
         return (
           <label key={slider.id} className="field">
             <span>

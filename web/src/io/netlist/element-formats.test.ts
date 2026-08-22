@@ -1000,6 +1000,24 @@ describe('voltage source file format', () => {
     expect(e.flags & 8).toBe(0);
     expect(elementLine).toBe('v 1 2 3 4 0 0 40 5 0 0 0.5');
   });
+
+  it('carries FLAG_TIME_SPEC through the round trip without token drift', () => {
+    // 36 = FLAG_PULSE_DUTY (4) | FLAG_TIME_SPEC (32). The time-spec bit is a
+    // dialog preference: it rides the flags word verbatim and the tokens stay
+    // the six-token stream, because frequency and dutyCycle remain the stored
+    // truth (VoltageElm.java:33, :495).
+    const { e, elementLine } = voltageLine('v 1 2 3 4 36 5 40.0 5.0 0.0 0.0 0.5');
+    expect(e.flags & 32).toBe(32);
+    expect(elementLine).toBe('v 1 2 3 4 36 5 40 5 0 0 0.5');
+  });
+
+  it('keeps FLAG_TIME_SPEC on a non-timing waveform, where it is inert', () => {
+    // A sine carrying the bit keeps it through save and load: nothing strips
+    // an unknown flag bit, and the waveform rows gate on hasTimingOptions.
+    const { e, elementLine } = voltageLine('v 1 2 3 4 32 1 40.0 5.0 0.0 0.0 0.5');
+    expect(e.flags & 32).toBe(32);
+    expect(elementLine).toBe('v 1 2 3 4 32 1 40 5 0 0 0.5');
+  });
 });
 
 describe('current source file format', () => {

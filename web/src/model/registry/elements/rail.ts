@@ -11,6 +11,7 @@ import {
 } from '../../../render/draw';
 import { RAIL_CLOCK, RAIL_SHOW_VOLTAGE, VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
 import { drawWaveformGlyph, onePost, readParams, writeParams, endpointBox } from '../shared';
+import { amplitudeLabel, waveformRows, WAVEFORM_CHOICES } from './voltage';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The duty cycle old pulse lines are stuck with (VoltageElm.java:51). */
@@ -127,7 +128,7 @@ export const RAIL_DEF: ElementDef = {
   posts: onePost,
   draggablePosts: 2,  // the free end is a control point, not a terminal
   defaultFlags: VOLTAGE_SHOW_VOLTAGE,  // RailElm.java:23-24, inherits the voltage source flag
-  defaults: { waveform: 0, frequency: 40, maxVoltage: 5, bias: 0, phaseShift: 0, dutyCycle: 0.5 },
+  defaults: { waveform: 0, frequency: 40, maxVoltage: 5, bias: 0, phaseShift: 0, dutyCycle: 0.5, riseTime: 0 },
   parse: (t, e) => {
     readParams(t, e, ['waveform', 'frequency', 'maxVoltage', 'bias', 'phaseShift', 'dutyCycle']);
     // The rail shares the voltage source's load-time flag conversions
@@ -149,8 +150,24 @@ export const RAIL_DEF: ElementDef = {
   // authoritative and says so, or the next load would normalise it away.
   dumpFlags: (e) => (e.params.waveform === 5 ? e.flags | VOLTAGE_PULSE_DUTY : e.flags),
   fields: [
-    { name: 'maxVoltage', label: 'Voltage', unit: 'V' },
-    { name: 'frequency', label: 'Frequency', unit: 'Hz' },
+    { name: 'maxVoltage', label: amplitudeLabel, unit: 'V' },
+    { name: 'waveform', label: 'Waveform', type: 'choice', choices: WAVEFORM_CHOICES },
+    { name: 'bias', label: 'DC offset', unit: 'V' },
+    // The rail's Show Voltage checkbox drives the rail variant of the flag
+    // (VoltageElm.java:541-545), which is what the draw path reads. Upstream
+    // hides the row on a DC rail (getEditInfo n==4 gates on
+    // `rail && waveform == WF_DC`, VoltageElm.java:541), where the DC label
+    // always draws and bit 64 does nothing.
+    {
+      name: 'showVoltage',
+      label: 'Show Voltage',
+      type: 'bool',
+      flag: RAIL_SHOW_VOLTAGE,
+      visible: (e) => (e.params.waveform ?? 0) !== 0,
+    },
+    // The same conditional table as the voltage source, minus its Circle
+    // Symbol row (RailElm extends VoltageElm and inherits the edit table).
+    ...waveformRows(),
   ],
   // The waveform circle (or the DC label) at the free end is a solid pick
   // zone: a circle radius around the far control point (RailElm.java:56).
@@ -174,6 +191,9 @@ export const RAIL_DEF: ElementDef = {
     } else {
       circle(g, p2, RAIL_CIRCLE, g.theme.text, false);
       drawWaveformGlyph(g, p2, wf, RAIL_CIRCLE);
+      // The value caption only draws under the rail variant of the Show
+      // Voltage flag; the frequency alone rides the global show-values toggle,
+      // upstream's showV/showF pair for rails (VoltageElm.java:406-417).
       const showF = g.showValues;
       if ((e.flags & RAIL_SHOW_VOLTAGE) !== 0) {
         drawRailValue(g, e, railValueText(e, showF, g.valueDigits));

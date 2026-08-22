@@ -16,6 +16,7 @@ import {
 } from '../../model/scrollValue';
 import type { ScrollValueSession } from '../../model/scrollValue';
 import type { CircuitElement, Point } from '../../model/types';
+import { fieldLabel } from '../../model/types';
 import { wireDragAxis } from '../../model/wirePlacement';
 import { GRID_SIZE } from '../../model/types';
 import { HIT_TOLERANCE_PX, hitTestElement, postAt, postPatch } from '../../render/geometry';
@@ -42,6 +43,9 @@ export type { Drag } from './pointerDown';
 /** The open mouse-wheel value popover, positioned at the cursor. */
 export interface ScrollValuePopover {
   session: ScrollValueSession;
+  /** The stepped field's display label, resolved at open (a dynamic label
+   *  needs the element's state, which the session itself does not carry). */
+  name: string;
   x: number;
   y: number;
 }
@@ -634,7 +638,13 @@ export function useCanvasInteractions(
         state.settings.wheelSensitivity,
       );
       state.setParam(session.id, session.param, selectionValue(session));
-      setPopover({ session, x: ev.clientX, y: ev.clientY });
+      // The title is the stepped field's label, resolved per element because a
+      // dynamic label (the source's "Voltage"/"Max Voltage") needs the params.
+      const def = defFor(hit.kind);
+      const stepped = def?.fields?.find((f) => f.name === session.param);
+      const titled = stepped ?? def?.fields?.[0];
+      const name = titled ? fieldLabel(hit, titled) : session.param;
+      setPopover({ session, name, x: ev.clientX, y: ev.clientY });
       return;
     }
 

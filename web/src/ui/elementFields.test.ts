@@ -2,7 +2,8 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { defFor } from '../model/registry';
 import { clearUserModels, putUserModel } from '../model/deviceModels';
 import { SRAM_HEX_DISPLAY } from '../model/registry/elements/sram';
-import type { CircuitElement, FieldDef } from '../model/types';
+import { VOLTAGE_TIME_SPEC } from '../model/registry/flags';
+import { fieldLabel, type CircuitElement, type FieldDef } from '../model/types';
 import {
   applyFieldChange,
   clampInteger,
@@ -10,6 +11,7 @@ import {
   deviceModelButtons,
   fieldRows,
   fieldValue,
+  visibleFields,
   type FieldEditActions,
 } from './elementFields';
 
@@ -112,7 +114,7 @@ describe('field rows', () => {
     expect(row?.value).toBe(1);
   });
 
-  it('drops a field whose when-predicate the element fails', () => {
+  it('drops a field whose visible-predicate the element fails', () => {
     // The realistic op-amp hides the Slew Rate and Output Current Limit rows
     // on the 324v2, whose netlist takes no such tuning upstream
     // (OpAmpRealElm.java:288-289); the 741 and the old 324 keep them.
@@ -197,6 +199,21 @@ describe('field change dispatch', () => {
     const same = recorder();
     applyFieldChange(elm({ kind: 'voltage', params: { waveform: 5 } }), waveform, 5, same.actions);
     expect(same.calls).toEqual([['setParam', 1, 'waveform', 5]]);
+
+    // The rail shares the rule (RailElm extends VoltageElm and inherits the
+    // edit table), so leaving or entering pulse on a rail resets it too.
+    const railInto = recorder();
+    applyFieldChange(elm({ kind: 'rail', params: { waveform: 1 } }), field('rail', 'waveform'), 5, railInto.actions);
+    expect(railInto.calls).toEqual([
+      ['setParam', 1, 'dutyCycle', 1 / (2 * Math.PI)],
+      ['setParam', 1, 'waveform', 5],
+    ]);
+    const railOut = recorder();
+    applyFieldChange(elm({ kind: 'rail', params: { waveform: 5 } }), field('rail', 'waveform'), 2, railOut.actions);
+    expect(railOut.calls).toEqual([
+      ['setParam', 1, 'dutyCycle', 0.5],
+      ['setParam', 1, 'waveform', 2],
+    ]);
   });
 });
 
@@ -359,5 +376,273 @@ describe('contents field commit', () => {
     });
     expect(plainAlerts).toHaveLength(1);
     expect(plainCalls).toEqual([]);
+  });
+});
+
+describe('waveform-conditional voltage rows', () => {
+  const names = (e: CircuitElement) => fieldRows(e).map((r) => r.field.name);
+  const voltage = (waveform: number, flags = 0) =>
+    elm({ kind: 'voltage', flags, params: { waveform, frequency: 125, dutyCycle: 0.25 } });
+
+  it('a DC source shows only the DC rows, no frequency/duty/rise', () => {
+    expect(names(voltage(0))).toEqual([
+      'maxVoltage',
+      'waveform',
+      'bias',
+      'showVoltage',
+      'circleSymbol',
+    ]);
+  });
+
+  it('a sine shows frequency and phase but no duty or rise', () => {
+    expect(names(voltage(1))).toEqual([
+      'maxVoltage',
+      'waveform',
+      'bias',
+      'showVoltage',
+      'frequency',
+      'phaseShift',
+    ]);
+  });
+
+  it('triangle and sawtooth match the sine row set', () => {
+    const want = ['maxVoltage', 'waveform', 'bias', 'showVoltage', 'frequency', 'phaseShift'];
+    expect(names(voltage(3))).toEqual(want);
+    expect(names(voltage(4))).toEqual(want);
+  });
+
+  it('a square and a pulse offer frequency, phase, duty and rise', () => {
+    const want = [
+      'maxVoltage',
+      'waveform',
+      'bias',
+      'showVoltage',
+      'specifyAs',
+      'frequency',
+      'phaseShift',
+      'dutyCycle',
+      'riseTime',
+    ];
+    expect(names(voltage(2))).toEqual(want);
+    expect(names(voltage(5))).toEqual(want);
+  });
+
+  it('noise matches DC minus the circle row: no frequency/duty/rise either', () => {
+    expect(names(voltage(6))).toEqual(['maxVoltage', 'waveform', 'bias', 'showVoltage']);
+    for (const wf of [0, 6]) {
+      const rows = names(voltage(wf));
+      for (const dead of ['frequency', 'phaseShift', 'dutyCycle', 'riseTime', 'highTime', 'lowTime', 'specifyAs']) {
+        expect(rows, `waveform ${wf}`).not.toContain(dead);
+      }
+    }
+  });
+});
+
+describe('voltage time-spec rows', () => {
+  const on = () =>
+    elm({
+      kind: 'voltage',
+      flags: VOLTAGE_TIME_SPEC,
+      params: { waveform: 5, frequency: 125, dutyCycle: 0.25 },
+    });
+
+  it('with bit 32 set, a pulse swaps frequency and duty for High/Low Time', () => {
+    expect(fieldRows(on()).map((r) => r.field.name)).toEqual([
+      'maxVoltage',
+      'waveform',
+      'bias',
+      'showVoltage',
+      'specifyAs',
+      'highTime',
+      'phaseShift',
+      'lowTime',
+      'riseTime',
+    ]);
+  });
+
+  it('the high row reads dutyCycle/frequency and the low row (1-duty)/frequency', () => {
+    const rows = fieldRows(on());
+    expect(rows.find((r) => r.field.name === 'highTime')?.value).toBe(0.25 / 125);
+    expect(rows.find((r) => r.field.name === 'lowTime')?.value).toBe(0.75 / 125);
+  });
+
+  it('a square with bit 32 shows the same swapped pair', () => {
+    const e = elm({ kind: 'voltage', flags: VOLTAGE_TIME_SPEC, params: { waveform: 2, frequency: 100, dutyCycle: 0.5 } });
+    const rows = fieldRows(e).map((r) => r.field.name);
+    expect(rows).toContain('highTime');
+    expect(rows).toContain('lowTime');
+    expect(rows).not.toContain('frequency');
+    expect(rows).not.toContain('dutyCycle');
+  });
+
+  it('a sine carrying bit 32 keeps the frequency rows (timeSpec gates on timing)', () => {
+    const e = elm({ kind: 'voltage', flags: VOLTAGE_TIME_SPEC, params: { waveform: 1 } });
+    const rows = fieldRows(e).map((r) => r.field.name);
+    expect(rows).toContain('frequency');
+    expect(rows).not.toContain('highTime');
+  });
+});
+
+describe('time-spec commit', () => {
+  const timespec = (waveform: number, frequency: number, dutyCycle: number) =>
+    elm({ kind: 'voltage', flags: VOLTAGE_TIME_SPEC, params: { waveform, frequency, dutyCycle } });
+
+  it('committing High Time recomputes frequency and duty from both times', () => {
+    // Stored (freq 100, duty 0.4) implies low = (1-0.4)/100 = 6e-3; committing
+    // high = 2e-3 stores the plan's pair: freq = 1/(2e-3+6e-3) = 125 Hz and
+    // duty = 2e-3/(2e-3+6e-3) = 0.25.
+    const { calls, actions } = recorder();
+    applyFieldChange(timespec(5, 100, 0.4), field('voltage', 'highTime'), 2e-3, actions);
+    expect(calls).toEqual([
+      ['setParam', 1, 'frequency', 125],
+      ['setParam', 1, 'dutyCycle', 0.25],
+    ]);
+  });
+
+  it('committing Low Time symmetrically stores the same pair', () => {
+    // Stored (freq 250, duty 0.5) implies high = 0.5/250 = 2e-3; committing
+    // low = 6e-3 stores the same recomputed pair, freq 125 Hz, duty 0.25.
+    const { calls, actions } = recorder();
+    applyFieldChange(timespec(5, 250, 0.5), field('voltage', 'lowTime'), 6e-3, actions);
+    expect(calls).toEqual([
+      ['setParam', 1, 'frequency', 125],
+      ['setParam', 1, 'dutyCycle', 0.25],
+    ]);
+  });
+
+  it('a zero or negative time leaves the stored pair untouched', () => {
+    // Stored (freq 125, duty 0.25) already encodes high 2e-3 / low 6e-3; a
+    // rejected commit mutates nothing and dispatches nothing, so the pair
+    // survives exactly as it was.
+    const base = timespec(5, 125, 0.25);
+    for (const [name, v] of [['highTime', 0], ['highTime', -1], ['lowTime', 0]] as const) {
+      const { calls, actions } = recorder();
+      applyFieldChange(base, field('voltage', name), v, actions);
+      expect(calls, `${name} ${v}`).toEqual([]);
+    }
+  });
+});
+
+describe('Specify As toggling', () => {
+  it('sets and clears bit 32 through updateElement and swaps the rows', () => {
+    const base = elm({ kind: 'voltage', params: { waveform: 5 } });
+    const specify = field('voltage', 'specifyAs');
+
+    const { calls, actions } = recorder();
+    applyFieldChange(base, specify, 1, actions);
+    expect(calls).toEqual([['updateElement', 1, { flags: VOLTAGE_TIME_SPEC }]]);
+
+    const on = elm({ kind: 'voltage', flags: VOLTAGE_TIME_SPEC, params: { waveform: 5 } });
+    expect(fieldRows(on).map((r) => r.field.name)).toContain('highTime');
+    expect(fieldRows(on).map((r) => r.field.name)).toContain('lowTime');
+    expect(fieldRows(on).map((r) => r.field.name)).not.toContain('frequency');
+    expect(fieldRows(on).map((r) => r.field.name)).not.toContain('dutyCycle');
+
+    const { calls: off, actions: offActions } = recorder();
+    applyFieldChange(on, specify, 0, offActions);
+    expect(off).toEqual([['updateElement', 1, { flags: 0 }]]);
+    expect(fieldRows(base).map((r) => r.field.name)).toContain('frequency');
+    expect(fieldRows(base).map((r) => r.field.name)).toContain('dutyCycle');
+  });
+});
+
+describe('field visible/get/apply mechanisms', () => {
+  it('visibleFields drops the rows whose predicate the element fails', () => {
+    const fields: FieldDef[] = [
+      { name: 'always', label: 'Always' },
+      { name: 'onlyHigh', label: 'Only High', visible: (e) => e.params.high === 1 },
+    ];
+    expect(visibleFields(elm({ kind: 'resistor', params: { high: 1 } }), fields).map((f) => f.name)).toEqual([
+      'always',
+      'onlyHigh',
+    ]);
+    expect(visibleFields(elm({ kind: 'resistor', params: { high: 0 } }), fields).map((f) => f.name)).toEqual(['always']);
+  });
+
+  it('fieldValue consults get before the params binding', () => {
+    const f: FieldDef = { name: 'ratio', label: 'Ratio', get: (e) => e.params.a / e.params.b };
+    // A stored `ratio` param is ignored: the row is a derived view.
+    expect(fieldValue(elm({ kind: 'resistor', params: { a: 3, b: 4, ratio: 999 } }), f)).toBe(0.75);
+  });
+
+  it('applyFieldChange runs apply on a draft and dispatches one setParam per change', () => {
+    const f: FieldDef = {
+      name: 'pair',
+      label: 'Pair',
+      apply: (e, v) => {
+        e.params.x = v;
+        e.params.y = v * 2;
+      },
+    };
+    const { calls, actions } = recorder();
+    applyFieldChange(elm({ kind: 'resistor', params: { x: 1, y: 1 } }), f, 5, actions);
+    expect(calls).toEqual([
+      ['setParam', 1, 'x', 5],
+      ['setParam', 1, 'y', 10],
+    ]);
+  });
+
+  it('applyFieldChange never mutates the store element, only its draft', () => {
+    const f: FieldDef = { name: 'pair', label: 'Pair', apply: (e, v) => { e.params.x = v; } };
+    const e = elm({ kind: 'resistor', params: { x: 1 } });
+    applyFieldChange(e, f, 5, recorder().actions);
+    expect(e.params.x).toBe(1);
+  });
+
+  it('fieldLabel resolves a function label per element', () => {
+    const f: FieldDef = { name: 'a', label: (e) => (e.params.on ? 'On' : 'Off') };
+    expect(fieldLabel(elm({ kind: 'resistor', params: { on: 1 } }), f)).toBe('On');
+    expect(fieldLabel(elm({ kind: 'resistor', params: { on: 0 } }), f)).toBe('Off');
+  });
+});
+
+describe('source amplitude label', () => {
+  it('labels the row Voltage for DC and Max Voltage otherwise', () => {
+    const dc = fieldRows(elm({ kind: 'voltage', params: { waveform: 0 } }));
+    expect(dc.find((r) => r.field.name === 'maxVoltage')?.label).toBe('Voltage');
+    const sine = fieldRows(elm({ kind: 'voltage', params: { waveform: 1 } }));
+    expect(sine.find((r) => r.field.name === 'maxVoltage')?.label).toBe('Max Voltage');
+  });
+});
+
+describe('rail rows', () => {
+  it('equal the voltage rows minus Circle Symbol for each waveform and flag set', () => {
+    for (const wf of [0, 1, 2, 3, 4, 5, 6]) {
+      for (const flags of [0, VOLTAGE_TIME_SPEC]) {
+        const v = elm({ kind: 'voltage', flags, params: { waveform: wf, frequency: 125, dutyCycle: 0.25 } });
+        const r = elm({ kind: 'rail', flags, params: { waveform: wf, frequency: 125, dutyCycle: 0.25 } });
+        const want = fieldRows(v)
+          .map((row) => row.field.name)
+          .filter((n) => n !== 'circleSymbol')
+          // The rail's Show Voltage row is hidden on the DC waveform, where
+          // the label always draws and bit 64 does nothing (VoltageElm.java:
+          // 541).
+          .filter((n) => !(wf === 0 && n === 'showVoltage'));
+        expect(
+          fieldRows(r).map((row) => row.field.name),
+          `waveform ${wf}, flags ${flags}`,
+        ).toEqual(want);
+      }
+    }
+  });
+
+  it('hides the Show Voltage row for the DC waveform but shows it otherwise', () => {
+    for (const wf of [1, 2, 3, 4, 5, 6]) {
+      const rows = fieldRows(elm({ kind: 'rail', params: { waveform: wf } })).map(
+        (row) => row.field.name,
+      );
+      expect(rows, `waveform ${wf}`).toContain('showVoltage');
+    }
+    const dc = fieldRows(elm({ kind: 'rail', params: { waveform: 0 } })).map(
+      (row) => row.field.name,
+    );
+    expect(dc).not.toContain('showVoltage');
+    // The voltage source keeps the row on every waveform, DC included.
+    for (const wf of [0, 1]) {
+      const rows = fieldRows(elm({ kind: 'voltage', params: { waveform: wf } })).map(
+        (row) => row.field.name,
+      );
+      expect(rows, `waveform ${wf}`).toContain('showVoltage');
+    }
   });
 });

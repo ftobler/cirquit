@@ -243,13 +243,18 @@ describe('text field metadata', () => {
     expect(postsOf(loaded)).toHaveLength(5);
   });
 
-  it('keeps every flag field a checkbox', () => {
-    // A `flag` field toggles a bit of `e.flags`; the panel only renders that
-    // as a checkbox under `type: 'bool'`, and any other type would silently
-    // write the bit as if it were a number.
+  it('keeps every flag field a checkbox or a two-choice selector', () => {
+    // A `flag` field toggles a bit of `e.flags`; the panel renders that as a
+    // checkbox under `type: 'bool'`, and the source's Specify As row as a
+    // choice of two whose values are the bit's 0/1 (VoltageElm.java:558-566).
+    // Either way the commit goes through the flag path, never a number param.
     for (const def of ELEMENT_DEFS) {
       for (const f of def.fields ?? []) {
-        if (f.flag !== undefined) expect(f.type, `${def.kind}.${f.name}`).toBe('bool');
+        if (f.flag === undefined) continue;
+        expect(['bool', 'choice'], `${def.kind}.${f.name}`).toContain(f.type);
+        if (f.type === 'choice') {
+          expect(f.choices?.length, `${def.kind}.${f.name}`).toBe(2);
+        }
       }
     }
   });
@@ -297,6 +302,11 @@ describe('text field metadata', () => {
         // memory editor, whose value is derived from the element's addr/val
         // pair params and whose commit is its own store action.
         if (f.type === 'contents') continue;
+        // A derived row (the source's High Time / Low Time) binds no field of
+        // its own name: its `get` reads and its `apply` writes other params
+        // (dutyCycle/frequency), so the parse/dump/defaults check cannot see
+        // the binding, exactly like a flag field's bit.
+        if (f.get !== undefined || f.apply !== undefined) continue;
         expect(bound.has(f.name), `${def.kind} field '${f.name}' is bound to nothing`).toBe(true);
       }
     }

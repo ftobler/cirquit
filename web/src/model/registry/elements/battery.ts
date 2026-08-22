@@ -229,7 +229,7 @@ export const BATTERY_DEF: ElementDef = {
     { name: 'c1', label: 'C1, Polarization Capacitance', unit: 'F' },
     // Upstream shows the table editor only on a custom battery
     // (BatteryElm.java:370-376).
-    { name: 'socTable', label: 'SOC Voltage Table', type: 'text', target: 'model', multiline: true, when: (e) => batteryTypeOf(e) === BT_CUSTOM },
+    { name: 'socTable', label: 'SOC Voltage Table', type: 'text', target: 'model', multiline: true, visible: (e) => batteryTypeOf(e) === BT_CUSTOM },
     { name: 'showVoltage', label: 'Show Voltage', type: 'bool', flag: BATTERY_SHOW_VOLTAGE },
     { name: 'showSoc', label: 'Show State of Charge', type: 'bool', flag: BATTERY_SHOW_SOC },
   ],

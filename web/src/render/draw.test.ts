@@ -66,6 +66,7 @@ import {
   OUTPUT_SHOW_VOLTAGE,
   SWITCH_IEC,
   VOLTAGE_CIRCLE_SYMBOL,
+  VOLTAGE_SHOW_VOLTAGE,
   WIRE_SHOW_CURRENT,
   WIRE_SHOW_VOLTAGE,
 } from '../model/registry/flags';
@@ -2975,10 +2976,11 @@ describe('value label placement', () => {
       y1: 0,
       x2: 0,
       y2: 160,
-      flags: 0,
+      flags: VOLTAGE_SHOW_VOLTAGE,
       params: { waveform: 0, maxVoltage: 5 },
     });
-    // The battery draw emits a single fillText, its value caption.
+    // The battery draw emits a single fillText, its value caption, which only
+    // appears under FLAG_SHOW_VOLTAGE (VoltageElm.java:308-322).
     expect(texts).toHaveLength(1);
     const t = texts[texts.length - 1];
     expect(t.text).toContain('V');

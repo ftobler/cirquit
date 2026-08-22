@@ -83,7 +83,11 @@ export interface CircuitElement {
 /** An editable property, surfaced in the element edit dialog. */
 export interface FieldDef {
   name: string;
-  label: string;
+  /** The row's caption. A function answers per element, for a label that
+   *  depends on state (the voltage source's "Voltage" for DC versus "Max
+   *  Voltage" otherwise, VoltageElm.java:552-554); a plain string is returned
+   *  verbatim. `fieldLabel` resolves both. */
+  label: string | ((e: CircuitElement) => string);
   /** Unit suffix, formatted with engineering prefixes. */
   unit?: string;
   /** The row control. `contents` (the SRAM/ROM memory editor) is a multiline
@@ -123,9 +127,11 @@ export interface FieldDef {
    *  slider hands the engine 3.47 inputs. */
   integer?: boolean;
   /** Bit of `e.flags` this field toggles, rather than a `params` entry. Only
-   *  meaningful for `bool`. A flag edit goes through `updateElement`, so the
-   *  engine rebuilds: file flags are read at build time and can change the
-   *  stamp or the node count, which the live `set_param` path cannot. */
+   *  meaningful for `bool` and for a two-value `choice` whose values are the
+   *  bit's 0/1 (the source's Specify As row). A flag edit goes through
+   *  `updateElement`, so the engine rebuilds: file flags are read at build
+   *  time and can change the stamp or the node count, which the live
+   *  `set_param` path cannot. */
   flag?: number;
   /** Reads `e.text` (the label), `e.keyShortcut` (a switch's keyboard
    *  shortcut), `e.modelName` (a named device model), `e.model` (the battery's
@@ -151,7 +157,30 @@ export interface FieldDef {
    *  op-amp's Slew Rate and Output Current Limit rows vanish for the 324v2,
    *  whose netlist takes no slew/current tuning upstream
    *  (OpAmpRealElm.java:288-289). */
-  when?: (e: CircuitElement) => boolean;
+  visible?: (e: CircuitElement) => boolean;
+  /** Reads the row's displayed value off the element, replacing the default
+   *  `params[name]` binding for a row whose value is a derived view of stored
+   *  truth. Pure and number-typed; see `apply` for the write-back side. The
+   *  High Time / Low Time rows display `dutyCycle/frequency` and
+   *  `(1-dutyCycle)/frequency` this way, never inventing new storage. */
+  get?(e: CircuitElement): number;
+  /** Writes an edited value back through the element's params, replacing the
+   *  default `setParam(name, v)` binding. Mutates `e.params` on a draft the
+   *  caller owns; `applyFieldChange` diffs the result against the stored
+   *  params and dispatches one `setParam` per change. These exist so the High
+   *  Time / Low Time rows can recompute the frequency/duty-cycle pair from
+   *  both times without a second parameter system: the params stay the stored
+   *  truth and the hook is just a derived view of them. Keep it number-typed
+   *  and side-effect free apart from the params it mutates; anything richer
+   *  belongs in a store action. */
+  apply?(e: CircuitElement, v: number): void;
+}
+
+/** A field's display label for a given element: a static string verbatim, a
+ *  function label by calling it. Shared by the row renderers and the slider
+ *  caption resolution, so a dynamic label reads identically everywhere. */
+export function fieldLabel(e: CircuitElement, f: FieldDef): string {
+  return typeof f.label === 'function' ? f.label(e) : f.label;
 }
 
 /** Everything the app needs to know about an element type. */

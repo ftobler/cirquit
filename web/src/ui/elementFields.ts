@@ -9,12 +9,14 @@ import { modelFamilyFor, userModel } from '../model/deviceModels';
 import { contentsToText, parseContentsText } from '../model/memoryContents';
 import { memoryPairs, normalizeSramBits, SRAM_HEX_DISPLAY } from '../model/registry/elements/sram';
 import { batteryTypeDefaults, batteryTypeTables } from '../model/registry/elements/battery';
-import type { CircuitElement, FieldDef } from '../model/types';
+import { fieldLabel, type CircuitElement, type FieldDef } from '../model/types';
 
-/** One row of the property list: the def's field plus the element's value for
- *  it, already resolved from wherever that field reads. */
+/** One row of the property list: the def's field, its label resolved for the
+ *  element (a dynamic label answered by calling the function), plus the
+ *  element's value for it, already resolved from wherever that field reads. */
 export interface FieldRow {
   field: FieldDef;
+  label: string;
   value: number | string;
 }
 
@@ -66,22 +68,35 @@ export function fieldValue(e: CircuitElement, f: FieldDef): number | string {
   if (f.target === 'modelName') return e.modelName ?? '';
   if (f.target === 'model') return typeof e.model === 'string' ? e.model : '';
   if (f.flag !== undefined) return (e.flags & f.flag) !== 0 ? 1 : 0;
+  // A derived row reads its displayed value through `get`, its stored truth
+  // being params the default binding would not name (the High Time row shows
+  // dutyCycle/frequency).
+  if (f.get !== undefined) return f.get(e);
   return (e.params[f.name] ?? 0) * (f.scale ?? 1);
+}
+
+/** The def's fields that show for one element, in def order. A field whose
+ *  `visible` predicate the element fails is dropped entirely, so the rows
+ *  match the engine's editable surface per element. */
+export function visibleFields(e: CircuitElement, fields: FieldDef[]): FieldDef[] {
+  return fields.filter((f) => f.visible === undefined || f.visible(e));
 }
 
 /** The property rows for one element, in def order. An unknown kind or a def
  *  with no fields (a wire, a ground) has nothing to edit and gives an empty
  *  list, which is what makes the dialog and the panel agree on "no
- *  properties" without either one repeating the check. A field whose `when`
+ *  properties" without either one repeating the check. A field whose `visible`
  *  predicate the element fails is dropped entirely, so the rows match the
  *  engine's editable surface per element (the realistic op-amp hides the
  *  Slew Rate and Output Current Limit rows on the 324v2, whose netlist takes
  *  no such tuning). */
 export function fieldRows(e: CircuitElement): FieldRow[] {
   const def = defFor(e.kind);
-  return (def?.fields ?? [])
-    .filter((field) => field.when === undefined || field.when(e))
-    .map((field) => ({ field, value: fieldValue(e, field) }));
+  return visibleFields(e, def?.fields ?? []).map((field) => ({
+    field,
+    label: fieldLabel(e, field),
+    value: fieldValue(e, field),
+  }));
 }
 
 /** Rounds an integer field's typed value and holds it inside the def's range,
@@ -194,13 +209,30 @@ export function applyFieldChange(
   }
   // Switching a source to or from pulse restores the duty cycle the other
   // family expects, mirroring VoltageElm.java:617-621: entering pulse takes
-  // the legacy 1/(2*pi), leaving it returns to 0.5. The waveform setParam
-  // below also keeps the stored pulse-duty flag (bit 4) in step, so an edited
-  // duty survives the next rebuild.
-  if (f.name === 'waveform' && e.kind === 'voltage') {
+  // the legacy 1/(2*pi), leaving it returns to 0.5. The rail shares the rule
+  // (RailElm extends VoltageElm and inherits the edit table). The waveform
+  // setParam below also keeps the stored pulse-duty flag (bit 4) in step, so
+  // an edited duty survives the next rebuild.
+  if (f.name === 'waveform' && (e.kind === 'voltage' || e.kind === 'rail')) {
     const old = Number(e.params.waveform ?? 0);
     if (value === 5 && old !== 5) actions.setParam(e.id, 'dutyCycle', 1 / (2 * Math.PI));
     else if (old === 5 && value !== 5) actions.setParam(e.id, 'dutyCycle', 0.5);
+  }
+  // A derived row writes its stored truth back through the element's params:
+  // `apply` mutates a draft (never the store's live element) and the caller
+  // diffs the result against the stored params, dispatching one setParam per
+  // change. Both edits land in the current edit session, so an apply that
+  // recomputes two params stays one undo step.
+  if (f.apply !== undefined) {
+    const draft: CircuitElement = { ...e, params: { ...e.params } };
+    f.apply(draft, Number(v));
+    for (const name of new Set([...Object.keys(e.params), ...Object.keys(draft.params)])) {
+      const next = draft.params[name];
+      if (next !== undefined && next !== e.params[name]) {
+        actions.setParam(e.id, name, next);
+      }
+    }
+    return;
   }
   // A scaled field (the battery's Initial State of Charge) commits its display
   // unit divided back into the stored param's unit (percent into the 0..1

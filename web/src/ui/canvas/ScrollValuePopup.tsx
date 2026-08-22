@@ -8,7 +8,6 @@
  */
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { defFor } from '../../model/registry';
 import { selectionIndex, wheelPixels, type ScrollValueSession } from '../../model/scrollValue';
 import { formatValue } from '../../render/draw';
 
@@ -16,6 +15,9 @@ const LABEL_COUNT = 5;
 
 interface Props {
   session: ScrollValueSession;
+  /** The stepped field's display label, resolved by the caller where the
+   *  element's state is at hand (a dynamic label cannot answer without it). */
+  name: string;
   x: number;
   y: number;
   /** A wheel tick on the popover; delta is normalized pixels. */
@@ -26,7 +28,7 @@ interface Props {
   onRevert: () => void;
 }
 
-export function ScrollValuePopup({ session, x, y, onStep, onClose, onRevert }: Props) {
+export function ScrollValuePopup({ session, name, x, y, onStep, onClose, onRevert }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   // Position the popup up and to the left of the cursor, upstream's
@@ -63,12 +65,6 @@ export function ScrollValuePopup({ session, x, y, onStep, onClose, onRevert }: P
     else onClose();
   };
 
-  const def = defFor(session.kind);
-  // Title by the stepped field, not the def's first field: for a voltage
-  // source the first field is the waveform choice while the wheel steps the
-  // amplitude (and a var rail's first field is the bias ceiling).
-  const field = def?.fields?.find((f) => f.name === session.param);
-  const name = field?.label ?? def?.fields?.[0]?.label ?? session.param;
   const sel = selectionIndex(session);
   const centre = (LABEL_COUNT - 1) / 2;
   const slots = Array.from({ length: LABEL_COUNT }, (_, i) => {

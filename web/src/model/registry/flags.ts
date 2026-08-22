@@ -77,6 +77,13 @@ export const VOLTAGE_PULSE_DUTY = 4;
  *  (VoltageElm.java:31). Meaningless on a non-DC waveform, where the circle
  *  is always drawn. */
 export const VOLTAGE_CIRCLE_SYMBOL = 8;
+/** The square/pulse source's frequency/duty rows are shown as a High Time /
+ *  Low Time pair (VoltageElm.java:33, :495, :556-576). No new file token
+ *  exists: frequency and dutyCycle stay the stored truth and the flag only
+ *  changes which rows the dialog offers. Meaningless on a non-timing
+ *  waveform, where it is ignored (upstream's `timeSpec()` gates on
+ *  `hasTimingOptions()`). */
+export const VOLTAGE_TIME_SPEC = 32;
 /** The battery draws its terminal voltage caption under this bit and its
  *  whole-percent SOC under bit 2 (BatteryElm.java:34-35). */
 export const BATTERY_SHOW_VOLTAGE = 1;  // BatteryElm.java:34

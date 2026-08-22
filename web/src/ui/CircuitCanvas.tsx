@@ -85,6 +85,7 @@ export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
       {interactions.popover && (
         <ScrollValuePopup
           session={interactions.popover.session}
+          name={interactions.popover.name}
           x={interactions.popover.x}
           y={interactions.popover.y}
           onStep={interactions.stepPopover}

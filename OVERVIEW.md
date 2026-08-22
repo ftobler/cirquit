@@ -230,7 +230,7 @@ fetch it).
 - 491 Rust tests, of which 417 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2609 TypeScript tests (one corpus report test skipped). The bus-label-width
+  2639 TypeScript tests (one corpus report test skipped). The bus-label-width
   branch added 14 of them, all plain additions over its base: 11 in
   busWidths.test.ts, one each in junction.test.ts, infoBoxLines.test.ts and
   registry.test.ts. The op-amp LM324 work added seven Rust tests (the two
@@ -243,7 +243,12 @@ fetch it).
   SRAM/ROM contents editor added 34 more across its codec, store and
   elementFields suites, and the battery element added six Rust tests and
   nineteen TypeScript ones (round-trip, presets, caption flags, the XML
-  converter mapping).
+  converter mapping). The voltage-source time-spec feature added 30 more
+  TypeScript tests: the per-waveform voltage and rail row sets, the High/Low
+  Time swap and its commit/guard semantics, the Specify As flag toggle, the
+  synthetic visible/get/apply/label mechanism tests, the FLAG_TIME_SPEC
+  round-trip, the flag-gated voltage and rail captions, and the updated
+  slider index and registry metadata checks.
   CI runs fmt, clippy, tests, typecheck, lint and build,
   then deploys to Pages.
 

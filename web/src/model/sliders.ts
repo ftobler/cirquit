@@ -57,7 +57,13 @@ export function adjustableFields(kind: string): FieldDef[] {
       f.type !== 'modelChoice' &&
       f.type !== 'contents' &&
       f.type !== 'file' &&
-      f.type !== 'download',
+      f.type !== 'download' &&
+      // A derived row (the source's High Time / Low Time, get/apply) has no
+      // single stored param to bind: a slider on it would write a phantom
+      // param the engine cannot patch, the same failure the contents row
+      // guards against.
+      f.get === undefined &&
+      f.apply === undefined,
   );
 }
 
@@ -83,7 +89,17 @@ export function resolveParam(
       if (field) return { name: alias, field };
     }
     for (const f of fields) {
-      if (normalize(f.label) === key) return { name: f.name, field: f };
+      // A dynamic label (the source's "Voltage"/"Max Voltage" row) has no
+      // single caption to match; the alias table and the index fallback cover
+      // those rows. A derived row (the High/Low Time pair, get/apply) has no
+      // stored param either, so a caption naming it must not bind a phantom.
+      if (
+        typeof f.label === 'string' &&
+        f.get === undefined &&
+        f.apply === undefined &&
+        normalize(f.label) === key
+      )
+        return { name: f.name, field: f };
     }
   }
 

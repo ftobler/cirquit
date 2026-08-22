@@ -24,12 +24,14 @@ import { UnitNumberInput } from './UnitNumberInput';
 
 function Field({
   field,
+  label,
   value,
   onChange,
   onBeginEdit,
   onDownload,
 }: {
   field: FieldDef;
+  label: string;
   value: number | string;
   onChange: (v: number | string | FileList | null) => boolean | void;
   onBeginEdit: () => void;
@@ -41,7 +43,7 @@ function Field({
     // (DataRecorderElm.java:99-125).
     return (
       <label className="field">
-        <span>{field.label}</span>
+        <span>{label}</span>
         <button type="button" onClick={() => onDownload?.()}>
           Export
         </button>
@@ -60,7 +62,7 @@ function Field({
     // and leaves nothing behind when the decode fails.
     return (
       <label className="field">
-        <span>{field.label}</span>
+        <span>{label}</span>
         <input
           type="file"
           onChange={(e) => onChange(e.target.files)}
@@ -74,7 +76,7 @@ function Field({
     // setVisibleLines(5)).
     return (
       <ContentsField
-        field={field}
+        label={label}
         value={String(value ?? '')}
         onBeginEdit={onBeginEdit}
         onCommit={onChange}
@@ -89,7 +91,7 @@ function Field({
     if (field.multiline) {
       return (
         <label className="field">
-          <span>{field.label}</span>
+          <span>{label}</span>
           <textarea
             rows={6}
             value={String(value ?? '')}
@@ -103,7 +105,7 @@ function Field({
     }
     return (
       <label className="field">
-        <span>{field.label}</span>
+        <span>{label}</span>
         <input
           type="text"
           value={String(value ?? '')}
@@ -131,7 +133,7 @@ function Field({
           onFocus={onBeginEdit}
           onChange={(e) => onChange(e.target.checked ? 1 : 0)}
         />
-        <span>{field.label}</span>
+        <span>{label}</span>
       </label>
     );
   }
@@ -145,7 +147,7 @@ function Field({
     const known = field.choices?.some((c) => c.value === current) ?? false;
     return (
       <label className="field">
-        <span>{field.label}</span>
+        <span>{label}</span>
         <select
           value={v}
           // Focus opens the edit session so a waveform or type change is one
@@ -183,7 +185,7 @@ function Field({
     const known = current === '' || options.includes(current);
     return (
       <label className="field">
-        <span>{field.label}</span>
+        <span>{label}</span>
         <select
           value={current}
           onFocus={onBeginEdit}
@@ -212,7 +214,7 @@ function Field({
     // would disagree.
     return (
       <label className="field">
-        <span>{field.label}</span>
+        <span>{label}</span>
         <input
           type="number"
           value={v}
@@ -235,7 +237,7 @@ function Field({
     return (
       <label className="field">
         <span>
-          {field.label} <em>{v.toFixed(2)}</em>
+          {label} <em>{v.toFixed(2)}</em>
         </span>
         <input
           type="range"
@@ -261,7 +263,7 @@ function Field({
     // params exactly as the old number input did.
     return (
       <UnitNumberInput
-        label={`${field.label} (${field.unit})`}
+        label={`${label} (${field.unit})`}
         value={v}
         onFocus={onBeginEdit}
         onCommit={(n) => onChange(n)}
@@ -272,7 +274,7 @@ function Field({
   return (
     <label className="field">
       <span>
-        {field.label}
+        {label}
       </span>
       <input
         type="number"
@@ -298,12 +300,12 @@ function Field({
  * one undo entry, the bracketing every other field uses.
  */
 function ContentsField({
-  field,
+  label,
   value,
   onBeginEdit,
   onCommit,
 }: {
-  field: FieldDef;
+  label: string;
   value: string;
   onBeginEdit: () => void;
   onCommit: (text: string) => boolean | void;
@@ -312,7 +314,7 @@ function ContentsField({
   const text = draft !== null ? draft : value;
   return (
     <label className="field">
-      <span>{field.label}</span>
+      <span>{label}</span>
       <textarea
         className="memory-contents"
         rows={5}
@@ -468,10 +470,11 @@ export function ElementFields({ element, engine }: Props) {
 
   return (
     <>
-      {fieldRows(element).map(({ field, value }) => (
+      {fieldRows(element).map(({ field, label, value }) => (
         <Fragment key={field.name}>
           <Field
             field={field}
+            label={label}
             value={value}
             onBeginEdit={beginEdit}
             onDownload={

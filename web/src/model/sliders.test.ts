@@ -9,21 +9,30 @@ import {
 
 describe('adjustable fields', () => {
   it('lists only the numeric fields a slider can drive, in field order', () => {
-    // The voltage source's fields: waveform (choice), maxVoltage, frequency,
-    // bias, phaseShift, riseTime, dutyCycle. The choice is excluded, so the
-    // adjustable list is the numeric ones in order.
+    // The voltage source's fields: maxVoltage, waveform (choice), bias,
+    // showVoltage (bool), circleSymbol (bool), then the waveform-dependent
+    // rows. The choice/bool rows and the derived High/Low Time pair are
+    // excluded, so the adjustable list is the stored-param numerics in order.
     expect(adjustableFields('voltage').map((f) => f.name)).toEqual([
       'maxVoltage',
-      'frequency',
       'bias',
+      'frequency',
       'phaseShift',
-      'riseTime',
       'dutyCycle',
+      'riseTime',
     ]);
     // A labeled node's only field is text: nothing to bind a slider to.
     expect(adjustableFields('labeledNode')).toEqual([]);
     // A kind with no definition has no fields either.
     expect(adjustableFields('unijunction')).toEqual([]);
+  });
+
+  it('excludes the derived High Time / Low Time rows, which have no stored param', () => {
+    // A slider on a get/apply row would write a phantom `highTime`/`lowTime`
+    // param the engine cannot patch; the stored pair stays the slider surface.
+    expect(adjustableFields('voltage').some((f) => f.name === 'highTime')).toBe(false);
+    expect(adjustableFields('voltage').some((f) => f.name === 'lowTime')).toBe(false);
+    expect(adjustableFields('rail').some((f) => f.name === 'highTime')).toBe(false);
   });
 
   it('excludes the file and download rows upstream rejects as widget/button', () => {
@@ -90,11 +99,11 @@ describe('slider parameter resolution', () => {
   it('falls back to the numeric edit-item index when the caption matches nothing', () => {
     // The resistor's only numeric field is resistance, at index 0.
     expect(resolveParam('resistor', 0, 'Unrelated')).toMatchObject({ name: 'resistance' });
-    // The voltage source's numeric fields in port order (waveform is a choice,
-    // so it is skipped): amplitude, frequency, DC offset, phase offset,
-    // rise/fall time, duty cycle.
-    expect(resolveParam('voltage', 1, '')).toMatchObject({ name: 'frequency' });
-    expect(resolveParam('voltage', 5, '')).toMatchObject({ name: 'dutyCycle' });
+    // The voltage source's numeric stored-param fields in port order (waveform
+    // is a choice, show voltage a checkbox, the High/Low Time pair derived):
+    // amplitude, DC offset, frequency, phase offset, duty cycle, rise/fall time.
+    expect(resolveParam('voltage', 1, '')).toMatchObject({ name: 'bias' });
+    expect(resolveParam('voltage', 5, '')).toMatchObject({ name: 'riseTime' });
   });
 
   it('an out-of-range index and a kind with no fields resolve to null', () => {
