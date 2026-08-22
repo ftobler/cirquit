@@ -4,7 +4,8 @@
 //! bus support, every wide pin at one coordinate collapsed into a single node
 //! and separately-driven bits shorted together.
 
-use circuit_core::{Circuit, ElementSpec};
+use circuit_core::elements::chip::FLAG_BIT_ORDER_BUS;
+use circuit_core::{Circuit, CircuitSpec, ElementSpec};
 
 mod common;
 use common::*;
@@ -373,5 +374,267 @@ fn bus_transceiver_isolates_when_disabled() {
         close(v[7], 5.0 * 1000.0 / 1001.0, 1e-6),
         "enabled output did not follow A: {}",
         v[7]
+    );
+}
+
+// ─── Bus-mode chips (BIT_ORDER_BUS, ChipElm.java:35-37) ───
+
+/// A 2-bit counter in bus mode, upstream's td4 shape: both Q pins share one
+/// coordinate and both I pins another, told apart only by the engine's
+/// per-post bit tags. Pin order is Q1, Q0, I1, I0, clk, clr, enp, rco, load,
+/// ent; the control pins sit on distinct coordinates.
+fn bus_counter(id: u32, msb_state: f64, lsb_state: f64) -> ElementSpec {
+    let mut e = elm(
+        id,
+        "counter2",
+        &[
+            [96, 32],  // 0 Q1, bit 1
+            [96, 32],  // 1 Q0, bit 0
+            [0, 32],   // 2 I1, bit 1
+            [0, 32],   // 3 I0, bit 0
+            [0, 0],    // 4 clk
+            [0, 64],   // 5 clr
+            [0, 96],   // 6 enp
+            [160, 0],  // 7 rco
+            [160, 64], // 8 load
+            [160, 96], // 9 ent
+        ],
+        &[
+            ("bits", 2.0),
+            ("modulus", 0.0),
+            ("highVoltage", 5.0),
+            ("voltage0", msb_state),
+            ("voltage1", lsb_state),
+        ],
+    );
+    e.flags = FLAG_BIT_ORDER_BUS;
+    e
+}
+
+#[test]
+fn bus_mode_counter_keeps_its_collapsed_output_pins_distinct() {
+    // The minimal td4 failure in miniature: a bus-mode counter whose two Q
+    // sources share one coordinate, a 2-wide wire out of it and a splitter
+    // fanning the bits onto individual loads. The stored state is 0b10, so
+    // bit 1 must read exactly 5 V and bit 0 exactly 0 V through their loads.
+    // Without the per-post bit tags both sources collapse onto one node,
+    // short each other and the build fails as singular, which is precisely
+    // how td4.txt failed before the conversion carried the bit order.
+    let c = &mut build(
+        vec![
+            bus_counter(1, 5.0, 0.0),
+            bus_wire(2, 96, 224, 32, 2),
+            splitter(3, 224, 32, 288, 2),
+            elm(
+                4,
+                "resistor",
+                &[[288, 0], [288, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[288, 100]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[288, 32], [288, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[288, 132]], &[]),
+            // Hold the active-low CLR high: a floating clear pin would wipe
+            // the preloaded state on the first executed step.
+            elm(
+                8,
+                "logicInput",
+                &[[0, 64]],
+                &[("hiV", 5.0), ("loV", 0.0), ("position", 1.0)],
+            ),
+        ],
+        opts(5e-6, false),
+    );
+    c.run(3);
+    let nodes = c.element_nodes();
+    let vn = c.node_voltages();
+    // Splitter individual pins: post bits+0 is bit 0's fan-out at flat index
+    // 14 + 2 + 0 (counter has 10 posts, the wire 4), post bits+1 is bit 1's.
+    assert!(
+        close(vn[nodes[16] as usize], 0.0, 1e-9),
+        "bit 0 load should read 0 V"
+    );
+    assert!(
+        close(vn[nodes[17] as usize], 5.0, 1e-9),
+        "bit 1 load should read 5 V"
+    );
+}
+
+#[test]
+fn a_non_bus_counter_still_shorts_coincident_outputs_loudly() {
+    // The mirror-image control: the same collapsed geometry without the bus
+    // tag must stay a hard short of two ideal sources, because that is what
+    // a non-bus file with overlapping output pins genuinely is. A grounded
+    // load far away keeps the auto-reference off the Q net, so the shorted
+    // sources really are two identical constraint rows. This is what keeps
+    // the fix from silently absorbing real source conflicts.
+    let mut bad = bus_counter(1, 5.0, 0.0);
+    bad.flags = 0;
+    let spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            bad,
+            elm(
+                9,
+                "resistor",
+                &[[160, 0], [160, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(10, "ground", &[[160, 100]], &[]),
+        ],
+        options: Some(opts(5e-6, false)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    let build_err = c.set_circuit(&spec).err();
+    let run_err = if build_err.is_some() {
+        None
+    } else {
+        c.run(1).error
+    };
+    assert!(
+        build_err.is_some() || run_err.is_some(),
+        "two coincident ideal outputs without bus tags must be singular"
+    );
+}
+
+#[test]
+fn bus_mode_full_adder_sums_through_its_shared_pin_groups() {
+    // A bus-mode 2-bit adder: the A bank, B bank and S bank each live on one
+    // coordinate, driven or read through bus logic inputs and a splitter.
+    // 01 + 01 = 0b10, so S bit 0 reads 0 V, S bit 1 reads 5 V and the carry
+    // stays low.
+    let c = &mut build(
+        vec![
+            // A = 0b01 anchored right on the adder's A coordinate.
+            bus_input(1, 64, 0, 2, 1.0),
+            // B = 0b01 on the B coordinate.
+            bus_input(2, 64, 32, 2, 1.0),
+            elm_flags(
+                3,
+                "fullAdder",
+                &[
+                    [64, 0], // A bank: both pins here, tagged per bit
+                    [64, 0],
+                    [64, 32], // B bank
+                    [64, 32],
+                    [160, 32], // S bank
+                    [160, 32],
+                    [64, 96], // Cin, left low
+                    [160, 0], // C out
+                ],
+                &[("bits", 2.0), ("highVoltage", 5.0)],
+                2 | FLAG_BIT_ORDER_BUS,
+            ),
+            bus_wire(4, 160, 224, 32, 2),
+            splitter(5, 224, 32, 288, 2),
+            elm(
+                6,
+                "resistor",
+                &[[288, 0], [288, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[288, 100]], &[]),
+            elm(
+                8,
+                "resistor",
+                &[[288, 32], [288, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[288, 132]], &[]),
+            elm(
+                10,
+                "resistor",
+                &[[160, 0], [160, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(11, "ground", &[[160, 100]], &[]),
+        ],
+        opts(5e-6, false),
+    );
+    c.run(3);
+    let nodes = c.element_nodes();
+    let vn = c.node_voltages();
+    // Flats: bli 0-1, bli 2-3, fullAdder 4-11, wire 12-15, splitter 16-19;
+    // individual pin for bit k sits at 16 + 2 + k, the carry at 11.
+    assert!(
+        close(vn[nodes[18] as usize], 0.0, 1e-9),
+        "S bit 0 should read 0 V"
+    );
+    assert!(
+        close(vn[nodes[19] as usize], 5.0, 1e-9),
+        "S bit 1 should read 5 V"
+    );
+    assert!(
+        close(vn[nodes[11] as usize], 0.0, 1e-9),
+        "carry out should read 0 V"
+    );
+}
+
+#[test]
+fn bus_mode_rom_decodes_address_and_drives_its_data_bus() {
+    // A bus-mode ROM with 2 address bits and 2 data bits, address 0b01
+    // holding 0b10: OE low enables the output, the data bank shares one
+    // coordinate, and the splitter's individual pins must read exactly
+    // D0 = 0 V and D1 = 5 V.
+    let mut rom = elm(
+        1,
+        "rom",
+        &[
+            [0, 0],    // OE
+            [0, 32],   // A1, bit 1
+            [0, 32],   // A0, bit 0
+            [160, 32], // D1, bit 1
+            [160, 32], // D0, bit 0
+        ],
+        &[
+            ("addressBits", 2.0),
+            ("dataBits", 2.0),
+            ("addr0", 1.0),
+            ("val0", 2.0),
+        ],
+    );
+    rom.flags = FLAG_BIT_ORDER_BUS;
+    let c = &mut build(
+        vec![
+            rom,
+            bus_input(2, 0, 32, 2, 1.0), // address 0b01
+            elm(3, "ground", &[[0, 0]], &[]),
+            bus_wire(4, 160, 224, 32, 2),
+            splitter(5, 224, 32, 288, 2),
+            elm(
+                6,
+                "resistor",
+                &[[288, 0], [288, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[288, 100]], &[]),
+            elm(
+                8,
+                "resistor",
+                &[[288, 32], [288, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[288, 132]], &[]),
+        ],
+        opts(5e-6, true),
+    );
+    c.run(3);
+    let nodes = c.element_nodes();
+    let vn = c.node_voltages();
+    // Flats: rom 0-4, bli 5-6, ground 7, wire 8-11, splitter 12-15;
+    // individual pin for bit k sits at 12 + 2 + k.
+    assert!(
+        close(vn[nodes[14] as usize], 0.0, 1e-6),
+        "D0 should read 0 V"
+    );
+    assert!(
+        close(vn[nodes[15] as usize], 5.0 * 1000.0 / 1001.0, 1e-6),
+        "D1 should read 5 V through its 1 ohm coupling"
     );
 }

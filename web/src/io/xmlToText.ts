@@ -13,15 +13,24 @@
  * already Java `Double.toString` output, which JS `String()` reproduces for
  * the same value. Fields the port does not model have no text token and are
  * dropped, exactly as if upstream had saved a text file. The XML-only element
- * classes that still have no port model (Gyrator, NortonAmp, RoutedWire,
+ * classes that still have no port model (Clock, Gyrator, NortonAmp,
  * CustomCompositeChip) become `#` comment lines so nothing is lost; a routed
  * wire's path is electrically identical to straight `w` segments, so those
- * convert to real wires. The bus classes convert for real now: a `bli`
+ * convert to real wires. Where an element converts but an attribute it
+ * carries would change what upstream builds (a multiplexer's bus input
+ * modes, a chip bit order this build does not lay out), the line keeps its
+ * slot and a visible `#` trace comment rides under it, so no converted file
+ * loses semantics silently.
+ *
+ * The bus classes convert for real now: a `bli`
  * becomes the port's 435 line and a `bt` its 437 line, each carrying its
  * width token, and an `rw` whose `bw` attribute exceeds one appends it to
  * every segment it becomes. Plain wires without a token need none: the
  * engine-side width pass re-derives their width from the wide pins they
- * touch, exactly as upstream's detectBusWidths does.
+ * touch, exactly as upstream's detectBusWidths does. The instruction display
+ * (`ins`) converts to a real 434 line carrying its lookup table, and the
+ * counter bit orders honoured end to end are ctr2/FullAdder/ROM/SRAM
+ * (`bo="2"` into the port's chip flag bit).
  */
 
 import { parseXml, type XmlNode } from './xml';
@@ -30,6 +39,8 @@ import { encodeScopeLine, scopeFieldsFromFlags } from './scopeLine';
 import { importDecOrHex, scopeValueFromToken } from './netlist/parse';
 import { FLAG_ESCAPE, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import type { PlotMeasurements, Scope, ScopeValue } from '../engine/simulator';
+
+import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
 
 const FLAG_MODEL = 2;         // DiodeElm.java:22, shared by the LED
 const FLAG_FWDROP = 1;        // DiodeElm.java:21
@@ -154,6 +165,14 @@ const WRITERS: Record<string, Writer> = {
   SevenSegDecoder: (n) => chipTail(n, false, [attr(n, 'sgt', 0)]),
   ssd: (n) => chipTail(n, false, [attr(n, 'ba', 7), attr(n, 'ex', 0), attr(n, 'di', 0)]),
   mux: (n) => chipTail(n, false, [attr(n, 'se', 2)]),
+  ins: (n) => [
+    // The port's 434 stream: width, threshold, then the lookup table as one
+    // escaped token (the body text upstream writes verbatim,
+    // InstructionDisplayElm.java:38-45).
+    attr(n, 'bw', 4),
+    attr(n, 'th', 2.5),
+    n.text ?? '',
+  ],
   ctr2: (n) => {
     const bits = attr(n, 'bi', 4);
     const state: (string | number)[] = [];
@@ -162,6 +181,9 @@ const WRITERS: Record<string, Writer> = {
   },
   dd: (n) => chipTail(n, false, [attr(n, 'bc', 4), attr(n, 'dm', 0)]),
   ROM: romTokens,
+  // The SRAM is the ROM's writer twin: same ab/db attrs and the same
+  // body-run format (SRAMElm.dumpXmlModel shares ROMElm's contents text).
+  SRAM: romTokens,
   cc: (n) => [n.attrs.mo ?? ''],
   cr: (n) => [
     `4_${attr(n, 'pc', 2.87e-11)}_0_0.001_0`,
@@ -254,6 +276,7 @@ const DUMP_CODES: Record<string, string> = {
   FullAdder: '196', SevenSegDecoder: '197', ssd: '157', mux: '184',
   ctr2: '421', dd: '419', ROM: '436', cc: '410', cr: '412',
   VCCS: '213', VCVS: '212', CCVS: '214',
+  ins: '434', SRAM: '413',
 };
 
 /** The port kind each element tag maps to, for scope value decoding. */
@@ -269,6 +292,7 @@ const KIND_BY_TAG: Record<string, string> = {
   FullAdder: 'fullAdder', SevenSegDecoder: 'sevenSegDecoder', ssd: 'sevenSeg',
   mux: 'multiplexer', ctr2: 'counter2', dd: 'decimalDisplay', ROM: 'rom',
   cc: 'customComposite', cr: 'crystal', VCCS: 'vccs', VCVS: 'vcvs', CCVS: 'ccvs',
+  ins: 'instructionDisplay', SRAM: 'sram',
 };
 
 /** The flags an element line carries: the XML `f` plus the bits the port's own
@@ -296,7 +320,78 @@ function flagsFor(node: XmlNode): number {
   ) {
     f |= CHIP_CUSTOM_VOLTAGE;
   }
+  // The chip bit order has no text-format home: upstream carries it as the
+  // XML attribute `bo` (ChipElm.java:381-405), and bo="2" is BIT_ORDER_BUS,
+  // under which every bit-pin group collapses onto one tagged coordinate.
+  // Dropping it would rebuild the chips three rows taller with the pins spread
+  // out, and every wire, ground and rail drawn against the real geometry would
+  // land on the wrong pin, which is exactly how the td4 family went singular.
+  // The port parks the state in its free chip flag bit instead. Only the
+  // kinds whose bus layout exists end to end honour it (see BO_HONOURED);
+  // the rest get a visible trace comment from droppedTraces.
+  if (
+    BO_HONOURED.has(tag) &&
+    attr(node, 'bo', 0) === 2
+  ) {
+    f |= CHIP_BIT_ORDER_BUS;
+  }
   return f;
+}
+
+/** The tags whose bus bit order this build honours: counter2, fullAdder,
+ *  SRAM and ROM have bus-mode pin layouts in the registry and per-post bit
+ *  tags in the engine. */
+const BO_HONOURED = new Set(['ctr2', 'FullAdder', 'ROM', 'SRAM']);
+
+/** Every ChipElm-subclass tag upstream writes a `bo` attribute onto when its
+ *  bit order is not MSB first (allowBus, ChipElm.java:484): the honoured four
+ *  plus ADC, DAC, Counter, Latch, DecimalDisplay, the seven-segment decoders
+ *  and the bus transceiver. A nonzero bo on any of these outside
+ *  [`BO_HONOURED`] changes the pin layout upstream builds, so it must never
+ *  vanish quietly. */
+const BO_TAGS = new Set([
+  ...BO_HONOURED,
+  'ADC',
+  'DAC',
+  'Counter',
+  'Latch',
+  'dd',
+  'SevenSegDecoder',
+  'SevenSeg',
+  'ssd',
+  'bt',
+  'BusTransceiver',
+]);
+
+/** Visible trace comments for attributes a converted line cannot carry.
+ *  Everything here keeps semantics upstream would have built; losing them
+ *  silently would make a loaded circuit look right and behave wrong. */
+function droppedTraces(node: XmlNode): string[] {
+  const traces: string[] = [];
+  const tag = node.tag;
+  if (tag === 'mux') {
+    // MultiplexerElm.java:32-37: inputMode 1 routes a bus in against
+    // individual selects, mode 2 bus against bus. The port lays out mode 0
+    // only, so a bus-mode mux converts to its single-bit shape.
+    if (attr(node, 'im', 0) !== 0) {
+      traces.push(
+        `# mux im="${node.attrs.im}" not modelled: converted as individual inputs with one output`,
+      );
+    }
+    if (attr(node, 'dw', 4) !== 4) {
+      traces.push(`# mux dw="${node.attrs.dw}" not modelled: data width stays individual`);
+    }
+  }
+  if (BO_TAGS.has(tag) && attr(node, 'bo', 0) !== 0) {
+    if (!BO_HONOURED.has(tag)) {
+      traces.push(`# ${tag} bo="${node.attrs.bo}" not modelled: converted as non-bus pin rows`);
+    } else if (attr(node, 'bo', 0) !== 2) {
+      // Only BIT_ORDER_BUS is carried; LSB first would flip row order within
+      // every pin group, which the registry defs do not lay out.
+      traces.push(`# ${tag} bo="${node.attrs.bo}" not modelled: bit order stays MSB first`);
+    }
+  }
+  return traces;
 }
 
 /** Escapes one string token like the serializer does; numeric tokens pass
@@ -680,7 +775,10 @@ export function xmlToText(source: string): string {
       ctx.slots.push(-1);
       passthrough.push(commentLine(node));
     } else {
-      elementLinesOut.push(...lines);
+      // A trace comment rides directly under the line it describes but must
+      // not take a file slot: only real element lines shift the ordinals the
+      // scope and slider lines count against.
+      elementLinesOut.push(...lines, ...droppedTraces(node));
       ctx.slots.push(slot);
       slot += lines.length;
     }

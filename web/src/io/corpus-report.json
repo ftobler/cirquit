@@ -2855,9 +2855,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "td4-ctr-dn.txt",
@@ -2866,9 +2865,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "td4-ctr-up-dn.txt",
@@ -2877,9 +2875,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "td4-ctr.txt",
@@ -2888,9 +2885,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "td4.txt",
@@ -2899,9 +2895,8 @@
     "missing": [],
     "sliderLines": 0,
     "load": "ok",
-    "sim": "error",
-    "simError": "The circuit has no solution: check for shorted sources or missing connections.",
-    "converged": false
+    "sim": "ok",
+    "converged": true
   },
   {
     "file": "tdiode.txt",

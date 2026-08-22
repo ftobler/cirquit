@@ -14,6 +14,10 @@ pub struct Counter2 {
     chip: Chip,
     bits: usize,
     modulus: usize,
+    /// True when the file's bit order is upstream's BIT_ORDER_BUS
+    /// (ChipElm.java:37): every Q pin shares one coordinate and every I pin
+    /// another, told apart by a per-post bus bit tag.
+    bus: bool,
     /// RCO's latch: high while the count is at `realmod - 1` after the last
     /// clock (Counter2Elm.java:120).
     carry: bool,
@@ -26,6 +30,7 @@ impl Counter2 {
         // allocating unbounded Q and I pins.
         let bits = (spec.param("bits", 4.0) as usize).clamp(2, 32);
         let modulus = spec.param("modulus", 0.0).max(0.0) as usize;
+        let bus = spec.flag(crate::elements::chip::FLAG_BIT_ORDER_BUS);
         let mut pins: Vec<ChipPin> = Vec::with_capacity(2 * bits + 6);
         // The Q outputs first, MSB at pin 0 (makeBitPins reversed,
         // Counter2Elm.java:75).
@@ -46,6 +51,7 @@ impl Counter2 {
             chip: Chip::new(spec, pins),
             bits,
             modulus,
+            bus,
             carry: false,
         }
     }
@@ -141,6 +147,24 @@ impl Element for Counter2 {
     }
     fn post_count(&self) -> usize {
         2 * self.bits + 6
+    }
+    /// Bus mode: the Q pins all sit on one coordinate and the I pins on
+    /// another, so each pin carries its logical bit as its merge tag. Pin p
+    /// of the Q block holds bit `bits-1-p` (the MSB is pin 0), and I pin q
+    /// feeds output pin `q-bits`, which holds bit `2*bits-1-q`; both reduce
+    /// to "the bit this pin drives or reads" (makeBitPins reversed,
+    /// Counter2Elm.java:75-76, and the load path at :149).
+    fn post_bus_z(&self, post: usize) -> usize {
+        if !self.bus {
+            return 0;
+        }
+        if post < self.bits {
+            self.bits - 1 - post
+        } else if post < 2 * self.bits {
+            2 * self.bits - 1 - post
+        } else {
+            0
+        }
     }
     fn voltage_source_count(&self) -> usize {
         self.chip.voltage_source_count()

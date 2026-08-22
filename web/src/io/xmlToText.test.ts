@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { parseXml, isXml } from './xml';
+import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
+import { postsOf } from '../model/registry';
 import { xmlToText } from './xmlToText';
-import { parseCircuit } from './netlist';
+import { parseCircuit, serializeCircuit } from './netlist';
+import { DEFAULT_SETTINGS } from '../model/types';
 
 const SIMPLE = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
   <r x="192 160 304 160" f="0" r="1000"/>
@@ -259,5 +262,140 @@ describe('xml to text conversion', () => {
   it('throws a conversion error wrapped in the load error on malformed xml', () => {
     const src = '<cir f="1">';
     expect(() => parseCircuit(src)).toThrow(/xml to text conversion failed/);
+  });
+
+  it('carries a bus-mode counter bit order into the port chip flag', () => {
+    // Upstream's bo="2" (BIT_ORDER_BUS) collapses every Q/I pin group onto
+    // one coordinate; the converted line must keep that state or the rebuilt
+    // chip lands its pins on rows the surrounding wires never touched, which
+    // is how the td4 family went singular.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ctr2 x="496 288 528 288" f="0" bi="4" bo="2" mo="0"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain(`421 496 288 528 288 ${CHIP_BIT_ORDER_BUS} 4`);
+    const parsed = parseCircuit(text);
+    const posts = postsOf(parsed.elements[0]);
+    // The four Q pins share one east coordinate and the four I pins one west
+    // coordinate; a plain non-bus rebuild would spread them over four rows.
+    expect(posts[0]).toEqual(posts[3]);
+    expect(posts[4]).toEqual(posts[7]);
+  });
+
+  it('leaves a flagless ctr2 in the plain per-row layout', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ctr2 x="496 288 528 288" f="0" bi="4" mo="0"/>
+</cir>
+`;
+    const parsed = parseCircuit(xmlToText(src));
+    const posts = postsOf(parsed.elements[0]);
+    expect(new Set(posts.map((p) => `${p.x},${p.y}`))).toHaveLength(14);
+  });
+
+  it('converts an instruction display to a real 434 line carrying its table', () => {
+    // alu74181's shape: bw 5, default threshold, multi-line body. The table
+    // must survive as one escaped token and re-parse into live element state,
+    // not die in a bare comment.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ins x="1200 1024 1264 1024" f="0" bw="5">0=ADD A
+0x10-0x1F=MOV A, B
+</ins>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('434 1200 1024 1264 1024 0 5 2.5 ');
+    expect(text).toContain('\\n');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements).toHaveLength(1);
+    expect(parsed.elements[0].kind).toBe('instructionDisplay');
+    expect(parsed.elements[0].params.busWidth).toBe(5);
+    expect(parsed.elements[0].params.threshold).toBe(2.5);
+    // The XML parser trims the body's trailing newline; every table row
+    // survives either way.
+    expect(parsed.elements[0].text).toBe('0=ADD A\n0x10-0x1F=MOV A, B');
+    // The converted line round-trips through a save unchanged.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    const round = parseCircuit(saved);
+    expect(round.elements[0].text).toBe('0=ADD A\n0x10-0x1F=MOV A, B');
+    expect(round.elements[0].params.busWidth).toBe(5);
+  });
+
+  it('converts the td4 instruction display with its threshold attribute', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ins x="1200 1024 1264 1024" f="0" bw="8" th="3">0=NOP</ins>
+</cir>
+`;
+    const parsed = parseCircuit(xmlToText(src));
+    expect(parsed.elements[0].kind).toBe('instructionDisplay');
+    expect(parsed.elements[0].params.busWidth).toBe(8);
+    expect(parsed.elements[0].params.threshold).toBe(3);
+    expect(parsed.elements[0].text).toBe('0=NOP');
+  });
+
+  it('keeps a bus-input mux line and marks the dropped input mode', () => {
+    // The port lays out input mode 0 only; the td4 files' im="2" muxes keep
+    // their element slot (scopes count against them) and gain a visible
+    // trace comment instead of silently losing the bus behaviour.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <mux x="752 320 784 320" f="0" se="2" im="2"/>
+  <w x="592 320 752 320" f="4"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('184 752 320 784 320 0 2');
+    expect(text).toContain(
+      '# mux im="2" not modelled: converted as individual inputs with one output',
+    );
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['multiplexer', 'wire']);
+  });
+
+  it('marks a dropped data width on a mux too', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <mux x="752 320 784 320" f="0" se="2" dw="8"/>
+</cir>
+`;
+    expect(xmlToText(src)).toContain('# mux dw="8" not modelled: data width stays individual');
+  });
+
+  it('marks a dropped bit order on chips this build does not lay out', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ADC x="304 160 368 160" f="0" bi="4" bo="2"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).not.toContain(String(CHIP_BIT_ORDER_BUS));
+    expect(text).toContain('# ADC bo="2" not modelled: converted as non-bus pin rows');
+  });
+
+  it('marks an LSB-first bit order even on an honoured chip', () => {
+    // Only BIT_ORDER_BUS rides the port flag; LSB first would flip row order
+    // inside every group, so it degrades loudly rather than silently.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ctr2 x="496 288 528 288" f="0" bi="4" bo="1" mo="0"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).not.toContain(String(CHIP_BIT_ORDER_BUS));
+    expect(text).toContain('# ctr2 bo="1" not modelled: bit order stays MSB first');
+  });
+
+  it('converts an SRAM like the ROM, honouring its bus bit order', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <SRAM x="800 896 832 896" f="4" ab="4" db="8" bo="2">0: B1 B2
+</SRAM>
+</cir>
+`;
+    const text = xmlToText(src);
+    // f="4" rides along as the hex-display bit next to the bus-order flag.
+    expect(text).toContain(`413 800 896 832 896 ${CHIP_BIT_ORDER_BUS | 4} 4 8`);
+    const parsed = parseCircuit(text);
+    expect(parsed.elements[0].kind).toBe('sram');
+    expect(postsOf(parsed.elements[0])).toHaveLength(14);  // WE + OE + 4 + 8
+    // Bus mode: each bank collapses onto row 1 of its side.
+    const posts = postsOf(parsed.elements[0]);
+    expect(posts[2]).toEqual(posts[5]);
+    expect(posts[6]).toEqual(posts[13]);
   });
 });

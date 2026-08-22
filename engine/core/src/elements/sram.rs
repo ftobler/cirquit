@@ -51,6 +51,10 @@ pub struct Sram {
     high_voltage: f64,
     address_bits: usize,
     data_bits: usize,
+    /// True under upstream's BIT_ORDER_BUS (ChipElm.java:37): the address
+    /// bank and the data bank each share one coordinate, told apart by
+    /// per-post bit tags.
+    bus: bool,
     has_we: bool,
     map: HashMap<usize, u32>,
     /// The contents to restore under FLAG_RELOAD_ON_RESET, captured at build
@@ -78,6 +82,7 @@ impl Sram {
             high_voltage: spec.param("highVoltage", 5.0),
             address_bits,
             data_bits,
+            bus: spec.flag(crate::elements::chip::FLAG_BIT_ORDER_BUS),
             has_we,
             map,
             initial_map,
@@ -153,6 +158,24 @@ impl Element for Sram {
     }
     fn post_count(&self) -> usize {
         Self::post_total(self.has_we, self.address_bits, self.data_bits)
+    }
+    /// Bus mode: each bank collapses onto one coordinate, and makeBitPins
+    /// runs the banks reversed, so bank pin p carries bit `n-1-p` of its
+    /// bank, which is exactly what read_address (:132) and do_step (:210)
+    /// decode (SRAMElm.java:120-121).
+    fn post_bus_z(&self, post: usize) -> usize {
+        if !self.bus {
+            return 0;
+        }
+        let a0 = self.address_base();
+        let d0 = self.data_base();
+        if post >= a0 && post < d0 {
+            self.address_bits - 1 - (post - a0)
+        } else if post >= d0 && post < d0 + self.data_bits {
+            self.data_bits - 1 - (post - d0)
+        } else {
+            0
+        }
     }
     /// One node per data bit holds the source that drives the stored value
     /// (`getInternalNodeCount`, SRAMElm.java:268).

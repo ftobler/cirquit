@@ -6,6 +6,7 @@
  */
 
 import {
+  chipBitOrderFlags,
   chipBodyRect,
   chipDumpFlags,
   chipPosts,
@@ -31,7 +32,7 @@ export const ROM_DEF: ElementDef = {
   defaults: { addressBits: 4, dataBits: 4, highVoltage: 5 },
   parse: (t, e) => memoryParse(t, e),
   dump: memoryDump,
-  dumpFlags: chipDumpFlags,
+  dumpFlags: (e) => chipBitOrderFlags(e, chipDumpFlags(e)),
   fields: [
     { name: 'addressBits', label: '# of Address Bits', min: 2, max: 16, integer: true },
     { name: 'dataBits', label: '# of Data Bits', min: 2, max: 16, integer: true },

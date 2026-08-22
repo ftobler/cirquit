@@ -18,6 +18,10 @@ import { postsOf } from './registry';
 import { normalizeBusSplitterBits } from './registry/elements/busSplitter';
 import { instructionDisplayBits } from './registry/elements/instructionDisplay';
 import { storedBusWidth } from './registry/elements/wire';
+import { counter2Pins } from './registry/elements/counter2';
+import { fullAdderPins } from './registry/elements/fullAdder';
+import { memoryPins } from './registry/elements/sram';
+import type { ChipPinDef } from './registry/elements/dFlipFlop';
 import type { CircuitElement, Point } from './types';
 
 /** The bus-width clamp the bus-logic-input engine constructor applies. */
@@ -30,6 +34,20 @@ interface WidePinGroup {
   /** One coordinate all of the group's posts share. */
   at: Point;
   width: number;
+}
+
+/** The wide pin groups a chip's pin table presents: one entry per collapsed
+ *  bank, keyed on the coordinate the bank's first pin sits on. This is the
+ *  `getPostWidth(j) > 1` half of detectBusWidths' seeding loop for the chips
+ *  that support upstream's BIT_ORDER_BUS. */
+function chipWideGroups(e: CircuitElement, pins: ChipPinDef[]): WidePinGroup[] {
+  const posts = postsOf(e);
+  const groups: WidePinGroup[] = [];
+  pins.forEach((p, i) => {
+    if ((p.busWidth ?? 1) <= 1 || (p.busZ ?? 0) > 0) return;
+    groups.push({ at: posts[i], width: p.busWidth! });
+  });
+  return groups;
 }
 
 /** The wide pin groups an element presents: one entry per shared coordinate,
@@ -48,6 +66,12 @@ function wideGroupsOf(e: CircuitElement): WidePinGroup[] {
   if (e.kind === 'instructionDisplay') {
     return [{ at: posts[0], width: instructionDisplayBits(e.params.busWidth ?? 4) }];
   }
+  // The bus-mode chips: their collapsed banks seed the widths exactly like
+  // any other wide pin, so plain wires drawn against them become buses.
+  if (e.kind === 'counter2') return chipWideGroups(e, counter2Pins(e));
+  if (e.kind === 'fullAdder') return chipWideGroups(e, fullAdderPins(e));
+  if (e.kind === 'sram') return chipWideGroups(e, memoryPins(e, true));
+  if (e.kind === 'rom') return chipWideGroups(e, memoryPins(e, false));
   return [];
 }
 

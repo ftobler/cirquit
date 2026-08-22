@@ -8,6 +8,8 @@
  */
 
 import {
+  chipBitOrderFlags,
+  chipBitOrderParam,
   chipBodyRect,
   chipCommonTokens,
   chipDumpFlags,
@@ -15,6 +17,7 @@ import {
   chipStateNames,
   drawChip,
   normalizeChipBits,
+  CHIP_BIT_ORDER_BUS,
   type ChipPinDef,
 } from './dFlipFlop';
 import { readParams } from '../shared';
@@ -32,21 +35,50 @@ function counter2Bits(e: CircuitElement): number {
   return normalizeCounter2Bits(e.params.bits ?? 4);
 }
 
+/** Bus bit order (upstream BIT_ORDER_BUS, the XML attribute `bo="2"`): the
+ *  Q pins share one east coordinate and the I pins one west coordinate, told
+ *  apart by per-post tags. */
+export function counter2Bus(e: CircuitElement): boolean {
+  return e.params.bitOrder === 2 || (e.flags & CHIP_BIT_ORDER_BUS) !== 0;
+}
+
 function counter2SizeY(e: CircuitElement): number {
-  return counter2Bits(e) + 3;
+  // bitsY is 1 in bus mode and `bits` otherwise (Counter2Elm.java:72-73).
+  return counter2Bus(e) ? 4 : counter2Bits(e) + 3;
 }
 
 /** The pin table, from `setupPins` (Counter2Elm.java:70-94). The Q outputs
- *  run MSB first (makeBitPins reversed), so Q_{bits-1} sits at the top. */
+ *  run MSB first (makeBitPins reversed), so Q_{bits-1} sits at the top. In
+ *  bus mode each group collapses onto row 1 of its side with every pin
+ *  carrying its logical bit as its tag (makeBitPins' useBus branch), which is
+ *  what keeps the td4 family's registers wired to their bus wires. */
 export function counter2Pins(e: CircuitElement): ChipPinDef[] {
   const bits = counter2Bits(e);
+  const bus = counter2Bus(e);
   const sizeY = counter2SizeY(e);
   const pins: ChipPinDef[] = [];
-  for (let i = 0; i < bits; i++) {
-    pins.push({ side: 'E', pos: 1 + i, text: `Q${bits - 1 - i}`, output: true, state: true });
-  }
-  for (let i = 0; i < bits; i++) {
-    pins.push({ side: 'W', pos: 1 + i, text: `I${bits - 1 - i}` });
+  if (bus) {
+    for (let i = 0; i < bits; i++) {
+      pins.push({
+        side: 'E',
+        pos: 1,
+        text: 'Q',
+        output: true,
+        state: true,
+        busWidth: bits,
+        busZ: bits - 1 - i,
+      });
+    }
+    for (let i = 0; i < bits; i++) {
+      pins.push({ side: 'W', pos: 1, text: 'I', busWidth: bits, busZ: bits - 1 - i });
+    }
+  } else {
+    for (let i = 0; i < bits; i++) {
+      pins.push({ side: 'E', pos: 1 + i, text: `Q${bits - 1 - i}`, output: true, state: true });
+    }
+    for (let i = 0; i < bits; i++) {
+      pins.push({ side: 'W', pos: 1 + i, text: `I${bits - 1 - i}` });
+    }
   }
   pins.push({ side: 'W', pos: 0, text: '', clock: true });
   // CLR and LOAD sit at bitsY+1 = sizeY-2, EnP and EnT at bitsY+2 = sizeY-1,
@@ -84,6 +116,7 @@ export const COUNTER2_DEF: ElementDef = {
     if (t[i + names.length] !== undefined && Number.isFinite(mod)) {
       e.params.modulus = mod;
     }
+    chipBitOrderParam(e);
   },
   dump: (e) => {
     const names = chipStateNames(counter2Pins(e));
@@ -94,7 +127,7 @@ export const COUNTER2_DEF: ElementDef = {
     out.push(e.params.modulus ?? 0);
     return out;
   },
-  dumpFlags: chipDumpFlags,
+  dumpFlags: (e) => chipBitOrderFlags(e, chipDumpFlags(e)),
   fields: [
     { name: 'bits', label: '# of Bits', min: 2, max: 32, integer: true },
     { name: 'modulus', label: 'Modulus', min: 0, integer: true },

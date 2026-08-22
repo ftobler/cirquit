@@ -186,6 +186,17 @@ fetch it).
   transceiver (437). The instruction display presents its pins the way
   upstream does now, all N on one coordinate tagged per bit. The corpus
   alu74181 simulates again; see the XML circuits bullet for what still waits.
+- Bus-mode chips (upstream's BIT_ORDER_BUS, ChipElm.java:37): counter2,
+  fullAdder, SRAM and ROM accept the collapsed pin layout under which each
+  makeBitPins group shares one coordinate and its pins carry per-post bit
+  tags, shrinking a 4-bit counter to 4 rows instead of 7 and the td4 ROM to 2
+  instead of 9. Upstream carries the state only as the XML attribute
+  `bo="2"`, which has no text-format home, so the port parks it in a free
+  chip flag bit (`CHIP_BIT_ORDER_BUS`, engine `FLAG_BIT_ORDER_BUS`, 1 << 14)
+  that round-trips with the rest of the word; the converter sets it, and
+  wide-pin seeding treats the collapsed banks exactly like a splitter's bus
+  side when re-deriving wire widths. The td4 corpus family simulates again;
+  see the XML circuits bullet.
 - Undocked scope window: the port's own interpretation of the element context
   menu's View in New Undocked Scope row. Upstream's identically named command
   drops a floating scope element onto the schematic near the clicked element
@@ -209,10 +220,10 @@ fetch it).
   capture, so no new boundary crossing exists. The parser maps those tokens to
   real values instead of null plots (a token outside an element's table still
   rides raw only), and early.txt's Vce-vs-Ic X-Y panels draw again.
-- 468 Rust tests, of which 394 are the end-to-end circuit checks against
-  analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
-  was split into topic files), plus 73 in-module unit tests and one doctest.
-  2489 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
+- 472 Rust tests, of which 398 are the end-to-end circuit checks across
+  `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
+  files), plus 73 in-module unit tests and one doctest.
+  2496 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
   tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -285,13 +296,25 @@ fetch it).
   converter maps each element tag's attributes to the port's own text tokens,
   carries the device models (`dm`/`tm`/`mm`/`ccm`), re-encodes scopes and
   sliders, converts the bus elements (`bli` to 435, `bt` to 437, and an `rw`
-  bus wire's `bw` onto every straight segment it becomes), and degrades
-  routed wires to straight `w` segments. The XML-only element classes still
-  unrealized (Clock, Gyrator, NortonAmp, RoutedWire, CustomCompositeChip) stay
-  as `#` comment lines so nothing is lost. Five of the 38 convert but do not
-  simulate (the td4 family: ground symbols drawn directly onto counter output
-  pins in the source document, plus overlapping register pin rows); they are
-  tracked in the corpus `DIAGNOSED_SIM_FAILURES` with the details. alu74181,
+  bus wire's `bw` onto every straight segment it becomes), converts the
+  instruction display (`ins` to a real 434 line carrying its lookup table),
+  and degrades routed wires to straight `w` segments. The XML-only element
+  classes still unrealized (Clock, Gyrator, NortonAmp, CustomCompositeChip)
+  stay as `#` comment lines so nothing is lost; RoutedWire is the exception,
+  converting to real segments. All 38 convert and simulate: the last holdouts,
+  the td4 family, fell to bus-mode chip support (see the Working bullet above;
+  their grounds on enable pins and the PC register's rails were drawn against
+  upstream's collapsed pin coordinates, and a non-bus rebuild put those rails
+  on an output pin). Two conversion gaps remain visible rather than fixed: a
+  multiplexer with a nonzero input mode (the td4 files' `im="2"`, upstream's
+  bus-in/bus-out wiring) converts to its single-bit layout and keeps its
+  element line under a `#` trace comment naming what was dropped, so faithful
+  bus/bus mux behaviour waits on mux input modes as follow-up work; and of the
+  chip bit order only ctr2/FullAdder/ROM/SRAM honour `bo="2"` end to end,
+  while any other allowBus kind carrying a nonzero `bo` keeps its line under
+  the same kind of trace. Where nothing can be honoured the whole element is
+  already a full comment. `DIAGNOSED_SIM_FAILURES`
+  is empty and the corpus report has no `sim error` entries left. alu74181,
   which used to wait on bus support, simulates again. The derivative-driven
   controlled sources that used to sit there, cs-varicap and cs-varinduct,
   fell to the `ExprState` step-length fix, and cs-opamprail, a clamped
@@ -299,6 +322,19 @@ fetch it).
   Newton, fell to the controlled sources stamping a fixed value for the first
   solve after a reset (`ExprSource::primed`). The text format remains what
   the `cct` and plain-text share links use.
+- **Chip bit-order leftovers, accepted deliberately.** The port carries the
+  chip bit order in flag bit 14 because upstream has no text-format home for
+  it (`bo` is an XML attribute only); if upstream ever defines one, migrate
+  rather than reuse the bit. A stale bit-14 row against already-expanded pin
+  geometry would silently open per-bit connections instead of erroring:
+  upstream never writes bit 14 there, so the risk is nil, but it is a silent
+  direction by nature. `bo="1"` (LSB first, non-bus) flips row order within
+  each pin group; the converter cannot honour it and marks every occurrence
+  with a trace comment instead. No bundled file uses it, and acting on it
+  needs the same row-flip layout work in the registry defs. The td4 command
+  decoder also rides out its composite as a diagonal `cc` placement whose
+  pins mostly miss their nets; that fidelity gap belongs to the
+  CustomCompositeChip geometry work, not here.
 - **The DC operating point runs per the `autoDC` setting, not always.** The
   solve runs before the first timestep and on every reset only when `autoDC`
   is on: the header's flag bit 128 drives it (CirSim.java:440-444), and a new
@@ -490,6 +526,7 @@ Dump codes implemented so far, with their trailing field order:
 | `208` | custom logic   | modelName (escaped), then one outputVoltage per output pin |
 | `435` | bus logic input| busWidth, value, hiV, loV                                  |
 | `437` | bus transceiver| bits, [highVoltage] (the standard chip stream)             |
+| `434` | instruction display | busWidth, threshold, lookup table (one escaped token) |
 
 For the gate rows the `inputCount` token is the post count minus one (1 to 8
 inputs); `lastOutputVoltage` restores the gate's output state on load

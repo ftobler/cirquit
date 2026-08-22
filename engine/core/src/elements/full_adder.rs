@@ -18,6 +18,9 @@ const FLAG_BITS: i64 = 2;
 pub struct FullAdder {
     chip: Chip,
     bits: usize,
+    /// True under upstream's BIT_ORDER_BUS (ChipElm.java:37): the A, B and S
+    /// groups share one coordinate each, told apart by per-post bit tags.
+    bus: bool,
 }
 
 impl FullAdder {
@@ -30,6 +33,7 @@ impl FullAdder {
         } else {
             1
         };
+        let bus = spec.flag(crate::elements::chip::FLAG_BIT_ORDER_BUS);
         // Pin order (setupPins, FullAdderElm.java:41-56): the A and B inputs
         // on the west MSB first, the S outputs on the east, then the carry-in
         // and carry-out (FullAdderElm.java:50-54). No pin is saved to the file.
@@ -48,6 +52,7 @@ impl FullAdder {
         Self {
             chip: Chip::new(spec, pins),
             bits,
+            bus,
         }
     }
 
@@ -78,6 +83,24 @@ impl Element for FullAdder {
     }
     fn post_count(&self) -> usize {
         3 * self.bits + 2
+    }
+    /// Bus mode: the A, B and S groups each collapse onto one coordinate, and
+    /// makeBitPins runs them unreversed, so pin p carries bit `p` within its
+    /// block (FullAdderElm.java:44-48); execute reads exactly that mapping
+    /// (:62-64).
+    fn post_bus_z(&self, post: usize) -> usize {
+        if !self.bus {
+            return 0;
+        }
+        if post < self.bits {
+            post
+        } else if post < 2 * self.bits {
+            post - self.bits
+        } else if post < 3 * self.bits {
+            post - 2 * self.bits
+        } else {
+            0
+        }
     }
     fn voltage_source_count(&self) -> usize {
         self.chip.voltage_source_count()

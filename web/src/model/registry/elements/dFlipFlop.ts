@@ -15,7 +15,6 @@ import {
   dsign,
   elementLength,
   endpoints,
-  lead,
   line,
   polyline,
   voltageColor,
@@ -29,6 +28,26 @@ export const CHIP_FLIP_X = 1 << 10;
 export const CHIP_FLIP_Y = 1 << 11;
 export const CHIP_FLIP_XY = 1 << 12;
 export const CHIP_CUSTOM_VOLTAGE = 1 << 13;
+/**
+ * Port extension: the chip's bit order is upstream's BIT_ORDER_BUS
+ * (ChipElm.java:37, the XML attribute `bo="2"`), under which every bit-pin
+ * group collapses onto one coordinate told apart by per-post tags. Upstream's
+ * text format has no home for the state, so the port parks it in this free
+ * chip flag bit, which round-trips verbatim like the rest of the word.
+ */
+export const CHIP_BIT_ORDER_BUS = 1 << 14;
+
+/** Reads the port bit-order flag into `params.bitOrder`, the shape the
+ *  geometry and the engine-facing param both consume. */
+export function chipBitOrderParam(e: CircuitElement): void {
+  if ((e.flags & CHIP_BIT_ORDER_BUS) !== 0) e.params.bitOrder = 2;
+}
+
+/** Keeps the port bit-order flag in step with `params.bitOrder`, layered on
+ *  the shared chip flags. */
+export function chipBitOrderFlags(e: CircuitElement, base: number): number {
+  return e.params.bitOrder === 2 ? base | CHIP_BIT_ORDER_BUS : base & ~CHIP_BIT_ORDER_BUS;
+}
 
 /** D flip-flop flag bits (DFlipFlopElm.java:23-25). */
 export const DFF_RESET = 2;
@@ -234,7 +253,11 @@ export function drawChip(
   pins.forEach((pin, i) => {
     const pt = chipPinPoints(e, frame, sizeX, sizeY, pin);
     if (pt.side === 'N' || pt.side === 'S') hasVertical = true;
-    lead(g, pt.post, pt.stub, voltageColor(g, g.voltages[i]));
+    // A bus pin draws once per shared coordinate: the z-tagged duplicates are
+    // skipped and the one drawn lead is thicker (ChipElm.java:103-108).
+    if ((pin.busZ ?? 0) > 0) return;
+    const wide = (pin.busWidth ?? 1) > 1;
+    line(g, pt.post, pt.stub, voltageColor(g, g.voltages[i]), wide ? 5 : 3, 'round');
     if (pin.bubble && pt.bubble) {
       // A bubble is a stroked ring over the stub, the port's usual bubble
       // (ChipElm.java:131-133, drawThickCircle at width 3).
@@ -247,7 +270,9 @@ export function drawChip(
     }
   });
   pins.forEach((pin) => {
-    if (!pin.text) return;
+    if (!pin.text || (pin.busZ ?? 0) > 0) return;
+    // A wide pin labels as name/width (ChipElm.java:129).
+    const text = (pin.busWidth ?? 1) > 1 ? `${pin.text}/${pin.busWidth}` : pin.text;
     const pt = chipPinPoints(e, frame, sizeX, sizeY, pin);
     const cspc = chipCspc(e);
     const csize = cspc / 8;
@@ -268,7 +293,7 @@ export function drawChip(
     let sw = 0;
     while (true) {
       g.ctx.font = canvasFont(fsz);
-      sw = g.ctx.measureText(pin.text).width;
+      sw = g.ctx.measureText(text).width;
       if (sw <= availSpace || fsz <= 4) break;
       fsz -= 1;
     }
@@ -289,7 +314,7 @@ export function drawChip(
     if (align === 'W') {
       g.ctx.textAlign = 'left';
       const x = pt.textloc.x - (cspc - 5);
-      g.ctx.fillText(pin.text, x, pt.textloc.y + asc / 3);
+      g.ctx.fillText(text, x, pt.textloc.y + asc / 3);
       if (pin.lineOver) {
         const y = pt.textloc.y - asc + asc / 3;
         line(g, { x, y }, { x: x + sw, y }, g.theme.text, 1);
@@ -297,14 +322,14 @@ export function drawChip(
     } else if (align === 'E') {
       g.ctx.textAlign = 'right';
       const x = pt.textloc.x + (cspc - 5);
-      g.ctx.fillText(pin.text, x, pt.textloc.y + asc / 3);
+      g.ctx.fillText(text, x, pt.textloc.y + asc / 3);
       if (pin.lineOver) {
         const y = pt.textloc.y - asc + asc / 3;
         line(g, { x: x - sw, y }, { x, y }, g.theme.text, 1);
       }
     } else {
       g.ctx.textAlign = 'center';
-      g.ctx.fillText(pin.text, pt.textloc.x, pt.textloc.y + asc / 3);
+      g.ctx.fillText(text, pt.textloc.x, pt.textloc.y + asc / 3);
       if (pin.lineOver) {
         const y = pt.textloc.y - asc + asc / 3;
         line(g, { x: pt.textloc.x - sw / 2, y }, { x: pt.textloc.x + sw / 2, y }, g.theme.text, 1);

@@ -85,24 +85,18 @@ export const SIM_TIMEOUT_MS = 60_000;
  * feeds the S0-S3/M labeled nodes and the instruction display without
  * shorting the bits together.
  *
- * The td4 family still fails for a reason that predates and outlives the bus
- * work: with every bus element removed the circuit is still singular. The
- * four counter2 registers sit 192 px apart, so each chip's last pin row
- * coincides with the next chip's first (register #15's CLK lands on register
- * #11's EnP and its RCO output on #11's EnT), three of the four registers
- * also carry ground symbols drawn directly onto a Q output pin and an I
- * input pin, and deleting any one of the first three registers still leaves
- * the matrix singular while deleting #15 or all of them solves. Root-causing
- * that overlap is its own feature; it is not a bus problem.
+ * The td4 family left this list when bus-mode chips landed. The circuits are
+ * drawn entirely against upstream's BIT_ORDER_BUS geometry (`bo="2"` on their
+ * four counters, the adder and the ROM): each bit-pin group collapses onto
+ * one coordinate told apart only by per-post tags, which shrinks a counter to
+ * 4 rows instead of 7. The converter used to drop that state, so the rebuilt
+ * chips were three rows taller with the pins spread out, and the wires,
+ * grounds and rails drawn for the real pins landed on the wrong ones: the PC
+ * register's two 5 V rails ended up on an output pin, an ideal source fighting
+ * an ideal source over one node. The port now carries the state in a free
+ * chip flag bit and lays the collapsed banks out exactly where upstream does.
  */
-export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {
-  'td4.txt':
-    'pre-existing, not bus-related: removing every bus element leaves the circuit singular; the four counter2 registers overlap pin rows (register #15 CLK/RCO share coordinates with #11 EnP/EnT) and three registers carry grounds drawn directly onto Q/I pins',
-  'td4-add2.txt': 'same counter-overlap limitation as td4.txt',
-  'td4-ctr.txt': 'same counter-overlap limitation as td4.txt',
-  'td4-ctr-dn.txt': 'same counter-overlap limitation as td4.txt',
-  'td4-ctr-up-dn.txt': 'same counter-overlap limitation as td4.txt',
-};
+export const DIAGNOSED_SIM_FAILURES: Record<string, string> = {};
 
 /**
  * Device-model definitions: none left. The `32` transistor lines are parsed

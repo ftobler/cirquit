@@ -13,6 +13,9 @@
  */
 
 import {
+  CHIP_BIT_ORDER_BUS,
+  chipBitOrderFlags,
+  chipBitOrderParam,
   chipBodyRect,
   chipCommonTokens,
   chipDumpFlags,
@@ -43,8 +46,16 @@ function sramDataBits(e: CircuitElement): number {
   return normalizeSramBits(e.params.dataBits ?? 4);
 }
 
-/** `sizeY = max(addrY, dataY) + 1` (SRAMElm.java:110). */
+/** Bus bit order (upstream BIT_ORDER_BUS, XML attribute `bo="2"`): the
+ *  address bank and the data bank each collapse onto one row of their side. */
+export function memoryBus(e: CircuitElement): boolean {
+  return e.params.bitOrder === 2 || (e.flags & CHIP_BIT_ORDER_BUS) !== 0;
+}
+
+/** `sizeY = max(addrY, dataY) + 1` (SRAMElm.java:110), with both bank heights
+ *  1 in bus mode. */
 export function memorySizeY(e: CircuitElement): number {
+  if (memoryBus(e)) return 2;
   return Math.max(sramAddressBits(e), sramDataBits(e)) + 1;
 }
 
@@ -57,6 +68,7 @@ export function memorySizeY(e: CircuitElement): number {
 export function memoryPins(e: CircuitElement, hasWe: boolean): ChipPinDef[] {
   const ab = sramAddressBits(e);
   const db = sramDataBits(e);
+  const bus = memoryBus(e);
   const sizeY = memorySizeY(e);
   const pins: ChipPinDef[] = [];
   if (hasWe) {
@@ -68,12 +80,27 @@ export function memoryPins(e: CircuitElement, hasWe: boolean): ChipPinDef[] {
     pins.push({ side: 'W', pos: 0, text: 'OE', lineOver: true });
   }
   // makeBitPins reversed, MSB first: the list runs A_{ab-1}..A0 down the west
-  // and D_{db-1}..D0 down the east, the MSB on the top row (SRAMElm.java:120-121).
+  // and D_{db-1}..D0 down the east, the MSB on the top row (SRAMElm.java:
+  // 120-121). In bus mode each bank collapses onto row sizeY - bankY (both
+  // bank heights are 1), every pin carrying its logical bit as its tag.
+  const addrY = bus ? 1 : ab;
+  const dataY = bus ? 1 : db;
   for (let j = 0; j < ab; j++) {
-    pins.push({ side: 'W', pos: sizeY - ab + j, text: `A${ab - 1 - j}` });
+    pins.push({
+      side: 'W',
+      pos: sizeY - addrY + (bus ? 0 : j),
+      text: bus ? 'A' : `A${ab - 1 - j}`,
+      ...(bus ? { busWidth: ab, busZ: ab - 1 - j } : {}),
+    });
   }
   for (let j = 0; j < db; j++) {
-    pins.push({ side: 'E', pos: sizeY - db + j, text: `D${db - 1 - j}`, output: true });
+    pins.push({
+      side: 'E',
+      pos: sizeY - dataY + (bus ? 0 : j),
+      text: bus ? 'D' : `D${db - 1 - j}`,
+      output: true,
+      ...(bus ? { busWidth: db, busZ: db - 1 - j } : {}),
+    });
   }
   return pins;
 }
@@ -122,6 +149,7 @@ export function memoryParse(t: string[], e: CircuitElement): void {
   const db = Number(t[i + 1]);
   if (t[i + 1] !== undefined && Number.isFinite(db)) e.params.dataBits = normalizeSramBits(db);
   readContentsRuns(t, e, i + 2);
+  chipBitOrderParam(e);
 }
 
 /** Writes the common chip tokens, the two width tokens and the contents
@@ -173,7 +201,7 @@ export const SRAM_DEF: ElementDef = {
   defaults: { addressBits: 4, dataBits: 4, highVoltage: 5 },
   parse: (t, e) => memoryParse(t, e),
   dump: memoryDump,
-  dumpFlags: chipDumpFlags,
+  dumpFlags: (e) => chipBitOrderFlags(e, chipDumpFlags(e)),
   fields: [
     { name: 'addressBits', label: '# of Address Bits', min: 2, max: 16, integer: true },
     { name: 'dataBits', label: '# of Data Bits', min: 2, max: 16, integer: true },

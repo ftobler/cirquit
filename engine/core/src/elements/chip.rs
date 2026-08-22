@@ -17,6 +17,13 @@ use crate::stamp::{Stamper, GROUND};
 /// the default 5 V, so the token stream stays unambiguous.
 pub const FLAG_CUSTOM_VOLTAGE: i64 = 1 << 13;
 
+/// Port-extension flag saying the chip's bit order is upstream's
+/// BIT_ORDER_BUS (ChipElm.java:37): every bit-pin group collapses onto one
+/// coordinate and its pins carry per-post bus tags. Upstream carries the
+/// state only as the XML attribute `bo="2"`, which has no text-format home,
+/// so the port parks it in this free chip flag bit.
+pub const FLAG_BIT_ORDER_BUS: i64 = 1 << 14;
+
 /// One chip terminal. Only the fields the simulator needs; the pin's drawn
 /// side, row and label never cross into the engine.
 pub struct ChipPin {

@@ -18,6 +18,7 @@ import {
 import { mirrorElement } from './transform';
 import { DIODE_DEF } from './registry/elements/diode';
 import { FULL_ADDER_BITS } from './registry/elements/fullAdder';
+import { CHIP_BIT_ORDER_BUS } from './registry/elements/dFlipFlop';
 import { ZENER_DEF } from './registry/elements/zener';
 import { FUSE_DEF } from './registry/elements/fuse';
 import { LAMP_DEF } from './registry/elements/lamp';
@@ -936,6 +937,93 @@ describe('bus splitter posts', () => {
       { x: 96, y: 32 }, // individual 0, row bits-1
       { x: 96, y: 0 },  // individual 1, row 0
     ]);
+  });
+});
+
+describe('bus-mode chip posts (BIT_ORDER_BUS)', () => {
+  // Terminal coordinates must match upstream exactly or wires in loaded
+  // circuits will not connect. In bus mode (ChipElm.java:37, the XML
+  // attribute bo="2") every makeBitPins group collapses onto one coordinate
+  // told apart only by per-post tags, and sizeY shrinks to bitsY+3 = 4 for a
+  // counter (Counter2Elm.java:72-73). The td4 family is drawn entirely
+  // against these coordinates.
+  it('collapses the counter Q and I groups onto row 1 of each side', () => {
+    const e = element('counter2', 0, 0, 96, 0, CHIP_BIT_ORDER_BUS, { bits: 4 });
+    expect(postsOf(e)).toEqual([
+      { x: 96, y: 32 }, // Q3..Q0 share the east bus coordinate, z 3..0
+      { x: 96, y: 32 },
+      { x: 96, y: 32 },
+      { x: 96, y: 32 },
+      { x: 0, y: 32 },  // I3..I0 share the west bus coordinate
+      { x: 0, y: 32 },
+      { x: 0, y: 32 },
+      { x: 0, y: 32 },
+      { x: 0, y: 0 },   // clk
+      { x: 0, y: 64 },  // CLR, row bitsY+1 = 2
+      { x: 0, y: 96 },  // EnP, row bitsY+2 = 3
+      { x: 96, y: 0 },  // RCO
+      { x: 96, y: 64 }, // LOAD
+      { x: 96, y: 96 }, // EnT
+    ]);
+  });
+
+  it('keeps the non-bus counter layout when no bit-order flag is set', () => {
+    const plain = element('counter2', 0, 0, 96, 0, 0, { bits: 4 });
+    const xs = postsOf(plain).map((p) => `${p.x},${p.y}`);
+    expect(new Set(xs).size).toBe(14);
+  });
+
+  it('collapses the adder A, B and S groups onto rows 0, 1 and 2', () => {
+    const e = element(
+      'fullAdder',
+      0,
+      0,
+      96,
+      0,
+      FULL_ADDER_BITS | CHIP_BIT_ORDER_BUS,
+      { bits: 2 },
+    );
+    expect(postsOf(e)).toEqual([
+      { x: 0, y: 0 },   // A bank, z 0..1
+      { x: 0, y: 0 },
+      { x: 0, y: 32 },  // B bank, z 0..1
+      { x: 0, y: 32 },
+      { x: 96, y: 64 }, // S bank, z 0..1
+      { x: 96, y: 64 },
+      { x: 0, y: 64 },  // Cin, row bitsY*2 = 2
+      { x: 96, y: 0 },  // C out
+    ]);
+  });
+
+  it('collapses the ROM banks onto row 1 in the td4 shape (4 address, 8 data)', () => {
+    const e = element('rom', 0, 0, 96, 0, CHIP_BIT_ORDER_BUS, {
+      addressBits: 4,
+      dataBits: 8,
+    });
+    const posts = postsOf(e);
+    expect(posts).toHaveLength(13);  // OE + 4 + 8
+    expect(posts[0]).toEqual({ x: 0, y: 0 });  // OE
+    for (let i = 1; i <= 4; i++) expect(posts[i]).toEqual({ x: 0, y: 32 });
+    for (let i = 5; i <= 12; i++) expect(posts[i]).toEqual({ x: 96, y: 32 });
+  });
+
+  it('round-trips the port flag through save and load', () => {
+    const src = `$ 1 0.000005 10 50 5 50 5e-11\n421 496 288 528 288 ${CHIP_BIT_ORDER_BUS} 4 0 0 0 0 0\n`;
+    const parsed = parseCircuit(src);
+    expect(parsed.elements[0].kind).toBe('counter2');
+    expect(parsed.elements[0].flags & CHIP_BIT_ORDER_BUS).not.toBe(0);
+    expect(postsOf(parsed.elements[0])).toHaveLength(14);
+    // The collapsed pins must survive a save: re-parse the saved text and
+    // read the flags field itself, so a bare substring match cannot mistake
+    // another numeric token for the flag word.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    const round = parseCircuit(saved);
+    expect(round.elements).toHaveLength(1);
+    expect(round.elements[0].flags & CHIP_BIT_ORDER_BUS).not.toBe(0);
+    // Still bus mode: four Q pins on one east coordinate, four I pins on one
+    // west coordinate, plus the six controls.
+    expect(postsOf(round.elements[0])).toHaveLength(14);
+    expect(new Set(postsOf(round.elements[0]).map((p) => `${p.x},${p.y}`))).toHaveLength(8);
   });
 });
 
