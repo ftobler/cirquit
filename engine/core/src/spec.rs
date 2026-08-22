@@ -180,6 +180,18 @@ pub enum ScopeValue {
     /// (CapacitorElm.java:225-229). Only elements with a meaningful charge
     /// return non-zero (capacitor.rs); the default is 0.
     Charge,
+    /// Lamp filament resistance for this step, upstream's VAL_R
+    /// (LampElm.java:218-219). Only the lamp answers it; the default is 0.
+    Resistance,
+    /// A transistor's terminal currents and junction voltages, upstream's
+    /// VAL_IB/IC/IE/VBE/VBC/VCE (TransistorElm.java:582-593). Only the
+    /// transistor answers them; the default is 0.
+    Ib,
+    Ic,
+    Ie,
+    Vbe,
+    Vbc,
+    Vce,
 }
 
 /// Which edge fires the trigger.
@@ -307,6 +319,27 @@ mod tests {
         assert_eq!(json, "\"nodeVoltage\"");
         let back: ScopeValue = serde_json::from_str(&json).expect("should deserialise");
         assert_eq!(back, ScopeValue::NodeVoltage);
+    }
+
+    #[test]
+    fn per_element_scope_values_serialise_as_the_frontend_union_members() {
+        // The lamp's VAL_R and the transistor's pin plots ride the same wire
+        // strings the TS `ScopeValue` union spells (`web/src/engine/simulator.ts`);
+        // a drift would deserialise every such scope spec as "bad circuit".
+        for (value, name) in [
+            (ScopeValue::Resistance, "resistance"),
+            (ScopeValue::Ib, "ib"),
+            (ScopeValue::Ic, "ic"),
+            (ScopeValue::Ie, "ie"),
+            (ScopeValue::Vbe, "vbe"),
+            (ScopeValue::Vbc, "vbc"),
+            (ScopeValue::Vce, "vce"),
+        ] {
+            let json = serde_json::to_string(&value).expect("should serialise");
+            assert_eq!(json, format!("\"{name}\""));
+            let back: ScopeValue = serde_json::from_str(&json).expect("should deserialise");
+            assert_eq!(back, value);
+        }
     }
 
     #[test]

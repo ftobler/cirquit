@@ -198,10 +198,21 @@ fetch it).
   `drawScope`. One window at a time; Escape closes it, an actual reload of the
   main window closes it, and a window whose scope disappears under it (remove,
   undo, load) closes itself.
-- 464 Rust tests, of which 391 are the end-to-end circuit checks against
+- Custom X-Y axes and per-element value plots: a scope's X-Y locus takes any
+  two of its plots as the axes (plus brightness and R/G/B colour modulators,
+  ScopePlot2d.java:22-28), chosen in the X-Y Plots fieldset of the scope
+  properties dialog; the pair itself is session-only, since the text `o` line
+  carries no axis indexes (only upstream's XML format does). A transistor
+  scope can plot Ib, Ic, Ie, Vbe, Vbc and Vce plus the Vce-vs-Ic 2D trace and
+  a lamp its hot resistance: the engine answers a `scope_value` hook per
+  sample (`element.rs`, transistor.rs, lamp.rs) inside the existing scope
+  capture, so no new boundary crossing exists. The parser maps those tokens to
+  real values instead of null plots (a token outside an element's table still
+  rides raw only), and early.txt's Vce-vs-Ic X-Y panels draw again.
+- 468 Rust tests, of which 394 are the end-to-end circuit checks against
   analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
-  was split into topic files), plus 72 in-module unit tests and one doctest.
-  2438 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
+  was split into topic files), plus 73 in-module unit tests and one doctest.
+  2468 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
   tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps

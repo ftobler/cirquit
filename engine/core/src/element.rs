@@ -395,6 +395,18 @@ pub trait Element {
         0.0
     }
 
+    /// The value a per-element scope plot samples, upstream's
+    /// `getScopeValue(val)` for the VAL_ ids that are not one of the generic
+    /// quantities (TransistorElm.java:582-593, LampElm.java:218-219): a
+    /// transistor's Ib/Ic/Ie/Vbe/Vbc/Vce and a lamp's hot resistance. `value`
+    /// names the request, so only the element family that owns it answers with
+    /// anything but zero; the frontend maps the file token per element kind
+    /// before the spec reaches the engine, which is what keeps a scope from
+    /// ever asking an element that has no answer.
+    fn scope_value(&self, _value: crate::spec::ScopeValue) -> f64 {
+        0.0
+    }
+
     /// Instrument reading reported back to the UI each frame, the probe's
     /// meter mode. Defaults to the two-terminal voltage difference, so every
     /// other element reports what a voltage scope on it would plot.

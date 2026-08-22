@@ -1,0 +1,68 @@
+import { describe, expect, it } from 'vitest';
+import { isVceIcRow, plotAxisLabel, plotValueRows } from './scopePlotRows';
+
+/** A row's plot value, skipping the compound Vce-vs-Ic action row. */
+const valuesOf = (kind: string | null) =>
+  plotValueRows(kind).flatMap((r) => (isVceIcRow(r) ? [] : [r.value]));
+
+describe('plotValueRows', () => {
+  it('gives a transistor its six pin plots in place of voltage and current', () => {
+    // ScopePropertiesDialog.java:556-571: the transistor grid swaps Show
+    // Voltage/Show Current for Ib..Vce.
+    const rows = plotValueRows('transistor');
+    expect(rows.map((r) => r.label)).toEqual([
+      'Show Ib',
+      'Show Ic',
+      'Show Ie',
+      'Show Vbe',
+      'Show Vbc',
+      'Show Vce',
+      'Show Power Consumed',
+      'Show Resistance',
+      'Show Vce vs Ic',
+    ]);
+    expect(valuesOf('transistor')).toContain('vce');
+    expect(valuesOf('transistor')).not.toContain('voltage');
+    // The compound action rides last, marked as its own thing.
+    expect(rows.at(-1)).toMatchObject({ label: 'Show Vce vs Ic', special: 'vceIc' });
+  });
+
+  it('keeps voltage and current first for every other kind', () => {
+    expect(valuesOf('resistor').slice(0, 2)).toEqual(['voltage', 'current']);
+    expect(plotValueRows('resistor').some(isVceIcRow)).toBe(false);
+  });
+
+  it('shows charge only for a capacitor', () => {
+    expect(valuesOf('capacitor')).toContain('charge');
+    expect(valuesOf('polarizedCapacitor')).toContain('charge');
+    expect(valuesOf('resistor')).not.toContain('charge');
+  });
+
+  it('renders resistance for everyone but enables it only for a lamp', () => {
+    // Upstream adds the box unconditionally and disables it where
+    // canShowResistance() fails (ScopePropertiesDialog.java:577-578, 821-822).
+    expect(plotValueRows('lamp').find((r) => !isVceIcRow(r) && r.value === 'resistance')?.disabled).toBe(false);
+    for (const kind of ['resistor', 'transistor', 'capacitor', null]) {
+      expect(
+        plotValueRows(kind).find((r) => !isVceIcRow(r) && r.value === 'resistance')?.disabled,
+      ).toBe(true);
+    }
+  });
+});
+
+describe('plotAxisLabel', () => {
+  it('labels a transistor pin plot "kind, name (unit)" like getScopeText', () => {
+    expect(plotAxisLabel('transistor', 'ic')).toBe('Transistor (BJT), Ic (A)');
+    expect(plotAxisLabel('transistor', 'vce')).toBe('Transistor (BJT), Vce (V)');
+  });
+
+  it('labels a generic plot with the element name and unit alone', () => {
+    expect(plotAxisLabel('resistor', 'voltage')).toBe('Resistor (V)');
+    expect(plotAxisLabel('lamp', 'resistance')).toBe('Lamp, R (Ω)');
+  });
+
+  it('degrades an unknown element or value without throwing', () => {
+    expect(plotAxisLabel(null, null)).toBe('Plot (?)');
+    expect(plotAxisLabel('mysteryKind', 'voltage')).toBe('mysteryKind (V)');
+  });
+});

@@ -102,38 +102,66 @@ export function importDecOrHex(token: string): number {
 /**
  * The `value`/`val` token to a trace quantity. Token 1 is the legacy power id
  * upstream rewrites to power for anything but a transistor
- * (ScopeSerializer.java:197-199); on a transistor it is VAL_IB. A transistor's
- * own ids (IB/IC/IE/VBE/VBC/VCE), the lamp's VAL_R and the capacitor's
- * VAL_CHARGE are element-specific values the engine cannot sample generically,
- * so they map to null (charge, on a capacitor, maps to the engine's Charge
- * scope value) and an unmapped trace is preserved via raw only instead of
- * drawing a wrong voltage waveform. Every other token falls through to a
- * voltage difference (CircuitElm.java:1270-1273).
+ * (ScopeSerializer.java:197-199); each element family answers the tokens its
+ * own `getScopeValue` table owns (TransistorElm.java:582-593, LampElm.java:
+ * 218-219): a transistor's IB/IC/IE/VBE/VBC/VCE and a lamp's VAL_R now map to
+ * engine-sampled values instead of null plots. On a transistor, voltage (0)
+ * and charge (8) deliberately still fall through to a plain voltage
+ * difference, which is friendlier than upstream's flat zero for the same
+ * token; only a truly unmodelled token above 8 maps to null, because drawing
+ * a wrong waveform would be worse than preserving the line raw. Every other
+ * kind falls through to a voltage difference (CircuitElm.java:1270-1273).
  */
 export function scopeValueFromToken(token: number, kind: string | null): ScopeValue | null {
+  if (kind === 'transistor') {
+    switch (token) {
+      case 0:
+        return 'voltage';
+      case 1:
+        return 'ib';  // VAL_IB
+      case 2:
+        return 'ic';  // VAL_IC
+      case 3:
+        return 'ie';  // VAL_IE
+      case 4:
+        return 'vbe';  // VAL_VBE
+      case 5:
+        return 'vbc';  // VAL_VBC
+      case 6:
+        return 'vce';  // VAL_VCE
+      case 7:
+        return 'power';
+      case 8:
+        return 'voltage';
+      default:
+        return null;
+    }
+  }
   switch (token) {
     case 0:
       return 'voltage';
+    case 2:
+      return kind === 'lamp' ? 'resistance' : 'voltage';  // VAL_R on a lamp
     case 7:
       return 'power';
     case 1:
-      return kind === 'transistor' ? null : 'power';  // legacy power id, or VAL_IB
+      return 'power';  // legacy power id becomes power
     case 3:
-      return kind === 'transistor' ? null : 'current';  // VAL_CURRENT, or VAL_IE
-    case 2:
-      return kind === 'lamp' || kind === 'transistor' ? null : 'voltage';  // VAL_R, or VAL_IC
+      return 'current';
     case 8:
       // VAL_CHARGE: a capacitor plots C*Vplate, upstream's getScopeValue
       // (CapacitorElm.java:225-229); any other element falls through to its
       // voltage like the default below.
       return kind === 'capacitor' || kind === 'polarizedCapacitor' ? 'charge' : 'voltage';
     default:
-      return kind === 'transistor' ? null : 'voltage';  // VBE/VBC/VCE on a transistor
+      return 'voltage';
   }
 }
 
 /** The `value`/`val` token a trace quantity serializes as, the inverse of
- *  `scopeValueFromToken`. Shared with the scope-line encoder. */
+ *  `scopeValueFromToken`. Shared with the scope-line encoder. The per-element
+ *  names are unambiguous without the kind: only a lamp ever carries an
+ *  `resistance` plot and only a transistor an `ib`..`vce` one. */
 export function valueTokenOf(value: ScopeValue | null): number {
   switch (value) {
     case 'current':
@@ -142,6 +170,20 @@ export function valueTokenOf(value: ScopeValue | null): number {
       return 7;
     case 'charge':
       return 8;
+    case 'resistance':
+      return 2;  // VAL_R
+    case 'ib':
+      return 1;  // VAL_IB
+    case 'ic':
+      return 2;  // VAL_IC
+    case 'ie':
+      return 3;  // VAL_IE
+    case 'vbe':
+      return 4;  // VAL_VBE
+    case 'vbc':
+      return 5;  // VAL_VBC
+    case 'vce':
+      return 6;  // VAL_VCE
     default:
       return 0;
   }

@@ -18,8 +18,22 @@ import { modelJsonFor } from '../model/sampleCache';
 import type { LiveState } from '../io/liveState';
 import { scopeColumnCount, scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 
-/** The quantity a scope trace samples. */
-export type ScopeValue = 'voltage' | 'current' | 'power' | 'charge';
+/** The quantity a scope trace samples. The strings match the engine's serde
+ *  names. `resistance` is a lamp's hot resistance and `ib`..`vce` a
+ *  transistor's pin plots, upstream's VAL_R and VAL_IB..VAL_VCE
+ *  (LampElm.java:218-222, TransistorElm.java:582-602). */
+export type ScopeValue =
+  | 'voltage'
+  | 'current'
+  | 'power'
+  | 'charge'
+  | 'resistance'
+  | 'ib'
+  | 'ic'
+  | 'ie'
+  | 'vbe'
+  | 'vbc'
+  | 'vce';
 
 /** Trigger acquisition settings, mirroring ScopeTrigger.java. Free run
  *  disables the trigger. The strings match the engine's serde names. */
@@ -97,6 +111,20 @@ export interface Scope {
    *  text `o` line never carries it, only the XML format does
    *  (ScopeSerializer.java:122-123). Zero keeps the legacy hard-coded fade. */
   trailPersistence: number;
+  /** The X and Y axis plot indexes, positions into `plots`, upstream's
+   *  plot2d.plotX/plotY (ScopePlot2d.java:22-23). Defaults 0 and 1. Like the
+   *  trail they are session-only: the text `o` line carries no X-Y pair, only
+   *  upstream's XML format does (its xy2x/xy2y attributes). */
+  plotX: number;
+  plotY: number;
+  /** Brightness and RGB colour modulator plot indexes into `plots`, -1 for
+   *  none (ScopePlot2d.plotBrightness/plotColorR/G/B, ScopePlot2d.java:24-26).
+   *  A set index tints or dims the locus by that plot's latest sample.
+   *  Session-only like the axes. */
+  plotBrightness: number;
+  plotColorR: number;
+  plotColorG: number;
+  plotColorB: number;
   /** Show Extended Info: draw the element's info lines on the scope
    *  (ScopeOverlays.draw, ScopeOverlays.java:216-217). */
   showElmInfo: boolean;

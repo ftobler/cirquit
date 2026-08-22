@@ -463,6 +463,9 @@ export interface AppState {
   setPlotManPosition(plotId: number, manVPosition: number): void;
   /** Adds or removes a plot of `value`, never emptying the panel. */
   togglePlot(scopeId: number, value: ScopeValue): void;
+  /** The Show Vce vs Ic row's action: replaces a transistor scope's plots
+   *  with the VCE/IC pair and turns X-Y on (Scope.java:1312-1317). */
+  setScopeVceIc(scopeId: number): void;
   /** Merges `b`'s plots into `a` and drops `b` (Scope.combine). */
   combineScopes(aId: number, bId: number): void;
   /** Splits a panel into one per plot, keeping a V+I pair together. */

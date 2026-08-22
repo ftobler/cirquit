@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { kindOfDumpCode, parseCircuit, serializeCircuit } from './index';
+import {
+  kindOfDumpCode,
+  parseCircuit,
+  scopeValueFromToken,
+  serializeCircuit,
+  unitsOf,
+  valueTokenOf,
+} from './index';
 import { SAMPLE } from './fixtures';
 import { DEFAULT_SETTINGS } from '../../model/types';
 
@@ -225,29 +232,75 @@ describe('scope o-line fidelity', () => {
     ]);
   });
 
-  it('maps value token 1 on a transistor to a null plot', () => {
+  it('maps value token 1 on a transistor to Ib', () => {
     const parsed = parseCircuit(
       HEADER + 't 0 0 16 0 0 1 0 0 0 0 0\n' + 'o 0 64 1 4099 20 0.05 0 1\n',
     );
-    expect(parsed.scopes[0].plots).toEqual([expect.objectContaining({ elementIndex: 0, value: null })]);
+    expect(parsed.scopes[0].plots).toEqual([expect.objectContaining({ elementIndex: 0, value: 'ib' })]);
   });
 
-  it('does not register the transistor VCE plot as a voltage trace', () => {
-    // early.txt and multivib-a.txt carry VAL_VCE (6) plots; the transistor's
-    // getScopeValue is element-specific and the engine cannot sample it, so
-    // the plot is preserved but unregistered instead of drawing a wrong
-    // voltage waveform.
+  it('maps the whole per-element value table and back', () => {
+    // TransistorElm.getScopeValue's table (TransistorElm.java:582-593) and
+    // LampElm's VAL_R, each with the inverse `valueTokenOf` so an edited
+    // scope line re-encodes the same tokens it parsed.
+    const transistor = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((tok) => scopeValueFromToken(tok, 'transistor'));
+    expect(transistor).toEqual([
+      'voltage',
+      'ib',
+      'ic',
+      'ie',
+      'vbe',
+      'vbc',
+      'vce',
+      'power',
+      'voltage',
+    ]);
+    expect(scopeValueFromToken(2, 'lamp')).toBe('resistance');
+    for (const [value, tok] of [
+      ['ib', 1],
+      ['ic', 2],
+      ['ie', 3],
+      ['vbe', 4],
+      ['vbc', 5],
+      ['vce', 6],
+      ['resistance', 2],
+    ] as const) {
+      expect(valueTokenOf(value)).toBe(tok);
+    }
+    // The walk still puts the per-element currents in amps and the resistance
+    // in ohms, which is what decides whether a scale token follows.
+    expect(unitsOf(2, 'lamp')).toBe(3);
+    expect(unitsOf(3, 'transistor')).toBe(1);
+    expect(unitsOf(6, 'transistor')).toBe(0);
+  });
+
+  it('maps the transistor VCE and IC pair to engine-sampled plots', () => {
+    // early.txt and multivib-a.txt carry VAL_VCE (6) and VAL_IC (2) plots: the
+    // transistor's getScopeValue table (TransistorElm.java:582-593) is
+    // engine-sampled since the per-element value hook landed, so the pair is
+    // registered as real traces instead of being preserved raw only.
     const parsed = parseCircuit(
       HEADER + 't 0 0 16 0 0 1 0 0 0 0 0\n' + 'o 0 64 6 4162 4e-7 1e-9 0 2 0 2\n',
     );
-    expect(parsed.scopes[0].plots.map((p) => p.value)).toEqual([null, null]);
+    expect(parsed.scopes[0].plots.map((p) => p.value)).toEqual(['vce', 'ic']);
     expect(parsed.scopes[0].raw).toEqual(['64', '6', '4162', '4e-7', '1e-9', '0', '2', '0', '2']);
   });
 
-  it('keeps lamp resistance unregistered and maps capacitor charge', () => {
-    // lightbulb.txt's VAL_R (2) plot on a lamp has no engine meaning and stays
-    // preserved, not plotted as voltage; a capacitor's VAL_CHARGE (8) maps to
-    // the engine's Charge scope value, C*Vplate (CapacitorElm.java:225-229).
+  it('keeps an out-of-table transistor value token unregistered', () => {
+    // A token outside TransistorElm.getScopeValue's table returns nothing
+    // upstream; drawing a wrong waveform would be worse than preserving the
+    // line raw, so it still maps to null.
+    const parsed = parseCircuit(
+      HEADER + 't 0 0 16 0 0 1 0 0 0 0 0\n' + 'o 0 64 9 4099 20 0.05 0 1\n',
+    );
+    expect(parsed.scopes[0].plots[0].value).toBeNull();
+  });
+
+  it('maps lamp resistance and capacitor charge to their engine values', () => {
+    // lightbulb.txt's VAL_R (2) plot on a lamp samples its hot resistance,
+    // upstream's getScopeValue(VAL_R) (LampElm.java:218-219); a capacitor's
+    // VAL_CHARGE (8) maps to the engine's Charge scope value, C*Vplate
+    // (CapacitorElm.java:225-229).
     const parsed = parseCircuit(
       HEADER +
         '181 0 0 16 0 0 293 100 120 0.4 0.4\n' +
@@ -255,7 +308,7 @@ describe('scope o-line fidelity', () => {
         'o 0 64 2 4099 160 1.6 0 1 160\n' +
         'o 1 64 8 4099 20 0.05 0 1\n',
     );
-    expect(parsed.scopes.map((s) => s.plots[0].value)).toEqual([null, 'charge']);
+    expect(parsed.scopes.map((s) => s.plots[0].value)).toEqual(['resistance', 'charge']);
     expect(parsed.scopes.map((s) => s.plots[0].elementIndex)).toEqual([0, 1]);
   });
 

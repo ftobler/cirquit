@@ -369,6 +369,9 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
     manScale: number | null;
     manVPosition: number;
   }[] = [];
+  // Plot kinds in plot order, the list the encoder decides scale tokens
+  // against exactly as the decoders do.
+  const kinds: (string | null)[] = [];
   let scaleV = 20;
   let scaleA = 0.05;
   let sawScaleV = false;
@@ -399,6 +402,7 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
       manScale: ms >= 0 ? ms : null,
       manVPosition: p.attrs.mp !== undefined ? attr(p, 'mp', 0) : 0,
     });
+    kinds.push(kind);
   }
   const scope = {
     ...decoded,
@@ -410,7 +414,7 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
     scaleA,
     plots,
   } as unknown as Scope;
-  const raw = encodeScopeLine(scope, (id) => slotOf(id));
+  const raw = encodeScopeLine(scope, (id) => slotOf(id), kinds);
   return ['o', slotOf(en) ?? -1, ...raw].join(' ');
 }
 

@@ -390,3 +390,126 @@ describe('reset a scope to the defaults', () => {
     expect(back.label).toBe('Renamed');
   });
 });
+
+describe('per-element value plots on the o line', () => {
+  // early.txt's arrangement: two plots on one transistor, Vce first and Ic
+  // second, under plotXY (bit 64) with per-plot flag tokens riding
+  // FLAG_PERPLOTFLAGS.
+  const TRANSISTOR = [
+    '$ 1 0.000005 10 50 5 50 5e-11',
+    't 0 0 16 0 0 1 0 0 100 default',
+    'o 0 64 6 266306 4e-7 1e-17 0 2 0 0 0 2 no\\sEarly\\seffect',
+    '',
+  ].join('\n');
+
+  it('maps both plots of a Vce-vs-Ic line to engine-sampled values', () => {
+    useStore.getState().loadNetlist(TRANSISTOR);
+    const scope = useStore.getState().scopes[0];
+    expect(scope.plots.map((p) => p.value)).toEqual(['vce', 'ic']);
+    expect(scope.plotXY).toBe(true);
+    expect(scope.plotX).toBe(0);
+    expect(scope.plotY).toBe(1);
+  });
+
+  it('saves an untouched Vce-vs-Ic scope byte-for-byte and keeps the tokens on edit', () => {
+    useStore.getState().loadNetlist(TRANSISTOR);
+    expect(useStore.getState().toNetlist()).toBe(TRANSISTOR);
+
+    const id = useStore.getState().scopes[0].id;
+    useStore.getState().setScopeFlags(id, { label: 'Renamed' });
+    const saved = useStore.getState().toNetlist();
+    // The regenerated line re-encodes VAL_VCE as 6 and VAL_IC as 2; the
+    // per-plot flag words drop out with their bit because neither plot is
+    // coupled (the same normalisation every uncoupled loaded line takes).
+    expect(saved).toContain('o 0 64 6 4290 4e-7 1e-17 0 2 0 2 Renamed');
+    useStore.getState().loadNetlist(saved);
+    expect(useStore.getState().scopes[0].plots.map((p) => p.value)).toEqual(['vce', 'ic']);
+  });
+
+  it('the X-Y axis selection is session state that never rewrites the line', () => {
+    // Upstream's text format carries no plotX/plotY (only its XML format
+    // does), so swapping the axes here must not dirty the untouched raw line,
+    // exactly like the trail persistence before it.
+    useStore.getState().loadNetlist(TRANSISTOR);
+    const id = useStore.getState().scopes[0].id;
+    useStore.getState().setScopeFlags(id, { plotX: 1, plotY: 0 });
+    const scope = useStore.getState().scopes[0];
+    expect(scope.plotX).toBe(1);
+    expect(scope.plotY).toBe(0);
+    expect(useStore.getState().toNetlist()).toBe(TRANSISTOR);
+  });
+
+  it('a lamp resistance plot round-trips through its VAL_R token', () => {
+    const NETLIST = [
+      '$ 1 0.000005 10 50 5 50 5e-11',
+      '181 0 0 16 0 0 293 100 120 0.4 0.4',
+      'o 0 64 2 4099 160 1.6 0 1 160',
+      '',
+    ].join('\n');
+    useStore.getState().loadNetlist(NETLIST);
+    const scope = useStore.getState().scopes[0];
+    expect(scope.plots[0].value).toBe('resistance');
+    // A resistance plot sits at the bottom of the manual screen like power
+    // and charge (ScopePlot.java:62-66).
+    expect(scope.plots[0].manVPosition).toBe(-100);
+    expect(useStore.getState().toNetlist()).toBe(NETLIST);
+  });
+});
+
+describe('the Show Vce vs Ic action', () => {
+  const addTransistorScope = () => {
+    // `addElement` hands back the new id directly.
+    const elementId = useStore.getState().addElement({
+      kind: 'transistor',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { pnp: 1 },
+    });
+    useStore.getState().addScope(elementId, 'voltage');
+    return { elementId, scopeId: useStore.getState().scopes[0].id };
+  };
+
+  it('seeds the pair, turns X-Y on and resets the axes', () => {
+    const { scopeId } = addTransistorScope();
+    // Park the axes and a modulator somewhere custom first: upstream's
+    // command resets them like its plotxy branch does (Scope.java:1329-1333).
+    useStore.getState().setScopeFlags(scopeId, { plotX: 1, plotY: 1, plotColorR: 0 });
+    useStore.getState().setScopeVceIc(scopeId);
+    const after = useStore.getState().scopes[0];
+    expect(after.plotXY).toBe(true);
+    expect(after.plotX).toBe(0);
+    expect(after.plotY).toBe(1);
+    expect(after.plotBrightness).toBe(-1);
+    expect(after.plotColorR).toBe(-1);
+    expect(after.plots.map((p) => p.value)).toEqual(['vce', 'ic']);
+    expect(after.plots.map((p) => p.elementId)).toEqual([
+      after.plots[0].elementId,
+      after.plots[0].elementId,
+    ]);
+  });
+
+  it('pushes one undo entry and treats a repeat click as a no-op', () => {
+    const { scopeId } = addTransistorScope();
+    const depth = useStore.getState().undoStack.length;
+    useStore.getState().setScopeVceIc(scopeId);
+    expect(useStore.getState().undoStack.length).toBe(depth + 1);
+    useStore.getState().setScopeVceIc(scopeId);
+    expect(useStore.getState().undoStack.length).toBe(depth + 1);
+  });
+
+  it('unchecking leaves the pair as stacked traces and the save keeps both tokens', () => {
+    const { scopeId } = addTransistorScope();
+    useStore.getState().setScopeVceIc(scopeId);
+    // The dialog's uncheck path is the display-only flag flip.
+    useStore.getState().setScopeFlags(scopeId, { plotXY: false });
+    const off = useStore.getState().scopes[0];
+    expect(off.plotXY).toBe(false);
+    expect(off.plots.map((p) => p.value)).toEqual(['vce', 'ic']);
+
+    useStore.getState().loadNetlist(useStore.getState().toNetlist());
+    expect(useStore.getState().scopes[0].plots.map((p) => p.value)).toEqual(['vce', 'ic']);
+  });
+});

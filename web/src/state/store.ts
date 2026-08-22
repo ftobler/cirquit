@@ -239,7 +239,7 @@ function serializeDocument(elements: CircuitElement[]): string {
         ? x.raw[0] === speedToken
           ? x.raw
           : [speedToken, ...x.raw.slice(1)]
-        : encodeScopeLine(x, (id) => indexById.get(id));
+        : encodeScopeLine(x, (id) => indexById.get(id), kinds);
     return {
       id: x.id,
       // Recomputed by the writer from where the element lands in the file;
@@ -319,9 +319,12 @@ const DIODE_MODEL_PARAMS = [
 const OUTPUT_LIKE = new Set(['output', 'logicOutput', 'audioOutput', 'testPoint', 'probe']);
 
 function makePlot(id: number, elementId: number | null, value: ScopeValue | null): ScopePlot {
-  // Power and charge plots start at the bottom of the manual-mode screen, the
-  // port of ScopePlot's constructor (ScopePlot.java:62-66).
-  const manVPosition = value === 'power' || value === 'charge' ? -100 : 0;
+  // Power, charge and resistance plots start at the bottom of the manual-mode
+  // screen, the port of ScopePlot's constructor (ScopePlot.java:62-66): ohms
+  // can only be positive, watts and coulombs sit low for backward
+  // compatibility.
+  const manVPosition =
+    value === 'power' || value === 'charge' || value === 'resistance' ? -100 : 0;
   return { id, elementId, value, manScale: null, manVPosition, acCoupled: false };
 }
 
@@ -405,6 +408,14 @@ function makeScope(
       fftPlot: false,
       logSpectrum: false,
       plotXY: false,
+      // Upstream's ScopePlot2d defaults: X axis on plot 0, Y axis on plot 1,
+      // no brightness or colour modulator (ScopePlot2d.java:22-26).
+      plotX: 0,
+      plotY: 1,
+      plotBrightness: -1,
+      plotColorR: -1,
+      plotColorG: -1,
+      plotColorB: -1,
       showPhaseAngle: false,
       trailPersistence: 0,
       showElmInfo: false,
@@ -1782,8 +1793,8 @@ function createAppStore() {
     // The traces stay: a reset is about how the panel is drawn, not about what
     // it watches. Only the per-plot state the dialog can set by hand (manual
     // scale, vertical position, coupling) goes back to automatic, and
-    // `makePlot`'s rule that a power or charge trace starts at the bottom of
-    // the manual screen is reapplied rather than zeroed.
+    // `makePlot`'s rule that a power, charge or resistance trace starts at the
+    // bottom of the manual screen is reapplied rather than zeroed.
     const plots = scope.plots.map((p) => ({
       ...p,
       manScale: null,
@@ -1930,6 +1941,58 @@ function createAppStore() {
         ...bumpRevision(s),
       };
     });
+  },
+
+  /** The properties dialog's Show Vce vs Ic row, upstream's showvcevsic menu
+   *  command (Scope.java:1312-1317): replace the plot list with exactly the
+   *  VCE/IC pair on the scope's element and turn the 2D plot on, resetting the
+   *  axes and modulators the way upstream's plotxy branch does. Unchecking is
+   *  the dialog's setScopeFlags({plotXY:false}); upstream ignores its state
+   *  bit entirely (the branch re-applies either way), so the port takes the
+   *  reversible reading. */
+  setScopeVceIc: (scopeId) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.id === scopeId);
+    if (!scope) return;
+    const elementId = scope.plots.find((p) => p.elementId !== null)?.elementId ?? null;
+    if (elementId === null) return;
+    const pair =
+      scope.plotXY &&
+      scope.plotX === 0 &&
+      scope.plotY === 1 &&
+      scope.plotBrightness === -1 &&
+      scope.plotColorR === -1 &&
+      scope.plotColorG === -1 &&
+      scope.plotColorB === -1 &&
+      scope.plots.length === 2 &&
+      scope.plots[0].elementId === elementId &&
+      scope.plots[0].value === 'vce' &&
+      scope.plots[1].elementId === elementId &&
+      scope.plots[1].value === 'ic';
+    // Already the arrangement: a repeat click must not push an undo entry.
+    if (pair) return;
+    s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) =>
+        x.id === scopeId
+          ? {
+              ...x,
+              plotXY: true,
+              plotX: 0,
+              plotY: 1,
+              plotBrightness: -1,
+              plotColorR: -1,
+              plotColorG: -1,
+              plotColorB: -1,
+              plots: [
+                makePlot(allocateId(), elementId, 'vce'),
+                makePlot(allocateId(), elementId, 'ic'),
+              ],
+            }
+          : x,
+      ),
+      ...bumpRevision(st),
+    }));
   },
 
   combineScopes: (aId, bId) => {

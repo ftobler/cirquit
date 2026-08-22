@@ -24,7 +24,10 @@ import {
   gridStepX,
   gridStepY,
   nextAxisScale,
+  nextModScale,
   nextScaleState,
+  setXYModScales,
+  xyModScalesFor,
   extremesFit,
   scaleStateFor,
   seedManScale,
@@ -43,6 +46,13 @@ export const UNIT: Record<ScopeValue, string> = {
   current: 'A',
   power: 'W',
   charge: 'C',
+  resistance: 'Ω',
+  ib: 'A',
+  ic: 'A',
+  ie: 'A',
+  vbe: 'V',
+  vbc: 'V',
+  vce: 'V',
 };
 
 /** Cursor and drag state, kept in a ref so it survives frame redraws. */
@@ -740,7 +750,70 @@ export function xyCrossColors(
   return { horizontal: theme.positive, vertical: plotXY ? theme.positive : theme.currentDot };
 }
 
-/** Draws the X-Y locus from the recent-sample rings (ScopePlot2d.java). */
+/** The brightness modulator for one locus segment: |latest sample| over the
+ *  auto-doubling scale (ScopePlot2d.computeAlpha). Pure; returns the grown
+ *  scale back to the caller, which keeps it sticky per scope. */
+export function xyBrightnessAlpha(
+  last: number,
+  scale: number,
+): { alpha: number; scale: number } {
+  const bv = Math.abs(last);
+  const s = nextModScale(scale, bv);
+  return { alpha: s > 0 ? bv / s : 0, scale: s };
+}
+
+/** One RGB colour channel from a modulator plot's latest sample, scaled 0..255
+ *  against the same auto-doubling rule (ScopePlot2d.computeColor). Pure;
+ *  truncates like upstream's int cast. */
+export function xyColorChannel(last: number, scale: number): { channel: number; scale: number } {
+  const s = nextModScale(scale, last);
+  const raw = (last / s) * 255;
+  const truncated = raw < 0 ? Math.ceil(raw) : Math.floor(raw);
+  return { channel: Math.max(0, Math.min(255, truncated)), scale: s };
+}
+
+/** One axis of the X-Y pair: the plot driving it and its engine trace. */
+export interface XYTrace {
+  plot: DrawablePlot;
+  index: number;
+}
+
+/** The traces an X-Y locus draws, from the scope's stored plotX/plotY indexes
+ *  into its plot list (ScopePlot2d.validPlotIndex, timeStep). While both axes
+ *  still hold their 0/1 defaults the pair is the first two samplable plots
+ *  verbatim, exactly the hardcoded pair this feature replaced, so an untouched
+ *  scope draws byte-identically however raw-only plots shift the positions;
+ *  stored indexes become literal only once the user touches the selects.
+ *  Pure given the trace lookup, so the pairing is testable headlessly. */
+export function xyPairFor(
+  scope: Scope,
+  indexOfTrace: (plotId: number) => number | undefined,
+): { x: XYTrace; y: XYTrace } | null {
+  const resolved: ({ plot: DrawablePlot; index: number } | null)[] = scope.plots.map((plot) => {
+    if (!isDrawable(plot)) return null;
+    const index = indexOfTrace(plot.id);
+    return index === undefined ? null : { plot, index };
+  });
+  const samplable = resolved.filter((e): e is XYTrace => e !== null);
+  const [x, second] = samplable;
+  if (scope.plotX === 0 && scope.plotY === 1) {
+    return x ? { x, y: second ?? x } : null;
+  }
+  // A custom axis wins whenever it names a samplable plot; out of range or
+  // unsamplable it falls through to the legacy pair, which upstream has no
+  // equivalent of because every plot of theirs can sample.
+  const pick = (idx: number): XYTrace | undefined =>
+    idx >= 0 && idx < scope.plots.length ? resolved[idx] ?? undefined : undefined;
+  const px = pick(scope.plotX) ?? x;
+  const py = pick(scope.plotY) ?? second ?? x;
+  if (!px || !py) return null;
+  return { x: px, y: py };
+}
+
+/** Draws the X-Y locus from the recent-sample rings (ScopePlot2d.java). The
+ *  axes come from `xyPairFor`; a brightness or RGB index tints and dims the
+ *  locus by those plots' latest samples (computeAlpha/computeColor), and unset
+ *  (-1, the default) leaves the plain white stroke at full alpha. */
 function drawXY(
   ctx: CanvasRenderingContext2D,
   engine: ScopeDrawSource,
@@ -751,15 +824,10 @@ function drawXY(
   timeStep: number,
   theme: Theme,
 ): void {
-  const plots = scope.plots
-    .filter(isDrawable)
-    .map((plot) => ({ plot, index: engine.scopeIndexOf(plot.id) }))
-    .filter((x): x is { plot: DrawablePlot; index: number } => x.index !== undefined);
-  const px = plots[0];
-  const py = plots[1] ?? plots[0];
-  if (!px) return;
-  const xs = engine.recentSamples(px.index);
-  const ys = engine.recentSamples(py.index);
+  const pair = xyPairFor(scope, (id) => engine.scopeIndexOf(id));
+  if (!pair) return;
+  const xs = engine.recentSamples(pair.x.index);
+  const ys = engine.recentSamples(pair.y.index);
   const n = Math.min(xs.length, ys.length);
   if (n < 2) return;
   // Per-axis sticky power-of-two auto scale (ScopePlot2d.java:31-32,
@@ -821,9 +889,44 @@ function drawXY(
     }
   }
   // The locus is upstream's whiteColor pair, white on black and black on white
-  // (ScopePlot2d.java:85).
-  pctx.strokeStyle = theme.whiteColor;
+  // (ScopePlot2d.java:85), until a colour modulator replaces it; a brightness
+  // modulator dims the stroke by its plot's latest sample. With every
+  // modulator unset (the default) both stay at the plain defaults, so the
+  // pixels match the unmodulated draw exactly.
+  const mods = xyModScalesFor(scope.id);
+  const modLast = (idx: number): number => {
+    if (idx < 0 || idx >= scope.plots.length) return 0;
+    const plot = scope.plots[idx];
+    if (!isDrawable(plot)) return 0;
+    const i = engine.scopeIndexOf(plot.id);
+    if (i === undefined) return 0;
+    const ring = engine.recentSamples(i);
+    return ring.length > 0 ? ring[ring.length - 1] : 0;
+  };
+  let strokeStyle = theme.whiteColor;
+  if (scope.plotColorR >= 0 || scope.plotColorG >= 0 || scope.plotColorB >= 0) {
+    const r = xyColorChannel(scope.plotColorR >= 0 ? modLast(scope.plotColorR) : 0, mods.r);
+    mods.r = r.scale;
+    const g = xyColorChannel(scope.plotColorG >= 0 ? modLast(scope.plotColorG) : 0, mods.g);
+    mods.g = g.scale;
+    const b = xyColorChannel(scope.plotColorB >= 0 ? modLast(scope.plotColorB) : 0, mods.b);
+    mods.b = b.scale;
+    strokeStyle = `rgb(${r.channel}, ${g.channel}, ${b.channel})`;
+  }
+  let alpha = 1;
+  // An index past the plot list is unset, not zero-bright: upstream's
+  // computeAlpha returns 1.0 there (ScopePlot2d.java:171-173), and a missing
+  // sample read as 0 would black the locus out whenever plots shrink under a
+  // set modulator.
+  if (scope.plotBrightness >= 0 && scope.plotBrightness < scope.plots.length) {
+    const bright = xyBrightnessAlpha(modLast(scope.plotBrightness), mods.brightness);
+    alpha = bright.alpha;
+    mods.brightness = bright.scale;
+  }
+  setXYModScales(scope.id, mods);
+  pctx.strokeStyle = strokeStyle;
   pctx.lineWidth = 1;
+  if (alpha < 1) pctx.globalAlpha = alpha;
   pctx.beginPath();
   for (let i = 0; i < n; i++) {
     const x = xsTo(xs[i]);
@@ -832,6 +935,7 @@ function drawXY(
     else pctx.lineTo(x, y);
   }
   pctx.stroke();
+  if (alpha < 1) pctx.globalAlpha = 1;
   ctx.drawImage(entry.canvas, 0, 0);
   // Centre cross (ScopePlot2d.java:226-230), horizontal line first, matching
   // upstream's order so the vertical wins the overlap at the centre pixel.

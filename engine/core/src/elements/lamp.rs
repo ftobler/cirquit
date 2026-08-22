@@ -127,6 +127,16 @@ impl Element for Lamp {
         self.base.current = two_terminal_current(&self.base, self.resistance);
     }
 
+    /// The resistance plot, upstream's `getScopeValue(VAL_R)`
+    /// (LampElm.java:218-219): the resistance this step stamped, computed from
+    /// `temp` at `start_iteration` before it advanced.
+    fn scope_value(&self, value: crate::spec::ScopeValue) -> f64 {
+        match value {
+            crate::spec::ScopeValue::Resistance => self.resistance,
+            _ => 0.0,
+        }
+    }
+
     fn state_tokens(&self) -> Vec<(String, f64)> {
         vec![("temp".into(), self.temp)]
     }

@@ -11,6 +11,7 @@ import type { ScopeValue } from '../engine/simulator';
 import { seedManScale, barToSpeed, speedToBar, gridStepX, scaleStateFor, nextHighestScale, nextLowestScale } from '../scope/scale';
 import { formatValue, makeTheme } from '../render/draw';
 import { MAN_DIVISIONS, trailSliderToSteps, trailStepsToSlider, UNIT, plotColors, visiblePlotsOf } from '../scope/draw';
+import { plotValueRows, plotAxisLabel, isVceIcRow } from './scopePlotRows';
 import { saveScopeDefaults } from '../state/scopeDefaults';
 import { useStore } from '../state/store';
 import { useFocusTrap } from './useFocusTrap';
@@ -104,7 +105,8 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
     if (Number.isFinite(v)) useStore.getState().setScopeTrigger(scope.id, { level: v });
   };
 
-  const toggle = (key: keyof FlagKey, value: boolean) => setFlags({ [key]: value } as FlagKey);
+  const toggle = (key: keyof FlagKey, value: boolean | number) =>
+    setFlags({ [key]: value } as FlagKey);
 
   const rows = (label: string, value: boolean, key: keyof FlagKey) => (
     <label key={key}>
@@ -115,18 +117,25 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
 
   // The scope's single element, when there is exactly one and its kind is
   // known: which extra Plots boxes the dialog offers (ScopePropertiesDialog
-  // shows Show Charge only for a capacitor, ScopePropertiesDialog.java:573-576).
+  // shows the transistor pin plots for a transistor, Show Charge only for a
+  // capacitor, ScopePropertiesDialog.java:544-607).
   const singleElement = scope.plots.find((p) => p.elementId !== null)?.elementId ?? null;
   const element = singleElement === null ? null : useStore.getState().elements.find((e) => e.id === singleElement)?.kind ?? null;
-  const isCapacitor = element === 'capacitor' || element === 'polarizedCapacitor';
+  // Upstream's Show Vce vs Ic checked state (isShowingVceAndIc, Scope.java:
+  // 1258-1260): the 2D plot on and exactly the VCE/IC pair showing.
+  const showingVceIc =
+    scope.plotXY &&
+    scope.plots.length === 2 &&
+    scope.plots[0].value === 'vce' &&
+    scope.plots[1].value === 'ic';
 
   // The Plots boxes mirror upstream's ScopeCheckBox states
-  // (ScopePropertiesDialog.java:801-804): checked when the show flag is on and
+  // (ScopePropertiesDialog.java:801-833): checked when the show flag is on and
   // a matching plot exists. Toggling on with none present adds one. A value
   // with a flag (voltage/current) routes through setScopeShowValue; any other
-  // value (power, charge) has no flag and toggles the plot itself, upstream's
-  // showPower/showPlotValue (Scope.java:145-165), via togglePlot.
-  const showBox = (label: string, value: ScopeValue) => {
+  // value has no flag and toggles the plot itself, upstream's showPlotValue
+  // (Scope.java:145-165), via togglePlot.
+  const showBox = (label: string, value: ScopeValue, disabled = false) => {
     // A null-element plot is preserved via its raw line only and can never be
     // toggled away, so the checked state follows what togglePlot would remove
     // (elementId !== null), keeping the box and the panel in step.
@@ -137,6 +146,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
         <label key={value}>
           <input
             type="checkbox"
+            disabled={disabled}
             checked={show && hasPlot}
             onChange={(e) => useStore.getState().setScopeShowValue(scope.id, value, e.target.checked)}
           />
@@ -148,6 +158,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
       <label key={value}>
         <input
           type="checkbox"
+          disabled={disabled}
           checked={hasPlot}
           onChange={() => useStore.getState().togglePlot(scope.id, value)}
         />
@@ -170,8 +181,54 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
 
   const unitOf = (value: ScopeValue | null): string => (value === null ? '?' : UNIT[value]);
 
+  // Element kind behind a plot, for the X-Y axis list's `name (units)` labels.
+  const kindOfElement = (elementId: number | null): string | null =>
+    elementId === null
+      ? null
+      : (useStore.getState().elements.find((e) => e.id === elementId)?.kind ?? null);
+
+  type XYKey = 'plotX' | 'plotY' | 'plotBrightness' | 'plotColorR' | 'plotColorG' | 'plotColorB';
+
+  /** One X-Y settings list: the axis or modulator selects write their plot
+   *  index straight through setScopeFlags; modulator lists prepend None (-1),
+   *  axis lists do not (populatePlotListBox, ScopePropertiesDialog.java:
+   *  731-741). */
+  const xySelect = (label: string, inputId: string, key: XYKey, value: number, withNone: boolean) => (
+    <>
+      <label htmlFor={inputId}>{label}</label>
+      <select
+        id={inputId}
+        value={value}
+        onChange={(e) => toggle(key, Number(e.target.value))}
+      >
+        {withNone && (
+          <option key="none" value={-1}>
+            None
+          </option>
+        )}
+        {scope.plots.map((p, i) => (
+          <option key={p.id} value={i}>
+            {plotAxisLabel(kindOfElement(p.elementId), p.value)}
+          </option>
+        ))}
+      </select>
+    </>
+  );
+
   const channelLetter = (value: ScopeValue | null) =>
-    value === 'voltage' ? 'V' : value === 'current' ? 'I' : value === 'power' ? 'P' : value === 'charge' ? 'Q' : '?';
+    value === 'voltage'
+      ? 'V'
+      : value === 'current'
+        ? 'I'
+        : value === 'power'
+          ? 'P'
+          : value === 'charge'
+            ? 'Q'
+            : value === 'resistance'
+              ? 'R'
+              : value !== null
+                ? value.charAt(0).toUpperCase() + value.slice(1)
+                : '?';
 
   return (
     <div className="scope-props" role="dialog" aria-modal="true" aria-label="Scope properties" tabIndex={-1} ref={panelRef}>
@@ -396,10 +453,31 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
       <fieldset>
         <legend>Measurements</legend>
         <div className="row row-wrap">
-          {showBox('Show Voltage', 'voltage')}
-          {showBox('Show Current', 'current')}
-          {showBox('Show Power Consumed', 'power')}
-          {isCapacitor && showBox('Show Charge', 'charge')}
+          {/* The per-element Plots boxes, upstream's order (a transistor's six
+              pin plots in place of Show Voltage/Current, then power, charge
+              for a capacitor, resistance enabled only for a lamp and the
+              compound Vce-vs-Ic action). */}
+          {plotValueRows(element).map((row) =>
+            isVceIcRow(row) ? (
+              // Upstream's box reads isShowingVceAndIc() (Scope.java:1258-1260)
+              // and its command re-seeds the pair whenever fired; unchecking
+              // here just leaves the 2D mode.
+              <label key="vce-ic">
+                <input
+                  type="checkbox"
+                  checked={showingVceIc}
+                  onChange={(e) =>
+                    e.target.checked
+                      ? useStore.getState().setScopeVceIc(scope.id)
+                      : setFlags({ plotXY: false })
+                  }
+                />
+                {row.label}
+              </label>
+            ) : (
+              showBox(row.label, row.value, row.disabled)
+            ),
+          )}
           {rows('Scale', scope.showScale, 'showScale')}
           {rows('Max', scope.showMax, 'showMax')}
           {rows('Min', scope.showMin, 'showMin')}
@@ -434,6 +512,22 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
               : formatValue(scope.trailPersistence * timeStep, 's')}
           </span>
         </div>
+        {scope.plotXY && (
+          <>
+            <div className="row row-wrap">
+              {/* Upstream's X-Y settings grid: an X Axis and Y Axis list over
+                  the scope's plots, then Brightness and the R/G/B colour
+                  modulators, each -1 for none
+                  (ScopePropertiesDialog.java:494-533, 655-668). */}
+              {xySelect('X Axis', 'xy-x', 'plotX', scope.plotX, false)}
+              {xySelect('Y Axis', 'xy-y', 'plotY', scope.plotY, false)}
+              {xySelect('Brightness', 'xy-brightness', 'plotBrightness', scope.plotBrightness, true)}
+              {xySelect('Red', 'xy-r', 'plotColorR', scope.plotColorR, true)}
+              {xySelect('Green', 'xy-g', 'plotColorG', scope.plotColorG, true)}
+              {xySelect('Blue', 'xy-b', 'plotColorB', scope.plotColorB, true)}
+            </div>
+          </>
+        )}
       </fieldset>
 
       <fieldset>

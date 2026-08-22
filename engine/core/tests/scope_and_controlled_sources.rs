@@ -1137,6 +1137,220 @@ fn charge_scope_samples_capacitance_times_plate_voltage() {
     );
 }
 
+// ─── Per-element value plots ───
+
+/// A scope spec for one of the per-element values, the wire form of an
+/// `o`-line plot whose value token mapped through the element kind.
+fn element_scope(element_id: u32, value: ScopeValue) -> ScopeSpec {
+    ScopeSpec {
+        element_id,
+        value,
+        post: 0,
+        steps_per_column: 1,
+        columns: 1024,
+        ac_coupled: false,
+        trigger: Default::default(),
+        display_width: 0,
+    }
+}
+
+/// The min/max pair of a trace's newest column.
+fn last_column(c: &Circuit, index: usize) -> (f64, f64) {
+    let snap = c.scopes()[index].snapshot();
+    (snap[snap.len() - 2] as f64, snap[snap.len() - 1] as f64)
+}
+
+#[test]
+fn transistor_scopes_sample_the_analytic_collector_current_and_junction_voltage() {
+    // The engine half of upstream's Show Ic / Show Vbe boxes: a scope whose
+    // plot token is a transistor pin value must sample that pin quantity
+    // (TransistorElm.getScopeValue, TransistorElm.java:582-593), not fall
+    // back to the element voltage. The stage is the common-emitter reference
+    // circuit: Ic must equal the collector load's (5 - Vc)/1k to solver
+    // tolerance, and Vbe the measured base-emitter difference.
+    let c = &mut build_with(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 470_000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[0, 0], [200, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            // Posts: base, collector, emitter.
+            elm(
+                4,
+                "transistor",
+                &[[100, 0], [200, 0], [200, 100]],
+                &[("pnp", 1.0), ("beta", 100.0)],
+            ),
+            elm(5, "ground", &[[200, 100]], &[]),
+        ],
+        opts(1e-5, true),
+        vec![
+            element_scope(4, ScopeValue::Ic),
+            element_scope(4, ScopeValue::Vbe),
+        ],
+    );
+    c.run(50);
+
+    let nodes = c.element_nodes();
+    // The transistor is element index 3; its three posts start at flattened
+    // index 1 + 2 + 2 = 5 (the rail's single post and the two resistor pairs
+    // precede it).
+    let (nb, nc, ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+    let v = c.node_voltages();
+    let ic_expected = (5.0 - v[nc]) / 1000.0;
+    let vbe_expected = v[nb] - v[ne];
+
+    let (ic_lo, ic_hi) = last_column(c, 0);
+    assert!(
+        close(ic_lo, ic_expected, 1e-9) && close(ic_hi, ic_expected, 1e-9),
+        "Ic scope sampled {ic_lo}/{ic_hi}, expected {ic_expected}"
+    );
+    let (vbe_lo, vbe_hi) = last_column(c, 1);
+    assert!(
+        close(vbe_lo, vbe_expected, 1e-6) && close(vbe_hi, vbe_expected, 1e-6),
+        "Vbe scope sampled {vbe_lo}/{vbe_hi}, expected {vbe_expected}"
+    );
+}
+
+#[test]
+fn transistor_vce_vs_ic_pair_fills_two_traces_for_the_xy_locus() {
+    // early.txt's arrangement: two plots on one transistor, Vce first and
+    // Ic second, drawn as the Vce-vs-Ic X-Y locus. Each recent-sample ring
+    // must carry its own quantity, so the locus pairs Vce against Ic rather
+    // than plotting one quantity against itself.
+    let c = &mut build_with(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 470_000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[0, 0], [200, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            // Posts: base, collector, emitter.
+            elm(
+                4,
+                "transistor",
+                &[[100, 0], [200, 0], [200, 100]],
+                &[("pnp", 1.0), ("beta", 100.0)],
+            ),
+            elm(5, "ground", &[[200, 100]], &[]),
+        ],
+        opts(1e-5, true),
+        vec![
+            element_scope(4, ScopeValue::Vce),
+            element_scope(4, ScopeValue::Ic),
+        ],
+    );
+    c.run(50);
+
+    let nodes = c.element_nodes();
+    // Flattened post offset 5: the rail's single post and the two resistor
+    // pairs precede the transistor.
+    let (nc, ne) = (nodes[6] as usize, nodes[7] as usize);
+    let v = c.node_voltages();
+    let vce_expected = v[nc] - v[ne];
+    let ic_expected = (5.0 - v[nc]) / 1000.0;
+
+    // A DC steady state, so every recent sample sits on the operating point.
+    let xs = c.scopes()[0].recent_snapshot();
+    let ys = c.scopes()[1].recent_snapshot();
+    assert!(
+        xs.len() > 10 && ys.len() == xs.len(),
+        "ring lengths {}/{}",
+        xs.len(),
+        ys.len()
+    );
+    for k in [0, xs.len() / 2, xs.len() - 1] {
+        assert!(
+            close(xs[k] as f64, vce_expected, 1e-6),
+            "x ring sample {} was {}, expected Vce {vce_expected}",
+            k,
+            xs[k]
+        );
+        assert!(
+            close(ys[k] as f64, ic_expected, 1e-9),
+            "y ring sample {} was {}, expected Ic {ic_expected}",
+            k,
+            ys[k]
+        );
+    }
+}
+
+#[test]
+fn lamp_resistance_scope_samples_the_filament_curve() {
+    // Upstream's Show Resistance box: VAL_R samples this step's stamped
+    // resistance (LampElm.getScopeValue, LampElm.java:218-219). One step from
+    // room temperature must read the curve's room-temperature point exactly,
+    // because start_iteration computes R before advancing the temperature;
+    // driven at its rating long enough to settle it must reach the ~144 ohm
+    // hot resistance a 100 W / 120 V lamp is rated for.
+    // LampElm.java:169-175's curve at 300 K for the default lamp.
+    let (nom_pow, nom_v) = (100.0, 120.0);
+    let nom_r = nom_v * nom_v / nom_pow;
+    let tp = 300.0_f64.min(5390.0);
+    let r_cold =
+        nom_r * (1.26104 - 4.90662 * (17.1839 / tp - 0.00318794).sqrt() - 7.8569 / (tp - 187.56));
+
+    let cold = &mut build_with(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "lamp", &[[0, 0], [0, 100]], &[]),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-3, false),
+        vec![element_scope(2, ScopeValue::Resistance)],
+    );
+    cold.run(1);
+    let (lo, hi) = last_column(cold, 0);
+    assert!(
+        close(lo, r_cold, 1e-4 * r_cold) && close(hi, r_cold, 1e-4 * r_cold),
+        "cold resistance scope sampled {lo}/{hi}, expected {r_cold}"
+    );
+
+    // Five seconds at the rated voltage settles the filament near its hot
+    // resistance (the thermal topic file pins ~144.09 ohms for the same
+    // discrete loop); the sampled value must sit there too, and match the
+    // V/R figure the stamped resistance implies.
+    let warm = &mut build_with(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 120.0)]),
+            elm(2, "lamp", &[[0, 0], [0, 100]], &[]),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-3, false),
+        vec![element_scope(2, ScopeValue::Resistance)],
+    );
+    warm.run(5000);
+    let (lo, hi) = last_column(warm, 0);
+    assert!(
+        (140.0..=148.0).contains(&lo) && (140.0..=148.0).contains(&hi),
+        "hot resistance scope sampled {lo}/{hi}, expected ~144 ohms"
+    );
+    let amps = warm.element_currents();
+    let from_ohms_law = 120.0 / lo;
+    assert!(
+        close(amps[1], from_ohms_law, 1e-3),
+        "lamp carried {} A while the scope sampled {lo} ohms",
+        amps[1]
+    );
+}
+
 // ─── Scope capture across a rebuild ───
 
 /// A divider with a voltage scope on the resistor. `extra` is appended so a

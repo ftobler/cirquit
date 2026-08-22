@@ -39,8 +39,11 @@ describe('o-line plot walk: units for an element line this build cannot read', (
     // The lamp takes no element slot in `elements`: only the capacitor does.
     expect(parsed.elements).toHaveLength(1);
     expect(parsed.elements[0].kind).toBe('capacitor');
+    // The unreadable lamp's VAL_R still maps through its raw dump code to the
+    // engine's Resistance value; with no store element behind it the plot
+    // stays unregistered and rides the raw line only.
     expect(parsed.scopes[0].plots).toEqual([
-      expect.objectContaining({ elementIndex: 0, elementId: undefined, value: null }),
+      expect.objectContaining({ elementIndex: 0, elementId: undefined, value: 'resistance' }),
       expect.objectContaining({
         elementIndex: 1,
         elementId: parsed.elements[0].id,

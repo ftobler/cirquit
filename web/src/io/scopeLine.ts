@@ -99,11 +99,11 @@ const FLAG_IVALUE = 2048;
  *  (ScopeSerializer.java:231). */
 const FLAG_AC = 1;
 
-/** The vertical position a fresh plot of this value starts at: power and
- *  charge plots sit at the bottom of the manual-mode screen, everything else
- *  centred, upstream's ScopePlot constructor (ScopePlot.java:62-66). */
+/** The vertical position a fresh plot of this value starts at: power, charge
+ *  and resistance plots sit at the bottom of the manual-mode screen, everything
+ *  else centred, upstream's ScopePlot constructor (ScopePlot.java:62-66). */
 function defaultManVPosition(value: ScopeValue | null): number {
-  return value === 'power' || value === 'charge' ? -100 : 0;
+  return value === 'power' || value === 'charge' || value === 'resistance' ? -100 : 0;
 }
 
 /** The full flag word a scope's display state encodes, the port of upstream's
@@ -292,11 +292,16 @@ export function decodeScopeLine(
 /** Regenerates a new-style `o` line's tokens (after the element index) from the
  *  scope state, matching upstream's `undump` shape (ScopeSerializer.java:213-256).
  *  `indexOf` resolves a plot's store element id to its file ordinal, -1 for a
- *  null element, the existing scopeUIRaw convention. The encoder only writes
- *  new-style lines; upstream parses both. */
+ *  null element, the existing scopeUIRaw convention. `kinds[i]` is plot i's
+ *  element kind, the same list `decodeScopeLine` walks with: whether a value
+ *  token carries a per-unit scale token is kind-dependent (a transistor's Ib
+ *  plots in amps, a lamp's R in ohms), so the encoder must decide it against
+ *  the same kinds the decoders read or its output would not re-decode to
+ *  itself. The encoder only writes new-style lines; upstream parses both. */
 export function encodeScopeLine(
   scope: Scope,
   indexOf: (elementId: number) => number | undefined,
+  kinds: (string | null)[],
 ): string[] {
   const first = scope.plots[0];
   const manual = scope.manualScale;
@@ -315,20 +320,21 @@ export function encodeScopeLine(
   // The divisions token sits between the plot count and the first plot's
   // per-unit scale, exactly where undump reads it (ScopeSerializer.java:219-220).
   if (manual) tokens.push(String(scope.manDivisions));
-  // A W or C plot carries a scale token (ScopeSerializer.java:221-223). Charge
-  // needs the explicit value check: the kind is unknown here, and only the
-  // capacitor's charge is ever a `charge` plot, so `unitsOf` with a null kind
-  // would wrongly read it as volts.
-  const needsScaleToken = (value: ScopeValue | null): boolean =>
-    value === 'charge' || unitsOf(valueTokenOf(value), null) > 1;
-  if (needsScaleToken(first.value)) tokens.push('20');
+  // A W, C or Ω plot carries a scale token (ScopeSerializer.java:221-223).
+  // Charge and resistance need the explicit value check for a plot whose kind
+  // is unknown here (its element left the document): only a capacitor's charge
+  // and a lamp's resistance are ever those plots, so `unitsOf` with a null
+  // kind would wrongly read them as volts and drop their skip token.
+  const needsScaleToken = (value: ScopeValue | null, kind: string | null): boolean =>
+    value === 'charge' || value === 'resistance' || unitsOf(valueTokenOf(value), kind) > 1;
+  if (needsScaleToken(first.value, kinds[0] ?? null)) tokens.push('20');
   for (let i = 0; i < scope.plots.length; i++) {
     const p = scope.plots[i];
     if (anyPlotFlags) tokens.push(p.acCoupled ? '1' : '0');
     if (i !== 0) {
       const index = p.elementId === null ? -1 : (indexOf(p.elementId) ?? -1);
       tokens.push(String(index), String(valueTokenOf(p.value)));
-      if (needsScaleToken(p.value)) tokens.push('20');
+      if (needsScaleToken(p.value, kinds[i] ?? null)) tokens.push('20');
     }
     if (manual) {
       // A plot without a user scale keeps a neutral pair so the flag stays

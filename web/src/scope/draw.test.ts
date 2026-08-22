@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Scope, ScopePlot, SimEngine } from '../engine/simulator';
 import type { ThemeColors } from '../model/types';
 import { makeTheme } from '../render/draw';
-import { pruneScaleStates, scaleStateFor } from './scale';
+import { nextModScale, pruneScaleStates, scaleStateFor } from './scale';
 import { PHASE_COLOR } from './spectrum';
 import {
   advanceFadeCounter,
@@ -20,7 +20,10 @@ import {
   trailStepsToSlider,
   triggerTimeAnchor,
   visiblePlotsOf,
+  xyBrightnessAlpha,
+  xyColorChannel,
   xyCrossColors,
+  xyPairFor,
   type ScopeCursor,
 } from './draw';
 
@@ -46,6 +49,12 @@ const scopeOf = (plots: ScopePlot[], overrides: Partial<Scope> = {}): Scope => (
   fftPlot: false,
   logSpectrum: false,
   plotXY: false,
+  plotX: 0,
+  plotY: 1,
+  plotBrightness: -1,
+  plotColorR: -1,
+  plotColorG: -1,
+  plotColorB: -1,
   showPhaseAngle: false,
   trailPersistence: 0,
   showElmInfo: false,
@@ -676,8 +685,15 @@ describe('drawScope cursor colours', () => {
 /** The X-Y trail lives on an offscreen canvas `drawXY` builds through
  *  `document.createElement`. The test environment is node with no DOM, so the
  *  canvas is stubbed and its recorder handed to the body: the locus stroke and
- *  the fade fill land there, never on the visible context. */
-const withTrailCanvas = <T>(body: (trail: { strokes: string[]; fills: string[] }) => T): T => {
+ *  the fade fill land there, never on the visible context. The stub context
+ *  itself rides along so a test can watch globalAlpha around each stroke. */
+const withTrailCanvas = <T>(
+  body: (trail: {
+    strokes: string[];
+    fills: string[];
+    pctx: { globalAlpha: number; stroke: (...args: unknown[]) => void };
+  }) => T,
+): T => {
   const strokes: string[] = [];
   const fills: string[] = [];
   const pctx = {
@@ -700,7 +716,7 @@ const withTrailCanvas = <T>(body: (trail: { strokes: string[]; fills: string[] }
   const had = 'document' in host;
   host.document = { createElement: () => ({ width: 0, height: 0, getContext: () => pctx }) };
   try {
-    return body({ strokes, fills });
+    return body({ strokes, fills, pctx });
   } finally {
     if (had) host.document = previous;
     else delete host.document;
@@ -788,5 +804,178 @@ describe('drawScope colour overrides', () => {
     });
     expect(strokes).toContain('#123456');
     expect(fills).toContain('#123456');
+  });
+});
+
+describe('xyPairFor', () => {
+  const indexById = (id: number) => id - 1;
+  const rawOnlyPlot: ScopePlot = {
+    id: 99,
+    elementId: null,
+    value: null,
+    manScale: null,
+    manVPosition: 0,
+    acCoupled: false,
+  };
+
+  it('defaults to the first two samplable plots', () => {
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], { plotXY: true });
+    const pair = xyPairFor(scope, indexById)!;
+    expect(pair.x.plot.id).toBe(1);
+    expect(pair.y.plot.id).toBe(2);
+  });
+
+  it('swapped plotX/plotY draws the other two traces', () => {
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], {
+      plotXY: true,
+      plotX: 1,
+      plotY: 0,
+    });
+    const pair = xyPairFor(scope, indexById)!;
+    expect(pair.x.plot.id).toBe(2);
+    expect(pair.y.plot.id).toBe(1);
+  });
+
+  it('indexes are positions in the full plot list, upstream style', () => {
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current'), plot(3, 'power')], {
+      plotXY: true,
+      plotX: 2,
+    });
+    const pair = xyPairFor(scope, indexById)!;
+    expect(pair.x.plot.value).toBe('power');
+    expect(pair.y.plot.id).toBe(2);
+  });
+
+  it('defaults draw the first two samplable plots even with a raw-only first plot', () => {
+    // The reviewer's case: positions and samplable order disagree, but the
+    // untouched defaults must keep drawing exactly the old hardcoded pair,
+    // A vs B, not A against itself.
+    const raw: ScopePlot = {
+      id: 99,
+      elementId: null,
+      value: null,
+      manScale: null,
+      manVPosition: 0,
+      acCoupled: false,
+    };
+    const scope = scopeOf([raw, plot(1, 'voltage'), plot(2, 'current')], { plotXY: true });
+    const pair = xyPairFor(scope, indexById)!;
+    expect(pair.x.plot.id).toBe(1);
+    expect(pair.y.plot.id).toBe(2);
+  });
+
+  it('axes on raw-only plots fall back to the hardcoded samplable pair', () => {
+    // A plot whose value token has no engine meaning never registers a trace,
+    // so axes parked on those slots fall through to the first two samplable
+    // plots rather than drawing nothing.
+    const secondRaw: ScopePlot = { ...rawOnlyPlot, id: 98 };
+    const scope = scopeOf([rawOnlyPlot, secondRaw, plot(1, 'voltage'), plot(2, 'current')], {
+      plotXY: true,
+      plotX: 0,
+      plotY: 1,
+    });
+    const pair = xyPairFor(scope, indexById)!;
+    expect(pair.x.plot.id).toBe(1);
+    expect(pair.y.plot.id).toBe(2);
+  });
+
+  it('returns null when nothing can sample', () => {
+    const scope = scopeOf([rawOnlyPlot], { plotXY: true });
+    expect(xyPairFor(scope, indexById)).toBeNull();
+  });
+});
+
+describe('X-Y modulators', () => {
+  it('nextModScale doubles to contain and never shrinks', () => {
+    expect(nextModScale(5, 7)).toBe(10);
+    expect(nextModScale(10, 3)).toBe(10);
+    expect(nextModScale(5, 20)).toBe(20);
+    // A scale that decayed to zero restarts at the default instead of
+    // dividing by zero.
+    expect(nextModScale(0, 3)).toBe(5);
+  });
+
+  it('brightness maps |last| over the grown scale into an alpha', () => {
+    expect(xyBrightnessAlpha(-5, 5)).toEqual({ alpha: 1, scale: 5 });
+    expect(xyBrightnessAlpha(2.5, 5)).toEqual({ alpha: 0.5, scale: 5 });
+    const grown = xyBrightnessAlpha(20, 5);
+    expect(grown.scale).toBe(20);
+    expect(grown.alpha).toBe(1);
+  });
+
+  it('colour channels truncate into 0..255 against their own scale', () => {
+    expect(xyColorChannel(5, 5)).toEqual({ channel: 255, scale: 5 });
+    // Truncates like upstream's int cast.
+    expect(xyColorChannel(2.5, 5)).toEqual({ channel: 127, scale: 5 });
+    // Negative samples clamp to black, and an over-range one grows the scale.
+    expect(xyColorChannel(-5, 5)).toEqual({ channel: 0, scale: 5 });
+    expect(xyColorChannel(20, 5)).toEqual({ channel: 255, scale: 20 });
+  });
+
+  it('tints the locus from an RGB modulator plot', () => {
+    clearXYPersistence(1);
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], { plotXY: true });
+    scope.plotColorR = 1;
+    const engine = {
+      scopeIndexOf: (id: number) => (id === 1 ? 0 : 1),
+      scopeData: () => new Float32Array([1, 1]),
+      scopeDiverged: () => false,
+      recentSamples: () => new Float32Array([4, 4]),
+    } as unknown as SimEngine;
+    const out = withTrailCanvas((rec) => {
+      recordDraw(engine, scope, 200, 150, emptyCursor());
+      return rec;
+    });
+    // The modulated stroke is an rgb() triple; the unmodulated default is a
+    // hex colour, so the prefix alone tells them apart.
+    expect(out.strokes[0]).toMatch(/^rgb\(/);
+  });
+
+  it('a set brightness index dims the locus stroke', () => {
+    clearXYPersistence(1);
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], { plotXY: true });
+    scope.plotBrightness = 0;
+    const engine = {
+      scopeIndexOf: () => 0,
+      scopeData: () => new Float32Array([1, 1]),
+      scopeDiverged: () => false,
+      recentSamples: () => new Float32Array([4, 4]),
+    } as unknown as SimEngine;
+    withTrailCanvas(({ pctx }) => {
+      // |last| 4 over the default scale 5 dims to 0.8 during the stroke.
+      const seen: number[] = [];
+      const orig = pctx.stroke.bind(pctx);
+      pctx.stroke = (...args: unknown[]) => {
+        seen.push(pctx.globalAlpha);
+        orig(...args);
+      };
+      recordDraw(engine, scope, 200, 150, emptyCursor());
+      expect(seen).toContain(0.8);
+    });
+  });
+
+  it('an out-of-range brightness index leaves the locus fully bright', () => {
+    // Upstream's computeAlpha returns 1.0 once the index leaves the plot list
+    // (ScopePlot2d.java:171-173); treating the missing sample as 0 would
+    // black the whole locus out instead.
+    clearXYPersistence(1);
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], { plotXY: true });
+    scope.plotBrightness = 9;
+    const engine = {
+      scopeIndexOf: () => 0,
+      scopeData: () => new Float32Array([1, 1]),
+      scopeDiverged: () => false,
+      recentSamples: () => new Float32Array([4, 4]),
+    } as unknown as SimEngine;
+    withTrailCanvas(({ pctx }) => {
+      const seen: number[] = [];
+      const orig = pctx.stroke.bind(pctx);
+      pctx.stroke = (...args: unknown[]) => {
+        seen.push(pctx.globalAlpha);
+        orig(...args);
+      };
+      recordDraw(engine, scope, 200, 150, emptyCursor());
+      expect(seen).not.toContain(0);
+    });
   });
 });

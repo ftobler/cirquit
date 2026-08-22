@@ -202,6 +202,7 @@ export function setXYScale(scopeId: number, scale: { x: number; y: number }): vo
 /** Drops a scope's X-Y axis scales (called when the scope is removed). */
 export function clearXYScale(scopeId: number): void {
   xyScales.delete(scopeId);
+  xyModScales.delete(scopeId);
 }
 
 /** Drops X-Y axis scales for scopes that no longer exist. */
@@ -209,6 +210,9 @@ export function pruneXYScales(live: Iterable<number>): void {
   const keep = new Set(live);
   for (const id of xyScales.keys()) {
     if (!keep.has(id)) xyScales.delete(id);
+  }
+  for (const id of xyModScales.keys()) {
+    if (!keep.has(id)) xyModScales.delete(id);
   }
 }
 
@@ -228,6 +232,33 @@ export function nextAxisScale(
     fit,
     { maxScale: false },
   ).gridMax;
+}
+
+/** The sticky X-Y modulator scales (brightness, R, G, B), keyed by scope id.
+ *  Upstream keeps them on ScopePlot2d with the same default of 5
+ *  (ScopePlot2d.java:27-28); they grow to contain their plot's samples and
+ *  never shrink, unlike the axes. */
+type ModScales = { brightness: number; r: number; g: number; b: number };
+
+const xyModScales = new Map<number, ModScales>();
+
+const DEFAULT_MOD_SCALES: ModScales = { brightness: 5, r: 5, g: 5, b: 5 };
+
+export function xyModScalesFor(scopeId: number): ModScales {
+  return { ...DEFAULT_MOD_SCALES, ...xyModScales.get(scopeId) };
+}
+
+export function setXYModScales(scopeId: number, scales: ModScales): void {
+  xyModScales.set(scopeId, scales);
+}
+
+/** Upstream's one-way doubling for a modulator scale
+ *  (ScopePlot2d.computeColor/computeAlpha): it grows to contain the sample and
+ *  never comes back down. Pure, so the growth rule is testable headlessly. */
+export function nextModScale(prev: number, v: number): number {
+  let s = prev > 0 ? prev : 5;
+  while (v > s) s *= 2;
+  return s;
 }
 
 /** The X-Y band check, the 1d `extremesFit` applied to one axis: every sample

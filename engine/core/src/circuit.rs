@@ -1681,6 +1681,10 @@ impl Circuit {
                 ScopeValue::Power => elm.power(),
                 ScopeValue::NodeVoltage => base.volts.get(scope.spec.post).copied().unwrap_or(0.0),
                 ScopeValue::Charge => elm.charge(),
+                // The per-element values (a transistor's Ib, a lamp's R):
+                // the element model answers per sample, the same one-value
+                // boundary the charge hook rides.
+                other => elm.scope_value(other),
             };
             scope.push(v, sim_time);
         }

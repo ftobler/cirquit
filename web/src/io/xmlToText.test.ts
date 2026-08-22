@@ -76,6 +76,24 @@ describe('xml to text conversion', () => {
     expect(text).toMatch(/^o 0 4 0 \d+ 10 0.05 0 1$/m);
   });
 
+  it('re-encodes a transistor Vce/Ib scope without inventing a scale token', () => {
+    // The encoder decides scale tokens against the plot kinds: token 1 on a
+    // transistor is Ib in amps, so the migrated line must not carry the
+    // legacy-power scale token a kind-blind walk would invent.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <t x="192 160 304 160" f="0"/>
+  <o en="0" sp="64" f="4162" p="0">
+    <p v="6"/>
+    <p v="1"/>
+  </o>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('o 0 64 6 4290 20 0.05 0 2 0 1');
+    const parsed = parseCircuit(text);
+    expect(parsed.scopes[0].plots.map((p) => p.value)).toEqual(['vce', 'ib']);
+  });
+
   it('round-trips through parseCircuit and serialises byte-for-byte', () => {
     const text = xmlToText(SIMPLE);
     const parsed = parseCircuit(text);

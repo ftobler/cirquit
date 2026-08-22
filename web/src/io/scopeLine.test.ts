@@ -25,6 +25,12 @@ const loadedScope = (decoded: DecodedScopeLine, plots: ScopePlot[]): Scope => {
     id: 1,
     raw: null,
     trailPersistence: 0,
+    plotX: 0,
+    plotY: 1,
+    plotBrightness: -1,
+    plotColorR: -1,
+    plotColorG: -1,
+    plotColorB: -1,
     plots: plots.map((p, i) => ({
       ...p,
       acCoupled: perPlot[i].acCoupled,
@@ -189,7 +195,7 @@ describe('encodeScopeLine round-trip', () => {
   ): void => {
     const decoded = decodeScopeLine(raw, plots, kinds, 0);
     const scope = loadedScope(decoded, plots);
-    const first = encodeScopeLine(scope, () => 0);
+    const first = encodeScopeLine(scope, () => 0, kinds);
     // Re-encoding the re-decoded line must be stable. Some old-format lines
     // (manual mode without per-plot pairs, or pairs or a divisions token
     // without manual mode) normalize to upstream's current canonical form on
@@ -198,6 +204,7 @@ describe('encodeScopeLine round-trip', () => {
     const second = encodeScopeLine(
       loadedScope(decodeScopeLine(first, plots, kinds, scope.position), plots),
       () => 0,
+      kinds,
     );
     expect(second).toEqual(first);
   };
@@ -295,7 +302,7 @@ describe('encodeScopeLine round-trip', () => {
     const plots = [plot(0, 'voltage')];
     const decoded = decodeScopeLine(raw, plots, ['resistor'], 0);
     expect(decoded.showPhaseAngle).toBe(true);
-    expect(encodeScopeLine(loadedScope(decoded, plots), () => 0)).toContain('8392706');
+    expect(encodeScopeLine(loadedScope(decoded, plots), () => 0, ['resistor'])).toContain('8392706');
     roundTrips(raw, plots, ['resistor']);
   });
 
@@ -308,16 +315,57 @@ describe('encodeScopeLine round-trip', () => {
       decodeScopeLine(['64', '7', '135187', '80', '0.00009765625', '0', '1', '160'], [plot(17, 'power')], ['resistor'], 0),
       [plot(17, 'power')],
     );
-    expect(encodeScopeLine(power, () => 17)).toEqual([
+    expect(encodeScopeLine(power, () => 17, ['resistor'])).toEqual([
       '64', '7', '2756627', '80', '0.00009765625', '0', '1', '8', '20', '1', '-100',
     ]);
     const oldStyle = loadedScope(
       decodeScopeLine(['64', '0', '6', '5.0', '9.765625E-5', '0', 'set'], [plot(15, 'voltage')], [null], 0),
       [plot(15, 'voltage')],
     );
-    expect(encodeScopeLine(oldStyle, () => 15)).toEqual([
+    expect(encodeScopeLine(oldStyle, () => 15, [null])).toEqual([
       '64', '0', '4102', '5', '0.00009765625', '0', '1', 'set',
     ]);
+  });
+  it('writes no scale token for a per-element plot and its output re-decodes', () => {
+    // The bug this pins: needsScaleToken used to decide with a null kind, so
+    // token 1 (Ib on a transistor) fell into the generic legacy-power branch
+    // (watts) and gained a literal 20 no decoder would skip. Under
+    // FLAG_PERPLOTFLAGS that stray token was eaten as the next plot's flag
+    // word and every later field landed one token off.
+    const kinds = ['transistor', 'transistor', 'transistor'];
+    const plots = [plot(0, 'ib'), plot(0, 'ic'), plot(0, 'vce')];
+    const raw = [
+      '64', '1', '266306', '20', '0.05', '0', '3',
+      '0',             // plot 0's per-plot flags word (hex)
+      '1', '0', '2',   // plot 1's word (AC coupled), then ne val (Ic)
+      '0', '0', '6',   // plot 2's word, then ne val (Vce)
+      'Label',
+    ];
+    const decoded = decodeScopeLine(raw, plots, kinds, 0);
+    expect(decoded.perPlot).toEqual([
+      { acCoupled: false, manScale: null, manVPosition: 0 },
+      { acCoupled: true, manScale: null, manVPosition: 0 },
+      { acCoupled: false, manScale: null, manVPosition: 0 },
+    ]);
+    expect(decoded.label).toBe('Label');
+    const encoded = encodeScopeLine(loadedScope(decoded, plots), (id) => id, kinds);
+    // Ib in amps carries no scale token, exactly like the Ic beside it; only
+    // plotXY's second bit is new against the input line (the encoder always
+    // writes both 2D bits).
+    expect(encoded).toEqual([
+      '64', '1', '266434', '20', '0.05', '0', '3',
+      '0',
+      '1', '0', '2',
+      '0', '0', '6',
+      'Label',
+    ]);
+    // The encoder's own output walks back to the same state, which is what
+    // the save path relies on when it regenerates an edited line.
+    const again = decodeScopeLine(encoded, plots, kinds, 0);
+    expect(again.perPlot).toEqual(decoded.perPlot);
+    expect(again.label).toBe('Label');
+    const second = encodeScopeLine(loadedScope(again, plots), (id) => id, kinds);
+    expect(second).toEqual(encoded);
   });
 });
 

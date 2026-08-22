@@ -173,6 +173,22 @@ impl Element for BipolarTransistor {
         self.base.current = self.ic;
     }
 
+    /// The pin plots, upstream's `getScopeValue` (TransistorElm.java:582-593).
+    /// Voltages read the live terminal volts raw, exactly as upstream returns
+    /// them unscaled by polarity; currents are the reported (polarity-scaled)
+    /// terminal figures, with ie = -(ic + ib) as in TransistorElm.java:455-457.
+    fn scope_value(&self, value: crate::spec::ScopeValue) -> f64 {
+        match value {
+            crate::spec::ScopeValue::Ib => self.ib,
+            crate::spec::ScopeValue::Ic => self.ic,
+            crate::spec::ScopeValue::Ie => -self.ic - self.ib,
+            crate::spec::ScopeValue::Vbe => self.base.volts[0] - self.base.volts[2],
+            crate::spec::ScopeValue::Vbc => self.base.volts[0] - self.base.volts[1],
+            crate::spec::ScopeValue::Vce => self.base.volts[1] - self.base.volts[2],
+            _ => 0.0,
+        }
+    }
+
     fn state_tokens(&self) -> Vec<(String, f64)> {
         // The file tokens are node differences, not the internal fields: the
         // constructor swaps and polarity-scales them (`last_vbe = p*lastVbc`,
