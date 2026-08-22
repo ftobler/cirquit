@@ -230,6 +230,16 @@ describe('pointer-down on an SPDT while running', () => {
     expect(useStore.getState().elements[0].state).toBe(0);
   });
 
+  it('a linked SPDT fans its throw out to its group from the canvas', () => {
+    const a = addEl('switch2', { params: { position: 0, momentary: 0, throwCount: 2, link: 6 } });
+    const b = addEl('switch2', { params: { position: 0, momentary: 0, throwCount: 2, link: 6 } });
+    const r = refs();
+    beginPointerGesture(down(), { x: 96, y: -15 }, useStore.getState(), hit(a), false, r);
+    expect(hit(a).state).toBe(1);
+    expect(hit(b).state).toBe(1);
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+  });
+
   it('outside the fan selects and arms move, without toggling', () => {
     const id = addEl('switch2');
     const r = refs();

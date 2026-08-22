@@ -67,6 +67,17 @@ describe('adjustable fields', () => {
     ]);
   });
 
+  it('excludes the switch2 Group Number, which upstream disallows on sliders', () => {
+    // Upstream marks the group-number row `.disallowSliders()` (Switch2Elm.java:
+    // 198): it is a dimensionless link id, not a value a drag should sweep. The
+    // shortcut row beside it is a text field and stays excluded as always, so
+    // the SPDT has no adjustable rows at all.
+    expect(adjustableFields('switch2')).toEqual([]);
+    // Neither the caption path nor the index fallback binds it.
+    expect(resolveParam('switch2', 0, 'Group Number (for linking)')).toBeNull();
+    expect(resolveParam('switch2', 1, '')).toBeNull();
+  });
+
   it('editItem indexes the adjustable list the same way resolveParam binds', () => {
     // resolveParam's caption-free fallback indexes into this exact list, so a
     // dialog creating a slider at index 1 saves a line that resolves back.

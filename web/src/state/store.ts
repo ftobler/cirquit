@@ -36,6 +36,7 @@ import {
   mirrorElement,
   rotateElement,
   swapTerminalOrder,
+  switch2PosCount,
 } from '../model/transform';
 import { LOGIC_INPUT_TERNARY, SWITCH2_CENTER_OFF, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import { defFor, postsOf } from '../model/registry';
@@ -1657,14 +1658,38 @@ function createAppStore() {
             .map((e) => e.id)
         : [],
     );
+    // A linked SPDT throws every switch2 in the same nonzero Group Number with
+    // the target: the twin takes the target's new position, mirrored when the
+    // twin's runtime flip parity differs (Switch2Elm.java:158-170), so a
+    // mirrored twin of a ganged pair holds the opposite index forever.
+    const switch2Positions = new Map<number, number>();
+    const s2link = target.kind === 'switch2' ? (target.params.link ?? 0) : 0;
+    if (s2link !== 0) {
+      const targetPosCount = switch2PosCount(target);
+      const targetParity = target.params.flipParity ?? 0;
+      switch2Positions.set(id, next);
+      for (const twin of s.elements) {
+        if (twin.id === id || twin.kind !== 'switch2' || (twin.params.link ?? 0) !== s2link)
+          continue;
+        let pos = next;
+        if ((twin.params.flipParity ?? 0) !== targetParity) pos = targetPosCount - 1 - next;
+        // A twin only takes a position it owns: a 3-stop twin linked to a
+        // 2-stop twin keeps its throw when the position does not fit, upstream's
+        // `if (pos < s2.posCount)` guard (Switch2Elm.java:167-168).
+        if (pos < switch2PosCount(twin)) switch2Positions.set(twin.id, pos);
+      }
+    }
     set((st) => ({
-      elements: st.elements.map((e) =>
-        e.id === id || linked.has(e.id) ? { ...e, state: next } : e,
-      ),
+      elements: st.elements.map((e) => {
+        if (e.id === id || linked.has(e.id)) return { ...e, state: next };
+        const s2pos = switch2Positions.get(e.id);
+        return s2pos !== undefined ? { ...e, state: s2pos } : e;
+      }),
       pendingStates: (() => {
         const m = new Map(st.pendingStates);
         m.set(id, next);
         for (const lid of linked) m.set(lid, next);
+        for (const [sid, s2pos] of switch2Positions) m.set(sid, s2pos);
         return m;
       })(),
       paramRevision: st.paramRevision + 1,

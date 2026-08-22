@@ -15,6 +15,9 @@ beforeEach(() => useStore.setState(fresh()));
 function elementSpecs(elements: CircuitElement[]) {
   return elements.map((e) => {
     const params = { ...e.params };
+    // Mirrors the simulator's session-only strip (simulator.ts): the switch2
+    // flip parity never crosses into the engine spec.
+    delete params.flipParity;
     if (e.state !== undefined) params[e.kind === 'fuse' ? 'blown' : 'position'] = e.state;
     return {
       id: e.id,
@@ -71,5 +74,26 @@ describe('the engine handoff contract', () => {
     // The NaN param is gone entirely, so `JSON.stringify` could not have
     // emitted it as `null` inside the params object.
     expect(parsed.elements[0].params.foo).toBeUndefined();
+  });
+
+  it('a switch2 flip parity never reaches the spec, while the link does', () => {
+    // flipParity is session-only (upstream's positionFlipped, Switch2Elm.java:
+    // 244), so the handoff strips it; `link` is the stored truth of the S line
+    // and must ride for the engine's future use.
+    const id = useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, throwCount: 2, link: 7, flipParity: 1 },
+      state: 0,
+    });
+    const [el] = elementSpecs(useStore.getState().elements);
+    expect(el.id).toBe(id);
+    expect(el.params.flipParity).toBeUndefined();
+    expect(el.params.link).toBe(7);
+    expect(el.params.position).toBe(0);
   });
 });

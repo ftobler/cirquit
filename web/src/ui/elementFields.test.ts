@@ -217,6 +217,30 @@ describe('field change dispatch', () => {
   });
 });
 
+describe('SPDT group number row', () => {
+  it('sits after the shortcut row as an integer 0..100', () => {
+    const def = defFor('switch2')!;
+    expect(def.fields!.map((f) => f.name)).toEqual(['keyShortcut', 'link']);
+    expect(def.fields![1]).toMatchObject({
+      name: 'link',
+      label: 'Group Number (for linking)',
+      min: 0,
+      max: 100,
+      integer: true,
+    });
+  });
+
+  it('shows the stored link and routes an edit through the numeric param path', () => {
+    const e = elm({ kind: 'switch2', params: { position: 0, throwCount: 2, link: 3 } });
+    const row = fieldRows(e).find((r) => r.field.name === 'link');
+    expect(row?.value).toBe(3);
+
+    const { calls, actions } = recorder();
+    applyFieldChange(e, field('switch2', 'link'), 7, actions);
+    expect(calls).toEqual([['setParam', 1, 'link', 7]]);
+  });
+});
+
 describe('clampInteger', () => {
   it('rounds to a whole number', () => {
     expect(clampInteger(3.4, { min: 1, max: 8 })).toBe(3);

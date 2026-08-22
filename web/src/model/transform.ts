@@ -12,7 +12,7 @@
  */
 
 import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP, postCountOf } from './registry';
-import { COMPARATOR_SWAP, OPAMPREAL_SWAP } from './registry/flags';
+import { COMPARATOR_SWAP, OPAMPREAL_SWAP, SWITCH2_CENTER_OFF } from './registry/flags';
 import { GRID_SIZE, type CircuitElement, type Point } from './types';
 
 /** Whether the element can turn a quarter turn. A stem-bearing one-post part
@@ -52,6 +52,38 @@ const DPDT_POLE_GAP = 48;
 function flipDpdtPosition(e: CircuitElement): CircuitElement {
   const position = (e.state ?? e.params.position ?? 0) === 1 ? 0 : 1;
   return { ...e, state: position, params: { ...e.params, position } };
+}
+
+/** The lever stops a switch2 walks: `throwCount`, plus the centre-off open
+ *  middle when the flag is set and there are exactly two throws
+ *  (Switch2Elm.java:83, :226). Shared by the flip reversal here and the
+ *  linked-toggle fan-out in the store, so both agree on where a position can
+ *  land. */
+export function switch2PosCount(e: CircuitElement): number {
+  const throws = Math.max(2, e.params.throwCount ?? 2);
+  const centreOff = (e.flags & SWITCH2_CENTER_OFF) !== 0 && throws === 2;
+  return throws + (centreOff ? 1 : 0);
+}
+
+/** Upstream's switch2 flips reverse the lever and toggle the runtime
+ *  `positionFlipped` flag on every flipX/flipY/flipXY (Switch2Elm.java:241-259):
+ *  after a mirror the stored endpoints swap order, which reverses the fan's
+ *  perpendicular direction, so without the reversal the lever would land on
+ *  the other physical side. The parity is session-only, exactly as upstream
+ *  never writes `positionFlipped`; the port parks it in `params.flipParity`,
+ *  which the dump never lists. */
+function flipSwitch2(e: CircuitElement): CircuitElement {
+  const posCount = switch2PosCount(e);
+  const position = posCount - 1 - (e.state ?? e.params.position ?? 0);
+  return {
+    ...e,
+    state: position,
+    params: {
+      ...e.params,
+      position,
+      flipParity: ((e.params.flipParity ?? 0) + 1) % 2,
+    },
+  };
 }
 
 /** Upstream's grid snap, `(v + gridSize/2 - 1) & ~(gridSize - 1)`
@@ -154,7 +186,13 @@ export function rotateElement(e: CircuitElement, pivot?: Point): CircuitElement 
   };
   // The DPDT's flips invert the throw pairing (DPDTSwitchElm.java:256-277), so
   // a turned DPDT throws to each pole's other throw, like every flip().
-  return e.kind === 'dpdtSwitch' ? flipDpdtPosition(base) : base;
+  if (e.kind === 'dpdtSwitch') return flipDpdtPosition(base);
+  // A switch2's rotate reverses the lever the same way (Switch2Elm.java:241-259),
+  // but only for the settled-selection turn: the placement ghost turns about
+  // its press anchor with no committed position history, so a fresh part keeps
+  // its throw through the placement turns.
+  if (e.kind === 'switch2' && pivot === undefined) return flipSwitch2(base);
+  return base;
 }
 
 /**
@@ -286,6 +324,19 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
       y1: e.y1 + shiftY,
       x2: e.x1 - shiftX,
       y2: e.y2 + shiftY,
+    });
+  }
+  if (e.kind === 'switch2') {
+    // Upstream's switch2 flips reverse the lever too (Switch2Elm.java:241-245):
+    // the generic reflection swaps the endpoints and with them the fan's
+    // perpendicular direction, so the reversal keeps the lever on the same
+    // physical side. No body shift, unlike the DPDT.
+    return flipSwitch2({
+      ...withoutRoute(e),
+      x1: 2 * cx - e.x1,
+      y1: e.y1,
+      x2: 2 * cx - e.x2,
+      y2: e.y2,
     });
   }
   let flipBit = 0;

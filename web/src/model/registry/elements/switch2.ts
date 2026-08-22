@@ -70,6 +70,11 @@ export const SWITCH2_DEF: ElementDef = {
     return rectOfPoints([lead1, poles[0], poles[poles.length - 1]]);
   },
   noDiagonal: true,  // Switch2Elm.java:35,51
+  // Upstream's switch2 overrides flipX/flipY/flipXY to reverse the lever and
+  // toggle the runtime `positionFlipped` flag (Switch2Elm.java:241-259), and
+  // canFlipX defaults to true, so Mirror is offered and the transform arm
+  // reverses the throw.
+  canMirror: true,
   defaults: { position: 0, throwCount: 2 },
   parse: (t, e) => {
     const p = t[0];
@@ -85,7 +90,10 @@ export const SWITCH2_DEF: ElementDef = {
   },
   dump: (e) => [...switchTokens(e), e.params.link ?? 0, e.params.throwCount ?? 2],
   dumpFlags: labelFlags,
-  fields: [{ name: 'keyShortcut', label: 'Keyboard Shortcut', type: 'text', target: 'keyShortcut' }],
+  fields: [
+    { name: 'keyShortcut', label: 'Keyboard Shortcut', type: 'text', target: 'keyShortcut' },
+    { name: 'link', label: 'Group Number (for linking)', min: 0, max: 100, integer: true },
+  ],
   draw(g, e) {
     const posts = switch2Posts(e);
     const throws = Math.max(2, e.params.throwCount ?? 2);

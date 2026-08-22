@@ -355,10 +355,11 @@ export function beginPointerGesture(
           heldMomentaryRef.current = hit.id;
           heldMomentaryPointerRef.current = ev.pointerId;
         }
-        // A make-before-break switch fans its throw out to every switch in the
-        // same Switch Group through the link-aware toggle; every other switch
-        // is a plain single-element throw (MBBSwitchElm.java:182-195).
-        if (hit.kind === 'mbbSwitch') {
+        // A make-before-break switch and a linked SPDT fan their throw out to
+        // every switch in the same group through the link-aware toggle; every
+        // other switch is a plain single-element throw (MBBSwitchElm.java:
+        // 182-195, Switch2Elm.java:155-173).
+        if (hit.kind === 'mbbSwitch' || (hit.kind === 'switch2' && (hit.params.link ?? 0) !== 0)) {
           state.toggleSwitch(hit.id);
         } else {
           state.setElementState(hit.id, next);

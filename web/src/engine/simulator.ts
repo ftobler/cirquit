@@ -482,6 +482,10 @@ export class SimEngine {
     const spec = {
       elements: usable.map((e) => {
         const params = { ...e.params };
+        // The switch2 flip parity is session-only UI bookkeeping (upstream's
+        // runtime `positionFlipped`, Switch2Elm.java:244), never part of the
+        // file or the engine model; the spec must not carry it.
+        delete params.flipParity;
         // A switch's live position rides in as `position`, a fuse's live blown
         // as `blown`, a bus logic input's live word as `value`: all interactive
         // state the engine must see on a rebuild, since `params` only carries

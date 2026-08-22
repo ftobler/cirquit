@@ -32,6 +32,15 @@ function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+/** Rows that must never take a slider on top of the type rules: upstream marks
+ *  the switch2 Group Number row `.disallowSliders()` (Switch2Elm.java:198), a
+ *  dimensionless link id no drag should sweep. The port has no such flag on
+ *  FieldDef, so the exclusion lives here beside the type checks and is shared
+ *  by the caption resolution and the adjustable list. */
+function sliderDisabled(kind: string, f: FieldDef): boolean {
+  return kind === 'switch2' && f.name === 'link';
+}
+
 /**
  * The numeric fields an element can host a slider on: the `getEditInfo` rows
  * that carry a value a slider can set, in field order. The choice, checkbox,
@@ -63,7 +72,8 @@ export function adjustableFields(kind: string): FieldDef[] {
       // param the engine cannot patch, the same failure the contents row
       // guards against.
       f.get === undefined &&
-      f.apply === undefined,
+      f.apply === undefined &&
+      !sliderDisabled(kind, f),
   );
 }
 
@@ -97,6 +107,7 @@ export function resolveParam(
         typeof f.label === 'string' &&
         f.get === undefined &&
         f.apply === undefined &&
+        !sliderDisabled(kind, f) &&
         normalize(f.label) === key
       )
         return { name: f.name, field: f };

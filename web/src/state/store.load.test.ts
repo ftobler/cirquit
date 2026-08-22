@@ -384,3 +384,26 @@ describe('the subcircuit library is scoped to the loaded file', () => {
     }
   });
 });
+
+describe('SPDT group-number round trip', () => {
+  // A labelled SPDT with a nonzero link: the `S` line token order is
+  // position momentary label link throwCount (Switch2Elm.java:44-50).
+  const SPDT = ['$ 1 0.000005 10.20027730826997 50 5 43 5e-11', 'S 0 0 160 0 4 1 false myLabel 3 2', ''].join(
+    '\n',
+  );
+
+  it('saves a labelled linked SPDT byte-for-byte', () => {
+    useStore.getState().loadNetlist(SPDT);
+    expect(useStore.getState().toNetlist()).toBe(SPDT);
+  });
+
+  it('flipParity never leaks into the dumped token list', () => {
+    useStore.getState().loadNetlist(SPDT);
+    const el = useStore.getState().elements[0];
+    // The parity is session-only, upstream's `positionFlipped` (Switch2Elm.java:
+    // 244), and the dump lists its tokens explicitly, so the saved line is
+    // byte-identical however many flips the session has seen.
+    useStore.getState().updateElement(el.id, { params: { ...el.params, flipParity: 1 } });
+    expect(useStore.getState().toNetlist()).toBe(SPDT);
+  });
+});

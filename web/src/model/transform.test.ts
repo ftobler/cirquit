@@ -9,6 +9,7 @@ import {
   swapTerminalOrder,
   turnPointAbout,
 } from './transform';
+import { SWITCH2_CENTER_OFF } from './registry/flags';
 import {
   clearSessionModels,
   modelToEngineSpec,
@@ -288,6 +289,69 @@ describe('dpdt switch transforms', () => {
     let e: CircuitElement = original;
     for (let i = 0; i < 4; i++) e = rotateElement(e);
     expect(e).toEqual(original);
+  });
+});
+
+describe('switch2 transforms', () => {
+  const switch2 = (
+    position: number,
+    flags = 0,
+    throwCount = 2,
+    flipParity = 0,
+  ): CircuitElement => ({
+    ...element('switch2', 0, 0, 160, 0, flags, { position, throwCount, flipParity }),
+    state: position,
+  });
+
+  it('mirror reverses the lever and bumps the flip parity', () => {
+    const m = mirrorElement(switch2(0));
+    expect(m.state).toBe(1);
+    expect(m.params.position).toBe(1);
+    expect(m.params.flipParity).toBe(1);
+    // The endpoints reflect about the midpoint like any mirror.
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([160, 0, 0, 0]);
+  });
+
+  it('four mirrors return the position and the parity to the start', () => {
+    let e: CircuitElement = switch2(0);
+    for (let i = 0; i < 4; i++) e = mirrorElement(e);
+    expect(e.state).toBe(0);
+    expect(e.params.position).toBe(0);
+    expect(e.params.flipParity).toBe(0);
+  });
+
+  it('rotate of a settled selection behaves like a mirror', () => {
+    const r = rotateElement(switch2(0));
+    expect(r.state).toBe(1);
+    expect(r.params.position).toBe(1);
+    expect(r.params.flipParity).toBe(1);
+  });
+
+  it('four rotates return the position and the parity to the start', () => {
+    let e: CircuitElement = switch2(0);
+    for (let i = 0; i < 4; i++) e = rotateElement(e);
+    expect(e.state).toBe(0);
+    expect(e.params.position).toBe(0);
+    expect(e.params.flipParity).toBe(0);
+  });
+
+  it('the placement ghost rotate does not invert the fresh lever', () => {
+    // The ghost turns about its press anchor with no committed position
+    // history, so the position and parity stay where a fresh part starts.
+    const ghost = rotateElement(switch2(0), { x: 0, y: 0 });
+    expect(ghost.state).toBe(0);
+    expect(ghost.params.position).toBe(0);
+    expect(ghost.params.flipParity).toBe(0);
+  });
+
+  it('a centre-off mirror honours the three stops', () => {
+    const centreOff = switch2(0, SWITCH2_CENTER_OFF, 2);
+    const m = mirrorElement(centreOff);
+    expect(m.state).toBe(2);
+    expect(m.params.flipParity).toBe(1);
+    const back = mirrorElement(m);
+    expect(back.state).toBe(0);
+    expect(back.params.flipParity).toBe(0);
   });
 });
 

@@ -998,6 +998,217 @@ describe('switch keyboard shortcuts', () => {
     expect(els[1].state).toBe(1);
   });
 
+  it('a linked SPDT throws every switch2 in its group along', () => {
+    // Upstream's toggle() scans the whole element list and copies its position
+    // into every SPDT with the same link (Switch2Elm.java:155-173); the store
+    // toggle fans the throw out in one set so the engine sees one edit.
+    const add = (link: number, position: number) =>
+      useStore.getState().addElement({
+        kind: 'switch2',
+        x1: 0,
+        y1: 0,
+        x2: 160,
+        y2: 0,
+        flags: 0,
+        params: { position, momentary: 0, throwCount: 2, link },
+        state: position,
+      });
+    add(0, 0); // unlinked: must not move
+    add(3, 0); // group 3
+    add(3, 0); // group 3
+    add(0, 1); // unlinked
+    const [unlinkedA, linkedA, linkedB, unlinkedB] = useStore.getState().elements;
+    useStore.getState().commit();
+    const before = useStore.getState().undoStack.length;
+
+    useStore.getState().toggleSwitch(linkedA.id);
+
+    const els = useStore.getState().elements;
+    expect(els[0].state).toBe(0); // unlinked stays
+    expect(els[1].state).toBe(1); // target threw
+    expect(els[2].state).toBe(1); // group member threw to the same position
+    expect(els[3].state).toBe(1); // other unlinked stays
+    // One toggle is one engine edit entry per affected element, queued in the
+    // same set().
+    expect(useStore.getState().pendingStates.get(linkedA.id)).toBe(1);
+    expect(useStore.getState().pendingStates.get(linkedB.id)).toBe(1);
+    expect(useStore.getState().pendingStates.get(unlinkedA.id)).toBeUndefined();
+    expect(useStore.getState().pendingStates.get(unlinkedB.id)).toBeUndefined();
+    // A run-mode toggle pushes no undo entry, like the keyboard path.
+    expect(useStore.getState().undoStack.length).toBe(before);
+  });
+
+  it('a different link leaves its group alone', () => {
+    useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, throwCount: 2, link: 4 },
+      state: 0,
+    });
+    useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, throwCount: 2, link: 7 },
+      state: 0,
+    });
+    const a = useStore.getState().elements[0];
+    useStore.getState().toggleSwitch(a.id);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().elements[1].state).toBe(0);
+    expect(useStore.getState().pendingStates.get(useStore.getState().elements[1].id)).toBeUndefined();
+  });
+
+  it('a mirrored twin lands on the opposite throw and stays consistent', () => {
+    // The twin carries flipParity 1, the runtime positionFlipped flag upstream
+    // toggles on every mirror; the toggle scan mirrors the new position into
+    // it (Switch2Elm.java:164-168).
+    const add = (link: number, position: number, flipParity: number) =>
+      useStore.getState().addElement({
+        kind: 'switch2',
+        x1: 0,
+        y1: 0,
+        x2: 160,
+        y2: 0,
+        flags: 0,
+        params: { position, momentary: 0, throwCount: 2, link, flipParity },
+        state: position,
+      });
+    add(3, 0, 1); // mirrored twin
+    add(3, 0, 0); // target
+    const [twin, target] = useStore.getState().elements;
+
+    useStore.getState().toggleSwitch(target.id);
+    let els = useStore.getState().elements;
+    expect(els[1].state).toBe(1); // target threw to 1
+    expect(els[0].state).toBe(0); // twin mirrored: posCount-1-1 = 0
+    expect(useStore.getState().pendingStates.get(twin.id)).toBe(0);
+
+    useStore.getState().toggleSwitch(target.id);
+    els = useStore.getState().elements;
+    expect(els[1].state).toBe(0);
+    expect(els[0].state).toBe(1); // twin mirrored: posCount-1-0 = 1
+  });
+
+  it('a centre-off pair walks both switches through their three stops together', () => {
+    const add = (link: number, position: number) =>
+      useStore.getState().addElement({
+        kind: 'switch2',
+        x1: 0,
+        y1: 0,
+        x2: 160,
+        y2: 0,
+        flags: 1, // SWITCH2_CENTER_OFF
+        params: { position, momentary: 0, throwCount: 2, link },
+        state: position,
+      });
+    add(5, 0);
+    add(5, 0);
+    const a = useStore.getState().elements[0];
+
+    useStore.getState().toggleSwitch(a.id);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().elements[1].state).toBe(1);
+    useStore.getState().toggleSwitch(a.id);
+    expect(useStore.getState().elements[0].state).toBe(2);
+    expect(useStore.getState().elements[1].state).toBe(2);
+    useStore.getState().toggleSwitch(a.id);
+    expect(useStore.getState().elements[0].state).toBe(0);
+    expect(useStore.getState().elements[1].state).toBe(0);
+  });
+
+  it('a twin only takes a position it owns: a 2-stop twin skips the centre-off middle', () => {
+    // Upstream's `if (pos < s2.posCount)` guard (Switch2Elm.java:167-168): the
+    // plain twin has no open middle, so when the centre-off target walks into
+    // position 2 the twin keeps its last throw instead of wrapping.
+    useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 1, // SWITCH2_CENTER_OFF
+      params: { position: 0, momentary: 0, throwCount: 2, link: 5 },
+      state: 0,
+    });
+    useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, throwCount: 2, link: 5 },
+      state: 0,
+    });
+    const target = useStore.getState().elements[0];
+    useStore.getState().toggleSwitch(target.id);
+    expect(useStore.getState().elements[1].state).toBe(1);
+    useStore.getState().toggleSwitch(target.id); // into the open middle
+    expect(useStore.getState().elements[0].state).toBe(2);
+    expect(useStore.getState().elements[1].state).toBe(1); // kept its throw
+    useStore.getState().toggleSwitch(target.id);
+    expect(useStore.getState().elements[1].state).toBe(0);
+  });
+
+  it('a linked SPDT keyboard toggle fans out too', () => {
+    useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, throwCount: 2, link: 9 },
+      state: 0,
+      keyShortcut: 's',
+    });
+    useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 1, momentary: 0, throwCount: 2, link: 9 },
+      state: 1,
+    });
+    useStore.getState().toggleSwitchByKey('s');
+    const els = useStore.getState().elements;
+    expect(els[0].state).toBe(1);
+    expect(els[1].state).toBe(1);
+  });
+
+  it('a group-number edit lands in the S line slot and round-trips', () => {
+    const id = useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 4, // SWITCH_LABEL
+      params: { position: 1, momentary: 0, throwCount: 2, link: 0 },
+      state: 1,
+      text: 'myLabel',
+    });
+    useStore.getState().setParam(id, 'link', 7);
+    // The S line writes position momentary label link throwCount, so the
+    // group number sits between the optional label and the throw count
+    // (Switch2Elm.java:44-50).
+    const line = useStore.getState().toNetlist().split('\n')[1];
+    expect(line).toBe('S 0 0 160 0 4 1 false myLabel 7 2');
+    const back = parseCircuit(useStore.getState().toNetlist()).elements[0];
+    expect(back.params.link).toBe(7);
+    expect(back.params.throwCount).toBe(2);
+  });
+
   it('a DPDT poleCount edit normalizes to the engine integer range', () => {
     useStore.getState().addElement({
       kind: 'dpdtSwitch',
