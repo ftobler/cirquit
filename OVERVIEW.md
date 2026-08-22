@@ -227,10 +227,10 @@ fetch it).
   capture, so no new boundary crossing exists. The parser maps those tokens to
   real values instead of null plots (a token outside an element's table still
   rides raw only), and early.txt's Vce-vs-Ic X-Y panels draw again.
-- 485 Rust tests, of which 411 are the end-to-end circuit checks across
+- 491 Rust tests, of which 417 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2590 TypeScript tests (one corpus report test skipped). The bus-label-width
+  2609 TypeScript tests (one corpus report test skipped). The bus-label-width
   branch added 14 of them, all plain additions over its base: 11 in
   busWidths.test.ts, one each in junction.test.ts, infoBoxLines.test.ts and
   registry.test.ts. The op-amp LM324 work added seven Rust tests (the two
@@ -239,9 +239,11 @@ fetch it).
   default-limit inverting amp) and three TypeScript ones (the 324/324v2
   round-trip, the two-way Model choice and the conditional-field row hiding).
   The device-model editor added 32 more TypeScript tests across the new
-  deviceModels, parse, store.model-editor and elementFields suites, and the
+  deviceModels, parse, store.model-editor and elementFields suites, the
   SRAM/ROM contents editor added 34 more across its codec, store and
-  elementFields suites.
+  elementFields suites, and the battery element added six Rust tests and
+  nineteen TypeScript ones (round-trip, presets, caption flags, the XML
+  converter mapping).
   CI runs fmt, clippy, tests, typecheck, lint and build,
   then deploys to Pages.
 
@@ -403,7 +405,7 @@ fetch it).
 ### Milestone C — element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
-a test. Done so far: **127 kinds implemented** (the `KINDS` list in
+a test. Done so far: **129 kinds implemented** (the `KINDS` list in
 `engine/core/src/elements/mod.rs`); the only upstream types still absent are
 the permanently-deferred XML-only classes (Clock, Gyrator, NortonAmp,
 RoutedWire, CustomCompositeChip).
