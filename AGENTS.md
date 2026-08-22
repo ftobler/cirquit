@@ -92,6 +92,8 @@ dev server.
   conventional-commit prefixes.
 - Write in the owner's voice: what changed and why, nothing about how it was
   produced.
+- on UI only fixes consider a given permission to commit to be one-time. Unless the
+  user is saying otherwise.
 
 ## Feature planning and implementing
 
@@ -190,5 +192,6 @@ Two files, both under `feature/`:
 
 ## Tmporary Directory
 
-- if something needs temporary files, you must not use system wide `/tmp`. For temporary files use `tmp/` or `scratch/` inside the project.
-- do not access anything outside the project directory.
+- if something needs temporary files, you must NOT use system wide `/tmp`.
+  For temporary files use `tmp/` or `scratch/` inside the project.
+- Do not access anything outside the project directory.
