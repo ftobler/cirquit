@@ -39,6 +39,7 @@ export const fresh = () => ({
   partsOpen: false,
   panelOpen: false,
   elementProperties: null,
+  deviceModelEditor: null,
   sliderElementId: null,
   clipboard: null,
   lastSaved: null,

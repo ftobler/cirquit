@@ -230,7 +230,7 @@ fetch it).
 - 485 Rust tests, of which 411 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2524 TypeScript tests (one corpus report test skipped). The bus-label-width
+  2556 TypeScript tests (one corpus report test skipped). The bus-label-width
   branch added 14 of them, all plain additions over its base: 11 in
   busWidths.test.ts, one each in junction.test.ts, infoBoxLines.test.ts and
   registry.test.ts. The op-amp LM324 work added seven Rust tests (the two
@@ -238,6 +238,8 @@ fetch it).
   LM324 and 324v2 analytic tests, the 741-dispatch regression guard and the
   default-limit inverting amp) and three TypeScript ones (the 324/324v2
   round-trip, the two-way Model choice and the conditional-field row hiding).
+  The device-model editor added 32 more TypeScript tests across the new
+  deviceModels, parse, store.model-editor and elementFields suites.
   CI runs fmt, clippy, tests, typecheck, lint and build,
   then deploys to Pages.
 

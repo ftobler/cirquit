@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { defFor } from '../model/registry';
+import { clearUserModels, putUserModel } from '../model/deviceModels';
 import type { CircuitElement, FieldDef } from '../model/types';
 import {
   applyFieldChange,
   clampInteger,
+  deviceModelButtons,
   fieldRows,
   fieldValue,
   type FieldEditActions,
@@ -43,6 +45,45 @@ function field(kind: string, name: string): FieldDef {
   if (!f) throw new Error(`no ${name} field on ${kind}`);
   return f;
 }
+
+describe('deviceModelButtons', () => {
+  beforeEach(() => clearUserModels());
+
+  const none = { createSimple: false, createAdvanced: false, create: false, edit: false };
+
+  it('gives the diode family both create buttons and nothing else', () => {
+    expect(deviceModelButtons(elm({ kind: 'diode' }))).toEqual({
+      ...none,
+      createSimple: true,
+      createAdvanced: true,
+    });
+    expect(deviceModelButtons(elm({ kind: 'zener' })).createSimple).toBe(true);
+    expect(deviceModelButtons(elm({ kind: 'varactor' })).createAdvanced).toBe(true);
+    expect(deviceModelButtons(elm({ kind: 'led' })).createSimple).toBe(true);
+  });
+
+  it('gives the transistor, mosfet and jfet one generic create button', () => {
+    expect(deviceModelButtons(elm({ kind: 'transistor' }))).toEqual({ ...none, create: true });
+    expect(deviceModelButtons(elm({ kind: 'mosfet' }))).toEqual({ ...none, create: true });
+    expect(deviceModelButtons(elm({ kind: 'jfet' }))).toEqual({ ...none, create: true });
+  });
+
+  it('shows Edit only when the name resolves to a writable model, never a built-in', () => {
+    // A value-form diode and a built-in name both leave Edit hidden.
+    expect(deviceModelButtons(elm({ kind: 'diode' })).edit).toBe(false);
+    expect(deviceModelButtons(elm({ kind: 'diode', modelName: '1N4148' })).edit).toBe(false);
+    expect(deviceModelButtons(elm({ kind: 'transistor', modelName: 'default' })).edit).toBe(false);
+    // An unknown name resolves to nothing, so Edit stays hidden.
+    expect(deviceModelButtons(elm({ kind: 'diode', modelName: 'not-a-model' })).edit).toBe(false);
+    // A writable entry (created or file-loaded) makes Edit appear.
+    putUserModel('diode', { name: 'mydiode', builtIn: false, saturationCurrent: 1e-9, seriesResistance: 0, emissionCoefficient: 2, breakdownVoltage: 0 });
+    expect(deviceModelButtons(elm({ kind: 'diode', modelName: 'mydiode' })).edit).toBe(true);
+  });
+
+  it('hides every button for an element that cannot name a model', () => {
+    expect(deviceModelButtons(elm({ kind: 'resistor' }))).toEqual(none);
+  });
+});
 
 describe('field rows', () => {
   it('gives one row per def field, in def order, with the element value', () => {

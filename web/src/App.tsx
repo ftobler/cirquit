@@ -9,6 +9,7 @@ import { AboutDialog } from './ui/AboutDialog';
 import { CreateSubcircuitDialog } from './ui/CreateSubcircuitDialog';
 import { CircuitCanvas } from './ui/CircuitCanvas';
 import { ContextMenu } from './ui/ContextMenu';
+import { DeviceModelEditorDialog } from './ui/DeviceModelEditorDialog';
 import { ElementPropertiesDialog } from './ui/ElementPropertiesDialog';
 import { ExportAsLinkDialog } from './ui/ExportAsLinkDialog';
 import { ExportAsTextDialog } from './ui/ExportAsTextDialog';
@@ -66,6 +67,7 @@ export default function App() {
   const [engineError, setEngineError] = useState<string | null>(null);
   const dialog = useStore((s) => s.dialog);
   const elementProperties = useStore((s) => s.elementProperties);
+  const deviceModelEditor = useStore((s) => s.deviceModelEditor);
   const partsOpen = useStore((s) => s.partsOpen);
   const panelOpen = useStore((s) => s.panelOpen);
   const setPartsOpen = useStore((s) => s.setPartsOpen);
@@ -404,6 +406,7 @@ export default function App() {
       {dialog === 'otherOptions' && <OtherOptionsDialog />}
       {dialog === 'sliders' && <SliderDialog />}
       {elementProperties !== null && <ElementPropertiesDialog engine={engine} />}
+      {deviceModelEditor !== null && <DeviceModelEditorDialog />}
       <div className="workspace">
         <aside id="parts-drawer" className={partsOpen ? 'left open' : 'left'}>
           <Toolbox />

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import {
   kindOfDumpCode,
   parseCircuit,
@@ -7,6 +7,15 @@ import {
   unitsOf,
   valueTokenOf,
 } from './index';
+import {
+  clearUserModels,
+  forwardVoltageAt,
+  putUserModel,
+  registerFileModels,
+  simpleDiodeEntry,
+  userModel,
+  type UserDiodeEntry,
+} from '../../model/deviceModels';
 import { SAMPLE } from './fixtures';
 import { DEFAULT_SETTINGS } from '../../model/types';
 
@@ -202,6 +211,208 @@ describe('netlist parsing', () => {
     expect(parsed.passthrough).toEqual([line('first'), line('second')]);
     expect(parsed.compositeModels.map((m) => m.name)).toEqual(['first', 'second']);
     expect(parsed.compositeModels[0].extList).toEqual([{ name: 'in', node: 1, pos: 0, side: 0 }]);
+  });
+});
+
+describe('device-model file lines and the save writer', () => {
+  const HEADER = '$ 1 0.000005 10 50 5 43 5e-11\n';
+
+  beforeEach(() => clearUserModels());
+
+  it('loads a written 34 line into the exposed map', () => {
+    const parsed = parseCircuit(
+      HEADER + '34 mydiode 1 1e-9 0 2 5.6 1e-3\n' + 'd 0 0 160 0 2 mydiode\n',
+    );
+    expect(parsed.diodeFileModels.get('mydiode')).toEqual({
+      saturationCurrent: 1e-9,
+      seriesResistance: 0,
+      emissionCoefficient: 2,
+      breakdownVoltage: 5.6,
+      forwardCurrent: 1e-3,
+      flags: 1,
+    });
+    // The line still rides through in passthrough, byte for byte.
+    expect(parsed.passthrough).toContain('34 mydiode 1 1e-9 0 2 5.6 1e-3');
+    // A 32 line lands in the transistor map with the two modelled tokens.
+    const t = parseCircuit(HEADER + '32 early 0 1e-13 0 0 1.5 0 0 2 1 1 0.02 0 1\n');
+    expect(t.transistorFileModels.get('early')).toEqual({ saturationCurrent: 1e-13, betaReverse: 1 });
+  });
+
+  it('an untouched file model line stays byte-identical on save', () => {
+    const text =
+      HEADER + '34 aaa 0 1e-9 0 2 0\n' + 'd 0 0 160 0 2 aaa\n';
+    const parsed = parseCircuit(text);
+    registerFileModels(parsed.diodeFileModels, parsed.transistorFileModels);
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toBe(text);
+  });
+
+  it('an edited file model line regenerates in place', () => {
+    const text =
+      HEADER + '34 aaa 0 1e-9 0 2 0\n' + 'd 0 0 160 0 2 aaa\n' + '34 bbb 0 1e-12 1 2 0\n' + 'd 16 0 176 0 2 bbb\n';
+    const parsed = parseCircuit(text);
+    registerFileModels(parsed.diodeFileModels, parsed.transistorFileModels);
+    // The editor changed aaa's saturation current and bbb's series resistance.
+    putUserModel('diode', { name: 'aaa', builtIn: false, flags: 0, saturationCurrent: 2e-9, seriesResistance: 0, emissionCoefficient: 2, breakdownVoltage: 0 });
+    putUserModel('diode', { name: 'bbb', builtIn: false, flags: 0, saturationCurrent: 1e-12, seriesResistance: 3, emissionCoefficient: 2, breakdownVoltage: 0 });
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    const lines = out.split('\n');
+    expect(lines).toContain('34 aaa 0 2e-9 0 2 0');
+    expect(lines).toContain('34 bbb 0 1e-12 3 2 0');
+    expect(lines).not.toContain('34 aaa 0 1e-9 0 2 0');
+    expect(lines).not.toContain('34 bbb 0 1e-12 1 2 0');
+  });
+
+  it('an edited transistor line keeps the tokens the port does not model', () => {
+    const text =
+      HEADER + '32 early 0 1e-13 0 0 1.5 0 0 2 1 1 0.02 0 1\n' + 't 0 0 16 0 0 1 0 0 100 early\n';
+    const parsed = parseCircuit(text);
+    registerFileModels(parsed.diodeFileModels, parsed.transistorFileModels);
+    putUserModel('transistor', { name: 'early', builtIn: false, saturationCurrent: 5e-13, betaReverse: 2 });
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toContain('32 early 0 5e-13 0 0 1.5 0 0 2 1 1 0.02 0 2');
+  });
+
+  it('emits a fresh user-model line once, ahead of the first referencing element', () => {
+    putUserModel('diode', { name: 'mydiode', builtIn: false, flags: 0, saturationCurrent: 1e-9, seriesResistance: 0, emissionCoefficient: 2, breakdownVoltage: 0 });
+    const diodes = [
+      { id: 1, kind: 'diode', x1: 0, y1: 0, x2: 160, y2: 0, flags: 2, params: {}, modelName: 'mydiode' },
+      { id: 2, kind: 'diode', x1: 176, y1: 0, x2: 336, y2: 0, flags: 2, params: {}, modelName: 'mydiode' },
+    ];
+    const out = serializeCircuit(diodes, { ...DEFAULT_SETTINGS }).trim().split('\n');
+    const modelLines = out.filter((l) => l.startsWith('34 '));
+    expect(modelLines).toEqual(['34 mydiode 0 1e-9 0 2 0']);
+    expect(out.indexOf('34 mydiode 0 1e-9 0 2 0')).toBeLessThan(out.findIndex((l) => l.startsWith('d ')));
+  });
+
+  it('mosfet and jfet model names never emit a line', () => {
+    putUserModel('mosfet', { name: 'mymos', builtIn: false, threshold: 2, beta: 0.01, jfet: false });
+    putUserModel('jfet', { name: 'myjfet', builtIn: false, threshold: -3, beta: 0.001, jfet: true });
+    const out = serializeCircuit(
+      [
+        { id: 1, kind: 'mosfet', x1: 0, y1: 0, x2: 160, y2: 0, flags: 0, params: {}, modelName: 'mymos' },
+        { id: 2, kind: 'jfet', x1: 0, y1: 0, x2: 160, y2: 0, flags: 1, params: {}, modelName: 'myjfet' },
+      ],
+      { ...DEFAULT_SETTINGS },
+    );
+    expect(out).not.toContain('34 ');
+    expect(out).not.toContain('32 ');
+  });
+
+  it('an unchanged simple-mode file model keeps its line bytes after a dialog OK', () => {
+    // Opening a simple model and pressing OK without editing anything must not
+    // rewrite the `34` line: re-deriving n from the forward drop does not
+    // round-trip bit-exactly (a stored 1.906 derives back as
+    // 1.9060000000000001), so the dialog keeps the stored coefficient until a
+    // field actually changes.
+    const text =
+      HEADER + '34 mysimple 1 4.352e-9 0 1.906 75 1e-3\n' + 'd 0 0 160 0 2 mysimple\n';
+    const parsed = parseCircuit(text);
+    registerFileModels(parsed.diodeFileModels, parsed.transistorFileModels);
+    const initial = userModel('diode', 'mysimple') as UserDiodeEntry;
+    // The dialog shows the forward drop derived from the stored current; an OK
+    // with those unchanged fields must write back the stored n verbatim.
+    putUserModel(
+      'diode',
+      simpleDiodeEntry(initial, {
+        name: 'mysimple',
+        saturationCurrent: initial.saturationCurrent,
+        forwardVoltage: forwardVoltageAt(
+          initial.saturationCurrent,
+          initial.emissionCoefficient,
+          initial.forwardCurrent ?? 1,
+        ),
+        forwardCurrent: initial.forwardCurrent ?? 1,
+        breakdownVoltage: initial.breakdownVoltage,
+      }),
+    );
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toBe(text);
+  });
+
+  it('emits a session-only model line for an element placed after a load', () => {
+    // A file's order tracks only its own elements. A diode placed (or pasted)
+    // after the load appends at the end of the walk; its model's line must
+    // still reach the saved file, or a reload would silently drop the model.
+    const text = HEADER + 'r 0 0 16 0 0 100\n';
+    const parsed = parseCircuit(text);
+    putUserModel('diode', { name: 'placed', builtIn: false, flags: 0, saturationCurrent: 1e-9, seriesResistance: 0, emissionCoefficient: 2, breakdownVoltage: 0 });
+    const placed = {
+      id: 99,
+      kind: 'diode',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 2,
+      params: {},
+      modelName: 'placed',
+    };
+    const out = serializeCircuit(
+      [...parsed.elements, placed],
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    const lines = out.split('\n');
+    expect(lines).toContain('34 placed 0 1e-9 0 2 0');
+    expect(lines).toContain('d 0 0 160 0 2 placed');
+  });
+
+  it('regenerates an edited file line even when its order-tracked element was deleted', () => {
+    // The file's own diode is gone (its order slot vacates), but a diode pasted
+    // after the load still names the model. The regeneration pass consults
+    // every live element, not just the file's order-tracked ones, so the edited
+    // body still reaches the saved line.
+    const text = HEADER + '34 shared 0 1e-9 0 2 0\n' + 'd 0 0 160 0 2 shared\n';
+    const parsed = parseCircuit(text);
+    registerFileModels(parsed.diodeFileModels, parsed.transistorFileModels);
+    putUserModel('diode', { name: 'shared', builtIn: false, flags: 0, saturationCurrent: 3e-9, seriesResistance: 0, emissionCoefficient: 2, breakdownVoltage: 0 });
+    const pasted = {
+      id: 99,
+      kind: 'diode',
+      x1: 176,
+      y1: 0,
+      x2: 336,
+      y2: 0,
+      flags: 2,
+      params: {},
+      modelName: 'shared',
+    };
+    const out = serializeCircuit(
+      [pasted],
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toContain('34 shared 0 3e-9 0 2 0');
+    expect(out).not.toContain('34 shared 0 1e-9 0 2 0');
   });
 });
 

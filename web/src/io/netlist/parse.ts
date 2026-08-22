@@ -24,6 +24,83 @@ import { xmlToText } from '../xmlToText';
 const MODEL_KINDS = new Set(['diode', 'zener', 'varactor', 'led']);
 
 /**
+ * Parses one `34` diode-model library line into its interpreted model, or null
+ * for a line that does not carry a resolvable model (a partial or hand-edited
+ * line is still preserved by the caller, it just never resolves). The token
+ * layout is `34 <escaped name> <flags> <saturationCurrent> <seriesResistance>
+ * <emissionCoefficient> <breakdownVoltage> [<forwardCurrent>]` (DiodeModel.dump,
+ * DiodeModel.java:338-341). The saturation current and emission coefficient
+ * must be positive: the derived forward drop is ln(1/Is + 1), which a
+ * non-positive Is would make Infinity. Shared by `parseCircuit` and the save
+ * path, which re-parses a stored line to compare its body against the current
+ * writable entry before deciding whether to regenerate it.
+ */
+export function parseDiodeModelLine(line: string): { name: string; model: DiodeModel } | null {
+  const tokens = line.trim().split(/\s+/);
+  if (tokens[0] !== '34') return null;
+  const name = tokens[1] === undefined ? '' : unescapeToken(tokens[1]);
+  const num = (i: number): number | undefined => {
+    const v = Number(tokens[i]);
+    return tokens[i] !== undefined && Number.isFinite(v) ? v : undefined;
+  };
+  const saturationCurrent = num(3);
+  const seriesResistance = num(4);
+  const emissionCoefficient = num(5);
+  const breakdownVoltage = num(6);
+  if (
+    name === '' ||
+    saturationCurrent === undefined ||
+    saturationCurrent <= 0 ||
+    seriesResistance === undefined ||
+    emissionCoefficient === undefined ||
+    emissionCoefficient <= 0 ||
+    breakdownVoltage === undefined
+  ) {
+    return null;
+  }
+  const model: DiodeModel = {
+    saturationCurrent,
+    seriesResistance,
+    emissionCoefficient,
+    breakdownVoltage,
+    flags: Number(tokens[2]) || 0,
+  };
+  const forwardCurrent = num(7);
+  if (forwardCurrent !== undefined) model.forwardCurrent = forwardCurrent;
+  return { name, model };
+}
+
+/**
+ * Parses one `32` transistor-model library line into its interpreted model, or
+ * null for a line without a resolvable table. The port's Ebers-Moll consumes
+ * only satCur (token 3) and betaR (token 14); the rest of the table stays on
+ * the line but is not resolved (TransistorModel.undump,
+ * TransistorModel.java:234-248). A non-positive satCur or betaR is not a
+ * resolvable model. Shared with the save path like `parseDiodeModelLine`.
+ */
+export function parseTransistorModelLine(line: string): { name: string; model: TransistorModel } | null {
+  const tokens = line.trim().split(/\s+/);
+  if (tokens[0] !== '32') return null;
+  const name = tokens[1] === undefined ? '' : unescapeToken(tokens[1]);
+  const num = (i: number): number | undefined => {
+    const v = Number(tokens[i]);
+    return tokens[i] !== undefined && Number.isFinite(v) ? v : undefined;
+  };
+  const saturationCurrent = num(3);
+  const betaReverse = num(14);
+  if (
+    name === '' ||
+    saturationCurrent === undefined ||
+    saturationCurrent <= 0 ||
+    betaReverse === undefined ||
+    betaReverse <= 0
+  ) {
+    return null;
+  }
+  return { name, model: { saturationCurrent, betaReverse } };
+}
+
+/**
  * Splits a custom-logic `rules` string into the left/right table the engine
  * evaluates, mirroring `parseRules` (CustomLogicModel.java:185-245). Each
  * non-empty, non-comment line is lowercased and trimmed, split on `=` into
@@ -471,50 +548,15 @@ export function parseCircuit(text: string): ParsedCircuit {
     }
 
     if (head === '34') {
-      // Diode-model library line (DiodeModel.dump, DiodeModel.java:338-341):
-      // `34 <escaped name> <flags> <saturationCurrent> <seriesResistance>
-      // <emissionCoefficient> <breakdownVoltage> [<forwardCurrent>]`. The line
-      // itself rides through in passthrough so a save re-emits it in place;
-      // only its parameters are interpreted, into the library the model-name
-      // resolution below reads. It is not an element line upstream either, so
-      // it takes no scope index and is not reported unsupported.
+      // Diode-model library line (DiodeModel.dump, DiodeModel.java:338-341).
+      // The line itself rides through in passthrough so a save re-emits it in
+      // place; only its parameters are interpreted, into the library the
+      // model-name resolution below reads. It is not an element line upstream
+      // either, so it takes no scope index and is not reported unsupported.
       // A bare `34` with no name token must not throw: it degrades to
       // preserved-but-unresolvable like any other partial line.
-      const name = tokens[1] === undefined ? '' : unescapeToken(tokens[1]);
-      const num = (i: number): number | undefined => {
-        const v = Number(tokens[i]);
-        return tokens[i] !== undefined && Number.isFinite(v) ? v : undefined;
-      };
-      const saturationCurrent = num(3);
-      const seriesResistance = num(4);
-      const emissionCoefficient = num(5);
-      const breakdownVoltage = num(6);
-      // The same skip-non-finite guard readParams uses
-      // (registry/shared.ts:43-48), so a truncated or hand-edited line
-      // degrades field by field instead of stamping NaN. Only a line that
-      // carries all four core parameters becomes a resolvable model; a
-      // partial line is still preserved. The saturation current and emission
-      // coefficient must be positive too: the derived forward drop is
-      // ln(1/Is + 1), which a non-positive Is would make Infinity.
-      if (
-        name !== '' &&
-        saturationCurrent !== undefined &&
-        saturationCurrent > 0 &&
-        seriesResistance !== undefined &&
-        emissionCoefficient !== undefined &&
-        emissionCoefficient > 0 &&
-        breakdownVoltage !== undefined
-      ) {
-        const model: DiodeModel = {
-          saturationCurrent,
-          seriesResistance,
-          emissionCoefficient,
-          breakdownVoltage,
-        };
-        const forwardCurrent = num(7);
-        if (forwardCurrent !== undefined) model.forwardCurrent = forwardCurrent;
-        diodeModels.set(name, model);
-      }
+      const parsed = parseDiodeModelLine(lineText);
+      if (parsed !== null) diodeModels.set(parsed.name, parsed.model);
       passthrough.push(lineText);
       order.push({ kind: 'other', line: rawLine });
       continue;
@@ -522,36 +564,14 @@ export function parseCircuit(text: string): ParsedCircuit {
 
     if (head === '32') {
       // Transistor-model library line (TransistorModel.undump,
-      // TransistorModel.java:234-248): `32 <escaped name> <flags> <satCur>
-      // <invRollOffF> <BEleakCur> <leakBEemissionCoeff> <invRollOffR>
-      // <BCleakCur> <leakBCemissionCoeff> <emissionCoeffF> <emissionCoeffR>
-      // <invEarlyVoltF> <invEarlyVoltR> <betaR> [junction/transit-time
-      // tokens]`. The port's Ebers-Moll consumes only satCur (index 3) and
-      // betaR (index 14); the rest of the table stays on the line but is not
-      // resolved into params. Like the `34` line it rides through in
-      // passthrough so a save re-emits it in place, and it is not an element
-      // line upstream either, so it takes no scope index and is not reported
-      // unsupported.
-      // The same skip-non-finite guard readParams uses, so a truncated or
-      // hand-edited line degrades field by field instead of stamping NaN. A
-      // line missing the full table, or with a non-positive satCur/betaR, is
-      // still preserved but never becomes a resolvable model.
-      const name = tokens[1] === undefined ? '' : unescapeToken(tokens[1]);
-      const num = (i: number): number | undefined => {
-        const v = Number(tokens[i]);
-        return tokens[i] !== undefined && Number.isFinite(v) ? v : undefined;
-      };
-      const saturationCurrent = num(3);
-      const betaReverse = num(14);
-      if (
-        name !== '' &&
-        saturationCurrent !== undefined &&
-        saturationCurrent > 0 &&
-        betaReverse !== undefined &&
-        betaReverse > 0
-      ) {
-        transistorModels.set(name, { saturationCurrent, betaReverse });
-      }
+      // TransistorModel.java:234-248). The port's Ebers-Moll consumes only
+      // satCur (index 3) and betaR (index 14); the rest of the table stays on
+      // the line but is not resolved into params. Like the `34` line it rides
+      // through in passthrough so a save re-emits it in place, and it is not
+      // an element line upstream either, so it takes no scope index and is not
+      // reported unsupported.
+      const parsed = parseTransistorModelLine(lineText);
+      if (parsed !== null) transistorModels.set(parsed.name, parsed.model);
       passthrough.push(lineText);
       order.push({ kind: 'other', line: rawLine });
       continue;
@@ -805,6 +825,8 @@ export function parseCircuit(text: string): ParsedCircuit {
     sliders,
     passthrough,
     compositeModels,
+    diodeFileModels: diodeModels,
+    transistorFileModels: transistorModels,
     unsupported,
     warnings,
     order,

@@ -1,13 +1,30 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { defFor } from './registry';
 import {
   DIODE_MODELS,
   MOSFET_MODELS,
   TRANSISTOR_MODELS,
+  allModels,
+  clearUserModels,
+  diodeModelLine,
+  emissionCoefficientFor,
   forwardVoltageFor,
+  forwardVoltageAt,
   modelFamilyFor,
+  pruneUnreferencedModels,
+  putUserModel,
+  regenerateDiodeLine,
+  regenerateTransistorLine,
   resolveModelParams,
+  saturationCurrentFor,
+  seedModelEntry,
   selectableModels,
+  simpleForwardSeed,
+  synthesizeModelName,
+  transistorModelLine,
+  userModel,
+  type UserDiodeEntry,
+  type UserTransistorEntry,
 } from './deviceModels';
 
 describe('built-in device model tables', () => {
@@ -151,5 +168,211 @@ describe('resolveModelParams', () => {
     // `1n4148` does not resolve; `1N4148` does.
     expect(resolveModelParams('diode', '1n4148', undefined)).toBeUndefined();
     expect(resolveModelParams('diode', '1N4148', undefined)).toBeDefined();
+  });
+});
+
+describe('the writable model store', () => {
+  const diodeEntry = (name: string, breakdownVoltage = 0): UserDiodeEntry => ({
+    name,
+    builtIn: false,
+    saturationCurrent: 1e-9,
+    seriesResistance: 0,
+    emissionCoefficient: 2,
+    breakdownVoltage,
+  });
+
+  beforeEach(() => clearUserModels());
+
+  it('putUserModel is visible through allModels, sorted after the built-ins', () => {
+    putUserModel('diode', diodeEntry('my-1N4148'));
+    putUserModel('diode', diodeEntry('aaa'));
+    const names = allModels('diode').map((e) => e.name);
+    // The ten built-ins come first, then the two writable names sorted.
+    expect(names).toEqual([...selectableModels('diode').slice(0, 10), 'aaa', 'my-1N4148']);
+    // The writable entry itself carries its body.
+    expect(allModels('diode').find((e) => e.name === 'my-1N4148')).toMatchObject({
+      builtIn: false,
+      saturationCurrent: 1e-9,
+    });
+  });
+
+  it('selectableModels shows user models, and the zener filter drops their zero-breakdown rows', () => {
+    putUserModel('diode', diodeEntry('my-zener', 6.3));
+    putUserModel('diode', diodeEntry('my-plain'));
+    expect(selectableModels('diode')).toContain('my-zener');
+    expect(selectableModels('diode')).toContain('my-plain');
+    // A created zener must not vanish from the picker it was made from
+    // (feature/device-model-editor.md risk notes).
+    expect(selectableModels('diode', true)).toContain('my-zener');
+    expect(selectableModels('diode', true)).not.toContain('my-plain');
+  });
+
+  it('resolveModelParams consults the writable store before the built-ins', () => {
+    putUserModel('diode', diodeEntry('1N4148'));
+    const params = resolveModelParams('diode', '1N4148', undefined);
+    expect(params?.saturationCurrent).toBe(1e-9);
+    // The file's own line still wins over the writable entry.
+    const fileWins = resolveModelParams('diode', '1N4148', {
+      saturationCurrent: 5e-9,
+      seriesResistance: 0,
+      emissionCoefficient: 2,
+      breakdownVoltage: 0,
+    });
+    expect(fileWins?.saturationCurrent).toBe(5e-9);
+    // A transistor entry resolves satCur and betaR like the built-in does.
+    putUserModel('transistor', { name: 'myt', builtIn: false, saturationCurrent: 2e-13, betaReverse: 1 });
+    expect(resolveModelParams('transistor', 'myt', undefined)).toEqual({
+      saturationCurrent: 2e-13,
+      betaReverse: 1,
+    });
+  });
+
+  it('a writable model shadowing a built-in appears once, file entry winning', () => {
+    // A legal file shape: a `34` line names `1N4148`, shadowing the built-in
+    // row the way the load-time resolution lets the file win.
+    putUserModel('diode', {
+      name: '1N4148',
+      builtIn: false,
+      saturationCurrent: 1e-9,
+      seriesResistance: 0,
+      emissionCoefficient: 2,
+      breakdownVoltage: 0,
+    });
+    const entries = allModels('diode').filter((e) => e.name === '1N4148');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ builtIn: false, saturationCurrent: 1e-9 });
+    // The picker has exactly one option for the name.
+    expect(selectableModels('diode').filter((n) => n === '1N4148')).toEqual(['1N4148']);
+    // And resolution still favours the writable entry over the built-in.
+    expect(resolveModelParams('diode', '1N4148', undefined)?.saturationCurrent).toBe(1e-9);
+  });
+
+  it('synthesizeModelName follows upstream pickName, suffixing on collision', () => {
+    // The family words, and the zener/simple diode names (DiodeModel.java:
+    // 365-371, TransistorModel.java:340, MosfetModel.java:374).
+    expect(synthesizeModelName('transistor', { name: '', builtIn: false, saturationCurrent: 1e-13, betaReverse: 1 })).toBe('transistormodel');
+    expect(synthesizeModelName('mosfet', { name: '', builtIn: false, threshold: 1.5, beta: 0.02, jfet: false })).toBe('mosfetmodel');
+    expect(synthesizeModelName('jfet', { name: '', builtIn: false, threshold: -4, beta: 0.00125, jfet: true })).toBe('jfetmodel');
+    expect(synthesizeModelName('diode', diodeEntry(''))).toBe('diodemodel');
+    expect(synthesizeModelName('diode', diodeEntry('', 5.6))).toBe('zener-5.6');
+    expect(synthesizeModelName('diode', { ...diodeEntry(''), flags: 1, forwardVoltage: 0.806 })).toBe('fwdrop=0.806');
+    // A collision against a built-in or a writable name gets the -2 suffix.
+    putUserModel('diode', diodeEntry('diodemodel'));
+    putUserModel('diode', diodeEntry('diodemodel-2'));
+    expect(synthesizeModelName('diode', diodeEntry(''))).toBe('diodemodel-3');
+    expect(synthesizeModelName('diode', diodeEntry('1N4148'))).toBe('1N4148-2');
+    // An explicit name is left alone when nothing holds it.
+    expect(synthesizeModelName('diode', diodeEntry('my-own'))).toBe('my-own');
+    // An in-place edit that keeps its name is not a collision with itself.
+    putUserModel('diode', diodeEntry('shared'));
+    expect(synthesizeModelName('diode', diodeEntry('shared'), 'shared')).toBe('shared');
+  });
+
+  it('forward-voltage derivation works in both directions', () => {
+    const is = 1e-9;
+    const fwdI = 1;
+    const v = forwardVoltageAt(is, 2, fwdI);
+    // The simple mode's n from V/I is the inverse of the forward voltage.
+    expect(emissionCoefficientFor(v, fwdI, is)).toBeCloseTo(2, 10);
+    expect(forwardVoltageAt(is, emissionCoefficientFor(v, fwdI, is), fwdI)).toBeCloseTo(v, 10);
+    // forwardVoltageFor is the 1 A special case of forwardVoltageAt.
+    expect(forwardVoltageAt(is, 2, 1)).toBeCloseTo(forwardVoltageFor(is, 2), 10);
+    // And the inverse recovers Is from a drop.
+    expect(saturationCurrentFor(forwardVoltageFor(is, 2), 2)).toBeCloseTo(is, 10);
+    // simpleForwardSeed defaults the current to 1 A (setForwardVoltage,
+    // DiodeModel.java:326-330).
+    expect(simpleForwardSeed(is, 2, undefined)).toEqual({
+      forwardCurrent: 1,
+      forwardVoltage: forwardVoltageFor(is, 2),
+    });
+  });
+
+  it('pruneUnreferencedModels deletes only the unreferenced entries', () => {
+    putUserModel('diode', diodeEntry('used'));
+    putUserModel('diode', diodeEntry('orphan'));
+    putUserModel('transistor', { name: 'orphan-t', builtIn: false, saturationCurrent: 1e-13, betaReverse: 1 });
+    pruneUnreferencedModels([
+      { kind: 'diode', modelName: 'used' },
+      { kind: 'zener', modelName: 'used' },
+    ]);
+    expect(userModel('diode', 'used')).toBeDefined();
+    expect(userModel('diode', 'orphan')).toBeUndefined();
+    expect(userModel('transistor', 'orphan-t')).toBeUndefined();
+  });
+
+  it('writes the 34 line upstream dumps, in the token order parse reads', () => {
+    expect(
+      diodeModelLine({ ...diodeEntry('mydiode'), forwardCurrent: 1e-3, forwardVoltage: 0.806 }),
+    ).toBe('34 mydiode 0 1e-9 0 2 0 0.001');
+    // A simple-mode entry carries FLAGS_SIMPLE (bit 0) in the flags token.
+    expect(diodeModelLine({ ...diodeEntry('mydiode'), flags: 1 })).toBe('34 mydiode 1 1e-9 0 2 0');
+  });
+
+  it('writes a full 32 table and regenerates an edited one in place', () => {
+    const entry: UserTransistorEntry = { name: 'myt', builtIn: false, saturationCurrent: 2e-13, betaReverse: 1 };
+    // The defaults the port does not model ride the upstream constructor
+    // values, so the line still walks the way `parseTransistorModelLine` reads.
+    expect(transistorModelLine(entry)).toBe('32 myt 0 2e-13 0 0 1.5 0 0 2 1 1 0 0 1');
+    // An edited file line keeps its unknown tokens byte for byte.
+    expect(
+      regenerateTransistorLine('32 early 0 1e-13 0 0 1.5 0 0 2 1 1 0.02 0 1', {
+        ...entry,
+        name: 'early',
+        saturationCurrent: 5e-13,
+      }),
+    ).toBe('32 early 0 5e-13 0 0 1.5 0 0 2 1 1 0.02 0 1');
+    // Indented lines keep their leading whitespace (the order walk carries the
+    // raw, untrimmed line).
+    expect(
+      regenerateTransistorLine('  32 early 0 1e-13 0 0 1.5 0 0 2 1 1 0.02 0 1', {
+        ...entry,
+        name: 'early',
+        saturationCurrent: 5e-13,
+      }),
+    ).toBe('  32 early 0 5e-13 0 0 1.5 0 0 2 1 1 0.02 0 1');
+    // An unchanged token keeps its original spelling: only satCur changed, so
+    // the file's `1.0` betaR must not be rewritten to `1`.
+    expect(
+      regenerateTransistorLine('32 early 0 5e-13 0 0 1.5 0 0 2 1 1 0.02 0 1.0', {
+        ...entry,
+        name: 'early',
+        saturationCurrent: 5e-13,
+      }),
+    ).toBe('32 early 0 5e-13 0 0 1.5 0 0 2 1 1 0.02 0 1.0');
+  });
+
+  it('regenerateDiodeLine keeps the file line leading whitespace like the transistor writer', () => {
+    const entry = { name: 'mydiode', builtIn: false as const, flags: 0, saturationCurrent: 2e-9, seriesResistance: 0, emissionCoefficient: 2, breakdownVoltage: 0 };
+    expect(regenerateDiodeLine(' 34 mydiode 0 1e-9 0 2 0', entry)).toBe(
+      ' 34 mydiode 0 2e-9 0 2 0',
+    );
+  });
+
+  it('seedModelEntry copies the current model for a create, empty-named', () => {
+    // A value-form diode recovers its saturation current from the drop.
+    const seed = seedModelEntry(
+      'diode',
+      { forwardVoltage: 0.805904783, seriesResistance: 0, emissionCoefficient: 2 },
+      undefined,
+      'create-simple',
+    );
+    expect(seed).toMatchObject({ name: '', builtIn: false, flags: 1, forwardCurrent: 1 });
+    expect((seed as UserDiodeEntry).saturationCurrent).toBeCloseTo(1.7143528192808883e-7, 12);
+    // An advanced create keeps the copy's params under flags 0.
+    const advanced = seedModelEntry(
+      'diode',
+      { forwardVoltage: 0.805904783, seriesResistance: 0.5, emissionCoefficient: 2 },
+      undefined,
+      'create-advanced',
+    );
+    expect(advanced).toMatchObject({ name: '', builtIn: false, flags: 0, seriesResistance: 0.5 });
+    // A source entry's forward current carries into the simple seed.
+    const fromSource = seedModelEntry(
+      'diode',
+      {},
+      { ...diodeEntry('src'), forwardCurrent: 2 },
+      'create-simple',
+    );
+    expect(fromSource).toMatchObject({ forwardCurrent: 2, saturationCurrent: 1e-9 });
   });
 });

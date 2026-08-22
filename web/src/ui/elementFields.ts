@@ -5,6 +5,7 @@
  *  controls; this module owns the rows and the store dispatch. */
 
 import { defFor } from '../model/registry';
+import { modelFamilyFor, userModel } from '../model/deviceModels';
 import type { CircuitElement, FieldDef } from '../model/types';
 
 /** One row of the property list: the def's field plus the element's value for
@@ -12,6 +13,31 @@ import type { CircuitElement, FieldDef } from '../model/types';
 export interface FieldRow {
   field: FieldDef;
   value: number | string;
+}
+
+/** Which device-model buttons the `modelChoice` row of an element shows, the
+ *  port of upstream's create/edit rows (DiodeElm.java:211-227,
+ *  TransistorElm.java:632-643, MosfetElm.java:738-745). The diode family gets
+ *  the simple and advanced create buttons, every other model-naming family one
+ *  generic Create Model; Edit Model shows only when the current name resolves
+ *  to a writable entry, the readOnly rule that hides it for built-ins. */
+export interface ModelButtons {
+  createSimple: boolean;
+  createAdvanced: boolean;
+  create: boolean;
+  edit: boolean;
+}
+
+export function deviceModelButtons(e: CircuitElement): ModelButtons {
+  const family = modelFamilyFor(e.kind);
+  const none: ModelButtons = { createSimple: false, createAdvanced: false, create: false, edit: false };
+  if (family === undefined) return none;
+  return {
+    createSimple: family === 'diode',
+    createAdvanced: family === 'diode',
+    create: family !== 'diode',
+    edit: e.modelName !== undefined && userModel(family, e.modelName) !== undefined,
+  };
 }
 
 /** Where a field reads from: free text, a bit of `e.flags`, a named model, or

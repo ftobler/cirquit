@@ -59,6 +59,11 @@ export interface DiodeModel {
   breakdownVoltage: number;
   /** Optional, read under a try upstream (DiodeModel.java:243-245). */
   forwardCurrent?: number;
+  /** The `34` line's flags token (token 2, skipped by the param walk). Bit 0
+   *  FLAGS_SIMPLE marks a simple-mode model (DiodeModel.java:29), which is what
+   *  lets the editor reopen a reloaded model in the same mode it was created
+   *  in. */
+  flags?: number;
 }
 
 /**
@@ -240,6 +245,14 @@ export interface ParsedCircuit {
    *  only a caller that commits the text (a load, a paste) puts them in the
    *  library. */
   compositeModels: CompositeModel[];
+  /** The diode models this file's `34` lines define, keyed by unescaped name.
+   *  The same interpreted copy as `compositeModels`: the lines ride in
+   *  passthrough, and the store commits these into the writable model store on
+   *  load, exactly how it registers `.` lines. */
+  diodeFileModels: Map<string, DiodeModel>;
+  /** The transistor models this file's `32` lines define, the same interpreted
+   *  copy for the transistor family. */
+  transistorFileModels: Map<string, TransistorModel>;
   /** Types present in the file that this build cannot draw or simulate. */
   unsupported: string[];
   /** Clamp-on-load warnings: file tokens the engine's range guards normalised

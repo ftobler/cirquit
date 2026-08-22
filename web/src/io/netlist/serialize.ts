@@ -1,6 +1,19 @@
 import { defFor } from '../../model/registry';
+import {
+  diodeModelLine,
+  modelFamilyFor,
+  regenerateDiodeLine,
+  regenerateTransistorLine,
+  sameDiodeModelBody,
+  sameTransistorModelBody,
+  transistorModelLine,
+  userModel,
+  type ModelFamily,
+  type UserDiodeEntry,
+  type UserTransistorEntry,
+} from '../../model/deviceModels';
 import type { CircuitElement, SimSettings } from '../../model/types';
-import type { NetlistLine, ScopeConfig, ScopePlotConfig, SliderConfig } from './types';
+import type { DiodeModel, NetlistLine, ScopeConfig, ScopePlotConfig, SliderConfig, TransistorModel } from './types';
 import { escapeToken } from './tokens';
 import {
   FLAG_DIVISIONS,
@@ -11,6 +24,8 @@ import {
   importDecOrHex,
   isElementLine,
   kindOfDumpCode,
+  parseDiodeModelLine,
+  parseTransistorModelLine,
   unitsOf,
 } from './parse';
 
@@ -177,6 +192,27 @@ function sliderLineFor(s: SliderConfig, ordinalById: Map<number, number>): strin
   return ['38', index, ...s.raw.slice(1)].join(' ');
 }
 
+/** The writable-model work an element names, or null for one that names none:
+ *  value-form diodes carry no modelName, built-in and unknown names resolve to
+ *  no writable entry, and mosfet/jfet models never take a text line at all. */
+function writableModelOf(e: CircuitElement): { family: ModelFamily; name: string } | null {
+  if (e.modelName === undefined) return null;
+  const family = modelFamilyFor(e.kind);
+  if (family !== 'diode' && family !== 'transistor') return null;
+  return { family, name: e.modelName };
+}
+
+/** The `34`/`32` line a writable entry serializes as, or null when the name
+ *  does not resolve to one: built-ins take no line, and mosfet/jfet have no
+ *  text line at all. */
+function modelLineFor(family: ModelFamily, name: string): string | null {
+  const entry = userModel(family, name);
+  if (entry === undefined) return null;
+  if (family === 'diode') return diodeModelLine(entry as UserDiodeEntry);
+  if (family === 'transistor') return transistorModelLine(entry as UserTransistorEntry);
+  return null;
+}
+
 /**
  * Serialises a circuit back to the original format.
  *
@@ -221,7 +257,26 @@ export function serializeCircuit(
   // takes the default layout rather than dropping the passthrough lines.
   if (!order || order.length === 0) {
     rendered.forEach((r, i) => ordinalById.set(r.id, i));
-    const body = rendered.map((r) => r.line);
+    const elementById = new Map(elements.map((e) => [e.id, e]));
+    // No file was loaded, so every referenced writable model is session-only:
+    // emit its `34`/`32` line once, ahead of the first element that names it,
+    // so a save (and a copy or duplicate, which take this same path) carries
+    // the model a reload needs. A fresh circuit's passthrough holds no model
+    // lines, so there is nothing to compare against here.
+    const body: string[] = [];
+    const emitted = new Set<string>();
+    for (const r of rendered) {
+      const e = elementById.get(r.id);
+      const m = e === undefined ? null : writableModelOf(e);
+      if (m !== null && !emitted.has(`${m.family}:${m.name}`)) {
+        const line = modelLineFor(m.family, m.name);
+        if (line !== null) {
+          emitted.add(`${m.family}:${m.name}`);
+          body.push(line);
+        }
+      }
+      body.push(r.line);
+    }
     const traces = scopes.map((s) => scopeLineFor(s, ordinalById, kindOf));
     const sliderLines = sliders.map((s) => sliderLineFor(s, ordinalById));
     return [header, ...body, ...traces, ...sliderLines, ...passthrough].join('\n') + '\n';
@@ -240,6 +295,59 @@ export function serializeCircuit(
   const sliderSlots = new Map<number, number>();
   sliders.forEach((s, i) => sliderSlots.set(s.id, i));
 
+  // Pre-pass over the preserved lines: collect the file's `34`/`32` model
+  // lines, keyed by name with the last one winning, the same last-wins rule
+  // the load's map uses. The walk below keeps an untouched line's bytes and
+  // regenerates an edited one at its own slot.
+  const fileDiodeLines = new Map<string, { raw: string; body: DiodeModel; at: number }>();
+  const fileTransistorLines = new Map<string, { raw: string; body: TransistorModel; at: number }>();
+  order.forEach((entry, at) => {
+    if (entry.kind !== 'other') return;
+    const parsedDiode = parseDiodeModelLine(entry.line);
+    if (parsedDiode !== null) {
+      fileDiodeLines.set(parsedDiode.name, { raw: entry.line, body: parsedDiode.model, at });
+      return;
+    }
+    const parsedTransistor = parseTransistorModelLine(entry.line);
+    if (parsedTransistor !== null) {
+      fileTransistorLines.set(parsedTransistor.name, { raw: entry.line, body: parsedTransistor.model, at });
+    }
+  });
+  const elementById = new Map(elements.map((e) => [e.id, e]));
+  // File lines to rewrite, keyed by their slot in the order walk. Decided in
+  // its own pass ahead of the walk: a file's `34`/`32` line can sit above the
+  // first element that names it, so by the time the walk reaches that element
+  // the line would already have been written verbatim. Every live element is
+  // consulted, order-tracked or not: an element placed or pasted after the
+  // load has no order slot, yet it is the reason a shared file model's edit
+  // must still reach the file.
+  const regenerateAt = new Map<number, string>();
+  for (const e of elements) {
+    const m = writableModelOf(e);
+    if (m === null) continue;
+    const fileLine =
+      m.family === 'diode' ? fileDiodeLines.get(m.name) : fileTransistorLines.get(m.name);
+    const writable = userModel(m.family, m.name);
+    if (fileLine === undefined || writable === undefined) continue;
+    const edited =
+      m.family === 'diode'
+        ? !sameDiodeModelBody(fileLine.body as DiodeModel, writable as UserDiodeEntry)
+        : !sameTransistorModelBody(
+            fileLine.body as TransistorModel,
+            writable as UserTransistorEntry,
+          );
+    if (edited) {
+      regenerateAt.set(
+        fileLine.at,
+        m.family === 'diode'
+          ? regenerateDiodeLine(fileLine.raw, writable as UserDiodeEntry)
+          : regenerateTransistorLine(fileLine.raw, writable as UserTransistorEntry),
+      );
+    }
+  }
+  // Session-only models already written ahead of a naming element.
+  const emittedFresh = new Set<string>();
+
   const lines: string[] = [];
   const usedElements = new Set<number>();
   const usedScopes = new Set<number>();
@@ -250,12 +358,12 @@ export function serializeCircuit(
   const deferred: { at: number; kind: 'scope' | 'slider'; slot: number }[] = [];
   let fileIndex = 0;
   let sawHeader = false;
-  for (const entry of order) {
+  order.forEach((entry, i) => {
     if (entry.kind === 'header') {
       lines.push(header);
       sawHeader = true;
     } else if (entry.kind === 'other') {
-      lines.push(entry.line);
+      lines.push(regenerateAt.get(i) ?? entry.line);
       // An unmodelled element line still takes its slot (see `parseCircuit`);
       // its raw dump code is recorded so a plot targeting it can still resolve
       // a kind for `unitsOf`, the same fallback the reader uses.
@@ -265,10 +373,30 @@ export function serializeCircuit(
       }
     } else if (entry.kind === 'element') {
       // A deleted element vacates its slot; the lines around it do not move.
-      const slot = (slotById.get(entry.id) ?? []).find((i) => !usedElements.has(i));
+      const slot = (slotById.get(entry.id) ?? []).find((x) => !usedElements.has(x));
       if (slot !== undefined) {
         usedElements.add(slot);
         ordinalById.set(entry.id, fileIndex++);
+        // A session-only writable model (one the file's lines do not define) is
+        // emitted here, once, ahead of the first element that names it. File
+        // models were already handled by the regeneration pass above.
+        const e = elementById.get(entry.id);
+        const m = e === undefined ? null : writableModelOf(e);
+        const fileLine =
+          m === null
+            ? undefined
+            : m.family === 'diode'
+              ? fileDiodeLines.get(m.name)
+              : fileTransistorLines.get(m.name);
+        if (m !== null && fileLine === undefined) {
+          if (!emittedFresh.has(`${m.family}:${m.name}`)) {
+            const line = modelLineFor(m.family, m.name);
+            if (line !== null) {
+              emittedFresh.add(`${m.family}:${m.name}`);
+              lines.push(line);
+            }
+          }
+        }
         lines.push(rendered[slot].line);
       }
     } else if (entry.kind === 'slider') {
@@ -286,7 +414,7 @@ export function serializeCircuit(
         lines.push('');
       }
     }
-  }
+  });
   // A headerless file that holds a circuit still has to save its settings. One
   // that holds no elements is left exactly as it came in: that is the XML
   // `<cir>` form, which this build only passes through, and prefixing it with
@@ -299,6 +427,25 @@ export function serializeCircuit(
   rendered.forEach((r, i) => {
     if (usedElements.has(i)) return;
     ordinalById.set(r.id, fileIndex++);
+    // An element with no order slot (placed or pasted after the load) still
+    // needs its session-only model's line: the walk above only visits the
+    // file's own element slots, so without this a model created for a fresh
+    // element would never reach the saved file and a reload would drop it.
+    const e = elementById.get(r.id);
+    const m = e === undefined ? null : writableModelOf(e);
+    const fileLine =
+      m === null
+        ? undefined
+        : m.family === 'diode'
+          ? fileDiodeLines.get(m.name)
+          : fileTransistorLines.get(m.name);
+    if (m !== null && fileLine === undefined && !emittedFresh.has(`${m.family}:${m.name}`)) {
+      const line = modelLineFor(m.family, m.name);
+      if (line !== null) {
+        emittedFresh.add(`${m.family}:${m.name}`);
+        lines.push(line);
+      }
+    }
     lines.push(r.line);
   });
   scopes.forEach((s, i) => {

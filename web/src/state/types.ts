@@ -9,6 +9,7 @@ import type {
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
+import type { ModelFamily, UserModelEntry } from '../model/deviceModels';
 import type { ShortcutOverlay } from '../input/shortcuts';
 import type { CircuitElement, Point, SimSettings } from '../model/types';
 import type { WireSegment } from '../model/wirePlacement';
@@ -197,6 +198,18 @@ export interface AppState {
    *  upstream's EditDialog, which edits the element under the cursor; the side
    *  panel keeps showing the same rows for the selection behind it. */
   elementProperties: number | null;
+  /** The open device-model create/edit dialog, or null. `initial` is the model
+   *  being edited or the copy a create starts from; `attachedElementId` is set
+   *  on a create (the element whose Create button opened it, which OK rebinds),
+   *  and `prevName` is the name an edit started from, so a rename in the dialog
+   *  moves the writable entry and the naming elements with it. Transient UI
+   *  state like `elementProperties`: never part of the undo Snapshot. */
+  deviceModelEditor: {
+    family: ModelFamily;
+    initial: UserModelEntry;
+    attachedElementId?: number;
+    prevName?: string;
+  } | null;
   /** The element the Sliders dialog is scoped to, from the context menu's
    *  Sliders... row, or null for the circuit-wide menubar dialog. The dialog
    *  shows create/remove checkboxes for this element's adjustable fields. */
@@ -330,6 +343,34 @@ export interface AppState {
   requestEdit(id: number): void;
   /** Closes the element properties dialog. */
   closeElementProperties(): void;
+  /** Opens the device-model create/edit dialog for the element's family.
+   *  `create-simple`/`create-advanced` seed a copy of the element's current
+   *  model in the matching diode mode (upstream's Create New Simple/Advanced
+   *  Model rows, DiodeElm.java:211-220); `create` does the same for the
+   *  transistor and mosfet/jfet families (TransistorElm.java:632-636,
+   *  MosfetElm.java:738-742); `edit` opens the existing writable entry (the
+   *  readOnly-gated Edit Model row). A no-op when the element is gone or, for
+   *  edit, when its name does not resolve to a writable entry. */
+  openDeviceModelEditor(
+    kind: string,
+    elementId: number,
+    action: 'create-simple' | 'create-advanced' | 'create' | 'edit',
+  ): void;
+  /** Closes the device-model dialog without applying anything. */
+  closeDeviceModelEditor(): void;
+  /** Applies a model edit or create, as one undo step. The writable store is
+   *  updated first (module state, so undo never rolls a model back), then the
+   *  document half: a create rebinds the attached element through
+   *  `setModelName`, an in-place edit re-resolves every element naming the
+   *  model against the new entry, and a rename moves those elements to the new
+   *  name. The revision bump rebuilds the engine either way, since model
+   *  params are read at build time. */
+  applyDeviceModelEdit(
+    family: ModelFamily,
+    entry: UserModelEntry,
+    attachedElementId?: number,
+    prevName?: string,
+  ): void;
   /** Opens or closes the toolbox drawer (the mobile overlay). Opening it
    *  closes the options drawer, since only one mobile drawer shows at a time. */
   setPartsOpen(open: boolean): void;

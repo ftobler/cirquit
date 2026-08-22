@@ -4,6 +4,7 @@
  *  are and what a change does live next door in `elementFields.ts`, which is
  *  node-tested; this file is the controls and the file-picker plumbing. */
 
+import { Fragment } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { AUDIO_DECODE_ERROR, decodeAudioFile } from '../model/audioFile';
 import { parseDataFile } from '../model/dataFile';
@@ -12,7 +13,12 @@ import { saveBlob } from '../io/fileIO';
 import { selectableModels } from '../model/deviceModels';
 import type { CircuitElement, FieldDef } from '../model/types';
 import { useStore } from '../state/store';
-import { applyFieldChange, clampInteger, fieldRows } from './elementFields';
+import {
+  applyFieldChange,
+  clampInteger,
+  deviceModelButtons,
+  fieldRows,
+} from './elementFields';
 import { UnitNumberInput } from './UnitNumberInput';
 
 function Field({
@@ -314,6 +320,49 @@ interface Props {
   engine: SimEngine | null;
 }
 
+/** The create/edit buttons under a `modelChoice` row, the port of upstream's
+ *  Create New Model and Edit Model rows (DiodeElm.java:211-227): the diode
+ *  family offers a simple and an advanced create, the other model-naming
+ *  families one generic create, and Edit Model appears only when the current
+ *  name resolves to a writable model. Clicking opens the shared device-model
+ *  dialog seeded from this element. */
+function ModelButtonRow({
+  element,
+  onOpen,
+}: {
+  element: CircuitElement;
+  onOpen: (action: 'create-simple' | 'create-advanced' | 'create' | 'edit') => void;
+}) {
+  const buttons = deviceModelButtons(element);
+  if (!buttons.createSimple && !buttons.createAdvanced && !buttons.create && !buttons.edit) {
+    return null;
+  }
+  return (
+    <div className="row">
+      {buttons.createSimple && (
+        <button type="button" onClick={() => onOpen('create-simple')}>
+          Create Simple Model
+        </button>
+      )}
+      {buttons.createAdvanced && (
+        <button type="button" onClick={() => onOpen('create-advanced')}>
+          Create Advanced Model
+        </button>
+      )}
+      {buttons.create && (
+        <button type="button" onClick={() => onOpen('create')}>
+          Create Model
+        </button>
+      )}
+      {buttons.edit && (
+        <button type="button" onClick={() => onOpen('edit')}>
+          Edit Model
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** The def's property rows for one element. Every control writes through a
  *  store action, so undo bracketing, the revision bump and the engine rebuild
  *  behave the same wherever this list is mounted. */
@@ -327,52 +376,60 @@ export function ElementFields({ element, engine }: Props) {
   const updateElement = useStore((s) => s.updateElement);
   const loadAudioFile = useStore((s) => s.loadAudioFile);
   const loadDataFile = useStore((s) => s.loadDataFile);
+  const openDeviceModelEditor = useStore((s) => s.openDeviceModelEditor);
 
   return (
     <>
       {fieldRows(element).map(({ field, value }) => (
-        <Field
-          key={field.name}
-          field={field}
-          value={value}
-          onBeginEdit={beginEdit}
-          onDownload={
-            field.type === 'download'
-              ? () => {
-                  // The engine holds the ring; the samples are pulled on
-                  // demand and downloaded with upstream's filename and
-                  // header (DataRecorderElm.java:106-118).
-                  if (!engine) return;
-                  const data = engine.recordedData(element.id);
-                  saveBlob(
-                    recorderFilename(),
-                    new Blob([recorderDataText(data, timeStep)], { type: 'text/plain' }),
-                  );
-                }
-              : undefined
-          }
-          onChange={(v) => {
-            if (field.type === 'file' && field.fileLoad !== undefined) {
-              // `v` is the FileList; the read and decode are asynchronous
-              // and land through the store action once ready.
-              loadFileInto(
-                element,
-                field.fileLoad,
-                v as FileList | null,
-                loadAudioFile,
-                loadDataFile,
-              );
-              return;
+        <Fragment key={field.name}>
+          <Field
+            field={field}
+            value={value}
+            onBeginEdit={beginEdit}
+            onDownload={
+              field.type === 'download'
+                ? () => {
+                    // The engine holds the ring; the samples are pulled on
+                    // demand and downloaded with upstream's filename and
+                    // header (DataRecorderElm.java:106-118).
+                    if (!engine) return;
+                    const data = engine.recordedData(element.id);
+                    saveBlob(
+                      recorderFilename(),
+                      new Blob([recorderDataText(data, timeStep)], { type: 'text/plain' }),
+                    );
+                  }
+                : undefined
             }
-            applyFieldChange(element, field, v as number | string, {
-              setParam,
-              setText,
-              setKeyShortcut,
-              setModelName,
-              updateElement,
-            });
-          }}
-        />
+            onChange={(v) => {
+              if (field.type === 'file' && field.fileLoad !== undefined) {
+                // `v` is the FileList; the read and decode are asynchronous
+                // and land through the store action once ready.
+                loadFileInto(
+                  element,
+                  field.fileLoad,
+                  v as FileList | null,
+                  loadAudioFile,
+                  loadDataFile,
+                );
+                return;
+              }
+              applyFieldChange(element, field, v as number | string, {
+                setParam,
+                setText,
+                setKeyShortcut,
+                setModelName,
+                updateElement,
+              });
+            }}
+          />
+          {field.type === 'modelChoice' && (
+            <ModelButtonRow
+              element={element}
+              onOpen={(action) => openDeviceModelEditor(element.kind, element.id, action)}
+            />
+          )}
+        </Fragment>
       ))}
     </>
   );

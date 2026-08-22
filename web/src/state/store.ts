@@ -64,7 +64,18 @@ import { normalizeInputCount } from '../model/registry/shared';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import { nextFileNum, setAudioSamples, setDataSamples, clearSampleCache } from '../model/sampleCache';
 import { paramScale, resolveParam } from '../model/sliders';
-import { modelFamilyFor, resolveModelParams } from '../model/deviceModels';
+import {
+  clearUserModels,
+  deleteUserModel,
+  modelFamilyFor,
+  pruneUnreferencedModels,
+  putUserModel,
+  registerFileModels,
+  resolveModelParams,
+  restorePrunedModels,
+  seedModelEntry,
+  userModel,
+} from '../model/deviceModels';
 import {
   DEFAULT_SETTINGS,
   GRID_SIZE,
@@ -573,6 +584,7 @@ function createAppStore() {
   partsOpen: defaultPartsOpen(),
   panelOpen: false,
   elementProperties: null,
+  deviceModelEditor: null,
   sliderElementId: null,
   clipboard: null,
   lastSaved: null,
@@ -696,6 +708,75 @@ function createAppStore() {
     })),
 
   closeElementProperties: () => set({ elementProperties: null }),
+
+  openDeviceModelEditor: (kind, elementId, action) => {
+    const s = get();
+    const family = modelFamilyFor(kind);
+    const element = s.elements.find((e) => e.id === elementId);
+    if (family === undefined || element === undefined) return;
+    if (action === 'edit') {
+      // The readOnly-gated Edit Model row (DiodeElm.java:221-227): only a
+      // writable entry is editable, so a name that resolves to a built-in or
+      // to nothing never opens here.
+      const name = element.modelName;
+      if (name === undefined) return;
+      const entry = userModel(family, name);
+      if (entry === undefined) return;
+      set({ deviceModelEditor: { family, initial: entry, prevName: name } });
+      return;
+    }
+    // A create copies the element's current model under an empty name, exactly
+    // as upstream's `new DiodeModel(model)` copy leaves the name to pickName
+    // (DiodeElm.java:246-249); the dialog applies the real name on OK.
+    const name = element.modelName ?? '';
+    const source = name === '' ? undefined : userModel(family, name);
+    const initial = seedModelEntry(family, element.params, source, action);
+    if (initial === undefined) return;
+    set({ deviceModelEditor: { family, initial, attachedElementId: elementId } });
+  },
+
+  closeDeviceModelEditor: () => set({ deviceModelEditor: null }),
+
+  applyDeviceModelEdit: (family, entry, attachedElementId, prevName) => {
+    const s = get();
+    // One undo step for the whole dialog OK; the writable store is module
+    // state, so an undo of the element half below never rolls the model back
+    // (upstream's models live outside its undo stack too).
+    s.commit();
+    putUserModel(family, entry);
+    if (prevName !== undefined && prevName !== entry.name) deleteUserModel(family, prevName);
+    if (attachedElementId !== undefined) {
+      // The create-from-element path: the fresh model is already in the
+      // writable store, so `setModelName`'s resolution sees it and rebinds the
+      // element, bumping `revision` for the rebuild.
+      s.setModelName(attachedElementId, entry.name);
+      return;
+    }
+    // An in-place edit: re-resolve every element that names the model against
+    // the new entry, so a shared model's edit reaches all of them in one step,
+    // and bump `revision` so the engine rebuild reads the new params. A rename
+    // also moves those elements to the new name.
+    set((st) => {
+      const names =
+        prevName === undefined || prevName === entry.name
+          ? [entry.name]
+          : [prevName, entry.name];
+      let changed = false;
+      const elements = st.elements.map((e) => {
+        if (e.modelName === undefined || !names.includes(e.modelName)) return e;
+        if (modelFamilyFor(e.kind) !== family) return e;
+        const next = { ...e };
+        if (e.modelName !== entry.name) next.modelName = entry.name;
+        const params = resolveModelParams(family, entry.name, undefined);
+        if (params !== undefined) next.params = { ...e.params, ...params };
+        if (next.modelName === e.modelName && next.params === e.params) return e;
+        changed = true;
+        return next;
+      });
+      if (!changed) return st;
+      return { elements, ...bumpRevision(st) };
+    });
+  },
 
   setPartsOpen: (open) =>
     set((s) => ({
@@ -1076,6 +1157,11 @@ function createAppStore() {
       selectedIds: [],
       ...bumpRevision(s),
     }));
+    // A writable model whose last referencing element just went leaves the
+    // session namespace with it. A file model's `34`/`32` line is never
+    // touched, so it survives in passthrough and re-registers on the next
+    // load.
+    pruneUnreferencedModels(useStore.getState().elements);
   },
 
   rotateSelection: () => {
@@ -2296,12 +2382,23 @@ function createAppStore() {
     // nothing until the user imports fresh files (upstream clears both caches
     // on load, CircuitLoader.java:239-240).
     clearSampleCache();
+    // The writable device-model store is document-scoped too. It must be empty
+    // before the parse runs, or the fresh file's elements would resolve their
+    // model names against the previous document's entries; the current file's
+    // `34`/`32` lines are committed right after, the document-counter reset
+    // the device-model feature rides (feature/overview.md, Live-state
+    // read-back).
+    clearUserModels();
     const parsed = parseCircuit(text);
     // The subcircuit library's session half belongs to the open file, so a load
     // rebuilds it: the previous file's `.` lines go, this file's arrive. Saved
     // models live in storage and are untouched by either half of this.
     clearSessionModels();
     for (const model of parsed.compositeModels) registerSessionModel(model);
+    // The file's own `34`/`32` lines enter the writable device-model store the
+    // same way, so the editor can tune them and the save path can rewrite an
+    // edited line.
+    registerFileModels(parsed.diodeFileModels, parsed.transistorFileModels);
     // The parser is deliberately pure, so a 410 can only resolve its model
     // name against the file's own `.` lines. Re-resolve every element against
     // the merged library (session then storage) so a 410 whose model lives
@@ -2432,6 +2529,10 @@ function createAppStore() {
     // a load performs. Saved models stay in storage.
     clearSessionModels();
     clearSampleCache();
+    // The writable device-model store is document-scoped like the sample
+    // cache: New is a fresh document, so no model from the old one may haunt
+    // the new circuit's picker.
+    clearUserModels();
     set((s) => ({
       elements: [],
       scopes: [],
@@ -2523,6 +2624,10 @@ function createAppStore() {
     // of the library follows them. Both line sets are read, so a step that did
     // not touch a `.` line changes nothing here.
     syncSessionModels(s.passthrough, prev.passthrough);
+    // A restored element can reference a writable device model the delete that
+    // took it away pruned from the store; put such a model back, or a save
+    // would drop its `34`/`32` line and a reload would silently revert it.
+    restorePrunedModels(useStore.getState().elements);
   },
 
   redo: () => {
@@ -2538,6 +2643,7 @@ function createAppStore() {
       ...bumpRevision(s),
     });
     syncSessionModels(s.passthrough, next.passthrough);
+    restorePrunedModels(useStore.getState().elements);
   },
 
   openContextMenu: (x, y, target, circuit, focusSearch = false) =>
@@ -2644,6 +2750,10 @@ function insertElementsFromText(text: string): void {
   // The parse alone registers nothing, so the `canPaste` probe that runs the
   // same text through the parser leaves the library alone.
   for (const model of parsed.compositeModels) registerSessionModel(model);
+  // The pasted `34`/`32` lines join the writable device-model store the same
+  // way, so a copied model's line travels with the copy and stays editable
+  // after the paste.
+  registerFileModels(parsed.diodeFileModels, parsed.transistorFileModels);
   const state = useStore.getState();
   state.commit();
   // A paste lands one square away, so the duplicate does not sit on top of
