@@ -432,6 +432,69 @@ fn optocoupler_led_uses_the_default_optocoupler_led_model() {
 
 // ─── 409 realistic op-amp ───
 
+/// The realistic op-amp as a grounded follower: the input node is driven
+/// through the usual 1k/1k resistive divider (so the op-amp sees half the
+/// drive source), the output is wired straight back to the inverting post,
+/// and the rails sit at +/-15 V. Returns the circuit for reading the output
+/// node and the supply currents off the rail elements.
+fn opamp_real_follower(
+    model_type: f64,
+    drive: f64,
+    slew: f64,
+    current_limit: f64,
+) -> circuit_core::Circuit {
+    build(
+        vec![
+            elm(1, "voltage", &[[0, 300], [0, 0]], &[("maxVoltage", drive)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            // Posts: V-, V+, out, V+ supply, V- supply (OpAmpRealElm.java:18).
+            // The V+ post shares the divider midpoint; the output feeds the
+            // V- post through the 1k feedback resistor.
+            elm_composite(
+                4,
+                "opampReal",
+                &[[200, 0], [100, 0], [300, 0], [300, -100], [300, -200]],
+                &[],
+                &[
+                    ("slewRate", slew),
+                    ("capValue", 0.0),
+                    ("currentLimit", current_limit),
+                    ("modelType", model_type),
+                ],
+            ),
+            elm(
+                5,
+                "resistor",
+                &[[300, 0], [200, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "rail", &[[300, -100]], &[("maxVoltage", 15.0)]),
+            elm(7, "rail", &[[300, -200]], &[("maxVoltage", -15.0)]),
+            elm(8, "ground", &[[0, 300]], &[]),
+            elm(9, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    )
+}
+
+/// The follower output node voltage: the op-amp is element index 3, so its
+/// posts start at flattened offset 6 and the output is the third of them.
+fn follower_output(c: &circuit_core::Circuit) -> f64 {
+    let n = c.element_nodes()[6 + 2] as usize;
+    c.node_voltages()[n]
+}
+
 #[test]
 fn opamp_real_follower_tracks_its_input_within_the_741_offset() {
     // The transistor-level 741 in unity-gain feedback: a 1 V input on the
@@ -479,4 +542,234 @@ fn opamp_real_follower_tracks_its_input_within_the_741_offset() {
         close(out, 1.0, 0.05),
         "follower output was {out}, expected about 1 V"
     );
+}
+
+#[test]
+fn lm324_unit_gain_dc_sweep_stays_in_swing_and_pulls_quiescent_current() {
+    // The LM324 (modelType 1) as the follower above, swept across a DC input
+    // range. The v1 model is the smaller discrete stack, whose output stage
+    // swings to within a couple of volts of each rail: the follower must track
+    // the input inside that window instead of railing, and the supply current
+    // must land on the netlist's order of magnitude (its bias sources are
+    // 6e-6, 4e-6, 1e-4 and 5e-5 A, so a few hundred uA total).
+    //
+    // The output current limit is set to 0.1 A rather than the 0.0231 A
+    // default, and the test documents why: at the default limit the old 324's
+    // follower DC operating point collapses (the input pair saturates, the
+    // mirror turns off and the first-stage output floats, stranding the output
+    // near V- for every input). Upstream hides this model from fresh parts for
+    // exactly that reason (OpAmpRealElm.java:270-281). Raising the limit
+    // scales the output-stage resistor and betas up (`init324`,
+    // OpAmpRealElm.java:131-137) and the solve lands on the tracking
+    // equilibrium, which is the behaviour the model is tuned for. The model is
+    // genuinely functional at the default limit in other configurations (see
+    // the inverting test below), so this sweep pins its follower behaviour
+    // when driven.
+    let follower_out = |drive: f64| {
+        let c = &mut opamp_real_follower(1.0, drive, 0.6, 0.1);
+        let report = c.run(30);
+        assert!(report.converged, "did not converge: {:?}", report.error);
+        follower_output(c)
+    };
+    for vin in [-12.0, -8.0, -4.0, 0.0, 4.0, 8.0, 12.0] {
+        let out = follower_out(2.0 * vin);
+        assert!(
+            close(out, vin, 0.05),
+            "324 follower output was {out} for input {vin}, expected it to track"
+        );
+    }
+    // A few volts above V+ the output clamps just under the rail instead of
+    // following the input.
+    let clamped = follower_out(2.0 * 15.0);
+    assert!(
+        clamped < 15.0 && clamped > 14.0,
+        "324 follower output clamped at {clamped} V, expected it to stall under V+"
+    );
+
+    // The quiescent supply current, read off the two rails. The follower's
+    // feedback resistor carries no current at the settled point, so the rails
+    // deliver only the amplifier's bias.
+    let c = &mut opamp_real_follower(1.0, 0.0, 0.6, 0.1);
+    c.run(30);
+    let ip = c.element_currents()[5]; // +15 V rail (element index 5)
+    let im = c.element_currents()[6]; // -15 V rail (element index 6)
+    let quiescent = ip - im;
+    assert!(
+        (1e-4..2e-3).contains(&quiescent),
+        "324 quiescent supply current was {quiescent} A (ip {ip}, im {im}), \
+         expected the netlist's order of magnitude"
+    );
+}
+
+#[test]
+fn lm324_inverting_amp_holds_its_gain_at_the_default_current_limit() {
+    // The old 324 is genuinely functional at the default currentLimit, just
+    // not in the follower: the inverting amp holds Vout = -Rf/Rin * Vin to a
+    // few millivolts across the input range, proving the modelType-1 netlist
+    // is a real inverting op-amp and not the 741 substitute. The 741's input
+    // stage and output swing would put different offsets here; the exact gain
+    // pins the v1 netlist.
+    for vin in [-0.5, -0.1, 0.1, 0.5] {
+        let c = &mut build(
+            vec![
+                elm(
+                    1,
+                    "voltage",
+                    &[[0, 100], [100, 100]],
+                    &[("maxVoltage", vin)],
+                ),
+                elm(
+                    2,
+                    "resistor",
+                    &[[100, 100], [200, 0]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(
+                    3,
+                    "resistor",
+                    &[[300, 0], [200, 0]],
+                    &[("resistance", 10_000.0)],
+                ),
+                // Posts: V-, V+, out, V+ supply, V- supply (OpAmpRealElm.java:18).
+                elm_composite(
+                    4,
+                    "opampReal",
+                    &[[200, 0], [100, 0], [300, 0], [300, -100], [300, -200]],
+                    &[],
+                    &[
+                        ("slewRate", 0.6),
+                        ("capValue", 0.0),
+                        ("currentLimit", 0.0231),
+                        ("modelType", 1.0),
+                    ],
+                ),
+                elm(5, "rail", &[[300, -100]], &[("maxVoltage", 15.0)]),
+                elm(6, "rail", &[[300, -200]], &[("maxVoltage", -15.0)]),
+                elm(7, "ground", &[[0, 100]], &[]),
+                elm(8, "ground", &[[100, 0]], &[]),
+            ],
+            opts(1e-5, true),
+        );
+        let report = c.run(30);
+        assert!(report.converged, "did not converge: {:?}", report.error);
+        let n = c.element_nodes()[8] as usize; // the opampReal output post
+        let out = c.node_voltages()[n];
+        assert!(
+            close(out, -10.0 * vin, 0.02),
+            "324 inverting amp output was {out} for input {vin}, expected -10*{vin}"
+        );
+    }
+}
+
+#[test]
+fn lm324v2_follows_input_past_rail_and_clamps_under_vplus() {
+    // The 324v2 follower driven above the positive rail. The composite builds
+    // the ON Semiconductor netlist with its named transistors resolved to the
+    // SPICE models (satCur 1e-16/1.01e-16, TransistorModel.java:121-126), so
+    // this is the real v2 output stage: the follower tracks well inside the
+    // rails and the output stalls a saturation drop under V+ (15 V) rather
+    // than running away past it.
+    let follower_out = |drive: f64| {
+        let c = &mut opamp_real_follower(2.0, drive, 0.6, 0.0231);
+        let report = c.run(40);
+        assert!(report.converged, "did not converge: {:?}", report.error);
+        follower_output(c)
+    };
+    for vin in [4.0, 8.0, 12.0] {
+        let out = follower_out(2.0 * vin);
+        assert!(
+            close(out, vin, 0.2),
+            "324v2 follower output was {out} for input {vin}, expected it to track"
+        );
+    }
+    // Above V+ the output clamps at V+ minus the output stage's saturation
+    // drop (measured 13.61 V) and stays there however far the input climbs.
+    let first = follower_out(2.0 * 16.0);
+    let higher = follower_out(2.0 * 20.0);
+    assert!(
+        first < 15.0 && first > 13.0,
+        "324v2 follower output was {first} V for a 16 V input, \
+         expected it clamped just under V+ (15 V)"
+    );
+    assert!(
+        close(first, higher, 1e-6),
+        "324v2 follower output drifted from {first} to {higher} V past the rail, \
+         expected a fixed clamp"
+    );
+}
+
+#[test]
+fn model_type_dispatch_keeps_the_741_default_bit_identical() {
+    // The modelType dispatch's 741 default: an explicit 0, an absent token,
+    // and a non-integer token (1.5, which upstream's Integer.parseInt rejects
+    // and the exact-match switch treats as not 1 or 2) must all build the same
+    // 741 netlist and land on the same operating point, node for node. This
+    // pins the refactor's dispatch without overclaiming that the path is
+    // unchanged from history: it proves the four token shapes are equivalent
+    // to each other here and now.
+    let circuit = |model_type: Option<f64>| {
+        let mut params: Vec<(&str, f64)> = vec![
+            ("slewRate", 0.6),
+            ("capValue", 0.0),
+            ("currentLimit", 0.0231),
+        ];
+        if let Some(mt) = model_type {
+            params.push(("modelType", mt));
+        }
+        let mut c = build(
+            vec![
+                elm(1, "voltage", &[[0, 300], [0, 0]], &[("maxVoltage", 2.0)]),
+                elm(
+                    2,
+                    "resistor",
+                    &[[0, 0], [100, 0]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(
+                    3,
+                    "resistor",
+                    &[[100, 0], [100, 100]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm_composite(
+                    4,
+                    "opampReal",
+                    &[[200, 0], [100, 0], [300, 0], [300, -100], [300, -200]],
+                    &[],
+                    &params,
+                ),
+                elm(
+                    5,
+                    "resistor",
+                    &[[300, 0], [200, 0]],
+                    &[("resistance", 1000.0)],
+                ),
+                elm(6, "rail", &[[300, -100]], &[("maxVoltage", 15.0)]),
+                elm(7, "rail", &[[300, -200]], &[("maxVoltage", -15.0)]),
+                elm(8, "ground", &[[0, 300]], &[]),
+                elm(9, "ground", &[[100, 100]], &[]),
+            ],
+            opts(1e-5, true),
+        );
+        let report = c.run(30);
+        assert!(report.converged, "did not converge: {:?}", report.error);
+        c.node_voltages().to_vec()
+    };
+
+    let base = circuit(Some(0.0));
+    let variants: [(&str, Option<f64>); 2] = [("absent", None), ("non-integer", Some(1.5))];
+    for (name, mt) in variants {
+        let v = circuit(mt);
+        assert_eq!(
+            base.len(),
+            v.len(),
+            "{name} modelType token changed the node count"
+        );
+        for (i, (a, b)) in base.iter().zip(v.iter()).enumerate() {
+            assert!(
+                close(*a, *b, 1e-12),
+                "node {i} differed between modelType 0 and the {name} token: {a} vs {b}"
+            );
+        }
+    }
 }

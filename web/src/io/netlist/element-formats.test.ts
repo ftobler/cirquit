@@ -2895,6 +2895,21 @@ describe('built-in composite file formats (batch C)', () => {
     expect(lineFor(e)).toContain(line);
   });
 
+  it('409 round-trips the LM324 and LM324v2 modelType tokens', () => {
+    // modelType 1 (LM324) and 2 (324v2) load as their own netlists and keep
+    // their token on save, so a file naming a 324 stays a 324
+    // (OpAmpRealElm.java:82-86).
+    for (const line of [
+      '409 80 64 208 64 0 0.6 0 0.0231 1',
+      '409 80 64 208 64 0 0.6 0 0.0231 2',
+    ]) {
+      const [e] = parseCircuit(line).elements;
+      expect(e.kind).toBe('opampReal');
+      expect(e.params.modelType).toBe(Number(line.split(' ').at(-1)));
+      expect(lineFor(e)).toContain(line);
+    }
+  });
+
   it('a fresh realistic op-amp dumps the 741 constructor defaults', () => {
     const e = makeElement('opampReal', 0, 0, 64, 0);
     expect(e.params).toEqual({ slewRate: 0.6, capValue: 0, currentLimit: 0.0231, modelType: 0 });

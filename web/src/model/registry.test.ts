@@ -1746,6 +1746,33 @@ describe('batch C composite draws and posts', () => {
     ]);
   });
 
+  it('the realistic op-amp offers the fresh models and hides the old 324', () => {
+    // The Model field offers the netlists a fresh part can take
+    // (OpAmpRealElm.java:270-281): the LM741 (0) and the LM324v2 (2). The old
+    // LM324 (modelType 1) is deliberately not offered; a file that names it
+    // still round-trips, and the choice row labels it through
+    // `outOfRangeLabel`. The default is the 741.
+    const def = defFor('opampReal');
+    const modelField = def?.fields?.find((f) => f.name === 'modelType');
+    expect(modelField).toMatchObject({ type: 'choice', outOfRangeLabel: 'LM324, old' });
+    expect(modelField?.choices).toEqual([
+      { value: 0, label: 'LM741' },
+      { value: 2, label: 'LM324v2' },
+    ]);
+    expect((def?.defaults ?? {}).modelType).toBe(0);
+    for (const modelType of [0, 1, 2]) {
+      const e = element('opampReal', 80, 64, 208, 64, 0, {
+        slewRate: 0.6,
+        capValue: 0,
+        currentLimit: 0.0231,
+        modelType,
+      });
+      expect(e.params.modelType).toBe(modelType);
+      const line = `409 80 64 208 64 0 0.6 0 0.0231 ${modelType}`;
+      expect(serializeCircuit([{ ...e, id: 1 }], DEFAULT_SETTINGS).trim()).toContain(line);
+    }
+  });
+
   it('the optocoupler posts sit at the four fixed chip corners', () => {
     // A fixed 2x2 body anchored at point1 (OptocouplerElm.java:125-148).
     const e = element('optocoupler', 80, 64, 208, 64);

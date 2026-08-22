@@ -69,6 +69,21 @@ describe('field rows', () => {
     expect(row?.value).toBe(1);
   });
 
+  it('drops a field whose when-predicate the element fails', () => {
+    // The realistic op-amp hides the Slew Rate and Output Current Limit rows
+    // on the 324v2, whose netlist takes no such tuning upstream
+    // (OpAmpRealElm.java:288-289); the 741 and the old 324 keep them.
+    const opampRows = (modelType: number) =>
+      fieldRows(elm({ kind: 'opampReal', params: { modelType } })).map(
+        (r) => r.field.name,
+      );
+    expect(opampRows(0)).toContain('slewRate');
+    expect(opampRows(0)).toContain('currentLimit');
+    expect(opampRows(1)).toContain('slewRate');
+    expect(opampRows(2)).not.toContain('slewRate');
+    expect(opampRows(2)).not.toContain('currentLimit');
+  });
+
   it('reads the text, key shortcut and model targets off the element', () => {
     const e = elm({ kind: 'resistor', text: 'R load', keyShortcut: 'a', modelName: 'default' });
     expect(fieldValue(e, { name: 'x', label: 'X', target: 'text' })).toBe('R load');

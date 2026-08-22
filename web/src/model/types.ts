@@ -102,6 +102,11 @@ export interface FieldDef {
    *  non-internal model shows, as the diode/varactor/led pickers want. */
   zenerBreakdown?: boolean;
   choices?: { value: number; label: string }[];
+  /** Label for the disabled option a `choice` field shows when the element's
+   *  value is not among `choices` (a loaded value the picker deliberately
+   *  does not offer fresh, like the realistic op-amp's old LM324). Absent,
+   *  the raw value is shown. */
+  outOfRangeLabel?: string;
   min?: number;
   max?: number;
   /** A whole-number field: an input count, a bit width, a grid size. Rendered
@@ -120,6 +125,14 @@ export interface FieldDef {
    *  shortcut), `e.modelName` (a named device model) or `e.params[name]`.
    *  Only meaningful for `text` and `modelChoice`. */
   target?: 'param' | 'text' | 'keyShortcut' | 'modelName';
+  /** Whether the row shows for a given element, the conditional-field
+   *  mechanism the voltage-source time fields need. Absent means always show.
+   *  The row disappears entirely rather than rendering disabled, so the panel
+   *  and the dialog agree with the engine on what is editable: the realistic
+   *  op-amp's Slew Rate and Output Current Limit rows vanish for the 324v2,
+   *  whose netlist takes no slew/current tuning upstream
+   *  (OpAmpRealElm.java:288-289). */
+  when?: (e: CircuitElement) => boolean;
 }
 
 /** Everything the app needs to know about an element type. */

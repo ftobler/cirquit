@@ -488,6 +488,86 @@ fn composite_with_a_current_child_delivers_its_rated_current() {
 }
 
 #[test]
+fn composite_vcvs_child_stamps_the_differential_gain() {
+    // A VCVS child parses its expression off the dump token (flags, input
+    // count, then the expression string) and stamps the differential gain onto
+    // its output pair: V(post2) - V(post3) = 2*(V(post0) - V(post1)). The
+    // composite's sync must hand the child its post voltages so the `a`/`b`
+    // input letters resolve to the composite's posts, and the expression being
+    // differential is what proves it: a gain that read only `a` would put 2*3
+    // = 6 V here instead of the 2*(3-1) = 4 V asserted.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 300], [0, 0]], &[("maxVoltage", 3.0)]),
+            elm(2, "voltage", &[[0, 400], [100, 0]], &[("maxVoltage", 1.0)]),
+            elm_composite(
+                3,
+                &[[0, 0], [100, 0], [300, 0], [300, 100]],
+                "VCVSElm 1 2 3 4",
+                &[1, 2, 3, 4],
+                &["0_2_2*(a-b)"],
+            ),
+            elm(4, "ground", &[[0, 300]], &[]),
+            elm(5, "ground", &[[0, 400]], &[]),
+            elm(6, "ground", &[[300, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    // The composite is element index 2; its four posts start at offset 4.
+    let (vp, vm) = (nodes[4 + 2] as usize, nodes[4 + 3] as usize);
+    assert!(
+        close(v[vp] - v[vm], 4.0, 1e-3),
+        "vcvs output was {} V, expected 2*(3-1) = 4 V",
+        v[vp] - v[vm]
+    );
+}
+
+#[test]
+fn composite_vccs_child_delivers_the_expression_current() {
+    // A VCCS child is the current twin: the expression is the
+    // transconductance, and a positive value pushes current into C+ (the
+    // VCCSElm sign, so 1 V on the input pair drives 1 mA through the 1k load).
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 300], [0, 0]], &[("maxVoltage", 1.0)]),
+            elm_composite(
+                2,
+                &[[0, 0], [100, 0], [200, 0], [200, 100]],
+                "VCCSElm 1 2 3 4",
+                &[1, 2, 3, 4],
+                &["0_2_0.001*(a-b)"],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[200, 0], [200, 300]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "ground", &[[0, 300]], &[]),
+            elm(5, "ground", &[[100, 0]], &[]),
+            elm(6, "ground", &[[200, 100]], &[]),
+            elm(7, "ground", &[[200, 300]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    // C+ is the composite's third post (offset 2 + 2).
+    let cp = nodes[4 + 2] as usize;
+    assert!(
+        close(v[cp], 1.0, 1e-4),
+        "C+ was {} V, expected 1 mA through the 1k load",
+        v[cp]
+    );
+}
+
+#[test]
 fn composite_with_an_led_child_drops_about_two_volts() {
     // An LED child is the port's Shockley diode with the LED's 2.1 V rated
     // drop, so a 5 V source through 1k into the composite reads just under
@@ -913,4 +993,66 @@ fn composite_gates_chain_through_an_internal_node() {
         0.0,
         1e-6
     ));
+}
+
+#[test]
+fn composite_transistor_child_resolves_its_named_spice_model() {
+    // A transistor child's dump token ends with its model name (the field
+    // after beta, TransistorElm.java:58-69). The composite must resolve it
+    // engine-side, or the LM324v2's SPICE transistors silently build as the
+    // port default (satCur 1e-13). A 1e-6 A base current forced by a child
+    // current source pins Vbe: VT*ln(1 + bf*(ib + sat/br)/sat) gives
+    // 0.7145 V for the `xlm324v2-qnq` satCur 1e-16 and 0.5360 V for the 1e-13
+    // default, the same analytic pair the top-level `32`-line test asserts
+    // (opamp_bjt.rs). The drive lives inside the composite because a top-level
+    // current source whose path runs through a composite is marked broken:
+    // the composite hides its internal connectivity from the union-find.
+    let stage = |dump: &str| {
+        let c = &mut build(
+            vec![
+                elm(1, "rail", &[[300, 0]], &[("maxVoltage", 5.0)]),
+                elm(
+                    2,
+                    "resistor",
+                    &[[300, 0], [300, 100]],
+                    &[("resistance", 10_000.0)],
+                ),
+                // Posts: the current source's source post, the base, the
+                // collector. The emitter is model node 0, the composite's
+                // ground.
+                elm_composite(
+                    3,
+                    &[[100, 0], [100, 100], [300, 100]],
+                    "CurrentElm 1 2\rNTransistorElm 2 3 0",
+                    &[1, 2, 3],
+                    &["0_0.000001", dump],
+                ),
+            ],
+            opts(1e-5, true),
+        );
+        let report = c.run(20);
+        assert!(report.converged, "did not converge: {:?}", report.error);
+        let v = c.node_voltages();
+        let nodes = c.element_nodes();
+        // The composite is element index 2; its three posts start at flattened
+        // offset 1 + 2 = 3. Post 1 is the base.
+        let nb = nodes[3 + 1] as usize;
+        v[nb]
+    };
+
+    let resolved = stage("0_1_0_0_100_xlm324v2-qnq");
+    assert!(
+        close(resolved, 0.7145, 5e-3),
+        "named-model Vbe was {resolved}, expected the 1e-16 satCur value 0.7145 V"
+    );
+    let default = stage("0_1_0_0_100");
+    assert!(
+        close(default, 0.5360, 5e-3),
+        "default Vbe was {default}, expected the 1e-13 satCur value 0.5360 V"
+    );
+    assert!(
+        close(resolved - default, 0.1785, 1e-2),
+        "named-model Vbe shift was {}, expected 0.1785 V",
+        resolved - default
+    );
 }

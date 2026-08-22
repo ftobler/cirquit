@@ -1,14 +1,19 @@
 /**
- * Realistic op-amp (OpAmpRealElm.java, dump 409): the transistor-level LM741,
- * built as a composite inside the engine. The frontend draws the larger
- * op-amp symbol with the two supply rails.
+ * Realistic op-amp (OpAmpRealElm.java, dump 409): the transistor-level op-amp,
+ * built as a composite inside the engine. The model selector (`modelType`) picks
+ * the LM741 or the LM324v2 netlist; the frontend draws the larger op-amp symbol
+ * with the two supply rails. A file naming the old LM324 (modelType 1) still
+ * loads and round-trips, and simulates its own netlist, but the picker offers
+ * it to nobody fresh: upstream hides it the same way (OpAmpRealElm.java:
+ * 270-281), because its follower's DC operating point collapses the input
+ * stage.
  *
  * Token layout after the common fields is the plain numeric pair
  * `slewRate capValue currentLimit modelType` (OpAmpRealElm.java:79-86): the
  * slew rate, the compensation capacitor's saved charge, the output current
- * limit and the model selector. Only the LM741 (modelType 0) is modelled;
- * the field offers it alone, and a loaded 324 keeps its token for the round
- * trip while simulating the 741 netlist.
+ * limit and the model selector. A loaded modelType token round-trips untouched
+ * (OpAmpRealElm.java:82-86 keeps the 741 when the token is absent or
+ * unparseable).
  *
  * The input-swap flag is bit 1 (OPAMPREAL_SWAP, OpAmpRealElm.java:65), the
  * composite's escape flag being bit 0.
@@ -122,10 +127,17 @@ export const OPAMP_REAL_DEF: ElementDef = {
       name: 'modelType',
       label: 'Model',
       type: 'choice',
-      // Only the 741 is modelled; the LM324 options are hidden exactly like
-      // upstream hides them for a part that is not already a 324
-      // (OpAmpRealElm.java:270-280).
-      choices: [{ value: 0, label: 'LM741' }],
+      // The netlists a fresh part can take (OpAmpRealElm.java:51-53,
+      // :270-281): the LM741 and the LM324v2. The old LM324 (modelType 1) is
+      // hidden from fresh parts exactly like upstream hides it ("hide old 324
+      // model"): its follower's DC operating point collapses the input stage,
+      // so it is only offered to files that already name it, which the choice
+      // row still shows as a disabled option (ElementFields.tsx).
+      choices: [
+        { value: 0, label: 'LM741' },
+        { value: 2, label: 'LM324v2' },
+      ],
+      outOfRangeLabel: 'LM324, old',
     },
     {
       name: 'swap',
@@ -133,8 +145,21 @@ export const OPAMP_REAL_DEF: ElementDef = {
       type: 'bool',
       flag: OPAMPREAL_SWAP,
     },
-    { name: 'slewRate', label: 'Slew Rate', unit: 'V/us' },
-    { name: 'currentLimit', label: 'Output Current Limit', unit: 'A' },
+    {
+      name: 'slewRate',
+      label: 'Slew Rate',
+      unit: 'V/us',
+      // The 324v2's compensation is fixed in its netlist (getCapacitor returns
+      // null, OpAmpRealElm.java:149-153), so upstream hides these two rows on
+      // it (:288-289); the 741 and the old 324 keep them.
+      when: (e) => e.params.modelType !== 2,
+    },
+    {
+      name: 'currentLimit',
+      label: 'Output Current Limit',
+      unit: 'A',
+      when: (e) => e.params.modelType !== 2,
+    },
   ],
   // The triangle body is a solid pick zone: the base at lead1 grown hs*2, the
   // apex at lead2 (OpAmpRealElm.java:183).

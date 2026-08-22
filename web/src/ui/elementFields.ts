@@ -27,10 +27,16 @@ export function fieldValue(e: CircuitElement, f: FieldDef): number | string {
 /** The property rows for one element, in def order. An unknown kind or a def
  *  with no fields (a wire, a ground) has nothing to edit and gives an empty
  *  list, which is what makes the dialog and the panel agree on "no
- *  properties" without either one repeating the check. */
+ *  properties" without either one repeating the check. A field whose `when`
+ *  predicate the element fails is dropped entirely, so the rows match the
+ *  engine's editable surface per element (the realistic op-amp hides the
+ *  Slew Rate and Output Current Limit rows on the 324v2, whose netlist takes
+ *  no such tuning). */
 export function fieldRows(e: CircuitElement): FieldRow[] {
   const def = defFor(e.kind);
-  return (def?.fields ?? []).map((field) => ({ field, value: fieldValue(e, field) }));
+  return (def?.fields ?? [])
+    .filter((field) => field.when === undefined || field.when(e))
+    .map((field) => ({ field, value: fieldValue(e, field) }));
 }
 
 /** Rounds an integer field's typed value and holds it inside the def's range,

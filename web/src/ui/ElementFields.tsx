@@ -99,6 +99,12 @@ function Field({
   }
 
   if (field.type === 'choice') {
+    // A loaded value outside the choices (the realistic op-amp's modelType 1,
+    // the old 324 upstream hides from fresh parts) must still display rather
+    // than silently show the first option, the same disabled-option handling
+    // the model picker gives an unknown name below.
+    const current = v;
+    const known = field.choices?.some((c) => c.value === current) ?? false;
     return (
       <label className="field">
         <span>{field.label}</span>
@@ -114,6 +120,11 @@ function Field({
               {c.label}
             </option>
           ))}
+          {!known && (
+            <option value={current} disabled>
+              {field.outOfRangeLabel ?? current}
+            </option>
+          )}
         </select>
       </label>
     );

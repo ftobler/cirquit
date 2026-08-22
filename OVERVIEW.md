@@ -227,13 +227,18 @@ fetch it).
   capture, so no new boundary crossing exists. The parser maps those tokens to
   real values instead of null plots (a token outside an element's table still
   rides raw only), and early.txt's Vce-vs-Ic X-Y panels draw again.
-- 475 Rust tests, of which 401 are the end-to-end circuit checks across
+- 485 Rust tests, of which 411 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2517 TypeScript tests (one corpus report test skipped). The bus-label-width
+  2524 TypeScript tests (one corpus report test skipped). The bus-label-width
   branch added 14 of them, all plain additions over its base: 11 in
   busWidths.test.ts, one each in junction.test.ts, infoBoxLines.test.ts and
-  registry.test.ts. CI runs fmt, clippy, tests, typecheck, lint and build,
+  registry.test.ts. The op-amp LM324 work added seven Rust tests (the two
+  composite VCVS/VCCS child checks, the composite named-model resolution, the
+  LM324 and 324v2 analytic tests, the 741-dispatch regression guard and the
+  default-limit inverting amp) and three TypeScript ones (the 324/324v2
+  round-trip, the two-way Model choice and the conditional-field row hiding).
+  CI runs fmt, clippy, tests, typecheck, lint and build,
   then deploys to Pages.
 
 ### Deliberate gaps
@@ -612,11 +617,25 @@ that order.
 For the `409` row the token stream is `slewRate capValue currentLimit modelType`
 (OpAmpRealElm.java:79-86); the 32 child dumps upstream's `dump()` writes are
 discarded on load and not regenerated, because the children are a pure function
-of the four parameters and upstream ignores them on load too. `modelType` 1
-(LM324) and 2 (324v2) round-trip but simulate the 741 netlist; the UI offers
-only the LM741 choice. The `capValue` token restores the compensation
+of the four parameters and upstream ignores them on load too. `modelType`
+selects the netlist the engine builds: 0 the LM741, 1 the LM324 and 2 its v2
+revision (OpAmpRealElm.java:51-53), each with its own cap-sizing formula and
+output-stage current-limit scaling, and the 324v2's named transistor models
+resolve engine-side to their SPICE satCur/betaR (composite.rs), so the v2 is
+genuinely the ON Semiconductor netlist. The Model choice offers the LM741 and
+the LM324v2; the old LM324 (modelType 1) is deliberately not offered to fresh
+parts, exactly like upstream hides it (OpAmpRealElm.java:270-281): its
+follower's DC operating point collapses the input stage (the pair saturates,
+the mirror turns off and the first-stage output floats, stranding the output
+near V-), so the model is only reachable through a file that already names it,
+which the choice row still displays as a disabled option. The v2 takes no
+slew/current tuning (its compensation is fixed in the netlist), so those two
+rows are hidden on it as upstream hides them (:288-289). The `capValue` token
+restores the compensation
 capacitor's stored charge on load (`set_param("voltDiff", …)`, upstream
-`getCapacitor().voltdiff`). The rail posts sit at the outer ends of the supply
+`getCapacitor().voltdiff`); the 324v2 has no compensation capacitor upstream
+sizes from the slew rate, so its `capValue` token is carried but inert. The
+rail posts sit at the outer ends of the supply
 stubs, 32 px from the body axis (upstream `rail1p[0]`).
 
 For the `407` row the three tokens are the `_`-joined dumps of the LED model,

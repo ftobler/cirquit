@@ -85,6 +85,13 @@ fn child_kind(model_type: &str) -> Option<(&'static str, Vec<(&'static str, f64)
         "AnalogSwitchElm" => Some(("analogSwitch", Vec::new())),
         "GroundElm" => Some(("ground", Vec::new())),
         "CCCSElm" => Some(("cccs", Vec::new())),
+        // The expression-driven controlled sources. The LM324v2 model strings
+        // hold a VCVS and a VCCS child whose value is a dump-token expression
+        // (lm324v2ModelString, OpAmpRealElm.java:38-41); the expression rides
+        // the child's label, the same string carrier the top-level sources
+        // use (VCCSElm.java:37-38).
+        "VCVSElm" => Some(("vcvs", Vec::new())),
+        "VCCSElm" => Some(("vccs", Vec::new())),
         _ => None,
     }
 }
@@ -158,6 +165,10 @@ fn dump_fields(kind: &str) -> Option<&'static [&'static str]> {
         "opamp" => Some(&["maxOut", "minOut", "gbw", "volts0", "volts1", "gain"]),
         "analogSwitch" => Some(&["r_on", "r_off", "threshold"]),
         "cccs" => Some(&["inputCount"]),
+        // The controlled sources dump their input count and their expression
+        // (VCCSElm.java:37-38); only the count is numeric, the expression is a
+        // string field `dump_expression` reads off the token directly.
+        "vcvs" | "vccs" => Some(&["inputCount"]),
         _ => None,
     }
 }
@@ -186,6 +197,60 @@ fn apply_dump(token: &str, kind: &str, params: &mut HashMap<String, f64>, flags:
             params.insert((*name).to_string(), v);
         }
     }
+}
+
+/// The expression a vcvs/vccs child's dump token carries, the fields after its
+/// flags and input count (VCCSElm.java:37-38). The token is `_`-joined, so the
+/// leftover fields rejoin with `_` to recover the original string, which the
+/// engine's own expressions never contain. `None` for every other child kind,
+/// and for a token that stops after the input count.
+fn dump_expression(token: &str, kind: &str) -> Option<String> {
+    if kind != "vcvs" && kind != "vccs" {
+        return None;
+    }
+    let mut fields = token.split('_');
+    fields.next();
+    fields.next();
+    let rest: Vec<&str> = fields.collect();
+    if rest.is_empty() {
+        None
+    } else {
+        Some(rest.join("_"))
+    }
+}
+
+/// The trailing model name a transistor child's dump token carries, the field
+/// after beta (TransistorElm.java:58-68, the token constructor reads the model
+/// name at :69). The LM324v2's dump names its transistors
+/// (`xlm324v2-qpi` etc.); without this field the child builds as a default
+/// Ebers-Moll transistor and the SPICE model's satCur/betaR are silently lost.
+/// `None` for every other child kind, and for a token with no name field.
+fn dump_model_name(token: &str, kind: &str) -> Option<String> {
+    if kind != "transistor" {
+        return None;
+    }
+    token.split('_').nth(5).map(|n| n.to_string())
+}
+
+/// The internal transistor models a composite child can name, with the two
+/// Ebers-Moll params the port consumes (satCur, betaR). Mirrors the engine
+/// half of `web/src/model/deviceModels.ts` (TransistorModel.java:121-126): the
+/// composite has no path through the frontend's load-time resolution, so the
+/// children of the built-in composites resolve here. A name outside the table
+/// is skipped and the child keeps its defaults, the same
+/// `getModelWithNameOrCopy` fallback a file miss gets at the top level.
+const TRANSISTOR_MODELS: &[(&str, f64, f64)] = &[
+    ("xlm324v2-qpi", 1.01e-16, 1.0),
+    ("xlm324v2-qpa", 1.01e-16, 1.0),
+    ("xlm324v2-qnq", 1e-16, 1.0),
+    ("xlm324v2-qpq", 1e-16, 1.0),
+];
+
+fn resolve_transistor_model(name: &str) -> Option<(f64, f64)> {
+    TRANSISTOR_MODELS
+        .iter()
+        .find(|(n, _, _)| *n == name)
+        .map(|&(_, sat, br)| (sat, br))
 }
 
 fn parse_model_line(line: &str) -> Option<(&str, Vec<usize>)> {
@@ -270,9 +335,34 @@ impl Composite {
                 .map(|(k, v)| (k.to_string(), v))
                 .collect();
             let mut flags = 0i64;
+            let mut label: Option<String> = None;
             if let Some(dumps) = dumps {
                 if let Some(token) = dumps.get(i) {
                     apply_dump(token, child_kind, &mut params, &mut flags);
+                    label = dump_expression(token, child_kind);
+                    // A transistor child's named model is a string field
+                    // `apply_dump` cannot carry; resolve it against the
+                    // internal-model table so the built-in composites keep
+                    // their SPICE transistors (see `resolve_transistor_model`).
+                    if let Some(name) = dump_model_name(token, child_kind) {
+                        if let Some((sat, br)) = resolve_transistor_model(&name) {
+                            params.insert("saturationCurrent".into(), sat);
+                            params.insert("betaReverse".into(), br);
+                        }
+                    }
+                }
+            }
+            // A controlled-source child's expression is not numeric, so
+            // `apply_dump` cannot carry it; it rides the label instead. A
+            // token whose expression fails to parse means the composite's own
+            // plumbing broke, not a user typo, and a silently-degraded child
+            // would stamp the wrong value, so fail loud with the child index
+            // named rather than letting `ExprSource::new` fall back to a stub.
+            if let Some(ref expr) = label {
+                if crate::expr::parse(expr).is_err() {
+                    panic!(
+                        "composite child {i} ({child_kind}) carries an unparseable expression: {expr:?}"
+                    );
                 }
             }
             // The channel type of a jfet/mosfet child is not a dump token; it
@@ -304,7 +394,7 @@ impl Composite {
                 kind: child_kind.into(),
                 posts: Vec::new(),
                 params,
-                label: None,
+                label,
                 model: None,
                 flags,
             };
