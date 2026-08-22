@@ -184,8 +184,15 @@ fetch it).
   currents recovered for the dots), and the two remaining XML-only classes
   exist as engine elements: the bus logic input (dump 435) and the bus
   transceiver (437). The instruction display presents its pins the way
-  upstream does now, all N on one coordinate tagged per bit. The corpus
-  alu74181 simulates again; see the XML circuits bullet for what still waits.
+  upstream does now, all N on one coordinate tagged per bit. Labeled nodes
+  take part too: each resolves to the widest width claimed by its coordinate
+  or any same-named label and presents one post per bit at its anchor, so a
+  label joins whole buses instead of only bit 0, while a narrow label named A
+  stays a different net from a wide one (upstream's two closure-key forms,
+  LabeledNodeElm.java:99, :137-140); width disagreements surface as red
+  bad-connection dots through the same list upstream folds its
+  `busMismatchList` into. The corpus alu74181 simulates again; see the XML
+  circuits bullet for what still waits.
 - Bus-mode chips (upstream's BIT_ORDER_BUS, ChipElm.java:37): counter2,
   fullAdder, SRAM and ROM accept the collapsed pin layout under which each
   makeBitPins group shares one coordinate and its pins carry per-post bit
@@ -220,10 +227,10 @@ fetch it).
   capture, so no new boundary crossing exists. The parser maps those tokens to
   real values instead of null plots (a token outside an element's table still
   rides raw only), and early.txt's Vce-vs-Ic X-Y panels draw again.
-- 472 Rust tests, of which 398 are the end-to-end circuit checks across
+- 475 Rust tests, of which 401 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2496 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
+  2517 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
   tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -504,7 +511,7 @@ Dump codes implemented so far, with their trailing field order:
 | `407` | optocoupler    | three raw `_`-joined child-dump tokens (LED, CCCS, phototransistor), then ctr |
 | `401` | comparator     | one raw `_`-joined child-dump token per composite child (internal op-amp, analog switch, ground) |
 | `412` | crystal        | four raw `_`-joined child-dump tokens (parallel cap, series cap, inductor, resistor), re-derived from params on save |
-| `207` | labeled node   | text (FLAG_ESCAPE = 4, always set on save)                 |
+| `207` | labeled node   | text (FLAG_ESCAPE = 4, always set on save; never a width token, the resolver derives it) |
 | `368` | test point      | meter, [label] (FLAG_LABEL = 1)                             |
 | `216` | ohmmeter        | current, maxVoltage (the CurrentElm tokens)                 |
 | `420` | wattmeter       | width, meter                                                |
@@ -577,10 +584,15 @@ transceiver in the standard chip stream (the XML attribute is `db`), OE
 active-low at top-left, DIR top-right, A and B banks MSB first down the sides;
 its A/B pins are individual, upstream's default outside bus mode. Wire widths:
 a saved token above one is honoured, but widths also propagate from wide pins
-through wire chains on every build (`web/src/model/busWidths.ts`, mirroring
-upstream's `detectBusWidths`), so a plain wire drawn onto a splitter becomes a
-bus without any token. Upstream's own text format never saves wire widths at
-all.
+through wire chains and matching labels on every build
+(`web/src/model/busWidths.ts`, mirroring upstream's `detectBusWidths`), so a
+plain wire drawn onto a splitter becomes a bus without any token and two
+same-named labels carry the width to each other; a coordinate where two
+different declared widths meet is collected into a mismatch set that draws as
+red bad-connection dots, like upstream's `busMismatchList`. Labeled nodes save
+no width token either: like wires, their width is derived at build time and
+injected into the engine spec only. Upstream's own text format never saves
+wire widths at all.
 
 For the `402` row the OTA is a `CompositeElm` of two rails and sixteen
 transistors (OTAElm.java:8-9), and every token after the flags is one composite

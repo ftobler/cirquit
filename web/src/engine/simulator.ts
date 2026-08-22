@@ -460,10 +460,11 @@ export class SimEngine {
   ): string | null {
     const usable = elements.filter((e) => this.supports(engineKindOf(e)));
     // Bus widths are a property of the whole netlist: wide pins seed them and
-    // they flood through wire chains (upstream's detectBusWidths), so the
-    // pass runs over the usable list before any post list is laid out. A bus
-    // wire then hands the engine one terminal per bit at each endpoint.
-    const busWidths = resolveBusWidths(usable);
+    // they flood through wire chains and matching labels (upstream's
+    // detectBusWidths), so the pass runs over the usable list before any post
+    // list is laid out. A bus wire then hands the engine one terminal per bit
+    // at each endpoint, and a wide label one terminal per bit at its anchor.
+    const busWidths = resolveBusWidths(usable).widths;
     this.order = usable.map((e) => e.id);
     this.indexById = new Map(this.order.map((id, i) => [id, i]));
     this.postOffsetById = new Map();
@@ -490,8 +491,10 @@ export class SimEngine {
             e.state;
         }
         // The resolved width travels with the wire so the engine builds the
-        // same bus the offsets above were laid out for.
-        if (e.kind === 'wire') {
+        // same bus the offsets above were laid out for. A labeled node gets
+        // the same treatment: the engine grows one post per bit, and the text
+        // format itself never carries a width token.
+        if (e.kind === 'wire' || e.kind === 'labeledNode') {
           const w = busWidths.get(e.id);
           if (w !== undefined && w > 1) params.busWidth = w;
         }

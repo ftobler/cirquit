@@ -7,6 +7,7 @@
 
 import type { CircuitElement, Point } from '../model/types';
 import { postsOf } from '../model/registry';
+import { cachedBusMismatches } from '../model/busWidths';
 import { pointOnWireInterior } from './geometry';
 import { boxesIntersect, elementBox } from './selection';
 
@@ -39,6 +40,11 @@ export function shouldDrawDot(count: number): boolean {
  * dropping a wire end on another wire's middle splits nothing, so the end only
  * looks connected, and the red dot is what says otherwise.
  *
+ * Bus-width mismatches join the same list: upstream folds its
+ * `busMismatchList` into `badConnectionList` (SimulationManager.java:1109),
+ * so a coordinate where two different widths claim one net paints red and
+ * tallies exactly like a dropped end.
+ *
  * A wire is tested against its drawn path rather than its bounding box, which
  * for a diagonal wire would paint a whole rectangle of false positives; every
  * other element is tested against `elementBox`, this port's `boundingBox`.
@@ -53,6 +59,13 @@ export function badConnectionPoints(
   counts: Map<string, number> = postDotPoints(elements),
 ): Point[] {
   const bad: Point[] = [];
+  const seen = new Set<string>();
+  const push = (p: Point): void => {
+    const k = `${p.x},${p.y}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    bad.push(p);
+  };
   for (const [key, count] of counts) {
     if (count !== 1) continue;
     const [x, y] = key.split(',').map(Number);
@@ -69,10 +82,14 @@ export function badConnectionPoints(
           ? pointOnWireInterior(p, other)
           : boxesIntersect(elementBox(other), { x0: x, y0: y, x1: x, y1: y });
       if (touches) {
-        bad.push(p);
+        push(p);
         break;
       }
     }
+  }
+  for (const key of cachedBusMismatches(elements)) {
+    const [x, y] = key.split(',').map(Number);
+    push({ x, y });
   }
   return bad;
 }

@@ -410,10 +410,13 @@ export function useFrameLoop(
 
             const idx = engine?.indexOf(e.id);
             const offset = engine?.postOffset(e.id);
-            // A bus wire's terminal list follows the resolved width, matching
-            // what the engine built, so per-bit reads see every bit.
+            // A bus wire's or wide label's terminal list follows the resolved
+            // width, matching what the engine built, so per-bit reads see
+            // every bit.
             const posts =
-              e.kind === 'wire' ? postsForRender(e, busWidths) : def.posts(e);
+              e.kind === 'wire' || e.kind === 'labeledNode'
+                ? postsForRender(e, busWidths)
+                : def.posts(e);
             const voltages = posts.map((_, i) => {
               if (!nodeVoltages || !elementNodes || offset === undefined) return 0;
               const node = elementNodes[offset + i];
@@ -523,7 +526,9 @@ export function useFrameLoop(
               busWidth:
                 e.kind === 'wire'
                   ? Math.max(busWidths.get(e.id) ?? 1, storedBusWidth(e))
-                  : undefined,
+                  : e.kind === 'labeledNode'
+                    ? busWidths.get(e.id)
+                    : undefined,
               showCurrent: settings.showCurrent,
               showValues: settings.showValues,
               showVoltageColor: settings.showVoltageColor,

@@ -561,15 +561,24 @@ impl Circuit {
             }
         }
 
-        // Named nodes connect by label rather than by position.
-        let mut by_label: HashMap<String, usize> = HashMap::new();
-        for (ei, elm) in self.elements.iter().enumerate() {
-            if let Some(label) = elm.node_label() {
-                let gi = offsets[ei];
-                match by_label.entry(label.to_string()) {
-                    std::collections::hash_map::Entry::Occupied(o) => uf.union(gi, *o.get()),
-                    std::collections::hash_map::Entry::Vacant(v) => {
-                        v.insert(gi);
+        // Named nodes connect by label rather than by position, per post: a
+        // wide labeled node's post b carries the key (text, Some(b)) and joins
+        // only bit b of every same-named label, while a narrow one keys
+        // (text, None), exactly the port's pre-bus behaviour. Upstream writes
+        // these two forms as distinct closure keys (LabeledNodeElm.java:99,
+        // :137-140), which keeps a narrow label named A and a wide label named
+        // A on separate nets.
+        let mut by_label: HashMap<(&str, Option<usize>), usize> = HashMap::new();
+        for (ei, es) in specs.iter().enumerate() {
+            let elm = &self.elements[ei];
+            for pi in 0..es.posts.len() {
+                if let Some((label, bit)) = elm.node_label_key(pi) {
+                    let gi = offsets[ei] + pi;
+                    match by_label.entry((label, bit)) {
+                        std::collections::hash_map::Entry::Occupied(o) => uf.union(gi, *o.get()),
+                        std::collections::hash_map::Entry::Vacant(v) => {
+                            v.insert(gi);
+                        }
                     }
                 }
             }

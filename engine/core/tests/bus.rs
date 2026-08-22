@@ -638,3 +638,139 @@ fn bus_mode_rom_decodes_address_and_drives_its_data_bus() {
         "D1 should read 5 V through its 1 ohm coupling"
     );
 }
+
+// ─── Labeled nodes on buses (LabeledNodeElm.java:126-140) ───
+
+/// An N-bit labeled node anchored at `(x, y)`: every post sits at the anchor
+/// carrying its own bit, exactly like the bus logic input's posts. `busWidth`
+/// is what the frontend's width resolver injects; the text format itself
+/// never saves a width token.
+fn labeled(id: u32, x: i32, y: i32, width: usize, text: &str) -> ElementSpec {
+    let posts = vec![[x, y]; width];
+    let mut e = elm(id, "labeledNode", &posts, &[("busWidth", width as f64)]);
+    e.label = Some(text.into());
+    e
+}
+
+#[test]
+fn labeled_node_joins_two_buses_per_bit() {
+    // Two 2-bit banks joined ONLY by two labels sharing one text. The driver
+    // holds 0b01 with hiV 5 and loV 3, so bit 0 carries 5 V and bit 1 carries
+    // 3 V, deliberately two distinguishable levels: had the label carried only
+    // bit 0 across (the old behaviour), far bit 1 would sit on nothing and
+    // float to its gmin pin instead of reading exactly 3 V.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "busLogicInput",
+                &[[0, 0]; 2],
+                &[
+                    ("busWidth", 2.0),
+                    ("value", 1.0),
+                    ("hiV", 5.0),
+                    ("loV", 3.0),
+                ],
+            ),
+            labeled(2, 0, 0, 2, "A"),
+            labeled(3, 128, 64, 2, "A"),
+            splitter(4, 128, 64, 224, 2),
+            elm(
+                5,
+                "resistor",
+                &[[224, 0], [288, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(6, "ground", &[[288, 0]], &[]),
+            elm(
+                7,
+                "resistor",
+                &[[224, 32], [288, 32]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(8, "ground", &[[288, 32]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    let v = c.element_voltages();
+    // Element order: driver, two labels, splitter, then load/ground pairs, so
+    // the loads sit at indices 4 and 6; each is grounded at its far end.
+    assert!(close(v[4], 5.0, 1e-9), "far bit 0 read {} not 5", v[4]);
+    assert!(close(v[6], 3.0, 1e-9), "far bit 1 read {} not 3", v[6]);
+}
+
+#[test]
+fn narrow_and_wide_labels_with_one_text_stay_apart() {
+    // Upstream writes two disjoint closure-key namespaces, `label:text` and
+    // `label:text:b` (LabeledNodeElm.java:137-140), so a single-post label
+    // named A and a 2-post label named A are different nets. If they merged,
+    // the 5 V ideal source below would fight the driver's 4 V bit-0 source
+    // and the build would fail as singular.
+    let spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            elm(1, "voltage", &[[-160, 0], [-96, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "ground", &[[-160, 0]], &[]),
+            labeled(3, -96, 0, 1, "A"),
+            elm(
+                4,
+                "busLogicInput",
+                &[[96, 32]; 2],
+                &[
+                    ("busWidth", 2.0),
+                    ("value", 1.0),
+                    ("hiV", 4.0),
+                    ("loV", 1.0),
+                ],
+            ),
+            labeled(5, 96, 32, 2, "A"),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+
+    let c = &mut Circuit::new();
+    c.set_circuit(&spec)
+        .expect("narrow and wide A must not merge");
+    c.run(3);
+    // Flat slots: source 0-1, ground 2, narrow label 3, driver 4-5, wide
+    // label 6-7. Each side holds its own levels exactly.
+    assert!(close(voltage_at(c, 3), 5.0, 1e-9), "narrow A lost its net");
+    assert!(close(voltage_at(c, 6), 4.0, 1e-9), "wide A bit 0 drifted");
+    assert!(close(voltage_at(c, 7), 1.0, 1e-9), "wide A bit 1 drifted");
+}
+
+#[test]
+fn wide_label_meets_a_plain_wire_only_at_bit_0() {
+    // The everyday drawing: a plain single-bit wire runs into a wide label's
+    // anchor. Bit 0 must join the wire, bit 1 must stay off it, which is what
+    // the (coordinate, bit) merge gives once the label presents real per-bit
+    // posts.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[-160, 0], [-96, 0]], &[("maxVoltage", 2.5)]),
+            elm(2, "ground", &[[-160, 0]], &[]),
+            elm(3, "wire", &[[-96, 0], [0, 0]], &[]),
+            labeled(4, 0, 0, 2, "B"),
+            // Only bit 0 has a return path, so bit 1 floats to ~0 V while the
+            // wire side reads the full 2.5 V.
+            elm(5, "resistor", &[[0, 0], [0, 64]], &[("resistance", 1000.0)]),
+            elm(6, "ground", &[[0, 64]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    let nodes = c.element_nodes();
+    let vn = c.node_voltages();
+    // Flats: source 0-1, ground 2, wire 3-4, label 5-6, load 7-8.
+    assert!(
+        close(vn[nodes[5] as usize], 2.5, 1e-9),
+        "label bit 0 did not join the wire"
+    );
+    assert!(
+        vn[nodes[6] as usize].abs() < 1e-6,
+        "label bit 1 leaked onto the plain wire: {}",
+        vn[nodes[6] as usize]
+    );
+}

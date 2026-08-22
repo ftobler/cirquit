@@ -204,6 +204,16 @@ describe('text field metadata', () => {
     expect(def?.fields).toEqual([{ name: 'text', label: 'Text', type: 'text', target: 'text' }]);
   });
 
+  it('the labeled node keeps one file post and never saves a width token', () => {
+    // The bus width is the resolver's build-time answer (postsForRender
+    // expands the render terminals), never file state: upstream saves none
+    // either, so an injected params.busWidth must not reach the dump.
+    const def = ELEMENT_DEFS.find((d) => d.kind === 'labeledNode');
+    const e = { ...element('labeledNode', 32, 48, 32, 64), text: 'A', params: { busWidth: 8 } };
+    expect(def?.dump?.(e)).toEqual(['A']);
+    expect(postsOf(e)).toHaveLength(1);
+  });
+
   it('the custom logic model name is a text field, and its posts follow the model', () => {
     const def = ELEMENT_DEFS.find((d) => d.kind === 'customLogic');
     expect(def?.dumpCode).toBe('208');

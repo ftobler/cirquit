@@ -62,9 +62,11 @@ export function drawAllElements(
     const idx = engine?.indexOf(e.id);
     const offset = engine?.postOffset(e.id);
     // Same resolved-width terminal list as the live frame loop, so an export
-    // of a bus wire reads every bit's level.
+    // of a bus wire or wide label reads every bit's level.
     const posts =
-      e.kind === 'wire' ? postsForRender(e, busWidths) : def.posts(e);
+      e.kind === 'wire' || e.kind === 'labeledNode'
+        ? postsForRender(e, busWidths)
+        : def.posts(e);
     const voltages = posts.map((_, i) => {
       if (!nodeVoltages || !elementNodes || offset === undefined) return 0;
       const node = elementNodes[offset + i];
@@ -100,7 +102,9 @@ export function drawAllElements(
       busWidth:
         e.kind === 'wire'
           ? Math.max(busWidths.get(e.id) ?? 1, storedBusWidth(e))
-          : undefined,
+          : e.kind === 'labeledNode'
+            ? busWidths.get(e.id)
+            : undefined,
       showCurrent: false,
       showValues: settings.showValues,
       showVoltageColor: settings.showVoltageColor,

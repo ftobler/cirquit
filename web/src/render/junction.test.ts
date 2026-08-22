@@ -158,4 +158,24 @@ describe('bad connections', () => {
 
     expect(badConnectionPoints([across, dropped, rail])).toContainEqual({ x: 160, y: 32 });
   });
+
+  it('unions bus-width mismatch coordinates with the classic dots', () => {
+    // Upstream folds its busMismatchList into badConnectionList
+    // (SimulationManager.java:1109), so a coordinate where a 2-bit driver and
+    // a 4-bit driver claim one net paints red exactly like a dropped end. Two
+    // anchor-post drivers share (400,300); their widths disagree there.
+    const across = el('wire', 0, 0, 160, 0);
+    const dropped = el('wire', 80, 0, 80, 80);
+    dropped.id = 2;
+    const two = el('busLogicInput', 400, 300, 464, 332);
+    two.id = 3;
+    two.params.busWidth = 2;
+    const four = el('busLogicInput', 400, 300, 464, 332);
+    four.id = 4;
+    four.params.busWidth = 4;
+
+    const bad = badConnectionPoints([across, dropped, two, four]);
+    expect(bad).toContainEqual({ x: 80, y: 0 });
+    expect(bad).toContainEqual({ x: 400, y: 300 });
+  });
 });

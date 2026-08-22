@@ -33,11 +33,15 @@ export const LABELED_NODE_DEF: ElementDef = {
   draw(g, e) {
     const p = { x: e.x1, y: e.y1 };
     const text = e.text ?? '';
+    // A label the resolver widened is drawn with a heavy border, the port's
+    // analogue of upstream drawing its stem at weight 5 like a bus wire
+    // (LabeledNodeElm.java:214); g.busWidth carries the resolved width.
+    const width = Math.max(1, Math.trunc(g.busWidth ?? 1));
     g.ctx.font = canvasFont(11);
     const w = g.ctx.measureText(text).width + 10;
     g.ctx.fillStyle = g.theme.panel;
     g.ctx.strokeStyle = limbColor(g, voltageColor(g, g.voltages[0]));
-    g.ctx.lineWidth = 1.5;
+    g.ctx.lineWidth = width > 1 ? 4 : 1.5;
     g.ctx.beginPath();
     g.ctx.rect(p.x, p.y - 8, w, 16);
     g.ctx.fill();

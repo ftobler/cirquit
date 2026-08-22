@@ -77,4 +77,32 @@ describe('infoBoxLines', () => {
       '2 bad connections',
     ]);
   });
+
+  it('counts classic dots and bus-width mismatches in one tally', () => {
+    // One dropped end plus one coordinate where a 2-bit and a 4-bit driver
+    // disagree: upstream merges both lists into the same red-dot count
+    // (SimulationManager.java:1109).
+    const across = el(1, 'wire', {});
+    const dropped = { ...el(2, 'wire', {}), x1: 80, y1: 0, x2: 80, y2: 80 };
+    const two = {
+      ...el(3, 'busLogicInput', {}),
+      x1: 400,
+      y1: 300,
+      x2: 464,
+      y2: 332,
+      params: { busWidth: 2 },
+    };
+    const four = {
+      ...el(4, 'busLogicInput', {}),
+      x1: 400,
+      y1: 300,
+      x2: 464,
+      y2: 332,
+      params: { busWidth: 4 },
+    };
+
+    expect(infoBoxLines(null, [across, dropped, two, four], engine, settings).at(-1)).toBe(
+      '2 bad connections',
+    );
+  });
 });

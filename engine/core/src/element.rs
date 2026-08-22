@@ -289,9 +289,13 @@ pub trait Element {
     /// the new internal node (`getInternalNodeCount`, CapacitorElm.java:213).
     fn set_series_resistance(&mut self, _r: f64) {}
 
-    /// Named-node label, for elements that connect by name rather than by
-    /// position.
-    fn node_label(&self) -> Option<&str> {
+    /// Label merge key for one post, for elements that connect by name rather
+    /// than by position: `(text, Some(bit))` on a wide labeled node, `(text,
+    /// None)` on a narrow one. Upstream spells these as two disjoint key
+    /// namespaces, `label:text` versus `label:text:b`
+    /// (LabeledNodeElm.java:99, :137-140), so a narrow label named A and a
+    /// wide label named A do not join each other.
+    fn node_label_key(&self, _post: usize) -> Option<(&str, Option<usize>)> {
         None
     }
 
