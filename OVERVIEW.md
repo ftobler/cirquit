@@ -230,8 +230,11 @@ fetch it).
 - 475 Rust tests, of which 401 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2517 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
-  tests, typecheck, lint and build, then deploys to Pages.
+  2517 TypeScript tests (one corpus report test skipped). The bus-label-width
+  branch added 14 of them, all plain additions over its base: 11 in
+  busWidths.test.ts, one each in junction.test.ts, infoBoxLines.test.ts and
+  registry.test.ts. CI runs fmt, clippy, tests, typecheck, lint and build,
+  then deploys to Pages.
 
 ### Deliberate gaps
 

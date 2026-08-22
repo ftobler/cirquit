@@ -54,6 +54,13 @@ impl Element for LabeledNode {
         }
         Some((&self.label, if self.width > 1 { Some(post) } else { None }))
     }
+    /// Reads out the anchor's bit-0 level, upstream's `getVoltageDiff`
+    /// (LabeledNodeElm.java:243): a labeled node is a junction, so a hover or
+    /// a Voltage scope shows the net voltage, never the bit-to-bit difference
+    /// the two-terminal default would compute for a wide node.
+    fn voltage_diff(&self) -> f64 {
+        self.base.volts.first().copied().unwrap_or(0.0)
+    }
     /// Wire-equivalent like upstream (`getConnection` returns n1 == n2): no
     /// two distinct terminals couple in the matrix, so the floating-node pass
     /// cannot see bit 1 as grounded through bit 0.

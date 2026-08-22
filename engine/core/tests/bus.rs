@@ -698,6 +698,19 @@ fn labeled_node_joins_two_buses_per_bit() {
     // the loads sit at indices 4 and 6; each is grounded at its far end.
     assert!(close(v[4], 5.0, 1e-9), "far bit 0 read {} not 5", v[4]);
     assert!(close(v[6], 3.0, 1e-9), "far bit 1 read {} not 3", v[6]);
+    // The labels themselves read out their bit-0 level, upstream's
+    // getVoltageDiff returns volts[0] (LabeledNodeElm.java:243), never a
+    // bit-to-bit difference. The near label is index 1, the far one index 2.
+    assert!(
+        close(v[1], 5.0, 1e-9),
+        "near label readout was {} not 5",
+        v[1]
+    );
+    assert!(
+        close(v[2], 5.0, 1e-9),
+        "far label readout was {} not 5",
+        v[2]
+    );
 }
 
 #[test]
