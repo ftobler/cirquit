@@ -37,7 +37,7 @@ import {
   rotateElement,
   swapTerminalOrder,
 } from '../model/transform';
-import { LOGIC_INPUT_TERNARY, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
+import { LOGIC_INPUT_TERNARY, SWITCH2_CENTER_OFF, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import { defFor, postsOf } from '../model/registry';
 import { chipPinsOf } from '../model/registry/chips';
 import { CS_INPUT_COUNT_KINDS } from '../model/registry/elements/vcvs';
@@ -2624,7 +2624,14 @@ export function nextSwitchState(e: CircuitElement): number {
     return (((e.state ?? e.params.value ?? 0) + 1) % max + max) % max;
   }
   if (e.kind === 'mbbSwitch') return ((e.state ?? 0) + 1) % 4;
-  return ((e.state ?? 0) + 1) % (e.kind === 'switch' || e.kind === 'dpdtSwitch' ? 2 : throwCount);
+  // A centre-off two-throw switch cycles all three stops including the open
+  // middle, upstream's simpleToggle over posCount (Switch2Elm.java:83,
+  // :155-156); every other SPDT cycles its throws.
+  const centreOff =
+    e.kind === 'switch2' && (e.flags & SWITCH2_CENTER_OFF) !== 0 && throwCount === 2;
+  const posCount =
+    e.kind === 'switch' || e.kind === 'dpdtSwitch' ? 2 : throwCount + (centreOff ? 1 : 0);
+  return ((e.state ?? 0) + 1) % posCount;
 }
 
 /** Shared insert path for paste and duplicate: parse, re-id, offset a grid step. */

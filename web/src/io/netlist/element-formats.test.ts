@@ -811,6 +811,18 @@ describe('switch and SPDT labels', () => {
     // The `false` position normalises to 0, which is the same switch.
     expect(elementLine).toBe('S 144 144 144 64 0 0 false 1 2');
   });
+
+  it('keeps position 2 of a centre-off SPDT on load and saves it back byte-for-byte', () => {
+    // FLAG_CENTER_OFF (bit 1) widens the position range to 0..2, so a file
+    // saved with the lever on the open middle stop must reload with state 2
+    // (the engine's open request) instead of clamping it onto a throw.
+    const { e, elementLine } = switchLine('S 144 144 144 64 1 2 false 0 2', 'S ');
+    expect(e.flags & 1).toBe(1);
+    expect(e.state).toBe(2);
+    expect(e.params.position).toBe(2);
+    expect(e.params.throwCount).toBe(2);
+    expect(elementLine).toBe('S 144 144 144 64 1 2 false 0 2');
+  });
 });
 
 describe('electromechanical batch E file formats', () => {

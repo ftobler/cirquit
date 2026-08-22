@@ -1,6 +1,6 @@
 //! Switches, the AC source, potentiometer, labeled nodes, and the solver's handling of floating nodes, wires and grounds.
 
-use circuit_core::{Circuit, CircuitSpec, ScopeValue};
+use circuit_core::{Circuit, CircuitSpec, ElementSpec, ScopeValue};
 
 mod common;
 use common::*;
@@ -933,6 +933,162 @@ fn wires_off_a_rail_carry_the_rail_current() {
         close(i[1], -i[0], 1e-9),
         "flipped wire off the rail took {}",
         i[1]
+    );
+}
+
+/// A 5 V source through 1k into an SPDT's common, each throw hanging off its
+/// own 1k to ground. Element order: voltage, ground, feed resistor, switch2,
+/// throw-1 resistor, its ground, throw-2 resistor, its ground. The throw
+/// resistor voltages read the throw node directly (top at `post0`, bottom
+/// grounded), which is what the centre-off tests assert on.
+fn spdt_divider(center_off: bool, position: f64) -> Vec<ElementSpec> {
+    let mut v = vec![
+        elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+        elm(2, "ground", &[[0, 100]], &[]),
+        elm(
+            3,
+            "resistor",
+            &[[0, 0], [100, 0]],
+            &[("resistance", 1000.0)],
+        ),
+        elm(
+            4,
+            "switch2",
+            &[[100, 0], [100, 100], [100, 200]],
+            &[("throwCount", 2.0), ("position", position)],
+        ),
+        elm(
+            5,
+            "resistor",
+            &[[100, 100], [100, 300]],
+            &[("resistance", 1000.0)],
+        ),
+        elm(6, "ground", &[[100, 300]], &[]),
+        elm(
+            7,
+            "resistor",
+            &[[100, 200], [100, 400]],
+            &[("resistance", 1000.0)],
+        ),
+        elm(8, "ground", &[[100, 400]], &[]),
+    ];
+    if center_off {
+        v[3].flags = 1; // FLAG_CENTER_OFF
+    }
+    v
+}
+
+#[test]
+fn center_off_spdt_is_open_at_position_two() {
+    // A centre-off SPDT loaded at position 2 must not conduct: no voltage
+    // source is stamped, so each throw node sits at its own load's idle level
+    // (0 V, pulled to ground) instead of being pinned to the common by a 0 V
+    // source. Without the fix the clamp selects throw 2 and pins it to the
+    // divider's 2.5 V, which is exactly the silent-conduction bug the flag
+    // exists to stop.
+    let c = &mut build(spdt_divider(true, 2.0), opts(1e-5, true));
+    let report = c.run(5);
+    assert!(
+        report.converged,
+        "centre-off SPDT did not solve: {:?}",
+        report.error
+    );
+    assert!(
+        close(c.element_voltages()[4], 0.0, 1e-9),
+        "throw 1 read {} V with the switch open",
+        c.element_voltages()[4]
+    );
+    assert!(
+        close(c.element_voltages()[6], 0.0, 1e-9),
+        "throw 2 read {} V with the switch open",
+        c.element_voltages()[6]
+    );
+}
+
+#[test]
+fn center_off_spdt_toggles_open_then_back_closed() {
+    // set_state must store position 2 verbatim when centre-off: a live toggle
+    // into the middle opens the switch instead of wrapping 2 back onto throw 1.
+    let c = &mut build(spdt_divider(true, 1.0), opts(1e-5, true));
+    c.run(5);
+    // Position 1 selects throw 2: the 0 V source pins the common and throw 2
+    // to the same potential, which the feed and load resistors divide down to
+    // 5 V * 1k / (1k + 1k) = 2.5 V.
+    assert!(
+        close(c.element_voltages()[6], 2.5, 1e-9),
+        "throw 2 at position 1 read {} V",
+        c.element_voltages()[6]
+    );
+
+    assert!(c.set_state(4, 2));
+    c.run(5);
+    // Open: both throws idle at 0 V.
+    assert!(
+        close(c.element_voltages()[4], 0.0, 1e-9),
+        "throw 1 after opening read {} V",
+        c.element_voltages()[4]
+    );
+    assert!(
+        close(c.element_voltages()[6], 0.0, 1e-9),
+        "throw 2 after opening read {} V",
+        c.element_voltages()[6]
+    );
+
+    assert!(c.set_state(4, 0));
+    c.run(5);
+    // Back closed onto throw 1.
+    assert!(
+        close(c.element_voltages()[4], 2.5, 1e-9),
+        "throw 1 after re-closing read {} V",
+        c.element_voltages()[4]
+    );
+    assert!(
+        close(c.element_voltages()[6], 0.0, 1e-9),
+        "throw 2 after re-closing read {} V",
+        c.element_voltages()[6]
+    );
+}
+
+#[test]
+fn plain_spdt_still_clamps() {
+    // Without FLAG_CENTER_OFF the old behaviour holds exactly: a loaded
+    // position 2 clamps onto the last throw, and set_state wraps modulo
+    // throwCount. Negative control for the two centre-off branches.
+    let c = &mut build(spdt_divider(false, 2.0), opts(1e-5, true));
+    c.run(5);
+    // selected_post clamps position 2 onto throw 2, so the throw node joins
+    // the common at the divider's 2.5 V.
+    assert!(
+        close(c.element_voltages()[6], 2.5, 1e-9),
+        "clamped position 2 read {} V on throw 2",
+        c.element_voltages()[6]
+    );
+
+    // set_state wraps: 2 -> 0 (throw 1), then 3 -> 1 (throw 2).
+    assert!(c.set_state(4, 2));
+    c.run(5);
+    assert!(
+        close(c.element_voltages()[4], 2.5, 1e-9),
+        "wrapped state 2 read {} V on throw 1",
+        c.element_voltages()[4]
+    );
+    assert!(
+        close(c.element_voltages()[6], 0.0, 1e-9),
+        "wrapped state 2 read {} V on throw 2",
+        c.element_voltages()[6]
+    );
+
+    assert!(c.set_state(4, 3));
+    c.run(5);
+    assert!(
+        close(c.element_voltages()[4], 0.0, 1e-9),
+        "wrapped state 3 read {} V on throw 1",
+        c.element_voltages()[4]
+    );
+    assert!(
+        close(c.element_voltages()[6], 2.5, 1e-9),
+        "wrapped state 3 read {} V on throw 2",
+        c.element_voltages()[6]
     );
 }
 

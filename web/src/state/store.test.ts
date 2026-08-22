@@ -853,6 +853,54 @@ describe('switch keyboard shortcuts', () => {
     expect(nextSwitchState({ ...dpdt, state: 1 })).toBe(0);
   });
 
+  it('a centre-off SPDT cycles through the open middle position', () => {
+    // Upstream's simpleToggle cycles over posCount (Switch2Elm.java:83,155-156),
+    // so a flagged two-throw switch walks 0, 1, 2, 0 and rests its lever on the
+    // open stop; an unflagged one keeps walking 0, 1, 0 over its two throws.
+    const base = {
+      id: 1,
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 1, // SWITCH2_CENTER_OFF
+      params: { position: 0, momentary: 0, throwCount: 2 },
+      state: 0,
+    };
+    expect(nextSwitchState(base)).toBe(1);
+    expect(nextSwitchState({ ...base, state: 1 })).toBe(2);
+    expect(nextSwitchState({ ...base, state: 2 })).toBe(0);
+
+    const plain = { ...base, flags: 0 };
+    expect(nextSwitchState(plain)).toBe(1);
+    expect(nextSwitchState({ ...plain, state: 1 })).toBe(0);
+  });
+
+  it('clicking through a centre-off SPDT opens it and queues the engine state', () => {
+    // The pointer toggle reaches the open middle stop, and the engine rebuild
+    // carries position 2 through pendingStates exactly like any other throw.
+    const id = useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 1, // SWITCH2_CENTER_OFF
+      params: { position: 0, momentary: 0, throwCount: 2 },
+      state: 0,
+    });
+    useStore.getState().toggleSwitch(id);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().pendingStates.get(id)).toBe(1);
+    useStore.getState().toggleSwitch(id);
+    expect(useStore.getState().elements[0].state).toBe(2);
+    expect(useStore.getState().pendingStates.get(id)).toBe(2);
+    useStore.getState().toggleSwitch(id);
+    expect(useStore.getState().elements[0].state).toBe(0);
+    expect(useStore.getState().pendingStates.get(id)).toBe(0);
+  });
+
   it('toggleSwitchByKey throws an MBB and DPDT by their shortcut', () => {
     useStore.getState().addElement({
       kind: 'mbbSwitch',
