@@ -804,6 +804,47 @@ describe('switch keyboard shortcuts', () => {
     expect(nextSwitchState({ ...base, state: 1 })).toBe(0);
   });
 
+  it('clicking a ternary logic input cycles 0, 1, 2, 0 with a pending state each step', () => {
+    // The pointer toggle routes through nextSwitchState and setElementState,
+    // which is what queues the engine's pendingStates; every click must carry
+    // the new position to the engine, not just redraw the glyph.
+    const id = useStore.getState().addElement({
+      kind: 'logicInput',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 1, // FLAG_TERNARY
+      params: { position: 0, momentary: 0 },
+      state: 0,
+    });
+    for (const expected of [1, 2, 0]) {
+      const e = useStore.getState().elements[0];
+      useStore.getState().setElementState(id, nextSwitchState(e));
+      expect(useStore.getState().elements[0].state).toBe(expected);
+      expect(useStore.getState().pendingStates.get(id)).toBe(expected);
+    }
+  });
+
+  it('clicking an unflagged logic input still alternates 0/1 with a pending state each step', () => {
+    const id = useStore.getState().addElement({
+      kind: 'logicInput',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0 },
+      state: 0,
+    });
+    for (const expected of [1, 0]) {
+      const e = useStore.getState().elements[0];
+      useStore.getState().setElementState(id, nextSwitchState(e));
+      expect(useStore.getState().elements[0].state).toBe(expected);
+      expect(useStore.getState().pendingStates.get(id)).toBe(expected);
+    }
+  });
+
   it('releaseMomentaryByKey lets a momentary switch back up on keyup', () => {
     addSwitch({ momentary: 1, position: 1 }, 'k'); // rest open
     useStore.getState().toggleSwitchByKey('k'); // keydown closes it

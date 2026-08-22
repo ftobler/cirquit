@@ -329,6 +329,30 @@ describe('momentary switches', () => {
   });
 });
 
+describe('momentary logic inputs', () => {
+  it('a glyph press drives high, holds, and the pointer-up returns to low', () => {
+    const id = addEl('logicInput', { params: { position: 0, momentary: 1 }, state: 0 });
+    const r = refs();
+    beginPointerGesture(down(), { x: 160, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(useStore.getState().elements[0].state).toBe(1); // high while held
+    expect(r.heldMomentaryRef.current).toBe(id);
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+    releaseHeldMomentary(1, r);
+    expect(useStore.getState().elements[0].state).toBe(0); // back to low
+    expect(r.heldMomentaryRef.current).toBeNull();
+  });
+
+  it('the same gesture on a latching logic input stays high until the next click', () => {
+    const id = addEl('logicInput', { params: { position: 0, momentary: 0 }, state: 0 });
+    const r = refs();
+    beginPointerGesture(down(), { x: 160, y: 0 }, useStore.getState(), hit(id), false, r);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(r.heldMomentaryRef.current).toBeNull();
+    releaseHeldMomentary(1, r);
+    expect(useStore.getState().elements[0].state).toBe(1); // no hold to release
+  });
+});
+
 describe('touch gating', () => {
   it('a tap inside the rect still toggles immediately, drag never armed', () => {
     const id = addEl('switch');

@@ -15,7 +15,7 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 /** LogicInputElm.java:26-27. Bit 1 turns the third (mid) position on, bit 2
  *  swaps the glyph from L/H to the position number. Both are display-only;
  *  the engine needs only bit 1. */
-const LOGIC_INPUT_NUMERIC = 2;
+export const LOGIC_INPUT_NUMERIC = 2;
 
 /** The bold glyph at the free end: L or H, or the position under the numeric
  *  and ternary flags (LogicInputElm.java:79-81). */
@@ -82,6 +82,13 @@ export const LOGIC_INPUT_DEF: ElementDef = {
   fields: [
     { name: 'hiV', label: 'High logic voltage', unit: 'V' },
     { name: 'loV', label: 'Low voltage', unit: 'V' },
+    // The momentary flag is a live engine param (a set_param), so its row
+    // binds `params.momentary` like any number; the two display flags are file
+    // bits whose edits go through updateElement, which rebuilds and keeps the
+    // engine's position range in step (LogicInputElm.java:125-144).
+    { name: 'momentary', label: 'Momentary Switch', type: 'bool' },
+    { name: 'ternary', label: 'Ternary', type: 'bool', flag: LOGIC_INPUT_TERNARY },
+    { name: 'numeric', label: 'Numeric', type: 'bool', flag: LOGIC_INPUT_NUMERIC },
   ],
   draw: drawLogicInput,
 };

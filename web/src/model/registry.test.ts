@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { calcLeads, interp, makeTheme, rectCorners, ZIGZAG_HS, zigzagPoints } from '../render/draw';
 import {
   axisConstrained,
@@ -24,9 +24,13 @@ import { FUSE_DEF } from './registry/elements/fuse';
 import { LAMP_DEF } from './registry/elements/lamp';
 import { OPAMP_DEF } from './registry/elements/opamp';
 import { THREE_PHASE_MOTOR_DEF } from './registry/elements/threePhaseMotor';
-import { OPAMP_SWAP } from './registry/flags';
+import { LOGIC_INPUT_TERNARY, OPAMP_SWAP } from './registry/flags';
 import { makeToolElement, snap } from '../state/helpers';
+import { useStore } from '../state/store';
+import { fresh } from '../state/store.test-helpers';
+import { fieldRows } from '../ui/elementFields';
 import { parseCircuit, serializeCircuit } from '../io/netlist';
+import { LOGIC_INPUT_DEF, LOGIC_INPUT_NUMERIC } from './registry/elements/logicInput';
 import { DEFAULT_SETTINGS, GRID_SIZE } from './types';
 import type { CircuitElement, DrawContext, ElementDef, Point } from './types';
 
@@ -1083,6 +1087,72 @@ describe('bus logic input', () => {
     expect(back.params.busWidth).toBe(8);
     expect(back.params.value).toBe(5);
     expect(back.params.hiV).toBe(3.3);
+  });
+});
+
+describe('logic input edit fields', () => {
+  beforeEach(() => useStore.setState(fresh()));
+
+  it('exposes the two voltages, then Momentary, Ternary and Numeric', () => {
+    // Upstream's getEditInfo order is Momentary, High Voltage, Low Voltage,
+    // Numeric, Ternary; the port keeps its hiV/loV first and appends the three
+    // rows after them (LogicInputElm.java:125-144).
+    expect((LOGIC_INPUT_DEF.fields ?? []).map((f) => f.name)).toEqual([
+      'hiV',
+      'loV',
+      'momentary',
+      'ternary',
+      'numeric',
+    ]);
+    expect(LOGIC_INPUT_DEF.fields?.[2]).toEqual({
+      name: 'momentary',
+      label: 'Momentary Switch',
+      type: 'bool',
+    });
+    expect(LOGIC_INPUT_DEF.fields?.[3]).toEqual({
+      name: 'ternary',
+      label: 'Ternary',
+      type: 'bool',
+      flag: LOGIC_INPUT_TERNARY,
+    });
+    expect(LOGIC_INPUT_DEF.fields?.[4]).toEqual({
+      name: 'numeric',
+      label: 'Numeric',
+      type: 'bool',
+      flag: LOGIC_INPUT_NUMERIC,
+    });
+  });
+
+  it('shows all five rows on a fresh logic input', () => {
+    const li: CircuitElement = { ...makeToolElement('logicInput', 192, 160, 256, 160), id: 1 };
+    expect(fieldRows(li).map((r) => r.field.name)).toEqual([
+      'hiV',
+      'loV',
+      'momentary',
+      'ternary',
+      'numeric',
+    ]);
+    // The momentary row is a plain bool bound to the param, never a flag bit.
+    expect(fieldRows(li).find((r) => r.field.name === 'momentary')?.value).toBe(0);
+  });
+
+  it('a Ternary toggle sets flags bit 1 through updateElement, nothing else in the dump changes', () => {
+    const id = useStore.getState().addElement(makeToolElement('logicInput', 192, 160, 256, 160));
+    const line = () =>
+      serializeCircuit(useStore.getState().elements, { ...DEFAULT_SETTINGS })
+        .split('\n')
+        .find((l) => l.startsWith('L '))!;
+    const before = line();
+    useStore.getState().updateElement(id, { flags: 1 });
+    const after = line();
+    const b = before.split(' ');
+    const a = after.split(' ');
+    expect(a).toHaveLength(b.length);
+    for (let i = 0; i < b.length; i++) {
+      if (i === 5) expect(a[i]).toBe('1'); // the flags word, position 5
+      else expect(a[i]).toBe(b[i]);
+    }
+    expect(b[5]).toBe('0');
   });
 });
 
