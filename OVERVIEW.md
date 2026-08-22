@@ -761,6 +761,11 @@ For the `s` and `S` rows the label token exists only when FLAG_LABEL (bit 4) is
 set, and the SPDT reads it before `link` and `throwCount`, so a label shifts
 both of them one token along. The port sets the bit when there is a label and
 clears it when there is not, which keeps the token count and the flag in step.
+FLAG_CENTER_OFF (bit 1) on an `S` row widens the position range to three stops:
+position 2 is the open middle one, stamps no voltage source, reports no current
+unknown and stays open on save and on a live toggle, matching upstream's
+`hasCenterOff()` which only accepts it on a two-throw switch. No bundled
+circuit uses the bit, so no corpus line changed.
 
 For the `174` row the slider caption is every remaining token joined with
 single spaces, and it is **not** escaped: those tokens go in and out raw. A
