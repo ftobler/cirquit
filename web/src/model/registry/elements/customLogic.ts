@@ -32,10 +32,12 @@ const FALLBACK_INPUTS = 4;
 const FALLBACK_OUTPUTS = 2;
 
 /** The resolved model, or undefined while none is bound. The `model` carrier
- *  is shared with the OTA's raw child-dump array and the composite's engine
- *  spec (both of which never appear on a custom-logic element), so an array or
- *  a spec-bearing object is treated as absent. */
+ *  is shared with the OTA's raw child-dump array, the composite's engine spec
+ *  and the battery's plain table string (none of which ever appear on a
+ *  custom-logic element), so a string, an array or a spec-bearing object is
+ *  treated as absent. */
 function customLogicModel(e: CircuitElement): CustomLogicModel | undefined {
+  if (typeof e.model === 'string') return undefined;
   return e.model !== undefined && !Array.isArray(e.model) && !('external' in e.model)
     ? e.model
     : undefined;

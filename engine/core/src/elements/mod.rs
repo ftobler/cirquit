@@ -16,6 +16,7 @@ pub mod analog_switch2;
 pub mod antenna;
 pub mod audio_input;
 pub mod audio_output;
+pub mod battery;
 pub mod r#box;
 pub mod bus_logic_input;
 pub mod bus_splitter;
@@ -159,6 +160,7 @@ pub const KINDS: &[&str] = &[
     "vco",
     "dac",
     "current",
+    "battery",
     "darlington",
     "diode",
     "zener",
@@ -294,6 +296,7 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "vco" => Box::new(vco::Vco::new(spec)),
         "dac" => Box::new(dac::Dac::new(spec)),
         "current" => Box::new(current_source::CurrentSource::new(spec)),
+        "battery" => Box::new(battery::Battery::new(spec)),
         "darlington" => Box::new(darlington::Darlington::new(spec)),
         "diode" => Box::new(diode::Diode::new(spec)),
         "zener" => Box::new(diode::Diode::new_zener(spec)),

@@ -60,9 +60,11 @@ export interface CircuitElement {
    * element uses it for the resolved `.`-line model converted to the engine's
    * `CompositeEngineSpec` (`{model, external, dumps}`). Distinct payload
    * shapes are discriminated by the element kind; a string array never appears
-   * on a custom-logic element and a model object never on an OTA.
+   * on a custom-logic element and a model object never on an OTA. The battery
+   * uses the carrier for a plain string: its raw `\n`-joined SOC voltage
+   * table.
    */
-  model?: CustomLogicModel | CompositeEngineSpec | string[];
+  model?: CustomLogicModel | CompositeEngineSpec | string[] | string;
   /** Keyboard shortcut that toggles this element (the switch keyShortcut).
    *  Session-only: upstream serializes it only in the XML format
    *  (SwitchElm.java:79-90), never the .txt netlist, so it is deliberately
@@ -126,9 +128,22 @@ export interface FieldDef {
    *  stamp or the node count, which the live `set_param` path cannot. */
   flag?: number;
   /** Reads `e.text` (the label), `e.keyShortcut` (a switch's keyboard
-   *  shortcut), `e.modelName` (a named device model) or `e.params[name]`.
-   *  Only meaningful for `text` and `modelChoice`. */
-  target?: 'param' | 'text' | 'keyShortcut' | 'modelName';
+   *  shortcut), `e.modelName` (a named device model), `e.model` (the battery's
+   *  SOC voltage table) or `e.params[name]`. Only meaningful for `text` and
+   *  `modelChoice`. */
+  target?: 'param' | 'text' | 'keyShortcut' | 'modelName' | 'model';
+  /** A `text` field that must hold newlines renders as a multiline textarea
+   *  rather than a one-line input, which strips them. The battery's SOC
+   *  voltage table is one row per newline, so it needs the textarea
+   *  (BatteryElm.java:370-374). Absent means the one-line input. */
+  multiline?: boolean;
+  /** A param field displayed and edited in a scaled unit: the row shows
+   *  `e.params[name] * scale` and a commit stores `value / scale`. The
+   *  battery's Initial State of Charge is stored as a 0..1 fraction (the
+   *  engine and the live SOC token work in fractions) but shown as 0..100 %,
+   *  upstream's `initialSoc * 100` edit row (BatteryElm.java:353). Absent
+   *  means no scaling. */
+  scale?: number;
   /** Whether the row shows for a given element, the conditional-field
    *  mechanism the voltage-source time fields need. Absent means always show.
    *  The row disappears entirely rather than rendering disabled, so the panel
@@ -201,6 +216,10 @@ export interface ElementDef {
    *  (e.g. the relay coil/contact `label = "label"`, RelayCoilElm.java:88).
    *  Absent means no text. */
   defaultText?: string;
+  /** A model string a freshly placed part carries in `e.model`, matching the
+   *  upstream constructor (e.g. the battery's lithium SOC table,
+   *  BatteryElm.java:86-87). Absent means no model. */
+  defaultModel?: string;
   /** Elements the engine cannot solve yet are drawn but flagged in the UI. */
   simulated?: boolean;
   /** Clicking the element in run mode toggles it (switches). */

@@ -157,19 +157,24 @@ const clone = (s: Snapshot): Snapshot => ({
     // array (the composite child-dump tokens), which clones as a plain copy.
     // The composite's own engine spec is the third payload shape: its external
     // and dump vectors are arrays too, and the `external` key is what tells the
-    // two object payloads apart (a custom-logic model never carries one).
-    if (e.model) {
-      copy.model = Array.isArray(e.model)
-        ? [...e.model]
-        : 'external' in e.model
-          ? { ...e.model, external: [...e.model.external], dumps: [...e.model.dumps] }
-          : {
-              ...e.model,
-              inputs: [...e.model.inputs],
-              outputs: [...e.model.outputs],
-              rulesLeft: [...e.model.rulesLeft],
-              rulesRight: [...e.model.rulesRight],
-            };
+    // two object payloads apart (a custom-logic model never carries one). The
+    // battery's table is a plain string, immutable, so it passes through, while
+    // the string-array child dumps still clone so a snapshot never aliases them.
+    if (e.model !== undefined) {
+      copy.model =
+        typeof e.model === 'string'
+          ? e.model
+          : Array.isArray(e.model)
+            ? [...e.model]
+            : 'external' in e.model
+              ? { ...e.model, external: [...e.model.external], dumps: [...e.model.dumps] }
+              : {
+                  ...e.model,
+                  inputs: [...e.model.inputs],
+                  outputs: [...e.model.outputs],
+                  rulesLeft: [...e.model.rulesLeft],
+                  rulesRight: [...e.model.rulesRight],
+                };
     }
     return copy;
   }),

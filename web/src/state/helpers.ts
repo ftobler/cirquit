@@ -90,6 +90,9 @@ export function makeElement(kind: string, x1: number, y1: number, x2: number, y2
     flags: def?.defaultFlags ?? 0,
     params: { ...(def?.defaults ?? {}) },
     text: def?.defaultText,
+    // A default model (the battery's SOC table) must ride the same carrier
+    // the load path fills, or a fresh part would reach the engine tableless.
+    ...(def?.defaultModel !== undefined ? { model: def.defaultModel } : {}),
     state: def?.interactive ? 0 : undefined,
   });
 }
@@ -108,6 +111,7 @@ export function makeToolElement(tool: string, x1: number, y1: number, x2: number
     flags: (def?.defaultFlags ?? 0) | (entry.flags ?? 0),
     params: { ...(def?.defaults ?? {}), ...(entry.defaults ?? {}) },
     text: def?.defaultText,
+    ...(def?.defaultModel !== undefined ? { model: def.defaultModel } : {}),
     state: def?.interactive ? 0 : undefined,
   });
 }

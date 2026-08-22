@@ -83,6 +83,24 @@ function Field({
   }
 
   if (field.type === 'text') {
+    // A multiline text field is a textarea, the battery's SOC voltage table
+    // whose rows are newline-separated (BatteryElm.java:370-374). A one-line
+    // input strips newlines, which would concatenate the rows into garbage.
+    if (field.multiline) {
+      return (
+        <label className="field">
+          <span>{field.label}</span>
+          <textarea
+            rows={6}
+            value={String(value ?? '')}
+            // Focus opens the edit session, so the whole typing session is one
+            // undo entry; commit's dedup drops a focus that changed nothing.
+            onFocus={onBeginEdit}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </label>
+      );
+    }
     return (
       <label className="field">
         <span>{field.label}</span>

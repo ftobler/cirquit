@@ -77,6 +77,10 @@ export const VOLTAGE_PULSE_DUTY = 4;
  *  (VoltageElm.java:31). Meaningless on a non-DC waveform, where the circle
  *  is always drawn. */
 export const VOLTAGE_CIRCLE_SYMBOL = 8;
+/** The battery draws its terminal voltage caption under this bit and its
+ *  whole-percent SOC under bit 2 (BatteryElm.java:34-35). */
+export const BATTERY_SHOW_VOLTAGE = 1;  // BatteryElm.java:34
+export const BATTERY_SHOW_SOC = 2;      // BatteryElm.java:35
 export const PROBE_SHOW_VOLTAGE = 1;   // ProbeElm.java:30
 export const PROBE_CIRCLE = 2;         // ProbeElm.java:31
 export const OUTPUT_SHOW_VOLTAGE = 1;  // OutputElm.java:28

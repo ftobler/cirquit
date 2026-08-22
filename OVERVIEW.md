@@ -317,7 +317,8 @@ fetch it).
   sliders, converts the bus elements (`bli` to 435, `bt` to 437, and an `rw`
   bus wire's `bw` onto every straight segment it becomes), converts the
   instruction display (`ins` to a real 434 line carrying its lookup table),
-  and degrades routed wires to straight `w` segments. The XML-only element
+  the battery (`Battery` to a real 438 line carrying its SOC table), and
+  degrades routed wires to straight `w` segments. The XML-only element
   classes still unrealized (Clock, Gyrator, NortonAmp, CustomCompositeChip)
   stay as `#` comment lines so nothing is lost; RoutedWire is the exception,
   converting to real segments. All 38 convert and simulate: the last holdouts,
@@ -546,6 +547,7 @@ Dump codes implemented so far, with their trailing field order:
 | `435` | bus logic input| busWidth, value, hiV, loV                                  |
 | `437` | bus transceiver| bits, [highVoltage] (the standard chip stream)             |
 | `434` | instruction display | busWidth, threshold, lookup table (one escaped token) |
+| `438` | battery        | r0, r1, c1, capacityAh, initialSocPercent, batteryType, SOC table (one escaped token) |
 
 For the gate rows the `inputCount` token is the post count minus one (1 to 8
 inputs); `lastOutputVoltage` restores the gate's output state on load
@@ -605,6 +607,20 @@ red bad-connection dots, like upstream's `busMismatchList`. Labeled nodes save
 no width token either: like wires, their width is derived at build time and
 injected into the engine spec only. Upstream's own text format never saves
 wire widths at all.
+
+For the `438` row the battery is the port's own text form of BatteryElm
+(upstream saves it only as XML, so it gets the same invented code treatment as
+the 435/437 rows): `r0 r1 c1 capacityAh initialSocPercent batteryType`, then
+the SOC-to-voltage table as ONE escaped token (`\n` inside the token, never a
+raw newline, or the line-oriented parser would eat the rest of the file). The
+`initialSocPercent` token is 0..100 and the engine works in a 0..1 fraction;
+`batteryType` is the preset index 0..4 or -1 for a custom table. Every token
+is written unconditionally so the line is self-describing, like the `435`
+row's rationale. The running SOC and the polarization cap's stored charge
+cross back out through the live-state tokens `soc` and `capVoltDiff` (the
+capacitor's voltDiff precedent), so a mid-discharge save resumes where it
+left off. Flag bits 1 (FLAG_SHOW_VOLTAGE) and 2 (FLAG_SHOW_SOC) gate the two
+halves of the caption; a fresh battery is a lithium-ion with both set.
 
 For the `402` row the OTA is a `CompositeElm` of two rails and sixteen
 transistors (OTAElm.java:8-9), and every token after the flags is one composite

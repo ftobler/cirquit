@@ -61,7 +61,7 @@ const FALLBACK_PINS: ChipPinDef[] = [{ side: 'W', pos: 0, text: 'gnd' }];
  *  same way the resolution did, so a rename the `setText` path re-resolves
  *  redraws immediately. */
 function compositeModelOf(e: CircuitElement): CompositeModel | undefined {
-  if (e.model === undefined || Array.isArray(e.model) || !('external' in e.model)) {
+  if (e.model === undefined || typeof e.model === 'string' || Array.isArray(e.model) || !('external' in e.model)) {
     return undefined;
   }
   return e.text === undefined ? undefined : getModel(e.text);

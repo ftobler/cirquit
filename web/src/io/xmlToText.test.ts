@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseXml, isXml } from './xml';
 import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
+import { batteryTypeTables } from '../model/registry/elements/battery';
 import { postsOf } from '../model/registry';
 import { xmlToText } from './xmlToText';
 import { parseCircuit, serializeCircuit } from './netlist';
@@ -162,6 +163,39 @@ describe('xml to text conversion', () => {
     const text = xmlToText(src);
     expect(text).toContain('437 304 160 416 160 0 2');
     expect(parseCircuit(text).elements.map((e) => e.kind)).toEqual(['busTransceiver']);
+  });
+
+  it('converts a battery to a real 438 line carrying its preset table', () => {
+    // The XML `isoc` is a 0..1 fraction (BatteryElm.java:107), converted to
+    // the file's percent token; the preset table is written so the line is
+    // self-describing like the 435 row's rationale.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <Battery x="160 160 160 96" f="3" r0="0.15" r1="0.25" c1="1500" cap="2.5" isoc="0.5" bt="0"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('438 160 160 160 96 3 0.15 0.25 1500 2.5 50 0 ');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['battery']);
+    expect(parsed.elements[0].params.initialSoc).toBe(0.5);
+    expect(parsed.elements[0].model).toBe(batteryTypeTables[0]);
+  });
+
+  it('converts a custom battery, carrying its table text node', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <Battery x="160 160 160 96" f="3" r0="0.01" r1="0.02" c1="2000" cap="2" isoc="1" bt="-1">0=0.8
+10=0.95
+20=1.05
+</Battery>
+</cir>
+`;
+    const text = xmlToText(src);
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['battery']);
+    expect(parsed.elements[0].params.batteryType).toBe(-1);
+    // The XML parser trims the body's trailing newline, like the instruction
+    // display's table; every row survives either way.
+    expect(parsed.elements[0].model).toBe('0=0.8\n10=0.95\n20=1.05');
   });
 
   it('keeps XML-only kinds as comment lines so nothing is lost', () => {

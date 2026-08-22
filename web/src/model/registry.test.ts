@@ -256,10 +256,12 @@ describe('text field metadata', () => {
 
   it('keeps every target text field a text field', () => {
     // `target: 'keyShortcut'` reads/writes a top-level element field like
-    // `text` does, so it must render as a text input too.
+    // `text` does, and `target: 'model'` the battery's SOC table string, so
+    // they must render as text inputs too.
     for (const def of ELEMENT_DEFS) {
       for (const f of def.fields ?? []) {
-        if (f.target === 'text' || f.target === 'keyShortcut') expect(f.type).toBe('text');
+        if (f.target === 'text' || f.target === 'keyShortcut' || f.target === 'model')
+          expect(f.type).toBe('text');
       }
     }
   });
@@ -275,10 +277,13 @@ describe('text field metadata', () => {
         // A text, keyShortcut or modelName field is bound to a top-level
         // field of `e` (e.text / e.keyShortcut / e.modelName), not to a
         // param, so there is nothing in parse/dump/defaults for it to match.
+        // A `target: 'model'` field binds `e.model` the same way (the
+        // battery's SOC table), and a contents field its own codec.
         if (
           f.target === 'text' ||
           f.target === 'keyShortcut' ||
-          f.target === 'modelName'
+          f.target === 'modelName' ||
+          f.target === 'model'
         )
           continue;
         // A flag field is bound to a bit of `e.flags`, not to a param, so

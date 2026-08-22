@@ -32,6 +32,7 @@ import { TIME_DELAY_RELAY_DEF } from './elements/timeDelayRelay';
 import { MBB_SWITCH_DEF } from './elements/mbbSwitch';
 import { DPDT_SWITCH_DEF } from './elements/dpdtSwitch';
 import { VOLTAGE_DEF } from './elements/voltage';
+import { BATTERY_DEF } from './elements/battery';
 import { RAIL_DEF } from './elements/rail';
 import { VAR_RAIL_DEF } from './elements/varRail';
 import { EXT_VOLTAGE_DEF } from './elements/extVoltage';
@@ -179,6 +180,7 @@ export const ELEMENT_DEFS: ElementDef[] = [
   RELAY_COIL_DEF,
   RELAY_CONTACT_DEF,
   VOLTAGE_DEF,
+  BATTERY_DEF,
   RAIL_DEF,
   NOISE_DEF,
   ANTENNA_DEF,

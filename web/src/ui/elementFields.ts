@@ -8,6 +8,7 @@ import { defFor } from '../model/registry';
 import { modelFamilyFor, userModel } from '../model/deviceModels';
 import { contentsToText, parseContentsText } from '../model/memoryContents';
 import { memoryPairs, normalizeSramBits, SRAM_HEX_DISPLAY } from '../model/registry/elements/sram';
+import { batteryTypeDefaults, batteryTypeTables } from '../model/registry/elements/battery';
 import type { CircuitElement, FieldDef } from '../model/types';
 
 /** One row of the property list: the def's field plus the element's value for
@@ -63,8 +64,9 @@ export function fieldValue(e: CircuitElement, f: FieldDef): number | string {
   if (f.target === 'text') return e.text ?? '';
   if (f.target === 'keyShortcut') return e.keyShortcut ?? '';
   if (f.target === 'modelName') return e.modelName ?? '';
+  if (f.target === 'model') return typeof e.model === 'string' ? e.model : '';
   if (f.flag !== undefined) return (e.flags & f.flag) !== 0 ? 1 : 0;
-  return e.params[f.name] ?? 0;
+  return (e.params[f.name] ?? 0) * (f.scale ?? 1);
 }
 
 /** The property rows for one element, in def order. An unknown kind or a def
@@ -152,6 +154,13 @@ export function applyFieldChange(
     actions.setModelName(e.id, String(v));
     return;
   }
+  if (f.target === 'model') {
+    // The battery's SOC table rides `e.model`, which the engine consumes as
+    // `spec.model`; a plain updateElement reaches it through the same rebuild
+    // every other model edit uses.
+    actions.updateElement(e.id, { model: String(v) });
+    return;
+  }
   if (f.flag !== undefined) {
     // A file flag is read when the engine builds the circuit and can change
     // the stamp or the node count, so it has to go through `updateElement`,
@@ -164,6 +173,25 @@ export function applyFieldChange(
     return;
   }
   const value = Number(v);
+  // Choosing a battery preset loads its SOC table and its chemistry defaults
+  // (BatteryElm.java:380-399); switching to Custom keeps the current values
+  // editable. A preset change is a full element update: the table rides
+  // `e.model` and the rebuild carries both it and the new params.
+  if (f.name === 'batteryType' && e.kind === 'battery') {
+    const old = Number(e.params.batteryType ?? 1);
+    actions.setParam(e.id, 'batteryType', value);
+    if (value >= 0 && value < batteryTypeDefaults.length) {
+      if (value !== old) {
+        const [capacityAh, r0, r1, c1] = batteryTypeDefaults[value];
+        actions.setParam(e.id, 'capacityAh', capacityAh);
+        actions.setParam(e.id, 'r0', r0);
+        actions.setParam(e.id, 'r1', r1);
+        actions.setParam(e.id, 'c1', c1);
+      }
+      actions.updateElement(e.id, { model: batteryTypeTables[value] });
+    }
+    return;
+  }
   // Switching a source to or from pulse restores the duty cycle the other
   // family expects, mirroring VoltageElm.java:617-621: entering pulse takes
   // the legacy 1/(2*pi), leaving it returns to 0.5. The waveform setParam
@@ -174,5 +202,8 @@ export function applyFieldChange(
     if (value === 5 && old !== 5) actions.setParam(e.id, 'dutyCycle', 1 / (2 * Math.PI));
     else if (old === 5 && value !== 5) actions.setParam(e.id, 'dutyCycle', 0.5);
   }
-  actions.setParam(e.id, f.name, value);
+  // A scaled field (the battery's Initial State of Charge) commits its display
+  // unit divided back into the stored param's unit (percent into the 0..1
+  // fraction), the inverse of the `fieldValue` multiply.
+  actions.setParam(e.id, f.name, value / (f.scale ?? 1));
 }

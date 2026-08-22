@@ -29,7 +29,8 @@
  * engine-side width pass re-derives their width from the wide pins they
  * touch, exactly as upstream's detectBusWidths does. The instruction display
  * (`ins`) converts to a real 434 line carrying its lookup table, and the
- * counter bit orders honoured end to end are ctr2/FullAdder/ROM/SRAM
+ * battery (`Battery`) to a real 438 line carrying its SOC table. The counter
+ * bit orders honoured end to end are ctr2/FullAdder/ROM/SRAM
  * (`bo="2"` into the port's chip flag bit).
  */
 
@@ -41,6 +42,7 @@ import { FLAG_ESCAPE, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import type { PlotMeasurements, Scope, ScopeValue } from '../engine/simulator';
 
 import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
+import { batteryTypeTables } from '../model/registry/elements/battery';
 
 const FLAG_MODEL = 2;         // DiodeElm.java:22, shared by the LED
 const FLAG_FWDROP = 1;        // DiodeElm.java:21
@@ -148,6 +150,29 @@ const WRITERS: Record<string, Writer> = {
     attr(n, 'hi', 5),
     attr(n, 'lo', 0),
   ],
+  Battery: (n) => {
+    // The port's 438 stream: r0, r1, c1, capacityAh, initialSocPercent,
+    // batteryType, then the table as one token. Upstream writes the table as a
+    // body text node for a custom battery only (BatteryElm.java:109-110); a
+    // preset line takes the registry's table for its type so the line is
+    // self-describing like the 435 row's rationale. The XML `isoc` is already
+    // a 0..1 fraction, converted to the file's percent here (BatteryElm.java:
+    // 107, :123).
+    const bt = attr(n, 'bt', 1);
+    const table =
+      bt === -1
+        ? n.text || batteryTypeTables[1]
+        : batteryTypeTables[bt >= 0 && bt < batteryTypeTables.length ? bt : 1];
+    return [
+      attr(n, 'r0', 0.01),
+      attr(n, 'r1', 0.02),
+      attr(n, 'c1', 2000),
+      attr(n, 'cap', 2),
+      attr(n, 'isoc', 1) * 100,
+      bt,
+      table,
+    ];
+  },
   bt: (n) =>
     // The port's 437 stream: the needsBits bit count (the XML attribute is
     // `db`) plus the optional high voltage.
@@ -269,7 +294,7 @@ const DUMP_CODES: Record<string, string> = {
   w: 'w', g: 'g', r: 'r', c: 'c', pc: '209', l: 'l',
   R: 'R', v: 'v', i: 'i', d: 'd', t: 't', f: 'f', I: 'I', a: 'a', O: 'O',
   L: 'L', M: 'M', p: 'p', x: 'x', LED: '162', ln: '207', bs: '433',
-  bli: '435', bt: '437',
+  bli: '435', bt: '437', Battery: '438',
   Line: '423',
   And: '150', Nand: '151', Or: '152', Nor: '153', Xor: '154',
   DFlipFlop: '155', PhaseComp: '161', VCO: '158', ADC: '167',
@@ -286,7 +311,7 @@ const KIND_BY_TAG: Record<string, string> = {
   f: 'mosfet', I: 'inverter', a: 'opamp', O: 'output',   L: 'logicInput', M: 'logicOutput', p: 'probe',
   Line: 'line',
   x: 'decoration', LED: 'led', ln: 'labeledNode', bs: 'busSplitter',
-  bli: 'busLogicInput', bt: 'busTransceiver',
+  bli: 'busLogicInput', bt: 'busTransceiver', Battery: 'battery',
   And: 'andGate', Nand: 'nandGate', Or: 'orGate', Nor: 'norGate', Xor: 'xorGate',
   DFlipFlop: 'dFlipFlop', PhaseComp: 'phaseComp', VCO: 'vco', ADC: 'adc',
   FullAdder: 'fullAdder', SevenSegDecoder: 'sevenSegDecoder', ssd: 'sevenSeg',

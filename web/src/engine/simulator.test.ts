@@ -123,6 +123,68 @@ describe('SimEngine live state read-back', () => {
   });
 });
 
+describe('SimEngine battery live state', () => {
+  // A discharging alkaline battery: minus grounded, a 1 ohm load from plus to
+  // ground. The small capacity makes the SOC move measurably in 0.01 s.
+  const BATTERY: CircuitElement[] = [
+    {
+      id: 1,
+      kind: 'battery',
+      x1: 0,
+      y1: 100,
+      x2: 0,
+      y2: 0,
+      flags: 3, // FLAG_SHOW_VOLTAGE | FLAG_SHOW_SOC
+      params: { r0: 0.01, r1: 0.02, c1: 2000, capacityAh: 0.01, initialSoc: 1, batteryType: 0 },
+      model: '0=0.8\n10=0.95\n20=1.05\n40=1.18\n60=1.28\n80=1.38\n90=1.43\n100=1.55\n',
+    },
+    { id: 2, kind: 'ground', x1: 0, y1: 100, x2: 0, y2: 132, flags: 0, params: {} },
+    { id: 3, kind: 'resistor', x1: 0, y1: 0, x2: 0, y2: -100, flags: 0, params: { resistance: 1 } },
+    { id: 4, kind: 'ground', x1: 0, y1: -100, x2: 0, y2: -68, flags: 0, params: {} },
+  ];
+
+  it('reports the live soc token and a save-and-rebuild continues it', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(BATTERY, DEFAULT_SETTINGS, [])).toBeNull();
+
+    engine.run(2000); // 0.01 s at the default 5e-6 step
+    const live = engine.elementStateTokens();
+    expect(live[1]).toBeDefined();
+    const soc = live[1].soc;
+    expect(soc).toBeDefined();
+    expect(soc).toBeLessThan(1);
+    expect(soc).toBeGreaterThan(0.99);
+    expect(live[1].capVoltDiff).toBeDefined();
+
+    // The draw's SOC caption reads the same number from elementStates.
+    const idx = engine.indexOf(1)!;
+    expect(engine.elementStates()[idx]).toBeCloseTo(soc, 9);
+
+    // Save mid-discharge and rebuild: the engine reads the live soc straight
+    // off the param, so the first step of the new build continues it.
+    const overlaid = overlayLiveState(BATTERY, live);
+    expect(engine.setCircuit(overlaid, DEFAULT_SETTINGS, [])).toBeNull();
+    engine.run(1);
+    const socAfter = engine.elementStateTokens()[1].soc;
+    expect(socAfter).toBeLessThan(soc);
+  });
+
+  it('reset restores the initial soc, which an edit updates', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(BATTERY, DEFAULT_SETTINGS, [])).toBeNull();
+    engine.run(2000);
+    expect(engine.elementStateTokens()[1].soc).toBeLessThan(1);
+
+    engine.reset();
+    const idx = engine.indexOf(1)!;
+    expect(engine.elementStates()[idx]).toBe(1); // the file's initialSoc
+
+    engine.setParam(1, 'initialSoc', 0.5);
+    engine.reset();
+    expect(engine.elementStates()[idx]).toBe(0.5);
+  });
+});
+
 describe('SimEngine preserveRun', () => {
   const DIVIDER: CircuitElement[] = [
     { id: 1, kind: 'voltage', x1: 0, y1: 100, x2: 0, y2: 0, flags: 0, params: { maxVoltage: 10 } },
