@@ -55,7 +55,7 @@ import { normalizePisoBits } from '../model/registry/elements/pisoShift';
 import { normalizeBusSplitterBits } from '../model/registry/elements/busSplitter';
 import { normalizeBusLogicInputWidth } from '../model/registry/elements/busLogicInput';
 import { normalizeTransceiverBits } from '../model/registry/elements/busTransceiver';
-import { normalizeSramBits } from '../model/registry/elements/sram';
+import { memoryPairs, normalizeSramBits } from '../model/registry/elements/sram';
 import { normalizeAnalogMuxSelects } from '../model/registry/elements/analogMux';
 import { normalizeSipoBits } from '../model/registry/elements/sipoShift';
 import { normalizeRingBits } from '../model/registry/elements/ringCounter';
@@ -1436,6 +1436,50 @@ function createAppStore() {
         paramRevision: s.paramRevision + 1,
       };
     });
+  },
+
+  setMemoryContents: (id, pairs) => {
+    const s = get();
+    const target = s.elements.find((e) => e.id === id);
+    if (!target) return;
+    // A re-commit of the same pairs (a blur with nothing changed) must not
+    // rebuild the engine or grow the undo stack.
+    const current = memoryPairs(target);
+    if (
+      current.length === pairs.length &&
+      current.every(([addr, val], i) => addr === pairs[i][0] && val === pairs[i][1])
+    ) {
+      return;
+    }
+    // Baseline at the apply point, the loadAudioFile/loadDataFile pattern: the
+    // textarea's onFocus already committed, so this dedups against it, and a
+    // direct call without a focus still gets its own undo entry.
+    s.commit();
+    set((st) => ({
+      elements: st.elements.map((e) => {
+        if (e.id !== id) return e;
+        const params = { ...e.params };
+        // Clear the whole addr/val family first, or a shrink leaves a stale
+        // trailing pair that memoryDump writes back out.
+        let k = 0;
+        while (params[`addr${k}`] !== undefined) {
+          delete params[`addr${k}`];
+          delete params[`val${k}`];
+          k++;
+        }
+        pairs.forEach(([addr, val], i) => {
+          params[`addr${i}`] = addr;
+          params[`val${i}`] = val;
+        });
+        return { ...e, params };
+      }),
+      // The contents live in params but the engine reads them only at build
+      // time (sram.rs load_contents), so the change must reload; bumping
+      // `paramRevision` keeps the fast-path bookkeeping in step even though
+      // nothing is queued for it.
+      ...bumpRevision(st),
+      paramRevision: st.paramRevision + 1,
+    }));
   },
 
   setModelName: (id, name) =>

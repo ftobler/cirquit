@@ -1403,6 +1403,26 @@ input[type='range'] {
   padding: 4px 6px;
 }
 
+/* The SRAM/ROM contents editor: a five-line textarea in the code face, styled
+   like the other field inputs. The selector out-specifies `.dialog textarea`
+   so the dialog's 180 px minimum height does not blow past the five rows. */
+.field textarea.memory-contents {
+  width: 100%;
+  font:
+    12px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text);
+  background: var(--md-surface-container-lowest);
+  border: 1px solid var(--md-outline-interactive);
+  border-radius: var(--md-shape-xs);
+  padding: 4px 6px;
+  min-height: 0;
+  resize: vertical;
+}
+
 .field input[type='number'],
 .field input[type='text'],
 .field select,

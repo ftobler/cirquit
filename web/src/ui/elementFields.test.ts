@@ -1,10 +1,12 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { defFor } from '../model/registry';
 import { clearUserModels, putUserModel } from '../model/deviceModels';
+import { SRAM_HEX_DISPLAY } from '../model/registry/elements/sram';
 import type { CircuitElement, FieldDef } from '../model/types';
 import {
   applyFieldChange,
   clampInteger,
+  commitContentsField,
   deviceModelButtons,
   fieldRows,
   fieldValue,
@@ -265,5 +267,97 @@ describe('controlled-source defaults', () => {
     expect(defFor('vcvs')?.defaultText).toBe('.1*(a-b)');
     expect(defFor('ccvs')?.defaultText).toBe('2*a');
     expect(defFor('cccs')?.defaultText).toBe('2*a');
+  });
+});
+
+describe('contents field rows', () => {
+  // The memory editor joins the SRAM and ROM defs after the two bit widths,
+  // the upstream dialog's row order (SRAMElm.java:127-144).
+  it('sits between the bit widths and the rest of the rows on both defs', () => {
+    for (const kind of ['sram', 'rom']) {
+      const def = defFor(kind)!;
+      const names = def.fields!.map((f) => f.name);
+      expect(names.indexOf('contents')).toBe(2);
+      expect(def.fields![2]).toMatchObject({
+        name: 'contents',
+        label: 'Contents',
+        type: 'contents',
+      });
+    }
+  });
+
+  it('carries the rendered pair text in the current radix, the textarea seed', () => {
+    const e = elm({
+      kind: 'sram',
+      params: { dataBits: 8, addr0: 10, val0: 255, addr1: 12, val1: 16 },
+    });
+    const row = fieldRows(e).find((r) => r.field.name === 'contents');
+    expect(row?.value).toBe('10: 255\n12: 16\n');
+
+    const hex = elm({
+      kind: 'sram',
+      flags: SRAM_HEX_DISPLAY,
+      params: { dataBits: 8, addr0: 10, val0: 255, addr1: 12, val1: 16 },
+    });
+    expect(fieldRows(hex).find((r) => r.field.name === 'contents')?.value).toBe('A: FF\nC: 10\n');
+  });
+
+  it('derives the value per render, so a hex toggle re-radices without re-parsing', () => {
+    // The same stored numbers give two texts: the flag only changes the
+    // rendering, never the pairs underneath.
+    const params = { dataBits: 8, addr0: 10, val0: 255 };
+    const plain = elm({ kind: 'sram', params });
+    const hex = elm({ kind: 'sram', flags: SRAM_HEX_DISPLAY, params });
+    expect(fieldRows(plain).find((r) => r.field.name === 'contents')?.value).toBe('10: 255\n');
+    expect(fieldRows(hex).find((r) => r.field.name === 'contents')?.value).toBe('A: FF\n');
+  });
+});
+
+describe('contents field commit', () => {
+  it('committing valid text calls setMemoryContents with the parsed pairs', () => {
+    const e = elm({ kind: 'sram', params: { dataBits: 4 } });
+    const alerts: string[] = [];
+    const calls: Array<[number, [number, number][]]> = [];
+    const ok = commitContentsField(e, '0: 1 2\n5: 9\n', (m) => alerts.push(m), {
+      setMemoryContents: (id, pairs) => calls.push([id, pairs]),
+    });
+    expect(ok).toBe(true);
+    expect(alerts).toEqual([]);
+    expect(calls).toEqual([
+      [1, [[0, 1], [1, 2], [5, 9]]],
+    ]);
+  });
+
+  it('committing invalid text alerts and does not call the store', () => {
+    const e = elm({ kind: 'sram', params: { dataBits: 4 } });
+    const alerts: string[] = [];
+    const calls: unknown[] = [];
+    const ok = commitContentsField(e, '0: 1 xyz\n', (m) => alerts.push(m), {
+      setMemoryContents: (id, pairs) => calls.push([id, pairs]),
+    });
+    expect(ok).toBe(false);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toContain('Line 1');
+    expect(calls).toEqual([]);
+  });
+
+  it('parses bare hex only when hex display is on', () => {
+    const hex = elm({ kind: 'sram', params: { dataBits: 8 }, flags: SRAM_HEX_DISPLAY });
+    const alerts: string[] = [];
+    const calls: Array<[number, [number, number][]]> = [];
+    commitContentsField(hex, '0: FF\n', (m) => alerts.push(m), {
+      setMemoryContents: (id, pairs) => calls.push([id, pairs]),
+    });
+    expect(alerts).toEqual([]);
+    expect(calls).toEqual([[1, [[0, 255]]]]);
+
+    const plain = elm({ kind: 'sram', params: { dataBits: 8 } });
+    const plainAlerts: string[] = [];
+    const plainCalls: unknown[] = [];
+    commitContentsField(plain, '0: FF\n', (m) => plainAlerts.push(m), {
+      setMemoryContents: (id, pairs) => plainCalls.push([id, pairs]),
+    });
+    expect(plainAlerts).toHaveLength(1);
+    expect(plainCalls).toEqual([]);
   });
 });

@@ -84,7 +84,11 @@ export interface FieldDef {
   label: string;
   /** Unit suffix, formatted with engineering prefixes. */
   unit?: string;
-  type?: 'number' | 'choice' | 'bool' | 'text' | 'file' | 'download' | 'modelChoice';
+  /** The row control. `contents` (the SRAM/ROM memory editor) is a multiline
+   *  textarea binding no scalar value: `fieldRows` supplies the rendered
+   *  string and the commit goes through the dedicated setMemoryContents store
+   *  action, never applyFieldChange. */
+  type?: 'number' | 'choice' | 'bool' | 'text' | 'file' | 'download' | 'modelChoice' | 'contents';
   /** Which sample source a `type: 'file'` field loads: an audio buffer (via
    *  the WebAudio decoder) or a data text file (one value per line). Absent
    *  on every other field type. */

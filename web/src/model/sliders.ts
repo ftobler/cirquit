@@ -35,14 +35,17 @@ function normalize(s: string): string {
 /**
  * The numeric fields an element can host a slider on: the `getEditInfo` rows
  * that carry a value a slider can set, in field order. The choice, checkbox,
- * text, model-choice, file and download rows are excluded (upstream's
- * `canCreateAdjustable`, EditInfo.java:103): `choice`/`checkbox`/`textArea`
- * have no numeric value, the model picker is a choice by another name, and the
- * widget/button rows are the file and download fields, whose only "value" is
- * the loaded-file index a slider drag would silently overwrite on save. The
- * editItem index a slider line carries is the index into this list, so the
- * list is the shared source of truth for both resolving a slider line and
- * creating one from the Sliders dialog.
+ * text, model-choice, contents, file and download rows are excluded
+ * (upstream's `canCreateAdjustable`, EditInfo.java:103): `choice`/`checkbox`/
+ * `textArea` have no numeric value, the model picker is a choice by another
+ * name, and the widget/button rows are the file and download fields, whose
+ * only "value" is the loaded-file index a slider drag would silently
+ * overwrite on save. The contents row is the SRAM/ROM memory editor, the
+ * upstream textArea edit item (SRAMElm.java:132-136): a slider on it would
+ * write a phantom `contents` param the engine cannot patch and force a full
+ * rebuild on every drag. The editItem index a slider line carries is the
+ * index into this list, so the list is the shared source of truth for both
+ * resolving a slider line and creating one from the Sliders dialog.
  */
 export function adjustableFields(kind: string): FieldDef[] {
   const def = defFor(kind);
@@ -52,6 +55,7 @@ export function adjustableFields(kind: string): FieldDef[] {
       f.type !== 'bool' &&
       f.type !== 'text' &&
       f.type !== 'modelChoice' &&
+      f.type !== 'contents' &&
       f.type !== 'file' &&
       f.type !== 'download',
   );

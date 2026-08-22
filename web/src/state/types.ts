@@ -421,6 +421,12 @@ export interface AppState {
    *  through to the Manager. */
   renameSubcircuit(oldName: string, newName: string): RenameOutcome;
   setParam(id: number, name: string, value: number): void;
+  /** Replaces an SRAM/ROM element's stored contents with `pairs`, rewriting
+   *  the whole `addr{i}`/`val{i}` family atomically so a shrink cannot leave a
+   *  stale trailing pair behind, and bumps both revisions so the engine
+   *  rebuilds its memory map. Commits once, so the textarea's onFocus commit
+   *  and this one bracket the whole edit as one undo entry. */
+  setMemoryContents(id: number, pairs: [number, number][]): void;
   /** Edits an element's named device model: `''` deletes the name (the
    *  name-free value form), any other value sets it and re-runs the built-in
    *  model resolution into `params`. The revision bump forces a full engine

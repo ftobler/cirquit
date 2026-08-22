@@ -152,6 +152,19 @@ export function memoryParse(t: string[], e: CircuitElement): void {
   chipBitOrderParam(e);
 }
 
+/** The flat `addr{i}` / `val{i}` params as an ordered pair list. The order is
+ *  the stream order the file used, which is also the order `memoryDump`
+ *  regroups runs from and the contents editor presents. */
+export function memoryPairs(e: CircuitElement): [number, number][] {
+  const pairs: [number, number][] = [];
+  let k = 0;
+  while (e.params[`addr${k}`] !== undefined) {
+    pairs.push([e.params[`addr${k}`], e.params[`val${k}`] ?? 0]);
+    k++;
+  }
+  return pairs;
+}
+
 /** Writes the common chip tokens, the two width tokens and the contents
  *  runs. Upstream's own `dump()` writes none of the memory's tokens, so this
  *  writer restores all of them: a save must not shrink the part to a blank
@@ -162,12 +175,7 @@ export function memoryDump(e: CircuitElement): (string | number)[] {
   if (hv !== undefined && hv !== 5) out.push(hv);
   out.push(e.params.addressBits ?? 4);
   out.push(e.params.dataBits ?? 4);
-  const pairs: [number, number][] = [];
-  let k = 0;
-  while (e.params[`addr${k}`] !== undefined) {
-    pairs.push([e.params[`addr${k}`], e.params[`val${k}`] ?? 0]);
-    k++;
-  }
+  const pairs = memoryPairs(e);
   // Regroup the flat pairs into runs of consecutive addresses.
   let i = 0;
   while (i < pairs.length) {
@@ -205,6 +213,7 @@ export const SRAM_DEF: ElementDef = {
   fields: [
     { name: 'addressBits', label: '# of Address Bits', min: 2, max: 16, integer: true },
     { name: 'dataBits', label: '# of Data Bits', min: 2, max: 16, integer: true },
+    { name: 'contents', label: 'Contents', type: 'contents' },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     { name: 'hexDisplay', label: 'Hex Display', type: 'bool', flag: SRAM_HEX_DISPLAY },
     {

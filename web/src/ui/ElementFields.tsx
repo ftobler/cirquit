@@ -4,7 +4,7 @@
  *  are and what a change does live next door in `elementFields.ts`, which is
  *  node-tested; this file is the controls and the file-picker plumbing. */
 
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { AUDIO_DECODE_ERROR, decodeAudioFile } from '../model/audioFile';
 import { parseDataFile } from '../model/dataFile';
@@ -16,6 +16,7 @@ import { useStore } from '../state/store';
 import {
   applyFieldChange,
   clampInteger,
+  commitContentsField,
   deviceModelButtons,
   fieldRows,
 } from './elementFields';
@@ -30,7 +31,7 @@ function Field({
 }: {
   field: FieldDef;
   value: number | string;
-  onChange: (v: number | string | FileList | null) => void;
+  onChange: (v: number | string | FileList | null) => boolean | void;
   onBeginEdit: () => void;
   onDownload?: () => void;
 }) {
@@ -65,6 +66,19 @@ function Field({
           onChange={(e) => onChange(e.target.files)}
         />
       </label>
+    );
+  }
+
+  if (field.type === 'contents') {
+    // The SRAM/ROM memory editor, a five-line textarea (upstream's
+    // setVisibleLines(5)).
+    return (
+      <ContentsField
+        field={field}
+        value={String(value ?? '')}
+        onBeginEdit={onBeginEdit}
+        onCommit={onChange}
+      />
     );
   }
 
@@ -257,6 +271,61 @@ function Field({
 }
 
 /**
+ * The SRAM/ROM contents editor row: a five-line monospace textarea. The value
+ * is the pair text re-derived per render, so it always shows the current
+ * contents in the current radix while the user is not editing; a local draft
+ * holds the typing while focused. Commit parses and stores on blur and
+ * Ctrl+Enter. A parse error alerts and keeps the draft so the bad value stays
+ * on screen for fixing, and focus opens the edit session so the whole spell is
+ * one undo entry, the bracketing every other field uses.
+ */
+function ContentsField({
+  field,
+  value,
+  onBeginEdit,
+  onCommit,
+}: {
+  field: FieldDef;
+  value: string;
+  onBeginEdit: () => void;
+  onCommit: (text: string) => boolean | void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const text = draft !== null ? draft : value;
+  return (
+    <label className="field">
+      <span>{field.label}</span>
+      <textarea
+        className="memory-contents"
+        rows={5}
+        value={text}
+        onFocus={() => {
+          onBeginEdit();
+          // Seed the draft only when there is none: after a failed commit the
+          // bad text must survive a refocus so the user can fix it.
+          setDraft((d) => d ?? value);
+        }}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft === null) return;
+          if (onCommit(draft)) setDraft(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.ctrlKey && e.key === 'Enter') {
+            e.preventDefault();
+            if (draft === null) return;
+            if (onCommit(draft)) {
+              setDraft(null);
+              e.currentTarget.blur();
+            }
+          }
+        }}
+      />
+    </label>
+  );
+}
+
+/**
  * Reads a picked file into the element: data files go through the pure
  * one-value-per-line parser and alert on the same "Expected format" message
  * upstream shows (DataInputElm.java:185-216); audio files go through the
@@ -372,6 +441,7 @@ export function ElementFields({ element, engine }: Props) {
   const setText = useStore((s) => s.setText);
   const setKeyShortcut = useStore((s) => s.setKeyShortcut);
   const setModelName = useStore((s) => s.setModelName);
+  const setMemoryContents = useStore((s) => s.setMemoryContents);
   const beginEdit = useStore((s) => s.beginEdit);
   const updateElement = useStore((s) => s.updateElement);
   const loadAudioFile = useStore((s) => s.loadAudioFile);
@@ -413,6 +483,14 @@ export function ElementFields({ element, engine }: Props) {
                   loadDataFile,
                 );
                 return;
+              }
+              if (field.type === 'contents') {
+                // The commit owns the parse and the alert; its boolean tells
+                // the textarea whether the change landed, so a parse error
+                // keeps the bad draft on screen for fixing.
+                return commitContentsField(element, String(v), window.alert, {
+                  setMemoryContents,
+                });
               }
               applyFieldChange(element, field, v as number | string, {
                 setParam,

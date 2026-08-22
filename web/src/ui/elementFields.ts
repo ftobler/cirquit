@@ -6,6 +6,8 @@
 
 import { defFor } from '../model/registry';
 import { modelFamilyFor, userModel } from '../model/deviceModels';
+import { contentsToText, parseContentsText } from '../model/memoryContents';
+import { memoryPairs, normalizeSramBits, SRAM_HEX_DISPLAY } from '../model/registry/elements/sram';
 import type { CircuitElement, FieldDef } from '../model/types';
 
 /** One row of the property list: the def's field plus the element's value for
@@ -40,9 +42,24 @@ export function deviceModelButtons(e: CircuitElement): ModelButtons {
   };
 }
 
+/** The contents editor's radix and mask, derived from the element like the
+ *  engine derives them: the hex-display flag bit and the clamped data width.
+ *  Shared by the value synthesis (fieldValue) and the commit parser so the two
+ *  can never disagree about what the text means. */
+export function contentsOptions(e: CircuitElement): { hex: boolean; dataBits: number } {
+  return {
+    hex: (e.flags & SRAM_HEX_DISPLAY) !== 0,
+    dataBits: normalizeSramBits(e.params.dataBits ?? 4),
+  };
+}
+
 /** Where a field reads from: free text, a bit of `e.flags`, a named model, or
- *  a param. A flag field is a checkbox, so it is reported as 0 or 1. */
+ *  a param. A flag field is a checkbox, so it is reported as 0 or 1. A
+ *  `contents` field binds no scalar value: its row value is the rendered text,
+ *  re-derived per render so a hex-display toggle redraws the textarea in the
+ *  new radix without re-parsing the stored pairs. */
 export function fieldValue(e: CircuitElement, f: FieldDef): number | string {
+  if (f.type === 'contents') return contentsToText(memoryPairs(e), contentsOptions(e));
   if (f.target === 'text') return e.text ?? '';
   if (f.target === 'keyShortcut') return e.keyShortcut ?? '';
   if (f.target === 'modelName') return e.modelName ?? '';
@@ -84,6 +101,32 @@ export interface FieldEditActions {
   setKeyShortcut(id: number, key: string): void;
   setModelName(id: number, name: string): void;
   updateElement(id: number, patch: Partial<CircuitElement>): void;
+}
+
+/** The one store action a contents commit can reach. Split out so the commit
+ *  stays testable without a store, like FieldEditActions. */
+export interface ContentsCommitActions {
+  setMemoryContents(id: number, pairs: [number, number][]): void;
+}
+
+/** Commits the contents textarea: parse through the codec (never the raw
+ *  text, so two users typing different whitespace save identical files) and,
+ *  on success, hand the pairs to the store. A parse error alerts the message
+ *  and returns false so the caller keeps the bad value on screen, matching how
+ *  the data-file loader alerts. */
+export function commitContentsField(
+  e: CircuitElement,
+  text: string,
+  alert: (message: string) => void,
+  actions: ContentsCommitActions,
+): boolean {
+  const parsed = parseContentsText(text, contentsOptions(e));
+  if (parsed.error !== null) {
+    alert(parsed.error);
+    return false;
+  }
+  actions.setMemoryContents(e.id, parsed.pairs);
+  return true;
 }
 
 /**

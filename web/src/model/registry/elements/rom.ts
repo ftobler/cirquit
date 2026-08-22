@@ -36,6 +36,7 @@ export const ROM_DEF: ElementDef = {
   fields: [
     { name: 'addressBits', label: '# of Address Bits', min: 2, max: 16, integer: true },
     { name: 'dataBits', label: '# of Data Bits', min: 2, max: 16, integer: true },
+    { name: 'contents', label: 'Contents', type: 'contents' },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     { name: 'hexDisplay', label: 'Hex Display', type: 'bool', flag: SRAM_HEX_DISPLAY },
     {

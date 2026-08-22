@@ -288,6 +288,10 @@ describe('text field metadata', () => {
         // the recorded samples from the engine on demand (the data recorder's
         // export), never a param the element reads or writes.
         if (f.type === 'download') continue;
+        // A contents field binds no scalar value either: it is the SRAM/ROM
+        // memory editor, whose value is derived from the element's addr/val
+        // pair params and whose commit is its own store action.
+        if (f.type === 'contents') continue;
         expect(bound.has(f.name), `${def.kind} field '${f.name}' is bound to nothing`).toBe(true);
       }
     }

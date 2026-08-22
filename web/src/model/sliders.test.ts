@@ -42,6 +42,22 @@ describe('adjustable fields', () => {
     expect(adjustableFields('dataRecorder').map((f) => f.name)).toEqual(['dataCount']);
   });
 
+  it('excludes the SRAM/ROM contents editor, upstream\'s textArea edit item', () => {
+    // Upstream rejects a textArea row in canCreateAdjustable (EditInfo
+    // .java:101-104); a slider on it would write a phantom `contents` param
+    // the engine cannot patch. The two bit widths beside it stay adjustable.
+    expect(adjustableFields('sram').map((f) => f.name)).toEqual([
+      'addressBits',
+      'dataBits',
+      'highVoltage',
+    ]);
+    expect(adjustableFields('rom').map((f) => f.name)).toEqual([
+      'addressBits',
+      'dataBits',
+      'highVoltage',
+    ]);
+  });
+
   it('editItem indexes the adjustable list the same way resolveParam binds', () => {
     // resolveParam's caption-free fallback indexes into this exact list, so a
     // dialog creating a slider at index 1 saves a line that resolves back.
