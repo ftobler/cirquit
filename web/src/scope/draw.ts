@@ -14,6 +14,7 @@ import type {
   ScopeValue,
   TriggerInfoLike,
 } from '../engine/simulator';
+import { effectiveMeasurements } from '../engine/simulator';
 import { canvasFont, formatValue, makeTheme, parseRgb } from '../render/draw';
 import type { Theme, ThemeColors } from '../model/types';
 import { defFor } from '../model/registry';
@@ -510,47 +511,71 @@ function drawHeader(
   drawInfo(ctx, lines, h, theme.whiteColor);
 }
 
+/** One plot's measurement readout strings, computed from its own min/max
+ *  window: `stack` are the rows laid out under the header, `bottom` the Min
+ *  readout that pins to the bottom edge like upstream's always has
+ *  (ScopeOverlays.draw). */
+function measurementBlock(
+  scope: Scope,
+  s: MeasurableState,
+  speed: number,
+  timeStep: number,
+  decimalDigits: number,
+): { stack: string[]; bottom: string | null } {
+  if (s.count === 0) return { stack: [], bottom: null };
+  // The flags are per plot: its own mask when it carries one, the scope word
+  // otherwise, so a combined scope measures each trace on its own terms.
+  const m = effectiveMeasurements(scope, s.plot);
+  const unit = UNIT[s.plot.value];
+  const maxV = maxValue(s.min, s.max, s.count);
+  const minV = minValue(s.min, s.max, s.count);
+  const mid = (maxV + minV) / 2;
+  const stack: string[] = [];
+  if (m.showMax) stack.push(`Max=${formatValue(maxV, unit, decimalDigits)}`);
+  if (m.showP2P) stack.push(`P-P=${formatValue(maxV - minV, unit, decimalDigits)}`);
+  if (m.showRMS) stack.push(`${formatValue(rms(s.min, s.max, s.count, mid), unit, decimalDigits)}rms`);
+  if (m.showAverage)
+    stack.push(`${formatValue(average(s.min, s.max, s.count, mid), unit, decimalDigits)} average`);
+  if (m.showDutyCycle) stack.push(`Duty cycle ${Math.round(dutyCycle(s.min, s.max, s.count, mid))}%`);
+  if (m.showFreq) {
+    const f = estimateFrequency(s.min, s.max, s.count, speed, timeStep);
+    if (f !== 0) stack.push(formatValue(f, 'Hz', decimalDigits));
+  }
+  const bottom = m.showMin ? `Min=${formatValue(minV, unit, decimalDigits)}` : null;
+  return { stack, bottom };
+}
+
+/** Draws every visible trace's measurement readouts, one column per plot so
+ *  a combined scope's numbers sit beside their own trace colour instead of
+ *  all reading as the first trace's. Blocks advance left to right like the
+ *  manual-scale /div labels already do, stopping at the right edge. */
 function drawMeasurements(
   ctx: CanvasRenderingContext2D,
   scope: Scope,
-  first: MeasurableState,
+  states: MeasurableState[],
   h: number,
   speed: number,
   timeStep: number,
   theme: Theme,
   decimalDigits: number,
+  traceColors: Map<number, string>,
 ): void {
-  if (first.count === 0) return;
-  const mid = (maxValue(first.min, first.max, first.count) + minValue(first.min, first.max, first.count)) / 2;
-  const lines: InfoLine[] = [];
-  let y = 20;
-  const push = (text: string) => lines.push({ text, y: (y += 15) });
-  if (scope.showMax)
-    push(`Max=${formatValue(maxValue(first.min, first.max, first.count), UNIT[first.plot.value], decimalDigits)}`);
-  if (scope.showMin)
-    lines.push({
-      text: `Min=${formatValue(minValue(first.min, first.max, first.count), UNIT[first.plot.value], decimalDigits)}`,
-      y: h - 18,
-    });
-  if (scope.showP2P)
-    push(
-      `P-P=${formatValue(
-        maxValue(first.min, first.max, first.count) - minValue(first.min, first.max, first.count),
-        UNIT[first.plot.value],
-        decimalDigits,
-      )}`,
-    );
-  if (scope.showRMS)
-    push(`${formatValue(rms(first.min, first.max, first.count, mid), UNIT[first.plot.value], decimalDigits)}rms`);
-  if (scope.showAverage)
-    push(`${formatValue(average(first.min, first.max, first.count, mid), UNIT[first.plot.value], decimalDigits)} average`);
-  if (scope.showDutyCycle)
-    push(`Duty cycle ${Math.round(dutyCycle(first.min, first.max, first.count, mid))}%`);
-  if (scope.showFreq) {
-    const f = estimateFrequency(first.min, first.max, first.count, speed, timeStep);
-    if (f !== 0) push(formatValue(f, 'Hz', decimalDigits));
+  ctx.font = canvasFont(10);
+  let x = 4;
+  for (const s of states) {
+    const block = measurementBlock(scope, s, speed, timeStep, decimalDigits);
+    if (block.stack.length === 0 && block.bottom === null) continue;
+    const texts = [...block.stack, ...(block.bottom === null ? [] : [block.bottom])];
+    const width = Math.max(...texts.map((t) => ctx.measureText(t).width)) + 12;
+    if (x > 4 && x + width > ctx.canvas.width) break;
+    const color = traceColor(traceColors, s.plot, theme);
+    // The old single-trace row rhythm: stacked rows start one slot under the
+    // header, Min keeps its bottom-edge pin.
+    const info: InfoLine[] = block.stack.map((text, i) => ({ text, x, y: 20 + (i + 1) * 15 }));
+    if (block.bottom !== null) info.push({ text: block.bottom, x, y: h - 18 });
+    drawInfo(ctx, info, h, color);
+    x += width;
   }
-  drawInfo(ctx, lines, h, theme.whiteColor);
 }
 
 interface MeasurableState {
@@ -1163,8 +1188,10 @@ export function drawScope(
   // Angle is on and independent of the spectrum itself: upstream calls
   // drawPhaseAngle from ScopeOverlays.draw on every frame
   // (ScopeOverlays.java:218-219), and the FFT it needs is computed from the
-  // trace snapshots, not from the spectrum state.
-  if (scope.showPhaseAngle) {
+  // trace snapshots, not from the spectrum state. The flag is per trace now,
+  // but the band itself reads the voltage and current spectra together, so it
+  // draws when any visible trace turns it on.
+  if (states.some((s) => effectiveMeasurements(scope, s.plot).showPhaseAngle)) {
     drawPhaseBand(ctx, traces, w, h);
   }
   // Traces underneath: current first, voltage on top (Scope.java:666-681).
@@ -1203,7 +1230,7 @@ export function drawScope(
       kindOf ?? (() => null),
     );
   }
-  drawMeasurements(ctx, scope, states[0], h, speed, timeStep, theme, decimalDigits);
+  drawMeasurements(ctx, scope, states, h, speed, timeStep, theme, decimalDigits, traceColors);
   drawCursor(
     ctx,
     cursor,

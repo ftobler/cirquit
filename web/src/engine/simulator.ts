@@ -43,6 +43,39 @@ export interface ScopeTrigger {
   level: number;
 }
 
+/** The per-trace measurement readouts a scope plot can override, the port's
+ *  own extension: upstream's readout flags are scope-level. The key order here
+ *  is also the bit order of the per-plot flags token under FLAG_PERPLOTFLAGS
+ *  (scopeLine.ts): bit n+1 is PLOT_MEASUREMENT_KEYS[n], a set bit meaning the
+ *  readout is on. Bit 0 of that token stays upstream's FLAG_AC. */
+export interface PlotMeasurements {
+  showScale: boolean;
+  showMax: boolean;
+  showMin: boolean;
+  showP2P: boolean;
+  showFreq: boolean;
+  showRMS: boolean;
+  showAverage: boolean;
+  showDutyCycle: boolean;
+  showPhaseAngle: boolean;
+}
+
+export type PlotMeasurementKey = keyof PlotMeasurements;
+
+/** The override keys in per-plot-token bit order, shared by the codec and the
+ *  helpers below so the layout cannot drift between them. */
+export const PLOT_MEASUREMENT_KEYS: readonly PlotMeasurementKey[] = [
+  'showScale',
+  'showMax',
+  'showMin',
+  'showP2P',
+  'showFreq',
+  'showRMS',
+  'showAverage',
+  'showDutyCycle',
+  'showPhaseAngle',
+];
+
 export interface ScopePlot {
   /** Trace identity: what the UI and engine key on. */
   id: number;
@@ -60,6 +93,14 @@ export interface ScopePlot {
   manVPosition: number;
   /** DC-blocking filter on the raw sample (voltage plots only). */
   acCoupled: boolean;
+  /** This plot's own measurement readout mask, or null when the plot inherits
+   *  the scope-wide flags. All-or-nothing on purpose, matching the o line:
+   *  once a plot carries a per-plot flags token its own nine bits stand for
+   *  every readout, so a partial override is not expressible in the file.
+   *  All-off is distinct from inheriting: the token carries the bit-10
+   *  mask-present sentinel, so every readout can be turned off per trace
+   *  and survive a save/load. */
+  measurements: PlotMeasurements | null;
 }
 
 export interface Scope {
@@ -142,6 +183,46 @@ export interface Scope {
   scaleV: number;
   scaleA: number;
   trigger: ScopeTrigger;
+}
+
+/** The measurement word a plot without its own mask inherits: the scope's
+ *  own readout flags. */
+export function measurementsFromScope(scope: Scope): PlotMeasurements {
+  return {
+    showScale: scope.showScale,
+    showMax: scope.showMax,
+    showMin: scope.showMin,
+    showP2P: scope.showP2P,
+    showFreq: scope.showFreq,
+    showRMS: scope.showRMS,
+    showAverage: scope.showAverage,
+    showDutyCycle: scope.showDutyCycle,
+    showPhaseAngle: scope.showPhaseAngle,
+  };
+}
+
+/** The readout flags a plot actually draws with: its own mask when it has
+ *  one, the scope word otherwise. */
+export function effectiveMeasurements(scope: Scope, plot: ScopePlot): PlotMeasurements {
+  return plot.measurements ?? measurementsFromScope(scope);
+}
+
+/** Whether a plot carries a per-trace measurement that differs from the scope
+ *  default, the channel chip's badge condition. A mask that happens to equal
+ *  the scope word draws identically to inheriting, so it earns no badge. */
+export function plotOverridesScope(scope: Scope, plot: ScopePlot): boolean {
+  const mask = plot.measurements;
+  if (mask === null) return false;
+  const inherited = measurementsFromScope(scope);
+  return PLOT_MEASUREMENT_KEYS.some((k) => mask[k] !== inherited[k]);
+}
+
+/** Whether any plot of the scope overrides the scope word. The properties
+ *  dialog seeds its "Apply to all traces" toggle from this, so reopening the
+ *  dialog while overrides exist starts targeting the selected channel
+ *  instead of silently flipping every checkbox back to all traces. */
+export function anyPlotOverrides(scope: Scope): boolean {
+  return scope.plots.some((p) => plotOverridesScope(scope, p));
 }
 
 export interface FrameStats {

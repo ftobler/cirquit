@@ -29,7 +29,7 @@ import { escapeToken } from './netlist/tokens';
 import { encodeScopeLine, scopeFieldsFromFlags } from './scopeLine';
 import { importDecOrHex, scopeValueFromToken } from './netlist/parse';
 import { FLAG_ESCAPE, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
-import type { Scope, ScopeValue } from '../engine/simulator';
+import type { PlotMeasurements, Scope, ScopeValue } from '../engine/simulator';
 
 const FLAG_MODEL = 2;         // DiodeElm.java:22, shared by the LED
 const FLAG_FWDROP = 1;        // DiodeElm.java:21
@@ -366,6 +366,7 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
     value: ScopeValue | null;
     elementId: number | null;
     acCoupled: boolean;
+    measurements: PlotMeasurements | null;
     manScale: number | null;
     manVPosition: number;
   }[] = [];
@@ -399,6 +400,9 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
       value,
       elementId: e >= 0 ? e : null,
       acCoupled: (plotFlags & 1) !== 0,
+      // An XML attribute word never carries the port's measurement bits, so a
+      // converted plot always inherits the scope word.
+      measurements: null,
       manScale: ms >= 0 ? ms : null,
       manVPosition: p.attrs.mp !== undefined ? attr(p, 'mp', 0) : 0,
     });

@@ -7,7 +7,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { ScopeValue } from '../engine/simulator';
+import type { PlotMeasurementKey, ScopeValue } from '../engine/simulator';
+import { anyPlotOverrides, effectiveMeasurements, plotOverridesScope } from '../engine/simulator';
 import { seedManScale, barToSpeed, speedToBar, gridStepX, scaleStateFor, nextHighestScale, nextLowestScale } from '../scope/scale';
 import { formatValue, makeTheme } from '../render/draw';
 import { MAN_DIVISIONS, trailSliderToSteps, trailStepsToSlider, UNIT, plotColors, visiblePlotsOf } from '../scope/draw';
@@ -24,6 +25,21 @@ interface Props {
 
 type FlagKey = Parameters<ReturnType<typeof useStore.getState>['setScopeFlags']>[1];
 
+/** The nine per-trace readout rows, in their per-plot-token bit order (the
+ *  same list the o-line codec packs). Extended Info, Spectrum, Log Spectrum
+ *  and X-Y stay scope-level: they are not per-trace value readouts. */
+const MEASUREMENT_ROWS: { label: string; key: PlotMeasurementKey }[] = [
+  { label: 'Scale', key: 'showScale' },
+  { label: 'Max', key: 'showMax' },
+  { label: 'Min', key: 'showMin' },
+  { label: 'P-P', key: 'showP2P' },
+  { label: 'Freq', key: 'showFreq' },
+  { label: 'RMS', key: 'showRMS' },
+  { label: 'Average', key: 'showAverage' },
+  { label: 'Duty Cycle', key: 'showDutyCycle' },
+  { label: 'Show Phase Angle', key: 'showPhaseAngle' },
+];
+
 export function ScopeProperties({ scopeId, onClose }: Props) {
   const scope = useStore((s) => s.scopes.find((x) => x.id === scopeId));
   const scopes = useStore((s) => s.scopes);
@@ -34,6 +50,14 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
   // The channel selector's chosen trace, by id so a re-render survives plot
   // list changes; the derived `selected` falls back to the first visible one.
   const [selectedPlotId, setSelectedPlotId] = useState<number | null>(null);
+  // The Measurements fieldset's target: every trace (the scope word) or just
+  // the channel the selector has picked. A fresh scope starts on; a reopened
+  // dialog seeds from the scope itself, so while any trace overrides it
+  // starts off and the boxes keep editing the selected channel instead of
+  // lying about their target.
+  const [applyToAll, setApplyToAll] = useState(
+    () => scope !== undefined && anyPlotOverrides(scope),
+  );
   // Modal focus handling like the Dialog shell: Trap Tab, return focus to the
   // opener on close. The opener (a scope-menu row) is usually gone by then,
   // so the trap's restore guards against a detached element.
@@ -114,6 +138,29 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
       {label}
     </label>
   );
+
+  // One per-trace readout checkbox. With "Apply to all traces" on it writes
+  // the scope word every plot inherits; off, it writes the selected channel's
+  // own mask through setPlotMeasurementFlag.
+  const measurementRow = ({ label, key }: { label: string; key: PlotMeasurementKey }) => {
+    const perChannel = visibleChannels.length > 1 && !applyToAll && selected !== null;
+    const checked =
+      perChannel && selected ? effectiveMeasurements(scope, selected)[key] : scope[key];
+    return (
+      <label key={key}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) =>
+            perChannel && selected
+              ? useStore.getState().setPlotMeasurementFlag(selected.id, key, e.target.checked)
+              : toggle(key, e.target.checked)
+          }
+        />
+        {label}
+      </label>
+    );
+  };
 
   // The scope's single element, when there is exactly one and its kind is
   // known: which extra Plots boxes the dialog offers (ScopePropertiesDialog
@@ -312,6 +359,16 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
                   style={{ background: traceColors.get(plot.id) ?? theme.whiteColor }}
                 />
                 {`CH ${i + 1} (${channelLetter(plot.value)})`}
+                {/* A trace carrying its own measurement readouts gets a small
+                  second dot in its colour, so a combined scope shows at a
+                  glance which chips hold overrides. */}
+                {plotOverridesScope(scope, plot) && (
+                  <span
+                    className="channel-badge"
+                    title="This trace has its own measurements"
+                    style={{ background: traceColors.get(plot.id) ?? theme.whiteColor }}
+                  />
+                )}
               </button>
             ))}
           </div>
@@ -452,6 +509,28 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
 
       <fieldset>
         <legend>Measurements</legend>
+        {/* The per-trace readouts follow the channel selector: all traces
+            together (the scope word, today's behaviour) or just the picked
+            channel. Switching back to all traces clears every plot's mask so
+            no stale override hides behind the boxes. A single-trace scope
+            skips the toggle and always edits the scope word. */}
+        {visibleChannels.length > 1 && (
+          <div className="row">
+            <label>
+              <input
+                type="checkbox"
+                checked={applyToAll}
+                onChange={(e) => {
+                  setApplyToAll(e.target.checked);
+                  if (e.target.checked) {
+                    useStore.getState().clearPlotMeasurementOverrides(scope.id);
+                  }
+                }}
+              />
+              Apply to all traces
+            </label>
+          </div>
+        )}
         <div className="row row-wrap">
           {/* The per-element Plots boxes, upstream's order (a transistor's six
               pin plots in place of Show Voltage/Current, then power, charge
@@ -478,15 +557,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
               showBox(row.label, row.value, row.disabled)
             ),
           )}
-          {rows('Scale', scope.showScale, 'showScale')}
-          {rows('Max', scope.showMax, 'showMax')}
-          {rows('Min', scope.showMin, 'showMin')}
-          {rows('P-P', scope.showP2P, 'showP2P')}
-          {rows('Freq', scope.showFreq, 'showFreq')}
-          {rows('RMS', scope.showRMS, 'showRMS')}
-          {rows('Average', scope.showAverage, 'showAverage')}
-          {rows('Duty Cycle', scope.showDutyCycle, 'showDutyCycle')}
-          {rows('Show Phase Angle', scope.showPhaseAngle, 'showPhaseAngle')}
+          {MEASUREMENT_ROWS.map(measurementRow)}
           {rows('Extended Info', scope.showElmInfo, 'showElmInfo')}
           {rows('Spectrum', scope.fftPlot, 'fftPlot')}
           {rows('Log Spectrum', scope.logSpectrum, 'logSpectrum')}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Scope, ScopePlot } from '../engine/simulator';
+import type { PlotMeasurements, Scope, ScopePlot } from '../engine/simulator';
 import {
   decodeScopeLine,
   encodeScopeLine,
@@ -15,7 +15,22 @@ const plot = (id: number, value: ScopePlot['value']): ScopePlot => ({
   manScale: null,
   manVPosition: 0,
   acCoupled: false,
+  measurements: null,
 });
+
+/** A measurement mask with every readout off except the named ones. */
+const mask = (...on: (keyof PlotMeasurements)[]): PlotMeasurements => ({
+  showScale: false,
+  showMax: false,
+  showMin: false,
+  showP2P: false,
+  showFreq: false,
+  showRMS: false,
+  showAverage: false,
+  showDutyCycle: false,
+  showPhaseAngle: false,
+  ...Object.fromEntries(on.map((k) => [k, true])),
+}) as PlotMeasurements;
 
 /** The scope state the store's load path would build from a decoded line: the
  *  display fields plus the per-plot fields merged onto their plots. */
@@ -36,6 +51,7 @@ const loadedScope = (decoded: DecodedScopeLine, plots: ScopePlot[]): Scope => {
       acCoupled: perPlot[i].acCoupled,
       manScale: perPlot[i].manScale,
       manVPosition: perPlot[i].manVPosition,
+      measurements: perPlot[i].measurements,
     })),
     trigger: { mode: 'freeRun', edge: 'rising', level: 0 },
     ...fields,
@@ -58,7 +74,9 @@ describe('decodeScopeLine on the corpus shapes', () => {
     expect(decoded.label).toBe('set');
     expect(decoded.scaleV).toBe(5);
     expect(decoded.scaleA).toBeCloseTo(9.765625e-5, 15);
-    expect(decoded.perPlot).toEqual([{ acCoupled: false, manScale: null, manVPosition: 0 }]);
+    expect(decoded.perPlot).toEqual([
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
+    ]);
   });
 
   it('decodes a new-style two-plot line with a label', () => {
@@ -73,9 +91,10 @@ describe('decodeScopeLine on the corpus shapes', () => {
     expect(decoded.showMax).toBe(false);
     expect(decoded.label).toBe('J');
     expect(decoded.perPlot).toEqual([
-      { acCoupled: false, manScale: null, manVPosition: 0 },
-      { acCoupled: false, manScale: null, manVPosition: 0 },
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
     ]);
+    expect(decoded.label).toBe('J');
   });
 
   it('decodes an X-Y line, plotXY from upstream plot2d.enabled (bit 64)', () => {
@@ -111,6 +130,7 @@ describe('decodeScopeLine on the corpus shapes', () => {
     expect(decoded.label).toBe('');
     expect(decoded.perPlot[0]).toEqual({
       acCoupled: false,
+      measurements: null,
       manScale: null,
       manVPosition: -100,
     });
@@ -146,15 +166,17 @@ describe('decodeScopeLine on the corpus shapes', () => {
 
   it('reads per-plot flags and manScale pairs', () => {
     // flags 790528 = FLAG_PLOTS + FLAG_PERPLOTFLAGS + FLAG_PERPLOT_MAN_SCALE.
+    // The first plot's token is '0': no AC bit and no measurement bits, so
+    // the plot only carries the man-scale pair below.
     const decoded = decodeScopeLine(
-      ['64', '0', '790528', '20', '0.05', '0', '2', 'a', '2', '50', '1', '1', '3', '1', '60', 'label'],
+      ['64', '0', '790528', '20', '0.05', '0', '2', '0', '2', '50', '1', '1', '3', '1', '60', 'label'],
       [plot(0, 'voltage'), plot(1, 'current')],
       [null, 'resistor'],
       0,
     );
     expect(decoded.perPlot).toEqual([
-      { acCoupled: false, manScale: 2, manVPosition: 50 },
-      { acCoupled: true, manScale: 1, manVPosition: 60 },
+      { acCoupled: false, measurements: null, manScale: 2, manVPosition: 50 },
+      { acCoupled: true, measurements: null, manScale: 1, manVPosition: 60 },
     ]);
     expect(decoded.label).toBe('label');
   });
@@ -170,8 +192,8 @@ describe('decodeScopeLine on the corpus shapes', () => {
       0,
     );
     expect(decoded.perPlot).toEqual([
-      { acCoupled: false, manScale: null, manVPosition: 0 },
-      { acCoupled: false, manScale: null, manVPosition: 0 },
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
     ]);
     expect(decoded.label).toBe('');
   });
@@ -257,8 +279,8 @@ describe('encodeScopeLine round-trip', () => {
     expect(decoded.showV).toBe(true);
     expect(decoded.manDivisions).toBe(4);
     expect(decoded.perPlot).toEqual([
-      { acCoupled: false, manScale: null, manVPosition: 0 },
-      { acCoupled: false, manScale: null, manVPosition: 0 },
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
     ]);
     expect(decoded.label).toBe('');
     roundTrips(raw, plots, kinds);
@@ -275,8 +297,8 @@ describe('encodeScopeLine round-trip', () => {
     const kinds = ['resistor', 'resistor'];
     const decoded = decodeScopeLine(raw, plots, kinds, 0);
     expect(decoded.perPlot).toEqual([
-      { acCoupled: false, manScale: null, manVPosition: 0 },
-      { acCoupled: false, manScale: null, manVPosition: -100 },
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: -100 },
     ]);
     expect(decoded.label).toBe('');
     roundTrips(raw, plots, kinds);
@@ -343,9 +365,9 @@ describe('encodeScopeLine round-trip', () => {
     ];
     const decoded = decodeScopeLine(raw, plots, kinds, 0);
     expect(decoded.perPlot).toEqual([
-      { acCoupled: false, manScale: null, manVPosition: 0 },
-      { acCoupled: true, manScale: null, manVPosition: 0 },
-      { acCoupled: false, manScale: null, manVPosition: 0 },
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
+      { acCoupled: true, measurements: null, manScale: null, manVPosition: 0 },
+      { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
     ]);
     expect(decoded.label).toBe('Label');
     const encoded = encodeScopeLine(loadedScope(decoded, plots), (id) => id, kinds);
@@ -366,6 +388,74 @@ describe('encodeScopeLine round-trip', () => {
     expect(again.label).toBe('Label');
     const second = encodeScopeLine(loadedScope(again, plots), (id) => id, kinds);
     expect(second).toEqual(encoded);
+  });
+});
+
+describe('per-plot measurement bits under FLAG_PERPLOTFLAGS', () => {
+  // flags 266242 = showV + FLAG_PLOTS + FLAG_PERPLOTFLAGS. Plot A's token
+  // '420' (hex) sets the mask-present sentinel (bit 10) plus bit 5, the
+  // port's per-plot showFreq; plot B's token '0' carries neither, so B
+  // inherits.
+  const RAW = ['64', '0', '266242', '20', '0.05', '0', '2', '420', '0', '0', '3', 'FreqOnly'];
+  const plots = [plot(0, 'voltage'), plot(0, 'current')];
+  const kinds: (string | null)[] = [null, null];
+
+  it('decodes a masked plot and an inheriting one', () => {
+    const decoded = decodeScopeLine(RAW, plots, kinds, 0);
+    expect(decoded.perPlot).toHaveLength(2);
+    expect(decoded.perPlot[0].measurements).toEqual(mask('showFreq'));
+    expect(decoded.perPlot[1]).toMatchObject({ acCoupled: false, measurements: null });
+    expect(decoded.label).toBe('FreqOnly');
+  });
+
+  it('re-encodes to the same tokens and scopeLineMatches agrees', () => {
+    const decoded = decodeScopeLine(RAW, plots, kinds, 0);
+    const scope = loadedScope(decoded, plots);
+    expect(encodeScopeLine(scope, () => 0, kinds)).toEqual(RAW);
+    expect(scopeLineMatches(scope, RAW, kinds, 0)).toBe(true);
+    // Giving B its own differing mask breaks the match, the same way any
+    // display edit does.
+    const edited = loadedScope(decoded, plots);
+    edited.plots[1] = { ...edited.plots[1], measurements: mask('showRMS') };
+    expect(scopeLineMatches(edited, RAW, kinds, 0)).toBe(false);
+    // So does clearing A's mask back to inheriting.
+    const cleared = loadedScope(decoded, plots);
+    cleared.plots[0] = { ...cleared.plots[0], measurements: null };
+    expect(scopeLineMatches(cleared, RAW, kinds, 0)).toBe(false);
+  });
+
+  it('reads a multi-bit hex token and round-trips it', () => {
+    // The mask-present sentinel is bit 10, showMax bit 2 and showPhaseAngle
+    // bit 9: 1024 + 4 + 512 = 1540 = hex '604'.
+    const raw = ['64', '0', '266242', '20', '0.05', '0', '1', '604'];
+    const single = [plot(0, 'voltage')];
+    const decoded = decodeScopeLine(raw, single, [null], 0);
+    expect(decoded.perPlot[0].measurements).toEqual(mask('showMax', 'showPhaseAngle'));
+    expect(encodeScopeLine(loadedScope(decoded, single), () => 0, [null])).toEqual(raw);
+  });
+
+  it('a sentinel-carrying token with empty measurement bits decodes as all-off', () => {
+    // A foreign file (or this port's own encoder) marks a real mask with
+    // bit 10 alone: hex '400'. That must come back as an explicit all-off
+    // mask, not collapse into inheriting.
+    const raw = ['64', '0', '266242', '20', '0.05', '0', '2', '400', '0', '0', '3'];
+    const decoded = decodeScopeLine(raw, plots, kinds, 0);
+    expect(decoded.perPlot[0].measurements).toEqual(mask());
+    expect(decoded.perPlot[1].measurements).toBeNull();
+    expect(encodeScopeLine(loadedScope(decoded, plots), () => 0, kinds)).toEqual(raw);
+  });
+
+  it('an AC-only token keeps the plot inheriting, exactly as before this feature', () => {
+    // Upstream writes per-plot tokens for AC coupling alone; those must not
+    // grow an all-off measurement mask or an untouched file would stop
+    // drawing its inherited readouts.
+    const raw = ['64', '0', '266242', '20', '0.05', '0', '2', '1', '0', '0', '3'];
+    const decoded = decodeScopeLine(raw, plots, kinds, 0);
+    expect(decoded.perPlot[0].acCoupled).toBe(true);
+    expect(decoded.perPlot[0].measurements).toBeNull();
+    expect(decoded.perPlot[1].acCoupled).toBe(false);
+    expect(decoded.perPlot[1].measurements).toBeNull();
+    expect(encodeScopeLine(loadedScope(decoded, plots), () => 0, kinds)).toEqual(raw);
   });
 });
 

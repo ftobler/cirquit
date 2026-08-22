@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Scope, ScopePlot, ScopeTrigger, ScopeValue } from '../engine/simulator';
+import { measurementsFromScope } from '../engine/simulator';
 import { scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 import { positionToOffset } from '../scope/scale';
 import {
@@ -168,7 +169,12 @@ const clone = (s: Snapshot): Snapshot => ({
     ...x,
     raw: x.raw ? [...x.raw] : null,
     trigger: { ...x.trigger },
-    plots: x.plots.map((p) => ({ ...p })),
+    // The measurement mask is a nested object like the trigger: clone it so a
+    // snapshot can never alias the live plot's override.
+    plots: x.plots.map((p) => ({
+      ...p,
+      measurements: p.measurements ? { ...p.measurements } : null,
+    })),
   })),
   sliders: s.sliders.map((x) => ({ ...x, raw: [...x.raw] })),
   settings: { ...s.settings },
@@ -325,7 +331,15 @@ function makePlot(id: number, elementId: number | null, value: ScopeValue | null
   // compatibility.
   const manVPosition =
     value === 'power' || value === 'charge' || value === 'resistance' ? -100 : 0;
-  return { id, elementId, value, manScale: null, manVPosition, acCoupled: false };
+  return {
+    id,
+    elementId,
+    value,
+    manScale: null,
+    manVPosition,
+    acCoupled: false,
+    measurements: null,
+  };
 }
 
 /** The horizontal zoom a scope created in the UI starts at, before any stored
@@ -1800,6 +1814,9 @@ function createAppStore() {
       manScale: null,
       manVPosition: makePlot(p.id, p.elementId, p.value).manVPosition,
       acCoupled: false,
+      // Reset to Default is about how the panel draws: the per-trace
+      // measurement overrides go back to inheriting the scope word too.
+      measurements: null,
     }));
     // `makeScope` is what a fresh panel goes through, stored defaults and all,
     // so "default" here means the same thing the Save as Default button writes:
@@ -1866,6 +1883,61 @@ function createAppStore() {
       // scope fast path (applyScopeParams), so toggling it must not rewind
       // the simulation. The trigger path has no fast path yet and still
       // reloads; see setScopeTrigger.
+    }));
+  },
+
+  /** One plot's per-trace measurement readout, the properties dialog's
+   *  per-channel checkbox path. The mask is seeded from the scope word so a
+   *  first override carries the inherited values for every other readout;
+   *  display-only, like setScopeFlags. */
+  setPlotMeasurementFlag: (plotId, key, on) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.plots.some((p) => p.id === plotId));
+    if (!scope) return;
+    const plot = scope.plots.find((p) => p.id === plotId);
+    // A mask already holding the value is a repeat click: no change and no
+    // undo entry. Without a mask the checkbox shows the inherited value, so
+    // a click always flips something.
+    if (!plot || (plot.measurements !== null && plot.measurements[key] === on)) return;
+    if (!s.scopeGesture) s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) =>
+        x.id === scope.id
+          ? {
+              ...x,
+              plots: x.plots.map((p) =>
+                p.id === plotId
+                  ? {
+                      ...p,
+                      measurements: { ...measurementsFromScope(x), ...p.measurements, [key]: on },
+                    }
+                  : p,
+              ),
+            }
+          : x,
+      ),
+    }));
+  },
+
+  /** Drops every plot's measurement mask in one scope so all traces inherit
+   *  the scope word again: the "Apply to all traces" toggle's switch-on path,
+   *  so no stale per-trace override hides behind the scope checkboxes. */
+  clearPlotMeasurementOverrides: (scopeId) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.id === scopeId);
+    // A scope without overrides has nothing to clear and must not push an
+    // undo entry.
+    if (!scope || !scope.plots.some((p) => p.measurements !== null)) return;
+    if (!s.scopeGesture) s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) =>
+        x.id === scopeId
+          ? {
+              ...x,
+              plots: x.plots.map((p) => (p.measurements === null ? p : { ...p, measurements: null })),
+            }
+          : x,
+      ),
     }));
   },
 
@@ -2277,6 +2349,7 @@ function createAppStore() {
             acCoupled: perPlot[i].acCoupled,
             manScale: perPlot[i].manScale,
             manVPosition: perPlot[i].manVPosition,
+            measurements: perPlot[i].measurements,
           })),
         });
       }

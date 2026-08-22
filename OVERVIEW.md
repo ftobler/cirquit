@@ -212,7 +212,7 @@ fetch it).
 - 468 Rust tests, of which 394 are the end-to-end circuit checks against
   analytic results across `engine/core/tests/` (the old monolithic `circuits.rs`
   was split into topic files), plus 73 in-module unit tests and one doctest.
-  2468 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
+  2489 TypeScript tests (one corpus report test skipped). CI runs fmt, clippy,
   tests, typecheck, lint and build, then deploys to Pages.
 
 ### Deliberate gaps
@@ -263,7 +263,17 @@ fetch it).
   port models: speed, stacking position, showV/showI (live trace-visibility
   toggles, Scope.java:289-315), scale mode (auto/max/manual), manDivisions,
   the measurement toggles, FFT/log-spectrum, X-Y, the label, and the per-plot
-  DC/AC coupling and manual scale/position. The trigger bits (1<<24) are
+  DC/AC coupling and manual scale/position. The nine value readouts (Scale,
+  Max, Min, P-P, Freq, RMS, Average, Duty Cycle, Phase Angle) are additionally
+  settable per trace: each plot carries its own mask in the per-plot flags
+  token under FLAG_PERPLOTFLAGS, bit 0 staying FLAG_AC and bits 1..9 the
+  port's own fresh convention (set bit means the readout is on, no inheritance
+  of upstream's historical showMax inversion), with bit 10 marking that a
+  mask exists at all so an all-off mask survives a save/load instead of
+  collapsing into inheriting; bits 11 and up are reserved and never written.
+  A token that sets neither the sentinel nor a measurement bit leaves the
+  plot inheriting the scope word, so existing files behave and encode
+  byte-for-byte as before. The trigger bits (1<<24) are
   deliberately not read: the text format carries no trigger state and upstream
   never restores it. Hints (`h`) are preserved verbatim but inert.
 - **XML circuits.** Current upstream saves a `<cir …>` document rather than
@@ -679,9 +689,21 @@ neighbour. A trace whose target is one of those unreadable lines has nothing
 to draw, and its line is carried through untouched. The display fields are
 interpreted into scope state: speed, stacking position, showV/showI, scale
 mode, manDivisions, the measurement toggles, FFT/log-spectrum, X-Y, the label
-and per-plot coupling and manual scale/position. The trigger bits (1<<24) are
-deliberately not read, so a loaded line's trigger field is left alone; see the
-scope line fidelity section.
+and per-plot coupling and manual scale/position. Under FLAG_PERPLOTFLAGS each
+plot carries one hex flags token whose bit 0 is upstream's FLAG_AC, whose
+bits 1..9 are the port's per-trace measurement readouts in the order Scale,
+Max, Min, P-P, Freq, RMS, Average, Duty Cycle, Phase Angle (set meaning on: a
+fresh convention, no inheritance of upstream's historical showMax inversion),
+and whose bit 10 marks that a mask exists at all so an explicitly all-off mask
+round-trips instead of collapsing into inheriting. Bits 11 and up are
+reserved: nothing writes them, and unknown high bits in a foreign token
+decode as off and drop on regeneration. A token that sets neither the
+sentinel nor a measurement bit leaves the plot inheriting the scope word,
+and the flag word sets FLAG_PERPLOTFLAGS only when a plot actually
+carries a token or an AC bit, so scopes that never used per-channel
+measurements encode byte-for-byte as upstream's do. The trigger bits (1<<24)
+are deliberately not read, so a loaded line's trigger field is left alone;
+see the scope line fidelity section.
 
 For the `s` and `S` rows the label token exists only when FLAG_LABEL (bit 4) is
 set, and the SPDT reads it before `link` and `throwCount`, so a label shifts

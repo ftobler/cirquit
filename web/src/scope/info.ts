@@ -5,6 +5,10 @@ import { canvasFont } from '../render/draw';
 export interface InfoLine {
   text: string;
   color?: string;
+  /** Pixel offset from the left edge; defaults to 4, the shared left margin.
+   *  The measurement clusters set it so each trace's block sits beside the
+   *  previous one. */
+  x?: number;
   y: number;
 }
 
@@ -26,6 +30,6 @@ export function drawInfo(
   for (const line of lines) {
     if (line.y < 0 || line.y >= h - 5) continue;
     ctx.fillStyle = line.color ?? defaultColor;
-    ctx.fillText(line.text, 4, line.y);
+    ctx.fillText(line.text, line.x ?? 4, line.y);
   }
 }

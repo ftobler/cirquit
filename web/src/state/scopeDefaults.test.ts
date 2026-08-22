@@ -111,6 +111,36 @@ describe('scope defaults persistence', () => {
     );
   });
 
+  it('a per-trace measurement mask rides the word as FLAG_PERPLOTFLAGS and seeds nothing', () => {
+    // Per-plot flags belong to saved o lines, never to the defaults blob:
+    // the stored word keeps the bit (a plot does carry a token), but the
+    // patch a fresh scope loads stays scope-word fields only.
+    const storage = fakeStorage();
+    const maskedPlot = {
+      id: 7,
+      elementId: 1,
+      value: 'voltage' as const,
+      manScale: null,
+      manVPosition: 0,
+      acCoupled: false,
+      measurements: {
+        showScale: false,
+        showMax: false,
+        showMin: false,
+        showP2P: false,
+        showFreq: true,
+        showRMS: false,
+        showAverage: false,
+        showDutyCycle: false,
+        showPhaseAngle: false,
+      },
+    };
+    saveScopeDefaults(scopeOf({ plots: [maskedPlot] }), storage);
+    const blob = JSON.parse(storage.getItem(SCOPE_DEFAULTS_STORAGE_KEY)!) as { flags: number };
+    expect(blob.flags & (1 << 18)).not.toBe(0);
+    expect(loadScopeDefaults(storage)).not.toHaveProperty('measurements');
+  });
+
   it('clamps an out-of-range speed on load like the load path', () => {
     const storage = fakeStorage();
     storage.setItem(

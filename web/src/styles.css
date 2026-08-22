@@ -1773,6 +1773,16 @@ input[type='range'] {
   flex: 0 0 auto;
 }
 
+/* A trace running its own measurement readouts carries a small second dot in
+   the trace colour, beside the chip's label. */
+.scope-props .channel-badge {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
 .scope-props input[type='range'] {
   flex: 1;
 }

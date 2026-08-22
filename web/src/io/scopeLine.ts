@@ -13,7 +13,13 @@
  * fields and swallow part of the label.
  */
 
-import type { Scope, ScopePlot, ScopeValue } from '../engine/simulator';
+import type {
+  PlotMeasurements,
+  Scope,
+  ScopePlot,
+  ScopeValue,
+} from '../engine/simulator';
+import { PLOT_MEASUREMENT_KEYS } from '../engine/simulator';
 import { unescapeToken, escapeToken } from './netlist/tokens';
 import {
   FLAG_DIVISIONS,
@@ -28,6 +34,9 @@ import {
 /** Per-plot fields a scope line carries, indexed like the plot list. */
 export interface DecodedPlotFields {
   acCoupled: boolean;
+  /** The plot's own measurement mask when its per-plot flags token set any
+   *  measurement bit, else null: the plot inherits the scope word. */
+  measurements: PlotMeasurements | null;
   /** The per-plot manScale token, or null when no pair was on the line. */
   manScale: number | null;
   /** The per-plot manVPosition token; upstream's -200..200 span (the port's
@@ -99,6 +108,43 @@ const FLAG_IVALUE = 2048;
  *  (ScopeSerializer.java:231). */
 const FLAG_AC = 1;
 
+/** The per-plot token's measurement bits, the port's own extension. Bit 0 is
+ *  upstream's FLAG_AC, bits 1..9 are PLOT_MEASUREMENT_KEYS in order with a
+ *  fresh convention (a set bit means the readout is on), and bit 10 is the
+ *  mask-present sentinel: without it an all-off mask would encode as '0' and
+ *  collapse back into inheriting on reload. Upstream's tokens only ever
+ *  carried the AC bit, so these bits were free; unlike the scope word there
+ *  is no historical FLAG_SHOW_MAX_OFF inversion to inherit. Bits 11 and up
+ *  are reserved: nothing may write them, and unknown high bits in a foreign
+ *  token decode as off and drop on regeneration. */
+const MEASUREMENT_MASK = ((1 << PLOT_MEASUREMENT_KEYS.length) - 1) << 1;
+
+/** Bit 10: marks a token as carrying a real mask, even an all-off one. One
+ *  above the top key bit, since the keys occupy bits 1..9. */
+const MEASUREMENT_SENTINEL = 1 << (PLOT_MEASUREMENT_KEYS.length + 1);
+
+/** Packs a plot's mask into its token bits (AC included). The sentinel rides
+ *  whenever a mask exists at all, so all-off is distinguishable from null. */
+function measurementTokenBits(acCoupled: boolean, m: PlotMeasurements | null): number {
+  let bits = acCoupled ? FLAG_AC : 0;
+  if (m !== null) {
+    bits |= MEASUREMENT_SENTINEL;
+    PLOT_MEASUREMENT_KEYS.forEach((key, i) => {
+      if (m[key]) bits |= 1 << (i + 1);
+    });
+  }
+  return bits;
+}
+
+/** Unpacks a token's measurement bits into a mask. */
+function measurementsFromBits(bits: number): PlotMeasurements {
+  const out = {} as PlotMeasurements;
+  PLOT_MEASUREMENT_KEYS.forEach((key, i) => {
+    out[key] = (bits & (1 << (i + 1))) !== 0;
+  });
+  return out;
+}
+
 /** The vertical position a fresh plot of this value starts at: power, charge
  *  and resistance plots sit at the bottom of the manual-mode screen, everything
  *  else centred, upstream's ScopePlot constructor (ScopePlot.java:62-66). */
@@ -112,7 +158,10 @@ function defaultManVPosition(value: ScopeValue | null): number {
  *  (FLAG_PLOTS and friends) depend only on the scope state, so a UI-created
  *  scope and a loaded one encode identically. */
 export function scopeDisplayFlags(scope: Scope): number {
-  const anyPlotFlags = scope.plots.some((p) => p.acCoupled);
+  // The per-plot bit rides the word only when a plot actually carries its own
+  // flags: AC coupling or a measurement mask. A scope that never used
+  // per-channel measurements therefore encodes byte-for-byte as before.
+  const anyPlotFlags = scope.plots.some((p) => p.acCoupled || p.measurements !== null);
   const manual = scope.manualScale;
   return (
     (scope.showI ? FLAG_SHOW_I : 0) |
@@ -218,6 +267,7 @@ export function decodeScopeLine(
 
   const perPlot: DecodedPlotFields[] = plots.map((p) => ({
     acCoupled: false,
+    measurements: null,
     manScale: null,
     // Without a per-plot pair the constructor default stands, so a W/C plot
     // loads at the bottom of the manual-mode screen exactly as upstream's
@@ -247,6 +297,16 @@ export function decodeScopeLine(
         if ((flags & FLAG_PERPLOTFLAGS) !== 0 && cursor < raw.length) {
           const plotFlags = Number.parseInt(raw[cursor++] ?? '', 16);
           perPlot[i].acCoupled = Number.isFinite(plotFlags) && (plotFlags & FLAG_AC) !== 0;
+          // A token carries this plot's own mask when it sets the sentinel
+          // or any measurement bit: the sentinel keeps an all-off mask alive,
+          // while AC-only tokens ('0'/'1', everything upstream and the
+          // corpus writes) leave the plot inheriting the scope word exactly
+          // as before per-channel measurements existed.
+          perPlot[i].measurements =
+            Number.isFinite(plotFlags) &&
+            (plotFlags & (MEASUREMENT_MASK | MEASUREMENT_SENTINEL)) !== 0
+              ? measurementsFromBits(plotFlags)
+              : null;
         }
         if (i !== 0) {
           const ne = next();
@@ -306,7 +366,10 @@ export function encodeScopeLine(
   const first = scope.plots[0];
   const manual = scope.manualScale;
   const flags = scopeDisplayFlags(scope);
-  const anyPlotFlags = scope.plots.some((p) => p.acCoupled);
+  // The token rides for every plot once any of them carries one, upstream's
+  // all-or-nothing FLAG_PERPLOTFLAGS shape: a mask or an AC bit anywhere
+  // turns the word's bit on.
+  const anyPlotFlags = scope.plots.some((p) => p.acCoupled || p.measurements !== null);
 
   const tokens = [
     String(scope.speed),
@@ -330,7 +393,9 @@ export function encodeScopeLine(
   if (needsScaleToken(first.value, kinds[0] ?? null)) tokens.push('20');
   for (let i = 0; i < scope.plots.length; i++) {
     const p = scope.plots[i];
-    if (anyPlotFlags) tokens.push(p.acCoupled ? '1' : '0');
+    // Hex, matching the decoder's parseInt(_, 16); single-digit values come
+    // out as '0'/'1' exactly like the AC-only tokens always written.
+    if (anyPlotFlags) tokens.push(measurementTokenBits(p.acCoupled, p.measurements).toString(16));
     if (i !== 0) {
       const index = p.elementId === null ? -1 : (indexOf(p.elementId) ?? -1);
       tokens.push(String(index), String(valueTokenOf(p.value)));
@@ -387,7 +452,15 @@ export function scopeLineMatches(
       (d, i) =>
         d.acCoupled === scope.plots[i].acCoupled &&
         d.manScale === scope.plots[i].manScale &&
-        d.manVPosition === scope.plots[i].manVPosition,
+        d.manVPosition === scope.plots[i].manVPosition &&
+        sameMeasurements(d.measurements, scope.plots[i].measurements),
     )
   );
+}
+
+/** Mask equality with null in the mix: both null inherit alike, two masks
+ *  agree when every bit does. */
+function sameMeasurements(a: PlotMeasurements | null, b: PlotMeasurements | null): boolean {
+  if (a === null || b === null) return a === b;
+  return PLOT_MEASUREMENT_KEYS.every((k) => a[k] === b[k]);
 }

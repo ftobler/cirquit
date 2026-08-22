@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  anyPlotOverrides,
+  effectiveMeasurements,
+  plotOverridesScope,
+} from '../engine/simulator';
 import { useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 import { SCOPE_DEFAULTS_STORAGE_KEY } from './scopeDefaults';
@@ -511,5 +516,193 @@ describe('the Show Vce vs Ic action', () => {
 
     useStore.getState().loadNetlist(useStore.getState().toNetlist());
     expect(useStore.getState().scopes[0].plots.map((p) => p.value)).toEqual(['vce', 'ic']);
+  });
+});
+
+describe('per-channel measurement flags', () => {
+  /** A combined scope over two resistors: four plots, A's V+I then B's. */
+  const combinedScope = () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    const [sa, sb] = useStore.getState().scopes;
+    useStore.getState().combineScopes(sa.id, sb.id);
+    return useStore.getState().scopes[0];
+  };
+
+  it('setPlotMeasurementFlag changes one trace and not its stacked sibling', () => {
+    const scope = combinedScope();
+    const pa = scope.plots[0];
+    const pb = scope.plots[2];
+    const before = useStore.getState().revision;
+    useStore.getState().setPlotMeasurementFlag(pa.id, 'showFreq', true);
+    const after = useStore.getState().scopes[0];
+    const qa = after.plots.find((p) => p.id === pa.id)!;
+    const qb = after.plots.find((p) => p.id === pb.id)!;
+    // The mask is seeded from the scope word, so only Freq moves and the
+    // other readouts keep the inherited values.
+    expect(qa.measurements!.showFreq).toBe(true);
+    expect(qa.measurements!.showMax).toBe(after.showMax);
+    expect(qb.measurements).toBeNull();
+    // A readout flag is display-only, like setScopeFlags.
+    expect(useStore.getState().revision).toBe(before);
+  });
+
+  it('a repeat click changes nothing and pushes no undo entry', () => {
+    const scope = combinedScope();
+    const pa = scope.plots[0];
+    useStore.getState().setPlotMeasurementFlag(pa.id, 'showFreq', true);
+    const depth = useStore.getState().undoStack.length;
+    useStore.getState().setPlotMeasurementFlag(pa.id, 'showFreq', true);
+    expect(useStore.getState().undoStack.length).toBe(depth);
+  });
+
+  it('the badge condition tracks masks that differ from the scope word only', () => {
+    const scope = combinedScope();
+    const pa = scope.plots[0];
+    expect(plotOverridesScope(scope, pa)).toBe(false);
+    useStore.getState().setPlotMeasurementFlag(pa.id, 'showFreq', true);
+    let after = useStore.getState().scopes[0];
+    expect(plotOverridesScope(after, after.plots[0])).toBe(true);
+    // Flipping the bit back leaves an override that equals the scope word
+    // everywhere: it draws exactly like inheriting, so no badge.
+    useStore.getState().setPlotMeasurementFlag(pa.id, 'showFreq', false);
+    after = useStore.getState().scopes[0];
+    expect(after.plots[0].measurements).not.toBeNull();
+    expect(plotOverridesScope(after, after.plots[0])).toBe(false);
+  });
+
+  it('the all-traces path writes the scope word every plot inherits', () => {
+    const scope = combinedScope();
+    // The dialog's "Apply to all traces" checkbox is this call: no plot grows
+    // a mask, every trace follows the scope word.
+    useStore.getState().setScopeFlags(scope.id, { showFreq: true });
+    const after = useStore.getState().scopes[0];
+    expect(after.plots.every((p) => p.measurements === null)).toBe(true);
+    for (const p of after.plots) {
+      expect(effectiveMeasurements(after, p).showFreq).toBe(true);
+    }
+    // A stale per-trace override does not follow the scope word on its own;
+    // switching the toggle back on clears it first.
+    useStore.getState().setPlotMeasurementFlag(after.plots[0].id, 'showFreq', false);
+    const mixed = useStore.getState().scopes[0];
+    expect(effectiveMeasurements(mixed, mixed.plots[0]).showFreq).toBe(false);
+    useStore.getState().clearPlotMeasurementOverrides(scope.id);
+    const cleared = useStore.getState().scopes[0];
+    expect(effectiveMeasurements(cleared, cleared.plots[0]).showFreq).toBe(true);
+  });
+
+  it('switching back to all traces clears the overrides so they cannot hide', () => {
+    const scope = combinedScope();
+    useStore.getState().setPlotMeasurementFlag(scope.plots[0].id, 'showFreq', true);
+    useStore.getState().clearPlotMeasurementOverrides(scope.id);
+    expect(useStore.getState().scopes[0].plots.every((p) => p.measurements === null)).toBe(true);
+    // Clearing with nothing overridden is a no-op: no undo entry.
+    const depth = useStore.getState().undoStack.length;
+    useStore.getState().clearPlotMeasurementOverrides(scope.id);
+    expect(useStore.getState().undoStack.length).toBe(depth);
+  });
+
+  it('one undo restores both traces after their overrides were cleared', () => {
+    const scope = combinedScope();
+    const pa = scope.plots[0];
+    const pb = scope.plots[2];
+    useStore.getState().setPlotMeasurementFlag(pa.id, 'showFreq', true);
+    useStore.getState().setPlotMeasurementFlag(pb.id, 'showMin', true);
+    useStore.getState().clearPlotMeasurementOverrides(scope.id);
+    useStore.getState().undo();
+    // The clear is one undo entry: both overrides come back together.
+    const restored = useStore.getState().scopes[0];
+    expect(restored.plots.find((p) => p.id === pa.id)!.measurements!.showFreq).toBe(true);
+    expect(restored.plots.find((p) => p.id === pb.id)!.measurements!.showMin).toBe(true);
+    // Each setter committed its own entry, so undoing further peels them off
+    // one at a time back to the untouched baseline.
+    useStore.getState().undo();
+    const half = useStore.getState().scopes[0];
+    expect(half.plots.find((p) => p.id === pb.id)!.measurements).toBeNull();
+    useStore.getState().undo();
+    const baseline = useStore.getState().scopes[0];
+    expect(baseline.plots.every((p) => p.measurements === null)).toBe(true);
+  });
+
+  it('a per-trace measurement rides the saved o line and reloads', () => {
+    addResistor();
+    useStore.getState().addScope(useStore.getState().elements[0].id, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    useStore.getState().setPlotMeasurementFlag(scope.plots[0].id, 'showFreq', true);
+    const saved = useStore.getState().toNetlist();
+    // showI+showV + FLAG_PLOTS + FLAG_PERPLOTFLAGS in the word. Plot 0's
+    // token is seeded from the scope word, so it carries the default
+    // showMax (bit 2) plus Freq (bit 5), and the mask-present sentinel rides
+    // at bit 10: 1024 + 4 + 32 = 1060 = hex 424; plot 1 stays '0'.
+    expect(saved).toContain('o 0 64 0 266243 20 0.05 0 2 424 0 0 3');
+    useStore.getState().loadNetlist(saved);
+    const reloaded = useStore.getState().scopes[0];
+    expect(reloaded.plots[0].measurements!.showFreq).toBe(true);
+    expect(reloaded.plots[1].measurements).toBeNull();
+    expect(useStore.getState().toNetlist()).toBe(saved);
+  });
+
+  it('one click, unchecking Max on one channel under Apply-to-all off, survives a round trip', () => {
+    // The regression the sentinel fixes: Max is the only default-on readout,
+    // so that single click seeds the mask from the scope word and flips it
+    // all-off. Before bit 10 existed the saved token was '0' and reload
+    // resurrected every inherited readout.
+    addResistor();
+    useStore.getState().addScope(useStore.getState().elements[0].id, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    useStore.getState().setPlotMeasurementFlag(scope.plots[0].id, 'showMax', false);
+    const mask = useStore.getState().scopes[0].plots[0].measurements!;
+    expect(mask.showMax).toBe(false);
+    expect(
+      Object.values(mask).every((v) => v === false),
+    ).toBe(true);
+    const saved = useStore.getState().toNetlist();
+    // The token is the bare sentinel: hex '400'.
+    expect(saved).toContain('o 0 64 0 266243 20 0.05 0 2 400 0 0 3');
+    useStore.getState().loadNetlist(saved);
+    const reloaded = useStore.getState().scopes[0];
+    expect(reloaded.plots[0].measurements).not.toBeNull();
+    expect(Object.values(reloaded.plots[0].measurements!).every((v) => v === false)).toBe(true);
+    expect(useStore.getState().toNetlist()).toBe(saved);
+  });
+
+  it('the dialog reopens targeting the selected channel while overrides exist', () => {
+    // ScopeProperties seeds applyToAll from anyPlotOverrides, so a reopened
+    // dialog starts with the toggle off and keeps editing the picked channel.
+    combinedScope();
+    const scope = useStore.getState().scopes[0];
+    expect(anyPlotOverrides(scope)).toBe(false);
+    useStore.getState().setPlotMeasurementFlag(scope.plots[0].id, 'showFreq', true);
+    expect(anyPlotOverrides(useStore.getState().scopes[0])).toBe(true);
+    useStore.getState().clearPlotMeasurementOverrides(scope.id);
+    expect(anyPlotOverrides(useStore.getState().scopes[0])).toBe(false);
+  });
+
+  it('clearing the last override puts an untouched loaded line back to byte-identical', () => {
+    const NETLIST = [
+      '$ 1 0.000005 10 50 5 50 5e-11',
+      'r 0 0 16 0 0 100',
+      'o 0 64 0 4099 20 0.05 0 1',
+      '',
+    ].join('\n');
+    useStore.getState().loadNetlist(NETLIST);
+    const scope = useStore.getState().scopes[0];
+    useStore.getState().setPlotMeasurementFlag(scope.plots[0].id, 'showFreq', true);
+    expect(useStore.getState().toNetlist()).not.toBe(NETLIST);
+    useStore.getState().clearPlotMeasurementOverrides(scope.id);
+    expect(useStore.getState().toNetlist()).toBe(NETLIST);
+  });
+
+  it('reset to default drops the per-trace overrides too', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    useStore.getState().setPlotMeasurementFlag(scope.plots[0].id, 'showFreq', true);
+    useStore.getState().resetScopeToDefaults(scope.id);
+    expect(
+      useStore.getState().scopes[0].plots.every((p) => p.measurements === null),
+    ).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Scope, ScopePlot, SimEngine } from '../engine/simulator';
+import type { PlotMeasurements, Scope, ScopePlot, SimEngine } from '../engine/simulator';
 import type { ThemeColors } from '../model/types';
 import { makeTheme } from '../render/draw';
 import { nextModScale, pruneScaleStates, scaleStateFor } from './scale';
@@ -73,6 +73,7 @@ const plot = (id: number, value: ScopePlot['value']): ScopePlot => ({
   manScale: null,
   manVPosition: 0,
   acCoupled: false,
+  measurements: null,
 });
 
 describe('visiblePlotsOf', () => {
@@ -816,6 +817,7 @@ describe('xyPairFor', () => {
     manScale: null,
     manVPosition: 0,
     acCoupled: false,
+    measurements: null,
   };
 
   it('defaults to the first two samplable plots', () => {
@@ -857,6 +859,7 @@ describe('xyPairFor', () => {
       manScale: null,
       manVPosition: 0,
       acCoupled: false,
+      measurements: null,
     };
     const scope = scopeOf([raw, plot(1, 'voltage'), plot(2, 'current')], { plotXY: true });
     const pair = xyPairFor(scope, indexById)!;
@@ -977,5 +980,117 @@ describe('X-Y modulators', () => {
       recordDraw(engine, scope, 200, 150, emptyCursor());
       expect(seen).not.toContain(0);
     });
+  });
+});
+
+/** A measurement mask with every readout off except the named ones. */
+const masked = (on: Partial<PlotMeasurements>): PlotMeasurements => ({
+  showScale: false,
+  showMax: false,
+  showMin: false,
+  showP2P: false,
+  showFreq: false,
+  showRMS: false,
+  showAverage: false,
+  showDutyCycle: false,
+  showPhaseAngle: false,
+  ...on,
+});
+
+describe('drawScope per-trace measurements', () => {
+  const sineRing = (period: number, columns = 400): Float32Array => {
+    const data = new Float32Array(columns * 2);
+    for (let i = 0; i < columns; i++) {
+      const v = Math.sin((2 * Math.PI * i) / period);
+      data[i * 2] = v;
+      data[i * 2 + 1] = v;
+    }
+    return data;
+  };
+  // Two voltage traces at different periods, so their frequency strings differ.
+  const sineEngine = (): SimEngine =>
+    ({
+      scopeIndexOf: (id: number) => (id === 1 ? 0 : 1),
+      scopeData: (index: number) => (index === 0 ? sineRing(16) : sineRing(24)),
+      scopeDiverged: () => false,
+    }) as unknown as SimEngine;
+
+  /** Runs drawScope pairing every filled text with its fill style, so a test
+   *  can assert which trace colour a readout was painted in. */
+  const drawnTexts = (
+    engine: SimEngine,
+    scope: Scope,
+    opts: DrawOpts = {},
+  ): { text: string; color: string }[] => {
+    const { ctx } = mkCtx(200, 150);
+    const out: { text: string; color: string }[] = [];
+    const fillText = ctx.fillText;
+    ctx.fillText = vi.fn((text: string) => {
+      out.push({ text, color: ctx.fillStyle as string });
+      (fillText as unknown as (t: string) => void)(text);
+    }) as unknown as CanvasRenderingContext2D['fillText'];
+    drawScope(
+      ctx,
+      engine,
+      scope,
+      200,
+      150,
+      emptyCursor(),
+      opts.simTime ?? 0,
+      5e-6,
+      opts.dark ?? false,
+      3,
+      opts.themeColors,
+    );
+    return out;
+  };
+
+  it('draws the Freq readout for plot A alone when only its mask enables it', () => {
+    // The user's ask: Freq on the first stacked signal only, not the second.
+    const pa = plot(1, 'voltage');
+    pa.measurements = masked({ showFreq: true });
+    const pb = plot(2, 'voltage');
+    const scope = scopeOf([pa, pb], { showMax: false });
+    const freqs = drawnTexts(sineEngine(), scope, { dark: true }).filter((e) =>
+      e.text.endsWith('Hz'),
+    );
+    expect(freqs).toHaveLength(1);
+    // First voltage trace on the dark theme is green; B's red never appears.
+    expect(freqs[0].color).toBe('#00ff00');
+  });
+
+  it('a scope-wide flag measures every trace, not just states[0]', () => {
+    // The behaviour change this feature makes: both traces now carry their own
+    // readouts, each in its own colour and from its own min/max window.
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'voltage')], {
+      showMax: false,
+      showFreq: true,
+    });
+    const freqs = drawnTexts(sineEngine(), scope, { dark: true }).filter((e) =>
+      e.text.endsWith('Hz'),
+    );
+    expect(freqs).toHaveLength(2);
+    expect(freqs.map((f) => f.color)).toEqual(['#00ff00', '#ff0000']);
+    expect(freqs[0].text).not.toBe(freqs[1].text);
+  });
+
+  it('the inherited default Max readout draws per trace with no masks anywhere', () => {
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'voltage')]);
+    const maxes = drawnTexts(sineEngine(), scope, { dark: true }).filter((e) =>
+      e.text.startsWith('Max='),
+    );
+    expect(maxes).toHaveLength(2);
+    expect(maxes.map((m) => m.color)).toEqual(['#00ff00', '#ff0000']);
+  });
+
+  it('Min keeps its bottom-edge pin inside its own cluster', () => {
+    const pa = plot(1, 'voltage');
+    pa.measurements = masked({ showMin: true });
+    const scope = scopeOf([pa, plot(2, 'voltage')], { showMax: false });
+    const mins = drawnTexts(sineEngine(), scope, { dark: true }).filter((e) =>
+      e.text.startsWith('Min='),
+    );
+    expect(mins).toHaveLength(1);
+    expect(mins[0].color).toBe('#00ff00');
   });
 });

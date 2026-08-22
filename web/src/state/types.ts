@@ -1,6 +1,11 @@
 /** Application state. Everything the UI reads or mutates lives here. */
 
-import type { Scope, ScopeTrigger, ScopeValue } from '../engine/simulator';
+import type {
+  PlotMeasurementKey,
+  Scope,
+  ScopeTrigger,
+  ScopeValue,
+} from '../engine/simulator';
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
@@ -461,6 +466,14 @@ export interface AppState {
   setPlotCoupling(scopeId: number, plotId: number, acCoupled: boolean): void;
   setPlotManScale(plotId: number, manScale: number | null): void;
   setPlotManPosition(plotId: number, manVPosition: number): void;
+  /** Sets one plot's per-trace measurement readout, the properties dialog's
+   *  per-channel checkbox path. The plot's mask is seeded from the scope word
+   *  on first use; display-only, like setScopeFlags. */
+  setPlotMeasurementFlag(plotId: number, key: PlotMeasurementKey, on: boolean): void;
+  /** Drops every plot's measurement mask in one scope so all traces inherit
+   *  the scope word again: the "Apply to all traces" toggle's switch-on path.
+   *  A no-op (and no undo entry) when nothing overrides. */
+  clearPlotMeasurementOverrides(scopeId: number): void;
   /** Adds or removes a plot of `value`, never emptying the panel. */
   togglePlot(scopeId: number, value: ScopeValue): void;
   /** The Show Vce vs Ic row's action: replaces a transistor scope's plots

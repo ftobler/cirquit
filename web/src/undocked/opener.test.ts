@@ -88,10 +88,10 @@ const SCOPE: Scope = {
   id: 9,
   raw: null,
   plots: [
-    { id: 11, elementId: 5, value: 'voltage', manScale: null, manVPosition: 0, acCoupled: false },
-    { id: 12, elementId: 5, value: 'current', manScale: null, manVPosition: 0, acCoupled: false },
+    { id: 11, elementId: 5, value: 'voltage', manScale: null, manVPosition: 0, acCoupled: false, measurements: null },
+    { id: 12, elementId: 5, value: 'current', manScale: null, manVPosition: 0, acCoupled: false, measurements: null },
     // A plot with no engine trace (an unreadable element line): never pushed.
-    { id: 13, elementId: null, value: null, manScale: null, manVPosition: 0, acCoupled: false },
+    { id: 13, elementId: null, value: null, manScale: null, manVPosition: 0, acCoupled: false, measurements: null },
   ],
   speed: 64,
   position: 0,
