@@ -228,6 +228,46 @@ body {
   margin-left: auto;
 }
 
+/* The subcircuit drill-in context path, a full-width strip under the menubar
+   row when a model's internals are being edited (SubcircuitBar.java). The
+   flex-basis pushes it onto its own wrapped line; each crumb is a flat chip
+   that returns to that level, the last one naming the model being edited. */
+.subcircuit-breadcrumb {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0 2px;
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.subcircuit-breadcrumb .crumb {
+  background: transparent;
+  border: none;
+  color: var(--md-secondary);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.subcircuit-breadcrumb .crumb:hover {
+  background: var(--hover);
+}
+
+.subcircuit-breadcrumb .crumb.current {
+  color: var(--text);
+  font-weight: 500;
+  cursor: default;
+}
+
+.subcircuit-breadcrumb .crumb-sep {
+  color: var(--md-outline-variant);
+  font-size: 12px;
+}
+
 /* The icon-only controls -- undo/redo, the burger, run/pause and reset -- are
    square. They carry a 20 px glyph and no label, so their box comes from the
    shared size token instead of the text padding every other button uses, which

@@ -46,6 +46,7 @@ export const fresh = () => ({
   hasRecovery: false,
   liveStateProvider: null,
   document: 0,
+  subcircuitStack: [],
   undocked: null,
 });
 

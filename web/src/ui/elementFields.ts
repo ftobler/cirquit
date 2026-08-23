@@ -5,6 +5,7 @@
  *  controls; this module owns the rows and the store dispatch. */
 
 import { defFor } from '../model/registry';
+import { DEFAULT_MODEL_NAME } from '../model/registry/elements/customComposite';
 import { modelFamilyFor, userModel } from '../model/deviceModels';
 import { contentsToText, parseContentsText } from '../model/memoryContents';
 import { memoryPairs, normalizeSramBits, SRAM_HEX_DISPLAY } from '../model/registry/elements/sram';
@@ -43,6 +44,18 @@ export function deviceModelButtons(e: CircuitElement): ModelButtons {
     create: family !== 'diode',
     edit: e.modelName !== undefined && userModel(family, e.modelName) !== undefined,
   };
+}
+
+/** What the composite element's Edit Model button can do for this element, so
+ *  the dialog's row is testable without a DOM. `none` hides the row entirely
+ *  (not a composite), `default` shows it but clicking alerts that the built-in
+ *  stub is not editable (CustomCompositeElm.java:253-255), and `editable`
+ *  opens the drill-in. */
+export type CompositeEditModelState = 'none' | 'default' | 'editable';
+
+export function compositeEditModelState(e: CircuitElement): CompositeEditModelState {
+  if (e.kind !== 'customComposite') return 'none';
+  return (e.text ?? DEFAULT_MODEL_NAME) === DEFAULT_MODEL_NAME ? 'default' : 'editable';
 }
 
 /** The contents editor's radix and mask, derived from the element like the

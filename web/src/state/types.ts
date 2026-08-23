@@ -36,6 +36,25 @@ export type DialogName =
   | 'otherOptions'
   | 'sliders';
 
+/** A dialog-free inline model editing session, the port's analogue of
+ *  upstream's `CircuitContext` (CirSim.java:679-686): one entry per level of
+ *  drill-in, holding everything needed to return to the level below. The stack
+ *  holds snapshots rather than names, so the single editing context is wholly
+ *  replaced on enter and restored on exit. Nested subcircuits (a model whose
+ *  children include a 410) are not drillable yet, so the only level the stack
+ *  ever reaches is one: the outer circuit and the model being edited.
+ */
+export interface SubcircuitStackEntry {
+  /** The model name being edited at this level. */
+  modelName: string;
+  /** The enclosing document's netlist text at the moment this level was
+   *  entered, what loadNetlist consumes to get back out. */
+  document: string;
+  /** The enclosing document's pan/zoom, restored on exit the way upstream
+   *  restores its transform (CirSim.java:499). */
+  view: ViewTransform;
+}
+
 /** A point-in-time copy of everything undo needs to restore. Settings and view
  *  travel with it like the dump header and transform do upstream, so undoing a
  *  drag, toggle or edit also brings back the voltage range and the pan/zoom. */
@@ -236,6 +255,12 @@ export interface AppState {
    *  inject the previous document's live charges into the next one. Undo and
    *  redo do not bump it. */
   document: number;
+  /** The subcircuit drill-in stack: one entry per level of model editing,
+   *  each holding the enclosing document and view to return to. Non-empty
+   *  exactly when the canvas shows a model's internals rather than the outer
+   *  circuit. Reset wholesale by any load, New and recover, exactly as
+   *  upstream's `resetEditingContext` clears its context stack. */
+  subcircuitStack: SubcircuitStackEntry[];
   /** User-assigned shortcut overlay: assignable action -> chord signature,
    *  loaded from localStorage at init and edited by the Shortcuts dialog. A
    *  runtime overlay on the SHORTCUTS table, so matchShortcut consults it
@@ -540,13 +565,29 @@ export interface AppState {
   combineAllScopes(): void;
   separateAllScopes(): void;
 
-  loadNetlist(text: string): void;
+  loadNetlist(text: string, opts?: { noCenter?: boolean }): void;
   toNetlist(): string;
   /** Serialises the document the way `toNetlist` does, but overlaid with the
    *  engine's live operating-point tokens where the provider reports them, so
    *  a mid-transient save writes the charge the circuit actually holds. */
   saveNetlist(): string;
   newCircuit(): void;
+  /** Enters a model's internals for editing (the 410 element's Edit Model
+   *  button): pushes the current document and view onto the subcircuit stack,
+   *  then loads the reconstructed inner document with a clean undo history,
+   *  exactly as upstream's `pushContext` + `readCircuit` do
+   *  (CustomCompositeElm.java:273-281). Refuses the default model and an
+   *  unresolvable name with the reason in `subcircuitError`; returns false
+   *  then and changes nothing. */
+  enterSubcircuit(name: string): boolean;
+  /** Leaves the innermost model editing session: derives the edited model from
+   *  the inner document, rewrites the enclosing document's `.` line for it,
+   *  restores the saved document and view and pops the stack. One undo entry
+   *  lands on the outer document covering the model change, so the inner
+   *  session's own undo history dies with it, matching upstream's per-context
+   *  stacks (CirSim.java:489-505). On an extraction error the session stays
+   *  inside with the reason in `subcircuitError`. */
+  exitSubcircuit(): void;
   /** Points the store at the engine's token reader, or clears it. */
   setLiveStateProvider(provider: (() => LiveState) | null): void;
   /** Marks the current document clean: `lastSaved` is set to the non-live

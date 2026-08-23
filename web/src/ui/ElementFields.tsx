@@ -17,6 +17,7 @@ import {
   applyFieldChange,
   clampInteger,
   commitContentsField,
+  compositeEditModelState,
   deviceModelButtons,
   fieldRows,
 } from './elementFields';
@@ -452,6 +453,38 @@ function ModelButtonRow({
   );
 }
 
+/** The composite element's Edit Model button row, the port of upstream's
+ *  CustomCompositeElm.java:234-238, :273-281: enters the model's internals for
+ *  editing by pushing the drill-in context. The built-in default stub refuses
+ *  with the same alert upstream shows (CustomCompositeElm.java:253-255), and a
+ *  successful enter closes the properties dialog, as upstream's edit dialog
+ *  closes on entry. */
+function CompositeEditModelButton({ element }: { element: CircuitElement }) {
+  const enterSubcircuit = useStore((s) => s.enterSubcircuit);
+  const closeElementProperties = useStore((s) => s.closeElementProperties);
+  if (compositeEditModelState(element) === 'none') return null;
+  return (
+    <div className="row">
+      <button
+        type="button"
+        onClick={() => {
+          if (compositeEditModelState(element) === 'default') {
+            window.alert("Can't edit this model.");
+            return;
+          }
+          const name = element.text ?? '';
+          // A refusal (an unresolvable name, a child kind the port cannot
+          // build) leaves the reason in subcircuitError; the user stays put.
+          if (enterSubcircuit(name)) closeElementProperties();
+          else window.alert(useStore.getState().subcircuitError);
+        }}
+      >
+        Edit Model
+      </button>
+    </div>
+  );
+}
+
 /** The def's property rows for one element. Every control writes through a
  *  store action, so undo bracketing, the revision bump and the engine rebuild
  *  behave the same wherever this list is mounted. */
@@ -527,6 +560,9 @@ export function ElementFields({ element, engine }: Props) {
               element={element}
               onOpen={(action) => openDeviceModelEditor(element.kind, element.id, action)}
             />
+          )}
+          {field.name === 'modelName' && element.kind === 'customComposite' && (
+            <CompositeEditModelButton element={element} />
           )}
         </Fragment>
       ))}

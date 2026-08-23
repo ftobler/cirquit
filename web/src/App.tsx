@@ -211,8 +211,15 @@ export default function App() {
           break;
         case 'escape':
           // Upstream's Escape returns to select mode and leaves the selection
-          // alone (UIManager.java:1145-1151); do not deselect here.
-          s.setTool(null);
+          // alone (UIManager.java:1145-1151); do not deselect here. Inside a
+          // subcircuit drill-in it closes the editing context instead, the
+          // keyboard's File-close-context: the guard at the top already means
+          // no dialog owns this key. A refused exit stays inside and says why.
+          if (s.subcircuitStack.length > 0) {
+            s.exitSubcircuit();
+            const after = useStore.getState();
+            if (after.subcircuitError !== null) window.alert(after.subcircuitError);
+          } else s.setTool(null);
           break;
         case 'selectMode':
           s.setTool(null);

@@ -28,7 +28,7 @@ import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** Model name written for a part with none, matching upstream's fresh-model
  *  name and its builtin default stub (CustomCompositeElm.java:28). */
-const DEFAULT_MODEL_NAME = 'default';
+export const DEFAULT_MODEL_NAME = 'default';
 
 /** The small-grid flag. CustomCompositeElm.FLAG_SMALL is bit 1 (value 2):
  *  bit 0 belongs to CompositeElm's FLAG_ESCAPE, and the two must not collide

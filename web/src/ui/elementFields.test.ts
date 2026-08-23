@@ -8,6 +8,7 @@ import {
   applyFieldChange,
   clampInteger,
   commitContentsField,
+  compositeEditModelState,
   deviceModelButtons,
   fieldRows,
   fieldValue,
@@ -86,6 +87,32 @@ describe('deviceModelButtons', () => {
 
   it('hides every button for an element that cannot name a model', () => {
     expect(deviceModelButtons(elm({ kind: 'resistor' }))).toEqual(none);
+  });
+});
+
+describe('compositeEditModelState (the drill-in Edit Model button)', () => {
+  it('shows only on a custom composite selection', () => {
+    // The button row appears only for a 410 element.
+    expect(compositeEditModelState(elm({ kind: 'resistor' }))).toBe('none');
+    expect(compositeEditModelState(elm({ kind: 'diode' }))).toBe('none');
+    expect(compositeEditModelState(elm({ kind: 'customComposite', text: 'amp' }))).toBe(
+      'editable',
+    );
+  });
+
+  it('the default model is not editable and alerts on click', () => {
+    // A fresh part carries the default name, and clicking alerts upstream's
+    // refusal instead of entering (CustomCompositeElm.java:253-255).
+    expect(compositeEditModelState(elm({ kind: 'customComposite' }))).toBe('default');
+    expect(compositeEditModelState(elm({ kind: 'customComposite', text: 'default' }))).toBe(
+      'default',
+    );
+  });
+
+  it('a named model opens the drill-in', () => {
+    expect(compositeEditModelState(elm({ kind: 'customComposite', text: 'myCirc' }))).toBe(
+      'editable',
+    );
   });
 });
 

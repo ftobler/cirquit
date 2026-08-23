@@ -3,7 +3,7 @@
  *  the context menu and the keyboard cannot diverge. Rows whose commands other
  *  features still own render disabled with a tooltip, never live-looking. */
 
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { DOC_PAGES } from '../docs/pages';
 import { openCircuit } from '../io/fileIO';
@@ -299,6 +299,10 @@ export function Menubar({ engine }: Props) {
   const setPartsOpen = useStore((s) => s.setPartsOpen);
   const panelOpen = useStore((s) => s.panelOpen);
   const setPanelOpen = useStore((s) => s.setPanelOpen);
+  // The drill-in session's context path: non-empty exactly while a model's
+  // internals are being edited, so this is the surface that says where you
+  // are and lets a crumb jump back out to it.
+  const subcircuitStack = useStore((s) => s.subcircuitStack);
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   // The mobile burger panel. On desktop the menu group is a plain run of
@@ -374,6 +378,23 @@ export function Menubar({ engine }: Props) {
       setBurgerOpen(false);
     } catch (e) {
       setLibraryError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  // The drill-in breadcrumb: `outer > modelA > modelB`. A crumb jumps back to
+  // its level by exiting once per level above it, so the outer crumb exits the
+  // whole session and the current model's crumb is inert. A refused exit (a
+  // pin label deleted, a net left unused) keeps the session inside and says
+  // why, the same alert the create path uses.
+  const jumpBackTo = (index: number) => {
+    const s = useStore.getState();
+    const levels = s.subcircuitStack.length - index;
+    for (let i = 0; i < levels; i++) {
+      useStore.getState().exitSubcircuit();
+      if (useStore.getState().subcircuitError !== null) {
+        window.alert(useStore.getState().subcircuitError);
+        return;
+      }
     }
   };
 
@@ -928,6 +949,31 @@ export function Menubar({ engine }: Props) {
           </span>
         </button>
       </div>
+
+      {/* The drill-in context path, upstream's SubcircuitBar (SubcircuitBar.java)
+          reinterpreted as clickable crumbs: each one returns to its level, so
+          the strip both names where you are and is the way out. */}
+      {subcircuitStack.length > 0 && (
+        <nav className="subcircuit-breadcrumb" aria-label="Editing context">
+          <button type="button" className="crumb" onClick={() => jumpBackTo(0)}>
+            outer
+          </button>
+          {subcircuitStack.map((entry, i) => (
+            <Fragment key={`${entry.modelName}-${i}`}>
+              <span className="crumb-sep" aria-hidden="true">
+                ›
+              </span>
+              {i === subcircuitStack.length - 1 ? (
+                <span className="crumb current">{entry.modelName}</span>
+              ) : (
+                <button type="button" className="crumb" onClick={() => jumpBackTo(i + 1)}>
+                  {entry.modelName}
+                </button>
+              )}
+            </Fragment>
+          ))}
+        </nav>
+      )}
     </header>
   );
 }

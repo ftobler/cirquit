@@ -5,9 +5,9 @@ import { scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 import { positionToOffset } from '../scope/scale';
 import {
   allocateId,
-  isElementLine,
   parseCircuit,
   serializeCircuit,
+  type CompositeModel,
   type ScopeConfig,
 } from '../io/netlist';
 import { overlayLiveState } from '../io/liveState';
@@ -15,6 +15,7 @@ import { decodeScopeLine, encodeScopeLine, scopeLineMatches } from '../io/scopeL
 import {
   buildModelFromSelection,
   clearSessionModels,
+  compositeModelLine,
   describeBuildFailure,
   getModel,
   modelToEngineSpec,
@@ -26,6 +27,12 @@ import {
   saveModel,
   syncSessionModels,
 } from '../io/subcircuits';
+import {
+  compositeFromDocument,
+  describeMissingComponents,
+  documentFromComposite,
+  modelHasNestedSubcircuit,
+} from '../io/compositeDocument';
 import { leadPostAt, pointOnWireInterior, splitWire } from '../render/geometry';
 import { convertWires } from '../render/wireConverter';
 import { lShapeRoute, routeWire, routingObstacles } from '../render/wireRouter';
@@ -62,6 +69,7 @@ import { normalizeSipoBits } from '../model/registry/elements/sipoShift';
 import { normalizeRingBits } from '../model/registry/elements/ringCounter';
 import { normalizePoleCount } from '../model/registry/elements/dpdtSwitch';
 import { normalizeInputCount } from '../model/registry/shared';
+import { DEFAULT_MODEL_NAME } from '../model/registry/elements/customComposite';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import { nextFileNum, setAudioSamples, setDataSamples, clearSampleCache } from '../model/sampleCache';
 import { paramScale, resolveParam } from '../model/sliders';
@@ -289,35 +297,7 @@ function serializeDocument(elements: CircuitElement[]): string {
 }
 
 /**
- * Which preserved line types cost the user a component. A head this build knows
- * as an element does, and so does any all-digit head: upstream numbers its
- * element codes, so a number this port does not recognise is an element newer
- * than the port rather than a data line. `isElementLine` alone would call that
- * one inert, since it can only match codes one of the two builds already knows.
- */
-function isMissingComponent(type: string): boolean {
-  return isElementLine(type) || /^\d+$/.test(type);
-}
-
-/**
- * The load warning, and the only one an unreadable line earns: a missing
- * element code means the component is absent from both the drawing and the
- * simulation, so it goes in the sticky banner. Everything else `unsupported`
- * collects rides through untouched and round-trips on save — an `h` hint, a
- * `!` model definition — so the user is told nothing, having neither lost
- * anything nor anything to do about it. Counts are of distinct types, not
- * lines, so seven sliders are one thing to report.
- */
-function describeMissing(unsupported: string[]): string | null {
-  const missing = [...new Set(unsupported)].filter(isMissingComponent);
-  if (missing.length === 0) return null;
-  return (
-    `${missing.length} element type(s) (${missing.join(', ')}) are not implemented yet, ` +
-    'so those components are missing from the drawing and the simulation.'
-  );
-}
-
-/** Joins a load-time message with what the engine reported on the last build,
+ * Joins a load-time message with what the engine reported on the last build,
  *  so neither can wipe the other. Used for both channels: the frame loop
  *  recomputes each from its two sources on every build, so a message is never
  *  reported twice and a stale one (cleared by a fresh load) stays dead. */
@@ -596,6 +576,7 @@ function createAppStore() {
   lastSaved: null,
   liveStateProvider: null,
   document: 0,
+  subcircuitStack: [],
   undocked: null,
 
   setRunning: (running) => set({ running }),
@@ -2450,7 +2431,7 @@ function createAppStore() {
     set({ undocked: null });
   },
 
-  loadNetlist: (text) => {
+  loadNetlist: (text, opts) => {
     // The sample cache belongs to the open file, like the session models: the
     // previous file's buffers go, this file's fileNum tokens resolve to
     // nothing until the user imports fresh files (upstream clears both caches
@@ -2529,7 +2510,7 @@ function createAppStore() {
     // The load banner: the missing-elements message plus any clamp-on-load
     // warnings (a hand-edited 12-input gate loading as 8), joined the same way
     // the frame loop joins the engine warnings, so a rebuild cannot wipe them.
-    const loadProblem = mergeProblem(describeMissing(parsed.unsupported), parsed.warnings);
+    const loadProblem = mergeProblem(describeMissingComponents(parsed.unsupported), parsed.warnings);
 
     set((s) => ({
       elements: resolved,
@@ -2564,6 +2545,10 @@ function createAppStore() {
       notice: null,
       // A refusal from the previous circuit says nothing about this one.
       subcircuitError: null,
+      // A load is a new document: any drill-in session that returned to it no
+      // longer has a home, so the context stack is reset wholesale, exactly as
+      // upstream's resetEditingContext clears it (CirSim.java:508-511).
+      subcircuitStack: [],
       ...bumpRevision(s),
       // A load is a new document: the frame loop's rebuild gate must refuse to
       // inject the previous circuit's live charges into it.
@@ -2572,13 +2557,17 @@ function createAppStore() {
     // A load is a new document on screen too: centre it the way upstream's
     // finishReadCircuit always does unless RC_NO_CENTER is passed
     // (CircuitLoader.java:220-235), so opening a file doesn't leave the view
-    // wherever the previous circuit happened to scroll to.
+    // wherever the previous circuit happened to scroll to. The drill-in exit
+    // passes noCenter and restores the saved view itself.
     // The fit runs twice on purpose. The immediate one keeps the store honest
     // on its own (headless callers, tests) and gets the first frame close;
     // the request re-fits after React has committed the new layout, because a
     // circuit that brings scopes with it (or drops the ones on screen) resizes
     // the canvas by the scope strip's height, and the size read above is still
     // the previous layout's.
+    if (opts?.noCenter) {
+      return;
+    }
     get().centerCircuit();
     get().requestCenter();
     // The loaded content is its own baseline: opening a file, a library
@@ -2597,6 +2586,125 @@ function createAppStore() {
   },
 
   setLiveStateProvider: (provider) => set({ liveStateProvider: provider }),
+
+  enterSubcircuit: (name) => {
+    const s = get();
+    // The default model is the built-in stub, not a model the user can edit,
+    // matching upstream's refusal (CustomCompositeElm.java:253-255).
+    if (name === DEFAULT_MODEL_NAME) {
+      set({ subcircuitError: "Can't edit this model." });
+      return false;
+    }
+    // The model must resolve somewhere: the session map first (the file's own
+    // `.` lines), then storage, exactly the lookup the library and the 410
+    // resolution use.
+    const model = getModel(name);
+    if (model === undefined) {
+      set({ subcircuitError: `No subcircuit named "${name}" exists.` });
+      return false;
+    }
+    // Reconstruct the editable inner document and check it loads cleanly. A
+    // child kind the port cannot parse (a model not created here) must refuse
+    // with the unsupported-kind banner rather than half-loading, reusing
+    // ParsedCircuit.unsupported rather than inventing a second signal.
+    // A model whose children include a 410 is a nested subcircuit. Drilling in
+    // would have to load another model inside the editing context, which this
+    // build does not support yet, so refuse with a specific message rather than
+    // half-loading a document that points at an uneditable child
+    // (upstream's CustomCompositeElm carries no edit-context for its children).
+    if (modelHasNestedSubcircuit(model)) {
+      set({
+        subcircuitError:
+          "This subcircuit contains a nested subcircuit, which can't be edited here yet.",
+      });
+      return false;
+    }
+    // Reconstruct the editable inner document and check it loads cleanly. A
+    // child kind the port cannot parse (a model not created here) must refuse
+    // with the unsupported-kind banner rather than half-loading, reusing
+    // ParsedCircuit.unsupported rather than inventing a second signal.
+    const inner = documentFromComposite(model);
+    const missing = describeMissingComponents(parseCircuit(inner).unsupported);
+    if (missing !== null) {
+      set({ subcircuitError: missing });
+      return false;
+    }
+    // The entry must be captured before the load: loadNetlist resets the stack
+    // (a load is a fresh document), so the snapshot reads the document that is
+    // about to be replaced, and the entry is set after the load re-pushed the
+    // cleared stack position.
+    const entry = { modelName: name, document: s.toNetlist(), view: s.view };
+    const stack = s.subcircuitStack;
+    s.loadNetlist(inner);
+    set({ subcircuitStack: [...stack, entry], subcircuitError: null });
+    return true;
+  },
+
+  exitSubcircuit: () => {
+    const s = get();
+    const stack = s.subcircuitStack;
+    const top = stack[stack.length - 1];
+    if (top === undefined) return;
+    // The enclosing document's copy of the edited model, matched by name in
+    // its own `.` lines. A model that resolves only from storage has no line
+    // here; its flag word is read from the stored copy instead (the session
+    // map was cleared by the inner load, so the lookup reaches storage).
+    const lineModel = modelInText(top.document, top.modelName);
+    const storedModel = getModel(top.modelName);
+    const previous = lineModel ?? storedModel ?? {
+      name: top.modelName,
+      flags: 0,
+      sizeX: 1,
+      sizeY: 1,
+      extList: [],
+      nodeList: '',
+      elmDump: '',
+    };
+    const { model: next, error } = compositeFromDocument(top.modelName, s.toNetlist(), previous);
+    // An extraction failure (a deleted pin label, a net left unused) keeps the
+    // session inside with the create path's reason shown.
+    if (next === null) {
+      set({ subcircuitError: error });
+      return;
+    }
+    // Entering and leaving without touching anything changes no model, so the
+    // return is a plain restore with no undo entry, exactly the round-trip the
+    // tests assert byte for byte.
+    if (sameCompositeModel(previous, next)) {
+      s.loadNetlist(top.document, { noCenter: true });
+      // A prior refused exit may have left a message here; a successful return
+      // clears it so the Escape/breadcrumb alert call sites stay silent.
+      set({ view: top.view, subcircuitStack: stack.slice(0, -1), subcircuitError: null });
+      return;
+    }
+    // Rewrite the enclosing document's `.` line for the model. The match is on
+    // the parsed body per the Findings rule, never on which half of the
+    // library held it, so a saved model whose body matches no line never edits
+    // an unrelated open file; such a model's edit persists through the library
+    // instead.
+    let outer = top.document;
+    if (lineModel !== undefined) outer = rewriteModelLines(top.document, lineModel, next);
+    else saveModel(next);
+    // One undo entry on the outer document covering the model change, and the
+    // inner session's undo history dies with it (upstream's per-context
+    // stacks, CirSim.java:480-482). The pre-change snapshot is the saved outer
+    // text, loaded once to parse it, then the after text is loaded and the
+    // stack is popped. The view comes back from the entry, the way upstream
+    // restores its transform.
+    s.loadNetlist(top.document, { noCenter: true });
+    const pre = clone(get());
+    pre.view = top.view;
+    s.loadNetlist(outer, { noCenter: true });
+    set({
+      undoStack: [pre],
+      redoStack: [],
+      view: top.view,
+      subcircuitStack: stack.slice(0, -1),
+      // Same as the no-edit return: clear any stale refusal so the caller's
+      // alert only fires on a real failure.
+      subcircuitError: null,
+    });
+  },
 
   newCircuit: () => {
     // New drops the open file, and its `.` line models with it, the same reset
@@ -2645,6 +2753,8 @@ function createAppStore() {
       unsupportedProblem: null,
       notice: null,
       subcircuitError: null,
+      // New drops the drill-in session too: the outer document is gone.
+      subcircuitStack: [],
       ...bumpRevision(s),
       // New is a fresh document, like a load: no live charges carry over.
       document: s.document + 1,
@@ -2875,6 +2985,38 @@ function insertElementsFromText(text: string): void {
     ],
     ...bumpRevision(s),
   }));
+}
+
+/** The model a netlist text's `.` lines define under `name`, or undefined when
+ *  no line carries it. A repeated name shadows its predecessors, the same
+ *  last-wins rule the parser's library map uses. */
+function modelInText(text: string, name: string): CompositeModel | undefined {
+  let found: CompositeModel | undefined;
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('.')) continue;
+    const model = parseCompositeModelLine(trimmed);
+    if (model !== null && model.name === name) found = model;
+  }
+  return found;
+}
+
+/** The netlist text with every `.` line that is the given model rewritten to
+ *  `next`'s serialisation. Only lines whose parsed body matches move, the
+ *  Findings rule (feature/overview.md): a different model that happens to
+ *  share the name is preserved, while a file holding the same model twice is
+ *  updated everywhere, exactly like the subcircuit rename's write-back. */
+function rewriteModelLines(text: string, original: CompositeModel, next: CompositeModel): string {
+  return text
+    .split(/\r\n|\r|\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('.')) return line;
+      const model = parseCompositeModelLine(trimmed);
+      if (model === null || !sameCompositeModel(model, original)) return line;
+      return compositeModelLine(next);
+    })
+    .join('\n');
 }
 
 /** The document `.` lines that define the models the given composite elements
