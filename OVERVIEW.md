@@ -230,7 +230,7 @@ fetch it).
 - 501 Rust tests, of which 420 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2735 TypeScript tests (one corpus report test skipped). The relay pulldown
+  2736 TypeScript tests (one corpus report test skipped). The relay pulldown
   parity fix added three Rust tests: the flag grounds an unwired throw in
   either settled position, a flag-clear guard keeps the old pole coupling,
   and the mid-travel position stamps identically with and without the flag.
@@ -264,9 +264,10 @@ fetch it).
   bus/bus multiplexer feature added seven Rust and seven TypeScript tests
   (group routing, strobe, the inverted bus, the value integer, the mode-0
   negative control, the pin table and round-trips). The drill-in document
-  integrity fixes added six more store.subcircuit tests (the lastSaved round
-  trips in both dirty directions, the surviving session device model and
-  imported samples, and the stacked recovery payload).
+  integrity fixes added seven more store.subcircuit tests (the lastSaved round
+  trips in both dirty directions, the Save As guard that keeps the baseline off
+  the inner sheet, the surviving session device model and imported samples, and
+  the stacked recovery payload).
   CI runs fmt, clippy, tests, typecheck, lint and build,
   then deploys to Pages.
 

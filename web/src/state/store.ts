@@ -2816,7 +2816,15 @@ function createAppStore() {
     set({ lastSaved: get().toNetlist() });
   },
 
-  markSaved: () => set({ lastSaved: get().toNetlist() }),
+  markSaved: () => {
+    // The baseline stays on the outer document while a drill-in session is up:
+    // a Save As from inside (Ctrl+S or the File menu) exports the scratch
+    // sheet, and recording the inner text here would read the restored outer
+    // circuit dirty forever. Skipping keeps the exit's dirty state exactly the
+    // pre-enter state.
+    if (get().subcircuitStack.length > 0) return;
+    set({ lastSaved: get().toNetlist() });
+  },
 
   recoverAutoSave: () => {
     // Nothing stored: the row is greyed, and a stale click must not clear the

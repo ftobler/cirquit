@@ -380,6 +380,22 @@ describe('drill-in document integrity', () => {
     expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(true);
   });
 
+  it('Save As from inside does not move the baseline onto the inner sheet', () => {
+    useStore.getState().loadNetlist(outer());
+    const baseline = useStore.getState().lastSaved;
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    // Ctrl+S and the File>Save As row both reach markSaved from inside, and
+    // the exported text is the scratch sheet: recording it would read the
+    // restored outer document dirty forever after the exit.
+    useStore.getState().markSaved();
+    expect(useStore.getState().lastSaved).toBe(baseline);
+
+    useStore.getState().exitSubcircuit();
+    const s = useStore.getState();
+    expect(s.lastSaved).toBe(baseline);
+    expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(false);
+  });
+
   it('a session device model survives an enter/exit round trip and still resolves', () => {
     useStore.getState().loadNetlist(outer());
     // Created after the load, like a dialog session: the load itself empties

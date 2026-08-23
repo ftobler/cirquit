@@ -617,7 +617,9 @@ export interface AppState {
   /** Marks the current document clean: `lastSaved` is set to the non-live
    *  `toNetlist`, the same baseline a load or New records, so the F5 and
    *  autosave checks compare like against like. The live overlay a save wrote
-   *  is deliberately not the baseline. */
+   *  is deliberately not the baseline. A no-op while a drill-in session is up:
+   *  a Save As from inside exports the scratch sheet, and the baseline belongs
+   *  to the outer document for the whole session. */
   markSaved(): void;
   /** Loads the stored auto-save recovery, if any, as one undo entry, and marks
    *  the circuit unsaved (upstream's doRecover, UndoManager.java:83-88). A
