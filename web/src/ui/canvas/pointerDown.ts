@@ -86,10 +86,11 @@ export interface PointerDownInput {
   pointerId: number;
 }
 
-/** A momentary push switch returns to rest when the pointer that pressed it
- *  lifts, cancels or double-taps away; the mirror of the press's toggle
- *  (SwitchElm.mouseUp, SwitchElm.java:180-182). A different finger's lift
- *  must never release it. */
+/** A momentary switch answers a second toggle when the pointer that pressed
+ *  it lifts, cancels or double-taps away: upstream's inherited mouseUp runs
+ *  one toggle per event (SwitchElm.java:180-183), so a two-stop switch lands
+ *  back at rest and a multi-throw one steps on from where the press left it.
+ *  A different finger's lift must never release it. */
 export function releaseHeldMomentary(pointerId: number, refs: PointerDownRefs): void {
   const { heldMomentaryRef, heldMomentaryPointerRef } = refs;
   if (heldMomentaryRef.current == null || heldMomentaryPointerRef.current !== pointerId) return;
@@ -98,11 +99,15 @@ export function releaseHeldMomentary(pointerId: number, refs: PointerDownRefs): 
   heldMomentaryPointerRef.current = null;
   const e = useStore.getState().elements.find((q) => q.id === id);
   if (!e) return;
-  // An SPDT releases through the same link-aware toggleSwitch path its press
-  // took, so every twin in the group sees this second throw and the gang
-  // returns to rest together; a plain setElementState here would leave them
-  // one stop over (Switch2Elm.toggle fans the group, Switch2Elm.java:155-173).
-  if (e.kind === 'switch2') {
+  // An SPDT or a make-before-break switch releases through the same
+  // link-aware toggleSwitch path its press took, so every twin in the group
+  // sees this second throw (Switch2Elm.toggle fans the group,
+  // Switch2Elm.java:155-173, MBBSwitchElm.java:182-195); a plain
+  // setElementState here would leave them one stop over. Upstream's mouseUp
+  // is one toggle per event for every SwitchElm subclass, so a multi-throw
+  // kind steps forward again rather than rewinding: an MBB rests one stop on
+  // from where the press found it, while a two-stop DPDT lands back at rest.
+  if (e.kind === 'switch2' || e.kind === 'mbbSwitch') {
     useStore.getState().toggleSwitch(id);
     return;
   }
@@ -349,7 +354,11 @@ export function beginPointerGesture(
       const rect = def.switchRect?.(hit);
       if (rect === undefined || rectContains(rect, p)) {
         const momentary =
-          (hit.kind === 'switch' || hit.kind === 'logicInput' || hit.kind === 'switch2') &&
+          (hit.kind === 'switch' ||
+            hit.kind === 'logicInput' ||
+            hit.kind === 'switch2' ||
+            hit.kind === 'mbbSwitch' ||
+            hit.kind === 'dpdtSwitch') &&
           (hit.params.momentary ?? 0) !== 0;
         // The next state respects the part's range: binary for a plain switch
         // and two-level logic input, `throwCount` throws for an SPDT, and the
