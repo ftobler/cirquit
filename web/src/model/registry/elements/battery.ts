@@ -232,7 +232,12 @@ export const BATTERY_DEF: ElementDef = {
     e.params.r1 ?? 0.02,
     e.params.c1 ?? 2000,
     e.params.capacityAh ?? 2,
-    (e.params.initialSoc ?? 1) * 100,
+    // The live soc token rides params after an overlayLiveState merge at save
+    // time, so a mid-discharge save carries the running charge, upstream's
+    // config/state split between dumpXml's isoc and dumpXmlState's soc. After
+    // a reset the token equals initialSoc again, and before any build the
+    // fallback applies. Both fields are 0..1 fractions; the file stores percent.
+    (e.params.soc ?? e.params.initialSoc ?? 1) * 100,
     e.params.batteryType ?? 1,
     batteryTableOf(e),
   ],

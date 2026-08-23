@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { overlayLiveState } from '../../../io/liveState';
 import { parseCircuit, serializeCircuit } from '../../../io/netlist';
 import { applyFieldChange, fieldRows, fieldValue } from '../../../ui/elementFields';
 import { makeElement } from '../../../state/helpers';
@@ -254,6 +255,28 @@ describe('battery', () => {
   it('the SOC caption tracks the live state and the SOC round percentage', () => {
     expect(captions(BATTERY_SHOW_SOC, 0.496)).toEqual(['50%']);
     expect(captions(BATTERY_SHOW_SOC, 0.501)).toEqual(['50%']);
+  });
+
+  it('a mid-discharge save carries the live soc token, not the stale initial', () => {
+    // overlayLiveState merges the engine's live soc fraction into params at
+    // save time; the dump must prefer it over the configured initialSoc or
+    // every save (Ctrl+S, autosave, crash recovery) restarts the battery full
+    // on reload. Both fields are 0..1 fractions, so one * 100 covers both.
+    const e = { ...mk(), params: { ...mk().params, initialSoc: 0.75 } };
+    const out = serializeCircuit(overlayLiveState([e], { 1: { soc: 0.42 } }), DEFAULT_SETTINGS);
+    const tokens = out.split('\n').find((l) => l.startsWith('438 '))!.split(' ');
+    expect(tokens[10]).toBe('42');
+  });
+
+  it('a battery never built by the engine still dumps its configured initialSoc', () => {
+    // Before any build there is no live soc token to overlay, so the dump
+    // falls back to the configured fraction.
+    const e = { ...mk(), params: { ...mk().params, initialSoc: 0.3 } };
+    const tokens = serializeCircuit([e], DEFAULT_SETTINGS)
+      .split('\n')
+      .find((l) => l.startsWith('438 '))!
+      .split(' ');
+    expect(tokens[10]).toBe('30');
   });
 
   it('sorts an out-of-order SOC table ascending on load', () => {

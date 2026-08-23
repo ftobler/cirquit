@@ -6,6 +6,7 @@ import { postsOf } from '../model/registry';
 import { useStore } from '../state/store';
 import { fresh } from '../state/store.test-helpers';
 import { overlayLiveState } from '../io/liveState';
+import { parseCircuit, serializeCircuit } from '../io/netlist';
 import {
   clearSessionModels,
   modelToEngineSpec,
@@ -167,6 +168,53 @@ describe('SimEngine battery live state', () => {
     engine.run(1);
     const socAfter = engine.elementStateTokens()[1].soc;
     expect(socAfter).toBeLessThan(soc);
+  });
+
+  it('a saved mid-discharge file resumes and saves the discharged soc', async () => {
+    // The full save path the file menu takes: a battery saved at 42 percent,
+    // that text loaded back, discharged past it, and saved again. The new
+    // file must carry the running charge, not the original 42.
+    const saved = serializeCircuit(
+      [
+        {
+          id: 1,
+          kind: 'battery',
+          x1: 0,
+          y1: 100,
+          x2: 0,
+          y2: 0,
+          flags: 3,
+          params: { r0: 0.01, r1: 0.02, c1: 2000, capacityAh: 0.01, initialSoc: 0.42, batteryType: 0 },
+          model: '0=0.8\n10=0.95\n20=1.05\n40=1.18\n60=1.28\n80=1.38\n90=1.43\n100=1.55\n',
+        },
+        { id: 2, kind: 'ground', x1: 0, y1: 100, x2: 0, y2: 132, flags: 0, params: {} },
+        { id: 3, kind: 'resistor', x1: 0, y1: 0, x2: 0, y2: -100, flags: 0, params: { resistance: 1 } },
+        { id: 4, kind: 'ground', x1: 0, y1: -100, x2: 0, y2: -68, flags: 0, params: {} },
+      ],
+      DEFAULT_SETTINGS,
+    );
+    const parsed = parseCircuit(saved);
+    expect(parsed.elements[0].params.initialSoc).toBe(0.42);
+
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(parsed.elements, DEFAULT_SETTINGS, [])).toBeNull();
+    const batId = parsed.elements[0].id;
+
+    // Discharge until the live SOC crosses below the saved 42 percent; the
+    // guard only bounds a broken build where nothing discharges.
+    let live = engine.elementStateTokens();
+    for (let guard = 0; (live[batId]?.soc ?? 1) >= 0.42 && guard < 400; guard++) {
+      engine.run(1000);
+      live = engine.elementStateTokens();
+    }
+    expect(live[batId].soc).toBeLessThan(0.42);
+
+    // Saving through overlayLiveState writes the running fraction into the
+    // initialSocPercent token, so a reload of this file resumes below 42.
+    const resaved = parseCircuit(
+      serializeCircuit(overlayLiveState(parsed.elements, live), DEFAULT_SETTINGS),
+    );
+    expect(resaved.elements[0].params.initialSoc).toBeLessThan(0.42);
   });
 
   it('reset restores the initial soc, which an edit updates', async () => {
