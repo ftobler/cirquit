@@ -133,7 +133,7 @@ const SCOPE: Scope = {
   plotColorB: -1,
   showPhaseAngle: false,
   trailPersistence: 0,
-  showElmInfo: false,
+  showElmInfo: true,
   showI: true,
   showV: true,
   scaleV: 20,
@@ -178,6 +178,20 @@ describe('buildUndockedFrame', () => {
       'R = 0 Ω',
       'P = 0 W',
     ]);
+  });
+
+  it('ships no element lines when Show Extended Info is off', () => {
+    // The child only reads elmInfo while drawing that header, and a
+    // scope-value kind would pay its on-demand crossing per frame for lines
+    // nobody displays, so the opener omits them outright.
+    const message = buildUndockedFrame({
+      source: stubSource(),
+      scope: { ...SCOPE, showElmInfo: false },
+      elements: ELEMENTS,
+      settings: DEFAULT_SETTINGS,
+      dark: true,
+    });
+    expect(message.elmInfo).toEqual({});
   });
 
   it('snapshots the trigger ring only in a triggered mode', () => {

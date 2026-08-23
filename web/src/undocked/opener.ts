@@ -144,8 +144,11 @@ export function buildUndockedFrame(args: {
     // Show Extended Info ships the element's full getInfo lines for the child,
     // computed once here with the same closure the docked panel uses, so the
     // popup needs no engine access (OVERVIEW.md: the undocked window is a
-    // display client). The readout rides arrays already read back per frame.
-    if (plot.elementId !== null) {
+    // display client). Gated on the flag because the child only reads these
+    // entries when it draws that header, and a scope-value kind would
+    // otherwise pay its on-demand crossing every frame for lines nobody sees.
+    // The readout rides arrays already read back per frame.
+    if (scope.showElmInfo && plot.elementId !== null) {
       const element = elmById.get(plot.elementId);
       if (element)
         elmInfo[plot.elementId] = infoLines(
