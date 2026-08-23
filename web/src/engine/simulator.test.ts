@@ -183,6 +183,46 @@ describe('SimEngine battery live state', () => {
     engine.reset();
     expect(engine.elementStates()[idx]).toBe(0.5);
   });
+
+  it('stamps the table value, which needs the raw string carrier', async () => {
+    // The spec carries the battery's table as a plain string; quoting it like
+    // the composite blobs would leave one line no f64 parse accepts, the
+    // table would parse empty and the engine would fall back to flat 3.7 V.
+    const ALKALINE_PROBE: CircuitElement[] = [
+      {
+        id: 1,
+        kind: 'battery',
+        x1: 0,
+        y1: 100,
+        x2: 0,
+        y2: 0,
+        flags: 3,
+        params: { r0: 0.01, r1: 0.02, c1: 2000, capacityAh: 2, initialSoc: 0.5, batteryType: -1 },
+        model: '0=0.8\n10=0.95\n20=1.05\n40=1.18\n60=1.28\n80=1.38\n90=1.43\n100=1.55\n',
+      },
+      { id: 2, kind: 'ground', x1: 0, y1: 100, x2: 0, y2: 132, flags: 0, params: {} },
+      {
+        id: 3,
+        kind: 'resistor',
+        x1: 0,
+        y1: 0,
+        x2: 0,
+        y2: -100,
+        flags: 0,
+        params: { resistance: 10e6 },
+      },
+      { id: 4, kind: 'ground', x1: 0, y1: -100, x2: 0, y2: -68, flags: 0, params: {} },
+    ];
+    const engine = await SimEngine.create();
+    expect(
+      engine.setCircuit(ALKALINE_PROBE, { ...DEFAULT_SETTINGS, autoDC: true }, []),
+    ).toBeNull();
+    engine.run(1);
+    const idx = engine.indexOf(1)!;
+    // Alkaline at 50% interpolates halfway between the 40% 1.18 V and the
+    // 60% 1.28 V pairs, so 1.23 V; the probe sags it through r0 + r1 only.
+    expect(engine.elementVoltages()[idx]).toBeCloseTo(1.23 * (10e6 / (10e6 + 0.03)), 5);
+  });
 });
 
 describe('SimEngine preserveRun', () => {

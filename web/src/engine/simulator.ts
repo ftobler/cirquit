@@ -424,6 +424,20 @@ function engineKindOf(e: CircuitElement): string {
   return e.model !== undefined ? 'composite' : '';
 }
 
+/** The engine's second string carrier. Objects (the custom-logic blob, a
+ *  composite's `{model, external, dumps}`) and token arrays (the OTA's child
+ *  dumps) cross as JSON text their engine readers parse with serde. The
+ *  battery's plain-string SOC table must pass through verbatim instead:
+ *  quoting it would leave one line no f64 parse accepts, the table would
+ *  parse empty and every battery would stamp the flat 3.7 V whatever its
+ *  chemistry says. */
+function engineModelOf(e: CircuitElement): string | null {
+  if (typeof e.model === 'string') return e.model;
+  if (e.model !== undefined) return JSON.stringify(e.model);
+  if (e.kind === 'audioInput' || e.kind === 'dataInput') return modelJsonFor(e);
+  return null;
+}
+
 export class SimEngine {
   private sim: WasmSimulator;
   private kinds: Set<string>;
@@ -525,20 +539,7 @@ export class SimEngine {
           // unreachable today; it is a second, independent wall.
           params: Object.fromEntries(Object.entries(params).filter(([, v]) => Number.isFinite(v))),
           label: e.text ?? null,
-          // A resolved device model (the custom-logic `!`-line model) rides
-          // the second string carrier: the label is that element's model
-          // name, so the definition has to travel separately, serialised.
-          // The audio/data inputs reuse the same carrier with a different
-          // payload: their samples live in a session cache keyed by
-          // `params.fileNum`, so the model is resolved here by kind rather
-          // than riding the element (which would make a copy/paste carry the
-          // whole buffer; see sampleCache.ts).
-          model:
-            e.model !== undefined
-              ? JSON.stringify(e.model)
-              : e.kind === 'audioInput' || e.kind === 'dataInput'
-                ? modelJsonFor(e)
-                : null,
+          model: engineModelOf(e),
           flags: e.flags,
         };
       }),
