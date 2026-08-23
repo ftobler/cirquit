@@ -32,7 +32,7 @@ import { ScopeMenu } from './ScopeMenu';
 import { ScopeProperties } from './ScopeProperties';
 import { SimInfoPanel } from './SimInfoPanel';
 import { infoLines } from '../render/infoBox';
-import { readElementReadout } from './useLiveSimReadout';
+import { readElementInfoValues } from './useLiveSimReadout';
 
 interface Props {
   engine: SimEngine | null;
@@ -118,11 +118,13 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
         (id: number) => {
           // The Show Extended Info header draws the plotted element's full
           // getInfo lines, the same ones the hover box shows, so the two
-          // surfaces cannot drift. The readout comes from the engine's already
-          // pulled-back flat arrays, never a fresh per-element crossing.
+          // surfaces cannot drift. The readout comes from the engine's
+          // already pulled-back flat arrays; only kinds whose tables need
+          // per-element scope values (the transistor) pay the on-demand
+          // single-element crossing.
           const element = elementsRef.current.find((e) => e.id === id);
           if (!element) return null;
-          return infoLines(element.kind, element, readElementReadout(engine, id));
+          return infoLines(element.kind, element, readElementInfoValues(engine, element));
         },
       );
     };

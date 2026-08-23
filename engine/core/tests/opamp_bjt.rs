@@ -696,9 +696,21 @@ fn element_scope_values_walks_the_declared_table_in_order() {
     let ic_law = (5.0 - v[nc]) / 1000.0;
     assert!(close(sv[1], ic_law, 1e-7), "slot 1 (Ic) was {}", sv[1]);
     assert!(sv[2] < 0.0, "slot 2 (Ie) was {}", sv[2]);
-    assert!(close(sv[3], v[nb] - v[ne], 1e-12), "slot 3 (Vbe) was {}", sv[3]);
-    assert!(close(sv[4], v[nb] - v[nc], 1e-12), "slot 4 (Vbc) was {}", sv[4]);
-    assert!(close(sv[5], v[nc] - v[ne], 1e-12), "slot 5 (Vce) was {}", sv[5]);
+    assert!(
+        close(sv[3], v[nb] - v[ne], 1e-12),
+        "slot 3 (Vbe) was {}",
+        sv[3]
+    );
+    assert!(
+        close(sv[4], v[nb] - v[nc], 1e-12),
+        "slot 4 (Vbc) was {}",
+        sv[4]
+    );
+    assert!(
+        close(sv[5], v[nc] - v[ne], 1e-12),
+        "slot 5 (Vce) was {}",
+        sv[5]
+    );
 }
 
 #[test]

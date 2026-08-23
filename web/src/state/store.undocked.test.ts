@@ -38,6 +38,7 @@ function stubSource(plotIds: number[]): ElementReadoutSource {
     elementCurrents: () => new Float64Array(plotIds.length),
     elementVoltages: () => new Float64Array(plotIds.length),
     elementPowers: () => new Float64Array(plotIds.length),
+    elementScopeValues: () => new Float64Array(),
     scopeData: () => data,
     scopeDiverged: () => false,
     triggerInfo: () => ({

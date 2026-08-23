@@ -54,6 +54,9 @@ function stubSource(): ElementReadoutSource & { dataCalls: number[] } {
     elementPowers() {
       return new Float64Array([0, 0]);
     },
+    elementScopeValues() {
+      return new Float64Array();
+    },
     scopeData(index: number) {
       calls.push(index);
       return traces.get(index === 0 ? 11 : 12)!;

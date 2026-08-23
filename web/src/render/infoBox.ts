@@ -16,12 +16,18 @@ export const INFO_LINE_SPACING = 15;
 export const SCOPE_MARGIN = 20;
 
 /** The per-frame operating-point readout an element's info lines draw on:
- *  current, terminal voltage and power from the engine's flat arrays. The same
- *  shape `readElementReadout` returns, so its result passes straight through. */
+ *  current, terminal voltage and power from the engine's flat arrays, plus
+ *  the on-demand scope-value table for the kinds whose rows need more. The
+ *  same shape `readElementReadout` returns, so its result passes straight
+ *  through. */
 export interface InfoLinesValues {
   current?: number;
   voltage?: number;
   power?: number;
+  /** The element's live scope-value table from `elementScopeValues`, in the
+   *  order its kind declares in the engine. Present only when the kind's
+   *  info table reads it; absent means the rows fall back to zero. */
+  scopeValues?: Float64Array;
 }
 
 /** Upstream's waveform codes (VoltageElm.java:39-46, the `waveform` field).
@@ -135,6 +141,49 @@ function diodeFamilyLines(
   return lines;
 }
 
+/** The transistor's scope-value slots, in the order the engine's declared
+ *  table walks them (upstream's VAL_ id order, TransistorElm.java:582-593).
+ *  The info rows index this table by position, so a reorder on either side
+ *  shows up as swapped rows rather than silent garbage. */
+const TRANSISTOR_SCOPE_TABLE = ['ib', 'ic', 'ie', 'vbe', 'vbc', 'vce'] as const;
+
+/** The transistor's getInfo block (TransistorElm.java:538-563): header, model
+ *  and beta, operating mode, then the signed terminal rows. Ic, Ib, Vbe, Vbc
+ *  and Vce read the scope-value table; posts are base 0, collector 1,
+ *  emitter 2, so the junction voltages are raw node differences exactly as
+ *  upstream classifies them. P rides the shared flat-array power. */
+function transistorLines(e: CircuitElement, values: InfoLinesValues): string[] {
+  const sv = values.scopeValues;
+  const at = (slot: number) => (sv !== undefined && slot < sv.length ? sv[slot] : 0);
+  // The file sign is the type: -1 is PNP, everything else NPN.
+  const pnp = (e.params.pnp ?? 1) < 0 ? -1 : 1;
+  const vbc = at(TRANSISTOR_SCOPE_TABLE.indexOf('vbc'));
+  const vbe = at(TRANSISTOR_SCOPE_TABLE.indexOf('vbe'));
+  // Upstream's classification thresholds are strict > .2 on the
+  // polarity-scaled junction voltages, so exactly .2 stays out of saturation.
+  const mode =
+    vbc * pnp > 0.2
+      ? vbe * pnp > 0.2
+        ? 'saturation'
+        : 'reverse active'
+      : vbe * pnp > 0.2
+        ? 'fwd active'
+        : 'cutoff';
+  return [
+    `transistor (${pnp === -1 ? 'PNP' : 'NPN'})`,
+    // Upstream names the resolved model even when it is the unnamed default
+    // (TransistorModel "default"), so an absent name still prints.
+    `${e.modelName ?? 'default'}, β=${showFormat(e.params.beta ?? 100)}`,
+    mode,
+    `Ic = ${formatValue(at(TRANSISTOR_SCOPE_TABLE.indexOf('ic')), 'A')}`,
+    `Ib = ${formatValue(at(TRANSISTOR_SCOPE_TABLE.indexOf('ib')), 'A')}`,
+    `Vbe = ${formatValue(vbe, 'V')}`,
+    `Vbc = ${formatValue(vbc, 'V')}`,
+    `Vce = ${formatValue(at(TRANSISTOR_SCOPE_TABLE.indexOf('vce')), 'V')}`,
+    `P = ${formatValue(values.power ?? 0, 'W')}`,
+  ];
+}
+
 /** The element's `getInfo` array (CircuitElm.java:1199-1203): the kind as the
  *  label line, then the shared `I =` / `Vd =` pair, then the kind-specific
  *  lines. I and Vd are magnitudes, upstream's `getCurrentDText` and
@@ -142,9 +191,7 @@ function diodeFamilyLines(
  *  the engine's array, the same source the live readout reads. The voltage
  *  source, rail and diode family get their full upstream tables; switch
  *  family, ground and wire and any unknown kind keep the shared pair only,
- *  matching upstream's own short tables. Transistor junction rows
- *  (Ic/Ib/Vbe/Vbc) need values the flat readback arrays do not carry, so they
- *  are deliberately deferred (see the feature plan's Risks). */
+ *  matching upstream's own short tables. */
 export function infoLines(kind: string, e: CircuitElement, values: InfoLinesValues): string[] {
   const current = values.current ?? 0;
   const voltage = values.voltage ?? 0;
@@ -153,6 +200,8 @@ export function infoLines(kind: string, e: CircuitElement, values: InfoLinesValu
     case 'voltage source':
     case 'rail':
       return voltageSourceLines(kind, e, current, voltage, power);
+    case 'transistor':
+      return transistorLines(e, values);
     case 'diode':
     case 'zener':
     case 'led':

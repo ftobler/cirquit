@@ -2,7 +2,7 @@ import type { SimEngine } from '../engine/simulator';
 import type { CircuitElement, SimSettings } from '../model/types';
 import { infoLines, simStatsLines } from '../render/infoBox';
 import { cachedBadConnectionPoints } from '../render/junction';
-import { readElementReadout } from './useLiveSimReadout';
+import { readElementInfoValues } from './useLiveSimReadout';
 
 /** The info area's text: the hovered element's getInfo-style readout, or the
  *  `t =` / `time step =` stats when nothing is hovered, then the bad-connection
@@ -16,7 +16,7 @@ export function infoBoxLines(
 ): string[] {
   const hovered = hoveredId !== null ? elements.find((e) => e.id === hoveredId) : undefined;
   const lines = hovered
-    ? infoLines(hovered.kind, hovered, readElementReadout(engine, hovered.id))
+    ? infoLines(hovered.kind, hovered, readElementInfoValues(engine, hovered))
     : simStatsLines(engine?.time ?? 0, settings.timeStep, settings.iterCount);
   // The tally of the red dots, appended below whichever block is showing
   // (UIManager.java:879-883). It is the only hint of why a circuit that looks

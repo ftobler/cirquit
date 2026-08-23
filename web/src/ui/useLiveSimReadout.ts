@@ -6,11 +6,23 @@
 
 import { useEffect, useState } from 'react';
 import type { ElementReadoutSource } from '../engine/simulator';
+import type { CircuitElement } from '../model/types';
 
 export interface ElementReadout {
   current?: number;
   voltage?: number;
   power?: number;
+}
+
+/** The kinds whose info tables read per-element scope values through the
+ *  on-demand readback (the transistor's junction rows today; the MOSFET,
+ *  lamp and fuse tables later). Everything else stays zero-cost. */
+const INFO_SCOPE_KINDS = new Set(['transistor']);
+
+/** The readout an info table draws on: the flat-array triple, plus the
+ *  element's live scope-value table when its kind needs one. */
+export interface ElementInfoValues extends ElementReadout {
+  scopeValues?: Float64Array;
 }
 
 /** Reads the three engine operating-point arrays for one element id. Pure, so
@@ -28,6 +40,18 @@ export function readElementReadout(
     voltage: engine.elementVoltages()[idx],
     power: engine.elementPowers()[idx],
   };
+}
+
+/** The info-table variant of [`readElementReadout`]: adds the on-demand
+ *  scope-value crossing only for the kinds whose tables actually read it,
+ *  so hovering anything else keeps the boundary silent. Pure like its base. */
+export function readElementInfoValues(
+  engine: ElementReadoutSource | null,
+  element: CircuitElement | undefined,
+): ElementInfoValues {
+  const base = readElementReadout(engine, element?.id);
+  if (!engine || !element || !INFO_SCOPE_KINDS.has(element.kind)) return base;
+  return { ...base, scopeValues: engine.elementScopeValues(element.id) };
 }
 
 /** The per-frame pump: reads the readout once per animation frame and hands

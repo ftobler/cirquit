@@ -22,7 +22,7 @@ import {
   type UndockedTraceFrame,
 } from './protocol';
 import { infoLines } from '../render/infoBox';
-import { readElementReadout } from '../ui/useLiveSimReadout';
+import { readElementInfoValues } from '../ui/useLiveSimReadout';
 
 interface Attachment {
   win: Window;
@@ -147,7 +147,12 @@ export function buildUndockedFrame(args: {
     // display client). The readout rides arrays already read back per frame.
     if (plot.elementId !== null) {
       const element = elmById.get(plot.elementId);
-      if (element) elmInfo[plot.elementId] = infoLines(element.kind, element, readElementReadout(source as ElementReadoutSource, plot.elementId));
+      if (element)
+        elmInfo[plot.elementId] = infoLines(
+          element.kind,
+          element,
+          readElementInfoValues(source as ElementReadoutSource, element),
+        );
     }
   }
   return {

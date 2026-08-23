@@ -19,6 +19,19 @@ const engine: SimEngine = {
   elementCurrents: () => new Float64Array([-0.05]),
   elementVoltages: () => new Float64Array([-2.5]),
   elementPowers: () => new Float64Array([0.125]),
+  elementScopeValues: () => new Float64Array(),
+  time: 0.01,
+} as unknown as SimEngine;
+
+/** A biased NPN stage's live readout: the flat-array triple plus the
+ *  scope-value table [ib, ic, ie, vbe, vbc, vce] in the engine's declared
+ *  order, active region at beta 100 into a 1 k load. */
+const transistorEngine: SimEngine = {
+  indexOf: (id: number) => (id === 1 ? 0 : undefined),
+  elementCurrents: () => new Float64Array([9.2e-4]),
+  elementVoltages: () => new Float64Array([-4]),
+  elementPowers: () => new Float64Array([-0.00368]),
+  elementScopeValues: () => new Float64Array([9e-6, 9.2e-4, -9.29e-4, 0.65, -4, 4.65]),
   time: 0.01,
 } as unknown as SimEngine;
 
@@ -40,6 +53,42 @@ describe('infoBoxLines', () => {
       'R = 1k Ω',
       'P = 125m W',
     ]);
+  });
+
+  it('builds the full transistor table through the scope-value readback', () => {
+    const t = { ...el(1, 'transistor', { pnp: 1, beta: 100 }), modelName: '2N2222' };
+    expect(infoBoxLines(1, [t], transistorEngine, settings)).toEqual([
+      'transistor (NPN)',
+      '2N2222, β=100',
+      'fwd active',
+      'Ic = 920µ A',
+      'Ib = 9µ A',
+      'Vbe = 650m V',
+      'Vbc = -4 V',
+      'Vce = 4.65 V',
+      'P = -3.68m W',
+    ]);
+  });
+
+  it('does not cross the scope-value boundary for kinds without a table', () => {
+    // The on-demand channel exists so only the read-out kind pays; a
+    // resistor hover must leave it silent.
+    const calls: number[] = [];
+    const spying = {
+      ...engine,
+      elementScopeValues: (id: number) => {
+        calls.push(id);
+        return new Float64Array();
+      },
+    } as unknown as SimEngine;
+    expect(infoBoxLines(1, [el(1, 'resistor', { resistance: 1000 })], spying, settings)).toEqual([
+      'resistor',
+      'I = 50m A',
+      'Vd = 2.5 V',
+      'R = 1k Ω',
+      'P = 125m W',
+    ]);
+    expect(calls).toEqual([]);
   });
 
   it('ignores a hovered id that no longer exists', () => {

@@ -23,6 +23,12 @@ const el = (kind: string, params: Record<string, number>, modelName?: string): C
   ...(modelName !== undefined ? { modelName } : {}),
 });
 
+/** A transistor scope-value table in the engine's declared order [ib, ic,
+ *  ie, vbe, vbc, vce]; ie = -(ib+ic) and vce = vbe - vbc follow from the
+ *  same node differences the engine reports. */
+const transistorScope = (ib: number, ic: number, vbe: number, vbc: number): Float64Array =>
+  new Float64Array([ib, ic, -(ib + ic), vbe, vbc, vbe - vbc]);
+
 /** The fake-surface slice drawInfoBox writes to, mirroring the recorders the
  *  rest of the draw layer tests use. */
 interface FakeSurface {
@@ -168,6 +174,91 @@ describe('infoLines', () => {
       'I = 10m A',
       'Vd = 700m V',
       'P = 7m W',
+    ]);
+  });
+
+  it('builds the nine upstream rows for an NPN in the active region', () => {
+    expect(
+      infoLines('transistor', el('transistor', { pnp: 1, beta: 100 }, '2N2222'), {
+        current: 9.2e-4,
+        voltage: -4,
+        power: -0.00368,
+        scopeValues: transistorScope(9e-6, 9.2e-4, 0.65, -4),
+      }),
+    ).toEqual([
+      'transistor (NPN)',
+      '2N2222, β=100',
+      'fwd active',
+      'Ic = 920µ A',
+      'Ib = 9µ A',
+      'Vbe = 650m V',
+      'Vbc = -4 V',
+      'Vce = 4.65 V',
+      'P = -3.68m W',
+    ]);
+  });
+
+  it('prints the PNP header and the raw signed junction rows', () => {
+    // The engine reports polarity-scaled terminal currents (positive into
+    // the device) beside raw node-difference voltages, so a conducting PNP
+    // reads positive Ic/Ib next to a negative Vbe, exactly what upstream
+    // prints through the signed getVoltageText.
+    expect(
+      infoLines('transistor', el('transistor', { pnp: -1, beta: 50 }), {
+        power: 0.002,
+        scopeValues: transistorScope(8e-6, 8e-4, -0.65, 4),
+      }),
+    ).toEqual([
+      'transistor (PNP)',
+      'default, β=50',
+      'fwd active',
+      'Ic = 800µ A',
+      'Ib = 8µ A',
+      'Vbe = -650m V',
+      'Vbc = 4 V',
+      'Vce = -4.65 V',
+      'P = 2m W',
+    ]);
+  });
+
+  it.each([
+    ['saturation', 0.75, 0.3],
+    ['reverse active', 0.1, 0.3],
+    ['cutoff', 0.1, -1],
+  ] as const)('classifies an NPN at Vbe %p, Vbc %p as %s', (mode, vbe, vbc) => {
+    const lines = infoLines('transistor', el('transistor', { pnp: 1 }), {
+      scopeValues: transistorScope(0, 0, vbe, vbc),
+    });
+    expect(lines[2]).toBe(mode);
+  });
+
+  it('keeps exactly .2 out of saturation on either side of the polarity sign', () => {
+    // Upstream's thresholds are strict > .2 on vbc*pnp then vbe*pnp
+    // (TransistorElm.java:545-548), so the boundary itself classifies as
+    // active, mirrored through the PNP's negative raw voltages.
+    const npn = infoLines('transistor', el('transistor', { pnp: 1 }), {
+      scopeValues: transistorScope(0, 0, 0.7, 0.2),
+    });
+    expect(npn[2]).toBe('fwd active');
+    const pnp = infoLines('transistor', el('transistor', { pnp: -1 }), {
+      scopeValues: transistorScope(0, 0, -0.7, -0.2),
+    });
+    expect(pnp[2]).toBe('fwd active');
+  });
+
+  it('falls back to zero rows when the readout carries no scope table', () => {
+    // A readout without the table (a source that never crossed the
+    // boundary) must degrade to zeros, not NaN.
+    expect(infoLines('transistor', el('transistor', {}), { power: 0 })).toEqual([
+      'transistor (NPN)',
+      'default, β=100',
+      'cutoff',
+      'Ic = 0 A',
+      'Ib = 0 A',
+      'Vbe = 0 V',
+      'Vbc = 0 V',
+      'Vce = 0 V',
+      'P = 0 W',
     ]);
   });
 

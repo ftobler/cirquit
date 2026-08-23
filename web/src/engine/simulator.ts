@@ -343,6 +343,10 @@ export interface ElementReadoutSource extends ScopeDrawSource {
   elementCurrents(): Float64Array;
   elementVoltages(): Float64Array;
   elementPowers(): Float64Array;
+  /** One element's live scope-value table in the order its kind declares,
+   *  empty for kinds that answer nothing. On-demand like the other
+   *  single-element channels, so only the read-out element pays. */
+  elementScopeValues(id: number): Float64Array;
 }
 
 /** A scope's capture width for engine sizing: its registered canvas width, or
@@ -681,6 +685,15 @@ export class SimEngine {
    *  element pays for the crossing. */
   recordedData(id: number): Float64Array {
     return this.sim.dataRecorderData(id);
+  }
+
+  /** One element's live scope-value table in the order its kind declares
+   *  (a transistor's ib, ic, ie, vbe, vbc, vce), for the info readout's
+   *  junction rows. Empty for ids whose kind answers nothing. On-demand
+   *  like `transmissionLineWave`: only the read-out element pays the
+   *  crossing, never a per-frame per-element loop. */
+  elementScopeValues(id: number): Float64Array {
+    return this.sim.elementScopeValues(id);
   }
 
   /** Dissipated power per element, using the scope Power-trace convention
