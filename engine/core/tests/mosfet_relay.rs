@@ -716,6 +716,178 @@ fn relay_file_state_is_restored() {
     );
 }
 
+// ─── FLAG_PULLDOWN (RelayElm.java:43) ───
+
+/// A pulldown probe: the pole hangs off a 5 V rail through 1 k and each throw
+/// carries a 1 k load to ground. `wiring` picks which throws are actually
+/// wired: `Some(true)` wires only the NO throw (post 2), `Some(false)` only
+/// the NC throw (post 1), `None` both. The coil is driven at 16 mA, inside
+/// the 15..20 mA pick-up/drop-out band, so a `set_state`-forced throw holds
+/// still instead of drifting back to rest. Relay post order: pole, throw1
+/// (NC), throw2 (NO), coil0, coil1; the relay is element index 2 after two
+/// two-terminal parts, so its terminals sit at node offset 4.
+fn pulldown_relay(flags: i64, wiring: Option<bool>, relay_params: &[(&str, f64)]) -> Circuit {
+    let mut el = vec![
+        elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+        elm(
+            2,
+            "resistor",
+            &[[0, 0], [200, 0]],
+            &[("resistance", 1000.0)],
+        ),
+        elm_flags(
+            3,
+            "relay",
+            &[[200, 0], [300, 16], [300, -16], [400, 32], [400, 48]],
+            relay_params,
+            flags,
+        ),
+        elm(4, "ground", &[[0, 100]], &[]),
+    ];
+    let mut id = 5;
+    if wiring != Some(true) {
+        el.push(elm(
+            id,
+            "resistor",
+            &[[300, 16], [300, 96]],
+            &[("resistance", 1000.0)],
+        ));
+        id += 1;
+        el.push(elm(id, "ground", &[[300, 96]], &[]));
+        id += 1;
+    }
+    if wiring != Some(false) {
+        el.push(elm(
+            id,
+            "resistor",
+            &[[300, -16], [300, -96]],
+            &[("resistance", 1000.0)],
+        ));
+        id += 1;
+        el.push(elm(id, "ground", &[[300, -96]], &[]));
+        id += 1;
+    }
+    // Coil drive: 1.6 V through the 80 ohm series resistor into the 20 ohm
+    // coil puts 16 mA through it at the operating point, inside the band.
+    el.push(elm(
+        id,
+        "voltage",
+        &[[500, 100], [500, 0]],
+        &[("maxVoltage", 1.6)],
+    ));
+    id += 1;
+    el.push(elm(id, "ground", &[[500, 100]], &[]));
+    id += 1;
+    el.push(elm(
+        id,
+        "resistor",
+        &[[500, 0], [400, 32]],
+        &[("resistance", 80.0)],
+    ));
+    id += 1;
+    el.push(elm(id, "ground", &[[400, 48]], &[]));
+    build(el, opts(1e-4, true))
+}
+
+#[test]
+fn relay_pulldown_grounds_the_unwired_throw() {
+    // FLAG_PULLDOWN stamps a constant r_off from every throw post to ground
+    // (RelayElm.java:394-401) and doStep then drops the pole-to-unselected-
+    // throw r_off (RelayElm.java:468-473). An unwired throw must therefore
+    // read exactly 0 V in either settled position while the wired one keeps
+    // its divider potential near half the rail.
+    let c = &mut pulldown_relay(16, Some(false), &[]);
+    assert!(c.set_state(3, 0));
+    c.run(20);
+    let nodes = c.element_nodes();
+    let v_nc = c.node_voltages()[nodes[4 + 1] as usize];
+    let v_no = c.node_voltages()[nodes[4 + 2] as usize];
+    // The wired divider reads 5 V through 1000 + r_on against its 1 k load,
+    // which the pulldown turns into 1k || 1e6.
+    assert!(close(v_nc, 2.49869, 1e-3), "wired NC throw was {v_nc}");
+    assert!(
+        v_no.abs() < 1e-9,
+        "unwired NO throw should be grounded, got {v_no}"
+    );
+
+    // Position 1 mirrors: pole closed onto the wired NO throw.
+    let c = &mut pulldown_relay(16, Some(true), &[]);
+    assert!(c.set_state(3, 1));
+    c.run(20);
+    let nodes = c.element_nodes();
+    let v_nc = c.node_voltages()[nodes[4 + 1] as usize];
+    let v_no = c.node_voltages()[nodes[4 + 2] as usize];
+    assert!(close(v_no, 2.49869, 1e-3), "wired NO throw was {v_no}");
+    assert!(
+        v_nc.abs() < 1e-9,
+        "unwired NC throw should be grounded, got {v_nc}"
+    );
+}
+
+#[test]
+fn relay_without_pulldown_keeps_the_throw_coupled() {
+    // With the flag clear doStep keeps stamping the pole-to-unselected-throw
+    // r_off (RelayElm.java:468-483), so the same unwired throw rides at the
+    // pole's potential instead of being pulled down: no current can leave a
+    // dead-ended r_off, so it sits at the pole voltage exactly. Guarded in
+    // both directions because either position must keep the old coupling.
+    let c = &mut pulldown_relay(0, Some(false), &[]);
+    assert!(c.set_state(3, 0));
+    c.run(20);
+    let nodes = c.element_nodes();
+    let v_pole = c.node_voltages()[nodes[4] as usize];
+    let v_no = c.node_voltages()[nodes[4 + 2] as usize];
+    assert!(close(v_no, v_pole, 1e-9), "NO throw was {v_no}, pole {v_pole}");
+    assert!(v_no > 2.0, "NO throw should track the pole, got {v_no}");
+
+    let c = &mut pulldown_relay(0, Some(true), &[]);
+    assert!(c.set_state(3, 1));
+    c.run(20);
+    let nodes = c.element_nodes();
+    let v_pole = c.node_voltages()[nodes[4] as usize];
+    let v_nc = c.node_voltages()[nodes[4 + 1] as usize];
+    assert!(close(v_nc, v_pole, 1e-9), "NC throw was {v_nc}, pole {v_pole}");
+    assert!(v_nc > 2.0, "NC throw should track the pole, got {v_nc}");
+}
+
+#[test]
+fn relay_midtravel_stamps_both_throws_whatever_the_flag() {
+    // The intermediate position pins the pole to BOTH throws through r_off
+    // regardless of FLAG_PULLDOWN: the else arm carries no needsPulldown
+    // guard (RelayElm.java:474-482). With both throws loaded the added
+    // pulldowns are 1e6 parallel 1k and move nothing measurable, so the flag
+    // and no-flag builds must agree: the pole sits at 4.990 V and each throw
+    // tracks it down its branch, near 5 mV, instead of reading 0 V.
+    //
+    // set_state cannot hold this position (it zeroes d_position, which
+    // start_iteration collapses straight to rest), so the state comes from
+    // the file token like relay_file_state_is_restored does, and the large
+    // switching time keeps d_position mid-travel for the whole run.
+    let params = &[("position", 2.0), ("switchingTime", 50.0)];
+    let mut circuits = [
+        pulldown_relay(0, None, params),
+        pulldown_relay(16, None, params),
+    ];
+    for c in &mut circuits {
+        c.run(20);
+        let nodes = c.element_nodes();
+        let volts = |off: usize| c.node_voltages()[nodes[off] as usize];
+        let (v_pole, v_nc, v_no) = (volts(4), volts(5), volts(6));
+        assert!(close(v_pole, 4.9900, 1e-3), "pole was {v_pole}");
+        assert!(close(v_nc, 4.985e-3, 5e-4), "NC throw was {v_nc}");
+        assert!(close(v_no, 4.985e-3, 5e-4), "NO throw was {v_no}");
+    }
+    // The two builds differ only by 1e6 pulldowns in parallel with 1k loads.
+    let (a, b) = (&circuits[0], &circuits[1]);
+    let worst = a
+        .node_voltages()
+        .iter()
+        .zip(b.node_voltages())
+        .map(|(x, y)| (x - y).abs())
+        .fold(0.0, f64::max);
+    assert!(worst < 1e-5, "mid-travel builds diverged by {worst}");
+}
+
 #[test]
 fn relay_contact_keeps_resting_position_across_reset() {
     // A de-energised coil rests at switchPosition 0 and drives its contact to

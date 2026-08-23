@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::inductor::Inductor;
 use crate::spec::ElementSpec;
-use crate::stamp::Stamper;
+use crate::stamp::{Stamper, GROUND};
 
 /// Default parameters, from RelayModel.java:30-41. The relay's own token
 /// constructor would default the two missing trailing tokens to `offCurrent =
@@ -23,6 +23,7 @@ const DEF_COIL_R: f64 = 20.0;
 const DEF_SWITCHING_TIME: f64 = 5e-3;
 
 const FLAG_NORMALLY_CLOSED: i64 = 2; // RelayContactElm.java:40
+const FLAG_PULLDOWN: i64 = 16; // RelayElm.java:43
 
 /// Relay coil types, from RelayCoilElm.java:61-67.
 const TYPE_LATCHING: i32 = 3;
@@ -75,6 +76,9 @@ pub struct Relay {
     d_position: f64,
     i_position: i32,
     on_state: bool,
+    /// FLAG_PULLDOWN: hold both throw posts of every pole down through r_off
+    /// so an unwired open throw reads 0 V instead of floating.
+    pulldown: bool,
 }
 
 impl Relay {
@@ -98,6 +102,7 @@ impl Relay {
             d_position: 0.0,
             i_position: 0,
             on_state: false,
+            pulldown: spec.flag(FLAG_PULLDOWN),
         };
         // The saved position token restores the throw state (`postUndump`,
         // RelayElm.java:122-126): 1 is closed, 2 is caught mid-throw.
@@ -183,6 +188,16 @@ impl Element for Relay {
             self.base.nodes[self.n_coil2()],
             self.coil_r,
         );
+        // Pulldowns hold every throw post down through r_off so an open
+        // throw reads 0 V instead of floating, matching the analog switch
+        // approach (RelayElm.java:394-401). Constant, so they join the
+        // snapshot pass.
+        if self.pulldown {
+            for p in 0..self.pole_count {
+                s.resistor(self.base.nodes[p * 3 + 1], GROUND, self.r_off);
+                s.resistor(self.base.nodes[p * 3 + 2], GROUND, self.r_off);
+            }
+        }
     }
 
     fn start_iteration(&mut self, ctx: &SimCtx) {
@@ -227,9 +242,11 @@ impl Element for Relay {
         self.ind.do_step(ctx, s);
         // The switch resistors change when the throw moves, so they are
         // stamped every Newton iteration like upstream's doStep
-        // (RelayElm.java:464-484). The unselected throw gets r_off to keep
-        // the pole pinned; upstream skips it under FLAG_PULLDOWN, whose
-        // pulldown resistors are deferred in this port.
+        // (RelayElm.java:464-484). Under FLAG_PULLDOWN the settled positions
+        // skip the pole-to-unselected-throw r_off: the constant pulldowns
+        // from stamp() already define the open side. The intermediate
+        // position keeps both links whatever the flag, since mid-travel
+        // leaves the pole attached to neither throw.
         for p in 0..self.pole_count {
             let po = p * 3;
             let (n0, n1, n2) = (
@@ -240,11 +257,15 @@ impl Element for Relay {
             match self.i_position {
                 0 => {
                     s.resistor(n0, n1, self.r_on);
-                    s.resistor(n0, n2, self.r_off);
+                    if !self.pulldown {
+                        s.resistor(n0, n2, self.r_off);
+                    }
                 }
                 1 => {
-                    s.resistor(n0, n1, self.r_off);
                     s.resistor(n0, n2, self.r_on);
+                    if !self.pulldown {
+                        s.resistor(n0, n1, self.r_off);
+                    }
                 }
                 _ => {
                     s.resistor(n0, n1, self.r_off);
