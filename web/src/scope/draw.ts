@@ -17,7 +17,6 @@ import type {
 import { effectiveMeasurements } from '../engine/simulator';
 import { canvasFont, formatValue, makeTheme, parseRgb } from '../render/draw';
 import type { Theme, ThemeColors } from '../model/types';
-import { defFor } from '../model/registry';
 import { MIN_SETTINGS_WHEEL_SIZE, scopeSpeed, timeToX } from './geometry';
 import {
   axisSamplesFit,
@@ -456,25 +455,27 @@ function drawHeader(
   theme: Theme,
   traceColors: Map<number, string>,
   decimalDigits: number,
-  kindOf: (elementId: number) => string | null,
+  elmInfo?: (elementId: number) => string[] | null,
 ): void {
   const lines: InfoLine[] = [];
   // The scope's own label renders as a title line above the scale, in the
   // theme text colour, and only when it is set (ScopeOverlays.draw:
-  // getScopeLabelOrText). Show Extended Info takes its place and draws the
-  // plotted element's name instead, the port of `drawElmInfo`'s first line
-  // (ScopeOverlays.java:179-184); the full getInfo array (current, power, ...)
-  // is deferred as element-model work the port has no table for.
+  // getScopeLabelOrText). Show Extended Info stacks the plotted element's full
+  // getInfo block underneath it, the port of `drawElmInfo`
+  // (ScopeOverlays.java:178-192): every line at the 15 px pitch upstream uses,
+  // sharing `infoLines` with the hover box so the two surfaces cannot drift.
   let y = 4;
   if (scope.label) {
     lines.push({ text: scope.label, y });
     y += 15;
-  } else if (scope.showElmInfo && firstPlot.elementId !== null) {
-    const kind = kindOf(firstPlot.elementId);
-    const name = kind === null ? null : (defFor(kind)?.label ?? kind);
-    if (name) {
-      lines.push({ text: name, y });
-      y += 15;
+  }
+  if (scope.showElmInfo && firstPlot.elementId !== null) {
+    const info = elmInfo ? elmInfo(firstPlot.elementId) : null;
+    if (info) {
+      for (const text of info) {
+        lines.push({ text, y });
+        y += 15;
+      }
     }
   }
   const hs = `H=${formatValue(gridStepX(speed, timeStep), 's', decimalDigits)}/div`;
@@ -1075,7 +1076,7 @@ export function drawScope(
   dark: boolean,
   decimalDigits = 3,
   colors?: ThemeColors,
-  kindOf?: (elementId: number) => string | null,
+  elmInfo?: (elementId: number) => string[] | null,
 ): void {
   const theme = makeTheme(dark, colors);
   ctx.fillStyle = theme.background;
@@ -1107,10 +1108,26 @@ export function drawScope(
     return;
   }
 
-  const plots = visiblePlotsOf(scope)
-    .filter(isDrawable)
+  const visible = visiblePlotsOf(scope).filter(isDrawable);
+  const plots = visible
     .map((plot) => ({ plot, index: engine.scopeIndexOf(plot.id) }))
     .filter((x): x is { plot: DrawablePlot; index: number } => x.index !== undefined);
+
+  // Upstream's drawElmInfo runs even when the scope has no drawable trace
+  // (ScopeOverlays.java:188-192), drawing the element readout under the scale.
+  // The normal header call below is skipped by the empty-plot return, so draw
+  // it here first in that case; when a trace exists the later call handles the
+  // header, so this early branch is the empty-plots case only.
+  if (scope.showElmInfo && plots.length === 0) {
+    const infoPlot = visible.find((p) => p.elementId !== null);
+    if (infoPlot) {
+      // A synthesized transform drives only the scale /div label, which is
+      // harmless when no trace is drawn to measure against.
+      const transform = transformFor(scope, infoPlot, scaleStateFor(infoPlot.id, infoPlot.value), 0, 0, h);
+      drawHeader(ctx, scope, transform, infoPlot, speed, timeStep, h, theme, traceColors, decimalDigits, elmInfo);
+    }
+    return;
+  }
   if (plots.length === 0) return;
 
   // The trigger anchor comes from the first trace; all traces share the
@@ -1227,7 +1244,7 @@ export function drawScope(
       theme,
       traceColors,
       decimalDigits,
-      kindOf ?? (() => null),
+      elmInfo,
     );
   }
   drawMeasurements(ctx, scope, states, h, speed, timeStep, theme, decimalDigits, traceColors);

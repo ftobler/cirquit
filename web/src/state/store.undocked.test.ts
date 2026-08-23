@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
-import type { ScopeDrawSource } from '../engine/simulator';
+import type { ElementReadoutSource } from '../engine/simulator';
 import { addResistor, fresh } from './store.test-helpers';
 import { useStore } from './store';
 import { detachUndockedWindow, noteUndockedHello, pushUndockedScopeFrame } from '../undocked/opener';
@@ -23,7 +23,7 @@ type FakeWin = ReturnType<typeof fakeWindow>;
 
 /** Minimal engine surface for the push: every listed plot id gets one min/max
  *  column of samples, like the real engine's trace list. */
-function stubSource(plotIds: number[]): ScopeDrawSource {
+function stubSource(plotIds: number[]): ElementReadoutSource {
   const data = new Float32Array([1.5, -1.5]);
   return {
     time: 0.002,
@@ -31,6 +31,13 @@ function stubSource(plotIds: number[]): ScopeDrawSource {
       const index = plotIds.indexOf(id);
       return index < 0 ? undefined : index;
     },
+    indexOf: (id: number) => {
+      const index = plotIds.indexOf(id);
+      return index < 0 ? undefined : index;
+    },
+    elementCurrents: () => new Float64Array(plotIds.length),
+    elementVoltages: () => new Float64Array(plotIds.length),
+    elementPowers: () => new Float64Array(plotIds.length),
     scopeData: () => data,
     scopeDiverged: () => false,
     triggerInfo: () => ({

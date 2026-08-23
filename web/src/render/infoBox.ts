@@ -24,39 +24,173 @@ export interface InfoLinesValues {
   power?: number;
 }
 
+/** Upstream's waveform codes (VoltageElm.java:39-46, the `waveform` field).
+ *  The port's own file-format reference uses the same numbering
+ *  (OVERVIEW.md:785-786). */
+const WF_DC = 0;
+const WF_AC = 1;
+const WF_SQUARE = 2;
+const WF_TRIANGLE = 3;
+const WF_SAWTOOTH = 4;
+const WF_PULSE = 5;
+const WF_NOISE = 6;
+const WF_VAR = 7;
+
+/** The first getInfo line per periodic/DC waveform, upstream's getInfo switch
+ *  (VoltageElm.java:464-473). VAR rides the DC caption; NOISE keeps its own. */
+const WAVEFORM_CAPTION: Record<number, string> = {
+  [WF_DC]: 'voltage source',
+  [WF_VAR]: 'voltage source',
+  [WF_AC]: 'A/C source',
+  [WF_SQUARE]: 'square wave gen',
+  [WF_PULSE]: 'pulse gen',
+  [WF_SAWTOOTH]: 'sawtooth gen',
+  [WF_TRIANGLE]: 'triangle gen',
+  [WF_NOISE]: 'noise gen',
+};
+
+/** The RMS-to-peak multiplier per waveform (VoltageElm.getRmsMultiplier,
+ *  VoltageElm.java:446-456). RMS amplitude = peak * multiplier, so a sine's
+ *  V(rms) is Vmax / sqrt(2) and a square's is Vmax. The pulse is the one entry
+ *  that is not pure waveform data: its multiplier is sqrt(dutyCycle), read from
+ *  the element's own params like rail.ts's own getInfo does, so a 25% duty
+ *  pulse reports V(rms) = Vmax/2 rather than the flat-1 value. */
+const WAVEFORM_RMS_MULTIPLIER: Record<number, number> = {
+  [WF_DC]: 1,
+  [WF_AC]: 1 / Math.SQRT2,
+  [WF_SQUARE]: 1,
+  [WF_TRIANGLE]: 1 / Math.sqrt(3),
+  [WF_SAWTOOTH]: 1 / Math.sqrt(3),
+  [WF_NOISE]: 1,
+  [WF_VAR]: 1,
+};
+
+/** The voltage source's getInfo block (VoltageElm.java:463-492). The rail and
+ *  the free-standing source share everything but the voltage-line label
+ *  (RailElm uses "V =", VoltageElm "Vd ="). The periodic waveforms append the
+ *  f / Vmax pair, then V(rms) at zero bias or Voff otherwise, and a wavelength
+ *  line above 500 Hz at zero bias, mirroring the upstream else-if chain. */
+function voltageSourceLines(
+  kind: string,
+  e: CircuitElement,
+  current: number,
+  voltage: number,
+  power: number,
+): string[] {
+  const wf = Math.round(e.params.waveform ?? WF_DC);
+  const caption = WAVEFORM_CAPTION[wf] ?? 'voltage source';
+  const vLabel = kind === 'rail' ? 'V = ' : 'Vd = ';
+  const lines = [
+    caption,
+    `I = ${formatValue(Math.abs(current), 'A')}`,
+    `${vLabel}${formatValue(Math.abs(voltage), 'V')}`,
+  ];
+  // DC, VAR and NOISE have no timebase to describe, so upstream skips the block
+  // (VoltageElm.java:478).
+  if (wf !== WF_DC && wf !== WF_VAR && wf !== WF_NOISE) {
+    const frequency = e.params.frequency ?? 0;
+    const maxVoltage = e.params.maxVoltage ?? 0;
+    const bias = e.params.bias ?? 0;
+    lines.push(`f = ${formatValue(frequency, 'Hz')}`);
+    lines.push(`Vmax = ${formatValue(maxVoltage, 'V')}`);
+    if (bias === 0) {
+      const rms = wf === WF_PULSE ? Math.sqrt(e.params.dutyCycle ?? 0.5) : WAVEFORM_RMS_MULTIPLIER[wf] ?? 1;
+      lines.push(`V(rms) = ${formatValue(maxVoltage * rms, 'V')}`);
+    } else {
+      lines.push(`Voff = ${formatValue(bias, 'V')}`);
+    }
+    // The wavelength rides only the zero-bias branch above (the else-if on
+    // frequency binds to the bias != 0 test), so a biased source never shows it.
+    if (bias === 0 && frequency > 500) {
+      lines.push(`wavelength = ${formatValue(2.9979e8 / frequency, 'm')}`);
+    }
+  }
+  lines.push(`P = ${formatValue(power, 'W')}`);
+  return lines;
+}
+
+/** The diode family's getInfo block (DiodeElm.java:183-193). A named model
+ *  appends "(model)" to the kind line like upstream's non-oldStyle branch; the
+ *  value form (a forward drop in params, no model name) gains the Vf line that
+ *  upstream's oldStyle branch appends. P is shared by the whole family. */
+function diodeFamilyLines(
+  kind: string,
+  e: CircuitElement,
+  current: number,
+  voltage: number,
+  power: number,
+): string[] {
+  const kindLabel = e.modelName != null ? `${kind} (${e.modelName})` : kind;
+  const lines = [
+    kindLabel,
+    `I = ${formatValue(Math.abs(current), 'A')}`,
+    `Vd = ${formatValue(Math.abs(voltage), 'V')}`,
+    `P = ${formatValue(power, 'W')}`,
+  ];
+  // A named model resolves its drop from the table and exposes no numeric Vf;
+  // only the value form (no model name) carries the drop upstream would print.
+  if (e.modelName == null) {
+    lines.push(`Vf = ${formatValue(e.params.forwardVoltage ?? 0, 'V')}`);
+  }
+  return lines;
+}
+
 /** The element's `getInfo` array (CircuitElm.java:1199-1203): the kind as the
  *  label line, then the shared `I =` / `Vd =` pair, then the kind-specific
  *  lines. I and Vd are magnitudes, upstream's `getCurrentDText` and
  *  `getVoltageDText` apply `Math.abs`; P uses the scope-convention power from
- *  the engine's array, the same source the live readout reads. Unknown kinds
- *  keep only the shared lines. */
+ *  the engine's array, the same source the live readout reads. The voltage
+ *  source, rail and diode family get their full upstream tables; switch
+ *  family, ground and wire and any unknown kind keep the shared pair only,
+ *  matching upstream's own short tables. Transistor junction rows
+ *  (Ic/Ib/Vbe/Vbc) need values the flat readback arrays do not carry, so they
+ *  are deliberately deferred (see the feature plan's Risks). */
 export function infoLines(kind: string, e: CircuitElement, values: InfoLinesValues): string[] {
   const current = values.current ?? 0;
   const voltage = values.voltage ?? 0;
-  const lines = [
+  const power = values.power ?? 0;
+  switch (kind) {
+    case 'voltage source':
+    case 'rail':
+      return voltageSourceLines(kind, e, current, voltage, power);
+    case 'diode':
+    case 'zener':
+    case 'led':
+    case 'varactor':
+      return diodeFamilyLines(kind, e, current, voltage, power);
+    case 'resistor':
+      return [
+        kind,
+        `I = ${formatValue(Math.abs(current), 'A')}`,
+        `Vd = ${formatValue(Math.abs(voltage), 'V')}`,
+        `R = ${formatValue(e.params.resistance ?? 0, 'Ω')}`,
+        `P = ${formatValue(power, 'W')}`,
+      ];
+    case 'capacitor':
+      return [
+        kind,
+        `I = ${formatValue(Math.abs(current), 'A')}`,
+        `Vd = ${formatValue(Math.abs(voltage), 'V')}`,
+        `C = ${formatValue(e.params.capacitance ?? 0, 'F')}`,
+        `P = ${formatValue(power, 'W')}`,
+        // Q is the signed stored charge, capacitance times the live terminal
+        // voltage (CapacitorElm.java:219), so it stays a signed value.
+        `Q = ${formatValue((e.params.capacitance ?? 0) * voltage, 'C')}`,
+      ];
+    case 'inductor':
+      return [
+        kind,
+        `I = ${formatValue(Math.abs(current), 'A')}`,
+        `Vd = ${formatValue(Math.abs(voltage), 'V')}`,
+        `L = ${formatValue(e.params.inductance ?? 0, 'H')}`,
+        `P = ${formatValue(power, 'W')}`,
+      ];
+  }
+  return [
     kind,
     `I = ${formatValue(Math.abs(current), 'A')}`,
     `Vd = ${formatValue(Math.abs(voltage), 'V')}`,
   ];
-  const power = values.power ?? 0;
-  switch (kind) {
-    case 'resistor':
-      lines.push(`R = ${formatValue(e.params.resistance ?? 0, 'Ω')}`);
-      lines.push(`P = ${formatValue(power, 'W')}`);
-      break;
-    case 'capacitor':
-      lines.push(`C = ${formatValue(e.params.capacitance ?? 0, 'F')}`);
-      lines.push(`P = ${formatValue(power, 'W')}`);
-      // Q is the signed stored charge, capacitance times the live terminal
-      // voltage (CapacitorElm.java:219), so it stays a signed value.
-      lines.push(`Q = ${formatValue((e.params.capacitance ?? 0) * voltage, 'C')}`);
-      break;
-    case 'inductor':
-      lines.push(`L = ${formatValue(e.params.inductance ?? 0, 'H')}`);
-      lines.push(`P = ${formatValue(power, 'W')}`);
-      break;
-  }
-  return lines;
 }
 
 /** Formats a plain number like upstream's `####.#` `showFormat` pattern: up to

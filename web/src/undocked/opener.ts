@@ -8,7 +8,12 @@
  */
 
 import type { CircuitElement, SimSettings } from '../model/types';
-import type { Scope, ScopeDrawSource, TriggerInfoLike } from '../engine/simulator';
+import type {
+  ElementReadoutSource,
+  Scope,
+  ScopeDrawSource,
+  TriggerInfoLike,
+} from '../engine/simulator';
 import { DEFAULT_SCOPE_WIDTH, scopeWidth } from '../scope/geometry';
 import {
   UNDOCKED_FRAME_TYPE,
@@ -16,6 +21,8 @@ import {
   type UndockedFrameMessage,
   type UndockedTraceFrame,
 } from './protocol';
+import { infoLines } from '../render/infoBox';
+import { readElementReadout } from '../ui/useLiveSimReadout';
 
 interface Attachment {
   win: Window;
@@ -118,8 +125,8 @@ export function buildUndockedFrame(args: {
   // The docked canvas' registered width: what the ring was sized against and
   // what the dock passes to triggerInfo, so the child reads consistent state.
   const width = scopeWidth(scope.id) ?? DEFAULT_SCOPE_WIDTH;
-  const kindById = new Map(elements.map((e) => [e.id, e.kind]));
-  const kinds: Record<number, string> = {};
+  const elmById = new Map(elements.map((e) => [e.id, e]));
+  const elmInfo: Record<number, string[]> = {};
   const traces: UndockedTraceFrame[] = [];
   for (const plot of scope.plots) {
     const index = source.scopeIndexOf(plot.id);
@@ -134,9 +141,13 @@ export function buildUndockedFrame(args: {
         scope.trigger.mode !== 'freeRun' ? triggerSnapshot(source.triggerInfo(index, width)) : null,
       xy: scope.plotXY ? copyOf(source.recentSamples(index)) : null,
     });
+    // Show Extended Info ships the element's full getInfo lines for the child,
+    // computed once here with the same closure the docked panel uses, so the
+    // popup needs no engine access (OVERVIEW.md: the undocked window is a
+    // display client). The readout rides arrays already read back per frame.
     if (plot.elementId !== null) {
-      const kind = kindById.get(plot.elementId);
-      if (kind !== undefined) kinds[plot.elementId] = kind;
+      const element = elmById.get(plot.elementId);
+      if (element) elmInfo[plot.elementId] = infoLines(element.kind, element, readElementReadout(source as ElementReadoutSource, plot.elementId));
     }
   }
   return {
@@ -153,7 +164,7 @@ export function buildUndockedFrame(args: {
       selectionColor: settings.selectionColor,
       currentColor: settings.currentColor,
     },
-    kinds,
+    elmInfo,
     title: scopeWindowTitle(scope.label),
     traces,
   };

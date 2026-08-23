@@ -59,8 +59,12 @@ export interface UndockedFrameMessage {
   /** The five user-settable colours makeTheme overlays; a null key keeps the
    *  palette default, exactly as in the main window. */
   colors: ThemeColors;
-  /** Element id to kind, for the Show Extended Info header line. */
-  kinds: Record<number, string>;
+  /** Element id to its full getInfo line list, for the Show Extended Info
+   *  header. The opener computes these once per frame with the same closure the
+   *  docked panel uses, so the popup renders an identical header with zero
+   *  engine access. Shipped as strings (a few bytes against the sample buffers
+   *  already transferred) rather than re-derived in the child. */
+  elmInfo: Record<number, string[]>;
   /** Window title: the scope label, or the fallback when it is unset. */
   title: string;
   traces: UndockedTraceFrame[];
@@ -92,6 +96,15 @@ export function isUndockedFrameMessage(value: unknown): value is UndockedFrameMe
     !Array.isArray(v.traces)
   ) {
     return false;
+  }
+  // The message once carried `kinds` (element id to kind) for the Show
+  // Extended Info header; it now carries the full `elmInfo` line lists. A frame
+  // stuck in the old shape would hand the child a string where drawScope
+  // expects an array, so the legacy field is rejected outright.
+  if ('kinds' in v) return false;
+  if (typeof v.elmInfo !== 'object' || v.elmInfo === null) return false;
+  for (const lines of Object.values(v.elmInfo as Record<string, unknown>)) {
+    if (!Array.isArray(lines) || !lines.every((s) => typeof s === 'string')) return false;
   }
   for (const trace of v.traces as unknown[]) {
     if (typeof trace !== 'object' || trace === null) return false;

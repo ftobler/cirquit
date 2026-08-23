@@ -334,6 +334,17 @@ export interface ScopeDrawSource {
   recentSamples(index: number): Float32Array;
 }
 
+/** The element operating-point readout the Show Extended Info header needs:
+ *  the same flat arrays `readElementReadout` reads, so a scope can build its
+ *  info lines without a fresh engine crossing. `ScopeDrawSource` carries the
+ *  scope-facing surface; this widens it with the three readout getters. */
+export interface ElementReadoutSource extends ScopeDrawSource {
+  indexOf(id: number): number | undefined;
+  elementCurrents(): Float64Array;
+  elementVoltages(): Float64Array;
+  elementPowers(): Float64Array;
+}
+
 /** A scope's capture width for engine sizing: its registered canvas width, or
  *  a sane fallback before the panel has measured it. */
 export type WidthResolver = (scopeId: number) => number | undefined;

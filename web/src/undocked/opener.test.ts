@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
-import type { Scope, ScopeDrawSource } from '../engine/simulator';
+import type { ElementReadoutSource, Scope, ScopeDrawSource } from '../engine/simulator';
 import {
   UNDOCKED_FRAME_TYPE,
   UNDOCKED_HELLO_TYPE,
@@ -30,7 +30,7 @@ type FakeWin = ReturnType<typeof fakeWindow>;
 
 /** A two-trace engine stub: the exact surface drawScope reads, which the
  *  builder consumes through the same narrow interface. */
-function stubSource(): ScopeDrawSource & { dataCalls: number[] } {
+function stubSource(): ElementReadoutSource & { dataCalls: number[] } {
   const traces = new Map<number, Float32Array>([
     [11, new Float32Array([0.1, 0.2, 0.3, 0.4])],
     [12, new Float32Array(4)],
@@ -41,6 +41,18 @@ function stubSource(): ScopeDrawSource & { dataCalls: number[] } {
     time: 0.005,
     scopeIndexOf(plotId: number) {
       return plotId === 11 ? 0 : plotId === 12 ? 1 : undefined;
+    },
+    indexOf(id: number) {
+      return id === 5 ? 0 : undefined;
+    },
+    elementCurrents() {
+      return new Float64Array([0, 0]);
+    },
+    elementVoltages() {
+      return new Float64Array([0, 0]);
+    },
+    elementPowers() {
+      return new Float64Array([0, 0]);
     },
     scopeData(index: number) {
       calls.push(index);
@@ -154,8 +166,15 @@ describe('buildUndockedFrame', () => {
     expect(message.traces[1].diverged).toBe(true);
     expect(message.traces[0].trigger).toBeNull();
     expect(message.traces[0].xy).toBeNull();
-    // The kind map feeds the child's Show Extended Info line.
-    expect(message.kinds).toEqual({ 5: 'resistor' });
+    // The element line list feeds the child's Show Extended Info header, the
+    // same getInfo lines the docked panel draws.
+    expect(message.elmInfo[5]).toEqual([
+      'resistor',
+      'I = 0 A',
+      'Vd = 0 V',
+      'R = 0 Ω',
+      'P = 0 W',
+    ]);
   });
 
   it('snapshots the trigger ring only in a triggered mode', () => {

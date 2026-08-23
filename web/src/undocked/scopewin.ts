@@ -89,7 +89,7 @@ function draw(): void {
     latest.dark,
     latest.decimalDigits,
     latest.colors,
-    (elementId: number) => latest?.kinds[elementId] ?? null,
+    (elementId: number) => latest?.elmInfo[elementId] ?? null,
   );
 }
 

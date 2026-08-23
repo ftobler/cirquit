@@ -298,6 +298,64 @@ describe('drawScope diverged caption', () => {
   });
 });
 
+/** Records every drawn text with its baseline y, so a test can assert the
+ *  Show Extended Info header stacks one line per info entry at the 15 px pitch
+ *  upstream uses (ScopeOverlays.java:179-192). */
+const mkCtxTextsY = (
+  w = 200,
+  h = 150,
+): { ctx: CanvasRenderingContext2D; entries: { text: string; y: number }[] } => {
+  const entries: { text: string; y: number }[] = [];
+  const base = mkCtx(w, h);
+  const ctx = {
+    ...base.ctx,
+    fillText: vi.fn((text: string, _x: number, y: number) => {
+      entries.push({ text, y });
+    }),
+  } as unknown as CanvasRenderingContext2D;
+  return { ctx, entries };
+};
+
+describe('drawScope showElmInfo header', () => {
+  const engine = captionEngine(false);
+
+  it('renders one text line per info line at the 15 px pitch', () => {
+    const scope = scopeOf([plot(1, 'voltage')], { showElmInfo: true });
+    const { ctx, entries } = mkCtxTextsY();
+    drawScope(ctx, engine, scope, 200, 120, emptyCursor(), 0, 5e-6, false, 3, undefined,
+      (id) => (id === 1 ? ['Source', 'I = 1 A', 'Vd = 2 V'] : null));
+    // The three info lines start at y = 4 and step 15 px (drawInfo line.y).
+    const ys = entries
+      .filter((e) => e.text === 'Source' || e.text === 'I = 1 A' || e.text === 'Vd = 2 V')
+      .map((e) => e.y);
+    expect(ys).toEqual([4, 19, 34]);
+  });
+
+  it('draws nothing extra when Show Extended Info is off', () => {
+    const scope = scopeOf([plot(1, 'voltage')], { showElmInfo: false });
+    const { ctx, entries } = mkCtxTextsY();
+    drawScope(ctx, engine, scope, 200, 120, emptyCursor(), 0, 5e-6, false, 3, undefined,
+      (id) => (id === 1 ? ['Source', 'I = 1 A', 'Vd = 2 V'] : null));
+    const texts = entries.map((e) => e.text);
+    expect(texts).not.toContain('Source');
+    expect(texts).not.toContain('I = 1 A');
+    expect(texts).not.toContain('Vd = 2 V');
+  });
+
+  it('still renders the block for a scope with no drawable trace', () => {
+    // The engine never registered the plot, so plots.length === 0; upstream's
+    // empty-plot drawElmInfo branch draws the readout anyway.
+    const noTrace = { scopeIndexOf: () => undefined, scopeDiverged: () => false } as unknown as SimEngine;
+    const scope = scopeOf([plot(1, 'voltage')], { showElmInfo: true });
+    const { ctx, entries } = mkCtxTextsY();
+    drawScope(ctx, noTrace, scope, 200, 120, emptyCursor(), 0, 5e-6, false, 3, undefined,
+      (id) => (id === 1 ? ['Source', 'P = 1 W'] : null));
+    const texts = entries.map((e) => e.text);
+    expect(texts).toContain('Source');
+    expect(texts).toContain('P = 1 W');
+  });
+});
+
 /** Every drawScope knob a colour test needs to vary. `dark` is the White
  *  Background flag inverted, `themeColors` the user's Other Options overrides,
  *  and `simTime` matters because the time grid and the cursor are both

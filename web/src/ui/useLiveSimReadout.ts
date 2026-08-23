@@ -5,7 +5,7 @@
  *  last re-rendered, frozen while the sim runs. */
 
 import { useEffect, useState } from 'react';
-import type { SimEngine } from '../engine/simulator';
+import type { ElementReadoutSource } from '../engine/simulator';
 
 export interface ElementReadout {
   current?: number;
@@ -17,7 +17,7 @@ export interface ElementReadout {
  *  the mapping is testable without React or a rAF; a missing engine, a missing
  *  selection, or an id the engine skipped all read as an empty readout. */
 export function readElementReadout(
-  engine: SimEngine | null,
+  engine: ElementReadoutSource | null,
   selectedId: number | undefined,
 ): ElementReadout {
   if (!engine || selectedId === undefined) return {};
@@ -52,7 +52,7 @@ export function tickReadout(
  *  plain state updates never touch the store, so the loop cannot fight the
  *  canvas's focus or selection logic. */
 export function useLiveSimReadout(
-  engine: SimEngine | null,
+  engine: ElementReadoutSource | null,
   selectedId: number | undefined,
 ): ElementReadout {
   const [readout, setReadout] = useState<ElementReadout>(() =>

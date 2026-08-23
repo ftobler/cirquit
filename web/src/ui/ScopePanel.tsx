@@ -31,6 +31,8 @@ import { useStore } from '../state/store';
 import { ScopeMenu } from './ScopeMenu';
 import { ScopeProperties } from './ScopeProperties';
 import { SimInfoPanel } from './SimInfoPanel';
+import { infoLines } from '../render/infoBox';
+import { readElementReadout } from './useLiveSimReadout';
 
 interface Props {
   engine: SimEngine | null;
@@ -113,7 +115,15 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
         dark,
         settings.decimalDigits,
         settings,
-        (id: number) => elementsRef.current.find((e) => e.id === id)?.kind ?? null,
+        (id: number) => {
+          // The Show Extended Info header draws the plotted element's full
+          // getInfo lines, the same ones the hover box shows, so the two
+          // surfaces cannot drift. The readout comes from the engine's already
+          // pulled-back flat arrays, never a fresh per-element crossing.
+          const element = elementsRef.current.find((e) => e.id === id);
+          if (!element) return null;
+          return infoLines(element.kind, element, readElementReadout(engine, id));
+        },
       );
     };
     raf = requestAnimationFrame(draw);

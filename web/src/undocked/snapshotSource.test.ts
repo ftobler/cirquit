@@ -17,7 +17,7 @@ function frameMessage(overrides: Partial<UndockedFrameMessage> = {}): UndockedFr
       selectionColor: null,
       currentColor: null,
     },
-    kinds: {},
+    elmInfo: {},
     title: 'Undocked Scope - Circuit Simulator',
     traces: [
       {
@@ -118,6 +118,11 @@ describe('SnapshotScopeSource', () => {
     for (const junk of [null, undefined, 42, {}, { type: 'undocked-frame' }, { type: 'other' }]) {
       expect(deliverToSource(source, junk)).toBe(false);
     }
+    // The legacy element-kind map is rejected: a frame stuck in the old shape
+    // would hand the child a string where drawScope expects a line array.
+    expect(
+      deliverToSource(source, { ...frameMessage(), kinds: { 5: 'resistor' } }),
+    ).toBe(false);
     // The rejected messages changed nothing.
     expect(source.time).toBeCloseTo(0.01);
   });
