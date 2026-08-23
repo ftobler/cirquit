@@ -795,6 +795,37 @@ describe('swapped op-amp toolbox tool', () => {
   });
 });
 
+describe('push-switch toolbox tool', () => {
+  // Upstream's Add Push Switch menu item places a PushSwitchElm, a SwitchElm
+  // constructed momentary (Menus.java:280, PushSwitchElm.java), which rests
+  // open at position 1 and conducts only while held. The port covers that
+  // with kind switch plus params.momentary, offered through a second toolbox
+  // entry the way the swapped op-amp reuses its kind.
+  it('places a switch with momentary set, resting open', () => {
+    const entry = TOOLBOX.find((t) => t.id === 'pushSwitch');
+    expect(entry).toBeDefined();
+    expect(entry?.kind).toBe('switch');
+    expect(entry?.category).toBe('Basics');
+
+    const placed = { ...makeToolElement('pushSwitch', 192, 160, 320, 160), id: 1 };
+    expect(placed.kind).toBe('switch');
+    expect(placed.params.momentary).toBe(1);
+    expect(placed.params.position).toBe(1);
+    expect(placed.state).toBe(1); // rest open, upstream's SwitchElm(xx, yy, true)
+  });
+
+  it('round-trips through the file format as a momentary switch', () => {
+    const placed = { ...makeToolElement('pushSwitch', 192, 160, 320, 160), id: 1 };
+    const text = serializeCircuit([placed], { ...DEFAULT_SETTINGS });
+    const line = text.split('\n').find((l) => l.startsWith('s '));
+    expect(line).toContain(' true'); // the momentary token
+    const back = parseCircuit(text).elements[0];
+    expect(back.kind).toBe('switch');
+    expect(back.params.momentary).toBe(1);
+    expect(back.state).toBe(1);
+  });
+});
+
 describe('transformer posts', () => {
   // Terminal coordinates must match upstream's getPost exactly or wires in
   // loaded circuits will not connect. These assert the corpus layouts.

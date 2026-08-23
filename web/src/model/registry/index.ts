@@ -359,6 +359,10 @@ export interface ToolboxEntry {
    *  with `OPAMP_SWAP` already on, upstream's `OpAmpSwapElm` (OpAmpSwapElm.java).
    *  Params cannot carry a flag, so a flag-only variant needs its own slot. */
   flags?: number;
+  /** The state an interactive part starts in when this tool places it: the
+   *  push switch rests open at position 1, upstream's momentary constructor
+   *  (SwitchElm.java:33-38), while every other interactive kind rests at 0. */
+  state?: number;
 }
 
 const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
@@ -439,6 +443,22 @@ const SWAPPED_OPAMPS: ToolboxEntry[] = [
   },
 ];
 
+/** The push switch reuses the `switch` kind and dump code `s`, differing only
+ *  in params.momentary and its open rest position, upstream's Add Push Switch
+ *  menu entry placing a momentary SwitchElm (Menus.java:280,
+ *  PushSwitchElm.java). A file written by either reloads as the same thing:
+ *  the momentary param is what makes it a push switch. */
+const PUSH_SWITCHES: ToolboxEntry[] = [
+  {
+    id: 'pushSwitch',
+    kind: 'switch',
+    label: 'Push Switch',
+    category: 'Basics',
+    defaults: { position: 1, momentary: 1 },
+    state: 1,
+  },
+];
+
 /** Every pickable tool, in display order within each category. */
 export const TOOLBOX: ToolboxEntry[] = [
   ...ELEMENT_DEFS.filter((d) => d.kind !== 'transistor' && d.kind !== 'mosfet' && d.kind !== 'jfet' && d.kind !== 'darlington').map((d) => ({
@@ -448,6 +468,7 @@ export const TOOLBOX: ToolboxEntry[] = [
     category: d.category,
   })),
   ...SPLIT_SEMICONDUCTORS,
+  ...PUSH_SWITCHES,
   ...SWAPPED_OPAMPS,
 ];
 

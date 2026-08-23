@@ -98,7 +98,8 @@ export function makeElement(kind: string, x1: number, y1: number, x2: number, y2
 }
 
 /** Builds a new element from a toolbox tool id, which may carry its own
- *  defaults on top of the kind's (the NPN/PNP and N-/P-channel splits). */
+ *  defaults on top of the kind's (the NPN/PNP and N-/P-channel splits), and
+ *  its own rest state for an interactive kind (the push switch rests open). */
 export function makeToolElement(tool: string, x1: number, y1: number, x2: number, y2: number) {
   const entry = toolboxEntry(tool);
   const def = defFor(entry.kind);
@@ -112,7 +113,7 @@ export function makeToolElement(tool: string, x1: number, y1: number, x2: number
     params: { ...(def?.defaults ?? {}), ...(entry.defaults ?? {}) },
     text: def?.defaultText,
     ...(def?.defaultModel !== undefined ? { model: def.defaultModel } : {}),
-    state: def?.interactive ? 0 : undefined,
+    state: def?.interactive ? (entry.state ?? 0) : undefined,
   });
 }
 
