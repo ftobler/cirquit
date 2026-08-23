@@ -8,6 +8,7 @@ import {
   batteryTypeTables,
   getVoltageForSoc,
   interpSocTable,
+  parseSocTable,
 } from './battery';
 import { BATTERY_SHOW_SOC, BATTERY_SHOW_VOLTAGE } from '../flags';
 import type { CircuitElement, DrawContext, FieldDef } from '../../types';
@@ -252,5 +253,48 @@ describe('battery', () => {
   it('the SOC caption tracks the live state and the SOC round percentage', () => {
     expect(captions(BATTERY_SHOW_SOC, 0.496)).toEqual(['50%']);
     expect(captions(BATTERY_SHOW_SOC, 0.501)).toEqual(['50%']);
+  });
+
+  it('sorts an out-of-order SOC table ascending on load', () => {
+    // The engine sorts its copy at construction (battery.rs), so a hand-typed
+    // out-of-order table must parse sorted or the saved file disagrees with
+    // what the simulation reads.
+    const src = '438 0 0 64 0 0 0.01 0.02 2000 2 50 -1 50=3.7\\n20=3.5\\n100=4.2\\n';
+    const [back] = parseCircuit(src).elements;
+    expect(back.model).toBe('20=3.5\n50=3.7\n100=4.2\n');
+    const out = serializeCircuit([back], DEFAULT_SETTINGS)
+      .split('\n')
+      .find((l) => l.startsWith('438 '))!;
+    // The writer escapes `=` as \q inside the token, so the saved table reads
+    // in ascending SOC order.
+    expect(out.endsWith('20\\q3.5\\n50\\q3.7\\n100\\q4.2\\n')).toBe(true);
+  });
+
+  it('keeps duplicate SOC entries in parse order, like the engine sort', () => {
+    const pairs = parseSocTable('10=1.1\n10=1.2\n0=1.0\n');
+    expect(pairs.map((p) => `${p.pct}=${p.volt}`)).toEqual(['0=1', '10=1.1', '10=1.2']);
+  });
+
+  it('interpolates the caption from the segment the sorted engine table uses', () => {
+    // At 35% the sorted table interpolates between (20,3.5) and (50,3.7);
+    // reading the raw order would clamp at the first pair and show 3.7 V.
+    const ctx = mkCtx();
+    const e = {
+      ...mk(),
+      flags: BATTERY_SHOW_VOLTAGE | BATTERY_SHOW_SOC,
+      model: '50=3.7\n20=3.5\n100=4.2\n',
+    };
+    BATTERY_DEF.draw(context(ctx, { state: 0.35 }), e);
+    expect(ctx.fillText.mock.calls.map((a: unknown[]) => String(a[0]))).toEqual(['3.6V 35%']);
+  });
+
+  it('saves an already-sorted table byte-for-byte', () => {
+    // The canonical written form escapes `=` as \q and newlines as \n inside
+    // the one token; a file whose table already ascends must round-trip
+    // untouched.
+    const line = '438 0 0 64 0 0 0.01 0.02 2000 2 50 -1 20\\q3.5\\n50\\q3.7\\n100\\q4.2\\n';
+    const [back] = parseCircuit(line).elements;
+    expect(back.model).toBe('20=3.5\n50=3.7\n100=4.2\n');
+    expect(serializeCircuit([back], DEFAULT_SETTINGS).split('\n').find((l) => l.startsWith('438 '))).toBe(line);
   });
 });

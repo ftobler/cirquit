@@ -61,9 +61,10 @@ export function batteryTypeOf(e: CircuitElement): number {
 }
 
 /** Splits the table into `(pct, volt)` pairs, skipping blank and malformed
- *  lines, the port of upstream's `parseSocTable` (BatteryElm.java:156-190).
- *  The draw's caption needs only the interpolation, so the pairs are kept
- *  unsorted exactly as parsed. */
+ *  lines, then sorts them ascending by SOC percent, stable so equal percents
+ *  keep their parse order like upstream's insertion sort (BatteryElm.java:
+ *  186-189). The engine sorts its own copy at construction too, so the caption
+ *  here must interpolate the same segment it stamps. */
 export function parseSocTable(text: string): { pct: number; volt: number }[] {
   const pairs: { pct: number; volt: number }[] = [];
   for (const rawLine of text.split('\n')) {
@@ -75,7 +76,33 @@ export function parseSocTable(text: string): { pct: number; volt: number }[] {
     const volt = Number(line.slice(eq + 1).trim());
     if (Number.isFinite(pct) && Number.isFinite(volt)) pairs.push({ pct, volt });
   }
+  pairs.sort((a, b) => a.pct - b.pct);
   return pairs;
+}
+
+/** The saved form of a table: every valid `pct=volt` line re-slotted ascending
+ *  by SOC percent while each line keeps its original text and every blank or
+ *  malformed line stays pinned in place. An already-ordered table therefore
+ *  comes back byte-for-byte, and only a genuinely out-of-order one normalizes
+ *  on save, matching what the engine reads after its construction sort. */
+export function normalizeSocTable(text: string): string {
+  const lines = text.split('\n');
+  const slots: number[] = [];
+  const keyed: { line: string; pct: number }[] = [];
+  lines.forEach((line, i) => {
+    const eq = line.indexOf('=');
+    const pct = eq < 0 ? NaN : Number(line.slice(0, eq).trim());
+    const volt = eq < 0 ? NaN : Number(line.slice(eq + 1).trim());
+    if (Number.isFinite(pct) && Number.isFinite(volt)) {
+      slots.push(i);
+      keyed.push({ line, pct });
+    }
+  });
+  keyed.sort((a, b) => a.pct - b.pct);
+  keyed.forEach((entry, k) => {
+    lines[slots[k]] = entry.line;
+  });
+  return lines.join('\n');
 }
 
 /** Piecewise-linear interpolation of the table by percent, with the empty
@@ -198,7 +225,7 @@ export const BATTERY_DEF: ElementDef = {
     }
     const bt = num(5);
     if (bt !== undefined) e.params.batteryType = bt;
-    if (t[6] !== undefined) e.model = t[6];
+    if (t[6] !== undefined) e.model = normalizeSocTable(t[6]);
   },
   dump: (e) => [
     e.params.r0 ?? 0.01,
