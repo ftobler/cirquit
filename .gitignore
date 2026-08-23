@@ -27,3 +27,5 @@ node_modules/
 .scratch/
 tmp/
 scratch/
+# agent worktree scratch space
+/temp/
