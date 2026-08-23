@@ -253,13 +253,19 @@ fetch it).
   same day: momentary holds on the pointer path now cover the make-before-break,
   DPDT and crossover switches (every kind whose parse reads the momentary
   token), the darlington reports upstream's composite getPower instead of the
-  trait default, a push switch joined the toolbox resting open through a new
+  trait default, a   push switch joined the toolbox resting open through a new
   optional rest-state field on toolbox entries, and the stale XML note in the
-  examples docs matches what parseCircuit actually does.
-- 506 Rust tests, of which 432 are the end-to-end circuit checks across
+  examples docs matches what parseCircuit actually does. The Find DC Operating
+  Point command landed on top: File menu row between Create Subcircuit and
+  Recover Auto-Save, engine `find_dc_operating_point` wrapping a reset under a
+  temporarily-true autoDC option, wasm and facade crossings carrying found /
+  degraded / singular distinctly (upstream surfaces the same three outcomes as
+  stop messages), with four Rust tests in the new dc_command.rs file and seven
+  TypeScript ones across the facade and menu-row suites.
+- 510 Rust tests, of which 436 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2757 TypeScript tests (one corpus report test skipped). The relay pulldown
+  2764 TypeScript tests (one corpus report test skipped). The relay pulldown
   parity fix added three Rust tests: the flag grounds an unwired throw in
   either settled position, a flag-clear guard keeps the old pole coupling,
   and the mid-travel position stamps identically with and without the flag.
