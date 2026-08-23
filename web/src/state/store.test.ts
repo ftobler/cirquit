@@ -237,6 +237,30 @@ describe('setText edits free text through the fast path', () => {
     expect(other?.text).toBeUndefined();
   });
 
+  it.each(['vccs', 'vcvs', 'cccs', 'ccvs'])(
+    'bumps revision when a controlled source Output Function is edited',
+    (kind) => {
+      const id = useStore.getState().addElement({
+        kind,
+        x1: 0,
+        y1: 0,
+        x2: 64,
+        y2: 0,
+        flags: 0,
+        params: { inputCount: 2 },
+        text: '.1*(a-b)',
+      });
+      const before = useStore.getState();
+
+      useStore.getState().setText(id, '2*(a-b)');
+
+      const after = useStore.getState();
+      expect(after.revision).toBe(before.revision + 1);
+      expect(after.paramRevision).toBe(before.paramRevision);
+      expect(after.elements.find((e) => e.id === id)?.text).toBe('2*(a-b)');
+    },
+  );
+
   it('a display-only text edit changes the text and leaves paramRevision untouched', () => {
     const id = addDecoration('old');
     const before = useStore.getState();

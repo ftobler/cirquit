@@ -1588,7 +1588,11 @@ function createAppStore() {
       const reload =
         target.kind === 'labeledNode' ||
         target.kind === 'customLogic' ||
-        target.kind === 'customComposite';
+        target.kind === 'customComposite' ||
+        // The controlled sources' Output Function rides in `e.text` and the
+        // engine only parses it at build time, so an edit must rebuild rather
+        // than take the display-only fast path (controlled_source.rs).
+        CS_INPUT_COUNT_KINDS.has(target.kind);
       return {
         elements: s.elements.map((e) => {
           if (e.id !== id) return e;
