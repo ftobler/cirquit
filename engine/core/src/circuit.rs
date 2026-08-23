@@ -109,6 +109,18 @@ pub struct StepReport {
     pub failing: Vec<u32>,
 }
 
+/// What the one-shot Find DC Operating Point command did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DcOutcome {
+    /// The operating point converged and its reactive state is committed,
+    /// so the transient resumes from the found point.
+    Found,
+    /// The nonlinear iteration did not converge, the documented
+    /// silent-degradation case: every element was reset and the state is
+    /// the uncharged start, identical to a plain reset.
+    Degraded,
+}
+
 /// Why a single timestep attempt failed, with the subiterations it burned
 /// before giving up so the caller can report them.
 #[derive(Debug, Clone)]
@@ -175,6 +187,11 @@ pub struct Circuit {
     scopes: Vec<ScopeTrace>,
     warnings: Vec<String>,
     error: Option<String>,
+    /// Whether the latest operating-point solve converged, kept so the
+    /// one-shot command can tell a degraded solve from a found one through
+    /// the plain [`Circuit::reset`] it wraps: `reset` has no channel for the
+    /// outcome beyond the hard-error side channel. True until the first solve.
+    last_dc_converged: bool,
 }
 
 impl Default for Circuit {
@@ -210,6 +227,7 @@ impl Circuit {
             scopes: Vec::new(),
             warnings: Vec::new(),
             error: None,
+            last_dc_converged: true,
         }
     }
 
@@ -1124,12 +1142,14 @@ impl Circuit {
     }
 
     /// Solves the circuit with reactive elements held at steady state, giving
-    /// transient analysis a sensible starting point. Errors only when a linear
-    /// circuit's DC matrix is singular: a nonlinear circuit can legitimately
-    /// have no operating point (a current source into a reverse diode), in
-    /// which case the transient degrades to the documented initial conditions
-    /// and the call still succeeds.
-    fn solve_operating_point(&mut self) -> Result<(), String> {
+    /// transient analysis a sensible starting point. `Ok(true)` means the
+    /// operating point converged and was committed; `Ok(false)` is the
+    /// documented silent-degradation case, a nonlinear circuit with no
+    /// operating point, where the elements were reset to the uncharged start.
+    /// Errors only when a linear circuit's DC matrix is singular: the circuit
+    /// is genuinely unsolvable and continuing would leave a poisoned
+    /// transient behind.
+    fn solve_operating_point(&mut self) -> Result<bool, String> {
         // Reactive elements stamp differently under DC (a capacitor as an
         // open circuit, an inductor as a short), so the matrix has to be built
         // for DC, used, and then rebuilt for transient stepping.
@@ -1141,6 +1161,9 @@ impl Circuit {
         let solved = self
             .try_step(self.options.time_step, self.options.max_subiterations)
             .is_ok();
+        // Recorded for [`Circuit::find_dc_operating_point`], which observes
+        // this solve only through the reset that ran it.
+        self.last_dc_converged = solved;
         self.ctx.dc_analysis = false;
         self.ctx.time = 0.0;
         if !solved {
@@ -1165,7 +1188,7 @@ impl Circuit {
             }
         }
         self.restamp()?;
-        Ok(())
+        Ok(solved)
     }
 
     /// A single timestep attempt at `dt`, running up to `budget` Newton
@@ -1777,6 +1800,34 @@ impl Circuit {
                 self.error = Some(e);
             }
         }
+    }
+
+    /// Runs upstream's File > Find DC Operating Point one-shot command: a
+    /// flag plus the ordinary reset action (CommandManager.java:361-364).
+    /// The port borrows every guard and normalisation of [`Circuit::reset`]
+    /// by flipping `options.dc_operating_point` around the plain reset
+    /// instead of duplicating it: the clock and adaptive-dt fields rewind,
+    /// scopes clear, a converged solve commits its reactive state and a
+    /// failed one leaves the uncharged start. Run state is otherwise left
+    /// alone, matching this port's Reset rather than upstream's force-start
+    /// at t == 0. A hard engine failure recorded by the reset (a singular
+    /// linear matrix, a broken stamp) comes back as `Err` with that message;
+    /// the option is restored on every path.
+    pub fn find_dc_operating_point(&mut self) -> Result<DcOutcome, String> {
+        let saved = self.options.dc_operating_point;
+        self.options.dc_operating_point = true;
+        self.reset();
+        self.options.dc_operating_point = saved;
+        // reset clears `error` before it runs, so whatever sits here was
+        // recorded by this command's own reset.
+        if let Some(e) = self.error.clone() {
+            return Err(e);
+        }
+        Ok(if self.last_dc_converged {
+            DcOutcome::Found
+        } else {
+            DcOutcome::Degraded
+        })
     }
 
     /// Live parameter edit from the UI. Returns false if the id is unknown or

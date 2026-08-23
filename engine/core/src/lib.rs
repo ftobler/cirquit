@@ -41,7 +41,7 @@ pub mod sparse;
 pub mod spec;
 pub mod stamp;
 
-pub use circuit::{Circuit, StepReport};
+pub use circuit::{Circuit, DcOutcome, StepReport};
 pub use element::{Element, SimCtx};
 pub use elements::KINDS;
 pub use matrix::SolverBackend;
