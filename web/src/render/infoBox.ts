@@ -141,7 +141,7 @@ function diodeFamilyHeader(kind: string, e: CircuitElement): string {
 }
 
 /** The diode family's getInfo block (DiodeElm.java:183-193). I and Vd use
- *  upstream's signed getCurrentText/getVoltageText (:184-185), not the
+ *  upstream's signed getCurrentText/getVoltageText (:188-189), not the
  *  magnitude D-text variants, so a reverse-biased junction reads negative.
  *  The value form (a forward drop in params, no model name) gains the Vf
  *  line that upstream's oldStyle branch appends. P is shared by the whole

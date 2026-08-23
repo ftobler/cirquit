@@ -173,6 +173,16 @@ impl Element for BipolarTransistor {
         self.base.current = self.ic;
     }
 
+    fn power(&self) -> f64 {
+        // Upstream's getPower (TransistorElm.java:206-208): raw junction
+        // volts times the polarity-scaled terminal currents. The default
+        // `voltage_diff * current` would read Vbc*Ic here, which even has the
+        // wrong sign in the active region, so the power scope and the info
+        // box's P row would both misreport an absorbing device as delivering.
+        let v = &self.base.volts;
+        (v[0] - v[2]) * self.ib + (v[1] - v[2]) * self.ic
+    }
+
     /// The pin plots, upstream's `getScopeValue` (TransistorElm.java:582-593).
     /// Voltages read the live terminal volts raw, exactly as upstream returns
     /// them unscaled by polarity; currents are the reported (polarity-scaled)

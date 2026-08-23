@@ -678,6 +678,26 @@ fn transistor_scope_currents_match_the_analytic_operating_point() {
 }
 
 #[test]
+fn transistor_power_matches_upstreams_get_power() {
+    // Upstream's getPower (TransistorElm.java:206-208) is Vbe*Ib + Vce*Ic on
+    // the raw node volts, so an active NPN dissipating ~4.3 mW reads positive.
+    // The flat power array feeds both the Power scope trace and the info
+    // box's P row, so it must carry that same figure, not Vbc*Ic.
+    let c = &mut biased_common_emitter();
+    c.run(50);
+
+    let sv = c.element_scope_values(4);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let (nb, nc, ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+    let expect = (v[nb] - v[ne]) * sv[0] + (v[nc] - v[ne]) * sv[1];
+
+    let p = c.element_powers()[3];
+    assert!(close(p, expect, 1e-12), "power {p} vs getPower {expect}");
+    assert!(p > 0.0, "an absorbing stage read {p}");
+}
+
+#[test]
 fn element_scope_values_walks_the_declared_table_in_order() {
     // At this bias every slot carries a distinguishable value with its own
     // sign pattern, so any permutation fails: [Ib, Ic, Ie, Vbe, Vbc, Vce]

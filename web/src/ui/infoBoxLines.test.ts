@@ -25,12 +25,13 @@ const engine: SimEngine = {
 
 /** A biased NPN stage's live readout: the flat-array triple plus the
  *  scope-value table [ib, ic, ie, vbe, vbc, vce] in the engine's declared
- *  order, active region at beta 100 into a 1 k load. */
+ *  order, active region at beta 100 into a 1 k load. The power entry is
+ *  upstream's getPower, Vbe*Ib + Vce*Ic = 0.65*9µ + 4.65*920µ. */
 const transistorEngine: SimEngine = {
   indexOf: (id: number) => (id === 1 ? 0 : undefined),
   elementCurrents: () => new Float64Array([9.2e-4]),
   elementVoltages: () => new Float64Array([-4]),
-  elementPowers: () => new Float64Array([-0.00368]),
+  elementPowers: () => new Float64Array([0.00428385]),
   elementScopeValues: () => new Float64Array([9e-6, 9.2e-4, -9.29e-4, 0.65, -4, 4.65]),
   time: 0.01,
 } as unknown as SimEngine;
@@ -66,7 +67,7 @@ describe('infoBoxLines', () => {
       'Vbe = 650m V',
       'Vbc = -4 V',
       'Vce = 4.65 V',
-      'P = -3.68m W',
+      'P = 4.284m W',
     ]);
   });
 

@@ -192,7 +192,7 @@ describe('infoLines', () => {
 
   it('prints signed current and voltage on the diode table', () => {
     // A reverse-biased junction carries negative current at negative Vd,
-    // exactly what upstream's signed rows show (DiodeElm.java:184-185).
+    // exactly what upstream's signed rows show (DiodeElm.java:188-189).
     expect(
       infoLines('diode', el('diode', { forwardVoltage: 0.7 }), { current: -0.01, voltage: -5, power: 0.05 }),
     ).toEqual([
@@ -226,11 +226,11 @@ describe('infoLines', () => {
   });
 
   it('builds the nine upstream rows for an NPN in the active region', () => {
+    // P is upstream's getPower (TransistorElm.java:206-208), Vbe*Ib + Vce*Ic
+    // = 0.65*9µ + 4.65*920µ ≈ 4.284 mW absorbed, positive.
     expect(
       infoLines('transistor', el('transistor', { pnp: 1, beta: 100 }, '2N2222'), {
-        current: 9.2e-4,
-        voltage: -4,
-        power: -0.00368,
+        power: 0.00428385,
         scopeValues: transistorScope(9e-6, 9.2e-4, 0.65, -4),
       }),
     ).toEqual([
@@ -242,30 +242,31 @@ describe('infoLines', () => {
       'Vbe = 650m V',
       'Vbc = -4 V',
       'Vce = 4.65 V',
-      'P = -3.68m W',
+      'P = 4.284m W',
     ]);
   });
 
   it('prints the PNP header and the raw signed junction rows', () => {
-    // The engine reports polarity-scaled terminal currents (positive into
-    // the device) beside raw node-difference voltages, so a conducting PNP
-    // reads positive Ic/Ib next to a negative Vbe, exactly what upstream
-    // prints through the signed getVoltageText.
+    // The engine scales terminal currents by the polarity sign exactly as
+    // upstream stores them (TransistorElm.java:455-457), so a conducting PNP
+    // reads negative Ic/Ib beside its negative raw Vbe/Vce and positive Vbc,
+    // which is what upstream's signed rows print. P stays positive: raw
+    // junction volts times the signed currents.
     expect(
       infoLines('transistor', el('transistor', { pnp: -1, beta: 50 }), {
-        power: 0.002,
-        scopeValues: transistorScope(8e-6, 8e-4, -0.65, 4),
+        power: 0.0037252,
+        scopeValues: transistorScope(-8e-6, -8e-4, -0.65, 4),
       }),
     ).toEqual([
       'transistor (PNP)',
       'default, β=50',
       'fwd active',
-      'Ic = 800µ A',
-      'Ib = 8µ A',
+      'Ic = -800µ A',
+      'Ib = -8µ A',
       'Vbe = -650m V',
       'Vbc = 4 V',
       'Vce = -4.65 V',
-      'P = 2m W',
+      'P = 3.725m W',
     ]);
   });
 
