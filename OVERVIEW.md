@@ -230,7 +230,7 @@ fetch it).
 - 491 Rust tests, of which 417 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2691 TypeScript tests (one corpus report test skipped). The bus-label-width
+  2702 TypeScript tests (one corpus report test skipped). The bus-label-width
   branch added 14 of them, all plain additions over its base: 11 in
   busWidths.test.ts, one each in junction.test.ts, infoBoxLines.test.ts and
   registry.test.ts. The op-amp LM324 work added seven Rust tests (the two
@@ -254,7 +254,9 @@ fetch it).
   feature added 7 more across the registry, store and pointer-down suites, and
   the subcircuit drill-in feature added 25 more across the compositeDocument
   and store.subcircuit suites (single-level model editing, the context-stack
-  undo/reset, and the nested-subcircuit deferral).
+  undo/reset, and the nested-subcircuit deferral), and the scope Show Extended
+  Info feature added 11 more across the infoBox, scope draw and undocked suites
+  (the shared infoLines table, the header loop and the protocol swap).
   CI runs fmt, clippy, tests, typecheck, lint and build,
   then deploys to Pages.
 
