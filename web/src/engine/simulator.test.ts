@@ -704,6 +704,79 @@ describe('SimEngine run converts wasm throws into error flags', () => {
   });
 });
 
+describe('SimEngine findDcOperatingPoint', () => {
+  // The command is a whole reset under a temporarily-true DC option: success
+  // rewinds the clock and commits the found steady state into the reactive
+  // elements, so the RC fixture reads charged at t = 0 afterwards.
+  const RC: CircuitElement[] = [
+    { id: 1, kind: 'voltage', x1: 0, y1: 100, x2: 0, y2: 0, flags: 0, params: { maxVoltage: 10 } },
+    {
+      id: 2,
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 100,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    },
+    {
+      id: 3,
+      kind: 'capacitor',
+      x1: 100,
+      y1: 0,
+      x2: 100,
+      y2: 100,
+      flags: 0,
+      params: { capacitance: 1e-6, voltDiff: 0 },
+    },
+    { id: 4, kind: 'wire', x1: 100, y1: 100, x2: 0, y2: 100, flags: 0, params: {} },
+    { id: 5, kind: 'ground', x1: 0, y1: 100, x2: 0, y2: 132, flags: 0, params: {} },
+  ];
+
+  it('returns null on success, the setCircuit convention', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(RC, DEFAULT_SETTINGS, [])).toBeNull();
+    expect(engine.findDcOperatingPoint()).toBeNull();
+
+    // Found means solved and committed: back at t = 0 with the cap charged to
+    // the divider's steady value through the DC open's tiny drop.
+    expect(engine.time).toBe(0);
+    const idx = engine.indexOf(3)!;
+    expect(engine.elementVoltages()[idx]).toBeGreaterThan(9.99);
+  });
+
+  it('returns "degraded" when the nonlinear solve finds no operating point', async () => {
+    // A current source into a reverse diode has none; the documented
+    // degradation leaves the uncharged start.
+    const NO_POINT: CircuitElement[] = [
+      { id: 1, kind: 'current', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: { current: 0.01 } },
+      { id: 2, kind: 'diode', x1: 200, y1: 0, x2: 100, y2: 0, flags: 0, params: {} },
+      { id: 3, kind: 'ground', x1: 0, y1: 0, x2: 0, y2: 32, flags: 0, params: {} },
+      { id: 4, kind: 'ground', x1: 200, y1: 0, x2: 200, y2: 32, flags: 0, params: {} },
+    ];
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(NO_POINT, DEFAULT_SETTINGS, [])).toBeNull();
+    expect(engine.findDcOperatingPoint()).toBe('degraded');
+    expect(engine.nodeVoltages().every((v) => v === 0)).toBe(true);
+  });
+
+  it('returns an error string on singular input', async () => {
+    // A rail and a source fighting over one node is singular. As a linear
+    // circuit it is rejected by setCircuit's eager factor before any command
+    // could run, so this pins that the rejection carries the engine message
+    // the menubar routes to the problem banner.
+    const SINGULAR: CircuitElement[] = [
+      { id: 1, kind: 'rail', x1: 0, y1: 0, x2: 0, y2: 0, flags: 0, params: { maxVoltage: 5 } },
+      { id: 2, kind: 'voltage', x1: 0, y1: 0, x2: 0, y2: 100, flags: 0, params: { maxVoltage: 10 } },
+      { id: 3, kind: 'ground', x1: 0, y1: 100, x2: 0, y2: 132, flags: 0, params: {} },
+    ];
+    const engine = await SimEngine.create();
+    const err = engine.setCircuit(SINGULAR, DEFAULT_SETTINGS, []);
+    expect(err).toContain('no solution');
+  });
+});
+
 describe('SimEngine clearStops facade', () => {
   const STOP: CircuitElement[] = [
     {

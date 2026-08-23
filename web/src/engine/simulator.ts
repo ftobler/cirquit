@@ -586,6 +586,25 @@ export class SimEngine {
     this.sim.reset();
   }
 
+  /**
+   * Runs the one-shot Find DC Operating Point command: a whole reset under a
+   * temporarily-true DC option, so the clock rewinds and a converged solve
+   * commits its steady state into the reactive elements. Returns null on
+   * success (the `setCircuit` convention), the sentinel "degraded" when the
+   * nonlinear iteration found no operating point, or the engine's error
+   * message when the reset recorded a hard failure.
+   */
+  findDcOperatingPoint(): string | null {
+    try {
+      // The engine spells success "found"; this surface keeps setCircuit's
+      // convention that null means success, passing "degraded" through.
+      const outcome = this.sim.findDcOperatingPoint();
+      return outcome === 'found' ? null : outcome;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  }
+
   /** Re-arms the stop triggers without rewinding time, so a simulation paused
    *  by a stop trigger can resume. The frame loop calls this when `running`
    *  goes false -> true; the latches clear only here and on reset. */

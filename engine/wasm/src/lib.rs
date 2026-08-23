@@ -4,7 +4,7 @@
 //! Everything crossing the boundary is either a plain number or a flat typed
 //! array, so a frame costs one call rather than one call per element.
 
-use circuit_core::{Circuit, CircuitSpec};
+use circuit_core::{Circuit, CircuitSpec, DcOutcome};
 use wasm_bindgen::prelude::*;
 
 /// Installs a panic hook that reports Rust panics to the browser console.
@@ -184,6 +184,20 @@ impl Simulator {
 
     pub fn reset(&mut self) {
         self.circuit.reset();
+    }
+
+    /// Runs the one-shot Find DC Operating Point command: a whole reset under
+    /// a temporarily-true DC option, upstream's dcAnalysisFlag plus
+    /// resetAction (CommandManager.java:361-364). Returns "found" or
+    /// "degraded"; a hard engine failure throws with the engine message, the
+    /// `setCircuit` precedent for the only crossings that carry a rich error.
+    #[wasm_bindgen(js_name = findDcOperatingPoint)]
+    pub fn find_dc_operating_point(&mut self) -> Result<String, JsError> {
+        match self.circuit.find_dc_operating_point() {
+            Ok(DcOutcome::Found) => Ok("found".into()),
+            Ok(DcOutcome::Degraded) => Ok("degraded".into()),
+            Err(e) => Err(JsError::new(&e)),
+        }
     }
 
     /// Re-arms the stop triggers so a simulation paused by one can resume
