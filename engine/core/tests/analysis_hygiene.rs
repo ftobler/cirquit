@@ -179,3 +179,43 @@ fn resets_do_not_grow_the_warning_vector() {
     }
     assert_eq!(c.warnings().len(), 1);
 }
+
+#[test]
+fn the_floor_timestep_is_attempted_before_giving_up() {
+    // A compliance crossing whose endpoint sits deep in the tanh roll-off
+    // needs more Newton iterations than the budget of 4 allows at 5e-6 and
+    // again at 2.5e-6, and settles at the fourth attempt value, 1.25e-6.
+    // With min_time_step = 1.25e-6 the old strict shrink guard refused
+    // that last halving: 2.5e-6 was the smallest step ever attempted, it
+    // got the relaxed 5000 budget, and the run recovered there, so no step
+    // ever reported two rejections. Upstream halves first and stops only
+    // when the halved value drops below the minimum
+    // (SimulationManager.java:1391-1400), so the floor value itself gets
+    // tried, and the corrected guard reproduces that: two rejections,
+    // every halving counted, committing at exactly the floor.
+    let mut c = build(compliance_circuit(0.0), adaptive_opts(5e-6, 1.25e-6, 4));
+    // Crossings recur over the 20 kHz period; 200 steps span plenty.
+    let mut floored = None;
+    for _ in 0..200 {
+        let report = c.run(1);
+        assert!(
+            report.converged,
+            "a halving chain must end in a commit: {:?}",
+            report.error
+        );
+        if report.rejected_steps >= 2 {
+            floored = Some(report);
+            break;
+        }
+    }
+    let report = floored.expect("no step ever walked both halvings down");
+    assert_eq!(
+        report.rejected_steps, 2,
+        "both halvings should count as rejected attempts"
+    );
+    assert!(
+        close(report.time_step, 1.25e-6, 1e-15),
+        "the committed step was {}",
+        report.time_step
+    );
+}

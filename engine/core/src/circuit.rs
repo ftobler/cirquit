@@ -1367,11 +1367,20 @@ impl Circuit {
 
         let mut step = self.current_time_step;
         loop {
-            // The 100-budget applies only while the step can still be halved;
-            // at the floor (or with adaptation off) the budget relaxes so the
-            // solver gets every chance before failing, matching upstream's
-            // subiterCount rule (SimulationManager.java:1328).
-            let can_shrink = self.options.adaptive && step / 2.0 > self.options.min_time_step;
+            // While the step can still be halved, a failed attempt has a
+            // smaller fallback waiting, so it only burns the normal Newton
+            // budget. The `>=` matters: upstream halves first and stops only
+            // when the halved value drops below the minimum
+            // (SimulationManager.java:1391-1400), so the floor value itself
+            // is always attempted, and a circuit that converges only below
+            // twice the floor recovers instead of stopping one halving
+            // early. The floor attempt runs at the relaxed 5000-iteration
+            // budget, matching upstream's last-chance budget at the floor
+            // (SimulationManager.java:1328). Above the floor the port
+            // deliberately keeps its own documented max_subiterations
+            // rather than upstream's 100: the gmin ramps engage around
+            // subiter 100 and need room to climb (see SimOptions).
+            let can_shrink = self.options.adaptive && step / 2.0 >= self.options.min_time_step;
             let budget = if self.options.adaptive && !can_shrink {
                 5000
             } else {

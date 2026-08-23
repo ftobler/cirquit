@@ -691,11 +691,12 @@ fn easy_steps_double_the_timestep_back_to_max() {
 fn step_hitting_the_floor_falls_back_to_5000_and_stops_cleanly() {
     // A BJT with its base forced to a 100 V square wave. The cold start's vbe
     // is deep in exponential saturation and even the relaxed 5000-iteration
-    // floor budget cannot settle the first step at dt = 2.5e-6 (probing
-    // measured >5000 iterations needed), so the run must stop with the error
-    // set and the clock still at zero. min_time_step = 1.25e-6 lands the
-    // first halving exactly on the floor: 5e-6/2 = 2.5e-6 can no longer be
-    // halved, which is what forces the 5000 budget.
+    // budget cannot settle the first step (probing measured >5000 iterations
+    // needed at every step size the halving chain reaches), so the run must
+    // stop with the error set and the clock still at zero. min_time_step =
+    // 1.25e-6 walks both halvings down to the floor, 5e-6 then 2.5e-6 then
+    // 1.25e-6, and it is the floor attempt that gets the 5000 budget,
+    // because no smaller step exists behind it.
     let els = vec![
         elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
         elm(
