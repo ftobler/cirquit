@@ -8,6 +8,7 @@ import {
   batteryTypeTables,
   getVoltageForSoc,
   interpSocTable,
+  normalizeSocTable,
   parseSocTable,
 } from './battery';
 import { BATTERY_SHOW_SOC, BATTERY_SHOW_VOLTAGE } from '../flags';
@@ -273,6 +274,16 @@ describe('battery', () => {
   it('keeps duplicate SOC entries in parse order, like the engine sort', () => {
     const pairs = parseSocTable('10=1.1\n10=1.2\n0=1.0\n');
     expect(pairs.map((p) => `${p.pct}=${p.volt}`)).toEqual(['0=1', '10=1.1', '10=1.2']);
+  });
+
+  it('re-slots only the valid rows and pins every other line in place', () => {
+    // Blank and malformed lines carry no SOC to sort by, so they keep their
+    // slots while the valid lines move around them: a load/save cycle must
+    // never lose or reorder file text the table parser merely tolerates.
+    expect(normalizeSocTable('50=3.7\njunk\n20=3.5')).toBe('20=3.5\njunk\n50=3.7');
+    expect(normalizeSocTable('\n50=3.7\n\n20=3.5\n')).toBe('\n20=3.5\n\n50=3.7\n');
+    expect(normalizeSocTable('50=x\n')).toBe('50=x\n');
+    expect(normalizeSocTable('')).toBe('');
   });
 
   it('interpolates the caption from the segment the sorted engine table uses', () => {

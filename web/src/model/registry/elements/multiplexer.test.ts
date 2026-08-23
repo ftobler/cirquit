@@ -109,6 +109,17 @@ describe('multiplexer bus/bus input mode', () => {
     expect(back.split('\n').find((l) => l.startsWith('184 '))).toBe(line);
   });
 
+  it('reads a lone 1 token as a width too, which the old parser dropped', () => {
+    // Widths 1 and 2 are the common hand-edited ones; before the guard a
+    // bare `1` matched the deferred bus/bit mode, set nothing and the next
+    // save silently rewrote the width away.
+    const parsed = parseCircuit('184 0 0 64 0 0 2 1').elements[0];
+    expect(parsed.params.inputMode).toBeUndefined();
+    expect(parsed.params.dataBusWidth).toBe(1);
+    const back = serializeCircuit([parsed], DEFAULT_SETTINGS);
+    expect(back.split('\n').find((l) => l.startsWith('184 '))).toBe('184 0 0 64 0 0 2 1');
+  });
+
   it('still reads the two-token inputMode pair into bus/bus mode', () => {
     // The converter emits exactly `<inputMode> <dataBusWidth>` for im="2"
     // (xmlToText.ts), so a genuine pair keeps parsing into the bus layout.
