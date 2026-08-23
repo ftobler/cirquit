@@ -396,11 +396,11 @@ describe('momentary logic inputs', () => {
   });
 });
 
-describe('momentary MBB and DPDT switches', () => {
+describe('momentary MBB, DPDT and cross switches', () => {
   it('a momentary DPDT throws on press and returns to rest on release', () => {
     // Upstream releases through the inherited mouseUp, one toggle per event
     // (SwitchElm.mouseUp via MouseManager.java:1261-1263), and a DPDT has
-    // posCount 2 (DPDTSwitchElm.java:66), so the release step lands back on
+    // posCount 2 (DPDTSwitchElm.java:63), so the release step lands back on
     // the rest position.
     const id = addEl('dpdtSwitch', { params: { position: 0, momentary: 1 } });
     const r = refs();
@@ -408,6 +408,22 @@ describe('momentary MBB and DPDT switches', () => {
     expect(hit(id).state).toBe(1);
     expect(r.heldMomentaryRef.current).toBe(id);
     expect(r.dragRef.current).toEqual({ mode: 'none' });
+    releaseHeldMomentary(1, r);
+    expect(hit(id).state).toBe(0);
+    expect(r.heldMomentaryRef.current).toBeNull();
+  });
+
+  it('a momentary cross switch throws on press and returns to rest on release', () => {
+    // The cross switch is a SwitchElm subclass too (CrossSwitchElm.java:22)
+    // and its file format carries the same momentary token, so upstream's
+    // doSwitch arms a hold for it exactly as for the others; leaving it off
+    // the arming list would strand a loaded `430 ... true` in its thrown
+    // state after one click.
+    const id = addEl('crossSwitch', { params: { position: 0, momentary: 1 } });
+    const r = refs();
+    beginPointerGesture(down(), { x: 80, y: 24 }, useStore.getState(), hit(id), false, r);
+    expect(hit(id).state).toBe(1);
+    expect(r.heldMomentaryRef.current).toBe(id);
     releaseHeldMomentary(1, r);
     expect(hit(id).state).toBe(0);
     expect(r.heldMomentaryRef.current).toBeNull();
@@ -445,18 +461,22 @@ describe('momentary MBB and DPDT switches', () => {
     expect(hit(b).state).toBe(2); // the gang stepped together
   });
 
-  it('non-momentary MBB and DPDT single-toggle and arm no hold at all', () => {
+  it('non-momentary MBB, DPDT and cross switches single-toggle and arm no hold', () => {
     const mbb = addEl('mbbSwitch');
     const dpdt = addEl('dpdtSwitch');
+    const cross = addEl('crossSwitch');
     const r = refs();
     beginPointerGesture(down(), { x: 96, y: -15 }, useStore.getState(), hit(mbb), false, r);
     beginPointerGesture(down(), { x: 80, y: 0 }, useStore.getState(), hit(dpdt), false, r);
+    beginPointerGesture(down(), { x: 80, y: 24 }, useStore.getState(), hit(cross), false, r);
     expect(hit(mbb).state).toBe(1);
     expect(hit(dpdt).state).toBe(1);
+    expect(hit(cross).state).toBe(1);
     expect(r.heldMomentaryRef.current).toBeNull();
     releaseHeldMomentary(1, r);
     expect(hit(mbb).state).toBe(1);
     expect(hit(dpdt).state).toBe(1);
+    expect(hit(cross).state).toBe(1);
   });
 });
 

@@ -353,12 +353,16 @@ export function beginPointerGesture(
     if (def?.interactive && !ev.altKey && !ev.ctrlKey) {
       const rect = def.switchRect?.(hit);
       if (rect === undefined || rectContains(rect, p)) {
+        // This list is every kind whose parse reads the SwitchElm momentary
+        // token, so it must track the registry: a momentary kind left out
+        // here toggles once on click and never returns to rest.
         const momentary =
           (hit.kind === 'switch' ||
             hit.kind === 'logicInput' ||
             hit.kind === 'switch2' ||
             hit.kind === 'mbbSwitch' ||
-            hit.kind === 'dpdtSwitch') &&
+            hit.kind === 'dpdtSwitch' ||
+            hit.kind === 'crossSwitch') &&
           (hit.params.momentary ?? 0) !== 0;
         // The next state respects the part's range: binary for a plain switch
         // and two-level logic input, `throwCount` throws for an SPDT, and the
