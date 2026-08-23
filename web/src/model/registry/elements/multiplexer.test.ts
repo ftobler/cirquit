@@ -95,4 +95,38 @@ describe('multiplexer bus/bus input mode', () => {
     const back = serializeCircuit([parsed], DEFAULT_SETTINGS);
     expect(back.split('\n').find((l) => l.startsWith('184 '))).toBe(line);
   });
+
+  it('reads a lone trailing token as the data bus width of a mode-0 line', () => {
+    // The dump writes a bare dataBusWidth in mode 0 whenever it differs from
+    // 4, so a single small token must stay a width: reading it as inputMode
+    // would silently flip a hand-edited mode-0 line into the grouped bus/bus
+    // layout and strand its wires.
+    const line = '184 0 0 64 0 0 2 2';
+    const parsed = parseCircuit(line).elements[0];
+    expect(parsed.params.inputMode).toBeUndefined();
+    expect(parsed.params.dataBusWidth).toBe(2);
+    const back = serializeCircuit([parsed], DEFAULT_SETTINGS);
+    expect(back.split('\n').find((l) => l.startsWith('184 '))).toBe(line);
+  });
+
+  it('still reads the two-token inputMode pair into bus/bus mode', () => {
+    // The converter emits exactly `<inputMode> <dataBusWidth>` for im="2"
+    // (xmlToText.ts), so a genuine pair keeps parsing into the bus layout.
+    const line = '184 0 0 64 0 0 1 2 3';
+    const parsed = parseCircuit(line).elements[0];
+    expect(parsed.params.inputMode).toBe(MUX_INPUT_MODE_BUS_BUS);
+    expect(parsed.params.dataBusWidth).toBe(3);
+    const back = serializeCircuit([parsed], DEFAULT_SETTINGS);
+    expect(back.split('\n').find((l) => l.startsWith('184 '))).toBe(line);
+  });
+
+  it('degrades a three-token tail without flipping the input mode', () => {
+    // Only exactly two trailing tokens led by 1 or 2 mean the pair; anything
+    // longer falls back to the leading token as a width.
+    const parsed = parseCircuit('184 0 0 64 0 0 2 2 4 7').elements[0];
+    expect(parsed.params.inputMode).toBeUndefined();
+    expect(parsed.params.dataBusWidth).toBe(2);
+    const back = serializeCircuit([parsed], DEFAULT_SETTINGS);
+    expect(back.split('\n').find((l) => l.startsWith('184 '))).toBe('184 0 0 64 0 0 2 2');
+  });
 });

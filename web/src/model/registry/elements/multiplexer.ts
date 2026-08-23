@@ -200,11 +200,14 @@ export const MULTIPLEXER_DEF: ElementDef = {
       .slice(i + 1)
       .map(Number)
       .filter((v) => Number.isFinite(v));
-    // extra[0] is inputMode (1 or 2) when present, otherwise the lone
-    // dataBusWidth token of a mode-0 line that still carries a width.
-    if (extra.length >= 1 && (extra[0] === 1 || extra[0] === 2)) {
+    // The `<inputMode> <dataBusWidth>` pair is recognised only as exactly two
+    // trailing tokens led by 1 or 2. The dump writes a bare dataBusWidth in
+    // mode 0 whenever it differs from the default 4, so a lone small token
+    // must stay a width: reading it as an input mode would silently flip a
+    // hand-edited mode-0 line into the grouped bus/bus layout.
+    if (extra.length === 2 && (extra[0] === 1 || extra[0] === MUX_INPUT_MODE_BUS_BUS)) {
       if (extra[0] === MUX_INPUT_MODE_BUS_BUS) e.params.inputMode = MUX_INPUT_MODE_BUS_BUS;
-      if (extra.length >= 2) e.params.dataBusWidth = normalizeDataWidth(extra[1]);
+      e.params.dataBusWidth = normalizeDataWidth(extra[1]);
     } else if (extra.length >= 1) {
       e.params.dataBusWidth = normalizeDataWidth(extra[0]);
     }
