@@ -446,9 +446,15 @@ impl Circuit {
             subiter: 0,
         };
 
-        self.elements = Vec::with_capacity(spec.elements.len());
-        self.ids = Vec::with_capacity(spec.elements.len());
-        self.id_index.clear();
+        // Built into locals and committed to `self` only once every element
+        // has been accepted: a mid-loop reject below must not leave a
+        // half-built list behind while `closures`, `node_voltages` and the
+        // rest still describe the previous circuit. This mirrors the options
+        // guards above, so a rejected build leaves a live instance running
+        // what it had instead of a mixture of both circuits.
+        let mut elements: Vec<Box<dyn Element>> = Vec::with_capacity(spec.elements.len());
+        let mut ids = Vec::with_capacity(spec.elements.len());
+        let mut id_index: HashMap<u32, usize> = HashMap::with_capacity(spec.elements.len());
         for es in &spec.elements {
             let elm = build_element(es)
                 .ok_or_else(|| format!("unknown element type '{}' (id {})", es.kind, es.id))?;
@@ -463,20 +469,23 @@ impl Circuit {
             }
             // A duplicate id makes set_param/set_state/indexOf ambiguous, so
             // reject it rather than keep only the last element under that id.
-            if let Some(&prev) = self.id_index.get(&es.id) {
+            if let Some(&prev) = id_index.get(&es.id) {
                 return Err(format!(
                     "duplicate element id {} (element {} '{}' and element {} '{}')",
                     es.id,
                     prev,
-                    self.elements[prev].kind(),
-                    self.elements.len(),
+                    elements[prev].kind(),
+                    elements.len(),
                     es.kind,
                 ));
             }
-            self.id_index.insert(es.id, self.elements.len());
-            self.ids.push(es.id);
-            self.elements.push(elm);
+            id_index.insert(es.id, elements.len());
+            ids.push(es.id);
+            elements.push(elm);
         }
+        self.elements = elements;
+        self.ids = ids;
+        self.id_index = id_index;
         self.specs = spec.elements.clone();
 
         self.link_relay_contacts();
