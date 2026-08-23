@@ -1074,6 +1074,12 @@ impl Circuit {
     /// or unmerge terminals, such as closing a switch. Unlike `set_circuit`,
     /// it leaves the sim clock alone: a throw must not rewind the trace.
     fn reanalyze(&mut self) {
+        // The warnings belong to the latest analysis pass: this re-runs
+        // assign_nodes and the stamp, so the no-ground and floating-node
+        // notices below must replace whatever an earlier pass left rather
+        // than append to it. Without this, every switch throw grew the
+        // vector by one.
+        self.warnings.clear();
         // `assign_nodes` borrows the specs while `&mut self` is in play, so
         // hand it a clone rather than borrowing `self.specs` through `self`.
         // Closing a switch can short a capacitor or complete a capacitor loop,
@@ -1782,6 +1788,11 @@ impl Circuit {
 
     /// Returns the circuit to time zero.
     pub fn reset(&mut self) {
+        // The warnings belong to the latest analysis pass: the stamp below
+        // re-raises the floating-node notice, so it must replace whatever
+        // an earlier pass left rather than append to it. Without this,
+        // every reset grew the vector by one.
+        self.warnings.clear();
         self.ctx.time = 0.0;
         self.ctx.dt = self.options.time_step;
         self.ctx.subiter = 0;

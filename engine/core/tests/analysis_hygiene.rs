@@ -99,3 +99,83 @@ fn rejected_set_circuit_keeps_the_previous_circuit_running() {
         );
     }
 }
+
+/// A closed series loop with no ground symbol anywhere, so every analysis
+/// pass re-derives the reference from the first node and re-raises the
+/// no-ground notice.
+fn groundless_loop() -> CircuitSpec {
+    CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "switch", &[[100, 0], [100, 100]], &[("position", 0.0)]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+        ],
+        options: Some(opts(1e-6, false)),
+        scopes: Vec::new(),
+    }
+}
+
+#[test]
+fn switch_throws_do_not_grow_the_warning_vector() {
+    let mut c = Circuit::new();
+    c.set_circuit(&groundless_loop())
+        .expect("the groundless loop should build");
+    assert_eq!(c.warnings().len(), 1, "expected the no-ground notice");
+
+    // Every throw re-runs assign_nodes through reanalyze, which used to
+    // append a fresh copy of the same notice; ten toggles left eleven.
+    // The vector belongs to the latest analysis pass, so each throw
+    // replaces rather than appends.
+    for k in 0..10 {
+        assert!(c.set_state(3, i32::from(k % 2 == 0)));
+    }
+    assert_eq!(c.warnings().len(), 1);
+    assert!(c.warnings()[0].contains("No ground symbol"));
+}
+
+#[test]
+fn resets_do_not_grow_the_warning_vector() {
+    // A grounded divider plus a resistor whose both posts dangle: its node
+    // has no path to ground, so every analysis pass pins it with GMIN and
+    // raises the floating-node notice.
+    let spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(
+                4,
+                "resistor",
+                &[[500, 0], [600, 0]],
+                &[("resistance", 1000.0)],
+            ),
+        ],
+        options: Some(opts(1e-6, false)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    c.set_circuit(&spec)
+        .expect("the dangling tail should build");
+    assert_eq!(c.warnings().len(), 1, "expected the floating-node notice");
+    assert!(c.warnings()[0].contains("floating"));
+
+    // reset() re-runs allocate_and_stamp, which used to append another
+    // copy of the notice on every call; ten resets left eleven.
+    for _ in 0..10 {
+        c.reset();
+    }
+    assert_eq!(c.warnings().len(), 1);
+}
