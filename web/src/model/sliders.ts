@@ -32,12 +32,28 @@ function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+/** Element kinds that never host a slider. The dependent (controlled) sources
+ *  `vcvs`/`vccs`/`ccvs`/`cccs`/`cc2` compute their output from a controlling
+ *  node, so a manual slider would be overridden every step and is meaningless
+ *  (upstream's Adjustable skips them too). A disabled kind still round-trips
+ *  any slider line it carries: resolveParam returns null, so the slider stays
+ *  inert-but-preserved rather than rendering. */
+const SLIDER_DISABLED_KINDS: ReadonlySet<string> = new Set([
+  'vcvs',
+  'vccs',
+  'ccvs',
+  'cccs',
+  'cc2',
+]);
+
 /** Rows that must never take a slider on top of the type rules: upstream marks
  *  the switch2 Group Number row `.disallowSliders()` (Switch2Elm.java:198), a
- *  dimensionless link id no drag should sweep. The port has no such flag on
- *  FieldDef, so the exclusion lives here beside the type checks and is shared
- *  by the caption resolution and the adjustable list. */
+ *  dimensionless link id no drag should sweep, and the dependent sources never
+ *  take a slider at all. The port has no such flag on FieldDef, so the
+ *  exclusion lives here beside the type checks and is shared by the caption
+ *  resolution and the adjustable list. */
 function sliderDisabled(kind: string, f: FieldDef): boolean {
+  if (SLIDER_DISABLED_KINDS.has(kind)) return true;
   return kind === 'switch2' && f.name === 'link';
 }
 
@@ -96,7 +112,7 @@ export function resolveParam(
     const alias = ALIASES[key];
     if (alias !== undefined) {
       const field = fields.find((f) => f.name === alias);
-      if (field) return { name: alias, field };
+      if (field && !sliderDisabled(kind, field)) return { name: alias, field };
     }
     for (const f of fields) {
       // A dynamic label (the source's "Voltage"/"Max Voltage" row) has no

@@ -67,6 +67,21 @@ describe('adjustable fields', () => {
     ]);
   });
 
+  it('excludes the dependent (controlled) sources, whose output is computed', () => {
+    // vcvs/vccs/ccvs/cccs/cc2 derive their output from a controlling node, so a
+    // manual slider is meaningless and would be overridden every step. The
+    // integer input-count field (and cc2's gain) are never adjustable, and no
+    // slider line on these kinds resolves into a param.
+    for (const kind of ['vcvs', 'vccs', 'ccvs', 'cccs', 'cc2']) {
+      expect(adjustableFields(kind)).toEqual([]);
+      expect(resolveParam(kind, 0, '')).toBeNull();
+    }
+    // A slider line carried by a corpus file still does not bind (inert but
+    // preserved), whatever caption it names.
+    expect(resolveParam('cc2', 0, 'Gain')).toBeNull();
+    expect(resolveParam('vccs', 1, 'Output Function')).toBeNull();
+  });
+
   it('excludes the switch2 Group Number, which upstream disallows on sliders', () => {
     // Upstream marks the group-number row `.disallowSliders()` (Switch2Elm.java:
     // 198): it is a dimensionless link id, not a value a drag should sweep. The

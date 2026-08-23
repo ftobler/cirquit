@@ -1530,16 +1530,18 @@ function createAppStore() {
     // Adjustable (Adjustable.java:33-44). A caption that resolves to no field
     // keeps the index-only match, the only key it has.
     const resolved = resolveParam(element.kind, editItem, caption ?? '');
-    if (resolved) {
-      const dup = s.sliders.some(
-        (x) =>
-          x.elementId === elementId &&
-          resolveParam(element.kind, x.editItem, x.text)?.name === resolved.name,
-      );
-      if (dup) return;
-    } else if (s.sliders.some((x) => x.elementId === elementId && x.editItem === editItem)) {
-      return;
-    }
+    // A caption/index that resolves to no parameter (a disabled kind such as a
+    // controlled source, or a drifted corpus line) never becomes a live slider:
+    // the dialog only offers resolvable fields, and an inert entry would drive
+    // nothing yet persist. Loaded inert lines are preserved by the parser, not
+    // here.
+    if (!resolved) return;
+    const dup = s.sliders.some(
+      (x) =>
+        x.elementId === elementId &&
+        resolveParam(element.kind, x.editItem, x.text)?.name === resolved.name,
+    );
+    if (dup) return;
     s.commit();
     set((st) => ({
       // raw stays empty so the writer emits the port's canonical fresh line
