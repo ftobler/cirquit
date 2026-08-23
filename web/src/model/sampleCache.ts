@@ -59,6 +59,31 @@ export function clearSampleCache(): void {
   dataCache.clear();
 }
 
+/** A point-in-time copy of both caches. The maps are shallow copies: an entry
+ *  is treated as immutable once stored, so sharing entries between a snapshot
+ *  and the live cache loses nothing. */
+export interface SampleCacheSnapshot {
+  audio: Map<number, AudioSamples>;
+  data: Map<number, DataSamples>;
+}
+
+/** Freezes both caches, taken by the subcircuit drill-in on enter so its exit
+ *  can undo the load pipeline's clear. */
+export function snapshotSampleCache(): SampleCacheSnapshot {
+  return { audio: new Map(audioCache), data: new Map(dataCache) };
+}
+
+/** Puts both caches back to the snapshot's contents, dropping anything
+ *  imported since it was taken. The counter is deliberately untouched:
+ *  file numbers stay monotonic for the whole session, so a post-exit import
+ *  can never collide with a restored entry. */
+export function restoreSampleCache(snapshot: SampleCacheSnapshot): void {
+  audioCache.clear();
+  dataCache.clear();
+  for (const [num, entry] of snapshot.audio) audioCache.set(num, entry);
+  for (const [num, entry] of snapshot.data) dataCache.set(num, entry);
+}
+
 /**
  * The `spec.model` payload an audio or data input hands the engine, looked up
  * by the element's `fileNum`. Null when the kind is not one of the two sample

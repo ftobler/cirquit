@@ -337,9 +337,11 @@ export default function App() {
     const stop = startAutoSave(
       () => useStore,
       // The clean check compares against the non-live document; the slot is
-      // written live so a crash restores the current charge.
+      // written live so a crash restores the current charge. While a drill-in
+      // session is up the payload is the stack-root document instead, so a
+      // crash inside recovers onto the outer sheet.
       () => useStore.getState().toNetlist(),
-      { writeNetlist: () => useStore.getState().saveNetlist() },
+      { writeNetlist: () => useStore.getState().recoveryNetlist() },
     );
     return stop;
   }, []);

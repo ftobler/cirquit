@@ -9,10 +9,11 @@ import type {
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
-import type { ModelFamily, UserModelEntry } from '../model/deviceModels';
+import type { ModelFamily, UserModelEntry, UserModelSnapshot } from '../model/deviceModels';
 import type { ShortcutOverlay } from '../input/shortcuts';
 import type { CircuitElement, Point, SimSettings } from '../model/types';
 import type { WireSegment } from '../model/wirePlacement';
+import type { SampleCacheSnapshot } from '../model/sampleCache';
 
 export interface ViewTransform {
   /** Circuit-space coordinate at the canvas origin. */
@@ -36,6 +37,16 @@ export type DialogName =
   | 'otherOptions'
   | 'sliders';
 
+/** The session-scoped caches frozen at drill-in enter: the audio/data sample
+ *  buffers and the writable device-model namespace with its delete tombstones.
+ *  Both enter and exit run the full load pipeline, which clears these caches,
+ *  so without the freeze a look-and-return round trip would silently destroy
+ *  models created in dialogs and imported files this session held. */
+export interface DrillSessionSnapshot {
+  samples: SampleCacheSnapshot;
+  models: UserModelSnapshot;
+}
+
 /** A dialog-free inline model editing session, the port's analogue of
  *  upstream's `CircuitContext` (CirSim.java:679-686): one entry per level of
  *  drill-in, holding everything needed to return to the level below. The stack
@@ -53,6 +64,10 @@ export interface SubcircuitStackEntry {
   /** The enclosing document's pan/zoom, restored on exit the way upstream
    *  restores its transform (CirSim.java:499). */
   view: ViewTransform;
+  /** The pre-enter session caches, restored on exit. Travels with the entry
+   *  so any wholesale stack reset (a mid-drill load, New) drops it too, and
+   *  nothing stale can ever be restored onto the wrong document. */
+  session: DrillSessionSnapshot;
 }
 
 /** A point-in-time copy of everything undo needs to restore. Settings and view
@@ -565,12 +580,21 @@ export interface AppState {
   combineAllScopes(): void;
   separateAllScopes(): void;
 
-  loadNetlist(text: string, opts?: { noCenter?: boolean }): void;
+  /** Replaces the document with a parsed netlist. `noCenter` skips the
+   *  fit-to-view, for the drill-in exit which restores its own saved view;
+   *  `noBaseline` skips the `lastSaved` write, for the drill-in enter whose
+   *  baseline must stay on the outer document for the whole session. */
+  loadNetlist(text: string, opts?: { noCenter?: boolean; noBaseline?: boolean }): void;
   toNetlist(): string;
   /** Serialises the document the way `toNetlist` does, but overlaid with the
    *  engine's live operating-point tokens where the provider reports them, so
    *  a mid-transient save writes the charge the circuit actually holds. */
   saveNetlist(): string;
+  /** The netlist the auto-save slot should hold: the live document normally,
+   *  but the stack-root (outer) document while a drill-in session is up, so a
+   *  crash inside recovers onto the outer sheet as if the drill-in never
+   *  happened. */
+  recoveryNetlist(): string;
   newCircuit(): void;
   /** Enters a model's internals for editing (the 410 element's Edit Model
    *  button): pushes the current document and view onto the subcircuit stack,

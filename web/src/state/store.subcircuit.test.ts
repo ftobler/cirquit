@@ -2,8 +2,25 @@
  *  document context stack, the `.` line write-back on exit, and the surfaces
  *  that reset it. The engine is untouched; everything here is frontend state. */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseCompositeModelLine, saveModel } from '../io/subcircuits';
+import {
+  clearUserModels,
+  forwardVoltageFor,
+  putUserModel,
+  resolveModelParams,
+  userModel,
+} from '../model/deviceModels';
+import {
+  clearSampleCache,
+  getAudioSamples,
+  getDataSamples,
+  nextFileNum,
+  setAudioSamples,
+  setDataSamples,
+} from '../model/sampleCache';
+import { hasUnsavedChanges } from './helpers';
+import { RECOVERY_STORAGE_KEY, startAutoSave, type RecoveryStorage } from './recovery';
 import { useStore } from './store';
 import { fresh } from './store.test-helpers';
 
@@ -69,6 +86,20 @@ function outerWithSlider(): string {
     '\n38 0 0 0 1000 loadslider 0\n' +
     'h keep me\n'
   );
+}
+
+/** A plain-object recovery storage passed straight to startAutoSave, so the
+ *  autosave test never touches globalThis.localStorage. */
+function fakeRecoveryStorage() {
+  const map = new Map<string, string>();
+  return {
+    storage: {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    } as RecoveryStorage,
+    raw: () => map.get(RECOVERY_STORAGE_KEY) ?? null,
+  };
 }
 
 beforeEach(() => {
@@ -295,5 +326,143 @@ describe('drill-in resets', () => {
 
     expect(useStore.getState().subcircuitStack).toHaveLength(0);
     expect(useStore.getState().elements).toHaveLength(0);
+  });
+});
+
+describe('drill-in document integrity', () => {
+  afterEach(() => {
+    clearUserModels();
+    clearSampleCache();
+    vi.useRealTimers();
+  });
+
+  it('a no-op round trip leaves lastSaved on the outer document', () => {
+    useStore.getState().loadNetlist(outer());
+    const baseline = useStore.getState().lastSaved;
+    expect(baseline).toBe(useStore.getState().toNetlist());
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    // The baseline still belongs to the outer document while inside; letting
+    // the inner load overwrite it read the restored outer document dirty
+    // forever.
+    expect(useStore.getState().lastSaved).toBe(baseline);
+
+    useStore.getState().exitSubcircuit();
+    const s = useStore.getState();
+    expect(s.lastSaved).toBe(baseline);
+    expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(false);
+  });
+
+  it('an outer edit keeps the close guard armed through enter and exit', () => {
+    // The loose resistor gives the outer document something deletable that is
+    // not the 410 the drill-in needs.
+    useStore.getState().loadNetlist(HEADER + 'r 0 0 160 0 0 1000\n410 0 0 64 64 1 myCirc\n' + MODEL_LINE + '\n');
+    const resistor = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([resistor.id]);
+    useStore.getState().deleteSelected();
+    const edited = useStore.getState().toNetlist();
+    const baseline = useStore.getState().lastSaved;
+    expect(hasUnsavedChanges(baseline, edited)).toBe(true);
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    // Inside, the inner sheet compares against the outer baseline and reads
+    // dirty: the accepted false positive that keeps close-from-inside armed
+    // over unsaved outer edits held only in the stack entry.
+    const inside = useStore.getState();
+    expect(hasUnsavedChanges(inside.lastSaved, inside.toNetlist())).toBe(true);
+
+    useStore.getState().exitSubcircuit();
+    const s = useStore.getState();
+    expect(s.subcircuitStack).toHaveLength(0);
+    // Exactly the pre-enter state in both directions.
+    expect(s.toNetlist()).toBe(edited);
+    expect(s.lastSaved).toBe(baseline);
+    expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(true);
+  });
+
+  it('a session device model survives an enter/exit round trip and still resolves', () => {
+    useStore.getState().loadNetlist(outer());
+    // Created after the load, like a dialog session: the load itself empties
+    // the namespace, so only the drill-in round trip must preserve this.
+    putUserModel('diode', {
+      name: 'session-diode',
+      builtIn: false,
+      saturationCurrent: 3e-9,
+      seriesResistance: 0.5,
+      emissionCoefficient: 1.8,
+      breakdownVoltage: 0,
+    });
+    useStore.getState().enterSubcircuit('myCirc');
+    useStore.getState().exitSubcircuit();
+
+    const entry = userModel('diode', 'session-diode');
+    expect(entry).toBeDefined();
+    expect(entry).toMatchObject({
+      saturationCurrent: 3e-9,
+      seriesResistance: 0.5,
+      emissionCoefficient: 1.8,
+    });
+    // The model still resolves for engine serialisation, not just as a map row.
+    expect(resolveModelParams('diode', 'session-diode', null)).toEqual({
+      saturationCurrent: 3e-9,
+      seriesResistance: 0.5,
+      emissionCoefficient: 1.8,
+      breakdownVoltage: 0,
+      forwardVoltage: forwardVoltageFor(3e-9, 1.8),
+    });
+  });
+
+  it('imported audio and data samples survive an enter/exit round trip', () => {
+    useStore.getState().loadNetlist(outer());
+    // Imports land after the load, like a real session: the load itself clears
+    // the cache, so only the drill-in round trip must preserve these.
+    const audioNum = nextFileNum();
+    setAudioSamples(audioNum, [0.25, -0.25], 8000);
+    const dataNum = nextFileNum();
+    setDataSamples(dataNum, [1, 2, 3]);
+
+    useStore.getState().enterSubcircuit('myCirc');
+    useStore.getState().exitSubcircuit();
+
+    expect(getAudioSamples(audioNum)).toEqual({ samples: [0.25, -0.25], samplingRate: 8000 });
+    expect(getDataSamples(dataNum)).toEqual({ samples: [1, 2, 3] });
+  });
+
+  it('the recovery payload is the stack-root document while stacked', () => {
+    useStore.getState().loadNetlist(outer());
+    // Unstacked, the payload is the live document exactly as before.
+    expect(useStore.getState().recoveryNetlist()).toBe(useStore.getState().saveNetlist());
+
+    useStore.getState().enterSubcircuit('myCirc');
+    const s = useStore.getState();
+    expect(s.recoveryNetlist()).toBe(s.subcircuitStack[0].document);
+    // Genuinely the outer sheet, not whatever internals are on canvas now.
+    expect(s.recoveryNetlist()).not.toBe(s.toNetlist());
+    expect(s.recoveryNetlist()).toContain('410 ');
+  });
+
+  it('autosave writes the outer document while the drill-in is up', () => {
+    vi.useFakeTimers();
+    const { storage, raw } = fakeRecoveryStorage();
+    const stop = startAutoSave(
+      () => useStore,
+      () => useStore.getState().toNetlist(),
+      { storage, delayMs: 1000, writeNetlist: () => useStore.getState().recoveryNetlist() },
+    );
+    try {
+      useStore.getState().loadNetlist(outer());
+      // The load's revision bump flushes clean (lastSaved equals toNetlist),
+      // so nothing is written yet.
+      vi.advanceTimersByTime(5000);
+      expect(raw()).toBeNull();
+
+      useStore.getState().enterSubcircuit('myCirc');
+      vi.advanceTimersByTime(1000);
+
+      const root = useStore.getState().subcircuitStack[0].document;
+      expect(raw()).toBe(root);
+    } finally {
+      stop();
+    }
   });
 });

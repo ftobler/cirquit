@@ -71,7 +71,14 @@ import { normalizePoleCount } from '../model/registry/elements/dpdtSwitch';
 import { normalizeInputCount } from '../model/registry/shared';
 import { DEFAULT_MODEL_NAME } from '../model/registry/elements/customComposite';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
-import { nextFileNum, setAudioSamples, setDataSamples, clearSampleCache } from '../model/sampleCache';
+import {
+  nextFileNum,
+  setAudioSamples,
+  setDataSamples,
+  clearSampleCache,
+  snapshotSampleCache,
+  restoreSampleCache,
+} from '../model/sampleCache';
 import { paramScale, resolveParam } from '../model/sliders';
 import {
   clearUserModels,
@@ -82,7 +89,9 @@ import {
   registerFileModels,
   resolveModelParams,
   restorePrunedModels,
+  restoreUserModels,
   seedModelEntry,
+  snapshotUserModels,
   userModel,
 } from '../model/deviceModels';
 import {
@@ -2572,14 +2581,21 @@ function createAppStore() {
     // the canvas by the scope strip's height, and the size read above is still
     // the previous layout's.
     if (opts?.noCenter) {
+      // A noCenter caller owns both the view and the baseline afterwards: the
+      // drill-in exits are plain restores and must never touch lastSaved.
       return;
     }
     get().centerCircuit();
     get().requestCenter();
     // The loaded content is its own baseline: opening a file, a library
     // circuit or a share link is not "unsaved". `set` is synchronous, so this
-    // `get()` reads the just-loaded state.
-    set({ lastSaved: get().toNetlist() });
+    // `get()` reads the just-loaded state. The drill-in enter passes
+    // noBaseline: lastSaved belongs to the outer document for the whole
+    // session, and overwriting it with the inner netlist would read the
+    // restored outer document dirty forever.
+    if (!opts?.noBaseline) {
+      set({ lastSaved: get().toNetlist() });
+    }
   },
 
   toNetlist: () => {
@@ -2589,6 +2605,16 @@ function createAppStore() {
   saveNetlist: () => {
     const live = get().liveStateProvider?.() ?? {};
     return serializeDocument(overlayLiveState(get().elements, live));
+  },
+
+  recoveryNetlist: () => {
+    const s = get();
+    // While a drill-in session is up, the inner sheet is scratch editing
+    // context: the slot records the stack root so a crash recovers onto the
+    // outer circuit as if the drill-in never happened. The entry's document
+    // is already netlist text, so this serialises nothing.
+    const root = s.subcircuitStack[0];
+    return root !== undefined ? root.document : s.saveNetlist();
   },
 
   setLiveStateProvider: (provider) => set({ liveStateProvider: provider }),
@@ -2638,10 +2664,20 @@ function createAppStore() {
     // The entry must be captured before the load: loadNetlist resets the stack
     // (a load is a fresh document), so the snapshot reads the document that is
     // about to be replaced, and the entry is set after the load re-pushed the
-    // cleared stack position.
-    const entry = { modelName: name, document: s.toNetlist(), view: s.view };
+    // cleared stack position. The session caches freeze here too: the inner
+    // load wipes them like any load, and only the exit brings this world back.
+    const entry = {
+      modelName: name,
+      document: s.toNetlist(),
+      view: s.view,
+      session: { samples: snapshotSampleCache(), models: snapshotUserModels() },
+    };
     const stack = s.subcircuitStack;
-    s.loadNetlist(inner);
+    // noBaseline keeps lastSaved on the outer document for the whole session.
+    // While inside, hasUnsavedChanges compares the inner sheet against that
+    // outer baseline and may read dirty with no inner edit; that false
+    // positive beats silently discarding unsaved outer edits on close.
+    s.loadNetlist(inner, { noBaseline: true });
     set({ subcircuitStack: [...stack, entry], subcircuitError: null });
     return true;
   },
@@ -2678,6 +2714,12 @@ function createAppStore() {
     // tests assert byte for byte.
     if (sameCompositeModel(previous, next)) {
       s.loadNetlist(top.document, { noCenter: true });
+      // The restore load wiped the session caches like any load; the pre-enter
+      // world comes back, so a look-and-return round trip is invisible to them.
+      // lastSaved is untouched by a noCenter load and stays on the outer
+      // document, which is what keeps the round trip clean-read as it started.
+      restoreSampleCache(top.session.samples);
+      restoreUserModels(top.session.models);
       // A prior refused exit may have left a message here; a successful return
       // clears it so the Escape/breadcrumb alert call sites stay silent.
       set({ view: top.view, subcircuitStack: stack.slice(0, -1), subcircuitError: null });
@@ -2701,6 +2743,11 @@ function createAppStore() {
     const pre = clone(get());
     pre.view = top.view;
     s.loadNetlist(outer, { noCenter: true });
+    // Same session-cache restore as the no-edit return: the model write-back
+    // touches only the `.` line and storage, never these caches, so the
+    // pre-enter namespace is exactly what the outer document expects.
+    restoreSampleCache(top.session.samples);
+    restoreUserModels(top.session.models);
     set({
       undoStack: [pre],
       redoStack: [],

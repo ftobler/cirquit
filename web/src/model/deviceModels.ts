@@ -252,6 +252,40 @@ export function clearUserModels(): void {
   }
 }
 
+/** A point-in-time copy of both module maps. The Maps are shallow copies: an
+ *  entry object is replaced wholesale on edit, never mutated, so sharing
+ *  entries between a snapshot and the live maps loses nothing. */
+export interface UserModelSnapshot {
+  live: Record<ModelFamily, Map<string, UserModelEntry>>;
+  pruned: Record<ModelFamily, Map<string, UserModelEntry>>;
+}
+
+function copyMaps(
+  source: Record<ModelFamily, Map<string, UserModelEntry>>,
+): Record<ModelFamily, Map<string, UserModelEntry>> {
+  const out = {} as Record<ModelFamily, Map<string, UserModelEntry>>;
+  for (const family of MODEL_FAMILIES) out[family] = new Map(source[family]);
+  return out;
+}
+
+/** Freezes the writable namespace and its delete tombstones, taken by the
+ *  subcircuit drill-in on enter so its exit can undo the load pipeline's
+ *  clear. */
+export function snapshotUserModels(): UserModelSnapshot {
+  return { live: copyMaps(userModels), pruned: copyMaps(prunedModels) };
+}
+
+/** Puts both maps back to the snapshot's contents, dropping models created or
+ *  edited since it was taken. */
+export function restoreUserModels(snapshot: UserModelSnapshot): void {
+  const live = copyMaps(snapshot.live);
+  const pruned = copyMaps(snapshot.pruned);
+  for (const family of MODEL_FAMILIES) {
+    userModels[family] = live[family];
+    prunedModels[family] = pruned[family];
+  }
+}
+
 /** Commits the file's own `34`/`32` lines into the writable store, the load
  *  path's analogue of `registerSessionModel` for `.` lines (io/subcircuits.ts).
  *  The entries are writable like any other, so the editor can tune them, and
