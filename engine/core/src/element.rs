@@ -411,6 +411,16 @@ pub trait Element {
         0.0
     }
 
+    /// The table of scope values this element answers, in a fixed order the
+    /// frontend may index, upstream's getScopeValue VAL_ set. Empty by
+    /// default: most elements answer only the generic quantities the flat
+    /// per-frame arrays already carry. [`Circuit::element_scope_values`]
+    /// walks this table through [`Element::scope_value`], so an info readout
+    /// costs one boundary crossing instead of one per row.
+    fn scope_value_table(&self) -> &'static [crate::spec::ScopeValue] {
+        &[]
+    }
+
     /// Instrument reading reported back to the UI each frame, the probe's
     /// meter mode. Defaults to the two-terminal voltage difference, so every
     /// other element reports what a voltage scope on it would plot.

@@ -334,6 +334,22 @@ impl Circuit {
         self.elements[ei].data_recorder_data()
     }
 
+    /// One element's live scope-value table, walked in the order its kind
+    /// declares through [`Element::scope_value_table`], so a multi-row info
+    /// readout costs one crossing instead of one per row. Empty for unknown
+    /// ids and every kind whose table is empty. An on-demand channel like
+    /// [`Circuit::body_samples`]; only the hovered element pays.
+    pub fn element_scope_values(&self, id: u32) -> Vec<f64> {
+        let Some(&ei) = self.id_index.get(&id) else {
+            return Vec::new();
+        };
+        self.elements[ei]
+            .scope_value_table()
+            .iter()
+            .map(|v| self.elements[ei].scope_value(*v))
+            .collect()
+    }
+
     /// Trigger display anchor for one scope trace.
     pub fn trigger_info(&self, index: usize, width: usize) -> Option<crate::scope::TriggerInfo> {
         self.scopes.get(index).map(|s| s.trigger_info(width))

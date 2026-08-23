@@ -189,6 +189,20 @@ impl Element for BipolarTransistor {
         }
     }
 
+    /// Upstream's VAL_ id order (TransistorElm.java:582-593): the currents
+    /// and junction voltages a scope can plot, which is also the table
+    /// `element_scope_values` walks for the info rows.
+    fn scope_value_table(&self) -> &'static [crate::spec::ScopeValue] {
+        &[
+            crate::spec::ScopeValue::Ib,
+            crate::spec::ScopeValue::Ic,
+            crate::spec::ScopeValue::Ie,
+            crate::spec::ScopeValue::Vbe,
+            crate::spec::ScopeValue::Vbc,
+            crate::spec::ScopeValue::Vce,
+        ]
+    }
+
     fn state_tokens(&self) -> Vec<(String, f64)> {
         // The file tokens are node differences, not the internal fields: the
         // constructor swaps and polarity-scales them (`last_vbe = p*lastVbc`,

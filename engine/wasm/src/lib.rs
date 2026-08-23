@@ -336,6 +336,16 @@ impl Simulator {
         self.circuit.data_recorder_data(id)
     }
 
+    /// One element's live scope-value table in the order its kind declares
+    /// (a transistor's Ib, Ic, Ie, Vbe, Vbc, Vce), so a multi-row info
+    /// readout costs one crossing. Empty for ids whose kind answers nothing.
+    /// An on-demand per-element array like `transmissionLineWave`, so only
+    /// the hovered element pays for the crossing.
+    #[wasm_bindgen(js_name = elementScopeValues)]
+    pub fn element_scope_values(&self, id: u32) -> Vec<f64> {
+        self.circuit.element_scope_values(id)
+    }
+
     /// Trigger display info for a scope. `width` is the display width in
     /// pixels; the UI passes the canvas width so the anchor counts against the
     /// same window the drawing does.

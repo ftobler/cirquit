@@ -1,6 +1,6 @@
 //! Op-amps and bipolar transistors, including the Darlington pair.
 
-use circuit_core::{ScopeSpec, ScopeValue};
+use circuit_core::{Circuit, ScopeSpec, ScopeValue};
 
 mod common;
 use common::*;
@@ -615,6 +615,100 @@ fn transistor_type_flips_conduction_for_the_same_geometry() {
         "PNP leaked {} A",
         pnp.element_currents()[3]
     );
+}
+
+/// The NPN common-emitter stage the scope-value readback tests share: a 5 V
+/// rail, a 470 k base resistor, a 1 k collector load, beta 100. The
+/// transistor's posts are base, collector, emitter and its flattened node
+/// slice starts at index 5 (1 + 2 + 2 posts precede it).
+fn biased_common_emitter() -> Circuit {
+    build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 470_000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[0, 0], [200, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                4,
+                "transistor",
+                &[[100, 0], [200, 0], [200, 100]],
+                &[("pnp", 1.0), ("beta", 100.0)],
+            ),
+            elm(5, "ground", &[[200, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    )
+}
+
+#[test]
+fn transistor_scope_currents_match_the_analytic_operating_point() {
+    // The readback currents must be the device's own terminal figures: in the
+    // active region Ic obeys the collector-load law exactly and Ib is Ic/beta,
+    // so either derived from the wrong internal field fails here.
+    let c = &mut biased_common_emitter();
+    c.run(50);
+
+    let sv = c.element_scope_values(4);
+    assert_eq!(sv.len(), 6, "scope table was {sv:?}");
+    let (ib, ic, ie) = (sv[0], sv[1], sv[2]);
+
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let nc = nodes[6] as usize;
+    let ic_law = (5.0 - v[nc]) / 1000.0;
+    assert!(close(ic, ic_law, 1e-7), "Ic {} vs load law {ic_law}", ic);
+    assert!(
+        close(ib, ic / 100.0, ic * 2e-3),
+        "Ib {} vs Ic/beta {}",
+        ib,
+        ic / 100.0
+    );
+    assert!(ib > 0.0 && ic > 0.0, "currents were ib={ib} ic={ic}");
+    // KCL at the device: ie exits while ib and ic enter.
+    assert!(close(ie, -(ib + ic), 1e-12), "ie was {ie}");
+}
+
+#[test]
+fn element_scope_values_walks_the_declared_table_in_order() {
+    // At this bias every slot carries a distinguishable value with its own
+    // sign pattern, so any permutation fails: [Ib, Ic, Ie, Vbe, Vbc, Vce]
+    // reads two positive currents, one negative current, then vbe > 0,
+    // vbc < 0 and vce > 0 as raw node differences over the base, collector
+    // and emitter posts.
+    let c = &mut biased_common_emitter();
+    c.run(50);
+
+    let sv = c.element_scope_values(4);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let (nb, nc, ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+
+    assert!(sv[0] > 0.0 && sv[0] < 1e-4, "slot 0 (Ib) was {}", sv[0]);
+    let ic_law = (5.0 - v[nc]) / 1000.0;
+    assert!(close(sv[1], ic_law, 1e-7), "slot 1 (Ic) was {}", sv[1]);
+    assert!(sv[2] < 0.0, "slot 2 (Ie) was {}", sv[2]);
+    assert!(close(sv[3], v[nb] - v[ne], 1e-12), "slot 3 (Vbe) was {}", sv[3]);
+    assert!(close(sv[4], v[nb] - v[nc], 1e-12), "slot 4 (Vbc) was {}", sv[4]);
+    assert!(close(sv[5], v[nc] - v[ne], 1e-12), "slot 5 (Vce) was {}", sv[5]);
+}
+
+#[test]
+fn element_scope_values_is_empty_for_kinds_without_a_table() {
+    // A resistor answers no scope values and an unknown id maps to nothing:
+    // both come back empty so the frontend can call this for one kind
+    // without knowing which elements carry tables.
+    let c = biased_common_emitter();
+    assert!(c.element_scope_values(3).is_empty(), "resistor answered");
+    assert!(c.element_scope_values(99).is_empty(), "unknown id answered");
 }
 
 #[test]
