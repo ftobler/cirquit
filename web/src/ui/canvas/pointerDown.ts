@@ -97,7 +97,16 @@ export function releaseHeldMomentary(pointerId: number, refs: PointerDownRefs): 
   heldMomentaryRef.current = null;
   heldMomentaryPointerRef.current = null;
   const e = useStore.getState().elements.find((q) => q.id === id);
-  if (e) useStore.getState().setElementState(id, ((e.state ?? 0) + 1) % 2);
+  if (!e) return;
+  // An SPDT releases through the same link-aware toggleSwitch path its press
+  // took, so every twin in the group sees this second throw and the gang
+  // returns to rest together; a plain setElementState here would leave them
+  // one stop over (Switch2Elm.toggle fans the group, Switch2Elm.java:155-173).
+  if (e.kind === 'switch2') {
+    useStore.getState().toggleSwitch(id);
+    return;
+  }
+  useStore.getState().setElementState(id, ((e.state ?? 0) + 1) % 2);
 }
 
 /**
@@ -340,7 +349,7 @@ export function beginPointerGesture(
       const rect = def.switchRect?.(hit);
       if (rect === undefined || rectContains(rect, p)) {
         const momentary =
-          (hit.kind === 'switch' || hit.kind === 'logicInput') &&
+          (hit.kind === 'switch' || hit.kind === 'logicInput' || hit.kind === 'switch2') &&
           (hit.params.momentary ?? 0) !== 0;
         // The next state respects the part's range: binary for a plain switch
         // and two-level logic input, `throwCount` throws for an SPDT, and the

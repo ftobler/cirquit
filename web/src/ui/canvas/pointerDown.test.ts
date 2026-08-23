@@ -329,6 +329,49 @@ describe('momentary switches', () => {
   });
 });
 
+describe('momentary SPDT switches', () => {
+  it('a linked pair sees both toggles: press throws the gang, release returns it to rest', () => {
+    // The release must run the same link-aware toggle the press ran, so every
+    // twin gets the second throw; otherwise one click leaves the whole group
+    // one stop over permanently (Switch2Elm.toggle via SwitchElm.mouseUp,
+    // SwitchElm.java:180-182).
+    const a = addEl('switch2', { params: { position: 0, momentary: 1, throwCount: 2, link: 6 } });
+    const b = addEl('switch2', { params: { position: 0, momentary: 1, throwCount: 2, link: 6 } });
+    const r = refs();
+    beginPointerGesture(down(), { x: 96, y: -15 }, useStore.getState(), hit(a), false, r);
+    expect(hit(a).state).toBe(1);
+    expect(hit(b).state).toBe(1);
+    expect(r.heldMomentaryRef.current).toBe(a);
+    expect(r.heldMomentaryPointerRef.current).toBe(1);
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+    releaseHeldMomentary(1, r);
+    expect(hit(a).state).toBe(0);
+    expect(hit(b).state).toBe(0);  // the gang returned to rest together
+    expect(r.heldMomentaryRef.current).toBeNull();
+  });
+
+  it('an unlinked momentary SPDT toggles on press and back on release', () => {
+    const id = addEl('switch2', { params: { position: 0, momentary: 1, throwCount: 2, link: 0 } });
+    const r = refs();
+    beginPointerGesture(down(), { x: 96, y: -15 }, useStore.getState(), hit(id), false, r);
+    expect(hit(id).state).toBe(1);
+    expect(r.heldMomentaryRef.current).toBe(id);
+    releaseHeldMomentary(1, r);
+    expect(hit(id).state).toBe(0);
+  });
+
+  it('a non-momentary SPDT single-toggles and arms no hold at all', () => {
+    const id = addEl('switch2');
+    const r = refs();
+    beginPointerGesture(down(), { x: 96, y: -15 }, useStore.getState(), hit(id), false, r);
+    expect(hit(id).state).toBe(1);
+    expect(r.heldMomentaryRef.current).toBeNull();
+    // Nothing held, so a pointer-up must not move it off the new throw.
+    releaseHeldMomentary(1, r);
+    expect(hit(id).state).toBe(1);
+  });
+});
+
 describe('momentary logic inputs', () => {
   it('a glyph press drives high, holds, and the pointer-up returns to low', () => {
     const id = addEl('logicInput', { params: { position: 0, momentary: 1 }, state: 0 });
