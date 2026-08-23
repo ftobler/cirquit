@@ -225,12 +225,35 @@ fetch it).
   a lamp its hot resistance: the engine answers a `scope_value` hook per
   sample (`element.rs`, transistor.rs, lamp.rs) inside the existing scope
   capture, so no new boundary crossing exists. The parser maps those tokens to
-  real values instead of null plots (a token outside an element's table still
-  rides raw only), and early.txt's Vce-vs-Ic X-Y panels draw again.
-- 501 Rust tests, of which 420 are the end-to-end circuit checks across
+   real values instead of null plots (a token outside an element's table still
+   rides raw only), and early.txt's Vce-vs-Ic X-Y panels draw again.
+- Review-pass batch 2026-08-23: a settled-selection rotate is upstream's
+  flipXY-then-flipY, and both switch overrides reverse their position, so the
+  turn nets zero and no longer flips an SPDT throw or a DPDT bank; a mirror
+  keeps its single reversal. A momentary linked SPDT now returns to rest on
+  release like a push switch, fanning the second toggle across the gang. The
+  combined relay honours FLAG_PULLDOWN: constant r_off resistors from both
+  throw posts to ground while the pole-to-unselected-throw link drops in the
+  settled positions, matching RelayElm.java; every bundled relay carries the
+  bit. Two load guards landed: a lone trailing mux token can never be mistaken
+  for the bus/bus input-mode pair, and the battery SOC table sorts at parse so
+  the caption interpolates what the engine stamps; with that came the real fix
+  that the table string carrier reaches spec.model unquoted, so batteries
+  simulate their chemistry instead of the flat fallback. The drill-in round
+  trip keeps one outer-document baseline (Save As inside no longer baselines
+  the inner sheet), restores session device models, tombstones and imported
+  samples on exit, and recovery writes the stack-root document while stacked.
+  The info box draws the full nine-row transistor table through a new
+  on-demand elementScopeValues readback (the transmissionLineWave precedent:
+  only the hovered element pays), with upstream's signed current/voltage rows,
+  the operating-mode thresholds, and getPower fixed on the flat array from
+  Vbc*Ic to upstream's (Vb-Ve)*Ib + (Vc-Ve)*Ic; source/rail and diode-family
+  tables print signed too, and the undocked popup computes its lines only
+  when Show Extended Info is on.
+- 505 Rust tests, of which 431 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2736 TypeScript tests (one corpus report test skipped). The relay pulldown
+  2750 TypeScript tests (one corpus report test skipped). The relay pulldown
   parity fix added three Rust tests: the flag grounds an unwired throw in
   either settled position, a flag-clear guard keeps the old pole coupling,
   and the mid-travel position stamps identically with and without the flag.
@@ -267,9 +290,14 @@ fetch it).
   integrity fixes added seven more store.subcircuit tests (the lastSaved round
   trips in both dirty directions, the Save As guard that keeps the baseline off
   the inner sheet, the surviving session device model and imported samples, and
-  the stacked recovery payload).
-  CI runs fmt, clippy, tests, typecheck, lint and build,
-  then deploys to Pages.
+   the stacked recovery payload). The 2026-08-23 review-pass batch added the
+   rotate/mirror and momentary-hold switch tests, the mux width-token and
+   battery table-sort cases, three Rust relay tests already counted above, the
+   transistor info-table suite (analytic Ib/Ic, the declared-order readback
+   walk, upstream's getPower on the flat array, plus the infoBox and undocked
+   gating cases), and the seven drill-in integrity tests just named.
+   CI runs fmt, clippy, tests, typecheck, lint and build,
+   then deploys to Pages.
 
 ### Deliberate gaps
 
