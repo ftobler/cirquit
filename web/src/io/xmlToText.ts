@@ -189,7 +189,19 @@ const WRITERS: Record<string, Writer> = {
   FullAdder: (n) => chipTail(n, true, []),
   SevenSegDecoder: (n) => chipTail(n, false, [attr(n, 'sgt', 0)]),
   ssd: (n) => chipTail(n, false, [attr(n, 'ba', 7), attr(n, 'ex', 0), attr(n, 'di', 0)]),
-  mux: (n) => chipTail(n, false, [attr(n, 'se', 2)]),
+  mux: (n) => {
+    // The standard chip tail carries the select-bit count (`se`). In bus/bus
+    // input mode (im="2") upstream's bus-in/bus-out layout is modelled, so the
+    // text line also carries inputMode=2 and dataBusWidth=dw
+    // (MultiplexerElm.java:69-72); the td4 family's ROM-to-data-bus wiring
+    // then routes instead of degrading to single-bit. Mode 1 stays deferred.
+    const tail = chipTail(n, false, [attr(n, 'se', 2)]);
+    if (attr(n, 'im', 0) === 2) {
+      tail.push(2);
+      tail.push(attr(n, 'dw', 4));
+    }
+    return tail;
+  },
   ins: (n) => [
     // The port's 434 stream: width, threshold, then the lookup table as one
     // escaped token (the body text upstream writes verbatim,
@@ -395,16 +407,15 @@ function droppedTraces(node: XmlNode): string[] {
   const traces: string[] = [];
   const tag = node.tag;
   if (tag === 'mux') {
-    // MultiplexerElm.java:32-37: inputMode 1 routes a bus in against
-    // individual selects, mode 2 bus against bus. The port lays out mode 0
-    // only, so a bus-mode mux converts to its single-bit shape.
-    if (attr(node, 'im', 0) !== 0) {
+    // MultiplexerElm.java:32-37: inputMode 1 (bus in / single out, the bit
+    // selector) has no text-format home and no corpus user, so it stays
+    // deferred and converts to the single-bit shape. Mode 2 (bus in / bus out)
+    // is modelled, so it carries inputMode/dataBusWidth tokens instead of a
+    // trace comment.
+    if (attr(node, 'im', 0) === 1) {
       traces.push(
-        `# mux im="${node.attrs.im}" not modelled: converted as individual inputs with one output`,
+        `# mux im="1" not modelled: converted as individual inputs with one output`,
       );
-    }
-    if (attr(node, 'dw', 4) !== 4) {
-      traces.push(`# mux dw="${node.attrs.dw}" not modelled: data width stays individual`);
     }
   }
   if (BO_TAGS.has(tag) && attr(node, 'bo', 0) !== 0) {

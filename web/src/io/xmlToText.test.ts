@@ -367,30 +367,36 @@ describe('xml to text conversion', () => {
     expect(parsed.elements[0].text).toBe('0=NOP');
   });
 
-  it('keeps a bus-input mux line and marks the dropped input mode', () => {
-    // The port lays out input mode 0 only; the td4 files' im="2" muxes keep
-    // their element slot (scopes count against them) and gain a visible
-    // trace comment instead of silently losing the bus behaviour.
+  it('routes a bus-input (im="2") mux to its bus/bus text line', () => {
+    // The td4 files' im="2" muxes now carry inputMode=2 and dataBusWidth=4 on
+    // the 184 line, faithfully modelling upstream's bus-in/bus-out layout, so
+    // the ROM-to-data-bus wiring routes instead of degrading. No trace comment.
     const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
   <mux x="752 320 784 320" f="0" se="2" im="2"/>
   <w x="592 320 752 320" f="4"/>
 </cir>
 `;
     const text = xmlToText(src);
-    expect(text).toContain('184 752 320 784 320 0 2');
-    expect(text).toContain(
-      '# mux im="2" not modelled: converted as individual inputs with one output',
-    );
+    expect(text).toContain('184 752 320 784 320 0 2 2 4');
+    expect(text).not.toContain('# mux im=');
     const parsed = parseCircuit(text);
     expect(parsed.elements.map((e) => e.kind)).toEqual(['multiplexer', 'wire']);
+    expect(parsed.elements[0].params.inputMode).toBe(2);
+    expect(parsed.elements[0].params.dataBusWidth).toBe(4);
   });
 
-  it('marks a dropped data width on a mux too', () => {
+  it('keeps the deferred bus/bit (im="1") mux as a trace comment', () => {
+    // Mode 1 has no text-format home and no corpus user, so it still converts
+    // to the single-bit shape under a trace comment.
     const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
-  <mux x="752 320 784 320" f="0" se="2" dw="8"/>
+  <mux x="752 320 784 320" f="0" se="2" im="1"/>
 </cir>
 `;
-    expect(xmlToText(src)).toContain('# mux dw="8" not modelled: data width stays individual');
+    const text = xmlToText(src);
+    expect(text).toContain('184 752 320 784 320 0 2');
+    expect(text).toContain(
+      '# mux im="1" not modelled: converted as individual inputs with one output',
+    );
   });
 
   it('marks a dropped bit order on chips this build does not lay out', () => {

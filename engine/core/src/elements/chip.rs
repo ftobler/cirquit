@@ -40,6 +40,11 @@ pub struct ChipPin {
     /// True when the file format saves this pin's voltage (ChipElm.java:64-67,
     /// :369-371). Outputs carry it so a load restores the output state.
     pub state: bool,
+    /// The bus bit index this pin carries at its coordinate, upstream's
+    /// `Pin.busZ` (ChipElm.java:708). Only the bus/bus multiplexer sets it;
+    /// every other pin is bit 0, the default the engine already gives plain
+    /// posts, so `post_bus_z` returns it without the chip knowing the layout.
+    pub bus_z: usize,
 }
 
 impl ChipPin {
@@ -50,6 +55,7 @@ impl ChipPin {
             clock: false,
             value: false,
             state: false,
+            bus_z: 0,
         }
     }
 
@@ -60,6 +66,7 @@ impl ChipPin {
             clock: false,
             value: false,
             state,
+            bus_z: 0,
         }
     }
 
