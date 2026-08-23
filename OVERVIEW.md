@@ -227,10 +227,10 @@ fetch it).
   capture, so no new boundary crossing exists. The parser maps those tokens to
   real values instead of null plots (a token outside an element's table still
   rides raw only), and early.txt's Vce-vs-Ic X-Y panels draw again.
-- 491 Rust tests, of which 417 are the end-to-end circuit checks across
+- 498 Rust tests, of which 417 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2702 TypeScript tests (one corpus report test skipped). The bus-label-width
+  2709 TypeScript tests (one corpus report test skipped). The bus-label-width
   branch added 14 of them, all plain additions over its base: 11 in
   busWidths.test.ts, one each in junction.test.ts, infoBoxLines.test.ts and
   registry.test.ts. The op-amp LM324 work added seven Rust tests (the two
@@ -256,7 +256,10 @@ fetch it).
   and store.subcircuit suites (single-level model editing, the context-stack
   undo/reset, and the nested-subcircuit deferral), and the scope Show Extended
   Info feature added 11 more across the infoBox, scope draw and undocked suites
-  (the shared infoLines table, the header loop and the protocol swap).
+  (the shared infoLines table, the header loop and the protocol swap), and the
+  bus/bus multiplexer feature added seven Rust and seven TypeScript tests
+  (group routing, strobe, the inverted bus, the value integer, the mode-0
+  negative control, the pin table and round-trips).
   CI runs fmt, clippy, tests, typecheck, lint and build,
   then deploys to Pages.
 
@@ -340,14 +343,15 @@ fetch it).
   the td4 family, fell to bus-mode chip support (see the Working bullet above;
   their grounds on enable pins and the PC register's rails were drawn against
   upstream's collapsed pin coordinates, and a non-bus rebuild put those rails
-  on an output pin). Two conversion gaps remain visible rather than fixed: a
-  multiplexer with a nonzero input mode (the td4 files' `im="2"`, upstream's
-  bus-in/bus-out wiring) converts to its single-bit layout and keeps its
-  element line under a `#` trace comment naming what was dropped, so faithful
-  bus/bus mux behaviour waits on mux input modes as follow-up work; and of the
-  chip bit order only ctr2/FullAdder/ROM/SRAM honour `bo="2"` end to end,
+  on an output pin). One conversion gap remains visible rather than fixed: of
+  the chip bit order only ctr2/FullAdder/ROM/SRAM honour `bo="2"` end to end,
   while any other allowBus kind carrying a nonzero `bo` keeps its line under
-  the same kind of trace. Where nothing can be honoured the whole element is
+  the same kind of trace. The multiplexer's bus-in/bus-out input mode (the td4
+  files' `im="2"`) is no longer a gap: the engine models `INPUT_MODE_BUS_BUS`
+  with grouped data-bus inputs and one output bus, the converter emits the two
+  params instead of its old trace comment, so the td4 ROM-to-data-bus wiring
+  routes. Input mode 1 (bus in, single output) stays deferred under a trace.
+  Where nothing can be honoured the whole element is
   already a full comment. `DIAGNOSED_SIM_FAILURES`
   is empty and the corpus report has no `sim error` entries left. alu74181,
   which used to wait on bus support, simulates again. The derivative-driven
