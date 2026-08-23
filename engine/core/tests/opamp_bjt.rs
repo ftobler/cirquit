@@ -1052,3 +1052,55 @@ fn darlington_current_gain_is_the_product_of_the_two_betas() {
         pnp.element_currents()[2]
     );
 }
+
+#[test]
+fn darlington_power_matches_upstreams_composite_get_power() {
+    // The same biased stage as the gain test above. Upstream reports the sum
+    // of its two internal transistors' getPower on the raw node volts
+    // (CompositeElm.java:350-355 over TransistorElm.java:206-208); by KCL at
+    // the shared internal node that sum reduces to the single-transistor
+    // expression on the aggregate terminal currents, (Vb-Ve)*Ib +
+    // (Vc-Ve)*Ic, with every term measurable from outside. The trait default
+    // would report (Vb-Vc)*Ic here, which even has the wrong sign for an
+    // absorbing pair.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 47_000_000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[0, 0], [200, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            // Posts: base, collector, emitter.
+            elm(
+                4,
+                "darlington",
+                &[[100, 0], [200, 0], [200, 100]],
+                &[("pnp", 1.0)],
+            ),
+            elm(5, "ground", &[[200, 100]], &[]),
+        ],
+        opts_budget(1e-5, true, 1000),
+    );
+    c.run(50);
+
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    let (nb, nc, ne) = (nodes[5] as usize, nodes[6] as usize, nodes[7] as usize);
+    let currents = c.element_currents();
+    let expect = (v[nb] - v[ne]) * currents[1] + (v[nc] - v[ne]) * currents[2];
+
+    let p = c.element_powers()[3];
+    assert!(
+        close(p, expect, 1e-9),
+        "power {p} vs composite getPower {expect}"
+    );
+    assert!(p > 0.0, "an absorbing pair read {p}");
+}

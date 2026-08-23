@@ -40,6 +40,14 @@ pub struct Darlington {
     ib: f64,
     /// Q2's emitter current, positive into the device.
     ie2: f64,
+    /// Per-junction currents of the internal pair, device polarity, positive
+    /// into each transistor's base and collector. `power` reports them over
+    /// the raw node volts, so they must be the exact pair `do_step` stamped
+    /// with, not a quantity re-derived from the aggregates.
+    ib1: f64,
+    ic1: f64,
+    ib2: f64,
+    ic2: f64,
     /// Consecutive Newton iterations the pair has not settled within a single
     /// timestep. Both junctions share one counter and one ramp: they live on
     /// the same internal node, so when one limit-cycles the pair is stuck as a
@@ -76,6 +84,10 @@ impl Darlington {
             ic: 0.0,
             ib: 0.0,
             ie2: 0.0,
+            ib1: 0.0,
+            ic1: 0.0,
+            ib2: 0.0,
+            ic2: 0.0,
             local_subiters: 0,
             bad_iters: 0,
         }
@@ -213,10 +225,27 @@ impl Element for Darlington {
         self.ic = p * (ic1 + ic2);
         self.ib = p * ib1;
         self.ie2 = p * -(ic2 + ib2);
+        self.ib1 = p * ib1;
+        self.ic1 = p * ic1;
+        self.ib2 = p * ib2;
+        self.ic2 = p * ic2;
     }
 
     fn calculate_current(&mut self, _ctx: &SimCtx) {
         self.base.current = self.ic;
+    }
+
+    /// Upstream's composite getPower: the two internal transistors'
+    /// getPower summed (CompositeElm.java:350-355), each the raw junction
+    /// volts times its polarity-scaled currents (TransistorElm.java:206-208).
+    /// The default `voltage_diff * current` would read (Vb-Vc)*Ic here, which
+    /// even has the wrong sign in the active region.
+    fn power(&self) -> f64 {
+        let v = &self.base.volts;
+        (v[0] - v[3]) * self.ib1
+            + (v[1] - v[3]) * self.ic1
+            + (v[3] - v[2]) * self.ib2
+            + (v[1] - v[2]) * self.ic2
     }
 
     /// The three posts and the internal node, in device polarity: the base
@@ -264,6 +293,10 @@ impl Element for Darlington {
         self.ic = 0.0;
         self.ib = 0.0;
         self.ie2 = 0.0;
+        self.ib1 = 0.0;
+        self.ic1 = 0.0;
+        self.ib2 = 0.0;
+        self.ic2 = 0.0;
         self.local_subiters = 0;
         self.bad_iters = 0;
     }
