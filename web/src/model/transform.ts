@@ -184,14 +184,12 @@ export function rotateElement(e: CircuitElement, pivot?: Point): CircuitElement 
     y2: p2.y,
     flags: rotateFlags(e),
   };
-  // The DPDT's flips invert the throw pairing (DPDTSwitchElm.java:256-277), so
-  // a turned DPDT throws to each pole's other throw, like every flip().
-  if (e.kind === 'dpdtSwitch') return flipDpdtPosition(base);
-  // A switch2's rotate reverses the lever the same way (Switch2Elm.java:241-259),
-  // but only for the settled-selection turn: the placement ghost turns about
-  // its press anchor with no committed position history, so a fresh part keeps
-  // its throw through the placement turns.
-  if (e.kind === 'switch2' && pivot === undefined) return flipSwitch2(base);
+  // Upstream's rotate composes flipXY and flipY, and both switch families
+  // override each of those with a throw reversal (Switch2Elm.java:241-259,
+  // DPDTSwitchElm.java:264-277), so the two reversals cancel and a quarter
+  // turn leaves every position untouched: a rigid turn needs no compensation.
+  // The DPDT's two flip() body shifts cancel under the composed turn the same
+  // way. Only the single-reversal mirror below reverses anything.
   return base;
 }
 

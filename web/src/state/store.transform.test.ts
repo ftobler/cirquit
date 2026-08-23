@@ -75,6 +75,61 @@ describe('rotate, mirror and swap terminals', () => {
     }
   });
 
+  it('rotating a selected switch2 turns the body but changes no parameter', () => {
+    // Upstream's rotate cancels the SPDT's two flip reversals, so the command
+    // must not disturb the throw, the group link or the session parity; the
+    // mirror below is the single reversal that does.
+    const id = useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 1, momentary: 0, throwCount: 2, link: 3 },
+      state: 1,
+    });
+    useStore.getState().select([id]);
+
+    useStore.getState().rotateSelection();
+
+    const r = useStore.getState().elements[0];
+    expect(r.state).toBe(1);
+    expect(r.params).toEqual({ position: 1, momentary: 0, throwCount: 2, link: 3 });
+    expect(Math.abs(r.y2 - r.y1)).toBe(160);
+
+    useStore.getState().mirrorSelection();
+    const m = useStore.getState().elements[0];
+    expect(m.state).toBe(0);
+    expect(m.params.position).toBe(0);
+    expect(m.params.flipParity).toBe(1);
+  });
+
+  it('rotating a selected dpdt leaves its throw alone too', () => {
+    // Same upstream verdict for the DPDT: flipXY and flipY each reverse the
+    // position (DPDTSwitchElm.java:264-277), so the rotate nets zero.
+    const id = useStore.getState().addElement({
+      kind: 'dpdtSwitch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 1, momentary: 0, poleCount: 2 },
+      state: 1,
+    });
+    useStore.getState().select([id]);
+
+    useStore.getState().rotateSelection();
+
+    const r = useStore.getState().elements[0];
+    expect(r.state).toBe(1);
+    expect(r.params.position).toBe(1);
+
+    useStore.getState().mirrorSelection();
+    expect(useStore.getState().elements[0].state).toBe(0);
+  });
+
   it('mirrors a selected transistor, keeping its bounding box and flipping post order', () => {
     const id = addTransistor();
     const before = postsOf(useStore.getState().elements[0]);

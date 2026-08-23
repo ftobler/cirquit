@@ -243,16 +243,19 @@ describe('dpdt switch transforms', () => {
     state: position,
   });
 
-  it('rotate flips the throw position, keeping both params in step', () => {
+  it('rotate leaves the throw position alone: upstream nets zero over both flips', () => {
+    // Upstream's rotate is flipXY then flipY and DPDTSwitchElm overrides BOTH
+    // with a throw reversal (DPDTSwitchElm.java:264-277), so a quarter turn
+    // cancels out and each pole still throws where it did. Only the mirror,
+    // one flip, reverses.
     const r = rotateElement(dpdt(0));
-    expect(r.state).toBe(1);
-    expect(r.params.position).toBe(1);
-    // The throw pairing inverts with the position, so a position-1 turn throws
-    // to the other throw of every pole.
-    expect(postsOf(r).length).toBe(6);
+    expect(r.state).toBe(0);
+    expect(r.params.position).toBe(0);
+    // The body still rides the rigid quarter turn.
+    expect(postsOf(r)).toHaveLength(6);
     const m = rotateElement(dpdt(1));
-    expect(m.state).toBe(0);
-    expect(m.params.position).toBe(0);
+    expect(m.state).toBe(1);
+    expect(m.params.position).toBe(1);
   });
 
   it('mirror flips the throw position', () => {
@@ -320,11 +323,19 @@ describe('switch2 transforms', () => {
     expect(e.params.flipParity).toBe(0);
   });
 
-  it('rotate of a settled selection behaves like a mirror', () => {
+  it('rotate of a settled selection leaves the lever and the parity alone', () => {
+    // Upstream's rotate composes flipXY and flipY and Switch2Elm overrides
+    // BOTH with a lever reversal (Switch2Elm.java:241-259), so the two
+    // reversals cancel: a rigid quarter turn needs no compensation. The
+    // mirror above is one reversal and keeps it.
     const r = rotateElement(switch2(0));
-    expect(r.state).toBe(1);
-    expect(r.params.position).toBe(1);
-    expect(r.params.flipParity).toBe(1);
+    expect(r.state).toBe(0);
+    expect(r.params.position).toBe(0);
+    expect(r.params.flipParity).toBe(0);
+    const thrown = rotateElement(switch2(1));
+    expect(thrown.state).toBe(1);
+    expect(thrown.params.position).toBe(1);
+    expect(thrown.params.flipParity).toBe(0);
   });
 
   it('four rotates return the position and the parity to the start', () => {
