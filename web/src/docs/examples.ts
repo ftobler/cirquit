@@ -9,10 +9,10 @@
  * the `?ctz=` form the app already reads.
  *
  * The upstream rectifier-usage example on subcircuits.html is a `<cir>` XML
- * document, which this port passes through without importing (see
- * OVERVIEW.md), so it is deliberately not here: its button would open an
- * empty circuit. The 555 usage example below covers the same ground in text
- * format.
+ * document. parseCircuit converts every XML document at load (see
+ * OVERVIEW.md), so it would load and save as ordinary text like any other
+ * bundled circuit; the 555 usage example below covers the same ground in
+ * text format.
  */
 
 export const EXAMPLES: Record<string, string> = {
