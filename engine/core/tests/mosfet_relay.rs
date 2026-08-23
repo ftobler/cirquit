@@ -837,7 +837,10 @@ fn relay_without_pulldown_keeps_the_throw_coupled() {
     let nodes = c.element_nodes();
     let v_pole = c.node_voltages()[nodes[4] as usize];
     let v_no = c.node_voltages()[nodes[4 + 2] as usize];
-    assert!(close(v_no, v_pole, 1e-9), "NO throw was {v_no}, pole {v_pole}");
+    assert!(
+        close(v_no, v_pole, 1e-9),
+        "NO throw was {v_no}, pole {v_pole}"
+    );
     assert!(v_no > 2.0, "NO throw should track the pole, got {v_no}");
 
     let c = &mut pulldown_relay(0, Some(true), &[]);
@@ -846,7 +849,10 @@ fn relay_without_pulldown_keeps_the_throw_coupled() {
     let nodes = c.element_nodes();
     let v_pole = c.node_voltages()[nodes[4] as usize];
     let v_nc = c.node_voltages()[nodes[4 + 1] as usize];
-    assert!(close(v_nc, v_pole, 1e-9), "NC throw was {v_nc}, pole {v_pole}");
+    assert!(
+        close(v_nc, v_pole, 1e-9),
+        "NC throw was {v_nc}, pole {v_pole}"
+    );
     assert!(v_nc > 2.0, "NC throw should track the pole, got {v_nc}");
 }
 
