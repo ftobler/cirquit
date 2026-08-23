@@ -21,7 +21,7 @@ import { printCircuit } from '../render/print';
 import { makeGhostElement, useStore } from '../state/store';
 import { menubarButtonClass } from './controlClasses';
 import { useMenuKeyboard } from './menuKeyboard';
-import { deferred, type MenuItemDef } from './menuRows';
+import { dcOutcomeReport, findDcOperatingPointRow, type MenuItemDef } from './menuRows';
 
 interface Props {
   engine: SimEngine | null;
@@ -511,9 +511,21 @@ export function Menubar({ engine }: Props) {
         }
       }),
     },
-    deferred(
-      'Find DC Operating Point',
-      'The DC operating point runs on reset; the one-shot command is not ported',
+    // Run-mode command like Reset, so it stays enabled with editing disabled
+    // (upstream gates it behind no read-only check either). The command
+    // resets every element engine-side, so the store drops its live fuse
+    // copies exactly as the Reset button does; then the outcome routes
+    // through the two banner channels per dcOutcomeReport.
+    findDcOperatingPointRow(
+      fire(() => {
+        const result = engine?.findDcOperatingPoint();
+        if (result === undefined) return;
+        const report = dcOutcomeReport(result);
+        const s = useStore.getState();
+        if (report.problem !== null) s.setProblem(report.problem);
+        else if (report.notice !== null) s.setNotice(report.notice);
+        s.unblowFuses();
+      }),
     ),
     // Enabled only while a recovery exists (UIManager.java:170); the flag is
     // set once at store init and cleared by the recover, so the row stays
