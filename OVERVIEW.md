@@ -436,8 +436,10 @@ fetch it).
   Newton iterate. `DIAGNOSED_SIM_FAILURES` is empty and the corpus report has
   no `sim error` entries left: the last one, qam-256, fell to the solver
   grounding an effectively-open current-source output that had run away, not
-  to the DC solve. The one-shot "Find DC Operating Point" menu command is not
-  ported; the toggle covers its use.
+   to the DC solve. The one-shot "Find DC Operating Point" File menu command
+   rides this same path: it flips `autoDC` on around a single reset, upstream's
+   `dcAnalysisFlag` plus `resetAction` (CommandManager.java:361-364), so it
+   solves whatever the setting says and puts the setting back afterwards.
 
 ---
 
