@@ -249,11 +249,17 @@ fetch it).
   the operating-mode thresholds, and getPower fixed on the flat array from
   Vbc*Ic to upstream's (Vb-Ve)*Ib + (Vc-Ve)*Ic; source/rail and diode-family
   tables print signed too, and the undocked popup computes its lines only
-  when Show Extended Info is on.
-- 505 Rust tests, of which 431 are the end-to-end circuit checks across
+  when Show Extended Info is on. A follow-up strip of review nits landed the
+  same day: momentary holds on the pointer path now cover the make-before-break,
+  DPDT and crossover switches (every kind whose parse reads the momentary
+  token), the darlington reports upstream's composite getPower instead of the
+  trait default, a push switch joined the toolbox resting open through a new
+  optional rest-state field on toolbox entries, and the stale XML note in the
+  examples docs matches what parseCircuit actually does.
+- 506 Rust tests, of which 432 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2750 TypeScript tests (one corpus report test skipped). The relay pulldown
+  2757 TypeScript tests (one corpus report test skipped). The relay pulldown
   parity fix added three Rust tests: the flag grounds an unwired throw in
   either settled position, a flag-clear guard keeps the old pole coupling,
   and the mid-travel position stamps identically with and without the flag.
