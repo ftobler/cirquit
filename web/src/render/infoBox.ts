@@ -73,9 +73,15 @@ const WAVEFORM_RMS_MULTIPLIER: Record<number, number> = {
 
 /** The voltage source's getInfo block (VoltageElm.java:463-492). The rail and
  *  the free-standing source share everything but the voltage-line label
- *  (RailElm uses "V =", VoltageElm "Vd ="). The periodic waveforms append the
- *  f / Vmax pair, then V(rms) at zero bias or Voff otherwise, and a wavelength
- *  line above 500 Hz at zero bias, mirroring the upstream else-if chain. */
+ *  (RailElm uses "V =", VoltageElm "Vd ="). I and Vd ride upstream's signed
+ *  getCurrentText/getVoltageText (VoltageElm.java:474-476), not the
+ *  magnitude D-text variants, so a reversed source reads negative. The
+ *  periodic waveforms append the f / Vmax pair, then V(rms) at zero bias or
+ *  Voff otherwise, and a wavelength line above 500 Hz at zero bias, mirroring
+ *  the upstream else-if chain. Upstream's DC "(R = ...)" row is omitted: it
+ *  only prints under its showResistanceInVoltageSources setting
+ *  (VoltageElm.java:489), which this port does not have, so there is no row
+ *  and nothing to gate it on. */
 function voltageSourceLines(
   kind: string,
   e: CircuitElement,
@@ -88,8 +94,8 @@ function voltageSourceLines(
   const vLabel = kind === 'rail' ? 'V = ' : 'Vd = ';
   const lines = [
     caption,
-    `I = ${formatValue(Math.abs(current), 'A')}`,
-    `${vLabel}${formatValue(Math.abs(voltage), 'V')}`,
+    `I = ${formatValue(current, 'A')}`,
+    `${vLabel}${formatValue(voltage, 'V')}`,
   ];
   // DC, VAR and NOISE have no timebase to describe, so upstream skips the block
   // (VoltageElm.java:478).
@@ -115,10 +121,32 @@ function voltageSourceLines(
   return lines;
 }
 
-/** The diode family's getInfo block (DiodeElm.java:183-193). A named model
- *  appends "(model)" to the kind line like upstream's non-oldStyle branch; the
- *  value form (a forward drop in params, no model name) gains the Vf line that
- *  upstream's oldStyle branch appends. P is shared by the whole family. */
+/** The diode family's header line. getInfo lives in DiodeElm and prints
+ *  "diode", or "diode (model)" for a named model (DiodeElm.java:183-186);
+ *  each subclass overrides just that first line, so the zener reads
+ *  "Zener diode" (ZenerElm.java:91-96), the varactor stays plain "varactor"
+ *  (VaractorElm.java:21-25) and the LED keeps the value/model split
+ *  (LEDElm.java:113-118). */
+function diodeFamilyHeader(kind: string, e: CircuitElement): string {
+  switch (kind) {
+    case 'zener':
+      return 'Zener diode';
+    case 'varactor':
+      return 'varactor';
+    case 'led':
+      return e.modelName != null ? `LED (${e.modelName})` : 'LED';
+    default:
+      return e.modelName != null ? `diode (${e.modelName})` : 'diode';
+  }
+}
+
+/** The diode family's getInfo block (DiodeElm.java:183-193). I and Vd use
+ *  upstream's signed getCurrentText/getVoltageText (:184-185), not the
+ *  magnitude D-text variants, so a reverse-biased junction reads negative.
+ *  The value form (a forward drop in params, no model name) gains the Vf
+ *  line that upstream's oldStyle branch appends. P is shared by the whole
+ *  family; upstream also appends a Vz row on the zener and a C row on the
+ *  varactor, which need live model state this table does not carry yet. */
 function diodeFamilyLines(
   kind: string,
   e: CircuitElement,
@@ -126,11 +154,10 @@ function diodeFamilyLines(
   voltage: number,
   power: number,
 ): string[] {
-  const kindLabel = e.modelName != null ? `${kind} (${e.modelName})` : kind;
   const lines = [
-    kindLabel,
-    `I = ${formatValue(Math.abs(current), 'A')}`,
-    `Vd = ${formatValue(Math.abs(voltage), 'V')}`,
+    diodeFamilyHeader(kind, e),
+    `I = ${formatValue(current, 'A')}`,
+    `Vd = ${formatValue(voltage, 'V')}`,
     `P = ${formatValue(power, 'W')}`,
   ];
   // A named model resolves its drop from the table and exposes no numeric Vf;
@@ -186,12 +213,14 @@ function transistorLines(e: CircuitElement, values: InfoLinesValues): string[] {
 
 /** The element's `getInfo` array (CircuitElm.java:1199-1203): the kind as the
  *  label line, then the shared `I =` / `Vd =` pair, then the kind-specific
- *  lines. I and Vd are magnitudes, upstream's `getCurrentDText` and
- *  `getVoltageDText` apply `Math.abs`; P uses the scope-convention power from
- *  the engine's array, the same source the live readout reads. The voltage
- *  source, rail and diode family get their full upstream tables; switch
- *  family, ground and wire and any unknown kind keep the shared pair only,
- *  matching upstream's own short tables. */
+ *  lines. I and Vd are magnitudes for most kinds, upstream's
+ *  `getCurrentDText` and `getVoltageDText` apply `Math.abs`; the
+ *  voltage-source/rail and diode-family tables instead ride upstream's signed
+ *  getCurrentText/getVoltageText, as their getInfo calls do. P uses the
+ *  scope-convention power from the engine's array, the same source the live
+ *  readout reads. The voltage source, rail, diode family and transistor get
+ *  their full upstream tables; switch family, ground and wire and any unknown
+ *  kind keep the shared pair only, matching upstream's own short tables. */
 export function infoLines(kind: string, e: CircuitElement, values: InfoLinesValues): string[] {
   const current = values.current ?? 0;
   const voltage = values.voltage ?? 0;

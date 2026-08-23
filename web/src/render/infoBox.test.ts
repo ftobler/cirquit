@@ -177,6 +177,54 @@ describe('infoLines', () => {
     ]);
   });
 
+  it('prints signed current and voltage on the rail table', () => {
+    // VoltageElm.java:474-476 uses getCurrentText/getVoltageText, not the
+    // magnitude D-text variants, so a sinking rail reads negative.
+    expect(
+      infoLines('rail', el('rail', { waveform: 0, bias: 0 }), { current: -0.2, voltage: -5, power: 1 }),
+    ).toEqual([
+      'voltage source',
+      'I = -200m A',
+      'V = -5 V',
+      'P = 1 W',
+    ]);
+  });
+
+  it('prints signed current and voltage on the diode table', () => {
+    // A reverse-biased junction carries negative current at negative Vd,
+    // exactly what upstream's signed rows show (DiodeElm.java:184-185).
+    expect(
+      infoLines('diode', el('diode', { forwardVoltage: 0.7 }), { current: -0.01, voltage: -5, power: 0.05 }),
+    ).toEqual([
+      'diode',
+      'I = -10m A',
+      'Vd = -5 V',
+      'P = 50m W',
+      'Vf = 700m V',
+    ]);
+  });
+
+  it('the zener header reads "Zener diode" like upstream prints it', () => {
+    // ZenerElm overrides only the header line of DiodeElm's getInfo
+    // (ZenerElm.java:91-96), in both the value and named-model forms.
+    const valued = infoLines('zener', el('zener', { zenerVoltage: 5.6 }), { current: 0.01, voltage: 5, power: 0.05 });
+    expect(valued[0]).toBe('Zener diode');
+    const modeled = infoLines('zener', el('zener', {}, '1N750'), { current: 0.01, voltage: 5, power: 0.05 });
+    expect(modeled[0]).toBe('Zener diode');
+    expect(modeled[3]).toBe('P = 50m W');
+  });
+
+  it('keeps the varactor header plain and the LED header uppercase with its model split', () => {
+    // VaractorElm.java:21-25 replaces the header wholesale; LEDElm.java:
+    // 113-118 keeps DiodeElm's value/model distinction under the LED word.
+    const varactor = infoLines('varactor', el('varactor', {}, 'BB202'), { current: 0.001, voltage: 2, power: 0.002 });
+    expect(varactor[0]).toBe('varactor');
+    const ledValued = infoLines('led', el('led', { forwardVoltage: 2 }), { current: 0.02, voltage: 2, power: 0.04 });
+    expect(ledValued[0]).toBe('LED');
+    const ledModeled = infoLines('led', el('led', {}, 'red'), { current: 0.02, voltage: 2, power: 0.04 });
+    expect(ledModeled[0]).toBe('LED (red)');
+  });
+
   it('builds the nine upstream rows for an NPN in the active region', () => {
     expect(
       infoLines('transistor', el('transistor', { pnp: 1, beta: 100 }, '2N2222'), {
