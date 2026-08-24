@@ -17,6 +17,7 @@ import { unescapeToken } from './tokens';
 import { modelToEngineSpec, parseCompositeModelLine } from '../subcircuits';
 import { isXml } from '../xml';
 import { xmlToText } from '../xmlToText';
+import { decodeEmbeddedScope } from '../embeddedScope';
 
 /** Kinds that resolve a `modelName` against the diode model library. All four
  *  share the diode model machinery upstream (VaractorElm, ZenerElm and LEDElm
@@ -757,8 +758,35 @@ export function parseCircuit(text: string): ParsedCircuit {
   // Resolved after the whole file is read, so an `o` line placed above the
   // elements still finds its targets, and the plot walk knows each plot's
   // element kind, which decides whether a scale token follows its value.
+  // The kind resolver is shared with the embedded-scope decode below, whose
+  // config token indexes into the same element list.
+  const kindOfFileIndex = (index: number): string | null => {
+    const elementId = idByFileIndex.get(index);
+    if (elementId !== undefined) return elements.find((e) => e.id === elementId)?.kind ?? null;
+    const code = dumpCodeByFileIndex.get(index);
+    return code === undefined ? null : kindOfDumpCode(code);
+  };
   for (const { id, tokens } of pendingScopes) {
-    scopes.push(parseScopeLine(id, tokens, idByFileIndex, dumpCodeByFileIndex, elements));
+    scopes.push(parseScopeLine(id, tokens, idByFileIndex, kindOfFileIndex));
+  }
+
+  // The embedded scopes (403 rows) interpret their `_`-joined config token
+  // through the same walk and the same element indexes. The raw token stays
+  // in `text` untouched; this attaches the display-only interpretation the
+  // renderer and the trace registration read.
+  for (const e of elements) {
+    if (e.kind !== 'scope' || e.text === undefined) continue;
+    const decoded = decodeEmbeddedScope(e.text, kindOfFileIndex);
+    if (decoded === null) continue;
+    e.embedded = {
+      tokens: decoded.tokens,
+      display: decoded.display,
+      plots: decoded.plots.map((p) => ({
+        id: allocateId(),
+        elementId: idByFileIndex.get(p.elementIndex) ?? null,
+        value: p.value,
+      })),
+    };
   }
 
   // Model names resolve after the whole file is read too, for the same
@@ -839,30 +867,19 @@ export function parseCircuit(text: string): ParsedCircuit {
  * the walk exists to find the per-plot `ne val` pairs without mistaking the
  * optional manDivisions, per-plot flags and per-plot scale tokens for them.
  * Everything the walk does not consume is scope text, preserved in raw.
+ * `kindOf` resolves a file element index to its kind, shared with the
+ * embedded-scope decode so both walks read the file identically.
  */
 function parseScopeLine(
   id: number,
   tokens: string[],
   idByFileIndex: Map<number, number>,
-  dumpCodeByFileIndex: Map<number, string>,
-  elements: CircuitElement[],
+  kindOf: (index: number) => string | null,
 ): ScopeConfig {
   const rawIndex = Number(tokens[1]);
   const elementIndex = Number.isFinite(rawIndex) ? rawIndex : -1;
   const valueToken = Number(tokens[3]);
   const flags = importDecOrHex(tokens[4] ?? '0');
-
-  // The element kind a file index resolves to. When the index lands on an
-  // element line this build could not read, the raw dump code recorded for
-  // that slot still tells `unitsOf` what it needs to know (lamp/capacitor/
-  // polarizedCapacitor/transistor); anything else, or an index before any
-  // element, has no kind to report.
-  const kindOf = (index: number): string | null => {
-    const elementId = idByFileIndex.get(index);
-    if (elementId !== undefined) return elements.find((e) => e.id === elementId)?.kind ?? null;
-    const code = dumpCodeByFileIndex.get(index);
-    return code === undefined ? null : kindOfDumpCode(code);
-  };
 
   const plots: ScopePlotConfig[] = [];
   const plotOf = (index: number, token: number): ScopePlotConfig => ({

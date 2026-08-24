@@ -169,6 +169,20 @@ const clone = (s: Snapshot): Snapshot => ({
     // A route is a nested array; without this a future in-place route mutator
     // would silently corrupt the undo snapshot.
     if (e.route) copy.route = e.route.map((r) => [...r]);
+    // The embedded-scope interpretation nests a plot list and per-plot display
+    // fields; clone them so a snapshot never aliases the live element, the
+    // same rule the route and model payloads follow.
+    if (e.embedded) {
+      copy.embedded = {
+        ...e.embedded,
+        tokens: [...e.embedded.tokens],
+        plots: e.embedded.plots.map((p) => ({ ...p })),
+        display: {
+          ...e.embedded.display,
+          perPlot: e.embedded.display.perPlot.map((d) => ({ ...d })),
+        },
+      };
+    }
     // A resolved device model is a nested object, and the custom-logic rules
     // vectors inside it are arrays; clone them so a snapshot can never alias
     // the live element. The OTA's model is the same carrier holding a string

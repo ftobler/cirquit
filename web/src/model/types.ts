@@ -2,6 +2,7 @@
  *  ever sees terminal coordinates and parameters. */
 
 import type { CompositeEngineSpec, CustomLogicModel } from '../io/netlist/types';
+import type { EmbeddedScopeState } from '../io/embeddedScope';
 
 export interface Point {
   x: number;
@@ -78,6 +79,15 @@ export interface CircuitElement {
    *  two posts. A route is valid only for its exact endpoints, so any
    *  geometry edit clears it. */
   route?: [number, number][];
+  /**
+   * The interpreted view configuration of an embedded scope (the 403
+   * ScopeElm row): the `_`-joined config token split and decoded through the
+   * same walk the `o` lines take, resolved by `parseCircuit`'s second pass.
+   * Display-only: the raw token stays in `text` for the byte-for-byte round
+   * trip, nothing here reaches the file, and editing an embedded scope's
+   * properties is deliberately out of scope.
+   */
+  embedded?: EmbeddedScopeState;
 }
 
 /** An editable property, surfaced in the element edit dialog. */
