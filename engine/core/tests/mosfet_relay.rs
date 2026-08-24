@@ -166,6 +166,85 @@ fn mosfet_off_uses_min_conductance() {
     );
 }
 
+/// A beta=10 common-source stage: source grounded, gate biased to 3 V, drain
+/// fed from 10 V through 700 ohm. With beta = 10 A/V^2 the saturation current
+/// .5*beta*(vgs-vt)^2 = 11.25 A would drop far more than the supply across any
+/// sane drain resistor, so the stage sits deep in triode at the parabola's
+/// foot: 7000*(1.5*vd - vd^2/2)... solved, 3500*vd^2 - 10501*vd + 10 = 0,
+/// whose only root inside the device frame is vd = 9.526e-4 V. The other
+/// quadratic root lies past vgs-vt, outside the triode branch's validity.
+///
+/// A drain capacitor charged to `perturbation` starts the Newton trajectory
+/// at different points for otherwise identical circuits; once it discharges
+/// (tau <= RC, sub-microsecond here, and 300 steps give 300 us) both must sit
+/// on the same operating point. Converging "to tolerance" means the endpoint
+/// cannot depend on where the iteration started or how it walked in.
+fn high_beta_stage(perturbation: f64) -> Circuit {
+    build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 700.0)]),
+            elm(
+                3,
+                "mosfet",
+                &[[200, 0], [100, 100], [100, 0]],
+                &[("pnp", 1.0), ("threshold", 1.5), ("beta", 10.0)],
+            ),
+            elm(
+                4,
+                "voltage",
+                &[[200, 100], [200, 0]],
+                &[("maxVoltage", 3.0)],
+            ),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "ground", &[[100, 100]], &[]),
+            elm(7, "ground", &[[200, 100]], &[]),
+            elm(
+                8,
+                "capacitor",
+                &[[100, 0], [300, 0]],
+                &[("capacitance", 1e-9), ("voltDiff", perturbation)],
+            ),
+            elm(9, "ground", &[[300, 0]], &[]),
+        ],
+        // A generous Newton budget so the loosened late-iteration tolerances
+        // are reachable instead of a step being rejected for budget first.
+        opts_budget(1e-6, false, 500),
+    )
+}
+
+#[test]
+fn high_beta_common_source_drain_is_invariant_to_initial_condition_perturbation() {
+    let a = &mut high_beta_stage(0.1);
+    let b = &mut high_beta_stage(0.2);
+    let ra = a.run(300);
+    let rb = b.run(300);
+    assert!(
+        ra.converged,
+        "perturbed run did not converge: {:?}",
+        ra.error
+    );
+    assert!(
+        rb.converged,
+        "2x-perturbed run did not converge: {:?}",
+        rb.error
+    );
+
+    let va = a.element_voltages()[2];
+    let vb = b.element_voltages()[2];
+
+    // Both runs land on the analytic triode root...
+    assert!(close(va, 9.526e-4, 2e-4), "drain was {} not 9.526e-4", va);
+    assert!(close(vb, 9.526e-4, 2e-4), "drain was {} not 9.526e-4", vb);
+    // ...and on the SAME point, to well under the pre-fix 10 mV stopping bar.
+    assert!(
+        (va - vb).abs() < 1e-4,
+        "drain moved with the initial condition: {} vs {}",
+        va,
+        vb
+    );
+}
+
 #[test]
 fn resolved_mosfet_default_cuts_off_while_resolved_jfet_default_conducts() {
     // The frontend's built-in tables resolve a `default` mosfet to
