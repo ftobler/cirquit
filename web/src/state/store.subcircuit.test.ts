@@ -329,6 +329,140 @@ describe('drill-in resets', () => {
   });
 });
 
+describe('drill-in session integrity', () => {
+  it('the suspended undo history survives a look-and-return', () => {
+    // The loose resistor gives the outer document something deletable that is
+    // not the 410 the drill-in needs.
+    useStore.getState().loadNetlist(
+      HEADER + 'r 0 0 160 0 0 1000\n410 0 0 64 64 1 myCirc\n' + MODEL_LINE + '\n',
+    );
+    const resistor = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([resistor.id]);
+    useStore.getState().deleteSelected();
+    const edited = useStore.getState().toNetlist();
+    expect(useStore.getState().undoStack).toHaveLength(1);
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    useStore.getState().exitSubcircuit();
+
+    const s = useStore.getState();
+    expect(s.subcircuitStack).toHaveLength(0);
+    expect(s.toNetlist()).toBe(edited);
+    // The pre-drill history came back through the exit reload.
+    expect(s.undoStack).toHaveLength(1);
+    expect(s.redoStack).toHaveLength(0);
+    // And the restored entry still works: undo rewinds the pre-drill edit.
+    useStore.getState().undo();
+    const undone = useStore.getState();
+    expect(undone.undoStack).toHaveLength(0);
+    expect(undone.elements.some((e) => e.kind === 'customComposite')).toBe(true);
+    expect(undone.elements.some((e) => e.kind === 'resistor')).toBe(true);
+    expect(undone.toNetlist()).not.toBe(edited);
+  });
+
+  it('an edited exit restores the outer history and appends the model-change baseline', () => {
+    useStore.getState().loadNetlist(
+      HEADER + 'r 0 0 160 0 0 1000\n410 0 0 64 64 1 myCirc\n' + PARALLEL_LINE + '\n',
+    );
+    const originalLine = useStore
+      .getState()
+      .toNetlist()
+      .split('\n')
+      .find((l) => l.startsWith('. '))!;
+    // Two distinct outer edits: delete the loose resistor, then place another.
+    const resistor = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([resistor.id]);
+    useStore.getState().deleteSelected();
+    useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 320,
+      y1: 0,
+      x2: 480,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 2200 },
+    });
+    expect(useStore.getState().undoStack).toHaveLength(2);
+    const beforeDrill = useStore.getState().toNetlist();
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    const inner = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([inner.id]);
+    useStore.getState().deleteSelected();
+
+    useStore.getState().exitSubcircuit();
+
+    const s = useStore.getState();
+    expect(s.subcircuitStack).toHaveLength(0);
+    // Restored outer history plus this exit's model-change baseline on top.
+    expect(s.undoStack).toHaveLength(3);
+    expect(s.redoStack).toHaveLength(0);
+    // One undo lands exactly on the pre-drill document: the model change gone,
+    // both outer edits still in place beneath it.
+    useStore.getState().undo();
+    const once = useStore.getState();
+    expect(once.undoStack).toHaveLength(2);
+    expect(once.toNetlist()).toBe(beforeDrill);
+    expect(once.toNetlist().split('\n').find((l) => l.startsWith('. '))).toBe(originalLine);
+    // The entries beneath are the outer edits, in order.
+    useStore.getState().undo();
+    expect(useStore.getState().elements.some((e) => e.kind === 'resistor')).toBe(false);
+    useStore.getState().undo();
+    expect(useStore.getState().elements.some((e) => e.kind === 'resistor')).toBe(true);
+    expect(useStore.getState().undoStack).toHaveLength(0);
+  });
+
+  it('the entry snapshot carries the live reactive charge through a look-and-return', () => {
+    useStore.getState().loadNetlist(
+      HEADER + 'c 0 0 32 0 4 0.00001 5 0 0\n410 0 64 64 128 1 myCirc\n' + MODEL_LINE + '\n',
+    );
+    const capId = useStore.getState().elements.find((e) => e.kind === 'capacitor')!.id;
+    useStore.getState().setLiveStateProvider(() => ({ [capId]: { voltDiff: 8.16 } }));
+    // The clean producer keeps the file token until the drill-in starts.
+    expect(useStore.getState().toNetlist()).toContain('c 0 0 32 0 4 0.00001 5 0 0');
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    const entryDoc = useStore.getState().subcircuitStack[0].document;
+    // The capture is the live overlay, not the stale clean text.
+    expect(entryDoc).toContain('c 0 0 32 0 4 0.00001 8.16 0 0');
+
+    useStore.getState().exitSubcircuit();
+    const s = useStore.getState();
+    expect(s.subcircuitStack).toHaveLength(0);
+    // The restored element serialises the live value, not the file token: the
+    // exit reloaded the entry's tokens, so the operating point rode home.
+    expect(s.toNetlist()).toContain('c 0 0 32 0 4 0.00001 8.16 0 0');
+    expect(s.toNetlist()).toBe(entryDoc);
+    expect(s.elements.find((e) => e.kind === 'capacitor')!.params.voltDiff).toBe(8.16);
+  });
+
+  it('a load mid-drill drops the suspended stacks with the entry', () => {
+    useStore.getState().loadNetlist(outerWithSlider());
+    const resistor = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([resistor.id]);
+    useStore.getState().deleteSelected();
+    expect(useStore.getState().undoStack).toHaveLength(1);
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+
+    useStore.getState().loadNetlist(HEADER + 'r 0 0 160 0 0 2200\n');
+
+    const s = useStore.getState();
+    expect(s.subcircuitStack).toHaveLength(0);
+    expect(s.undoStack).toHaveLength(0);
+    expect(s.redoStack).toHaveLength(0);
+    // Exit is now a no-op: nothing may restore cross-document state.
+    useStore.getState().exitSubcircuit();
+    useStore.getState().undo();
+    const after = useStore.getState();
+    expect(after.subcircuitStack).toHaveLength(0);
+    expect(after.undoStack).toHaveLength(0);
+    expect(after.elements.some((e) => e.kind === 'customComposite')).toBe(false);
+    expect(after.toNetlist()).toContain('2200');
+    expect(after.toNetlist()).not.toContain('410 ');
+  });
+});
+
 describe('drill-in document integrity', () => {
   afterEach(() => {
     clearUserModels();

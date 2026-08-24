@@ -59,7 +59,9 @@ export interface SubcircuitStackEntry {
   /** The model name being edited at this level. */
   modelName: string;
   /** The enclosing document's netlist text at the moment this level was
-   *  entered, what loadNetlist consumes to get back out. */
+   *  entered, what loadNetlist consumes to get back out. Captured with the
+   *  live overlay so a look-and-return reloads the operating point instead of
+   *  discharging every capacitor and inductor on the outer sheet. */
   document: string;
   /** The enclosing document's pan/zoom, restored on exit the way upstream
    *  restores its transform (CirSim.java:499). */
@@ -68,6 +70,13 @@ export interface SubcircuitStackEntry {
    *  so any wholesale stack reset (a mid-drill load, New) drops it too, and
    *  nothing stale can ever be restored onto the wrong document. */
   session: DrillSessionSnapshot;
+  /** The enclosing level's suspended undo histories, restored on exit because
+   *  both loads of the round trip wipe the live stacks (upstream stashes them
+   *  in pushContext/popContext, CirSim.java:476-500). They travel with the
+   *  entry for the same reason `session` does: a mid-drill load or New drops
+   *  them with it, so nothing stale restores onto the wrong document. */
+  undo: Snapshot[];
+  redo: Snapshot[];
 }
 
 /** A point-in-time copy of everything undo needs to restore. Settings and view

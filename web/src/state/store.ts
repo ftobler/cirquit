@@ -2709,9 +2709,21 @@ function createAppStore() {
     // load wipes them like any load, and only the exit brings this world back.
     const entry = {
       modelName: name,
-      document: s.toNetlist(),
+      // saveNetlist, not toNetlist: the exit reloads this text, so the outer
+      // circuit's live reactive charge (capacitor voltDiff, inductor currents)
+      // must ride inside it or a look-and-return would discharge the circuit.
+      // The document bump inside both loads keeps the rebuild gate from
+      // injecting engine state across the round trip, so these tokens are the
+      // operating point's only ride home.
+      document: s.saveNetlist(),
       view: s.view,
       session: { samples: snapshotSampleCache(), models: snapshotUserModels() },
+      // The outer level's undo histories are suspended here for the drill-in,
+      // upstream's pushContext stash (CirSim.java:476-482). Both loads of the
+      // round trip wipe the live stacks unconditionally, so without this every
+      // pre-drill edit would come home unundoable.
+      undo: s.undoStack,
+      redo: s.redoStack,
     };
     const stack = s.subcircuitStack;
     // noBaseline keeps lastSaved on the outer document for the whole session.
@@ -2761,9 +2773,18 @@ function createAppStore() {
       // document, which is what keeps the round trip clean-read as it started.
       restoreSampleCache(top.session.samples);
       restoreUserModels(top.session.models);
-      // A prior refused exit may have left a message here; a successful return
-      // clears it so the Escape/breadcrumb alert call sites stay silent.
-      set({ view: top.view, subcircuitStack: stack.slice(0, -1), subcircuitError: null });
+      // The reload also wiped both undo stacks; the suspended outer histories
+      // come back here (upstream's popContext, CirSim.java:500-506), so
+      // pre-drill edits stay undoable after a look-and-return with no edits.
+      set({
+        view: top.view,
+        undoStack: top.undo,
+        redoStack: top.redo,
+        subcircuitStack: stack.slice(0, -1),
+        // A prior refused exit may have left a message here; a successful return
+        // clears it so the Escape/breadcrumb alert call sites stay silent.
+        subcircuitError: null,
+      });
       return;
     }
     // Rewrite the enclosing document's `.` line for the model. The match is on
@@ -2790,7 +2811,12 @@ function createAppStore() {
     restoreSampleCache(top.session.samples);
     restoreUserModels(top.session.models);
     set({
-      undoStack: [pre],
+      // The suspended outer history comes back first and this exit's
+      // model-change baseline lands on top of it, so pre-drill edits stay
+      // undoable past an edited drill-in too; upstream's popContext restores
+      // its stashed stacks the same way (CirSim.java:500-506). The redo future
+      // dies with the model change, the way every other edit clears it.
+      undoStack: [...top.undo, pre].slice(-UNDO_LIMIT),
       redoStack: [],
       view: top.view,
       subcircuitStack: stack.slice(0, -1),
