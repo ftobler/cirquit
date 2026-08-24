@@ -18,7 +18,8 @@
  * snapping, as it does for every other placement.
  */
 
-import type { Point } from './types';
+import type { CircuitElement, Point } from './types';
+import { postsOf } from './registry';
 
 /** The axis a wire drag runs along first. 'h' bends across then down, 'v'
  *  down then across. */
@@ -66,4 +67,67 @@ export function wireSegments(start: Point, end: Point, axis: WireAxis): WireSegm
   return legs
     .filter(([a, b]) => a.x !== b.x || a.y !== b.y)
     .map(([a, b]) => ({ x1: a.x, y1: a.y, x2: b.x, y2: b.y }));
+}
+
+/**
+ * The junction posts lying strictly inside a freshly drawn wire, ordered from
+ * (x1, y1) so the caller can walk the span end to end. Upstream collects its
+ * split points from the post-draw list and sorts them by squared distance
+ * from the drag's anchor (WireElm.draggingDone). Coordinates are grid
+ * integers, so collinearity is an exact cross product and needs no tolerance;
+ * repeated points collapse so the boundary walk never makes a zero-length
+ * piece.
+ */
+export function interiorPostHits(seg: WireSegment, posts: readonly Point[]): Point[] {
+  const x0 = Math.min(seg.x1, seg.x2);
+  const x1 = Math.max(seg.x1, seg.x2);
+  const y0 = Math.min(seg.y1, seg.y2);
+  const y1 = Math.max(seg.y1, seg.y2);
+  const dx = seg.x2 - seg.x1;
+  const dy = seg.y2 - seg.y1;
+  const hits = posts.filter((p) => {
+    if ((p.x === seg.x1 && p.y === seg.y1) || (p.x === seg.x2 && p.y === seg.y2)) return false;
+    if (p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1) return false;
+    return (p.x - seg.x1) * dy - (p.y - seg.y1) * dx === 0;
+  });
+  hits.sort(
+    (a, b) =>
+      (a.x - seg.x1) * (a.x - seg.x1) +
+      (a.y - seg.y1) * (a.y - seg.y1) -
+      ((b.x - seg.x1) * (b.x - seg.x1) + (b.y - seg.y1) * (b.y - seg.y1)),
+  );
+  const out: Point[] = [];
+  for (const p of hits) {
+    const last = out[out.length - 1];
+    if (last && last.x === p.x && last.y === p.y) continue;
+    out.push(p);
+  }
+  return out;
+}
+
+/**
+ * Whether some other two-terminal element already joins `a` to `b` directly,
+ * upstream's hasDirectConnection (WireElm.java:268-283): both of its posts sit
+ * exactly on those two coordinates. A sub-segment with such a twin would lie
+ * parallel on top of the existing part, an electrical loop over an already
+ * made connection, so the splitter drops it instead of adding it. `skip`
+ * carries the ids this gesture is replacing; upstream only excludes the one
+ * wire it came from (`ce == this`), the port excludes every wire of the run.
+ */
+export function duplicatesColinearElement(
+  elements: readonly CircuitElement[],
+  skip: ReadonlySet<number>,
+  a: Point,
+  b: Point,
+): boolean {
+  return elements.some((e) => {
+    if (skip.has(e.id)) return false;
+    const posts = postsOf(e);
+    if (posts.length !== 2) return false;
+    const [p, q] = posts;
+    return (
+      (p.x === a.x && p.y === a.y && q.x === b.x && q.y === b.y) ||
+      (p.x === b.x && p.y === b.y && q.x === a.x && q.y === a.y)
+    );
+  });
 }

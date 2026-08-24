@@ -36,6 +36,7 @@ import {
 import { leadPostAt, pointOnWireInterior, splitWire } from '../render/geometry';
 import { convertWires } from '../render/wireConverter';
 import { lShapeRoute, routeWire, routingObstacles } from '../render/wireRouter';
+import { postDotPoints, shouldDrawDot } from '../render/junction';
 import {
   canMirror,
   canRotate,
@@ -71,6 +72,7 @@ import { normalizeSipoBits } from '../model/registry/elements/sipoShift';
 import { normalizeRingBits } from '../model/registry/elements/ringCounter';
 import { normalizePoleCount } from '../model/registry/elements/dpdtSwitch';
 import { normalizeInputCount } from '../model/registry/shared';
+import { duplicatesColinearElement, interiorPostHits } from '../model/wirePlacement';
 import { DEFAULT_MODEL_NAME } from '../model/registry/elements/customComposite';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import {
@@ -101,6 +103,7 @@ import {
   GRID_SIZE,
   UNMODELLED_HEADER,
   type CircuitElement,
+  type Point,
   type SimSettings,
 } from '../model/types';
 import type { AppState, Slider, Snapshot, ViewTransform } from './types';
@@ -529,15 +532,82 @@ function patchChangesElement(e: CircuitElement, patch: Partial<CircuitElement>):
   return false;
 }
 
+/**
+ * The pass a freshly drawn wire run owes the junction posts it crossed,
+ * upstream's WireElm.draggingDone run from endDrag after the element lands
+ * (MouseManager.java:1281-1283, WireElm.java:286-316): each new plain wire
+ * splits at every junction-dot post on its interior, so drawing through a
+ * T-junction connects there instead of only looking connected. A sub-segment
+ * whose ends some existing two-terminal part already joins directly is
+ * dropped rather than laid parallel on it.
+ *
+ * The dot scan reads the scene WITHOUT this gesture's own wires, the
+ * equivalent of upstream running off its pre-gesture analysis: only then does
+ * a quiet pass-through coordinate stay unsplit. Routed wires are exempt,
+ * mirroring upstream's draggingDone override (they route around posts).
+ *
+ * Pure over the snapshot: returns the made ids to drop and their replacement
+ * pieces, or null when nothing hit and the run stands as drawn.
+ */
+function connectNewWiresAcrossPosts(
+  elements: readonly CircuitElement[],
+  madeIds: readonly number[],
+): { gone: Set<number>; added: CircuitElement[] } | null {
+  const made = new Set(madeIds);
+  const scene = elements.filter((e) => !made.has(e.id));
+  const dots: Point[] = [];
+  for (const [key, count] of postDotPoints(scene)) {
+    if (!shouldDrawDot(count)) continue;
+    const [x, y] = key.split(',').map(Number);
+    dots.push({ x, y });
+  }
+  const gone = new Set<number>();
+  const added: CircuitElement[] = [];
+  let touched = false;
+  for (const id of madeIds) {
+    const w = elements.find((e) => e.id === id);
+    if (!w || w.kind !== 'wire') continue;
+    if (w.route && w.route.length >= 2) continue;
+    const hits = interiorPostHits({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 }, dots);
+    if (hits.length === 0) continue;
+    touched = true;
+    gone.add(id);
+    // Walk the span splitting off one piece per hit with the same splitWire
+    // the other edit paths use; the trailing remainder closes the walk. An
+    // interior grid point always splits, so the null case cannot fire.
+    let head: CircuitElement = w;
+    const pieces: CircuitElement[] = [];
+    for (const p of hits) {
+      const pair = splitWire(head, p, allocateId);
+      if (!pair) break;
+      pieces.push(pair[0]);
+      head = pair[1];
+    }
+    pieces.push(head);
+    // The first surviving piece inherits the drawn wire's id, like upstream
+    // mutating the dragged element into its first segment, so a selection
+    // taken during the gesture still points at real geometry.
+    let reused = false;
+    for (const pc of pieces) {
+      if (
+        duplicatesColinearElement(scene, made, { x: pc.x1, y: pc.y1 }, { x: pc.x2, y: pc.y2 })
+      ) {
+        continue;
+      }
+      added.push(reused ? pc : { ...pc, id });
+      reused = true;
+    }
+  }
+  return touched ? { gone, added } : null;
+}
+
 /** The parts sidebar defaults open on a wide (desktop) screen, where it is
  *  the always-visible toolbox, and closed on narrow screens, where it is a
  *  drawer the Parts button opens. The Toolbar Options row and the Parts
  *  button share this same state. */
 function defaultPartsOpen(): boolean {
   return !isNarrow();
-}
-
-/** True on the narrow (mobile) layout where the side panels stop being flex
+}/** True on the narrow (mobile) layout where the side panels stop being flex
  *  siblings and become edge-anchored overlays, so only one can be shown at a
  *  time without stacking two popovers over the canvas. */
 function isNarrow(): boolean {
@@ -953,6 +1023,17 @@ function createAppStore() {
     get().placeWireEnd(last.id, last.x2, last.y2);
     get().autoSplitAt({ x: first.x1, y: first.y1 }, first.id);
     get().autoSplitAt({ x: last.x2, y: last.y2 }, last.id);
+    // Last, like upstream's endDrag runs draggingDone after the endpoint
+    // splits: the run breaks at every junction post its segments crossed, so
+    // drawing through a T-junction connects there. Still the gesture's single
+    // undo entry, owned by the commit above.
+    const pass = connectNewWiresAcrossPosts(get().elements, made.map((e) => e.id));
+    if (pass) {
+      set((st) => ({
+        elements: st.elements.filter((e) => !pass.gone.has(e.id)).concat(pass.added),
+        ...bumpRevision(st),
+      }));
+    }
     return made.map((e) => e.id);
   },
 

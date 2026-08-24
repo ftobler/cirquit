@@ -4147,6 +4147,141 @@ describe('wire split on a post drag', () => {
   });
 });
 
+describe('a drawn wire connects where it crosses junction posts', () => {
+  // Upstream's WireElm.draggingDone: a freshly drawn plain wire splits at
+  // every existing junction-dot post lying on its interior, and any
+  // sub-segment duplicating an existing colinear two-terminal element is
+  // dropped instead of laid parallel (WireElm.java:286-316).
+  const addWire = (x1: number, y1: number, x2: number, y2: number) =>
+    useStore.getState().addElement({
+      kind: 'wire',
+      x1,
+      y1,
+      x2,
+      y2,
+      flags: 0,
+      params: {},
+    });
+  const spans = () =>
+    useStore
+      .getState()
+      .elements.filter((e) => e.kind === 'wire')
+      .map((e) => [e.x1, e.y1, e.x2, e.y2]);
+
+  it('splits at a T-junction post mid-span, one undo entry for the whole gesture', () => {
+    // A real T-junction: two bar wires and a grounded post share (80,0), so a
+    // junction dot draws there. The ground's stem hangs off the far side, so
+    // the drawn span crosses exactly one dot point.
+    addWire(0, 0, 80, 0);
+    addWire(80, 0, 160, 0);
+    useStore
+      .getState()
+      .addElement({ kind: 'ground', x1: 80, y1: 0, x2: 80, y2: 32, flags: 0, params: {} });
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().addWires([{ x1: 80, y1: -96, x2: 80, y2: 96 }]);
+
+    // The drawn run came back split at the crossing, so both halves meet the
+    // junction's node.
+    expect(spans()).toContainEqual([80, -96, 80, 0]);
+    expect(spans()).toContainEqual([80, 0, 80, 96]);
+    // The gesture pushed exactly one entry, and it takes everything back.
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    useStore.getState().undo();
+    expect(spans()).toEqual([
+      [0, 0, 80, 0],
+      [80, 0, 160, 0],
+    ]);
+  });
+
+  it('splits at a dead-end post too', () => {
+    // A dangling stub's far end counts one post, which upstream's
+    // postDrawList includes like any junction dot.
+    addWire(80, 0, 80, 32);
+
+    useStore.getState().addWires([{ x1: 0, y1: 0, x2: 160, y2: 0 }]);
+
+    expect(spans()).toContainEqual([0, 0, 80, 0]);
+    expect(spans()).toContainEqual([80, 0, 160, 0]);
+    // The stub is untouched; its end is now a real connection.
+    expect(spans()).toContainEqual([80, 0, 80, 32]);
+  });
+
+  it('drops a sub-segment that would lie parallel on an existing part', () => {
+    // Redrawing an existing connection across its middle junction must not
+    // lay a second copy over each half: an electrical loop upstream avoids
+    // with hasDirectConnection. Both halves duplicate existing wires, so the
+    // whole drawn wire vanishes again.
+    addWire(0, 0, 80, 0);
+    addWire(80, 0, 160, 0);
+    addWire(80, 0, 80, 80);
+    const before = useStore.getState().elements;
+
+    useStore.getState().addWires([{ x1: 0, y1: 0, x2: 160, y2: 0 }]);
+
+    expect(useStore.getState().elements).toEqual(before);
+  });
+
+  it('leaves a crossing without a post alone', () => {
+    // The horizontal wire has no terminal mid-span, so (80,0) is not a dot
+    // point and the drawn wire stays whole.
+    addWire(0, 0, 160, 0);
+    const before = useStore.getState().elements.length;
+
+    useStore.getState().addWires([{ x1: 80, y1: -64, x2: 80, y2: 64 }]);
+
+    expect(useStore.getState().elements).toHaveLength(before + 1);
+    expect(spans()).toContainEqual([80, -64, 80, 64]);
+    expect(spans()).toContainEqual([0, 0, 160, 0]);
+  });
+
+  it('still splits what an endpoint lands on when the interior crosses nothing', () => {
+    // The endpoint-driven rule (placeWireEnd) keeps working unchanged beside
+    // the new interior pass.
+    addWire(0, 0, 160, 0);
+
+    useStore.getState().addWires([{ x1: 80, y1: -64, x2: 80, y2: 0 }]);
+
+    expect(spans()).toContainEqual([0, 0, 80, 0]);
+    expect(spans()).toContainEqual([80, 0, 160, 0]);
+    expect(spans()).toContainEqual([80, -64, 80, 0]);
+    expect(useStore.getState().elements.filter((e) => e.kind === 'wire')).toHaveLength(3);
+  });
+
+  it('keeps the drawn wire id on its first surviving piece', () => {
+    // Upstream turns the dragged element itself into the first segment, so
+    // what the gesture selected survives the split.
+    addWire(0, 0, 80, 0);
+    addWire(80, 0, 160, 0);
+    useStore
+      .getState()
+      .addElement({ kind: 'ground', x1: 80, y1: 0, x2: 80, y2: 32, flags: 0, params: {} });
+
+    const [drawn] = useStore.getState().addWires([{ x1: 80, y1: -96, x2: 80, y2: 96 }]);
+
+    const piece = useStore
+      .getState()
+      .elements.find((e) => e.id === drawn && e.kind === 'wire');
+    expect(piece).toBeDefined();
+    expect([piece!.x1, piece!.y1, piece!.x2, piece!.y2]).toEqual([80, -96, 80, 0]);
+  });
+
+  it('never re-splits when an existing element merely moves across posts', () => {
+    // Only freshly drawn wires get the pass: a moved element crossing posts
+    // connects nothing, exactly as before.
+    addWire(0, 0, 80, 0);
+    addWire(80, 0, 160, 0);
+    addWire(80, 0, 80, 80);
+    const mover = addWire(240, -64, 240, 64);
+
+    useStore.getState().moveElements([mover], -160, 0);
+
+    // The moved wire arrived on the T-junction whole: same count, no pieces.
+    expect(useStore.getState().elements.filter((e) => e.kind === 'wire')).toHaveLength(4);
+    expect(spans()).toContainEqual([80, -64, 80, 64]);
+  });
+});
+
 describe('manual wire split (Split Wire Manually)', () => {
   const addWire = (x1: number, y1: number, x2: number, y2: number) =>
     useStore.getState().addElement({

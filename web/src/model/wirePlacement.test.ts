@@ -1,8 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import type { Point } from './types';
-import { wireDragAxis, wireSegments } from './wirePlacement';
+import type { CircuitElement, Point } from './types';
+import {
+  duplicatesColinearElement,
+  interiorPostHits,
+  wireDragAxis,
+  wireSegments,
+} from './wirePlacement';
 
 const P = (x: number, y: number) => ({ x, y });
+
+const el = (kind: string, x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
+  id: 1,
+  kind,
+  x1,
+  y1,
+  x2,
+  y2,
+  flags: 0,
+  params: {},
+});
 
 describe('wireDragAxis', () => {
   it('reports nothing while the pointer is still on the anchor', () => {
@@ -80,5 +96,69 @@ describe('wireSegments', () => {
     expect({ x: segs[0].x1, y: segs[0].y1 }).toEqual(P(16, 16));
     expect({ x: segs[0].x2, y: segs[0].y2 }).toEqual({ x: segs[1].x1, y: segs[1].y1 });
     expect({ x: segs[1].x2, y: segs[1].y2 }).toEqual(P(112, 80));
+  });
+});
+
+describe('interiorPostHits', () => {
+  it('collects the posts on a drawn wire interior, ordered from its start', () => {
+    // Upstream sorts the split points by distance from the drag's anchor
+    // (WireElm.draggingDone), so the pieces come out in span order whatever
+    // order the post scan produced.
+    const seg = { x1: 0, y1: 0, x2: 160, y2: 0 };
+    expect(interiorPostHits(seg, [P(112, 0), P(48, 0)])).toEqual([P(48, 0), P(112, 0)]);
+  });
+
+  it('reads a wire drawn in either direction', () => {
+    const seg = { x1: 160, y1: 0, x2: 0, y2: 0 };
+    expect(interiorPostHits(seg, [P(112, 0)])).toEqual([P(112, 0)]);
+  });
+
+  it('drops endpoints and off-line points', () => {
+    const seg = { x1: 0, y1: 0, x2: 160, y2: 0 };
+    expect(interiorPostHits(seg, [P(0, 0), P(160, 0), P(80, 16), P(80, -16)])).toEqual([]);
+  });
+
+  it('dedups a repeated post and walks a vertical span', () => {
+    const seg = { x1: 80, y1: 80, x2: 80, y2: -80 };
+    expect(interiorPostHits(seg, [P(80, 0), P(80, 32)])).toEqual([P(80, 32), P(80, 0)]);
+    expect(interiorPostHits(seg, [P(80, 0), P(80, 0)])).toEqual([P(80, 0)]);
+  });
+
+  it('finds nothing when there is nothing to find', () => {
+    const seg = { x1: 0, y1: 0, x2: 64, y2: 0 };
+    expect(interiorPostHits(seg, [])).toEqual([]);
+  });
+});
+
+describe('duplicatesColinearElement', () => {
+  it('sees an existing part already joining the two ends, in either order', () => {
+    const pool = [el('wire', 0, 0, 80, 0)];
+    expect(duplicatesColinearElement(pool, new Set(), P(0, 0), P(80, 0))).toBe(true);
+    expect(duplicatesColinearElement(pool, new Set(), P(80, 0), P(0, 0))).toBe(true);
+  });
+
+  it('refuses near misses: one shared end is not a duplicate', () => {
+    const pool = [el('wire', 0, 0, 80, 0)];
+    expect(duplicatesColinearElement(pool, new Set(), P(80, 0), P(160, 0))).toBe(false);
+    expect(duplicatesColinearElement(pool, new Set(), P(0, 0), P(40, 0))).toBe(false);
+  });
+
+  it('counts any two-terminal part, not only wires', () => {
+    const pool = [
+      el('resistor', 0, 0, 80, 0),
+      el('ground', 160, 0, 160, 32),
+      el('transistor', 240, 0, 240, 64),
+    ];
+    expect(duplicatesColinearElement(pool, new Set(), P(0, 0), P(80, 0))).toBe(true);
+    // A ground has one post and a transistor three: neither can be the
+    // colinear twin upstream's getPostCount() == 2 gate demands.
+    expect(duplicatesColinearElement(pool, new Set(), P(160, 0), P(160, 32))).toBe(false);
+    expect(duplicatesColinearElement(pool, new Set(), P(240, 0), P(240, 64))).toBe(false);
+  });
+
+  it('skips the ids the caller is replacing', () => {
+    const mine = { ...el('wire', 0, 0, 80, 0), id: 7 };
+    expect(duplicatesColinearElement([mine], new Set([7]), P(0, 0), P(80, 0))).toBe(false);
+    expect(duplicatesColinearElement([mine], new Set(), P(0, 0), P(80, 0))).toBe(true);
   });
 });

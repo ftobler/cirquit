@@ -354,10 +354,14 @@ export interface AppState {
   /** Inserts a whole wire run as one edit: the 0, 1 or 2 segments a wire drag
    *  produced (`model/wirePlacement.ts`). One undo entry covers the run
    *  however many segments it is, and the run's two free ends split whatever
-   *  they landed on, the same connect-on-drop rule a dragged part follows. The
-   *  corner between two segments is left alone: it is this gesture's own
+   *  they landed on, the same connect-on-drop rule a dragged part follows.
+   *  The corner between two segments is left alone: it is this gesture's own
    *  junction, and upstream splits only at the dragged element's own ends.
-   *  Returns the new ids, empty when the run had no length. */
+   *  After those endpoint splits each drawn segment also breaks at every
+   *  junction-dot post lying on its interior (upstream's WireElm.draggingDone),
+   *  dropping any sub-segment that would lie parallel on an existing
+   *  colinear two-terminal part. Returns the new ids, empty when the run had
+   *  no length. */
   addWires(segments: WireSegment[]): number[];
   /** Splits the wire at `id` at `point` (circuit coordinates, snapped to the
    *  grid here like upstream's doSplit), replacing it with the two halves. The
