@@ -2324,6 +2324,27 @@ function createAppStore() {
     });
   },
 
+  /** The scope popup's Remove Plot: drops exactly the plot the menu opened
+   *  over, upstream's indexed removePlot (Scope.removePlot(int)). A combined
+   *  panel can carry two plots of the same value, so filtering by value would
+   *  kill the wrong trace; identity here is the plot id ScopePanel resolved
+   *  under the cursor. */
+  removePlot: (scopeId, plotId) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.id === scopeId);
+    // A stale id (the menu outlived its plot) must not commit a no-op.
+    if (!scope || !scope.plots.some((p) => p.id === plotId)) return;
+    // Removing must never empty the panel.
+    if (scope.plots.length <= 1) return;
+    s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) =>
+        x.id === scopeId ? { ...x, plots: x.plots.filter((p) => p.id !== plotId) } : x,
+      ),
+      ...bumpRevision(st),
+    }));
+  },
+
   /** The properties dialog's Show Vce vs Ic row, upstream's showvcevsic menu
    *  command (Scope.java:1312-1317): replace the plot list with exactly the
    *  VCE/IC pair on the scope's element and turn the 2D plot on, resetting the

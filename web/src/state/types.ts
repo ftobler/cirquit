@@ -584,6 +584,11 @@ export interface AppState {
   clearPlotMeasurementOverrides(scopeId: number): void;
   /** Adds or removes a plot of `value`, never emptying the panel. */
   togglePlot(scopeId: number, value: ScopeValue): void;
+  /** Removes exactly the plot `plotId` names, the scope popup's Remove Plot
+   *  (Scope.removePlot(int)): a combined panel can carry two plots of the
+   *  same value, so identity is by id, not by value. Never empties the
+   *  panel; one undo entry. */
+  removePlot(scopeId: number, plotId: number): void;
   /** The Show Vce vs Ic row's action: replaces a transistor scope's plots
    *  with the VCE/IC pair and turns X-Y on (Scope.java:1312-1317). */
   setScopeVceIc(scopeId: number): void;

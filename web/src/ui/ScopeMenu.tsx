@@ -126,10 +126,9 @@ export function ScopeMenu({ engine, nameOf }: Props) {
     },
     {
       label: 'Remove Plot',
-      action: () => {
-        const plot = scope.plots.find((p) => p.id === scopeMenu.plotId) ?? scope.plots[0];
-        if (plot.value !== null) useStore.getState().togglePlot(scope.id, plot.value);
-      },
+      // The plot id ScopePanel resolved under the cursor, not a value: two
+      // same-value plots in one panel must remove independently.
+      action: () => useStore.getState().removePlot(scope.id, scopeMenu.plotId),
     },
     {
       label: 'Reset',

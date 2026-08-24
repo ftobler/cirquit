@@ -2786,6 +2786,57 @@ describe('scope panels', () => {
     expect(useStore.getState().scopes[0].plots).toHaveLength(1);
   });
 
+  /** A combined panel holding exactly [V(A), V(B)]: the default settings give
+   *  every voltage scope a current companion, which would blur the identity
+   *  case this block is about, so it is switched off for the setup. */
+  const twoVoltageCombined = () => {
+    useStore.setState((s) => ({ settings: { ...s.settings, showCurrent: false } }));
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    const [sa, sb] = useStore.getState().scopes;
+    useStore.getState().combineScopes(sa.id, sb.id);
+    const combined = useStore.getState().scopes[0];
+    expect(combined.plots.map((p) => p.elementId)).toEqual([a, b]);
+    return { a, b, combined };
+  };
+
+  it('removePlot removes the clicked plot, not the first with its value', () => {
+    const { a, b, combined } = twoVoltageCombined();
+
+    // Right-clicking V(B) resolves B's plot id (ScopePanel selectPlotAt); the
+    // value-keyed togglePlot path would kill both voltage plots here.
+    useStore.getState().removePlot(combined.id, combined.plots[1].id);
+    expect(useStore.getState().scopes[0].plots.map((p) => p.elementId)).toEqual([a]);
+    expect(useStore.getState().scopes[0].plots.some((p) => p.elementId === b)).toBe(false);
+  });
+
+  it('removePlot refuses to empty the panel', () => {
+    // A single-plot panel: showCurrent off so addScope creates no companion,
+    // making V(A) the last samplable plot in it.
+    useStore.setState((s) => ({ settings: { ...s.settings, showCurrent: false } }));
+    useStore.getState().addScope(addResistor(), 'voltage');
+    const scope = useStore.getState().scopes[0];
+    const before = useStore.getState().undoStack.length;
+
+    useStore.getState().removePlot(scope.id, scope.plots[0].id);
+    expect(useStore.getState().scopes[0].plots).toHaveLength(1);
+    expect(useStore.getState().undoStack.length).toBe(before);
+  });
+
+  it('removePlot ignores a stale plot id', () => {
+    useStore.getState().addScope(addResistor(), 'voltage');
+    const scope = useStore.getState().scopes[0];
+    const before = useStore.getState().undoStack.length;
+
+    // The menu can outlive the plot it opened over; a stale id must be a
+    // no-op, not a committed revision bump that removes nothing.
+    useStore.getState().removePlot(scope.id, scope.plots[0].id + 9999);
+    expect(useStore.getState().scopes[0].plots).toEqual(scope.plots);
+    expect(useStore.getState().undoStack.length).toBe(before);
+  });
+
   it('addToScope adds the plot to the right scope, deduping per scope', () => {
     const r = addResistor();
     useStore.getState().addScope(r, 'voltage');

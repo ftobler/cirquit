@@ -101,13 +101,13 @@ describe('scope raw snapshot isolation', () => {
 });
 
 describe('scope family undo-restore', () => {
-  // The five structural mutators commit() themselves (addScope store.ts:1386,
-  // removeScope store.ts:1445, togglePlot store.ts:1568, combineScopes
-  // store.ts:1601, separateScope store.ts:1618) and so do the six fast-path
-  // setters (setScopeSpeed/Trigger/Flags, setPlotCoupling/ManScale/ManPosition):
-  // item 21 decided they are ordinary property edits and must be undoable as
-  // their own step. One undo after each restores the exact pre-mutation
-  // snapshot, so the tests below call the setter without an explicit commit.
+  // The six structural mutators commit() themselves (addScope, removeScope,
+  // togglePlot, removePlot, combineScopes, separateScope) and so do the fast
+  // path setters (setScopeSpeed/Trigger/Flags, setPlotCoupling/ManScale/
+  // ManPosition): item 21 decided they are ordinary property edits and must
+  // be undoable as their own step. One undo after each restores the exact
+  // pre-mutation snapshot, so the tests below call the setter without an
+  // explicit commit.
 
   const scoped = () => {
     const a = addResistor();
@@ -150,6 +150,19 @@ describe('scope family undo-restore', () => {
     const pre = useStore.getState().scopes;
 
     useStore.getState().togglePlot(scopeId, 'current');
+    expect(useStore.getState().scopes[0].plots).toHaveLength(1);
+
+    useStore.getState().undo();
+    expect(useStore.getState().scopes).toEqual(pre);
+    expect(useStore.getState().scopes[0].plots).toHaveLength(2);
+  });
+
+  it('removePlot: undo returns the removed plot', () => {
+    scoped();
+    const scopeId = useStore.getState().scopes[0].id;
+    const pre = useStore.getState().scopes;
+
+    useStore.getState().removePlot(scopeId, useStore.getState().scopes[0].plots[1].id);
     expect(useStore.getState().scopes[0].plots).toHaveLength(1);
 
     useStore.getState().undo();
