@@ -284,6 +284,11 @@ export interface AppState {
   scopeMenu: { x: number; y: number; scopeId: number; plotId: number } | null;
   /** Scope id whose properties dialog is open, or null. */
   scopeProperties: number | null;
+  /** True while a menubar dropdown (File/Edit/Scopes/Options/Tools/Help/
+   *  Circuits) or the mobile burger panel is open. Upstream's Swing menus are
+   *  modal grabs: keys never reach the canvas behind an open menu. One of the
+   *  surfaces the keyboard gate counts. */
+  menubarOpen: boolean;
   /** The open mouse-wheel value popover (see ScrollValuePopover), or null.
    *  Transient UI state like `contextMenu`: never part of the undo Snapshot,
    *  and one of the surfaces the keyboard gate counts. */
@@ -360,6 +365,9 @@ export interface AppState {
   setDark(dark: boolean): void;
   openDialog(name: DialogName): void;
   closeDialog(): void;
+  /** Raises or lowers the menubar's keyboard grab; Menubar keeps this in step
+   *  with its local open-menu state. */
+  setMenubarOpen(open: boolean): void;
   setHovered(id: number | null): void;
   setHighlightedNode(node: number | null): void;
 

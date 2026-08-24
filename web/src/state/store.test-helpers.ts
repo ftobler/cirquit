@@ -39,6 +39,7 @@ export const fresh = () => ({
   contextMenu: null,
   scopeMenu: null,
   scopeProperties: null,
+  menubarOpen: false,
   scrollValuePopover: null,
   partsOpen: false,
   panelOpen: false,

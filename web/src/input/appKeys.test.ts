@@ -63,7 +63,9 @@ const popoverAt = () => ({
 });
 
 /** Every surface the gate must treat as owning the keyboard, each opened by
- *  writing its own store field directly. */
+ *  writing its own store field directly. The menubar flag is the open-menu
+ *  grab: upstream's Swing menus are modal, so keys never reach the canvas
+ *  while File/Edit/Tools is dropped down. */
 const SURFACES: readonly (readonly [string, () => Partial<AppState>])[] = [
   ['dialog', () => ({ dialog: 'about' })],
   ['scopeProperties', () => ({ scopeProperties: 1 })],
@@ -74,6 +76,7 @@ const SURFACES: readonly (readonly [string, () => Partial<AppState>])[] = [
   ],
   ['contextMenu', () => ({ contextMenu: menuAt() })],
   ['scrollValuePopover', popoverAt],
+  ['menubarOpen', () => ({ menubarOpen: true })],
 ];
 
 describe('modalSurface', () => {
@@ -180,6 +183,34 @@ describe('with every surface closed', () => {
 });
 
 describe('Escape ownership', () => {
+  it('one Escape with the menubar open closes only the menu: shortcuts and drill-in stand down', () => {
+    // With a dropdown dropped, plain keys and Delete must not act behind it,
+    // and Escape must close the menu without also exiting a drill-in session
+    // through the app handler.
+    drillIn();
+    useStore.getState().setMenubarOpen(true);
+    const host = recordingHost();
+
+    for (const ev2 of [
+      key({ key: 'r' }),
+      key({ key: 'Delete' }),
+      key({ key: 'z', ctrlKey: true }),
+      key({ key: 'Escape' }),
+    ]) {
+      expect(handleAppKeyDown(useStore.getState(), ev2, host)).toBe(false);
+    }
+
+    // Menubar.tsx's own window Escape listener is what closes the menu;
+    // mirror it here to represent the one thing this Escape press does.
+    useStore.getState().setMenubarOpen(false);
+
+    const s = useStore.getState();
+    expect(host.calls).toEqual([]);
+    expect(s.menubarOpen).toBe(false);
+    expect(s.subcircuitStack).toHaveLength(1);
+    expect(s.tool).toBe('resistor');
+  });
+
   /** The drill-in suite's outer document: one 410 naming the model, the
    *  model's own `.` line, and a passthrough line that must survive. */
   const OUTER =

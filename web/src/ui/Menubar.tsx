@@ -328,6 +328,19 @@ export function Menubar({ engine }: Props) {
   const burgerRef = useRef<HTMLDivElement>(null);
   const burgerButtonRef = useRef<HTMLButtonElement>(null);
 
+  // The keyboard grab: while any dropdown or the burger panel is open the
+  // store's gate flag is up, so no app shortcut fires behind the menu and one
+  // Escape closes only the menu. The guard keeps redundant notifies out; the
+  // cleanup covers an unmount with a menu still open.
+  const setMenubarOpen = useStore((s) => s.setMenubarOpen);
+  useEffect(() => {
+    const open = openMenu !== null || burgerOpen || libraryOpen;
+    if (useStore.getState().menubarOpen !== open) setMenubarOpen(open);
+    return () => {
+      if (useStore.getState().menubarOpen) useStore.getState().setMenubarOpen(false);
+    };
+  }, [openMenu, burgerOpen, libraryOpen, setMenubarOpen]);
+
   // The burger panel dismisses like a dropdown: a pointerdown outside it and
   // its trigger, or Escape. The dropdowns inside keep their own handlers, so a
   // tap on the panel's background closes only the open submenu.

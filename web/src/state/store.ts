@@ -672,6 +672,7 @@ function createAppStore() {
   contextMenu: null,
   scopeMenu: null,
   scopeProperties: null,
+  menubarOpen: false,
   scrollValuePopover: null,
   partsOpen: defaultPartsOpen(),
   panelOpen: false,
@@ -728,6 +729,7 @@ function createAppStore() {
   setDark: (dark) => set({ dark }),
   openDialog: (dialog) => set({ dialog }),
   closeDialog: () => set({ dialog: null }),
+  setMenubarOpen: (open) => set((s) => (s.menubarOpen === open ? s : { menubarOpen: open })),
 
   setShortcuts: (overlay) => {
     // The overlay is an app setting, not a circuit edit: persist it (with the

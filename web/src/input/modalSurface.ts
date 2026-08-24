@@ -19,6 +19,7 @@ export type ModalSurfaces = Pick<
   | 'deviceModelEditor'
   | 'contextMenu'
   | 'scrollValuePopover'
+  | 'menubarOpen'
 >;
 
 /** True while a modal surface owns the keyboard and no app shortcut may run.
@@ -27,7 +28,11 @@ export type ModalSurfaces = Pick<
  *  The wheel value popover blocks the same way: upstream counts
  *  scrollValuePopup.isShowing() here (UIManager.java:1007-1008), and its key
  *  row answers Escape/Space/Enter directly (:1060-1064), so Delete, undo and
- *  placement letters cannot act on the circuit behind it. */
+ *  placement letters cannot act on the circuit behind it. An open menubar
+ *  dropdown is the same grab: upstream's Swing menus are modal, so with
+ *  File/Edit/Tools dropped down no shortcut fires behind the menu and one
+ *  Escape closes only the menu instead of also running the app escape action
+ *  (a drill-in exit included). */
 export function modalSurface(s: ModalSurfaces): boolean {
   return (
     s.dialog !== null ||
@@ -35,7 +40,8 @@ export function modalSurface(s: ModalSurfaces): boolean {
     s.elementProperties !== null ||
     s.deviceModelEditor !== null ||
     s.contextMenu !== null ||
-    s.scrollValuePopover !== null
+    s.scrollValuePopover !== null ||
+    s.menubarOpen
   );
 }
 
