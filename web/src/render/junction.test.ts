@@ -179,3 +179,101 @@ describe('bad connections', () => {
     expect(bad).toContainEqual({ x: 400, y: 300 });
   });
 });
+
+describe('collapsed bus banks', () => {
+  // A 4-bit bus splitter at (400,300)-(496,300): all four west pins hang off
+  // the single coordinate "400,300", each tagged with its bit, while the four
+  // individual east pins sit at (496, 300 + 32 * pos). Upstream keys its
+  // post-draw list on whole Points including that bit axis
+  // (SimulationManager.makePostDrawList), so a label's post pairs with a bank
+  // bit and nothing paints; this port counts flat "x,y" keys, so it counts
+  // only the bank pin drawing actually paints, exactly the drawChip busZ skip.
+  const splitter = (): CircuitElement => {
+    const s = el('busSplitter', 400, 300, 496, 300);
+    s.params.bits = 4;
+    return s;
+  };
+  const labelAt = (id: number, text: string): CircuitElement => ({
+    ...el('labeledNode', 400, 300, 400, 300),
+    id,
+    text,
+  });
+
+  it('hides a wide labeled node anchored on the bank: bank plus label is 2', () => {
+    const parts = [
+      splitter(),
+      labelAt(2, 'DBUS'),
+      { ...el('wire', 496, 300, 560, 300), id: 3 },  // the bus continues elsewhere
+    ];
+    const counts = postDotPoints(parts);
+
+    expect(counts.get('400,300')).toBe(2);
+    expect(shouldDrawDot(counts.get('400,300')!)).toBe(false);
+    expect(badConnectionPoints(parts)).toEqual([]);
+  });
+
+  it('hides the reported narrow-label repro the same way', () => {
+    // Upstream stacks stray ovals here for the bank bits its z-keyed count
+    // leaves unpaired at the coordinate; the port deliberately does not
+    // import that quirk and paints nothing, like the paired bits.
+    const parts = [splitter(), labelAt(2, 'A')];
+    const counts = postDotPoints(parts);
+
+    expect(counts.get('400,300')).toBe(2);
+    expect(shouldDrawDot(counts.get('400,300')!)).toBe(false);
+    expect(badConnectionPoints(parts)).toEqual([]);
+  });
+
+  it('hides a lone wire end landing on the bank', () => {
+    const parts = [splitter(), { ...el('wire', 320, 300, 400, 300), id: 2 }];
+    const counts = postDotPoints(parts);
+
+    expect(counts.get('400,300')).toBe(2);
+    expect(shouldDrawDot(counts.get('400,300')!)).toBe(false);
+    // The wire's free end stays an ordinary dead end.
+    expect(counts.get('320,300')).toBe(1);
+    expect(shouldDrawDot(counts.get('320,300')!)).toBe(true);
+    expect(badConnectionPoints(parts)).toEqual([]);
+  });
+
+  it('keeps an untouched bank a visible dead end', () => {
+    const parts = [splitter()];
+    const counts = postDotPoints(parts);
+
+    expect(counts.get('400,300')).toBe(1);
+    expect(shouldDrawDot(counts.get('400,300')!)).toBe(true);
+    // The individual east pins count one each, like any dead end.
+    expect(counts.get('496,300')).toBe(1);
+    expect(counts.get('496,332')).toBe(1);
+    expect(badConnectionPoints(parts)).toEqual([]);
+  });
+
+  it('draws one dot when a wire end and a label share the bank', () => {
+    const parts = [splitter(), { ...el('wire', 320, 300, 400, 300), id: 2 }, labelAt(3, 'DBUS')];
+    const counts = postDotPoints(parts);
+
+    expect(counts.get('400,300')).toBe(3);
+    expect(shouldDrawDot(counts.get('400,300')!)).toBe(true);
+    // A three-post coordinate connects, so nothing is flagged red either.
+    expect(badConnectionPoints(parts)).toEqual([]);
+  });
+
+  it('collapses an anchor-bank driver onto one counted post too', () => {
+    // The bus logic input declares no pin table: every post is one bit parked
+    // on the anchor coordinate (upstream getPost(n) = new Point(x, y, n)), so
+    // it must count once like the tagged banks do.
+    const bli = el('busLogicInput', 400, 300, 464, 332);
+    bli.id = 2;
+    bli.params.busWidth = 4;
+    const counts = postDotPoints([bli]);
+
+    expect(counts.get('400,300')).toBe(1);
+    expect(shouldDrawDot(counts.get('400,300')!)).toBe(true);
+
+    const labelled = [bli, labelAt(3, 'IR')];
+    const withLabel = postDotPoints(labelled);
+    expect(withLabel.get('400,300')).toBe(2);
+    expect(shouldDrawDot(withLabel.get('400,300')!)).toBe(false);
+    expect(badConnectionPoints(labelled)).toEqual([]);
+  });
+});

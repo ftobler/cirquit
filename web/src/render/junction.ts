@@ -7,17 +7,72 @@
 
 import type { CircuitElement, Point } from '../model/types';
 import { postsOf } from '../model/registry';
+import { chipPinsOf } from '../model/registry/chips';
+import type { ChipPinDef } from '../model/registry/elements/dFlipFlop';
+import { busSplitterPins } from '../model/registry/elements/busSplitter';
+import { counter2Pins } from '../model/registry/elements/counter2';
+import { fullAdderPins } from '../model/registry/elements/fullAdder';
+import { memoryPins } from '../model/registry/elements/sram';
 import { cachedBusMismatches } from '../model/busWidths';
 import { pointOnWireInterior } from './geometry';
 import { boxesIntersect, elementBox } from './selection';
 
+/**
+ * The pin table behind an element's posts when its kind carries one. The
+ * plain chips come through `chipPinsOf`; the splitter, parallel-load counter,
+ * bit-serial adder and memory families keep their tables in their own def
+ * files and are the kinds whose bus modes collapse banks, which is what the
+ * scan needs their `busZ` tags for.
+ */
+function bankedPinsOf(e: CircuitElement): ChipPinDef[] | undefined {
+  switch (e.kind) {
+    case 'busSplitter':
+      return busSplitterPins(e);
+    case 'counter2':
+      return counter2Pins(e);
+    case 'fullAdder':
+      return fullAdderPins(e);
+    case 'sram':
+      return memoryPins(e, true);
+    case 'rom':
+      return memoryPins(e, false);
+    default:
+      return chipPinsOf(e);
+  }
+}
+
+/**
+ * The posts the dot scan counts. A collapsed bus bank declares one pin per
+ * bit on a single coordinate (`busZ` 0..N-1) while drawing paints only that
+ * coordinate's one lead, skipping the z > 0 duplicates (drawChip,
+ * dFlipFlop.ts), so counting all N pins would keep every bank coordinate
+ * looking like a busy junction forever: a label or wire anchored there can
+ * never reach the quiet count of 2. Upstream avoids it by keying
+ * makePostDrawList on whole Points including the bit axis; this port keeps
+ * flat "x,y" keys and skips each element's z > 0 pins instead, so a bank
+ * contributes 1 like the one lead it paints.
+ */
+function countedPosts(e: CircuitElement): Point[] {
+  const posts = postsOf(e);
+  // The two anchor-bank drivers have no pin table: every post is one bit
+  // parked on the anchor (upstream getPost(n) = new Point(x, y, n)
+  // BusLogicInputElm.java:61-63, InstructionDisplayElm.java:53-55), so the
+  // anchor counts once.
+  if (e.kind === 'busLogicInput' || e.kind === 'instructionDisplay') {
+    return posts.slice(0, 1);
+  }
+  const pins = bankedPinsOf(e);
+  if (!pins) return posts;
+  return posts.filter((_, i) => (pins[i]?.busZ ?? 0) === 0);
+}
+
 /** Count of element posts per `x,y` coordinate, keyed `"x,y"`. A routed wire's
  *  bend vertices are not posts and contribute nothing; only the two endpoints
- *  count. */
+ *  count. A chip's collapsed bus bank counts once, per `countedPosts`. */
 export function postDotPoints(elements: readonly CircuitElement[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const e of elements) {
-    for (const p of postsOf(e)) {
+    for (const p of countedPosts(e)) {
       const key = `${p.x},${p.y}`;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -43,7 +98,9 @@ export function shouldDrawDot(count: number): boolean {
  * Bus-width mismatches join the same list: upstream folds its
  * `busMismatchList` into `badConnectionList` (SimulationManager.java:1109),
  * so a coordinate where two different widths claim one net paints red and
- * tallies exactly like a dropped end.
+ * tallies exactly like a dropped end. The counts arrive already collapsed per
+ * bank (`postDotPoints`), so a bank coordinate qualifies as a lonely post only
+ * when nothing shares it, like upstream's z-keyed list.
  *
  * A wire is tested against its drawn path rather than its bounding box, which
  * for a diagonal wire would paint a whole rectangle of false positives; every
