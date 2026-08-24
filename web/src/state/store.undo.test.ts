@@ -103,11 +103,11 @@ describe('scope raw snapshot isolation', () => {
 describe('scope family undo-restore', () => {
   // The six structural mutators commit() themselves (addScope, removeScope,
   // togglePlot, removePlot, combineScopes, separateScope) and so do the fast
-  // path setters (setScopeSpeed/Trigger/Flags, setPlotCoupling/ManScale/
-  // ManPosition): item 21 decided they are ordinary property edits and must
-  // be undoable as their own step. One undo after each restores the exact
-  // pre-mutation snapshot, so the tests below call the setter without an
-  // explicit commit.
+  // path setters (setScopeSpeed/Trigger/Flags/ShowValue,
+  // setPlotCoupling/ManScale/ManPosition): item 21 decided they are ordinary
+  // property edits and must be undoable as their own step. One undo after
+  // each restores the exact pre-mutation snapshot, so the tests below call
+  // the setter without an explicit commit.
 
   const scoped = () => {
     const a = addResistor();
@@ -316,6 +316,51 @@ describe('scope family undo-restore', () => {
     expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(100);
   });
 
+  it('setScopeShowValue commits itself; undo restores the hidden flag', () => {
+    const { scopeId, pre } = fastPath();
+    const baseline = useStore.getState().undoStack.length;
+    expect(useStore.getState().scopes[0].showV).toBe(true);
+
+    // Unchecking Show Voltage in the properties dialog is an ordinary
+    // property edit and must be its own undo step, like every sibling setter.
+    useStore.getState().setScopeShowValue(scopeId, 'voltage', false);
+    expect(useStore.getState().scopes[0].showV).toBe(false);
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+
+    useStore.getState().undo();
+    expect(useStore.getState().scopes).toEqual(pre);
+
+    useStore.getState().redo();
+    expect(useStore.getState().scopes[0].showV).toBe(false);
+  });
+
+  it("setScopeShowValue's addPlot branch commits itself; undo drops the added plot", () => {
+    const { scopeId } = fastPath();
+    useStore.getState().togglePlot(scopeId, 'current');
+    // The stripped panel is the snapshot the setter must commit itself; no
+    // explicit commit between here and the call under test.
+    const pre = useStore.getState().scopes;
+    const baseline = useStore.getState().undoStack.length;
+    expect(useStore.getState().scopes[0].plots.map((p) => p.value)).toEqual(['voltage']);
+
+    // Re-checking Show Current has no plot to reveal, so the branch adds one:
+    // that plot lands on the same undo step as the flag.
+    useStore.getState().setScopeShowValue(scopeId, 'current', true);
+    const after = useStore.getState();
+    expect(after.scopes[0].showI).toBe(true);
+    expect(after.scopes[0].plots.map((p) => p.value)).toEqual(['voltage', 'current']);
+    expect(after.undoStack.length).toBe(baseline + 1);
+
+    after.undo();
+    expect(useStore.getState().scopes).toEqual(pre);
+
+    useStore.getState().redo();
+    expect(useStore.getState().scopes[0].plots.map((p) => p.value)).toEqual([
+      'voltage',
+      'current',
+    ]);
+  });
+
   it('a no-op setter call commits nothing', () => {
     const { scopeId, plotId } = fastPath();
     const baseline = useStore.getState().undoStack.length;
@@ -329,6 +374,8 @@ describe('scope family undo-restore', () => {
     useStore.getState().setPlotCoupling(scopeId, plotId, false);
     useStore.getState().setPlotManScale(plotId, null);
     useStore.getState().setPlotManPosition(plotId, 0);
+    useStore.getState().setScopeShowValue(scopeId, 'voltage', true);
+    useStore.getState().setScopeShowValue(scopeId, 'current', true);
 
     expect(useStore.getState().undoStack.length).toBe(baseline);
   });

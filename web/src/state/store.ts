@@ -2140,32 +2140,34 @@ function createAppStore() {
     }));
   },
 
-  setScopeShowValue: (scopeId, value, show) =>
-    set((s) => {
-      const scope = s.scopes.find((x) => x.id === scopeId);
-      if (!scope) return s;
-      const key = value === 'voltage' ? 'showV' : 'showI';
-      const first = scope.plots.find((p) => p.elementId !== null)?.elementId ?? null;
-      // Turning a value on with no plot of it present adds one for the
-      // scope's first element, upstream's showVoltage/showCurrent
-      // (Scope.java:115-134). A plot is a netlist change, so adding one
-      // bumps revision; the visibility flag alone is display-only and must
-      // not rewind the simulation.
-      const addPlot = show && first !== null && !scope.plots.some((p) => p.value === value);
-      if (!addPlot && scope[key] === show) return s;
-      return {
-        scopes: s.scopes.map((x) =>
-          x.id === scopeId
-            ? {
-                ...x,
-                [key]: show,
-                plots: addPlot ? [...x.plots, makePlot(allocateId(), first, value)] : x.plots,
-              }
-            : x,
-        ),
-        ...(addPlot ? bumpRevision(s) : {}),
-      };
-    }),
+  setScopeShowValue: (scopeId, value, show) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.id === scopeId);
+    if (!scope) return;
+    const key = value === 'voltage' ? 'showV' : 'showI';
+    const first = scope.plots.find((p) => p.elementId !== null)?.elementId ?? null;
+    // Turning a value on with no plot of it present adds one for the
+    // scope's first element, upstream's showVoltage/showCurrent
+    // (Scope.java:115-134). A plot is a netlist change, so adding one
+    // bumps revision; the visibility flag alone is display-only and must
+    // not rewind the simulation.
+    const addPlot = show && first !== null && !scope.plots.some((p) => p.value === value);
+    // A repeat click changes nothing and must not push an undo entry.
+    if (!addPlot && scope[key] === show) return;
+    if (!s.scopeGesture) s.commit();
+    set((st) => ({
+      scopes: st.scopes.map((x) =>
+        x.id === scopeId
+          ? {
+              ...x,
+              [key]: show,
+              plots: addPlot ? [...x.plots, makePlot(allocateId(), first, value)] : x.plots,
+            }
+          : x,
+      ),
+      ...(addPlot ? bumpRevision(st) : {}),
+    }));
+  },
 
   setPlotCoupling: (scopeId, plotId, acCoupled) => {
     const s = get();
