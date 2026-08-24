@@ -233,11 +233,13 @@ const WRITERS: Record<string, Writer> = {
     // CounterElm writes in (a Boolean string) and mo always, plus each saved
     // Q level as v{i} on pins 2..bits+1 (CounterElm.java:52-57). The port's
     // text order interleaves those levels between the high voltage and the
-    // polarity pair.
+    // polarity pair. Lowercasing in mirrors Boolean.parseBoolean, which
+    // accepts any case.
     const bits = attr(n, 'bi', 4);
     const state: (string | number)[] = [];
     for (let i = 0; i < bits; i++) state.push(attr(n, `v${i + 2}`, 0));
-    return chipTail(n, true, [...state, n.attrs.in ?? 'true', attr(n, 'mo', 0)]);
+    const invert = (n.attrs.in ?? 'true').toLowerCase();
+    return chipTail(n, true, [...state, invert, attr(n, 'mo', 0)]);
   },
   TFlipFlop: (n) =>
     // Nothing beyond the base but the saved level of pin 1, the only state
@@ -438,10 +440,10 @@ const BO_TAGS = new Set([
   'ctr',
   'Latch',
   'dd',
+  // SevenSegElm's getXmlDumpType returns "ssd" (SevenSegElm.java:337) and
+  // BusTransceiverElm has no override, so its tag is the class-name default:
+  // the live tags are the two listed below, never SevenSeg or bt.
   'SevenSegDecoder',
-  'SevenSeg',
-  'ssd',
-  'bt',
   'BusTransceiver',
 ]);
 
@@ -463,8 +465,10 @@ function droppedTraces(node: XmlNode): string[] {
       );
     }
   }
-  if (tag === 'dmux' && (node.attrs.om !== undefined || node.attrs.dw !== undefined)) {
-    // DeMultiplexerElm.java:29-33: output modes 1 and 2 route buses, which
+  // Gate on value, not presence: a hand-written om="0" or dw="4" is the
+  // modelled default and deserves no "not modelled" note.
+  if (tag === 'dmux' && (attr(node, 'om', 0) !== 0 || attr(node, 'dw', 4) !== 4)) {
+    // DeMultiplexerElm.java:31-36: output modes 1 and 2 route buses, which
     // the port models only for the multiplexer. The line keeps the
     // individual-output shape under a visible trace.
     traces.push(

@@ -491,6 +491,36 @@ describe('xml to text conversion', () => {
     expect(parsed.elements[0].params.voltage4).toBe(5);
   });
 
+  it('converts a counter with a custom high voltage, pinning the token order', () => {
+    // The interleave is bits, then the high voltage under its flag, then the
+    // Q levels, then the polarity pair and the modulus. in passes through
+    // lowercased, matching Boolean.parseBoolean's case blindness.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ctr x="304 160 368 160" f="0" bi="3" hv="3" v2="5" v4="5" in="TRUE" mo="7"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain(`164 304 160 368 160 ${1 << 13} 3 3 5 0 5 true 7`);
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['counter']);
+    expect(parsed.elements[0].params.highVoltage).toBe(3);
+    expect(parsed.elements[0].params.invertreset).toBe(1);
+    expect(parsed.elements[0].params.modulus).toBe(7);
+    expect(parsed.elements[0].params.voltage4).toBe(5);
+  });
+
+  it('treats default-valued demultiplexer output modes as modelled', () => {
+    // om="0" and dw="4" are upstream's defaults: their presence alone must
+    // not raise the "not modelled" trace, only a real mode does.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dmux x="192 160 304 160" f="0" se="2" om="0" dw="4"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('185 192 160 304 160 0 2');
+    expect(text).not.toContain('# dmux');
+  });
+
   it('converts a T flip-flop to its 193 line, carrying a custom high voltage', () => {
     // TFlipFlopElm adds nothing beyond the ChipElm base but its saved Q level
     // v1 (pin 1 is the only state pin), so hv != 5 must raise
