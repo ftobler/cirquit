@@ -170,6 +170,11 @@ pub struct Circuit {
     /// timestep differs from this clears every capture before sampling, so a
     /// buffer can never mix columns aggregated under two different dt values.
     scope_time_step: f64,
+    /// Set when `set_time_step` fired since the captures were last synced.
+    /// Needed alongside the value above because a mid-frame halve that
+    /// recovers by doubling lands back on the exact starting float, which a
+    /// bare equality check would read as no change.
+    dt_dirty: bool,
     /// Consecutive easy steps, drives doubling once it reaches 3.
     good_iterations: u32,
     /// Solved closure vectors of the last committed step, one per closure, so
@@ -230,6 +235,7 @@ impl Circuit {
             ctx: SimCtx::default(),
             current_time_step: SimOptions::default().time_step,
             scope_time_step: SimOptions::default().time_step,
+            dt_dirty: false,
             good_iterations: 0,
             last_x: Vec::new(),
             collapsed_vs: HashSet::new(),
@@ -446,6 +452,10 @@ impl Circuit {
             self.current_time_step = self.options.time_step;
             self.good_iterations = 0;
         }
+        // The rebuild decides the working step outright; nothing sampled the
+        // captures under an in-flight change, so no pending dirty flag from
+        // before the rebuild may survive into the next frame.
+        self.dt_dirty = false;
         self.ctx = SimCtx {
             time: if spec.preserve_run {
                 self.ctx.time
@@ -944,6 +954,9 @@ impl Circuit {
     /// own here.
     fn set_time_step(&mut self, dt: f64) {
         self.current_time_step = dt;
+        // The scope sync in `run` compares values, which cannot see a step
+        // that moved and moved back inside one frame; the flag can.
+        self.dt_dirty = true;
         self.ctx.dt = dt;
         // A step-size change never touches topology, so `restamp` cannot
         // newly fail here; the side channel matches every other runtime
@@ -1757,9 +1770,13 @@ impl Circuit {
         // halve or double the surviving columns would stretch against the
         // time grid and a frequency readout over them would lie. The check
         // sits at the frame boundary here too; the stale columns written
-        // earlier in the changing frame die one frame later, exactly
-        // upstream's draw-time window.
-        if self.scope_time_step != self.current_time_step {
+        // earlier in the changing frame stay visible until this next run,
+        // one animation frame wider than upstream's same-draw reset. The
+        // dirty flag closes the round-trip hole: a halve-and-retry that
+        // recovers inside one frame lands back on the starting value, which
+        // a bare comparison would keep.
+        if self.dt_dirty || self.scope_time_step != self.current_time_step {
+            self.dt_dirty = false;
             self.scope_time_step = self.current_time_step;
             for s in self.scopes.iter_mut() {
                 s.clear();
@@ -1859,6 +1876,7 @@ impl Circuit {
         // The captures below were just emptied at the nominal step; recording
         // it here keeps the next frame from clearing them a second time.
         self.scope_time_step = self.current_time_step;
+        self.dt_dirty = false;
         self.good_iterations = 0;
         self.open_pinned.clear();
         for elm in self.elements.iter_mut() {
@@ -2334,6 +2352,23 @@ mod tests {
         c.set_time_step(1.25e-6);
         // The next frame clears first, then samples eight steps at the new
         // dt: two fresh columns, nothing carried over.
+        c.run(8);
+        assert_eq!(c.scopes()[0].columns_written, 2);
+        assert_eq!(c.scopes()[0].snapshot().len(), 4);
+    }
+
+    #[test]
+    fn a_timestep_that_moves_and_moves_back_still_clears_the_captures() {
+        // A halve-and-retry that recovers by doubling inside one frame lands
+        // back on the exact starting value, so a bare comparison of timesteps
+        // sees no change and would leave columns aggregated under two
+        // different steps sitting side by side in one buffer.
+        let mut c = scoped_circuit();
+        c.run(40);
+        assert_eq!(c.scopes()[0].columns_written, 10);
+        // What a mid-frame halve and its recovery would touch.
+        c.set_time_step(2.5e-6);
+        c.set_time_step(5e-6);
         c.run(8);
         assert_eq!(c.scopes()[0].columns_written, 2);
         assert_eq!(c.scopes()[0].snapshot().len(), 4);
