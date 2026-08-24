@@ -1,5 +1,10 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { frameStatsOf, SimEngine } from './simulator';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { frameStatsOf, scopePlotsToSpecs, SimEngine } from './simulator';
+import { traceScopes } from '../scope/embedded';
+import { decodeEmbeddedScope } from '../io/embeddedScope';
 import { DEFAULT_SETTINGS } from '../model/types';
 import type { CircuitElement } from '../model/types';
 import { postsOf } from '../model/registry';
@@ -924,5 +929,100 @@ describe('SimEngine clearStops facade', () => {
     engine.setParam(1, 'maxVoltage', 2);
     engine.run(2);
     expect(engine.elementStates()[engine.indexOf(2)!]).toBe(1);
+  });
+});
+
+describe('embedded scope registration', () => {
+  const CIRCUITS_DIR = fileURLToPath(new URL('../../public/circuits', import.meta.url));
+  const MULTIVIB = readFileSync(join(CIRCUITS_DIR, 'multivib-a.txt'), 'utf8');
+
+  /** Loads multivib-a through the store, exactly like opening the file. */
+  const loadMultivib = () => {
+    useStore.setState(fresh());
+    useStore.getState().loadNetlist(MULTIVIB, { noCenter: true, noBaseline: true });
+    return useStore.getState();
+  };
+
+  it('yields two docked plus eight embedded traces over the loaded document', () => {
+    const state = loadMultivib();
+    const specs = scopePlotsToSpecs(traceScopes(state.scopes, state.elements), state.settings);
+    expect(specs).toHaveLength(10);
+
+    // The docked o line contributes two vce traces at speed 64; each embedded
+    // window a voltage+current pair, two at 256 and two at 128.
+    const bySpeed = (n: number) => specs.filter((s) => s.stepsPerColumn === n);
+    expect(bySpeed(64)).toHaveLength(2);
+    expect(bySpeed(256)).toHaveLength(4);
+    expect(bySpeed(128)).toHaveLength(4);
+
+    const ids = new Set(state.elements.map((e) => e.id));
+    for (const spec of specs) {
+      expect(ids.has(spec.elementId)).toBe(true);
+      expect(spec.trigger.mode).toBe('freeRun');
+    }
+    // Every embedded pair samples one element as voltage then current.
+    const embedded = specs.slice(2);
+    for (let i = 0; i < embedded.length; i += 2) {
+      expect(embedded[i].value).toBe('voltage');
+      expect(embedded[i + 1].value).toBe('current');
+      expect(embedded[i].elementId).toBe(embedded[i + 1].elementId);
+      expect(embedded[i].plotId).not.toBe(embedded[i + 1].plotId);
+    }
+  });
+
+  it('fills engine rings for embedded traces like docked ones', async () => {
+    // A hand-built window keeps the physics deterministic: a 1 kHz sine into
+    // 1 k, with one embedded scope on the resistor tracing V+I. Both samples
+    // swing for the whole run, so an unfilled ring could only mean the trace
+    // never registered.
+    const decoded = decodeEmbeddedScope('2_64_0_4102_5_0.1_0_2_2_3', () => 'resistor')!;
+    const scopeElm: CircuitElement = {
+      id: 4,
+      kind: 'scope',
+      x1: 200,
+      y1: 0,
+      x2: 264,
+      y2: 64,
+      flags: 0,
+      params: {},
+      text: '2_64_0_4102_5_0.1_0_2_2_3',
+      embedded: {
+        tokens: decoded.tokens,
+        display: decoded.display,
+        plots: decoded.plots.map((p, i) => ({
+          id: 100 + i,
+          elementId: p.elementIndex === 2 ? 2 : null,
+          value: p.value,
+        })),
+      },
+    };
+    const elements: CircuitElement[] = [
+      {
+        id: 1,
+        kind: 'voltage',
+        x1: 0,
+        y1: 100,
+        x2: 0,
+        y2: 0,
+        flags: 0,
+        params: { waveform: 1, frequency: 1000, maxVoltage: 5, bias: 0, phaseShift: 0, duty: 0.5 },
+      },
+      { id: 2, kind: 'resistor', x1: 0, y1: 0, x2: 100, y2: 0, flags: 0, params: { resistance: 1000 } },
+      { id: 3, kind: 'ground', x1: 0, y1: 100, x2: 0, y2: 132, flags: 0, params: {} },
+      scopeElm,
+    ];
+    const engine = await SimEngine.create();
+    const scopes = traceScopes([], [scopeElm]);
+    expect(scopes).toHaveLength(1);
+    expect(engine.setCircuit(elements, DEFAULT_SETTINGS, scopes)).toBeNull();
+    engine.run(300);
+    const specs = scopePlotsToSpecs(scopes, DEFAULT_SETTINGS);
+    expect(specs).toHaveLength(2);
+    for (const spec of specs) {
+      const index = engine.scopeIndexOf(spec.plotId);
+      expect(index).toBeDefined();
+      expect(engine.scopeData(index!).some((v) => v !== 0)).toBe(true);
+    }
+    expect(engine.scopeIndexOf(-1)).toBeUndefined();
   });
 });

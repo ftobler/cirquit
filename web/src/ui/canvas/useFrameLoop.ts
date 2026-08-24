@@ -13,6 +13,7 @@ import { drawGrid } from '../../render/grid';
 import { drawHitboxes } from '../../render/hitboxes';
 import { cachedBadConnectionPoints, postDotPoints, shouldDrawDot } from '../../render/junction';
 import { scopeWidth } from '../../scope/geometry';
+import { traceScopes } from '../../scope/embedded';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { GRID_SIZE } from '../../model/types';
 import { wireSegments } from '../../model/wirePlacement';
@@ -150,10 +151,15 @@ export function useFrameLoop(
           // (memoised on identity) and read per wire at draw time.
           const busWidths = cachedBusWidths(elements);
 
+          // The embedded scope windows (403 rows) register their traces along
+          // with the docked panels: one engine trace per embedded plot, keyed
+          // on the plot ids the load allocated. Memoised on the element list.
+          const allScopes = traceScopes(scopes, elements);
+
           // Drop sticky auto-scale state for plots that no longer exist (a removed
           // scope), keeping the map bounded across a session.
-          pruneScaleStates(scopes.flatMap((s) => s.plots.map((p) => p.id)));
-          pruneXYScales(scopes.map((s) => s.id));
+          pruneScaleStates(allScopes.flatMap((s) => s.plots.map((p) => p.id)));
+          pruneXYScales(allScopes.map((s) => s.id));
 
           // Reload the engine whenever the netlist changed.
           if (engine && loadedRevision.current !== state.revision) {
@@ -172,7 +178,7 @@ export function useFrameLoop(
             // The same gate carries the clock: editing the shape of a running
             // circuit must not rewind it to t = 0, wipe the scopes or re-solve
             // the operating point. Only a new document restarts.
-            const err = engine.setCircuit(build, settings, scopes, widthOf, continues);
+            const err = engine.setCircuit(build, settings, allScopes, widthOf, continues);
             // A failed build leaves the engine on a stale or partial circuit, so
             // the next rebuild must not pull live tokens off it; record only on
             // success (recordBuildOnSuccess).
@@ -191,7 +197,7 @@ export function useFrameLoop(
             // edits are already in effect. Mark them consumed and drop the queue,
             // or they would be replayed against the fresh circuit below.
             appliedParamRevision.current = state.paramRevision;
-            appliedScopeFp.current = scopeParamsFingerprint(scopes, widthOf);
+            appliedScopeFp.current = scopeParamsFingerprint(allScopes, widthOf);
             if (state.pendingParams.size > 0 || state.pendingStates.size > 0) {
               state.clearPending();
             }
@@ -202,10 +208,10 @@ export function useFrameLoop(
           // The fingerprint is compared every frame so a ResizeObserver width
           // change is picked up without any store action.
           if (engine) {
-            const fp = scopeParamsFingerprint(scopes, widthOf);
+            const fp = scopeParamsFingerprint(allScopes, widthOf);
             if (fp !== appliedScopeFp.current) {
               appliedScopeFp.current = fp;
-              if (!engine.applyScopeParams(scopes, settings, widthOf)) {
+              if (!engine.applyScopeParams(allScopes, settings, widthOf)) {
                 // A trace index out of range means the last setCircuit failed;
                 // force the reload branch next frame.
                 loadedRevision.current = -1;
@@ -247,7 +253,7 @@ export function useFrameLoop(
                 : elements;
               // A param that could not be patched live is still an edit to a
               // running circuit, so this rebuild continues the run too.
-              const err = engine.setCircuit(build, settings, scopes, widthOf, continues);
+              const err = engine.setCircuit(build, settings, allScopes, widthOf, continues);
               builtDocument.current = recordBuildOnSuccess(
                 builtDocument.current,
                 state.document,
