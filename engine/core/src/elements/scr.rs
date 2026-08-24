@@ -90,7 +90,6 @@ impl Scr {
         (i, g + gmin)
     }
 
-    /// Linearises the internal junction across inode to cathode.
     /// The latch decision: `-icmult*ic + ia*iamult` with `icmult =
     /// 1/triggerI` and `iamult = 1/holdingI - 1/triggerI` reduces to
     /// `ig/triggerI + ia/holdingI` because `ic = -ig - ia`
@@ -101,6 +100,7 @@ impl Scr {
         self.ig / self.trigger_i + self.ia / self.holding_i > 1.0
     }
 
+    /// Linearises the internal junction across inode to cathode.
     fn stamp_junction(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         let (n_in, n_c) = (self.base.nodes[3], self.base.nodes[1]);
         let mut v = self.base.volts[3] - self.base.volts[1];
