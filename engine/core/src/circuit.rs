@@ -165,6 +165,11 @@ pub struct Circuit {
     /// Timestep the next step will attempt; starts at `options.time_step` and
     /// moves between it and `min_time_step` under adaptation.
     current_time_step: f64,
+    /// Timestep the scope captures were sampled at, mirroring upstream's
+    /// `Scope.scopeTimeStep` (Scope.java:73). A frame whose effective
+    /// timestep differs from this clears every capture before sampling, so a
+    /// buffer can never mix columns aggregated under two different dt values.
+    scope_time_step: f64,
     /// Consecutive easy steps, drives doubling once it reaches 3.
     good_iterations: u32,
     /// Solved closure vectors of the last committed step, one per closure, so
@@ -224,6 +229,7 @@ impl Circuit {
             options: SimOptions::default(),
             ctx: SimCtx::default(),
             current_time_step: SimOptions::default().time_step,
+            scope_time_step: SimOptions::default().time_step,
             good_iterations: 0,
             last_x: Vec::new(),
             collapsed_vs: HashSet::new(),
@@ -1745,6 +1751,20 @@ impl Circuit {
 
     /// Advances `steps` timesteps, sampling every scope on each one.
     pub fn run(&mut self, steps: u32) -> StepReport {
+        // Upstream resets every scope graph when the effective timestep has
+        // changed (Scope.java:597-601), checked each frame before drawing:
+        // columns aggregate a fixed count of steps, so after an adaptive
+        // halve or double the surviving columns would stretch against the
+        // time grid and a frequency readout over them would lie. The check
+        // sits at the frame boundary here too; the stale columns written
+        // earlier in the changing frame die one frame later, exactly
+        // upstream's draw-time window.
+        if self.scope_time_step != self.current_time_step {
+            self.scope_time_step = self.current_time_step;
+            for s in self.scopes.iter_mut() {
+                s.clear();
+            }
+        }
         let mut total = StepReport {
             time: self.ctx.time,
             converged: true,
@@ -1836,6 +1856,9 @@ impl Circuit {
         self.ctx.subiter = 0;
         self.error = None;
         self.current_time_step = self.options.time_step;
+        // The captures below were just emptied at the nominal step; recording
+        // it here keeps the next frame from clearing them a second time.
+        self.scope_time_step = self.current_time_step;
         self.good_iterations = 0;
         self.open_pinned.clear();
         for elm in self.elements.iter_mut() {
@@ -2238,6 +2261,83 @@ fn resolve_stuck_wires(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spec::{ScopeSpec, TriggerSpec};
+
+    /// A 5 V source behind 1 k into ground, with one voltage scope on the
+    /// resistor: four steps aggregate into each column of a 16-column ring.
+    fn scoped_circuit() -> Circuit {
+        let mut c = Circuit::new();
+        let spec = CircuitSpec {
+            preserve_run: false,
+            elements: vec![
+                ElementSpec {
+                    id: 1,
+                    kind: "voltage".into(),
+                    posts: vec![[0, 100], [0, 0]],
+                    params: HashMap::from([("maxVoltage".to_string(), 5.0)]),
+                    label: None,
+                    model: None,
+                    flags: 0,
+                },
+                ElementSpec {
+                    id: 2,
+                    kind: "resistor".into(),
+                    posts: vec![[0, 0], [100, 0]],
+                    params: HashMap::from([("resistance".to_string(), 1000.0)]),
+                    label: None,
+                    model: None,
+                    flags: 0,
+                },
+                ElementSpec {
+                    id: 3,
+                    kind: "ground".into(),
+                    posts: vec![[100, 0]],
+                    params: HashMap::new(),
+                    label: None,
+                    model: None,
+                    flags: 0,
+                },
+            ],
+            options: Some(SimOptions {
+                time_step: 5e-6,
+                ..SimOptions::default()
+            }),
+            scopes: vec![ScopeSpec {
+                element_id: 2,
+                value: ScopeValue::Voltage,
+                post: 0,
+                steps_per_column: 4,
+                columns: 16,
+                ac_coupled: false,
+                trigger: TriggerSpec::default(),
+                display_width: 0,
+            }],
+        };
+        c.set_circuit(&spec).expect("circuit should analyse");
+        c
+    }
+
+    #[test]
+    fn a_timestep_change_clears_the_scope_captures_at_the_next_frame() {
+        // Scope.java:597-601: when sim.maxTimeStep changes, every graph is
+        // reset before the next draw, so a capture buffer never mixes
+        // columns aggregated under two different timesteps. Without this an
+        // adaptive halve leaves the surviving columns stretched against the
+        // time grid and the frequency readout lies. The port checks at the
+        // same point, the frame boundary inside run().
+        let mut c = scoped_circuit();
+        c.run(40);
+        assert_eq!(c.scopes()[0].columns_written, 10);
+        assert_eq!(c.scopes()[0].snapshot().len(), 20);
+
+        // What the adaptive halve would reach mid-frame.
+        c.set_time_step(1.25e-6);
+        // The next frame clears first, then samples eight steps at the new
+        // dt: two fresh columns, nothing carried over.
+        c.run(8);
+        assert_eq!(c.scopes()[0].columns_written, 2);
+        assert_eq!(c.scopes()[0].snapshot().len(), 4);
+    }
 
     #[test]
     fn format_ohms_uses_an_engineering_prefix() {
