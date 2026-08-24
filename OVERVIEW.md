@@ -310,6 +310,20 @@ fetch it).
   line tokens, and Show Value checkboxes became their own undo step; and a
   right-click during a group drag can no longer hijack it (move drags freeze
   their id list and the frame paints from it).
+- Fidelity batch 2026-08-24b: the diode family's junction gmin tracks
+  leakage*0.01 like upstream below the ramp start (transistors keep their
+  hardcoded floor), unijunction and LED-array junctions included, with the
+  Newton-cancellation consequence documented: converged well-posed results
+  are gmin-invariant either way, the divergence lives in stamped conductance
+  and iteration behaviour, where the bridge-startup limit cycle no longer
+  forms; MOSFETs and JFETs share upstream's convergence ladder (beta>1 x100,
+  relative pass past ten iterations, loosening past one hundred); the wheel
+  value popover owns the keyboard through the shared modal predicate, Space
+  reverts and Enter commits, and an untouched session reverts without
+  writing; fresh parts place upstream constructor defaults (1 H inductor,
+  60 Hz sources) while tokenless loaded v/R lines keep the file-constructor
+  40 Hz seed, and AC voltage/rail toolbox entries carry the 120 V rms sine
+  presets.
 - 514 Rust tests, of which 436 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
