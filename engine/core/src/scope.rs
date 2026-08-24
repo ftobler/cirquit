@@ -278,19 +278,60 @@ impl ScopeTrace {
     }
 
     /// Resizes the capture ring to a new speed/width without touching the
-    /// simulation clock. The buffer is thrown away, matching upstream's
-    /// `Scope.setSpeed` -> `resetGraph` (ScopePlot.java:75-76).
+    /// simulation clock. A speed change redefines how much time a column
+    /// holds, so no old column means anything and the capture is thrown
+    /// away, matching upstream's `Scope.setSpeed` -> `resetGraph`
+    /// (ScopePlot.java:75-76 zeroes `oldSpc`). A pure column-count change
+    /// keeps the capture: upstream's copy carries the old min/max pairs into
+    /// the new arrays index-mapped (ScopePlot.java:85-96), so dragging the
+    /// window border across a bucket does not erase a running waveform.
     pub fn set_params(&mut self, steps_per_column: u32, columns: u32) {
         let columns = columns.clamp(16, 8192);
-        self.spec.steps_per_column = steps_per_column.max(1);
+        let steps_per_column = steps_per_column.max(1);
+        let speed_changed = steps_per_column != self.spec.steps_per_column;
+        self.spec.steps_per_column = steps_per_column;
         self.spec.columns = columns;
         let cap = columns as usize;
-        if self.mins.len() != cap {
-            self.mins = vec![0.0; cap];
-            self.maxs = vec![0.0; cap];
+        self.ac_alpha = ac_alpha_for(steps_per_column, columns);
+        if speed_changed {
+            if self.mins.len() != cap {
+                self.mins = vec![0.0; cap];
+                self.maxs = vec![0.0; cap];
+            }
+            self.clear();
+        } else {
+            self.preserve_tail(cap);
         }
-        self.ac_alpha = ac_alpha_for(self.spec.steps_per_column, columns);
-        self.clear();
+    }
+
+    /// Copies the newest completed columns into a freshly sized ring,
+    /// chronological order intact. The partially aggregated column is
+    /// dropped: its sample budget belonged to a column definition that no
+    /// longer exists. The recent-sample ring, the AC filter state and the
+    /// diverged flag describe the signal rather than the grid, so they
+    /// survive untouched; only the trigger re-arms, as upstream's
+    /// resetGraph does on every width change (Scope.java:187-206).
+    fn preserve_tail(&mut self, cap: usize) {
+        if self.mins.len() == cap {
+            return;
+        }
+        let old_cap = self.mins.len();
+        let keep = cap.min(old_cap).min(self.columns_written as usize);
+        let old_mins = std::mem::replace(&mut self.mins, vec![0.0; cap]);
+        let old_maxs = std::mem::replace(&mut self.maxs, vec![0.0; cap]);
+        let first = (self.head + old_cap - keep) % old_cap;
+        for k in 0..keep {
+            let src = (first + k) % old_cap;
+            self.mins[k] = old_mins[src];
+            self.maxs[k] = old_maxs[src];
+        }
+        self.head = keep % cap;
+        self.columns_written = keep as u64;
+        self.acc_count = 0;
+        self.acc_min = f64::INFINITY;
+        self.acc_max = f64::NEG_INFINITY;
+        // Anchors indexed into the old ring are meaningless after a resize.
+        self.trigger.reset(cap);
     }
 
     /// Flips the AC-coupling flag without rebuilding the circuit or clearing
@@ -570,6 +611,58 @@ mod tests {
         assert_eq!(snap.len(), 2);
         assert_eq!(snap[0], 0.0);
         assert_eq!(snap[1], 3.0);
+    }
+
+    #[test]
+    fn set_params_columns_only_preserves_the_capture_tail() {
+        // Upstream's ScopePlot.reset copies the old min/max pairs into the
+        // new arrays whenever only the column count changed
+        // (ScopePlot.java:85-96), so dragging the window border across a
+        // column bucket does not erase the running waveform.
+        let mut t = ScopeTrace::new(spec(1, 16), Some(0));
+        for i in 0..20 {
+            t.push(i as f64, 0.0);
+        }
+        let before = t.snapshot();
+        assert_eq!(before.len(), 32);
+
+        // Grow: every captured column survives, chronological order intact.
+        t.set_params(1, 32);
+        assert_eq!(t.capacity(), 32);
+        assert_eq!(t.snapshot(), before);
+        assert_eq!(t.columns_written, 16);
+
+        // New columns continue after the preserved tail.
+        for i in 20..24 {
+            t.push(i as f64, 0.0);
+        }
+        let snap = t.snapshot();
+        assert_eq!(snap.len(), 40);
+        assert_eq!(snap[snap.len() - 4], 22.0);
+        assert_eq!(snap[snap.len() - 1], 23.0);
+
+        // Shrink back: the newest tail of the capture is what survives.
+        t.set_params(1, 16);
+        assert_eq!(t.capacity(), 16);
+        let snap = t.snapshot();
+        assert_eq!(snap.len(), 32);
+        assert_eq!(snap[0], 8.0);
+        assert_eq!(snap[snap.len() - 1], 23.0);
+    }
+
+    #[test]
+    fn set_params_speed_change_still_clears_when_capacity_is_unchanged() {
+        // Control for the preservation above: a genuine steps-per-column
+        // change redefines what a column means, so the capture goes even
+        // when the ring size happens to match (ScopePlot.java:78-79).
+        let mut t = ScopeTrace::new(spec(1, 16), Some(0));
+        for i in 0..8 {
+            t.push(i as f64, 0.0);
+        }
+        t.set_params(4, 16);
+        assert_eq!(t.capacity(), 16);
+        assert!(t.snapshot().is_empty());
+        assert_eq!(t.columns_written, 0);
     }
 
     #[test]
