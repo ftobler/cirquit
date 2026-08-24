@@ -815,16 +815,17 @@ fn opamp_comparator_converges_within_the_iteration_budget() {
 /// nodes are defined only through the junction conductances until a diode
 /// conducts.
 #[test]
-fn diode_bridge_startup_converges_only_with_gmin_ramping() {
+fn diode_bridge_startup_converges_within_a_tight_iteration_budget() {
     // Nothing conducts initially, and once the capacitor has charged the
-    // bridge's diode switching locks into a Newton limit cycle: the junctions
-    // creep a fraction of a thermal voltage per iteration (junction limiting)
-    // and the step cannot settle within the budget. The first ~365 steps are
-    // easy (the junctions are nearly linear), so the test single-steps a
-    // window that reaches the step-366 switching stall. The same window
-    // converges once the geometric junction-gmin ramp engages (subiter > 100),
-    // and the failing-element diagnostics name the diodes that were still
-    // moving when the ramp-off run gave up.
+    // bridge's diode switching used to lock into a Newton limit cycle that
+    // no budget under the ramp start could settle. That was with a fixed
+    // 1e-12 S junction conductance; since the family tracks its model's
+    // saturation current instead (leakage * 0.01, Diode.java:147), the
+    // conductance damps the cycle from the first iteration and the whole
+    // window settles in a handful of iterations per step, without ever
+    // reaching for the geometric ramp. The tight budget is the point: it is
+    // far below the old stall's appetite (the worst step used to burn past
+    // 100 iterations), so any regression back toward the limit cycle trips.
     let bridge = vec![
         elm(
             1,
@@ -856,49 +857,23 @@ fn diode_bridge_startup_converges_only_with_gmin_ramping() {
         elm(9, "wire", &[[320, 320], [160, 320]], &[]),
         elm(10, "ground", &[[0, 320]], &[]),
     ];
-    // dt = 1e-6 (period 1 ms / 1000); the switching stall lands at step 366,
-    // so a 500-step window reaches it with margin on both sides.
-    let steps = 500;
-
-    // Ramp off: a constant 1e-12 S junction conductance cannot settle the
-    // stall, and the failure report names the diodes that were still moving.
-    let mut off = build(bridge.clone(), opts_budget(1e-6, false, 80));
-    let mut r_off = None;
-    for _ in 0..steps {
-        let r = off.run(1);
-        if !r.converged {
-            r_off = Some(r);
-            break;
-        }
-    }
-    let r_off = r_off.expect("bridge converged without the ramp");
-    assert!(
-        !r_off.failing.is_empty(),
-        "no element was reported as failing"
-    );
-    assert!(
-        r_off.failing.contains(&3),
-        "failing ids were {:?}, expected the D2 diode (id 3)",
-        r_off.failing
-    );
-
-    // Ramp on: the geometric gmin ramp engages at subiter > 100, and the
-    // worst step settles just past it (measured 103 iterations), so the ramp
-    // is what gets the bridge through the stall.
-    let mut on = build(bridge, opts_budget(1e-6, false, 500));
+    // dt = 1e-6 (period 1 ms / 1000); 500 steps cover the former step-366
+    // switching stall with margin on both sides.
+    let mut c = build(bridge, opts_budget(1e-6, false, 80));
     let mut worst = 0u32;
-    for _ in 0..steps {
-        let r = on.run(1);
+    for _ in 0..500 {
+        let r = c.run(1);
         assert!(
             r.converged,
-            "ramp-on bridge step failed: {}",
+            "bridge startup step failed: {}",
             r.error.unwrap_or_default()
         );
         worst = worst.max(r.iterations);
     }
     assert!(
-        worst > 100,
-        "ramp never engaged, worst step used only {worst} iterations"
+        worst <= 10,
+        "bridge startup regressed toward the old limit cycle, worst step \
+         took {worst} iterations"
     );
 }
 

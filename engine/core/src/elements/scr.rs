@@ -8,8 +8,7 @@
 
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::junction::{
-    critical_voltage, limit_junction, ramp_gmin, CONVERGENCE_V, GMIN_RAMP_DENOM, GMIN_RAMP_START,
-    JUNCTION_GMIN, MAX_EXP_ARG, VT,
+    critical_voltage, junction_gmin, limit_junction, CONVERGENCE_V, MAX_EXP_ARG, VT,
 };
 use crate::spec::ElementSpec;
 use crate::stamp::{Stamper, GROUND};
@@ -100,12 +99,11 @@ impl Scr {
         }
         v = limit_junction(v, self.junction_last_v, self.vscale, self.vcrit);
         self.junction_last_v = v;
-        // The gmin ramp engages once a step is stuck, same as the diode.
-        let gmin = if ctx.subiter as u32 > GMIN_RAMP_START {
-            ramp_gmin(ctx.subiter as u32, GMIN_RAMP_DENOM)
-        } else {
-            JUNCTION_GMIN
-        };
+        // The gmin ramp engages once a step is stuck, same as the diode; the
+        // base it replaces is the diode family's leakage*0.01, since upstream
+        // stamps this junction through a real `Diode` instance
+        // (SCRElm.java:70).
+        let gmin = junction_gmin(self.leakage, ctx.subiter as u32);
         let (i, g) = self.evaluate(v, gmin);
         self.junction_ieq = i - g * v;
         s.conductance(n_in, n_c, g);

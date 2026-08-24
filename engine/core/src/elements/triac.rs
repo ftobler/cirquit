@@ -8,8 +8,7 @@
 
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::junction::{
-    critical_voltage, limit_junction, ramp_gmin, CONVERGENCE_V, GMIN_RAMP_DENOM, GMIN_RAMP_START,
-    JUNCTION_GMIN, MAX_EXP_ARG, VT,
+    critical_voltage, junction_gmin, limit_junction, CONVERGENCE_V, MAX_EXP_ARG, VT,
 };
 use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
@@ -139,12 +138,11 @@ impl Element for Triac {
 
     fn do_step(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         let (n_mt2, n_mt1, n_in) = (self.base.nodes[0], self.base.nodes[1], self.base.nodes[3]);
-        // The gmin ramp engages once a step is stuck, same as the diode.
-        let gmin = if ctx.subiter as u32 > GMIN_RAMP_START {
-            ramp_gmin(ctx.subiter as u32, GMIN_RAMP_DENOM)
-        } else {
-            JUNCTION_GMIN
-        };
+        // The gmin ramp engages once a step is stuck, same as the diode; the
+        // base it replaces is the diode family's leakage*0.01, since upstream
+        // stamps these junctions through real `Diode` instances
+        // (TriacElm.java:66-68).
+        let gmin = junction_gmin(self.leakage, ctx.subiter as u32);
 
         // The MT2-to-internal leg, forward when MT2 sits above the internal
         // node and carrying the main current in the forward direction.

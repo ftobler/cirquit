@@ -4,8 +4,7 @@
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::capacitor::DC_OPEN;
 use crate::elements::junction::{
-    critical_voltage, limit_junction, ramp_gmin, CONVERGENCE_V, GMIN_RAMP_DENOM, GMIN_RAMP_START,
-    JUNCTION_GMIN, MAX_EXP_ARG, VT,
+    critical_voltage, junction_gmin, limit_junction, CONVERGENCE_V, MAX_EXP_ARG, VT,
 };
 use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
@@ -189,7 +188,8 @@ impl Diode {
     }
 
     /// Current and its derivative at `v`, with a parallel junction conductance
-    /// of `gmin` (the fixed 1e-12, or the geometric ramp once a step is stuck).
+    /// of `gmin` (the saturation-current-scaled base, or the geometric ramp
+    /// once a step is stuck).
     fn evaluate(&self, v: f64, gmin: f64) -> (f64, f64) {
         let arg = (v / self.vscale).min(MAX_EXP_ARG);
         let ev = arg.exp();
@@ -317,14 +317,10 @@ impl Element for Diode {
         }
         self.last_v = v;
 
-        // Once a step has been stuck past the ramp start, replace the tiny
-        // fixed junction conductance with the geometric ramp so the extra
-        // conductance can damp the limit cycle (Diode.java:149-156).
-        let gmin = if ctx.subiter as u32 > GMIN_RAMP_START {
-            ramp_gmin(ctx.subiter as u32, GMIN_RAMP_DENOM)
-        } else {
-            JUNCTION_GMIN
-        };
+        // Below the ramp start the parallel conductance tracks the model's
+        // saturation current; once a step is stuck, the geometric ramp takes
+        // over (Diode.java:147-156).
+        let gmin = junction_gmin(self.leakage, ctx.subiter as u32);
         let (i, g) = self.evaluate(v, gmin);
         self.geq = g;
         self.ieq = i - g * v;
