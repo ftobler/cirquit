@@ -46,7 +46,10 @@ export type Drag =
    *  `axis` latches the direction the drag first moved, which is what decides
    *  which way the L bends (model/wirePlacement.ts). */
   | { mode: 'wire'; start: Point; current: Point; axis: WireAxis | null }
-  | { mode: 'move'; last: Point; moved: boolean; gated?: boolean }
+  /** `ids` is the group frozen at pointer-down, read after the press's own
+   *  select settled: a mid-drag click or command that changes the selection
+   *  must never hand an in-flight group drag to other elements. */
+  | { mode: 'move'; ids: number[]; last: Point; moved: boolean; gated?: boolean }
   | {
       mode: 'dragpost';
       id: number;
@@ -292,6 +295,25 @@ export function startRowCol(
   dragRef.current = { mode: 'rowcol', axis, captured, last: { x, y } };
 }
 
+/** One pointer-move step of a group move: the grid-snapped delta against the
+ *  drag's last point goes to the ids the drag froze at pointer-down, never to
+ *  the live selection, so a mid-drag re-select cannot hand the drag to other
+ *  elements. Returns true when the step moved something, so the caller knows
+ *  to refresh the drag's last point and moved flag. Extracted beside
+ *  startRowCol so the consumption stays headlessly testable. */
+export function stepMoveDrag(
+  drag: Extract<Drag, { mode: 'move' }>,
+  p: Point,
+  state: AppState,
+): boolean {
+  const grid = GRID_SIZE;
+  const gx = snap(p.x, grid) - snap(drag.last.x, grid);
+  const gy = snap(p.y, grid) - snap(drag.last.y, grid);
+  if (gx === 0 && gy === 0) return false;
+  state.moveElements(drag.ids, gx, gy);
+  return true;
+}
+
 /** The pointer-down body shared by mouse, pen and touch: hit-test, toggle a
  *  running interactive part, select, arm the mode. `gated` marks the
  *  move/dragpost modes for touch, which must wait for dragArmed before they
@@ -463,7 +485,18 @@ export function beginPointerGesture(
         start: post === 1 ? { x: hit.x2, y: hit.y2 } : { x: hit.x1, y: hit.y1 },
       };
     } else {
-      dragRef.current = { mode: 'move', last: p, moved: false, gated };
+      // The group is read from the store after the press's select above
+      // settled, then frozen for the whole gesture. A right-click landing
+      // mid-drag must not re-select (upstream returns from mousedown before
+      // mouseSelect for anything but left or middle, MouseManager.java:
+      // 1071-1075), and neither may any programmatic selection change.
+      dragRef.current = {
+        mode: 'move',
+        ids: [...useStore.getState().selectedIds],
+        last: p,
+        moved: false,
+        gated,
+      };
       // Same one-gesture-one-undo-entry reasoning as the placement above: the
       // state.commit() before this branch is the move's baseline, and a Space
       // rotate mid-move rides along with it. An endpoint drag raises nothing:

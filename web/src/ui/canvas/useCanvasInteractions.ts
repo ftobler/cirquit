@@ -34,6 +34,7 @@ import {
   finishWireDrag,
   placementPoint,
   releaseHeldMomentary,
+  stepMoveDrag,
   type Drag,
 } from './pointerDown';
 import { useStoreRef } from './useStoreRef';
@@ -425,10 +426,7 @@ export function useCanvasInteractions(
         // delay applies to the whole group move; place and box-select are
         // explicit drags and stay immediate.
         if (isTouch && drag.gated && !touchArmedRef.current) break;
-        const gx = snap(p.x, grid) - snap(drag.last.x, grid);
-        const gy = snap(p.y, grid) - snap(drag.last.y, grid);
-        if (gx !== 0 || gy !== 0) {
-          state.moveElements(state.selectedIds, gx, gy);
+        if (stepMoveDrag(drag, p, state)) {
           dragRef.current = { ...drag, last: p, moved: true };
         }
         break;

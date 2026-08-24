@@ -624,6 +624,31 @@ describe('context menu state', () => {
     expect(useStore.getState().contextMenu?.target).toBeNull();
   });
 
+  it('a right-click while an element gesture is armed opens the menu but keeps the selection', () => {
+    // Upstream's mousedown returns before mouseSelect for anything but left
+    // or middle (MouseManager.java:1071-1075): a click that lands mid-drag
+    // must not rewrite what the drag is moving. The menu itself still opens.
+    const a = addResistor();
+    const b = addCapacitor();
+    const c = addResistor();
+    useStore.getState().select([a, b]);
+    useStore.getState().beginElementGesture('move');
+    useStore.getState().openContextMenu(10, 20, c, { x: 0, y: 0 });
+    expect(useStore.getState().contextMenu?.target).toBe(c);
+    expect(useStore.getState().selectedIds).toEqual([a, b]);
+  });
+
+  it('with no gesture armed the select-alone rule applies as before', () => {
+    const a = addResistor();
+    const b = addCapacitor();
+    const c = addResistor();
+    useStore.getState().select([a, b]);
+    useStore.getState().beginElementGesture('move');
+    useStore.getState().endElementGesture();
+    useStore.getState().openContextMenu(10, 20, c, { x: 0, y: 0 });
+    expect(useStore.getState().selectedIds).toEqual([c]);
+  });
+
   it('selectAll selects every element', () => {
     addResistor();
     addCapacitor();

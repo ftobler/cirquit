@@ -3090,9 +3090,16 @@ function createAppStore() {
     set((s) => {
       // Right-clicking an element outside the selection selects it alone so
       // the menu's copy and delete act on it; one already selected keeps the
-      // whole group. Empty canvas leaves the selection untouched.
+      // whole group. Empty canvas leaves the selection untouched. While an
+      // element gesture is in flight the rewrite stands down: upstream
+      // returns from mousedown before mouseSelect for anything but left or
+      // middle (MouseManager.java:1071-1075), so a click landing mid-drag
+      // opens the menu without re-selecting and cannot hijack what the drag
+      // is moving.
       const selectedIds =
-        target !== null && !s.selectedIds.includes(target) ? [target] : s.selectedIds;
+        s.elementGesture === null && target !== null && !s.selectedIds.includes(target)
+          ? [target]
+          : s.selectedIds;
       return { contextMenu: { x, y, target, circuit, focusSearch }, selectedIds };
     }),
 

@@ -3,7 +3,7 @@ import { defFor } from '../../model/registry';
 import { SWITCH_IEC } from '../../model/registry/flags';
 import { rectContains } from '../../model/registry/shared';
 import { GRID_SIZE } from '../../model/types';
-import type { CircuitElement } from '../../model/types';
+import type { CircuitElement, Point } from '../../model/types';
 import { HIT_TOLERANCE_PX } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
 import { makeGhostElement, snap, useStore } from '../../state/store';
@@ -17,6 +17,8 @@ import {
   finishWireDrag,
   placementPoint,
   releaseHeldMomentary,
+  startRowCol,
+  stepMoveDrag,
   type Drag,
   type PointerDownInput,
   type PointerDownRefs,
@@ -175,7 +177,7 @@ describe('pointer-down on a switch while running', () => {
     beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(0);
     expect(useStore.getState().selectedIds).toEqual([id]);
-    expect(r.dragRef.current).toEqual({ mode: 'move', last: { x: 30, y: 0 }, moved: false, gated: false });
+    expect(r.dragRef.current).toEqual({ mode: 'move', ids: [id], last: { x: 30, y: 0 }, moved: false, gated: false });
   });
 
   it('a press outside the rect leads to a real move', () => {
@@ -184,12 +186,9 @@ describe('pointer-down on a switch while running', () => {
     beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), false, r);
     const drag = r.dragRef.current;
     if (drag.mode !== 'move') throw new Error('expected a move to be armed');
-    // The move handler snap-deltas against the last point, then moves the
-    // selected group (useCanvasInteractions.ts:529-542).
-    const state = useStore.getState();
-    const gx = snap(46, GRID_SIZE) - snap(drag.last.x, GRID_SIZE);
-    const gy = snap(32, GRID_SIZE) - snap(drag.last.y, GRID_SIZE);
-    state.moveElements(state.selectedIds, gx, gy);
+    // The move handler steps the frozen group by the grid-snapped delta
+    // (stepMoveDrag, the canvas hook's move case).
+    stepMoveDrag(drag, { x: 46, y: 32 }, useStore.getState());
     const moved = useStore.getState().elements[0];
     expect(moved.x1).toBe(16);
     expect(moved.y1).toBe(32);
@@ -246,7 +245,7 @@ describe('pointer-down on an SPDT while running', () => {
     beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(0);
     expect(useStore.getState().selectedIds).toEqual([id]);
-    expect(r.dragRef.current).toEqual({ mode: 'move', last: { x: 30, y: 0 }, moved: false, gated: false });
+    expect(r.dragRef.current).toEqual({ mode: 'move', ids: [id], last: { x: 30, y: 0 }, moved: false, gated: false });
   });
 
   it('ctrl inside the fan arms dragpost without toggling', () => {
@@ -494,7 +493,7 @@ describe('touch gating', () => {
     const r = refs();
     beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), true, r);
     expect(useStore.getState().elements[0].state).toBe(0);
-    expect(r.dragRef.current).toEqual({ mode: 'move', last: { x: 30, y: 0 }, moved: false, gated: true });
+    expect(r.dragRef.current).toEqual({ mode: 'move', ids: [id], last: { x: 30, y: 0 }, moved: false, gated: true });
   });
 });
 
@@ -788,7 +787,7 @@ describe('pointer-down on a switch while paused', () => {
     beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(0);
     expect(useStore.getState().selectedIds).toEqual([id]);
-    expect(r.dragRef.current).toEqual({ mode: 'move', last: { x: 30, y: 0 }, moved: false, gated: false });
+    expect(r.dragRef.current).toEqual({ mode: 'move', ids: [id], last: { x: 30, y: 0 }, moved: false, gated: false });
   });
 
   it('ctrl while paused still arms dragpost', () => {
@@ -825,7 +824,7 @@ describe('endpoint handle auto-grab', () => {
     const id = addEl('resistor');
     const r = refs();
     beginPointerGesture(down(), { x: 80, y: 0 }, useStore.getState(), hit(id), false, r);
-    expect(r.dragRef.current).toEqual({ mode: 'move', last: { x: 80, y: 0 }, moved: false, gated: false });
+    expect(r.dragRef.current).toEqual({ mode: 'move', ids: [id], last: { x: 80, y: 0 }, moved: false, gated: false });
   });
 
   it('the grab is inclusive right at the radius and gives way to a move just past it', () => {
@@ -947,7 +946,7 @@ describe('finishPostDrag', () => {
     addWire(0, 0, 160, 0);
     addWire(80, 80, 80, 0);
 
-    finishPostDrag({ mode: 'move', last: { x: 80, y: 0 }, moved: true }, useStore.getState());
+    finishPostDrag({ mode: 'move', ids: [], last: { x: 80, y: 0 }, moved: true }, useStore.getState());
 
     expect(useStore.getState().elements).toHaveLength(2);
   });
@@ -1171,6 +1170,84 @@ describe('arming the store gesture flag', () => {
     );
     expect(row.dragRef.current.mode).toBe('rowcol');
     expect(useStore.getState().elementGesture).toBeNull();
+  });
+});
+
+describe('a right-click while a move drag is armed', () => {
+  /** Three parts on separate rows, so a click can land on one without the
+   *  other two. */
+  const threeParts = () => ({
+    a: addEl('resistor'),
+    b: addEl('resistor', { y1: 64, y2: 64 }),
+    c: addEl('resistor', { y1: 128, y2: 128 }),
+  });
+
+  /** The pointer-move body for a move drag: the same helper the canvas hook's
+   *  move case runs, fed the drag the pointer-down armed. */
+  const feedMove = (drag: Drag, p: Point) => {
+    if (drag.mode !== 'move') throw new Error('expected a move to be armed');
+    stepMoveDrag(drag, p, useStore.getState());
+  };
+
+  it('moves translate the frozen group and the clicked target does not join', () => {
+    // Rubber-band A+B, press A and drag, then barrel-click C without
+    // releasing: upstream never re-selects on a non-left button mid-drag
+    // (MouseManager.java:1071-1075), so C must ride along as nothing.
+    const { a, b, c } = threeParts();
+    useStore.getState().select([a, b]);
+    const r = refs();
+    beginPointerGesture(down(), { x: 80, y: 0 }, useStore.getState(), hit(a), false, r);
+    useStore.getState().openContextMenu(10, 20, c, { x: 0, y: 0 });
+
+    // The menu opens for C but the group the drag armed with stays selected,
+    // and the frozen list carries the move.
+    expect(useStore.getState().contextMenu?.target).toBe(c);
+    expect(useStore.getState().selectedIds).toEqual([a, b]);
+    feedMove(r.dragRef.current, { x: 96, y: 0 }); // one grid cell right
+
+    expect(hit(a)).toMatchObject({ x1: 16, y1: 0, x2: 176, y2: 0 });
+    expect(hit(b)).toMatchObject({ x1: 16, y1: 64, x2: 176, y2: 64 });
+    expect(hit(c)).toMatchObject({ x1: 0, y1: 128, x2: 160, y2: 128 });
+  });
+
+  it('keeps dragging the group the press froze even if a command re-selects mid-gesture', () => {
+    // The freeze is not only about right-clicks: any programmatic selection
+    // change while the hand is down must not steal an in-flight group drag.
+    const { a, b, c } = threeParts();
+    useStore.getState().select([a, b]);
+    const r = refs();
+    beginPointerGesture(down(), { x: 80, y: 0 }, useStore.getState(), hit(a), false, r);
+    useStore.getState().select([c]);
+
+    feedMove(r.dragRef.current, { x: 96, y: 0 });
+
+    expect(hit(a)).toMatchObject({ x1: 16, x2: 176 });
+    expect(hit(b)).toMatchObject({ x1: 16, x2: 176 });
+    expect(hit(c)).toMatchObject({ x1: 0, x2: 160 });
+  });
+
+  it('a rowcol sweep still rides its captured endpoints when the menu re-selects', () => {
+    // rowcol freezes its captured posts at pointer-down and raises no gesture
+    // flag, so today's select-alone rule applies and must not disturb the
+    // sweep: the captured list, not the live selection, drives the moves.
+    const a = addEl('resistor');
+    const b = addEl('resistor', { y1: 64, y2: 64 });
+    const c = addEl('resistor', { x1: 32, y1: 128, x2: 192, y2: 128 });
+    const r = refs();
+    startRowCol('col', { x: 0, y: 0 }, useStore.getState(), r.dragRef);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'rowcol') throw new Error('expected a col sweep');
+
+    useStore.getState().openContextMenu(10, 20, c, { x: 0, y: 0 });
+    // No gesture flag here, so the rewrite happens exactly as before.
+    expect(useStore.getState().selectedIds).toEqual([c]);
+
+    // The hook's rowcol consumption: along-axis delta per captured endpoint.
+    for (const cap of drag.captured) useStore.getState().movePoint(cap.id, cap.post, 16, 0);
+
+    expect(hit(a)).toMatchObject({ x1: 16, x2: 160 });
+    expect(hit(b)).toMatchObject({ x1: 16, x2: 160 });
+    expect(hit(c)).toMatchObject({ x1: 32, x2: 192 });
   });
 });
 
