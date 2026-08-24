@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { LONG_PRESS_MS, TouchGesture } from '../gestures';
 import { defFor } from '../../model/registry';
 import { SWITCH_IEC } from '../../model/registry/flags';
 import { rectContains } from '../../model/registry/shared';
@@ -10,6 +11,7 @@ import { makeGhostElement, snap, useStore } from '../../state/store';
 import { DEFAULT_PLACEMENT_LENGTH } from '../../state/helpers';
 import { fresh } from '../../state/store.test-helpers';
 import {
+  abandonForLongPress,
   armedHandle,
   beginPointerGesture,
   finishPlacement,
@@ -697,6 +699,102 @@ describe('finishPlacement splitting what the new part landed on', () => {
     finishPlacement(drag, useStore.getState());
 
     expect(useStore.getState().elements.some((e) => e.id === crossed)).toBe(true);
+  });
+});
+
+describe('a long-press while a placement is armed', () => {
+  // The hook drives exactly these pieces: the recognizer owns the clock and
+  // validates its own timers, and the component's long-press timer callback
+  // (scheduleTouchTimers in useCanvasInteractions.ts) is replayed here against
+  // a fake dragRef and the real store. The arm comes from the shared
+  // beginPointerGesture, so the test breaks if the arming contract changes.
+  const PRESS = { x: 100, y: 100 };
+  let t = 0;
+
+  /** A touch finger lands with `tool` armed, the way onPointerDown wires it:
+   *  gated true, the recognizer fed the same coordinates as the gesture. */
+  const touchDownWithTool = (tool: string | null) => {
+    const g = new TouchGesture(() => t);
+    t = 0;
+    useStore.getState().setTool(tool);
+    expect(g.down(1, PRESS.x, PRESS.y).actions).toEqual([{ type: 'primaryDown' }]);
+    const r = refs();
+    beginPointerGesture(
+      down({ pointerId: 1, clientX: PRESS.x, clientY: PRESS.y }),
+      PRESS,
+      useStore.getState(),
+      null,
+      true,
+      r,
+    );
+    return { g, r };
+  };
+
+  /** Fires the long-press timer at LONG_PRESS_MS and runs what runs for it in
+   *  the component: the menu opens at the finger, then the armed drag is
+   *  abandoned. */
+  const fireLongPress = ({ g, r }: ReturnType<typeof touchDownWithTool>) => {
+    t = LONG_PRESS_MS;
+    expect(g.timerFired('longPress')).toEqual([{ type: 'longPress' }]);
+    useStore.getState().openContextMenu(PRESS.x, PRESS.y, null, PRESS);
+    abandonForLongPress(r.dragRef, useStore.getState());
+  };
+
+  it('stands the tool down, keeps the tap-placed part and spends no extra undo', () => {
+    const h = touchDownWithTool('resistor');
+    expect(useStore.getState().elements).toHaveLength(1);
+    const baseline = useStore.getState().undoStack.length;
+
+    fireLongPress(h);
+
+    const s = useStore.getState();
+    expect(s.tool).toBeNull();
+    expect(s.elements).toHaveLength(1);
+    expect(s.undoStack.length).toBe(baseline);
+    expect(s.elementGesture).toBeNull();
+    expect(h.r.dragRef.current).toEqual({ mode: 'none' });
+  });
+
+  it('deletes a placement dragged back to its anchor instead of stranding it', () => {
+    const h = touchDownWithTool('resistor');
+    const drag = h.r.dragRef.current;
+    if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
+    useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
+    const baseline = useStore.getState().undoStack.length;
+
+    fireLongPress(h);
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(0);
+    expect(s.tool).toBeNull();
+    expect(s.undoStack.length).toBe(baseline);
+  });
+
+  it('disarms the wire tool and inserts no run', () => {
+    const h = touchDownWithTool('wire');
+    expect(h.r.dragRef.current.mode).toBe('wire');
+    const baseline = useStore.getState().undoStack.length;
+
+    fireLongPress(h);
+
+    const s = useStore.getState();
+    expect(s.tool).toBeNull();
+    expect(s.elements).toHaveLength(0);
+    expect(s.undoStack.length).toBe(baseline);
+    expect(h.r.dragRef.current).toEqual({ mode: 'none' });
+  });
+
+  it('still opens the menu when no tool is armed', () => {
+    const h = touchDownWithTool(null);
+
+    fireLongPress(h);
+
+    const s = useStore.getState();
+    expect(s.contextMenu?.x).toBe(PRESS.x);
+    expect(s.contextMenu?.y).toBe(PRESS.y);
+    expect(s.contextMenu?.target).toBeNull();
+    expect(s.elements).toHaveLength(0);
+    expect(h.r.dragRef.current).toEqual({ mode: 'none' });
   });
 });
 

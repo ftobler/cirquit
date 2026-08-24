@@ -214,6 +214,22 @@ export function finishWireDrag(drag: Drag, state: AppState): void {
   state.setTool(null);
 }
 
+/** What a long-press owes the gesture it interrupts: the finger is a menu
+ *  trigger, not a drag. A placement in flight still owes its up-time cleanup,
+ *  exactly as for the two-finger abandon and the double-tap, or its element
+ *  (stranded collapsed once dragged back to the anchor) serializes into saves;
+ *  a wire drag has inserted nothing yet, but the tool must stand down or it
+ *  stays silently armed under the menu. Everything else had nothing in
+ *  flight, so only the disarm runs. Sits beside the finish* cleanups it
+ *  composes so the rule stays testable without a canvas. */
+export function abandonForLongPress(dragRef: { current: Drag }, state: AppState): void {
+  const drag = dragRef.current;
+  if (drag.mode === 'place') finishPlacement(drag, state);
+  if (drag.mode === 'wire') finishWireDrag(drag, state);
+  dragRef.current = { mode: 'none' };
+  state.endElementGesture();
+}
+
 /** The pointer-up cleanup a single post drag owes. Two outcomes, in upstream's
  *  order: a drag that collapsed the element to a point is undone whole, and
  *  otherwise the dropped post splits any wire it landed on so the two connect

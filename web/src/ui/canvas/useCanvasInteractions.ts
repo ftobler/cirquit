@@ -27,6 +27,7 @@ import { ZOOM_FACTOR, zoomAbout } from '../../state/view';
 import { clearPaletteAnchor, setPaletteAnchor } from '../paletteAnchor';
 import { DRAG_DELAY_MS, LONG_PRESS_MS, TouchGesture, type GestureAction } from '../gestures';
 import {
+  abandonForLongPress,
   beginPointerGesture,
   collapsedToPoint,
   finishPlacement,
@@ -131,14 +132,15 @@ export function useCanvasInteractions(
         if (a.type === 'longPress') {
           // The long-press opens the same context menu as a right-click, at
           // the finger (MouseManager.java:139-141). The drag it armed is
-          // abandoned: the finger is a menu trigger, not a drag.
+          // abandoned: the finger is a menu trigger, not a drag, and a
+          // placement in flight still owes its up-time cleanup here exactly as
+          // the two-finger abandon below owes it.
+          const state = useStore.getState();
           const target = touchTargetRef.current;
           const down = touchDownClientRef.current;
-          useStore
-            .getState()
-            .openContextMenu(down.x, down.y, target, toCircuit(down.x, down.y));
+          state.openContextMenu(down.x, down.y, target, toCircuit(down.x, down.y));
+          abandonForLongPress(dragRef, state);
           touchArmedRef.current = false;
-          clearDrag(useStore.getState());
           pinchPrevMidRef.current = null;
         }
       }
