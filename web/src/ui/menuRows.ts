@@ -13,6 +13,9 @@ export interface MenuItemDef {
    *  with `disabledTitle` as the reason. Contextually disabled rows (no
    *  selection, editing disabled) leave this unset, so they never strike. */
   deferred?: boolean;
+  /** Renders a horizontal separator above the row, the way upstream stacks
+   *  addSeparator calls around the Full Screen toggle (Menus.java:140,:142). */
+  sepBefore?: boolean;
 }
 
 /** A menubar row upstream has but the port does not implement: disabled with
@@ -51,14 +54,19 @@ export function toggleFullScreenRow(onToggle: () => void): MenuItemDef {
 }
 
 /** The File menu's last three rows in upstream order (Menus.java:139-143):
- *  Print, the Full Screen toggle after a separator, then About. One factory
- *  so the position stays pinned by test rather than by reading JSX. */
-export function fileMenuTailRows(
-  print: MenuItemDef,
-  fullScreen: MenuItemDef,
-  about: MenuItemDef,
-): MenuItemDef[] {
-  return [print, fullScreen, about];
+ *  Print, the Full Screen toggle, then About, with separators around the
+ *  toggle like upstream's addSeparator calls. Built here rather than inline
+ *  so the headless tests pin order and separators against drift. */
+export function fileMenuTailRows(tail: {
+  print: () => void;
+  fullScreen: () => void;
+  about: () => void;
+}): MenuItemDef[] {
+  return [
+    { label: 'Print…', shortcut: 'Ctrl+P', onClick: tail.print },
+    { ...toggleFullScreenRow(tail.fullScreen), sepBefore: true },
+    { label: 'About…', onClick: tail.about, sepBefore: true },
+  ];
 }
 
 /** Where the command's facade result lands: null means found and flashes the

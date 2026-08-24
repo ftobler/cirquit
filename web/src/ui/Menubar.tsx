@@ -26,7 +26,6 @@ import {
   dcOutcomeReport,
   fileMenuTailRows,
   findDcOperatingPointRow,
-  toggleFullScreenRow,
   type MenuItemDef,
 } from './menuRows';
 
@@ -42,19 +41,25 @@ function MenuItem({
   title,
   onClick,
   deferred,
+  sepBefore,
 }: MenuItemDef) {
   return (
-    <button
-      type="button"
-      className={deferred ? 'menu-item deferred' : 'menu-item'}
-      role="menuitem"
-      disabled={disabled}
-      title={disabled ? disabledTitle : title}
-      onClick={onClick}
-    >
-      <span>{label}</span>
-      {shortcut && <span className="menu-shortcut">{shortcut}</span>}
-    </button>
+    <>
+      {/* Upstream's menu separators (Menus.java:140,:142), carried on the row
+          they precede so a factory can express a whole grouped block. */}
+      {sepBefore && <div className="menu-sep" role="separator" />}
+      <button
+        type="button"
+        className={deferred ? 'menu-item deferred' : 'menu-item'}
+        role="menuitem"
+        disabled={disabled}
+        title={disabled ? disabledTitle : title}
+        onClick={onClick}
+      >
+        <span>{label}</span>
+        {shortcut && <span className="menu-shortcut">{shortcut}</span>}
+      </button>
+    </>
   );
 }
 
@@ -543,19 +548,17 @@ export function Menubar({ engine }: Props) {
       onClick: fire(() => useStore.getState().recoverAutoSave()),
     },
     // Upstream's File tail (Menus.java:139-143): Print, then the Full Screen
-    // toggle after a separator, then About. The command toggles the browser
+    // toggle between separators, then About. The command toggles the browser
     // surface on the document element and re-fits the circuit afterwards
     // (CommandManager.java:305-311). The fit goes through requestCenter, whose
     // layout-effect path measures the canvas before fitting: entering full
     // screen resizes the canvas asynchronously, so a direct centerCircuit
     // would fit the windowed viewport and leave it there.
-    ...fileMenuTailRows(
-      { label: 'Print…', shortcut: 'Ctrl+P', onClick: fire(doPrint) },
-      toggleFullScreenRow(
-        fire(() => runFullScreenToggle(document, useStore.getState().requestCenter)),
-      ),
-      { label: 'About…', onClick: fire(() => openDialog('about')) },
-    ),
+    ...fileMenuTailRows({
+      print: fire(doPrint),
+      fullScreen: fire(() => runFullScreenToggle(document, useStore.getState().requestCenter)),
+      about: fire(() => openDialog('about')),
+    }),
   ];
 
   const editItems: MenuItemDef[] = [
@@ -672,19 +675,7 @@ export function Menubar({ engine }: Props) {
     },
   ];
 
-  const menu = (items: MenuItemDef[]) =>
-    items.map((m) => (
-      <MenuItem
-        key={m.label}
-        label={m.label}
-        shortcut={m.shortcut}
-        disabled={m.disabled}
-        disabledTitle={m.disabledTitle}
-        title={m.title}
-        deferred={m.deferred}
-        onClick={m.onClick}
-      />
-    ));
+  const menu = (items: MenuItemDef[]) => items.map((m) => <MenuItem key={m.label} {...m} />);
 
   return (
     <header className="menubar">

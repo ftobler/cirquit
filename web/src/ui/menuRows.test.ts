@@ -102,21 +102,27 @@ describe('toggleFullScreenRow', () => {
 });
 
 describe('fileMenuTailRows', () => {
+  const tail = (fired: string[]) => ({
+    print: () => void fired.push('Print…'),
+    fullScreen: () => void fired.push('Toggle Full Screen'),
+    about: () => void fired.push('About…'),
+  });
+
   it('keeps the upstream tail order: Print, Toggle Full Screen, About', () => {
     // Menus.java:139-143 puts the toggle between Print and About. Pinning the
     // assembled tail here keeps the position honest without rendering JSX.
     const fired: string[] = [];
-    const row = (label: string): MenuItemDef => ({
-      label,
-      onClick: () => void fired.push(label),
-    });
-    const rows = fileMenuTailRows(
-      row('Print…'),
-      toggleFullScreenRow(() => void fired.push('Toggle Full Screen')),
-      row('About…'),
-    );
+    const rows = fileMenuTailRows(tail(fired));
     expect(rows.map((r) => r.label)).toEqual(['Print…', 'Toggle Full Screen', 'About…']);
+    expect(rows[0]?.shortcut).toBe('Ctrl+P');
     for (const r of rows) r.onClick();
     expect(fired).toEqual(['Print…', 'Toggle Full Screen', 'About…']);
+  });
+
+  it('separates the toggle from both neighbours, like Menus.java:140,:142', () => {
+    const rows = fileMenuTailRows(tail([]));
+    expect(rows[0]?.sepBefore).toBeUndefined();
+    expect(rows[1]?.sepBefore).toBe(true);
+    expect(rows[2]?.sepBefore).toBe(true);
   });
 });

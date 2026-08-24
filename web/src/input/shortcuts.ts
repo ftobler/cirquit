@@ -275,10 +275,15 @@ export function chordOf(
   return `${mod ? 'Ctrl+' : ''}${alt}${shift}${key === ' ' ? 'Space' : key}`;
 }
 
-/** The action a chord is assigned to in the overlay, or null. */
+/** The action a chord is assigned to in the overlay, or null. An empty value
+ *  is "unassigned", never a binding: the dialog clears rows to '' before
+ *  overlayFromRows drops them, and the matcher's old truthiness guard only
+ *  covered this one caller, so the rule lives here where every caller
+ *  (the App.tsx repeat guard included) shares it. */
 export function actionForChord(overlay: ShortcutOverlay, chord: string): AssignableAction | null {
+  if (chord === '') return null;
   for (const [type, c] of Object.entries(overlay) as [AssignableAction, string][]) {
-    if (c === chord) return type;
+    if (c !== '' && c === chord) return type;
   }
   return null;
 }

@@ -7,6 +7,7 @@ import {
   COMMAND_ACTIONS,
   ASSIGNABLE_ACTIONS,
   defaultBindingFor,
+  hasChord,
   hasDuplicateChords,
   isDefaultBinding,
   isPlacementAction,
@@ -448,6 +449,21 @@ describe('the user-assigned overlay', () => {
     expect(matchShortcut(ev({ key: '/' }), overlay)).toEqual({ type: 'copy' });
     // Without the assignment the default still opens the search.
     expect(matchShortcut(ev({ key: '/' }))).toEqual({ type: 'openPalette' });
+  });
+
+  it('an empty-string assignment is unassigned, never a binding', () => {
+    // The old matcher guarded with truthiness, so {undo:''} fell through to
+    // the defaults; the guard now lives in actionForChord so every caller
+    // sees the same rule, the App.tsx repeat guard included. Storage never
+    // persists an empty chord, but nothing stops one arriving in memory.
+    const overlay: ShortcutOverlay = { undo: '', copy: 'x', 'place:wire': '' };
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), overlay)).toEqual({ type: 'undo' });
+    expect(matchShortcut(ev({ key: 'w' }), overlay)).toEqual({ type: 'place', kind: 'wire' });
+    expect(matchShortcut(ev({ key: 'x' }), overlay)).toEqual({ type: 'copy' });
+    expect(hasChord(overlay, 'Ctrl+z')).toBe(false);
+    // No event produces the empty chord, but the query API must still refuse
+    // to report an empty assignment as bound.
+    expect(hasChord(overlay, '')).toBe(false);
   });
 });
 
