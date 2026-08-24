@@ -73,6 +73,24 @@ export interface UndockedFrameMessage {
 export const UNDOCKED_HELLO_TYPE = 'undocked-hello';
 export const UNDOCKED_FRAME_TYPE = 'undocked-frame';
 
+/**
+ * Transport guard for messages arriving in the child window: only the opener
+ * window, posting from this page's own origin, may drive the display. Both
+ * halves matter: the source check alone would accept a document re-hosted
+ * under a foreign origin, and an origin check alone would accept any same-tab
+ * frame. Parameterised over the opener handle and expected origin so the
+ * listener's first gate stays unit-testable without a DOM. The child drops
+ * rejected events before their payload is inspected, so a stray tab cannot
+ * even probe the frame shape.
+ */
+export function fromTrustedSender(
+  ev: { source: unknown; origin: string },
+  opener: unknown,
+  ownOrigin: string,
+): boolean {
+  return ev.source === opener && ev.origin === ownOrigin;
+}
+
 /** Window title for the undocked scope: the scope's own label when it set
  *  one, a plain fallback otherwise, suffixed like the docs pages. */
 export function scopeWindowTitle(label: string): string {

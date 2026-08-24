@@ -10,7 +10,7 @@ import '@fontsource-variable/roboto';
 import '../styles.css';
 import { emptyCursor, drawScope } from '../scope/draw';
 import type { UndockedFrameMessage } from './protocol';
-import { UNDOCKED_HELLO_TYPE } from './protocol';
+import { UNDOCKED_HELLO_TYPE, fromTrustedSender } from './protocol';
 import { SnapshotScopeSource, deliverToSource } from './snapshotSource';
 
 const canvasEl = document.getElementById('scope-win-canvas');
@@ -29,9 +29,10 @@ let latest: UndockedFrameMessage | null = null;
 let receivedFrameAt = -1;
 
 window.addEventListener('message', (ev) => {
-  // Only the opener may drive this page: anything else (another tab, a
-  // stray iframe) is dropped before its payload is even inspected.
-  if (ev.source !== window.opener) return;
+  // Only the opener may drive this page, and only from this page's own
+  // origin: anything else (another tab, a stray iframe, a re-hosted document)
+  // is dropped before its payload is even inspected.
+  if (!fromTrustedSender(ev, window.opener, window.location.origin)) return;
   if (ev.data === null || typeof ev.data !== 'object') return;
   if (!deliverToSource(source, ev.data)) return;
   latest = ev.data as UndockedFrameMessage;
