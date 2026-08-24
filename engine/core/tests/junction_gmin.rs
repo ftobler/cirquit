@@ -13,6 +13,7 @@
 //! `src/elements/junction.rs`.
 
 mod common;
+use circuit_core::ElementSpec;
 use common::*;
 
 const VT: f64 = 0.025_865;
@@ -127,4 +128,112 @@ fn sample_hold_drains_at_the_saturation_current_not_the_gmin() {
         "held {v_b} after 0.4 s, the saturation drain law predicts \
          {predicted} (sampled from {v_a})"
     );
+}
+
+/// Subiteration at which the geometric ramp takes over, upstream's
+/// `sim.subIterations > 100` (Diode.java:150).
+const RAMP_START: u32 = 100;
+
+/// The full-wave bridge startup whose diodes carry the "default-led" model's
+/// saturation current (93.2 pA, DiodeModel.java:90), so the family's
+/// `leakage * 0.01` base conductance sits at 9.3e-13 S, essentially the fixed
+/// 1e-12 floor this branch replaced. That resurrects the hard-switching limit
+/// cycle the plain-default-model bridge no longer forms
+/// (`diode_bridge_startup_converges_within_a_tight_iteration_budget` in
+/// transformer_matrix.rs): once the capacitor is charged, one switching step
+/// locks up and burns its whole Newton budget without settling. This is the
+/// one scenario the stuck-step ramp exists for, and every other test budget
+/// tops out at or below [`RAMP_START`], leaving the ramp untested end to end.
+#[test]
+fn stuck_bridge_step_needs_the_ramp_and_converges_past_the_start() {
+    // Upstream's own Newton cap is 100 subiterations, exactly the ramp start,
+    // so the cycle is fatal there: the run must stop non-converged at the
+    // switching step, which pins the circuit as genuinely stuck rather than
+    // merely slow.
+    let mut capped = build(stiff_bridge(), opts_budget(1e-6, false, RAMP_START));
+    let fail = capped.run(2000);
+    assert!(
+        !fail.converged,
+        "the switching cycle should exhaust a 100-iteration budget"
+    );
+    assert!(
+        fail.error.is_some(),
+        "the stalled run must record its convergence error"
+    );
+
+    // With room past the start, the same trajectory crosses subiteration 100,
+    // the selector swaps in the geometric ramp (Diode.java:149-152) and the
+    // formerly fatal step settles within a few further iterations. The
+    // observation is the engagement proof: some step spent strictly more than
+    // RAMP_START Newton rounds in flight, which only the ramp branch serves.
+    let mut c = build(stiff_bridge(), opts_budget(1e-6, false, 1000));
+    let mut over_start = None;
+    for step in 0..2000u32 {
+        let r = c.run(1);
+        assert!(
+            r.converged,
+            "step {step} failed with the ramp available: {}",
+            r.error.unwrap_or_default()
+        );
+        if r.iterations > RAMP_START && over_start.is_none() {
+            over_start = Some((step, r.iterations));
+        }
+    }
+    let (step, iterations) =
+        over_start.expect("no step crossed the ramp start; the ramp was never exercised");
+
+    // The ramp shapes the iteration path only: by the Norton cancellation the
+    // committed solution is gmin-invariant, so the rescued run must land on
+    // the physics anyway. Steady state pins the capacitor near the sine peak
+    // less two conducting junction drops, each carrying the ~10 mA load
+    // current at Is = 93.2 pA: vscale*ln(I/Is) = 2*VT*ln(1.1e8) is about
+    // 0.96 V, so 12 - 2*0.96 = 10.08 V at the conduction peaks, less the few
+    // dozen millivolts of hold sag accumulated before the sample.
+    let v_cap = c.element_voltages()[5];
+    assert!(
+        (9.5..10.5).contains(&v_cap),
+        "after the ramp rescue the capacitor read {v_cap} V at step {step} \
+         ({iterations} iterations), expected the charged window around \
+         peak minus two junction drops"
+    );
+}
+
+/// The bridge behind transformer_matrix.rs's tight-budget startup test, with
+/// every diode's saturation current set to the "default-led" model's 93.2 pA.
+fn stiff_bridge() -> Vec<ElementSpec> {
+    vec![
+        elm(
+            1,
+            "voltage",
+            &[[0, 160], [0, 320]],
+            &[
+                ("maxVoltage", 12.0),
+                ("waveform", 1.0),
+                ("frequency", 1000.0),
+            ],
+        ),
+        stiff_diode(2, [[0, 160], [160, 160]]),
+        stiff_diode(3, [[0, 320], [160, 160]]),
+        stiff_diode(4, [[160, 320], [0, 160]]),
+        stiff_diode(5, [[160, 320], [0, 320]]),
+        elm(
+            6,
+            "capacitor",
+            &[[160, 160], [160, 320]],
+            &[("capacitance", 100e-6)],
+        ),
+        elm(
+            7,
+            "resistor",
+            &[[160, 160], [320, 160]],
+            &[("resistance", 1000.0)],
+        ),
+        elm(8, "wire", &[[320, 160], [320, 320]], &[]),
+        elm(9, "wire", &[[320, 320], [160, 320]], &[]),
+        elm(10, "ground", &[[0, 320]], &[]),
+    ]
+}
+
+fn stiff_diode(id: u32, posts: [[i32; 2]; 2]) -> ElementSpec {
+    elm(id, "diode", &posts, &[("saturationCurrent", 93.2e-12)])
 }

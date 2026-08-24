@@ -21,9 +21,11 @@ pub(crate) fn base_gmin(leakage: f64) -> f64 {
 /// The conductance a Shockley junction stamps on Newton iteration `subiter`:
 /// the saturation-current-scaled [`base_gmin`] below the ramp start, replaced
 /// by the geometric [`ramp_gmin`] once a step is stuck
-/// (Diode.java:147-156). The plain diode and the devices that embed one
-/// upstream, SCR, TRIAC and DIAC, all route through here so the family
-/// cannot drift. The transistor family keeps the fixed `JUNCTION_GMIN`
+/// (Diode.java:147-156). Every device upstream serves with real `Diode`
+/// instances routes through here, the plain diode plus SCR, TRIAC and DIAC,
+/// the unijunction's emitter diode (UnijunctionElm.java:38) and the LED
+/// array's grid (LEDArrayElm.java:90-94), so the family cannot drift. The
+/// transistor family keeps the fixed `JUNCTION_GMIN`
 /// instead, matching TransistorElm's hardcoded constant.
 pub(crate) fn junction_gmin(leakage: f64, subiter: u32) -> f64 {
     if subiter > GMIN_RAMP_START {

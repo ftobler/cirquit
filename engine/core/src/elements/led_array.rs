@@ -12,8 +12,7 @@
 
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::junction::{
-    critical_voltage, limit_junction, ramp_gmin, CONVERGENCE_V, GMIN_RAMP_DENOM, GMIN_RAMP_START,
-    JUNCTION_GMIN, MAX_EXP_ARG, VT,
+    critical_voltage, junction_gmin, limit_junction, CONVERGENCE_V, MAX_EXP_ARG, VT,
 };
 use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
@@ -133,11 +132,7 @@ impl Element for LedArray {
                 }
                 v = limit_junction(v, cell.last_v, LED_VSCALE, self.vcrit);
                 cell.last_v = v;
-                let gmin = if ctx.subiter > GMIN_RAMP_START as usize {
-                    ramp_gmin(ctx.subiter as u32, GMIN_RAMP_DENOM)
-                } else {
-                    JUNCTION_GMIN
-                };
+                let gmin = junction_gmin(LED_LEAKAGE, ctx.subiter as u32);
                 let (current, g) = evaluate(v, gmin);
                 cell.geq = g;
                 cell.ieq = current - g * v;

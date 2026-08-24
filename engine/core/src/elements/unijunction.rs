@@ -40,8 +40,7 @@ use crate::element::{Base, Element, SimCtx};
 use crate::elements::capacitor::DC_OPEN;
 use crate::elements::controlled_source::{converge_limit, input_derivative, sign};
 use crate::elements::junction::{
-    critical_voltage, limit_junction, ramp_gmin, CONVERGENCE_V, GMIN_RAMP_DENOM, GMIN_RAMP_START,
-    JUNCTION_GMIN, MAX_EXP_ARG, VT,
+    critical_voltage, junction_gmin, limit_junction, CONVERGENCE_V, MAX_EXP_ARG, VT,
 };
 use crate::expr::{parse, Expr, ExprState};
 use crate::spec::ElementSpec;
@@ -243,11 +242,7 @@ impl Element for Unijunction {
         }
         v = limit_junction(v, self.diode_last_v, self.vscale, self.vcrit);
         self.diode_last_v = v;
-        let gmin = if ctx.subiter as u32 > GMIN_RAMP_START {
-            ramp_gmin(ctx.subiter as u32, GMIN_RAMP_DENOM)
-        } else {
-            JUNCTION_GMIN
-        };
+        let gmin = junction_gmin(self.leakage, ctx.subiter as u32);
         let arg = (v / self.vscale).min(MAX_EXP_ARG);
         let ev = arg.exp();
         let i = self.leakage * (ev - 1.0);
