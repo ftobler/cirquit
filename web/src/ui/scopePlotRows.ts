@@ -5,7 +5,7 @@
  * labelled (populatePlotListBox, ScopePropertiesDialog.java:731-741).
  */
 
-import type { ScopeValue } from '../engine/simulator';
+import type { ScopePlot, ScopeValue } from '../engine/simulator';
 import { UNIT } from '../scope/draw';
 import { defFor } from '../model/registry';
 
@@ -62,6 +62,16 @@ export function plotValueRows(kind: string | null): PlotValueRow[] {
 export const isVceIcRow = (
   row: PlotValueRow,
 ): row is Extract<PlotValueRow, { special: 'vceIc' }> => 'special' in row && row.special === 'vceIc';
+
+/** Whether the scope popup's Remove Plot may act on `plotId`, the same guards
+ *  removePlot enforces: the id must name a real plot (a menu can outlive its
+ *  plot), the plot must carry a trace because a raw-only one exists only to
+ *  re-emit its o line tokens on save, and a single-plot panel must not empty. */
+export function canRemovePlot(plots: ScopePlot[], plotId: number): boolean {
+  const plot = plots.find((p) => p.id === plotId);
+  if (!plot || plot.value === null || plot.elementId === null) return false;
+  return plots.length > 1;
+}
 
 /** The short quantity name inside an axis label, upstream's getScopeText
  *  additions (TransistorElm.java:524-537); generic values have none and lean

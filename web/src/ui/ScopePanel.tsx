@@ -308,12 +308,13 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     const y = e.clientY - rect.top;
     const { w, h } = size();
     // selectPlotAt indexes the visible-plot list, like the drag path, so the
-    // Remove Plot target is resolved through it too.
+    // Remove Plot target is resolved through it too. No fallback: a click in
+    // the margin names no plot, and -1 matches nothing so the menu item sits
+    // disabled instead of aiming at a plot the user never pointed at.
     const visible = visiblePlotsOf(scope).filter(isDrawable);
     const plot = selectPlotAt(engine, scope, x, y, w, h);
     const target = plot >= 0 ? visible[plot] : undefined;
-    const plotId = target?.id ?? scope.plots[0].id;
-    useStore.getState().openScopeMenu(e.clientX, e.clientY, scope.id, plotId);
+    useStore.getState().openScopeMenu(e.clientX, e.clientY, scope.id, target?.id ?? -1);
   };
 
   return (

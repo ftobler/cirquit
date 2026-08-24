@@ -586,8 +586,9 @@ export interface AppState {
   togglePlot(scopeId: number, value: ScopeValue): void;
   /** Removes exactly the plot `plotId` names, the scope popup's Remove Plot
    *  (Scope.removePlot(int)): a combined panel can carry two plots of the
-   *  same value, so identity is by id, not by value. Never empties the
-   *  panel; one undo entry. */
+   *  same value, so identity is by id, not by value. Refuses stale ids,
+   *  raw-only plots (they only preserve their o line tokens for the next
+   *  save) and the panel's last plot; one undo entry when it acts. */
   removePlot(scopeId: number, plotId: number): void;
   /** The Show Vce vs Ic row's action: replaces a transistor scope's plots
    *  with the VCE/IC pair and turns X-Y on (Scope.java:1312-1317). */

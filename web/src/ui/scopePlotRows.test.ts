@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isVceIcRow, plotAxisLabel, plotValueRows } from './scopePlotRows';
+import type { ScopePlot } from '../engine/simulator';
+import { canRemovePlot, isVceIcRow, plotAxisLabel, plotValueRows } from './scopePlotRows';
 
 /** A row's plot value, skipping the compound Vce-vs-Ic action row. */
 const valuesOf = (kind: string | null) =>
@@ -64,5 +65,39 @@ describe('plotAxisLabel', () => {
   it('degrades an unknown element or value without throwing', () => {
     expect(plotAxisLabel(null, null)).toBe('Plot (?)');
     expect(plotAxisLabel('mysteryKind', 'voltage')).toBe('mysteryKind (V)');
+  });
+});
+
+describe('canRemovePlot', () => {
+  /** A minimal plot shape standing in for a loaded or created one. */
+  const plot = (id: number, overrides: Partial<ScopePlot> = {}): ScopePlot =>
+    ({
+      id,
+      elementId: 7,
+      value: 'voltage',
+      manScale: null,
+      manVPosition: 0,
+      acCoupled: false,
+      measurements: null,
+      ...overrides,
+    }) as ScopePlot;
+
+  it('allows a real samplable plot while others remain', () => {
+    const plots = [plot(1), plot(2)];
+    expect(canRemovePlot(plots, 2)).toBe(true);
+  });
+
+  it('refuses a stale id so the disabled item explains the no-op', () => {
+    // The menu can outlive its plot; a dead id must read as unavailable.
+    expect(canRemovePlot([plot(1), plot(2)], 3)).toBe(false);
+  });
+
+  it('refuses a raw-only plot that only preserves the o line tokens', () => {
+    const plots = [plot(1), { ...plot(2, { value: null }) }];
+    expect(canRemovePlot(plots, 2)).toBe(false);
+  });
+
+  it('refuses the last plot in the panel', () => {
+    expect(canRemovePlot([plot(1)], 1)).toBe(false);
   });
 });

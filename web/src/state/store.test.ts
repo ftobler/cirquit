@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, GRID_SIZE, type SimSettings } from '../model/types';
 import { postsOf } from '../model/registry';
 import { hitTestElement } from '../render/geometry';
 import { scopePlotsToSpecs } from '../engine/simulator';
+import { scaleStateFor, setScaleState } from '../scope/scale';
 import { parseCircuit, serializeCircuit } from '../io/netlist';
 import { SAMPLE } from '../io/netlist/fixtures';
 import { ZOOM_FACTOR, circuitBounds, fitView, zoomAbout } from './view';
@@ -2825,16 +2826,56 @@ describe('scope panels', () => {
     expect(useStore.getState().undoStack.length).toBe(before);
   });
 
-  it('removePlot ignores a stale plot id', () => {
-    useStore.getState().addScope(addResistor(), 'voltage');
+  it('removePlot refuses a raw-only plot', () => {
+    // An out-of-table value token loads as a plot kept only to re-emit the
+    // o line byte-for-byte; removing it would silently drop those tokens
+    // from every later save.
+    useStore.getState().loadNetlist(
+      ['$ 1 0.000005 10 50 5 43 5e-11', 't 0 0 16 0 0 1 0 0 0 0 0', 'o 0 64 9 4099 20 0.05 0 1', ''].join(
+        '\n',
+      ),
+    );
     const scope = useStore.getState().scopes[0];
+    const rawOnly = scope.plots[0];
+    expect(rawOnly.value).toBeNull();
+    // A companion samplable pair keeps the panel above the empty guard, so
+    // the refusal below is the raw-only rule and not the length one.
+    useStore.getState().addToScope(addResistor(), scope.id, 'voltage');
+    expect(useStore.getState().scopes[0].plots).toHaveLength(3);
     const before = useStore.getState().undoStack.length;
 
-    // The menu can outlive the plot it opened over; a stale id must be a
-    // no-op, not a committed revision bump that removes nothing.
-    useStore.getState().removePlot(scope.id, scope.plots[0].id + 9999);
-    expect(useStore.getState().scopes[0].plots).toEqual(scope.plots);
+    useStore.getState().removePlot(scope.id, rawOnly.id);
+    expect(useStore.getState().scopes[0].plots).toHaveLength(3);
+    expect(
+      useStore.getState().scopes[0].plots.find((p) => p.id === rawOnly.id),
+    ).toMatchObject({ value: null });
     expect(useStore.getState().undoStack.length).toBe(before);
+  });
+
+  it('removePlot ignores a stale plot id', () => {
+    useStore.getState().addScope(addResistor(), 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    // Destroy a real plot through the front door, then aim the command at its
+    // id: an open menu can easily outlive the plot it was opened over.
+    const victim = useStore.getState().scopes[0].plots[1].id;
+    useStore.getState().togglePlot(scopeId, 'current');
+    const before = useStore.getState().undoStack.length;
+
+    useStore.getState().removePlot(scopeId, victim);
+    expect(useStore.getState().scopes[0].plots).toHaveLength(1);
+    expect(useStore.getState().undoStack.length).toBe(before);
+  });
+
+  it('removePlot drops the removed plot scale state', () => {
+    useStore.getState().addScope(addResistor(), 'voltage');
+    const scope = useStore.getState().scopes[0];
+    const victim = scope.plots[1].id;
+    setScaleState(victim, { gridMax: 3, showNegative: true });
+
+    useStore.getState().removePlot(scope.id, victim);
+    // Same symmetry as the Reset command: a dead plot id must not keep its
+    // sticky auto-scale around for a future plot that reuses nothing of it.
+    expect(scaleStateFor(victim)).toEqual({ gridMax: 5, showNegative: false });
   });
 
   it('addToScope adds the plot to the right scope, deduping per scope', () => {

@@ -10,6 +10,7 @@ import type { DrawablePlot } from '../scope/draw';
 import { exportScopeCsv } from '../scope/draw';
 import { scopeWidth } from '../scope/geometry';
 import { clearScaleStates } from '../scope/scale';
+import { canRemovePlot } from './scopePlotRows';
 import { useStore } from '../state/store';
 
 interface Props {
@@ -127,7 +128,10 @@ export function ScopeMenu({ engine, nameOf }: Props) {
     {
       label: 'Remove Plot',
       // The plot id ScopePanel resolved under the cursor, not a value: two
-      // same-value plots in one panel must remove independently.
+      // same-value plots in one panel must remove independently. Disabled
+      // rather than a silent no-op when the target is stale, raw-only, or
+      // the panel's last plot.
+      disabled: !canRemovePlot(scope.plots, scopeMenu.plotId),
       action: () => useStore.getState().removePlot(scope.id, scopeMenu.plotId),
     },
     {

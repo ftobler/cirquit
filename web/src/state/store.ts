@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Scope, ScopePlot, ScopeTrigger, ScopeValue } from '../engine/simulator';
 import { measurementsFromScope } from '../engine/simulator';
 import { scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
-import { positionToOffset } from '../scope/scale';
+import { positionToOffset, clearScaleStates } from '../scope/scale';
 import {
   allocateId,
   parseCircuit,
@@ -2330,14 +2330,18 @@ function createAppStore() {
    *  over, upstream's indexed removePlot (Scope.removePlot(int)). A combined
    *  panel can carry two plots of the same value, so filtering by value would
    *  kill the wrong trace; identity here is the plot id ScopePanel resolved
-   *  under the cursor. */
+   *  under the cursor. Raw-only plots are refused: they exist only to carry
+   *  an o line's unreadable tokens, and removing one would rewrite that line
+   *  without them on the next save. */
   removePlot: (scopeId, plotId) => {
     const s = get();
     const scope = s.scopes.find((x) => x.id === scopeId);
+    const plot = scope?.plots.find((p) => p.id === plotId);
     // A stale id (the menu outlived its plot) must not commit a no-op.
-    if (!scope || !scope.plots.some((p) => p.id === plotId)) return;
+    if (!plot) return;
+    if (plot.value === null || plot.elementId === null) return;
     // Removing must never empty the panel.
-    if (scope.plots.length <= 1) return;
+    if (!scope || scope.plots.length <= 1) return;
     s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) =>
@@ -2345,6 +2349,9 @@ function createAppStore() {
       ),
       ...bumpRevision(st),
     }));
+    // The sticky auto-scale is keyed by plot id outside the store; a dead id
+    // must not hand its scale to whatever comes after, like Reset does.
+    clearScaleStates([plotId]);
   },
 
   /** The properties dialog's Show Vce vs Ic row, upstream's showvcevsic menu
