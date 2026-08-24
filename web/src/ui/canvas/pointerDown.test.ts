@@ -17,6 +17,7 @@ import {
   finishPlacement,
   finishPostDrag,
   finishWireDrag,
+  openMenuAndAbandonForLongPress,
   placementPoint,
   releaseHeldMomentary,
   startRowCol,
@@ -68,6 +69,33 @@ const down = (patch: Partial<PointerDownInput> = {}): PointerDownInput => ({
   pointerId: 1,
   ...patch,
 });
+
+/** The finger position shared by the gesture-interrupt suites below: every
+ *  recognizer event and both coordinate spaces use it, since their flat view
+ *  makes client and circuit points coincide. */
+const PRESS = { x: 100, y: 100 };
+let t = 0;
+
+/** A touch finger lands with `tool` armed, the way onPointerDown wires it:
+ *  gated true, the recognizer fed the same coordinates as the gesture, the
+ *  arm comes from the shared beginPointerGesture against a fake dragRef and
+ *  the real store. */
+const touchDownWithTool = (tool: string | null) => {
+  const g = new TouchGesture(() => t);
+  t = 0;
+  useStore.getState().setTool(tool);
+  expect(g.down(1, PRESS.x, PRESS.y).actions).toEqual([{ type: 'primaryDown' }]);
+  const r = refs();
+  beginPointerGesture(
+    down({ pointerId: 1, clientX: PRESS.x, clientY: PRESS.y }),
+    PRESS,
+    useStore.getState(),
+    null,
+    true,
+    r,
+  );
+  return { g, r };
+};
 
 describe('switchRect geometry', () => {
   it('a plain switch covers the body, the open tip and the closed lever', () => {
@@ -705,39 +733,22 @@ describe('finishPlacement splitting what the new part landed on', () => {
 describe('a long-press while a placement is armed', () => {
   // The hook drives exactly these pieces: the recognizer owns the clock and
   // validates its own timers, and the component's long-press timer callback
-  // (scheduleTouchTimers in useCanvasInteractions.ts) is replayed here against
-  // a fake dragRef and the real store. The arm comes from the shared
-  // beginPointerGesture, so the test breaks if the arming contract changes.
-  const PRESS = { x: 100, y: 100 };
-  let t = 0;
+  // (scheduleTouchTimers in useCanvasInteractions.ts) runs its reaction through
+  // the same exported openMenuAndAbandonForLongPress this suite calls, against
+  // a fake dragRef and the real store.
 
-  /** A touch finger lands with `tool` armed, the way onPointerDown wires it:
-   *  gated true, the recognizer fed the same coordinates as the gesture. */
-  const touchDownWithTool = (tool: string | null) => {
-    const g = new TouchGesture(() => t);
-    t = 0;
-    useStore.getState().setTool(tool);
-    expect(g.down(1, PRESS.x, PRESS.y).actions).toEqual([{ type: 'primaryDown' }]);
-    const r = refs();
-    beginPointerGesture(
-      down({ pointerId: 1, clientX: PRESS.x, clientY: PRESS.y }),
-      PRESS,
-      useStore.getState(),
-      null,
-      true,
-      r,
-    );
-    return { g, r };
-  };
-
-  /** Fires the long-press timer at LONG_PRESS_MS and runs what runs for it in
-   *  the component: the menu opens at the finger, then the armed drag is
-   *  abandoned. */
+  /** Fires the long-press timer at LONG_PRESS_MS and runs the component's
+   *  reaction: the menu opens at the finger, then the armed drag is abandoned.
+   *  The flat test view makes client and circuit points coincide. */
   const fireLongPress = ({ g, r }: ReturnType<typeof touchDownWithTool>) => {
     t = LONG_PRESS_MS;
     expect(g.timerFired('longPress')).toEqual([{ type: 'longPress' }]);
-    useStore.getState().openContextMenu(PRESS.x, PRESS.y, null, PRESS);
-    abandonForLongPress(r.dragRef, useStore.getState());
+    openMenuAndAbandonForLongPress(
+      r.dragRef,
+      useStore.getState(),
+      { client: PRESS, circuit: PRESS },
+      null,
+    );
   };
 
   it('stands the tool down, keeps the tap-placed part and spends no extra undo', () => {
@@ -795,6 +806,109 @@ describe('a long-press while a placement is armed', () => {
     expect(s.contextMenu?.target).toBeNull();
     expect(s.elements).toHaveLength(0);
     expect(h.r.dragRef.current).toEqual({ mode: 'none' });
+  });
+});
+
+describe('a second finger landing on an armed gesture', () => {
+  // The twoFingerStart branch in useCanvasInteractions.ts: a placement in
+  // flight owes its up-time cleanup, and (newer) a wire drag the first finger
+  // armed must stand down, or the pinch ends silently armed.
+  const landSecondFinger = ({ g, r }: ReturnType<typeof touchDownWithTool>) => {
+    t = 100;
+    expect(g.down(2, PRESS.x + 48, PRESS.y).actions).toEqual([{ type: 'twoFingerStart' }]);
+    const drag = r.dragRef.current;
+    if (drag.mode === 'place') finishPlacement(drag, useStore.getState());
+    if (drag.mode === 'wire') finishWireDrag(drag, useStore.getState());
+    r.dragRef.current = { mode: 'none' };
+    useStore.getState().endElementGesture();
+  };
+
+  it('disarms a wire drag the first finger armed and inserts no run', () => {
+    const h = touchDownWithTool('wire');
+    expect(h.r.dragRef.current.mode).toBe('wire');
+    const baseline = useStore.getState().undoStack.length;
+
+    landSecondFinger(h);
+
+    const s = useStore.getState();
+    expect(s.tool).toBeNull();
+    expect(s.elements).toHaveLength(0);
+    expect(s.undoStack.length).toBe(baseline);
+    expect(s.elementGesture).toBeNull();
+    expect(h.r.dragRef.current).toEqual({ mode: 'none' });
+    // The recognizer dropped the single-finger state with the pinch, so no
+    // stale timer can fire into the abandoned gesture later.
+    t = LONG_PRESS_MS + 100;
+    expect(h.g.timerFired('longPress')).toEqual([]);
+    expect(h.g.timerFired('dragDelay')).toEqual([]);
+  });
+
+  it('still finishes a placement dragged back to its anchor', () => {
+    const h = touchDownWithTool('resistor');
+    const drag = h.r.dragRef.current;
+    if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
+    useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
+    const baseline = useStore.getState().undoStack.length;
+
+    landSecondFinger(h);
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(0);
+    expect(s.tool).toBeNull();
+    expect(s.undoStack.length).toBe(baseline);
+  });
+});
+
+describe('a cancelled pointer on an armed gesture', () => {
+  // The onPointerCancel branch in useCanvasInteractions.ts: the system took
+  // the pointer away mid-gesture, the same early exit as a second finger, so
+  // an armed placement or wire tool owes the same abandonment the long-press
+  // runs (abandonForLongPress, minus its menu). A cancel is never a menu
+  // trigger.
+  const cancelWhileArmed = ({ g, r }: ReturnType<typeof touchDownWithTool>) => {
+    expect(g.cancel()).toEqual([{ type: 'cancel' }]);
+    abandonForLongPress(r.dragRef, useStore.getState());
+  };
+
+  it('deletes a placement dragged back to its anchor and stands the tool down', () => {
+    const h = touchDownWithTool('resistor');
+    const drag = h.r.dragRef.current;
+    if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
+    useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
+    const baseline = useStore.getState().undoStack.length;
+
+    cancelWhileArmed(h);
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(0);
+    expect(s.tool).toBeNull();
+    expect(s.contextMenu).toBeNull();
+    expect(s.undoStack.length).toBe(baseline);
+  });
+
+  it('disarms a wire drag and inserts no run', () => {
+    const h = touchDownWithTool('wire');
+    expect(h.r.dragRef.current.mode).toBe('wire');
+
+    cancelWhileArmed(h);
+
+    const s = useStore.getState();
+    expect(s.tool).toBeNull();
+    expect(s.elements).toHaveLength(0);
+    expect(s.contextMenu).toBeNull();
+    expect(h.r.dragRef.current).toEqual({ mode: 'none' });
+  });
+
+  it('with nothing armed is harmless and opens no menu', () => {
+    const h = touchDownWithTool(null);
+    expect(h.r.dragRef.current).toMatchObject({ mode: 'select' });
+
+    cancelWhileArmed(h);
+
+    const s = useStore.getState();
+    expect(s.contextMenu).toBeNull();
+    expect(h.r.dragRef.current).toEqual({ mode: 'none' });
+    expect(s.elements).toHaveLength(0);
   });
 });
 

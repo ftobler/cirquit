@@ -33,6 +33,7 @@ import {
   finishPlacement,
   finishPostDrag,
   finishWireDrag,
+  openMenuAndAbandonForLongPress,
   placementPoint,
   releaseHeldMomentary,
   stepMoveDrag,
@@ -136,10 +137,12 @@ export function useCanvasInteractions(
           // placement in flight still owes its up-time cleanup here exactly as
           // the two-finger abandon below owes it.
           const state = useStore.getState();
-          const target = touchTargetRef.current;
           const down = touchDownClientRef.current;
-          state.openContextMenu(down.x, down.y, target, toCircuit(down.x, down.y));
-          abandonForLongPress(dragRef, state);
+          const spot = { client: down, circuit: toCircuit(down.x, down.y) };
+          openMenuAndAbandonForLongPress(dragRef, state, spot, touchTargetRef.current);
+          // Defensive: the recognizer already invalidated its timers for this
+          // gesture, but nothing else should depend on that invariant.
+          clearTouchTimers();
           touchArmedRef.current = false;
           pinchPrevMidRef.current = null;
         }
@@ -290,6 +293,10 @@ export function useCanvasInteractions(
         // into the saved netlist.
         const drag = dragRef.current;
         if (drag.mode === 'place') finishPlacement(drag, state);
+        // A wire drag the first finger armed stands down too: nothing was
+        // inserted yet, but a tool left armed under the pinch drops a run on
+        // some later tap.
+        if (drag.mode === 'wire') finishWireDrag(drag, state);
         clearDrag(state);
         clearTouchTimers();
         touchArmedRef.current = false;
@@ -702,9 +709,12 @@ export function useCanvasInteractions(
       touchArmedRef.current = false;
       pinchPrevMidRef.current = null;
       // The pointer is gone, so the crosshair and transient highlights go with
-      // it, mirroring onPointerLeave and the shared up path.
+      // it, mirroring onPointerLeave and the shared up path. An armed
+      // placement or wire drag still owes its abandonment here, the long-press
+      // rule minus the menu: a bare disarm would strand a collapsed placement
+      // in the saves or leave the wire tool silently armed.
       const state = useStore.getState();
-      clearDrag(state);
+      abandonForLongPress(dragRef, state);
       releaseHeldMomentary(ev.pointerId, gestureRefs);
       pointerRef.current = null;
       hoverRef.current = null;

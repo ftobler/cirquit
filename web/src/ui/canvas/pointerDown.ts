@@ -214,20 +214,48 @@ export function finishWireDrag(drag: Drag, state: AppState): void {
   state.setTool(null);
 }
 
-/** What a long-press owes the gesture it interrupts: the finger is a menu
- *  trigger, not a drag. A placement in flight still owes its up-time cleanup,
+/** What an interrupted gesture owes: the finger is a menu trigger or was taken
+ *  away, never a drag. A placement in flight still owes its up-time cleanup,
  *  exactly as for the two-finger abandon and the double-tap, or its element
  *  (stranded collapsed once dragged back to the anchor) serializes into saves;
  *  a wire drag has inserted nothing yet, but the tool must stand down or it
  *  stays silently armed under the menu. Everything else had nothing in
- *  flight, so only the disarm runs. Sits beside the finish* cleanups it
- *  composes so the rule stays testable without a canvas. */
+ *  flight, so only the disarm runs. Shared by the long-press timer and the
+ *  cancelled-pointer path (which owe the same abandonment, minus the menu),
+ *  and sits beside the finish* cleanups it composes so the rule stays
+ *  testable without a canvas. */
 export function abandonForLongPress(dragRef: { current: Drag }, state: AppState): void {
   const drag = dragRef.current;
   if (drag.mode === 'place') finishPlacement(drag, state);
   if (drag.mode === 'wire') finishWireDrag(drag, state);
   dragRef.current = { mode: 'none' };
   state.endElementGesture();
+}
+
+/** Where the interrupted finger landed, in both coordinate spaces opening the
+ *  menu needs: viewport pixels position it, the circuit point is where Split
+ *  Wire Manually would act. The projection is the caller's because it needs
+ *  the canvas rect, which no pure function can reach. */
+export interface LongPressSpot {
+  client: Point;
+  circuit: Point;
+}
+
+/** The whole long-press reaction, menu plus abandonment, as one exported
+ *  function that both the hook's timer callback and these tests call. The
+ *  reaction used to be replayed by hand in the tests, which is why a revert
+ *  of the hook's call passed the suite silently: one shared body means the
+ *  suite pins exactly what the component runs. The menu opens at the finger
+ *  whether or not anything was armed; abandonForLongPress above stands down
+ *  whatever was. */
+export function openMenuAndAbandonForLongPress(
+  dragRef: { current: Drag },
+  state: AppState,
+  down: LongPressSpot,
+  target: number | null,
+): void {
+  state.openContextMenu(down.client.x, down.client.y, target, down.circuit);
+  abandonForLongPress(dragRef, state);
 }
 
 /** The pointer-up cleanup a single post drag owes. Two outcomes, in upstream's
