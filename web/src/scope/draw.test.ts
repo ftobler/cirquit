@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PlotMeasurements, Scope, ScopePlot, SimEngine } from '../engine/simulator';
+import type {
+  PlotMeasurements,
+  Scope,
+  ScopePlot,
+  ScopeValue,
+  SimEngine,
+} from '../engine/simulator';
 import type { ThemeColors } from '../model/types';
 import { makeTheme } from '../render/draw';
 import { nextModScale, pruneScaleStates, scaleStateFor } from './scale';
@@ -26,6 +32,7 @@ import {
   xyColorChannel,
   xyCrossColors,
   xyPairFor,
+  type DrawablePlot,
   type PlotTransform,
   type ScopeCursor,
 } from './draw';
@@ -69,15 +76,22 @@ const scopeOf = (plots: ScopePlot[], overrides: Partial<Scope> = {}): Scope => (
   ...overrides,
 });
 
-const plot = (id: number, value: ScopePlot['value']): ScopePlot => ({
-  id,
-  elementId: id,
-  value,
-  manScale: null,
-  manVPosition: 0,
-  acCoupled: false,
-  measurements: null,
-});
+/** A fixture plot. A sampled value makes the fixture drawable, matching
+ *  draw.ts's DrawablePlot; only a null-value plot is ever not drawable, and it
+ *  stays a bare ScopePlot because it is never registered as a trace. */
+function plot(id: number, value: null): ScopePlot;
+function plot(id: number, value: ScopeValue): DrawablePlot;
+function plot(id: number, value: ScopePlot['value']): ScopePlot {
+  return {
+    id,
+    elementId: id,
+    value,
+    manScale: null,
+    manVPosition: 0,
+    acCoupled: false,
+    measurements: null,
+  };
+}
 
 describe('visiblePlotsOf', () => {
   it('shows every plot when showV and showI are on', () => {
