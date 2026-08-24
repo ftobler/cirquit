@@ -3,6 +3,7 @@
 
 import type { CompositeEngineSpec, CustomLogicModel } from '../io/netlist/types';
 import type { EmbeddedScopeState } from '../io/embeddedScope';
+import type { ScopeDrawSource } from '../engine/simulator';
 
 export interface Point {
   x: number;
@@ -473,6 +474,19 @@ export interface DrawContext {
   valueDigits: number;
   /** Pixel size for value labels (upstream's valueFontSize, CircuitElm.java:53). */
   valueFontSize: number;
+  /** Everything an embedded scope window needs to draw its waveforms through
+   *  the shared `drawScope`: the same trace-ring surface the docked panels
+   *  read, plus the display settings that shape it. Present only in the live
+   *  canvas renderer; export and icon paths leave it unset, so those draw the
+   *  placeholder frame instead of pretending to have samples. */
+  scopeDraw?: {
+    source: ScopeDrawSource;
+    simTime: number;
+    timeStep: number;
+    dark: boolean;
+    decimalDigits: number;
+    themeColors?: ThemeColors;
+  };
 }
 
 /** The five user-settable colours, the keys `makeTheme` overlays onto a theme.

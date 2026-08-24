@@ -1,18 +1,26 @@
 /**
  * The scope embedded in the schematic (ScopeElm.java, dump 403): a framed
- * viewport with zero posts and no electrical presence. Upstream draws a live
- * oscilloscope inside the frame; this port draws an honest placeholder
- * viewport, because the real waveform rendering belongs to the scope panel.
+ * viewport with zero posts and no electrical presence, drawing live waveforms
+ * inside its frame.
  *
  * After the common fields the element line carries one extra token: the whole
  * embedded scope view's configuration, joined with `_` into a single token
- * (ScopeElm.java:47-50). It is opaque here: carried verbatim so a load/save
- * round-trip never loses it and never escapes it, the same spirit as the `o`
- * line fidelity work.
+ * (ScopeElm.java:47-50). The token is carried verbatim so a load/save
+ * round-trip never loses it and never escapes it; `parseCircuit` decodes a
+ * copy onto the element, and when that copy has samplable plots this def
+ * renders them through the same `drawScope` the docked panels use, with the
+ * frame as the viewport. That is upstream's own arrangement: ScopeElm.draw
+ * translates into its rect and calls elmScope.draw (ScopeElm.java:109-124).
+ *
+ * Without interpreted state (a fresh unattached window, a truncated token) or
+ * without any samplable plot (every target an unreadable line) it falls back
+ * to the placeholder frame plus caption, which is honest for those cases.
  */
 
 import { canvasFont, closedPolyline, endpoints, limbColor } from '../../../render/draw';
 import { boxOfPoints } from '../shared';
+import { embeddedScopeOf } from '../../../scope/embedded';
+import { drawScope as drawScopePanel, emptyCursor } from '../../../scope/draw';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The config a freshly placed scope writes: element -1 (nothing traced yet),
@@ -20,12 +28,44 @@ import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types
  *  round-trips; the number is never read back. */
 const DEFAULT_SCOPE_CONFIG = '-1_64_0_4096_5_0.1_0_0';
 
-function drawScope(g: DrawContext, e: CircuitElement): void {
+/** Shared read-only cursor state: an embedded window accepts no pointer
+ *  gestures, so nothing ever mutates it. */
+const NO_CURSOR = emptyCursor();
+
+function drawScopeElm(g: DrawContext, e: CircuitElement): void {
   const [p1, p2] = endpoints(e);
   const x = Math.min(p1.x, p2.x);
   const y = Math.min(p1.y, p2.y);
   const w = Math.abs(p2.x - p1.x);
   const h = Math.abs(p2.y - p1.y);
+
+  // Live waveforms first, translated into the frame like upstream's draw.
+  // The panel fills its own background, so the frame strokes on top of it and
+  // stays crisp. Export paths carry no engine surface in the context, and a
+  // synthesized scope needs one, hence the single gate for both.
+  const view = g.scopeDraw !== undefined ? embeddedScopeOf(e) : null;
+  if (view !== null && g.scopeDraw !== undefined && w >= 2 && h >= 2) {
+    const live = g.scopeDraw;
+    g.ctx.save();
+    g.ctx.translate(x, y);
+    // The renderer hands us the real canvas context here; the structural
+    // Context2D typing exists so recorders can stand in elsewhere.
+    drawScopePanel(
+      g.ctx as unknown as CanvasRenderingContext2D,
+      live.source,
+      view,
+      w,
+      h,
+      NO_CURSOR,
+      live.simTime,
+      live.timeStep,
+      live.dark,
+      live.decimalDigits,
+      live.themeColors,
+    );
+    g.ctx.restore();
+  }
+
   // The frame is the element's axis-aligned bounding box, stroked as a closed
   // loop so a degenerate zero-height box still reads as a scope. The close
   // joins the start corner; the explicit repeated point is kept so the four
@@ -38,12 +78,16 @@ function drawScope(g: DrawContext, e: CircuitElement): void {
     { x, y },
   ];
   closedPolyline(g, frame, limbColor(g, g.theme.text));
-  // The "Scope" caption sits at the top edge, clear of the viewport centre.
-  g.ctx.fillStyle = limbColor(g, g.theme.text);
-  g.ctx.font = canvasFont(12);
-  g.ctx.textAlign = 'center';
-  g.ctx.textBaseline = 'middle';
-  g.ctx.fillText('Scope', x + w / 2, y + 10);
+
+  // The "Scope" caption only marks a window with nothing to show yet; a live
+  // one has waveforms and its own header instead.
+  if (view === null) {
+    g.ctx.fillStyle = limbColor(g, g.theme.text);
+    g.ctx.font = canvasFont(12);
+    g.ctx.textAlign = 'center';
+    g.ctx.textBaseline = 'middle';
+    g.ctx.fillText('Scope', x + w / 2, y + 10);
+  }
 }
 
 export const SCOPE_DEF: ElementDef = {
@@ -62,7 +106,7 @@ export const SCOPE_DEF: ElementDef = {
   rawTokens: true,
   parse: (t, e) => {
     // The config is the last and only token after the flags. Carried
-    // verbatim; nothing here interprets it.
+    // verbatim here; parseCircuit decodes the interpretation separately.
     if (t[0] !== undefined) e.text = t[0];
   },
   dump: (e) => [e.text ?? DEFAULT_SCOPE_CONFIG],
@@ -75,5 +119,5 @@ export const SCOPE_DEF: ElementDef = {
     const y1 = Math.max(p1.y, p2.y);
     return boxOfPoints([{ x: x0, y: y0 }, { x: x1, y: y1 }]);
   },
-  draw: drawScope,
+  draw: drawScopeElm,
 };

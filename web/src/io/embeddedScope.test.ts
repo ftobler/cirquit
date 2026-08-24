@@ -3,6 +3,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../model/types';
+import type { CircuitElement, DrawContext } from '../model/types';
+import { defFor } from '../model/registry';
+import { SvgRecorder } from '../render/svg';
+import { makeTheme } from '../render/draw';
 import { useStore } from '../state/store';
 import { fresh } from '../state/store.test-helpers';
 import { decodeEmbeddedScope } from './embeddedScope';
@@ -181,6 +185,109 @@ describe('round-trip', () => {
     );
     const srcLine = text.split(/\r?\n/).find((l) => l.startsWith('403 '))!;
     expect(out.split('\n')).toContain(srcLine);
+  });
+});
+
+describe('embedded window drawing', () => {
+  /** A hand-built 403 element with a resolved two-plot state, the shape
+   *  parseCircuit produces for multivib-a. */
+  const scopeElement = (): CircuitElement => {
+    const text = '2_64_0_4102_5_0.1_0_2_2_3';
+    const decoded = decodeEmbeddedScope(text, () => 'resistor')!;
+    return {
+      id: 7,
+      kind: 'scope',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 32,
+      flags: 0,
+      params: {},
+      text,
+      embedded: {
+        tokens: decoded.tokens,
+        display: decoded.display,
+        plots: [
+          { id: 101, elementId: 2, value: 'voltage' },
+          { id: 102, elementId: 2, value: 'current' },
+        ],
+      },
+    };
+  };
+
+  const context = (ctx: DrawContext['ctx']): DrawContext => ({
+    ctx,
+    theme: makeTheme(),
+    voltages: [],
+    current: 0,
+    voltage: 0,
+    power: 0,
+    value: 0,
+    state: 0,
+    wave: [],
+    dotPhase: 0,
+    postCurrents: [],
+    postDotPhases: [],
+    showCurrent: false,
+    showValues: false,
+    showVoltageColor: true,
+    showPowerColor: false,
+    conventional: true,
+    euroResistors: true,
+    euroGates: true,
+    selected: false,
+    hovered: false,
+    onHighlightedNet: false,
+    voltageRange: 5,
+    powerRange: 50,
+    scale: 1,
+    valueDigits: 1,
+    valueFontSize: 12,
+  });
+
+  it('draws live traces inside the frame when a draw source is present', () => {
+    // One engine trace with eight written min/max columns; the current plot
+    // is hidden by the file's showI-off flag and never asks for a ring.
+    const data = new Float32Array(16 * 2);
+    for (let k = 0; k < 8; k++) {
+      data[k * 2] = -1;
+      data[k * 2 + 1] = 1;
+    }
+    const source = {
+      time: 0.001,
+      scopeIndexOf: (id: number) => (id === 101 ? 0 : undefined),
+      scopeData: () => data,
+      scopeDiverged: () => false,
+      triggerInfo: () => {
+        throw new Error('a freeRun window never asks for the trigger anchor');
+      },
+      recentSamples: () => new Float32Array(0),
+    };
+    const rec = new SvgRecorder();
+    const g = context(rec);
+    g.scopeDraw = {
+      source,
+      simTime: 0.001,
+      timeStep: 5e-6,
+      dark: true,
+      decimalDigits: 3,
+    };
+    defFor('scope')!.draw(g, scopeElement());
+    const svg = rec.toString(64, 32);
+    // The placeholder caption is gone; the header's time-base readout took
+    // its place and the voltage trace stroked in its own colour (the frame
+    // strokes in the text colour, so this cannot match on the frame alone).
+    expect(svg).not.toContain('>Scope<');
+    expect(svg).toContain(`stroke="${makeTheme().positive}"`);
+    expect(svg).not.toContain('NaN');
+  });
+
+  it('keeps the placeholder caption without interpreted state or a source', () => {
+    const bare = { ...scopeElement(), embedded: undefined };
+    const rec = new SvgRecorder();
+    defFor('scope')!.draw(context(rec), bare);
+    const svg = rec.toString(64, 32);
+    expect(svg).toContain('>Scope<');
   });
 });
 

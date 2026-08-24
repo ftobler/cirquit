@@ -145,6 +145,7 @@ export function useFrameLoop(
             highlightedNode,
             tool,
             toolTurns,
+            dark,
           } = state;
 
           // Bus widths are a netlist property, resolved once per element list
@@ -529,6 +530,20 @@ export function useFrameLoop(
               dotPhase: phase,
               postCurrents: postCs,
               postDotPhases,
+              // The embedded scope windows draw their waveforms through the
+              // same trace rings and display settings the docked panels use;
+              // every other element def ignores it.
+              scopeDraw:
+                engine !== null
+                  ? {
+                      source: engine,
+                      simTime: engine.time,
+                      timeStep: settings.timeStep,
+                      dark,
+                      decimalDigits: settings.decimalDigits,
+                      themeColors: settings,
+                    }
+                  : undefined,
               busWidth:
                 e.kind === 'wire'
                   ? Math.max(busWidths.get(e.id) ?? 1, storedBusWidth(e))
