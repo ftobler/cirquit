@@ -217,6 +217,53 @@ describe('SimEngine battery live state', () => {
     expect(resaved.elements[0].params.initialSoc).toBeLessThan(0.42);
   });
 
+  it('an over-discharged save reloads negative and keeps draining, not recharging to 0', async () => {
+    // The engine seeds soc from the param with only an upper cap
+    // (battery.rs), so the negative a save carries survives the rebuild and
+    // the coulomb count keeps sinking below zero, upstream's modelled
+    // over-discharge.
+    const saved = serializeCircuit(
+      [
+        {
+          id: 1,
+          kind: 'battery',
+          x1: 0,
+          y1: 100,
+          x2: 0,
+          y2: 0,
+          flags: 3,
+          params: { r0: 0.01, r1: 0.02, c1: 2000, capacityAh: 0.01, initialSoc: 1, soc: -0.05, batteryType: 0 },
+          model: '0=0.8\n10=0.95\n20=1.05\n40=1.18\n60=1.28\n80=1.38\n90=1.43\n100=1.55\n',
+        },
+        { id: 2, kind: 'ground', x1: 0, y1: 100, x2: 0, y2: 132, flags: 0, params: {} },
+        { id: 3, kind: 'resistor', x1: 0, y1: 0, x2: 0, y2: -100, flags: 0, params: { resistance: 1 } },
+        { id: 4, kind: 'ground', x1: 0, y1: -100, x2: 0, y2: -68, flags: 0, params: {} },
+      ],
+      DEFAULT_SETTINGS,
+    );
+    expect(saved).toContain(' -5 ');
+
+    const parsed = parseCircuit(saved);
+    expect(parsed.elements[0].params.soc).toBe(-0.05);
+    expect(parsed.elements[0].params.initialSoc).toBe(0);  // config floors, state does not
+
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(parsed.elements, DEFAULT_SETTINGS, [])).toBeNull();
+    const batId = parsed.elements[0].id;
+    const idx = engine.indexOf(batId)!;
+    expect(engine.elementStates()[idx]).toBe(-0.05);
+
+    engine.run(1000);
+    const live = engine.elementStateTokens();
+    expect(live[batId].soc).toBeLessThan(-0.05);
+
+    // Saving the deeper discharge carries a negative token again.
+    const resaved = parseCircuit(
+      serializeCircuit(overlayLiveState(parsed.elements, live), DEFAULT_SETTINGS),
+    );
+    expect(resaved.elements[0].params.soc).toBeLessThan(-0.05);
+  });
+
   it('reset restores the initial soc, which an edit updates', async () => {
     const engine = await SimEngine.create();
     expect(engine.setCircuit(BATTERY, DEFAULT_SETTINGS, [])).toBeNull();

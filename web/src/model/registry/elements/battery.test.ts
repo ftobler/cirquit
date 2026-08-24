@@ -145,6 +145,20 @@ describe('battery', () => {
     expect(under.params.initialSoc).toBe(0);
   });
 
+  it('an over-discharged percent token floors only the config, not the saved charge', () => {
+    // The one percent token doubles as the saved running charge, which
+    // over-discharge drives below zero. Like upstream's undump
+    // (BatteryElm.java:115-122) the config slot clamps to 0..1 while the
+    // seeded soc keeps the negative, so a reload resumes empty-but-drained
+    // instead of silently recharging to 0%.
+    const [back] = parseCircuit('438 0 0 64 0 0 0.01 0.02 2000 2 -5 1 20\\q3.5\\n').elements;
+    expect(back.params.initialSoc).toBe(0);
+    expect(back.params.soc).toBe(-0.05);
+    // And the round trip back out keeps it negative.
+    const resaved = parseCircuit(serializeCircuit([back], DEFAULT_SETTINGS)).elements[0];
+    expect(resaved.params.soc).toBe(-0.05);
+  });
+
   it('interpolates the alkaline table at 50% and extrapolates below 0%', () => {
     const alkaline = batteryTypeTables[0];
     expect(interpSocTable(alkaline, 50)).toBeCloseTo(1.23, 12);
@@ -240,6 +254,37 @@ describe('battery', () => {
     };
     applyFieldChange(e, field, 75, actions);
     expect(setParam).toHaveBeenCalledWith(e.id, 'initialSoc', 0.75);
+  });
+
+  it('committing Initial SOC also moves the live soc, so the next save carries it', () => {
+    // The running soc is what the dump prefers, so an Initial SOC edit that
+    // moved only the config would be dropped by the very next save. The
+    // commit dispatches both params, like the derived rows' apply hook
+    // (elementFields.ts diffs the draft and sends one setParam per change).
+    const e = { ...mk(), params: { ...mk().params, initialSoc: 1, soc: 0.42 } };
+    const field = BATTERY_DEF.fields!.find((f) => f.name === 'initialSoc')!;
+    const calls: { name: string; v: number }[] = [];
+    const actions = {
+      setParam: (_id: number, name: string, v: number) => calls.push({ name, v }),
+      setText: vi.fn(),
+      setKeyShortcut: vi.fn(),
+      setModelName: vi.fn(),
+      updateElement: vi.fn(),
+    };
+    applyFieldChange(e, field, 75, actions);
+
+    // Replay the dispatched calls onto a copy the way the store does.
+    const edited = { ...e, params: { ...e.params } as Record<string, number> };
+    for (const { name, v } of calls) edited.params[name] = v;
+    expect(edited.params.initialSoc).toBe(0.75);
+    expect(edited.params.soc).toBe(0.75);
+
+    // So the saved percent token is the typed value, not the stale 42.
+    const tokens = serializeCircuit([edited], DEFAULT_SETTINGS)
+      .split('\n')
+      .find((l) => l.startsWith('438 '))!
+      .split(' ');
+    expect(tokens[10]).toBe('75');
   });
 
   it('the Show Voltage and Show SOC flags gate the caption halves', () => {

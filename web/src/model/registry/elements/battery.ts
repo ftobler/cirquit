@@ -220,8 +220,13 @@ export const BATTERY_DEF: ElementDef = {
     if (cap !== undefined) e.params.capacityAh = cap;
     const pct = num(4);
     if (pct !== undefined) {
-      // The file stores percent; the engine and the SOC fraction live in 0..1.
+      // The one percent token doubles as the saved running charge. The config
+      // slot clamps to 0..1 like upstream's isoc undump, while the seeded soc
+      // keeps only the 100% cap so an over-discharged save stays negative
+      // across a reload instead of silently recharging to zero
+      // (BatteryElm.java:115-122).
       e.params.initialSoc = Math.min(100, Math.max(0, pct)) / 100;
+      e.params.soc = Math.min(100, pct) / 100;
     }
     const bt = num(5);
     if (bt !== undefined) e.params.batteryType = bt;
@@ -234,9 +239,10 @@ export const BATTERY_DEF: ElementDef = {
     e.params.capacityAh ?? 2,
     // The live soc token rides params after an overlayLiveState merge at save
     // time, so a mid-discharge save carries the running charge, upstream's
-    // config/state split between dumpXml's isoc and dumpXmlState's soc. After
-    // a reset the token equals initialSoc again, and before any build the
-    // fallback applies. Both fields are 0..1 fractions; the file stores percent.
+    // config/state split between dumpXml's isoc and dumpXmlState's soc
+    // (BatteryElm.java:101-115). After a reset the token equals initialSoc
+    // again, and before any build the fallback applies. Both fields are 0..1
+    // fractions; the file stores percent.
     (e.params.soc ?? e.params.initialSoc ?? 1) * 100,
     e.params.batteryType ?? 1,
     batteryTableOf(e),
@@ -254,8 +260,21 @@ export const BATTERY_DEF: ElementDef = {
     { name: 'capacityAh', label: 'Capacity', unit: 'Ah' },
     // The param is a 0..1 fraction (the engine and the live SOC token work in
     // fractions); the row shows and edits whole percent, upstream's
-    // `initialSoc * 100` edit row (BatteryElm.java:353).
-    { name: 'initialSoc', label: 'Initial State of Charge', min: 0, max: 100, scale: 100 },
+    // `initialSoc * 100` edit row (BatteryElm.java:353). Committing is a state
+    // edit too: soc follows so the caption and the next save reflect what was
+    // typed instead of the stale running value.
+    {
+      name: 'initialSoc',
+      label: 'Initial State of Charge',
+      min: 0,
+      max: 100,
+      scale: 100,
+      apply: (e, v) => {
+        const frac = Math.min(100, Math.max(0, v)) / 100;
+        e.params.initialSoc = frac;
+        e.params.soc = frac;
+      },
+    },
     { name: 'r0', label: 'R0, Ohmic Resistance', unit: 'Ω' },
     { name: 'r1', label: 'R1, Polarization Resistance', unit: 'Ω' },
     { name: 'c1', label: 'C1, Polarization Capacitance', unit: 'F' },
