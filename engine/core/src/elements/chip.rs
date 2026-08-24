@@ -96,14 +96,17 @@ pub struct Chip {
     ///
     /// The port arms this skip deliberately more broadly than upstream.
     /// Upstream arms it in exactly three kinds (DFlipFlopElm.java:77-80,
-    /// JKFlipFlopElm.java:62-67, RingCounterElm.java:72-76) and works around
-    /// its absence in Counter2Elm only on the XML path, whose undumpXml
-    /// forces the clear pin high once. Here `restore_state` arms it
-    /// for every kind whenever the file carries any saved pin voltage, which
-    /// is strictly more faithful to the saved state: a mid-count counter with
-    /// an active-low reset reloads and keeps its count through the first
-    /// step, where upstream's text-format counter would zero it before ever
-    /// running.
+    /// JKFlipFlopElm.java:62-67, RingCounterElm.java:72-76), unconditionally
+    /// in their file constructors, and works around its absence in
+    /// Counter2Elm only on the XML path, whose undumpXml forces the clear
+    /// pin high once. Here `restore_state` arms it for every kind whenever
+    /// the file carries any saved pin voltage, which is strictly more
+    /// faithful to the saved state: a mid-count counter with an active-low
+    /// reset reloads and keeps its count through the first step, where
+    /// upstream's text-format counter would zero it before ever running.
+    /// Arming on token presence rather than always is behaviourally
+    /// invisible today: a first pass left unarmed reads only zeroed inputs
+    /// and rewrites the defaults a fresh part already holds.
     pub just_loaded: bool,
     /// True when this kind's upstream edge detector survives Reset. The
     /// latch's lastLoad (LatchElm.java:111), the SIPO clockstate

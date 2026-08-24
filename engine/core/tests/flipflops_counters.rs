@@ -1036,7 +1036,9 @@ fn counter_reload_keeps_its_saved_count_through_the_first_step() {
     // XML-only clear-pin hack in Counter2Elm (undumpXml). A mid-count counter
     // reload therefore keeps its count here, where upstream's text-format
     // counter would read its active-low reset pin low out of the zeroed first
-    // step and clear to 0 before ever running.
+    // step and clear to 0 before ever running. That read is not hypothetical
+    // timing: the step's first `start_iteration` runs before any solve
+    // (circuit.rs:1229), so an unarmed build really does see R low there.
     let c = &mut build(
         vec![
             elm(1, "rail", &[[0, 32]], &[("maxVoltage", 5.0)]),
