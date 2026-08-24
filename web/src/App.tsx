@@ -161,15 +161,23 @@ export default function App() {
       if (handleAppKeyDown(useStore.getState(), ev, host)) ev.preventDefault();
     };
     const onKeyUp = (ev: KeyboardEvent) => {
-      const target = ev.target as HTMLElement | null;
-      if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
+      // No INPUT/SELECT/TEXTAREA early return here: the momentary release
+      // must outrank the focus guard, or a hold started on the canvas sticks
+      // closed when focus moved into a search box before the key came up.
+      // Releasing only touches held momentary switches, so ordinary typing
+      // stays a no-op.
       handleAppKeyUp(useStore.getState(), ev);
     };
+    // A hold whose release is lost entirely (alt-tab mid-press) strands every
+    // kind of armed momentary; the window blur releases them all.
+    const onBlur = () => useStore.getState().releaseHeldMomentaries();
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, []);
 

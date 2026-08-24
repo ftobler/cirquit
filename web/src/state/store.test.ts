@@ -888,6 +888,55 @@ describe('switch keyboard shortcuts', () => {
     expect(useStore.getState().elements[0].state).toBe(1);
   });
 
+  it('releaseHeldMomentaries returns every held momentary to rest, for window blur', () => {
+    // A key-held switch and one armed by pointer throw: blur mid-press loses
+    // the keyup and the pointerup alike, so the release-all is the safety net.
+    const keyed = addSwitch({ momentary: 1, position: 1 }, 'k'); // rest open
+    const thrown = addSwitch({ momentary: 1, position: 0 }); // rest closed
+    useStore.getState().toggleSwitchByKey('k');
+    useStore.getState().toggleSwitch(thrown);
+    expect(useStore.getState().elements[0].state).toBe(0);
+    expect(useStore.getState().elements[1].state).toBe(1);
+
+    useStore.getState().releaseHeldMomentaries();
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().elements[1].state).toBe(0);
+
+    // The engine learns the rest states too.
+    expect(useStore.getState().pendingStates.get(keyed)).toBe(1);
+    expect(useStore.getState().pendingStates.get(thrown)).toBe(0);
+  });
+
+  it('releaseHeldMomentaries leaves resting and latched switches alone', () => {
+    addSwitch({ momentary: 1, position: 1 }, 'k');
+    const latched = addSwitch({ momentary: 0, position: 0 }, 'j');
+    useStore.getState().setElementState(latched, 1);
+    useStore.getState().clearPending();
+
+    useStore.getState().releaseHeldMomentaries();
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().elements[1].state).toBe(1);
+    expect(useStore.getState().pendingStates.size).toBe(0);
+  });
+
+  it('a released hold leaves no redo future standing over it', () => {
+    // setElementState arms a switch without touching the stacks, so this
+    // builds a real redo future over a held momentary.
+    const id = addSwitch({ momentary: 1, position: 1 }, 'k');
+    useStore.getState().commit();
+    const r = addResistor();
+    useStore.getState().updateElement(r, { params: { resistance: 42 } });
+    useStore.getState().undo();
+    expect(useStore.getState().redoStack.length).toBeGreaterThan(0);
+    useStore.getState().setElementState(id, 0); // held closed
+
+    useStore.getState().releaseHeldMomentaries();
+    // Same rule as the per-key release: the release writes snapshot-carried
+    // state with no entry of its own, so a stale redo future would silently
+    // rewind it.
+    expect(useStore.getState().redoStack).toHaveLength(0);
+  });
+
   it('the MBB cycles its four positions and the DPDT its two', () => {
     const mbb = {
       id: 1,

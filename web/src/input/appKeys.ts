@@ -97,13 +97,15 @@ export function handleAppKeyDown(s: AppState, ev: AppKeyEvent, host: AppKeyHost)
 
 /** One keyup: a momentary switch returns to rest when its shortcut key is let
  *  go (UIManager.java:1113-1131). Modifiers suppress the release the way they
- *  suppress the press upstream, so a modified key never releases one. */
+ *  suppress the press upstream, so a modified key never releases one. The
+ *  release deliberately outranks every gate, modal surface and focus guard
+ *  alike: a hold that started on the canvas must end even if focus moved into
+ *  a text field or a dialog opened before the key came up, or the switch
+ *  sticks closed until some lucky later press. */
 export function handleAppKeyUp(s: AppState, ev: KeyEventLike): boolean {
-  if (modalSurface(s)) return false;
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return false;
   if (!isPrintableKey(ev.key)) return false;
-  s.releaseMomentaryByKey(ev.key);
-  return true;
+  return s.releaseMomentaryByKey(ev.key);
 }
 
 /** The command table behind matchShortcut: one-line store calls except where

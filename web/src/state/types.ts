@@ -546,8 +546,11 @@ export interface AppState {
    *  was found. The keyboard switch-toggle path (UIManager.java:1248-1268). */
   toggleSwitchByKey(key: string): boolean;
   /** Key-up release for momentary switches whose keyShortcut equals `key`
-   *  (UIManager.java:1113-1131). */
-  releaseMomentaryByKey(key: string): void;
+   *  (UIManager.java:1113-1131). Returns whether anything was released. */
+  releaseMomentaryByKey(key: string): boolean;
+  /** Returns every held momentary switch to its rest position: the window-
+   *  blur safety net for a hold whose release event was lost. */
+  releaseHeldMomentaries(): void;
   /** Replaces the user-assigned shortcut overlay and persists it; the
    *  Shortcuts dialog's OK path. */
   setShortcuts(overlay: ShortcutOverlay): void;

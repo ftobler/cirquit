@@ -116,9 +116,10 @@ describe.each(SURFACES)('keydown while %s is up', (_name, open) => {
     expect(useStore.getState().undoStack.length).toBe(undoDepth);
   });
 
-  it('releases nothing on keyup', () => {
-    // A momentary switch is held closed by its key when the surface opens;
-    // the gated keyup must leave it closed.
+  it('still releases a held momentary on keyup', () => {
+    // The release outranks the gate: a momentary switch held closed when the
+    // surface opens must come back up when its key is let go, or it sticks
+    // forever.
     useStore.getState().addElement({
       kind: 'switch',
       x1: 0,
@@ -133,8 +134,8 @@ describe.each(SURFACES)('keydown while %s is up', (_name, open) => {
     expect(useStore.getState().toggleSwitchByKey('k')).toBe(true);
     useStore.setState(open());
 
-    expect(handleAppKeyUp(useStore.getState(), key({ key: 'k' }))).toBe(false);
-    expect(useStore.getState().elements[0].state).toBe(0);
+    expect(handleAppKeyUp(useStore.getState(), key({ key: 'k' }))).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(1);
   });
 });
 

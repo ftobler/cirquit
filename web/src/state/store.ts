@@ -1974,7 +1974,8 @@ function createAppStore() {
     const s = get();
     // A momentary switch returns to rest when its shortcut key is let go
     // (UIManager.java:1113-1131), the keyboard mirror of the pointer-up
-    // releaseHeldMomentary path.
+    // releaseHeldMomentary path. Returns whether anything was released, so
+    // the app pipeline knows the event was consumed.
     const k = normalizeKey(key);
     let toggled = false;
     for (const e of s.elements) {
@@ -1990,6 +1991,29 @@ function createAppStore() {
     // Same rule as the keydown throw above: the release writes snapshot-carried
     // state with no entry, so it must not leave a redo future standing over it.
     if (toggled) get().discardRedoFuture();
+    return toggled;
+  },
+
+  releaseHeldMomentaries: () => {
+    const s = get();
+    // The window-blur safety net for m4: a hold whose release event is lost
+    // (alt-tab mid-press) would strand the switch closed forever. Every
+    // momentary off its rest position goes straight back to rest; writing the
+    // rest state directly, rather than cycling through toggleSwitch, keeps
+    // multi-position kinds (a ternary logic input, an MBB mid-throw) from
+    // walking further away from rest. Any kind with a nonzero momentary param
+    // counts: this mirrors what the canvas can arm, not one key-loop's union.
+    let released = false;
+    for (const e of s.elements) {
+      const rest = e.params.position ?? 0;
+      if ((e.params.momentary ?? 0) !== 0 && (e.state ?? rest) !== rest) {
+        s.setElementState(e.id, rest);
+        released = true;
+      }
+    }
+    // Snapshot-carried state written with no entry: kill any redo future,
+    // exactly like the per-key releases above.
+    if (released) get().discardRedoFuture();
   },
 
   discardRedoFuture: () => set({ redoStack: [] }),
