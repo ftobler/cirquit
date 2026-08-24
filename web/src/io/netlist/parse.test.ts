@@ -214,6 +214,92 @@ describe('netlist parsing', () => {
   });
 });
 
+describe('strict element-line coordinates', () => {
+  const HEADER = '$ 1 0.000005 10 50 5 43 5e-11\n';
+
+  it('a non-finite coordinate token makes the element line unreadable', () => {
+    // Upstream parses the four coordinates with Integer.parseInt inside the
+    // per-line try (CircuitLoader.java:186-190); the throw lands in the catch
+    // (:207-211) and the whole line is skipped. A silent (0,0) load instead
+    // welds posts that never touched, so the line must degrade like any other
+    // unmodelled element line: preserved verbatim, with a load warning.
+    const parsed = parseCircuit('r 1 abc 64 0 1000');
+    expect(parsed.elements).toEqual([]);
+    expect(parsed.passthrough).toEqual(['r 1 abc 64 0 1000']);
+    expect(parsed.order).toContainEqual({ kind: 'other', line: 'r 1 abc 64 0 1000' });
+    expect(parsed.warnings).toEqual([
+      'Resistor line with unreadable coordinates was kept as an unrecognised line',
+    ]);
+  });
+
+  it('a truncated line missing coordinate tokens degrades the same way', () => {
+    // A NoSuchElementException upstream skips the line exactly like a
+    // NumberFormatException, so absence and non-finiteness are one failure.
+    const parsed = parseCircuit(`${HEADER}r 0 0 16\nr 16 0 32 0 0 220\n`);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['resistor']);
+    expect(parsed.passthrough).toEqual(['r 0 0 16']);
+    expect(parsed.warnings).toHaveLength(1);
+  });
+
+  it('a degraded line still takes its slot in the scope index space', () => {
+    // The head is a known dump code, so the skipped line still shifts every
+    // later scope index, like any unmodelled element line.
+    const parsed = parseCircuit(
+      `${HEADER}w 0 0 16 0 0\nr 1 abc 64 0 1000\nr 16 0 32 0 0 220\no 2 64 0 4099 20 0.05 0 1\n`,
+    );
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['wire', 'resistor']);
+    expect(parsed.scopes[0].plots[0].elementIndex).toBe(2);
+    expect(parsed.scopes[0].plots[0].elementId).toBe(parsed.elements[1].id);
+  });
+
+  it('fractional coordinates still load rounded, without a warning', () => {
+    // The deliberate accommodation for dragged geometry: fractions are read
+    // and rounded, never treated as unreadable.
+    const parsed = parseCircuit(`${HEADER}r 10.4 20.6 170.2 20.6 0 100\n`);
+    const [resistor] = parsed.elements;
+    expect([resistor.x1, resistor.y1, resistor.x2, resistor.y2]).toEqual([10, 21, 170, 21]);
+    expect(parsed.warnings).toEqual([]);
+  });
+
+  it('a mixed damaged and healthy file keeps everything and saves back verbatim', () => {
+    // Healthy parts stay, the damaged line rides through in its original
+    // position among the comments and blank lines it arrived between, and the
+    // save reproduces the file byte for byte.
+    const text = [
+      '# hand-edited file',
+      '$ 1 0.000005 10 50 5 43 5e-11',
+      'w 0 0 16 0 0',
+      'r 1 abc 64 0 1000',
+      '',
+      'r 16 0 48 0 0 220',
+      '',
+    ].join('\n');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['wire', 'resistor']);
+    expect(parsed.passthrough).toEqual(['r 1 abc 64 0 1000']);
+    // The trailing newline terminates the last line rather than opening an
+    // empty one, so the order carries six entries for the seven split lines.
+    expect(parsed.order.map((o) => o.kind)).toEqual([
+      'other',
+      'header',
+      'element',
+      'other',
+      'other',
+      'element',
+    ]);
+    expect(parsed.warnings).toHaveLength(1);
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+      parsed.sliders,
+    );
+    expect(out).toBe(text);
+  });
+});
+
 describe('device-model file lines and the save writer', () => {
   const HEADER = '$ 1 0.000005 10 50 5 43 5e-11\n';
 

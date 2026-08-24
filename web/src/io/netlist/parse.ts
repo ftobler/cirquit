@@ -728,16 +728,45 @@ export function parseCircuit(text: string): ParsedCircuit {
       continue;
     }
 
+    // The four coordinate tokens decide readability, mirroring upstream's
+    // Integer.parseInt inside the per-line try (CircuitLoader.java:186-190):
+    // an absent or non-finite token throws there and the catch skips the whole
+    // line (:207-211). Loading such a line at (0,0) here would weld posts that
+    // never touched, so it degrades like any other unmodelled element line
+    // instead. Fractions stay accepted and rounded below, a deliberate
+    // accommodation for dragged geometry.
+    const coord = (i: number): number | null => {
+      const v = Number(tokens[i]);
+      return tokens[i] !== undefined && Number.isFinite(v) ? v : null;
+    };
+    const cx1 = coord(1);
+    const cy1 = coord(2);
+    const cx2 = coord(3);
+    const cy2 = coord(4);
+    if (cx1 === null || cy1 === null || cx2 === null || cy2 === null) {
+      passthrough.push(lineText);
+      order.push({ kind: 'other', line: rawLine });
+      warnings.push(
+        `${def.label} line with unreadable coordinates was kept as an unrecognised line`,
+      );
+      // The head is in the registry, so the skipped line still takes its slot
+      // in the scope index space, recorded by raw code like any unmodelled
+      // element line so a plot targeting it resolves its units the same way.
+      dumpCodeByFileIndex.set(fileIndex, head);
+      fileIndex += 1;
+      continue;
+    }
+
     const element: CircuitElement = {
       id: allocateId(),
       kind: def.kind,
       // Upstream files are integral, but a hand-edited file can carry
       // fractions that would fail the engine's `[i32; 2]` post type exactly
       // like a dragged element. Round so the store invariant survives loads.
-      x1: Math.round(Number(tokens[1]) || 0),
-      y1: Math.round(Number(tokens[2]) || 0),
-      x2: Math.round(Number(tokens[3]) || 0),
-      y2: Math.round(Number(tokens[4]) || 0),
+      x1: Math.round(cx1),
+      y1: Math.round(cy1),
+      x2: Math.round(cx2),
+      y2: Math.round(cy2),
       flags: Number(tokens[5]) || 0,
       params: { ...(def.defaults ?? {}) },
     };
