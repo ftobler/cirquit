@@ -59,40 +59,40 @@ function defaultStorage(): SubcircuitStorage | undefined {
     const ls = (globalThis as { localStorage?: Storage }).localStorage;
     if (!ls) return undefined;
     return {
-    getItem: (key) => {
-      try {
-        return ls.getItem(key);
-      } catch {
-        return null;
-      }
-    },
-    setItem: (key, value) => {
-      try {
-        ls.setItem(key, value);
-      } catch {
-        // A full or disabled localStorage must not take the app down; the
-        // model stays in the session map either way.
-      }
-    },
-    removeItem: (key) => {
-      try {
-        ls.removeItem(key);
-      } catch {
-        // Swallow, like the writer above.
-      }
-    },
-    listSubcircuitKeys: () => {
-      const out: string[] = [];
-      try {
-        for (let i = 0; i < ls.length; i++) {
-          const key = ls.key(i);
-          if (key !== null && key.startsWith(SUB_CIRCUIT_PREFIX)) out.push(key);
+      getItem: (key) => {
+        try {
+          return ls.getItem(key);
+        } catch {
+          return null;
         }
-      } catch {
-        // Swallow.
-      }
-      return out;
-    },
+      },
+      setItem: (key, value) => {
+        try {
+          ls.setItem(key, value);
+        } catch {
+          // A full or disabled localStorage must not take the app down; the
+          // model stays in the session map either way.
+        }
+      },
+      removeItem: (key) => {
+        try {
+          ls.removeItem(key);
+        } catch {
+          // Swallow, like the writer above.
+        }
+      },
+      listSubcircuitKeys: () => {
+        const out: string[] = [];
+        try {
+          for (let i = 0; i < ls.length; i++) {
+            const key = ls.key(i);
+            if (key !== null && key.startsWith(SUB_CIRCUIT_PREFIX)) out.push(key);
+          }
+        } catch {
+          // Swallow.
+        }
+        return out;
+      },
     };
   } catch {
     // Storage denied: run without persistence rather than crash.
