@@ -544,11 +544,16 @@ export function Menubar({ engine }: Props) {
     },
     // Upstream's File tail (Menus.java:139-143): Print, then the Full Screen
     // toggle after a separator, then About. The command toggles the browser
-    // surface on the document element and re-centres the circuit afterwards
-    // (CommandManager.java:305-311), so the schematic fills the new viewport.
+    // surface on the document element and re-fits the circuit afterwards
+    // (CommandManager.java:305-311). The fit goes through requestCenter, whose
+    // layout-effect path measures the canvas before fitting: entering full
+    // screen resizes the canvas asynchronously, so a direct centerCircuit
+    // would fit the windowed viewport and leave it there.
     ...fileMenuTailRows(
       { label: 'Print…', shortcut: 'Ctrl+P', onClick: fire(doPrint) },
-      toggleFullScreenRow(fire(() => runFullScreenToggle(document, centerCircuit))),
+      toggleFullScreenRow(
+        fire(() => runFullScreenToggle(document, useStore.getState().requestCenter)),
+      ),
       { label: 'About…', onClick: fire(() => openDialog('about')) },
     ),
   ];
