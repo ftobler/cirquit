@@ -7,6 +7,10 @@
 //! from the input levels, and a clock edge memory. The engine keeps only the
 //! electrical roles of a pin; the geometry (side, row position, label, bubble)
 //! lives in the TypeScript registry, which owns all drawing.
+//!
+//! One divergence from upstream is deliberate here: on a saved-state reload
+//! every chip skips its first `execute()`, where upstream guards that skip
+//! into three kinds only ([`Chip::just_loaded`]).
 
 use crate::element::Base;
 use crate::spec::ElementSpec;
@@ -86,9 +90,20 @@ pub struct Chip {
     /// (`lastClock`, ChipElm.java:166).
     pub last_clock: bool,
     /// True only for a chip built from a saved circuit. The first `execute()`
-    /// is skipped because `base.volts` is still all zeroes, which a D flip-flop
-    /// with an active-low reset would otherwise read as a spurious reset
-    /// (DFlipFlopElm.java:76-80, JKFlipFlopElm.java:62-66).
+    /// is skipped because `base.volts` is still all zeroes, which would read
+    /// every input low out of the file: a D flip-flop with an active-low set
+    /// or reset sees a spurious reset, a counter clears its restored count.
+    ///
+    /// The port arms this skip deliberately more broadly than upstream.
+    /// Upstream arms it in exactly three kinds (DFlipFlopElm.java:77-80,
+    /// JKFlipFlopElm.java:62-67, RingCounterElm.java:72-76) and works around
+    /// its absence in Counter2Elm only on the XML path, whose undumpXml
+    /// forces the clear pin high once. Here `restore_state` arms it
+    /// for every kind whenever the file carries any saved pin voltage, which
+    /// is strictly more faithful to the saved state: a mid-count counter with
+    /// an active-low reset reloads and keeps its count through the first
+    /// step, where upstream's text-format counter would zero it before ever
+    /// running.
     pub just_loaded: bool,
     /// True when this kind's upstream edge detector survives Reset. The
     /// latch's lastLoad (LatchElm.java:111), the SIPO clockstate
@@ -128,7 +143,9 @@ impl Chip {
 
     /// Applies the file's saved output levels: each `state` pin's voltage
     /// token becomes its committed value, and the presence of any such token
-    /// arms the one-step load deferral (ChipElm.java:61-67).
+    /// arms the one-step load deferral (ChipElm.java:61-67). The arming is
+    /// universal here, a deliberate divergence from upstream; see
+    /// [`Chip::just_loaded`].
     fn restore_state(&mut self, spec: &ElementSpec) {
         let mut loaded = false;
         for (i, pin) in self.pins.iter_mut().enumerate() {
@@ -205,7 +222,8 @@ impl Chip {
     /// Reads each input pin's level from its node voltage, then reports
     /// whether the per-step `execute()` should run. The first step after a
     /// load is skipped: `base.volts` is still all zeroes, so the inputs read
-    /// low and an active-low reset would fire spuriously.
+    /// low and an active-low reset would fire spuriously. Armed for every
+    /// kind, not just the three upstream guards; see [`Chip::just_loaded`].
     pub fn read_inputs(&mut self) -> bool {
         for (i, pin) in self.pins.iter_mut().enumerate() {
             if !pin.output {

@@ -1027,3 +1027,72 @@ fn d_flip_flop_still_resamples_once_after_reset_with_its_clock_held_high() {
         "the DFF clock memory should clear on Reset, so D resamples once"
     );
 }
+
+#[test]
+fn counter_reload_keeps_its_saved_count_through_the_first_step() {
+    // Saved-state protection on load is deliberately broader than upstream:
+    // every chip arms the one-step skip when the file carries voltage tokens,
+    // where upstream arms it only for the DFF, JK and ring counter, plus an
+    // XML-only clear-pin hack in Counter2Elm (undumpXml). A mid-count counter
+    // reload therefore keeps its count here, where upstream's text-format
+    // counter would read its active-low reset pin low out of the zeroed first
+    // step and clear to 0 before ever running.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 32]], &[("maxVoltage", 5.0)]),
+            elm(2, "ground", &[[0, 0]], &[]),
+            elm(
+                3,
+                "counter",
+                &[[0, 0], [0, 32], [96, 0], [96, 32], [96, 64], [96, 96]],
+                &[
+                    ("bits", 4.0),
+                    ("invertreset", 1.0),
+                    ("modulus", 0.0),
+                    // Count 9 saved: MSB first on pins 2..5, so 1001.
+                    ("voltage2", 5.0),
+                    ("voltage3", 0.0),
+                    ("voltage4", 0.0),
+                    ("voltage5", 5.0),
+                ],
+            ),
+            elm(
+                4,
+                "resistor",
+                &[[96, 0], [96, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(5, "ground", &[[96, 100]], &[]),
+            elm(
+                6,
+                "resistor",
+                &[[96, 32], [96, 132]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(7, "ground", &[[96, 132]], &[]),
+            elm(
+                8,
+                "resistor",
+                &[[96, 64], [96, 164]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(9, "ground", &[[96, 164]], &[]),
+            elm(
+                10,
+                "resistor",
+                &[[96, 96], [96, 196]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(11, "ground", &[[96, 196]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(1);
+    let v = c.element_voltages();
+    let bit = |i: usize| if v[i] > 2.5 { 1i64 } else { 0 };
+    let count = bit(3) * 8 + bit(5) * 4 + bit(7) * 2 + bit(9);
+    assert_eq!(
+        count, 9,
+        "the reloaded count did not survive the first step"
+    );
+}
