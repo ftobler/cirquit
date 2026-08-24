@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { SimEngine } from './engine/simulator';
-import { chordOf, hasChord, isPrintableKey, matchShortcut } from './input/shortcuts';
+import { handleAppKeyDown, handleAppKeyUp, type AppKeyHost } from './input/appKeys';
 import { openCircuit } from './io/fileIO';
 import { loadDefaultCircuit, loadLibraryCircuit } from './io/library';
 import { startupSource } from './io/urlShare';
@@ -31,7 +31,6 @@ import { hasUnsavedChanges, useStore } from './state/store';
 import { noteUndockedHello } from './undocked/opener';
 import { UNDOCKED_HELLO_TYPE } from './undocked/protocol';
 import { startAutoSave } from './state/recovery';
-import { GRID_SIZE } from './model/types';
 
 /** A small RC circuit, kept as the offline fallback for when the bundled
  *  library cannot be fetched, so the app still opens on something that runs. */
@@ -43,24 +42,6 @@ w 384 320 176 320 0
 g 176 320 176 352 0
 o 2 64 0 4099
 `;
-
-/** Shortcut actions that edit the circuit. Dropped whole when Disable Editing
- *  is on; everything else (zoom, file, view) stays live. */
-const EDIT_ACTIONS = new Set([
-  'undo',
-  'redo',
-  'delete',
-  'nudge',
-  'copy',
-  'cut',
-  'paste',
-  'duplicate',
-  'selectAll',
-  'rotate',
-  'mirror',
-  'swap',
-  'place',
-]);
 
 export default function App() {
   const [engine, setEngine] = useState<SimEngine | null>(null);
@@ -143,183 +124,46 @@ export default function App() {
     };
   }, []);
 
-  // Keyboard shortcuts. All key matching lives in matchShortcut; this effect
-  // only guards the input focus, resolves the switch keyShortcut path against
-  // the store, and dispatches one-line store calls.
+  // Keyboard shortcuts. The matching, the modal-surface gate and the dispatch
+  // live in input/appKeys.ts; this effect keeps only the two DOM concerns:
+  // the INPUT-focus early return and the browser-default suppression.
   useEffect(() => {
+    // Browser-bound side effects, collected behind one interface so the
+    // pipeline stays DOM-free and headlessly testable.
+    const host: AppKeyHost = {
+      openFile: () =>
+        openCircuit((text, name) => {
+          const st = useStore.getState();
+          st.loadNetlist(text);
+          st.setStatus(name);
+        }),
+      print: () => {
+        const st = useStore.getState();
+        printCircuit(st.elements, st.settings, false, engineRef.current);
+      },
+      alert: (message) => window.alert(message),
+      openPalette: () => {
+        const at = paletteAnchor({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+        // The trailing true is the whole point of the key: there is no click
+        // behind this open, so the menu has to put the caret in its element
+        // search itself. Target null forces the empty-canvas (palette) form
+        // even if the cursor happens to rest on an element.
+        useStore.getState().openContextMenu(at.client.x, at.client.y, null, at.circuit, true);
+      },
+      stateAfter: () => useStore.getState(),
+    };
     const onKey = (ev: KeyboardEvent) => {
       const target = ev.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
-      const s = useStore.getState();
-      // While a dialog is open the dialog owns the keyboard: no shortcut may
-      // reach the app, or Ctrl+V would paste into the circuit instead of the
-      // dialog's textarea and Delete would edit the circuit behind the modal.
-      // The scope-properties and element-properties modals are store dialogs
-      // of their own, so the same guard covers them.
-      if (s.dialog !== null || s.scopeProperties !== null || s.elementProperties !== null) return;
-      const evLike = {
-        key: ev.key,
-        ctrlKey: ev.ctrlKey,
-        metaKey: ev.metaKey,
-        shiftKey: ev.shiftKey,
-        altKey: ev.altKey,
-      };
-      // A plain printable key checks the switch keyShortcut map first: a
-      // switch assigned this key beats every command binding, and a held key
-      // must not re-toggle (UIManager.java:1248-1268). A switch is a run-mode
-      // control like the pointer throw, so it stays live with editing disabled.
-      if (!ev.repeat && !ev.ctrlKey && !ev.metaKey && !ev.altKey && isPrintableKey(ev.key)) {
-        if (s.toggleSwitchByKey(ev.key)) {
-          ev.preventDefault();
-          return;
-        }
-      }
-      // A held key must not re-fire a user-assigned shortcut
-      // (UIManager.java:1181); the hardcoded nudge, delete and zoom keys
-      // still repeat by design. The browser default is still suppressed, or a
-      // held Space assigned to a command would scroll the page on every repeat.
-      if (ev.repeat && hasChord(s.shortcuts, chordOf(evLike))) {
-        ev.preventDefault();
-        return;
-      }
-      const action = matchShortcut(evLike, s.shortcuts);
-      if (!action) return;
-      // With editing disabled the edit keys are dropped, not ignored: the
-      // status bar explains why nothing happened (CommandManager.java:22-24).
-      // View and file commands (zoom, save, open) stay live.
-      if (!s.settings.editable && EDIT_ACTIONS.has(action.type)) {
-        s.setStatus('Editing disabled. Re-enable from the Options menu.');
-        return;
-      }
-      // Every matched chord is an app command, so prevent its browser default;
-      // unbound keys keep theirs, notably Ctrl+= and Ctrl+- page zoom.
-      ev.preventDefault();
-      // A held rotate key turns once, not at the key-repeat rate: Space is
-      // rotate now, and a resting thumb would otherwise spin the part. The
-      // guard sits after preventDefault so the page still cannot scroll. The
-      // nudge, delete and zoom keys keep repeating by design.
-      if (ev.repeat && action.type === 'rotate') return;
-      switch (action.type) {
-        case 'undo':
-          s.undo();
-          break;
-        case 'redo':
-          s.redo();
-          break;
-        case 'delete':
-          s.deleteSelected();
-          break;
-        case 'escape':
-          // Upstream's Escape returns to select mode and leaves the selection
-          // alone (UIManager.java:1145-1151); do not deselect here. Inside a
-          // subcircuit drill-in it closes the editing context instead, the
-          // keyboard's File-close-context: the guard at the top already means
-          // no dialog owns this key. A refused exit stays inside and says why.
-          if (s.subcircuitStack.length > 0) {
-            s.exitSubcircuit();
-            const after = useStore.getState();
-            if (after.subcircuitError !== null) window.alert(after.subcircuitError);
-          } else s.setTool(null);
-          break;
-        case 'selectMode':
-          s.setTool(null);
-          break;
-        case 'place':
-          // A placement char arms the element, the same setTool the toolbox
-          // button and the palette menu use: upstream's MODE_ADD_ELM
-          // (UIManager.java:1273-1284). The split semiconductors carry their
-          // toolbox id here (pnp, pmos), so the N/P flavour arms exactly.
-          s.setTool(action.kind);
-          break;
-        case 'nudge':
-          // The matcher reports a unit-less step count; the grid size resolves
-          // it here so a nudge moves one grid square, like upstream's
-          // app.gridSize (UIManager.java:1153). The step is always 16: the
-          // small-grid option is removed, so there is one spacing.
-          s.nudgeSelection(action.dx * GRID_SIZE, action.dy * GRID_SIZE);
-          break;
-        case 'zoomIn':
-          s.zoomIn();
-          break;
-        case 'zoomOut':
-          s.zoomOut();
-          break;
-        case 'zoomReset':
-          s.zoomReset();
-          break;
-        case 'save':
-          // Ctrl+S and the File>Save row open the Save As dialog, one behavior
-          // for both, so the name is editable and exporting counts as saved
-          // when the dialog confirms.
-          s.openDialog('saveAs');
-          break;
-        case 'open':
-          openCircuit((text, name) => {
-            s.loadNetlist(text);
-            s.setStatus(name);
-          });
-          break;
-        case 'copy':
-          s.copySelection();
-          break;
-        case 'cut':
-          s.cutSelection();
-          break;
-        case 'paste':
-          s.pasteFromClipboard();
-          break;
-        case 'duplicate':
-          s.duplicateSelection();
-          break;
-        case 'selectAll':
-          s.selectAll();
-          break;
-        case 'rotate':
-          s.rotateSelection();
-          break;
-        case 'mirror':
-          s.mirrorSelection();
-          break;
-        case 'swap':
-          s.swapTerminals();
-          break;
-        case 'toggleRunning':
-          // Only reachable through a user-assigned shortcut: run/pause has no
-          // default key upstream (CommandManager.java:100-101).
-          s.toggleRunning();
-          break;
-        case 'print':
-          // Prints just the schematic image, white background, not the page
-          // (CommandManager.java:73-74).
-          printCircuit(s.elements, s.settings, false, engineRef.current);
-          break;
-        case 'openPalette':
-          // The port has no Find Component dialog; the right-click menu is
-          // where the element search lives, so '/' opens that, under the
-          // cursor when there is one and centred on the window when there is
-          // not. Target null forces the empty-canvas (palette) form even if
-          // the cursor happens to rest on an element.
-          {
-            const at = paletteAnchor({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-            // The trailing true is the whole point of the key: there is no
-            // click behind this open, so the menu has to put the caret in its
-            // element search itself.
-            s.openContextMenu(at.client.x, at.client.y, null, at.circuit, true);
-          }
-          break;
-      }
+      // True means a shortcut ran (or a switch toggled), so the browser
+      // default must die with it; a modal surface or an unbound key returns
+      // false and nothing is suppressed here.
+      if (handleAppKeyDown(useStore.getState(), ev, host)) ev.preventDefault();
     };
-    // A momentary switch returns to rest when its shortcut key is let go
-    // (UIManager.java:1113-1131). Modifiers suppress the keypress path
-    // upstream, so a modified key never releases one.
     const onKeyUp = (ev: KeyboardEvent) => {
       const target = ev.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
-      const s = useStore.getState();
-      if (s.dialog !== null || s.scopeProperties !== null || s.elementProperties !== null) return;
-      if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-      if (!isPrintableKey(ev.key)) return;
-      s.releaseMomentaryByKey(ev.key);
+      handleAppKeyUp(useStore.getState(), ev);
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
