@@ -16,6 +16,7 @@ import { useStore } from '../state/store';
 import {
   applyFieldChange,
   clampInteger,
+  commitBinaryFile,
   commitContentsField,
   compositeEditModelState,
   deviceModelButtons,
@@ -350,19 +351,42 @@ function ContentsField({
  * Reads a picked file into the element: data files go through the pure
  * one-value-per-line parser and alert on the same "Expected format" message
  * upstream shows (DataInputElm.java:185-216); audio files go through the
- * WebAudio decoder, taking the first channel as the sample buffer. The
- * basename (path and extension stripped, AudioInputElm.java:160) becomes the
- * element's rail label, which is not part of the file format.
+ * WebAudio decoder, taking the first channel as the sample buffer; binary
+ * files land as SRAM contents, refused at 128000 bytes like upstream's
+ * SRAMLoadFile.java:36-39. The basename (path and extension stripped,
+ * AudioInputElm.java:160) becomes the element's rail label, which is not part
+ * of the file format.
  */
 function loadFileInto(
   e: CircuitElement,
-  fileLoad: 'audio' | 'data',
+  fileLoad: 'audio' | 'data' | 'binary',
   files: FileList | null,
   loadAudioFile: (id: number, samples: number[], samplingRate: number, fileName: string) => void,
   loadDataFile: (id: number, samples: number[], fileName: string) => void,
+  setMemoryContents: (id: number, pairs: [number, number][]) => void,
 ): void {
   const file = files && files[0];
   if (!file) return;
+  if (fileLoad === 'binary') {
+    if (file.size >= 128000) {
+      window.alert('Cannot load: That file is too large!');
+      return;
+    }
+    // Same asynchronous shape as the two sample loaders: when the read lands,
+    // the bytes are encoded into the editor's run and committed through the
+    // textarea's own parse-and-store path.
+    const reader = new FileReader();
+    reader.onload = () => {
+      commitBinaryFile(
+        e,
+        new Uint8Array(reader.result as ArrayBuffer),
+        window.alert,
+        { setMemoryContents },
+      );
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
   const fileName = file.name.replace(/^.*\\/, '').replace(/\.[^.]*$/, '');
   if (fileLoad === 'data') {
     const reader = new FileReader();
@@ -535,6 +559,7 @@ export function ElementFields({ element, engine }: Props) {
                   v as FileList | null,
                   loadAudioFile,
                   loadDataFile,
+                  setMemoryContents,
                 );
                 return;
               }

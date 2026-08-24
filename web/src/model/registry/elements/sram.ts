@@ -216,6 +216,11 @@ export const SRAM_DEF: ElementDef = {
     { name: 'contents', label: 'Contents', type: 'contents' },
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
     { name: 'hexDisplay', label: 'Hex Display', type: 'bool', flag: SRAM_HEX_DISPLAY },
+    // The Load Contents From File row (SRAMElm.java:154, SRAMLoadFile
+    // .java:31-48). No value rides the field: the picked bytes are encoded
+    // into the contents run and committed through setMemoryContents, so
+    // nothing here reaches params or the file line. The ROM has no such row.
+    { name: 'loadFile', label: 'Load Contents From File', type: 'file', fileLoad: 'binary' },
     {
       name: 'reloadOnReset',
       label: 'Restore Contents on Reset',

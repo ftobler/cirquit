@@ -306,6 +306,12 @@ describe('text field metadata', () => {
         // memory editor, whose value is derived from the element's addr/val
         // pair params and whose commit is its own store action.
         if (f.type === 'contents') continue;
+        // A binary file-load row (the SRAM's Load Contents From File) binds
+        // no value at all: the picked bytes are encoded into the contents run
+        // and committed through setMemoryContents, so nothing reaches params
+        // or the file line. The audio/data rows stay checked: their field
+        // name is the persisted fileNum param.
+        if (f.type === 'file' && f.fileLoad === 'binary') continue;
         // A derived row (the source's High Time / Low Time) binds no field of
         // its own name: its `get` reads and its `apply` writes other params
         // (dutyCycle/frequency), so the parse/dump/defaults check cannot see

@@ -84,6 +84,19 @@ const HEX_DIGITS = /^[0-9a-fA-F]+$/;
 const DEC_DIGITS = /^[0-9]+$/;
 const BIN_DIGITS = /^[01]+$/;
 
+/** The loaded-binary form upstream injects into the contents editor
+ *  (SRAMLoadFile.java:31-48): the `0x0:` label then every byte as a
+ *  zero-padded uppercase hex value behind an `0x` prefix, one run starting at
+ *  address 0. The prefixes make the text parse identically in either display
+ *  radix, so it rides the textarea's commit untouched. */
+export function bytesToHexRun(bytes: ArrayLike<number>): string {
+  let text = '0x0:';
+  for (let i = 0; i < bytes.length; i++) {
+    text += ' 0x' + (bytes[i] & 0xff).toString(16).toUpperCase().padStart(2, '0');
+  }
+  return text;
+}
+
 /** Upstream's parseNumber (SRAMElm.java:216-224, prefix order per 902f965):
  *  an `0x` prefix always, then the bare radix digits, then an `0b` binary
  *  prefix, else decimal. Hex mode comes before the `0b` check so a hex token

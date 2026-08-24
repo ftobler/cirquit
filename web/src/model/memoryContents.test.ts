@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contentsToText, parseContentsText } from './memoryContents';
+import { bytesToHexRun, contentsToText, parseContentsText } from './memoryContents';
 
 /** Upstream's toHex/contentsToString examples, decimal and hex, 4-bit data. */
 const DEC = { hex: false, dataBits: 4 };
@@ -221,5 +221,32 @@ describe('parseContentsText', () => {
   it('rejects trailing junk parseInt would silently accept', () => {
     expect(parseContentsText('0: 12abc\n', DEC).error).toContain('12abc');
     expect(parseContentsText('0: 12ag\n', HEX).error).toContain('12ag');
+  });
+});
+
+describe('bytesToHexRun', () => {
+  it('formats one run starting at 0x0, two uppercase hex digits per byte', () => {
+    // Upstream's injected text (SRAMLoadFile.java:41-44): the 0x0 label then
+    // every byte as a zero-padded uppercase hex value behind an 0x prefix.
+    expect(bytesToHexRun([0xde, 0xad, 1])).toBe('0x0: 0xDE 0xAD 0x01');
+  });
+
+  it('an empty file leaves the bare 0x0 label', () => {
+    expect(bytesToHexRun([])).toBe('0x0:');
+  });
+
+  it('round-trips through the parser to one pair per byte', () => {
+    // The 0x prefixes make the run parse identically in either display radix,
+    // which is what lets it ride the textarea's commit untouched.
+    const bytes = [0, 15, 255];
+    for (const hex of [false, true]) {
+      const parsed = parseContentsText(bytesToHexRun(bytes), { hex, dataBits: 8 });
+      expect(parsed.error).toBeNull();
+      expect(parsed.pairs).toEqual([
+        [0, 0],
+        [1, 15],
+        [2, 255],
+      ]);
+    }
   });
 });

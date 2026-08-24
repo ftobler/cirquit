@@ -106,10 +106,11 @@ export interface FieldDef {
    *  string and the commit goes through the dedicated setMemoryContents store
    *  action, never applyFieldChange. */
   type?: 'number' | 'choice' | 'bool' | 'text' | 'file' | 'download' | 'modelChoice' | 'contents';
-  /** Which sample source a `type: 'file'` field loads: an audio buffer (via
-   *  the WebAudio decoder) or a data text file (one value per line). Absent
-   *  on every other field type. */
-  fileLoad?: 'audio' | 'data';
+  /** What a `type: 'file'` field loads: an audio buffer (via the WebAudio
+   *  decoder), a data text file (one value per line), or a binary file whose
+   *  raw bytes become the memory contents run. Absent on every other field
+   *  type. */
+  fileLoad?: 'audio' | 'data' | 'binary';
   /** Which built-in model table a `type: 'modelChoice'` field draws its
    *  options from. The diode family (diode/zener/varactor/led) shares one
    *  table, the transistor, mosfet and jfet each have their own. Absent on

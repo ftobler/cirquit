@@ -7,6 +7,7 @@ import { fieldLabel, type CircuitElement, type FieldDef } from '../model/types';
 import {
   applyFieldChange,
   clampInteger,
+  commitBinaryFile,
   commitContentsField,
   compositeEditModelState,
   deviceModelButtons,
@@ -427,6 +428,54 @@ describe('contents field commit', () => {
     });
     expect(plainAlerts).toHaveLength(1);
     expect(plainCalls).toEqual([]);
+  });
+});
+
+describe('binary contents file load', () => {
+  // Upstream's SRAM edit dialog carries a Load Contents From File row after
+  // the Hex Display checkbox (SRAMElm.java:154); the ROM has no such row.
+  it('the sram def opts in between hexDisplay and reloadOnReset, the rom does not', () => {
+    const names = defFor('sram')!.fields!.map((f) => f.name);
+    expect(names.indexOf('loadFile')).toBe(names.indexOf('hexDisplay') + 1);
+    const f = field('sram', 'loadFile');
+    expect(f.type).toBe('file');
+    expect(f.fileLoad).toBe('binary');
+    expect(defFor('rom')!.fields!.some((x) => x.type === 'file')).toBe(false);
+  });
+
+  it('committing loaded bytes calls setMemoryContents with the decoded pairs', () => {
+    const e = elm({ kind: 'sram', params: { dataBits: 8 }, flags: SRAM_HEX_DISPLAY });
+    const alerts: string[] = [];
+    const calls: Array<[number, [number, number][]]> = [];
+    const ok = commitBinaryFile(e, [0xde, 0xad], (m) => alerts.push(m), {
+      setMemoryContents: (id, pairs) => calls.push([id, pairs]),
+    });
+    expect(ok).toBe(true);
+    expect(alerts).toEqual([]);
+    expect(calls).toEqual([[1, [[0, 222], [1, 173]]]]);
+  });
+
+  it('bytes past the data width alert the codec error and store nothing', () => {
+    // A byte cannot fit a narrower data width; the port reports that where
+    // upstream silently stored the raw parsed value.
+    const e = elm({ kind: 'sram', params: { dataBits: 2 } });
+    const alerts: string[] = [];
+    const calls: unknown[] = [];
+    const ok = commitBinaryFile(e, [222], (m) => alerts.push(m), {
+      setMemoryContents: (id, pairs) => calls.push([id, pairs]),
+    });
+    expect(ok).toBe(false);
+    expect(alerts[0]).toContain('does not fit in 2 bits');
+    expect(calls).toEqual([]);
+  });
+
+  it('an empty file commits an empty pair list, clearing the contents', () => {
+    const e = elm({ kind: 'sram', params: { dataBits: 8 } });
+    const calls: Array<[number, [number, number][]]> = [];
+    commitBinaryFile(e, [], () => {}, {
+      setMemoryContents: (id, pairs) => calls.push([id, pairs]),
+    });
+    expect(calls).toEqual([[1, []]]);
   });
 });
 

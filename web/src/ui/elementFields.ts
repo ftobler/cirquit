@@ -7,7 +7,7 @@
 import { defFor } from '../model/registry';
 import { DEFAULT_MODEL_NAME } from '../model/registry/elements/customComposite';
 import { modelFamilyFor, userModel } from '../model/deviceModels';
-import { contentsToText, parseContentsText } from '../model/memoryContents';
+import { bytesToHexRun, contentsToText, parseContentsText } from '../model/memoryContents';
 import { memoryPairs, normalizeSramBits, SRAM_HEX_DISPLAY } from '../model/registry/elements/sram';
 import { batteryTypeDefaults, batteryTypeTables } from '../model/registry/elements/battery';
 import { fieldLabel, type CircuitElement, type FieldDef } from '../model/types';
@@ -157,6 +157,21 @@ export function commitContentsField(
   }
   actions.setMemoryContents(e.id, parsed.pairs);
   return true;
+}
+
+/** Commits a loaded binary file as memory contents, upstream's Load Contents
+ *  From File row (SRAMElm.java:154, SRAMLoadFile.java:31-48): the raw bytes
+ *  are encoded into the editor's `0x0:` hex run and handed to the textarea's
+ *  own commit, so the parse, the width check and the store action cannot
+ *  diverge from what typing the same text would do. A byte past the element's
+ *  data width alerts the codec error and stores nothing. */
+export function commitBinaryFile(
+  e: CircuitElement,
+  bytes: ArrayLike<number>,
+  alert: (message: string) => void,
+  actions: ContentsCommitActions,
+): boolean {
+  return commitContentsField(e, bytesToHexRun(bytes), alert, actions);
 }
 
 /**
