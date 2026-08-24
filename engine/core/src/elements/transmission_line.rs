@@ -15,10 +15,9 @@ use crate::element::{Base, Element, SimCtx};
 use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
 
-/// Ring-buffer length cap, upstream's limit above which it refuses to allocate
-/// the buffers and stops the sim (TransLineElm.java:96-101). The port has no
-/// per-element stop, so an over-long delay is clamped to the cap rather than
-/// halting the run.
+/// Ring-buffer length cap, upstream's limit above which it refuses to
+/// allocate the buffers and stops the sim instead (TransLineElm.java:96-101).
+/// Refusal is strict inequality, so exactly 100000 slots still runs.
 const MAX_STEPS: usize = 100_000;
 
 pub struct TransmissionLine {
@@ -30,7 +29,17 @@ pub struct TransmissionLine {
     /// working `dt` can halve under adaptation, but the ring must not shrink
     /// with it, so the sizing step is fixed after the first pass.
     nominal_dt: f64,
-    /// Ring-buffer length, `delay / nominal_dt` clamped to [`MAX_STEPS`].
+    /// Whether the ring has been sized at least once. Replaces the old
+    /// `len_steps == 0` sentinel, which an over-long delay would trip forever:
+    /// a refused line also has an empty ring, and the two states must not be
+    /// confused.
+    sized: bool,
+    /// Set when the delay needs more than [`MAX_STEPS`] slots. The buffers
+    /// stay unallocated, like upstream nulling them (TransLineElm.java:96-97),
+    /// and every transient `do_step` raises the engine stop rather than
+    /// playing back a silently shortened delay.
+    too_long: bool,
+    /// Ring-buffer length in steps; 0 while unallocated.
     len_steps: usize,
     /// Write index into the ring, advanced once per committed step.
     ptr: usize,
@@ -49,6 +58,8 @@ impl TransmissionLine {
             delay: spec.param("delay", Self::DEFAULT_DELAY),
             imped: spec.param("imped", 75.0),
             nominal_dt: 0.0,
+            sized: false,
+            too_long: false,
             len_steps: 0,
             ptr: 0,
             voltage_l: Vec::new(),
@@ -57,16 +68,22 @@ impl TransmissionLine {
     }
 
     /// Sizes the ring for `delay` against the nominal timestep and clears it.
-    /// The 1-step floor keeps a sub-timestep delay from producing an empty
-    /// ring, which upstream would crash on (`(ptr + 1) % lenSteps` with a zero
-    /// divisor).
+    /// The ratio truncates toward zero, upstream's `(int)` cast
+    /// (TransLineElm.java:94); rounding made a 3.5-slot delay take 4 slots
+    /// and delivered its edge a step late. The 1-step floor keeps a
+    /// sub-timestep delay from producing an empty ring, which upstream would
+    /// crash on (`(ptr + 1) % lenSteps` with a zero divisor). Above
+    /// [`MAX_STEPS`] nothing is allocated and [`Self::too_long`] records the
+    /// refusal for `do_step` to stop on.
     fn size_ring(&mut self, delay: f64) {
-        let steps = if self.nominal_dt > 0.0 {
-            (delay / self.nominal_dt).round() as usize
+        debug_assert!(self.nominal_dt > 0.0, "ring sized before the first stamp");
+        let steps = (delay / self.nominal_dt).floor() as usize;
+        self.too_long = steps > MAX_STEPS;
+        self.len_steps = if self.too_long {
+            0
         } else {
-            1
+            steps.clamp(1, MAX_STEPS)
         };
-        self.len_steps = steps.clamp(1, MAX_STEPS);
         self.voltage_l = vec![0.0; self.len_steps];
         self.voltage_r = vec![0.0; self.len_steps];
         self.ptr = 0;
@@ -122,9 +139,10 @@ impl Element for TransmissionLine {
     }
 
     fn stamp(&mut self, ctx: &SimCtx, s: &mut Stamper) {
-        if self.len_steps == 0 {
+        if !self.sized {
             // The first stamp runs at the nominal `options.time_step`, which
             // is the size the ring keeps for the whole run.
+            self.sized = true;
             self.nominal_dt = ctx.dt;
             self.size_ring(self.delay);
         }
@@ -149,6 +167,18 @@ impl Element for TransmissionLine {
     }
 
     fn do_step(&mut self, ctx: &SimCtx, s: &mut Stamper) {
+        if self.too_long && !ctx.dc_analysis {
+            // Upstream stops from both startIteration and doStep once the
+            // buffers were refused (TransLineElm.java:191-194, :203-206);
+            // do_step alone covers it here because it runs on every Newton
+            // iteration. The operating-point solve is excluded: raising the
+            // stop there would misroute this circuit condition into the
+            // solver's singular/degraded paths, so the message surfaces on
+            // the first transient step instead of during the DC solve. That
+            // is the one deliberate lifecycle deviation from upstream.
+            s.request_stop("Transmission line delay too large!");
+            return;
+        }
         if ctx.dc_analysis || self.len_steps == 0 {
             return;
         }
@@ -161,6 +191,16 @@ impl Element for TransmissionLine {
         let next = (self.ptr + 1) % self.len_steps;
         s.voltage_source_value(self.base.vs_base, -self.voltage_r[next]);
         s.voltage_source_value(self.base.vs_base + 1, -self.voltage_l[next]);
+        // Upstream also stops here when either inner post sits above 1e-5 V
+        // ("Need to ground transmission line!", TransLineElm.java:210-213).
+        // Deliberately skipped for now: both engines reference a port
+        // island with no ground reach through only a ~1e8 ohm pin
+        // (upstream's connectUnconnectedNodes resistor, the port's gmin
+        // stamp), so an AC source inside such an island lifts an inner post
+        // to source level. Upstream itself ships circuits wired that way
+        // (tllight, tlmis1, tlmismatch), and any absolute threshold trips
+        // them. A faithful check needs to know which nodes were pinned at
+        // analysis time, which the element cannot see today.
     }
 
     fn step_finished(&mut self, ctx: &SimCtx) {
@@ -225,10 +265,15 @@ impl Element for TransmissionLine {
         match name {
             // A delay edit re-sizes the ring from the fixed nominal step;
             // `Circuit::set_param` restamps after this, so the new buffer is
-            // in place before the next step.
+            // in place before the next step. A delay past the cap re-raises
+            // the refusal here, and shortening the delay back clears it.
+            // Before the first stamp there is no nominal step yet, so sizing
+            // waits for `stamp`.
             "delay" if value > 0.0 => {
                 self.delay = value;
-                self.size_ring(value);
+                if self.sized {
+                    self.size_ring(value);
+                }
             }
             "imped" if value > 0.0 => self.imped = value,
             _ => return false,
@@ -267,6 +312,51 @@ mod tests {
         e.voltage_l = vec![0.0; len_steps];
         e.voltage_r = vec![0.0; len_steps];
         e
+    }
+
+    #[test]
+    fn ring_length_truncates_the_delay_ratio_like_upstream() {
+        // Upstream sizes the ring with `(int)(delay/maxTimeStep)`
+        // (TransLineElm.java:94), which truncates toward zero: 3.5 slots of
+        // delay buys 3 slots, not 4. The ratio must be built as `3.5 * dt`
+        // rather than spelled `17.5e-6`: those are different f64 values and
+        // only the first sits on the rounding boundary. An exact multiple is
+        // unchanged.
+        let mut e = line(1);
+        e.nominal_dt = 5e-6;
+        e.size_ring(3.5 * 5e-6);
+        assert_eq!(e.len_steps, 3, "3.5 slots of delay must truncate to 3");
+        e.size_ring(15e-6);
+        assert_eq!(e.len_steps, 3, "an exact multiple must stay exact");
+    }
+
+    #[test]
+    fn over_long_delay_refuses_the_ring_instead_of_clamping() {
+        // Above MAX_STEPS the buffers stay unallocated and the element
+        // records the refusal for do_step to stop on (upstream nulls them,
+        // TransLineElm.java:96-97), rather than silently running a
+        // shortened line.
+        let mut e = line(1);
+        e.nominal_dt = 5e-6;
+        e.size_ring(1.0);
+        assert!(e.too_long);
+        assert_eq!(e.len_steps, 0);
+        assert!(e.voltage_l.is_empty());
+        // Refusal is strict: exactly 100000 slots allocates, and the
+        // fraction just above the cap truncates back onto it. The timestep
+        // is a power of two so every product below divides back exactly,
+        // keeping the boundary arithmetic free of float noise.
+        let dt = 2f64.powi(-18);
+        e.nominal_dt = dt;
+        e.size_ring(MAX_STEPS as f64 * dt);
+        assert!(!e.too_long);
+        assert_eq!(e.len_steps, MAX_STEPS);
+        e.size_ring((MAX_STEPS as f64 + 0.5) * dt);
+        assert!(!e.too_long);
+        assert_eq!(e.len_steps, MAX_STEPS);
+        e.size_ring((MAX_STEPS as f64 + 1.0) * dt);
+        assert!(e.too_long);
+        assert_eq!(e.len_steps, 0);
     }
 
     #[test]
