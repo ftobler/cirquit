@@ -71,6 +71,11 @@ pub struct Stamper<'a> {
     /// Their constraint rows are identities on their own unknowns and their
     /// value updates are dropped (see `voltage_source`).
     collapsed_vs: HashSet<usize>,
+    /// Message an element asked to halt the run with, upstream's
+    /// `sim.stop(text, elm)` text. First request wins: one fatal condition
+    /// per frame is enough, and the earliest element's reason is the one a
+    /// user can act on.
+    stop: Option<String>,
 }
 
 impl<'a> Stamper<'a> {
@@ -96,6 +101,7 @@ impl<'a> Stamper<'a> {
             failing: Vec::new(),
             record: None,
             collapsed_vs: HashSet::new(),
+            stop: None,
         }
     }
 
@@ -381,5 +387,24 @@ impl<'a> Stamper<'a> {
         if self.failing.last() != Some(&self.current) {
             self.failing.push(self.current);
         }
+    }
+
+    /// Asks the solver to halt the simulation run with this message,
+    /// upstream's `sim.stop` (SimulationManager.java:1342-1345 reads the
+    /// stop back straight after the doStep pass and abandons the frame).
+    /// Unlike [`Stamper::not_converged`] this never recovers by shrinking
+    /// the step: it is for conditions no timestep length can fix.
+    #[inline]
+    pub fn request_stop(&mut self, msg: &str) {
+        if self.stop.is_none() {
+            self.stop = Some(msg.to_string());
+        }
+    }
+
+    /// Takes the pending stop request, if any element raised one this
+    /// iteration.
+    #[inline]
+    pub fn take_stop(&mut self) -> Option<String> {
+        self.stop.take()
     }
 }

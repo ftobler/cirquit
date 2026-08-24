@@ -132,6 +132,11 @@ enum StepError {
     /// The Newton budget ran out, with the element indices of the elements
     /// that were still moving on the final iteration.
     NotConverged(u32, Vec<usize>),
+    /// An element halted the run with a message, upstream's `sim.stop`
+    /// (the transmission line whose delay will not fit its ring). A
+    /// condition of the circuit, not the step length, so halving and
+    /// retrying must not touch it.
+    Stopped(String),
 }
 
 pub struct Circuit {
@@ -1282,6 +1287,14 @@ impl Circuit {
                     s.set_current(ei);
                     elm.do_step(&ctx, &mut s);
                 }
+                // An element asked to halt the run: upstream checks
+                // `app.stopMessage` straight after the doStep pass
+                // (SimulationManager.java:1342-1345) and abandons the frame
+                // before solving, so nothing of this attempt commits.
+                if let Some(msg) = s.take_stop() {
+                    self.ctx.time = committed_time;
+                    return Err(StepError::Stopped(msg));
+                }
                 last_failing = std::mem::take(&mut s.failing);
                 s.converged
             };
@@ -1418,6 +1431,15 @@ impl Circuit {
                     report.time = self.ctx.time;
                     report.time_step = self.current_time_step;
                     break;
+                }
+                Err(StepError::Stopped(msg)) => {
+                    // A deliberate element stop carries its own message,
+                    // upstream's stopMessage shown verbatim. No halving and
+                    // no retry: the condition does not depend on the step.
+                    report.converged = false;
+                    report.error = Some(msg);
+                    self.error = report.error.clone();
+                    return report;
                 }
                 Err(StepError::Singular(iterations)) => {
                     report.iterations += iterations;
