@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { matchShortcut } from '../input/shortcuts';
+import { modalSurface } from '../input/modalSurface';
 import { DEFAULT_SETTINGS, GRID_SIZE, type SimSettings } from '../model/types';
 import { postsOf } from '../model/registry';
 import { hitTestElement } from '../render/geometry';
@@ -23,7 +24,7 @@ import {
   snap,
   useStore,
 } from './store';
-import { addResistor, fresh } from './store.test-helpers';
+import { addCapacitor, addResistor, fresh } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
 
@@ -3104,6 +3105,56 @@ describe('scope mutator coverage', () => {
     expect(s.scopes).toHaveLength(0);
     expect(s.undoStack.length).toBe(baseline);
     expect(s.revision).toBe(rev);
+  });
+
+  it('removing the scoped scope closes its Scope Properties gate', () => {
+    // The panel renders null once the scope is gone but stays mounted with
+    // its Escape listener, so a stale id here kept modalSurface() true
+    // forever and every shortcut died until a lucky Escape.
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    useStore.getState().openScopeProperties(scopeId);
+    expect(modalSurface(useStore.getState())).toBe(true);
+
+    useStore.getState().removeScope(scopeId);
+    expect(useStore.getState().scopeProperties).toBeNull();
+    expect(modalSurface(useStore.getState())).toBe(false);
+  });
+
+  it('removing another scope keeps the open Scope Properties gate', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    useStore.getState().addScope(addCapacitor(), 'voltage');
+    const [first] = useStore.getState().scopes;
+    const second = useStore.getState().scopes[1];
+    useStore.getState().openScopeProperties(first.id);
+
+    useStore.getState().removeScope(second.id);
+    expect(useStore.getState().scopeProperties).toBe(first.id);
+    expect(modalSurface(useStore.getState())).toBe(true);
+  });
+
+  it('loadNetlist clears an open Scope Properties gate', () => {
+    // Loading a file replaces the whole scope list, so the dialog's id can
+    // only point at a vanished scope.
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    useStore.getState().openScopeProperties(useStore.getState().scopes[0].id);
+
+    useStore.getState().loadNetlist(SAMPLE);
+    expect(useStore.getState().scopeProperties).toBeNull();
+    expect(modalSurface(useStore.getState())).toBe(false);
+  });
+
+  it('newCircuit clears an open Scope Properties gate', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    useStore.getState().openScopeProperties(useStore.getState().scopes[0].id);
+
+    useStore.getState().newCircuit();
+    expect(useStore.getState().scopeProperties).toBeNull();
+    expect(modalSurface(useStore.getState())).toBe(false);
   });
 
   it('setScopeTrigger patches the trigger and forces a reload; unknown id is a no-op', () => {

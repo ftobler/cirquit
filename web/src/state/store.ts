@@ -2071,6 +2071,12 @@ function createAppStore() {
     get().commit();
     set((s) => ({
       scopes: s.scopes.filter((x) => x.id !== id),
+      // The dialog's component renders null once its scope is gone but stays
+      // mounted with its Escape listener, so a stale id here would keep
+      // modalSurface() true forever and every shortcut would die. Another
+      // scope's removal leaves the open dialog alone: the stack tabs can
+      // still reach it.
+      scopeProperties: s.scopeProperties === id ? null : s.scopeProperties,
       ...bumpRevision(s),
     }));
   },
@@ -2767,6 +2773,11 @@ function createAppStore() {
       notice: null,
       // A refusal from the previous circuit says nothing about this one.
       subcircuitError: null,
+      // A load is a new document: any open Scope Properties dialog pointed at
+      // the old file's scope list, so its id can only be stale. Leaving it
+      // would keep modalSurface() true with nothing on screen, killing every
+      // shortcut until a lucky Escape.
+      scopeProperties: null,
       // A load is a new document: any drill-in session that returned to it no
       // longer has a home, so the context stack is reset wholesale, exactly as
       // upstream's resetEditingContext clears it (CirSim.java:508-511).
@@ -3055,6 +3066,9 @@ function createAppStore() {
       unsupportedProblem: null,
       notice: null,
       subcircuitError: null,
+      // New drops every scope, so an open Scope Properties dialog would be
+      // stranded on a vanished id, holding modalSurface() shut.
+      scopeProperties: null,
       // New drops the drill-in session too: the outer document is gone.
       subcircuitStack: [],
       ...bumpRevision(s),
