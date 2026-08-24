@@ -234,11 +234,14 @@ const WRITERS: Record<string, Writer> = {
     // Q level as v{i} on pins 2..bits+1 (CounterElm.java:52-57). The port's
     // text order interleaves those levels between the high voltage and the
     // polarity pair. Lowercasing in mirrors Boolean.parseBoolean, which
-    // accepts any case.
+    // accepts any case. The seed is false, upstream's invertreset field
+    // default (CounterElm.java:29): parseBooleanAttr("in", ...) hands a
+    // missing attribute back that default (CounterElm.java:61), an
+    // active-HIGH reset.
     const bits = attr(n, 'bi', 4);
     const state: (string | number)[] = [];
     for (let i = 0; i < bits; i++) state.push(attr(n, `v${i + 2}`, 0));
-    const invert = (n.attrs.in ?? 'true').toLowerCase();
+    const invert = (n.attrs.in ?? 'false').toLowerCase();
     return chipTail(n, true, [...state, invert, attr(n, 'mo', 0)]);
   },
   TFlipFlop: (n) =>
@@ -273,11 +276,15 @@ const WRITERS: Record<string, Writer> = {
   CCVS: (n) => [attr(n, 'ic', 2), n.attrs.ex ?? ''],
 };
 
-/** The `R`/`v` six-token stream (VoltageElm.java:45-56). */
+/** The `R`/`v` six-token stream (VoltageElm.java:45-56). The missing-fr seed
+ *  is 60, not the text-format constructor's 40: upstream never writes fr for
+ *  DC sources, so its XML reader meets a fresh element whose constructor set
+ *  frequency = 60 (VoltageElm.java:56), and the port seeds fresh parts at 60
+ *  too. */
 function voltageTokens(n: XmlNode): (string | number)[] {
   return [
     attr(n, 'wf', 0),
-    attr(n, 'fr', 40),
+    attr(n, 'fr', 60),
     attr(n, 'maxv', 5),
     attr(n, 'bias', 0),
     attr(n, 'phaseShift', 0),
@@ -440,10 +447,13 @@ const BO_TAGS = new Set([
   'ctr',
   'Latch',
   'dd',
-  // SevenSegElm's getXmlDumpType returns "ssd" (SevenSegElm.java:337) and
-  // BusTransceiverElm has no override, so its tag is the class-name default:
-  // the live tags are the two listed below, never SevenSeg or bt.
+  // SevenSegElm's getXmlDumpType returns "ssd" (SevenSegElm.java:337), so
+  // ssd is the live seven-segment-display tag and allowBus whenever
+  // diodeDirection is 0 (SevenSegElm.java:82). BusTransceiverElm has no
+  // override, so its tag defaults to the class name. The dead forms SevenSeg
+  // and bt never appear in a document, so bo can never ride them.
   'SevenSegDecoder',
+  'ssd',
   'BusTransceiver',
 ]);
 

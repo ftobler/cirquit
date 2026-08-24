@@ -256,7 +256,30 @@ describe('xml to text conversion', () => {
   <R x="288 96 288 48" f="0" wf="0" maxv="5" ir="5"/>
 </cir>
 `;
-    expect(xmlToText(src)).toContain('R 288 96 288 48 0 0 40 5 0 0 0.5');
+    expect(xmlToText(src)).toContain('R 288 96 288 48 0 0 60 5 0 0 0.5');
+  });
+
+  it('seeds a DC source or rail without fr at upstream frequency 60', () => {
+    // Upstream never writes fr for DC sources (VoltageElm.dumpXml) and its
+    // XML reader builds a fresh element first, whose constructor seeds
+    // frequency 60 (VoltageElm.java:56). The port's fresh-part seed is 60
+    // too, so a converted file matches what a fresh part would save.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <R x="288 96 288 48" f="0" wf="0" maxv="5"/>
+  <v x="192 160 128 160" f="0" wf="0" maxv="10"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('R 288 96 288 48 0 0 60 5 0 0 0.5');
+    expect(text).toContain('v 192 160 128 160 0 0 60 10 0 0 0.5');
+  });
+
+  it('keeps an explicit fr on a converted AC source', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <R x="288 96 288 48" f="0" wf="1" fr="1234" maxv="5"/>
+</cir>
+`;
+    expect(xmlToText(src)).toContain('R 288 96 288 48 0 1 1234 5 0 0 0.5');
   });
 
   it('converts a top-level probe element, not just scope plots', () => {
@@ -573,6 +596,47 @@ describe('xml to text conversion', () => {
     // The converted line round-trips through a save unchanged.
     const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
     expect(saved.split('\n')).toContain('168 496 288 528 288 2 2 5 0');
+  });
+
+  it('defaults a missing counter polarity to the active-high reset', () => {
+    // CounterElm.invertreset defaults false (CounterElm.java:29) and its
+    // reader parses a missing "in" against that default
+    // (CounterElm.java:61): active-HIGH reset. Seeding true would flip every
+    // hand-written counter's reset polarity.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ctr x="304 160 368 160" f="0" bi="2" mo="0"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('164 304 160 368 160 0 2 0 0 false 0');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['counter']);
+    expect(parsed.elements[0].params.invertreset).toBe(0);
+  });
+
+  it('traces a dropped bit order on the live seven-segment display tag', () => {
+    // SevenSegElm's getXmlDumpType returns "ssd" (SevenSegElm.java:337) and
+    // it is allowBus whenever diodeDirection is 0 (SevenSegElm.java:82), so
+    // ChipElm writes bo onto it. A nonzero bo collapses its whole pin layout,
+    // so it must degrade loudly, not silently.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ssd x="224 144 288 144" f="0" ba="7" bo="2"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('157 224 144 288 144 0 7 0 0');
+    expect(text).toContain('# ssd bo="2" not modelled: converted as non-bus pin rows');
+    expect(text).not.toContain(String(CHIP_BIT_ORDER_BUS));
+  });
+
+  it('keeps a flagless seven-segment display free of trace comments', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ssd x="224 144 288 144" f="0" ba="7"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('157 224 144 288 144 0 7 0 0');
+    expect(text).not.toContain('# ssd');
   });
 
   it('traces a dropped bit order on the newly mapped counter and latch', () => {
