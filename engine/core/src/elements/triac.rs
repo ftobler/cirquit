@@ -276,8 +276,7 @@ mod tests {
         // main-terminal current genuinely falls below holding.
         t.start_iteration(&SimCtx::default());
         assert_eq!(
-            t.a_resistance,
-            ON_RESISTANCE,
+            t.a_resistance, ON_RESISTANCE,
             "Reset must not clear the latch while i2 exceeds holding"
         );
     }
