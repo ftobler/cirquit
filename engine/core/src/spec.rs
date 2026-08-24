@@ -74,10 +74,13 @@ pub struct SimOptions {
     /// Nominal (maximum) timestep in seconds.
     #[serde(default = "default_time_step")]
     pub time_step: f64,
-    /// Floor for adaptive step shrinking, in seconds. Halving stops once the
-    /// result would drop below this value, so the floor itself is the
-    /// smallest attempted step, and it is where the relaxed 5000-iteration
-    /// budget applies; a non-convergent step there stops the run.
+    /// Floor for adaptive step shrinking, in seconds. Every halved step at
+    /// or above this value is attempted; halving stops once the result
+    /// would drop below it, so unless `time_step` halves onto the floor
+    /// exactly, the smallest attempted step lies between the floor and
+    /// twice it, and that smallest step is where the relaxed
+    /// 5000-iteration budget applies. A non-convergent step there stops
+    /// the run.
     #[serde(default = "default_min_time_step")]
     pub min_time_step: f64,
     /// Enable step doubling after easy steps and halve-and-retry on a

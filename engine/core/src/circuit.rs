@@ -448,10 +448,14 @@ impl Circuit {
 
         // Built into locals and committed to `self` only once every element
         // has been accepted: a mid-loop reject below must not leave a
-        // half-built list behind while `closures`, `node_voltages` and the
-        // rest still describe the previous circuit. This mirrors the options
-        // guards above, so a rejected build leaves a live instance running
-        // what it had instead of a mixture of both circuits.
+        // half-built list behind, so a rejected build keeps its previous
+        // elements, closures and node voltages and stays runnable instead
+        // of stepping a mixture of both circuits. This is per-stage
+        // atomicity, the same discipline as the options guards above:
+        // whatever an earlier stage committed (options, the warning and
+        // error clears, the adaptive-step carry-over and the context,
+        // including the clock rewind under `preserve_run = false`) stays
+        // in force when a later stage rejects.
         let mut elements: Vec<Box<dyn Element>> = Vec::with_capacity(spec.elements.len());
         let mut ids = Vec::with_capacity(spec.elements.len());
         let mut id_index: HashMap<u32, usize> = HashMap::with_capacity(spec.elements.len());
@@ -1371,12 +1375,15 @@ impl Circuit {
             // smaller fallback waiting, so it only burns the normal Newton
             // budget. The `>=` matters: upstream halves first and stops only
             // when the halved value drops below the minimum
-            // (SimulationManager.java:1391-1400), so the floor value itself
-            // is always attempted, and a circuit that converges only below
-            // twice the floor recovers instead of stopping one halving
-            // early. The floor attempt runs at the relaxed 5000-iteration
-            // budget, matching upstream's last-chance budget at the floor
-            // (SimulationManager.java:1328). Above the floor the port
+            // (SimulationManager.java:1391-1400), so every halved step at or
+            // above the floor is attempted, and a circuit that converges
+            // only below twice the floor recovers instead of stopping one
+            // halving early. Unless `time_step` halves onto the floor
+            // exactly, the smallest attempted step sits between the floor
+            // and twice it, not on the floor; that smallest step is the one
+            // that can no longer shrink, so it is where the relaxed
+            // 5000-iteration budget applies, matching upstream's last-chance
+            // budget (SimulationManager.java:1328). Above it the port
             // deliberately keeps its own documented max_subiterations
             // rather than upstream's 100: the gmin ramps engage around
             // subiter 100 and need room to climb (see SimOptions).
