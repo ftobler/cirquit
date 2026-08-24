@@ -7,7 +7,7 @@
  * sharing a stacking position render into one column.
  */
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Scope, SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
 import {
@@ -66,6 +66,9 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
   elementsRef.current = useStore((s) => s.elements);
   const settings = useStore((s) => s.settings);
   const dark = useStore((s) => s.dark);
+  // Watched so an undo or redo that force-clears the gesture flag mid-drag can
+  // cancel the plot drag here; see the orphan check below.
+  const scopeGesture = useStore((s) => s.scopeGesture);
 
   // Measure the canvas width and keep the geometry registry in step, so the
   // frame loop can size the engine ring without reading the DOM.
@@ -198,6 +201,12 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     cursor.hover = true;
     cursor.mouseX = x;
     cursor.hoverSettingsWheel = inSettingsWheel(x, y, w, h);
+    // The revert may land between two moves, before the effect above runs;
+    // tear the orphaned drag down here rather than mutate past its baseline.
+    if (cursor.draggingPlotY && !useStore.getState().scopeGesture) {
+      endPointerInteraction();
+      return;
+    }
     if (cursor.draggingPlotY) {
       const maxy = Math.floor((h - 1) / 2);
       const next = dragPlotYPosition(cursor.dragPlotYInitial, y - cursor.dragPlotYStart, maxy);
@@ -210,8 +219,9 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
   };
 
   /** Shared reset for the end of a pointer gesture: up, cancel and leave all
-   *  drop the drag and wheel state. */
-  const endPointerInteraction = () => {
+   *  drop the drag and wheel state. Reads only refs and the store, so it stays
+   *  referentially stable for the effect below. */
+  const endPointerInteraction = useCallback(() => {
     const cursor = cursorRef.current;
     cursor.draggingPlotY = false;
     cursor.dragPlotId = -1;
@@ -227,7 +237,15 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
     // A plot-Y drag ends here, closing its single undo entry. A wheel burst is
     // ended by its own idle timer, so this is a no-op for those.
     useStore.getState().endScopeGesture();
-  };
+  }, []);
+
+  // An undo or redo mid-drag reverts state and force-clears the gesture flag,
+  // because a live gesture cannot survive a revert. Dragging on would then
+  // commit per move against the stale press-time anchor, splitting one gesture
+  // into many entries, so an orphaned drag cancels like a pointer cancel.
+  useEffect(() => {
+    if (!scopeGesture && cursorRef.current.draggingPlotY) endPointerInteraction();
+  }, [scopeGesture, endPointerInteraction]);
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const pressedWheel = settingsWheelPressRef.current;

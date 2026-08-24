@@ -123,6 +123,33 @@ describe('scope setter gesture-level undo', () => {
     expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(0);
   });
 
+  it('an undo mid-drag closes the gesture instead of splitting the rest per move', () => {
+    const { plotId } = scoped();
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().beginScopeGesture();
+    useStore.getState().setPlotManPosition(plotId, 40);
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+
+    // Ctrl+Z mid-drag: the revert drops the flag...
+    useStore.getState().undo();
+    expect(useStore.getState().scopeGesture).toBe(false);
+    expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(0);
+
+    // ...and ScopePanel cancels its plot drag on exactly that fall, so no
+    // later pointermove reaches setPlotManPosition again: there is no b, c
+    // continuation to commit per frame off a stale anchor. The teardown
+    // closes nothing new; the gesture stayed one entry, consumed by the undo.
+    useStore.getState().endScopeGesture();
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+
+    // A setter after the cancel is a fresh discrete interaction and owns
+    // exactly one entry of its own.
+    useStore.getState().setPlotManPosition(plotId, 80);
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(80);
+  });
+
   it('redo resets the gesture flag if it was left raised', () => {
     const { plotId } = scoped();
     useStore.getState().beginScopeGesture();
