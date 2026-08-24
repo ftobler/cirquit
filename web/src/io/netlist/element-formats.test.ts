@@ -2633,6 +2633,31 @@ describe('ota file format', () => {
     expect(tokens[1]).toBe('0_0_40_12_0_0_0.5');
   });
 
+  it('an edited supply on a loaded OTA rewrites only its own rail token', () => {
+    // The crystal precedent (OVERVIEW row 412): a carried child dump that a
+    // param owns is re-derived from it on save, so a live supply edit reaches
+    // the file instead of being swallowed by the verbatim token list. The
+    // sixteen transistor saves have no param owner and stay byte-for-byte.
+    const [e] = parseCircuit(otaLine).elements;
+    e.params.posVolt = 20;
+    const tokens = childTokens(lineFor(e));
+    expect(tokens[1]).toBe('0_0_40_20_0_0_0.5');
+    expect(tokens[0]).toBe('0_0_40_-9_0_0_0.5');
+    expect(tokens.slice(2)).toEqual(otaLine.split(/\s+/).slice(8));
+  });
+
+  it('an empty rail supply field keeps the +/-9 V defaults', () => {
+    // A trailing underscore leaves the maxVoltage field '', which Number('')
+    // would happily turn into 0 V. An empty string is a missing value here,
+    // not a zero-volt supply.
+    const f = otaLine.split(/\s+/);
+    f[6] = '0_0_40__0_0_0.5';
+    f[7] = '0_0_40__0_0_0.5';
+    const [e] = parseCircuit(f.join(' ')).elements;
+    expect(e.params.negVolt).toBe(-9);
+    expect(e.params.posVolt).toBe(9);
+  });
+
   it('guards a non-finite supply back to the defaults', () => {
     // A param edited to NaN must not write `NaN` into the rail token: upstream
     // would parse it as a NaN supply and the rail would never settle

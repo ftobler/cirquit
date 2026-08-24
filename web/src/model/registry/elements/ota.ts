@@ -18,9 +18,10 @@
  * children's `maxVoltage`. On load they are read back off those same rail
  * dumps' maxVoltage field, exactly as upstream does (OTAElm.java:39-43): the
  * saved values ARE the supplies, so a part saved at other rails reloads at
- * them instead of falling back to +/-9. They are also written back, though,
- * whenever there are no carried tokens to re-emit (otaChildTokens below), so
- * a freshly placed OTA saves its real supplies.
+ * them instead of falling back to +/-9. They are also re-derived into the two
+ * rail tokens on every save, the crystal's re-derive-what-a-param-owns
+ * pattern, so a supply edit reaches the file even on a part loaded with
+ * carried tokens; the sixteen transistor tokens stay verbatim.
  */
 
 import {
@@ -171,15 +172,21 @@ function otaChildTokens(e: CircuitElement): string[] {
 
 /** The supply a rail child's dump token carries: field 3 of
  *  `flags_waveform_frequency_maxVoltage_...` (VoltageElm.java:69-75), the
- *  same value upstream reads back into negVolt/posVolt after a load. A token
- *  that is missing, too short or carries a non-finite number answers
- *  undefined so the element keeps its +/-9 V defaults rather than inheriting
- *  garbage (upstream's reader would throw and drop the element instead). */
+ *  same value upstream reads back into negVolt/posVolt after a load. A
+ *  missing or non-finite value answers undefined so the element keeps its
+ *  +/-9 V defaults rather than inheriting garbage. An empty field counts as
+ *  missing too: `Number('')` is 0, and a trailing underscore must not read
+ *  as a 0 V supply. Upstream is more forgiving than throwing here: its rail
+ *  reader wraps all six fields in one try/catch, so a short or malformed
+ *  token just leaves whatever the constructor set (5 V), and only a wholly
+ *  absent token throws in loadComposite (VoltageElm.java:69-78,
+ *  CompositeElm.java:85-91). */
 function railSupply(token: string | undefined): number | undefined {
   if (token === undefined) {
     return undefined;
   }
-  const volts = Number(token.split('_')[3]);
+  const field = token.split('_')[3];
+  const volts = field === '' ? Number.NaN : Number(field);
   return Number.isFinite(volts) ? volts : undefined;
 }
 
@@ -250,8 +257,8 @@ export const OTA_DEF: ElementDef = {
     e.model = t;
     // Upstream reads negVolt off rail child 0 and posVolt off child 1 after a
     // load (OTAElm.java:39-43): the saved values ARE the supplies. Only the
-    // params move; the token list above stays untouched so a save round-trips
-    // byte-for-byte. A short or malformed list leaves the +/-9 V defaults.
+    // params move here; the token list is refreshed from them at dump time. A
+    // short or malformed list leaves the +/-9 V defaults.
     const neg = railSupply(t[0]);
     if (neg !== undefined) {
       e.params.negVolt = neg;
@@ -261,11 +268,26 @@ export const OTA_DEF: ElementDef = {
       e.params.posVolt = pos;
     }
   },
-  // A carried token list always wins, so a loaded file round-trips
-  // byte-for-byte. The fallback is keyed on an empty list rather than on "is
+  // The carried token list is the base, so the sixteen transistor dumps stay
+  // byte-for-byte; the fallback is keyed on an empty list rather than on "is
   // this element fresh" so that a bare, already-broken `402 ... flags` line
   // gets repaired on the next save instead of staying unloadable upstream.
-  dump: (e) => (Array.isArray(e.model) && e.model.length > 0 ? e.model : otaChildTokens(e)),
+  // The two rail slots are then re-derived from their params, upstream's
+  // setEditValue + initOTA pattern (OTAElm.java:183-188): a supply edited
+  // after a load must reach the file, and re-derivation reproduces the loaded
+  // bytes when nothing changed. Only slots that exist are rewritten, so a
+  // short carried list neither grows nor has a transistor slot overwritten.
+  dump: (e) => {
+    const tokens =
+      Array.isArray(e.model) && e.model.length > 0 ? [...e.model] : otaChildTokens(e);
+    if (tokens[0] !== undefined) {
+      tokens[0] = railToken(e.params.negVolt, DEF_NEG_VOLT);
+    }
+    if (tokens[1] !== undefined) {
+      tokens[1] = railToken(e.params.posVolt, DEF_POS_VOLT);
+    }
+    return tokens;
+  },
   fields: [
     { name: 'posVolt', label: 'Positive Supply Voltage', unit: 'V' },
     { name: 'negVolt', label: 'Negative Supply Voltage', unit: 'V' },
