@@ -2721,9 +2721,16 @@ function createAppStore() {
       // The outer level's undo histories are suspended here for the drill-in,
       // upstream's pushContext stash (CirSim.java:476-482). Both loads of the
       // round trip wipe the live stacks unconditionally, so without this every
-      // pre-drill edit would come home unundoable.
-      undo: s.undoStack,
-      redo: s.redoStack,
+      // pre-drill edit would come home unundoable. Copied, not aliased, like
+      // the session caches: a stack mutated between here and its restore must
+      // not reach back into this entry.
+      undo: [...s.undoStack],
+      redo: [...s.redoStack],
+      // The app's own clean check, evaluated before anything is loaded: live
+      // charge alone never reads dirty against lastSaved, so a charged but
+      // unsaved-looking circuit counts as clean here exactly as it does in
+      // App.tsx's beforeunload guard.
+      cleanAtEnter: !hasUnsavedChanges(s.lastSaved, s.toNetlist()),
     };
     const stack = s.subcircuitStack;
     // noBaseline keeps lastSaved on the outer document for the whole session.
@@ -2776,11 +2783,20 @@ function createAppStore() {
       // The reload also wiped both undo stacks; the suspended outer histories
       // come back here (upstream's popContext, CirSim.java:500-506), so
       // pre-drill edits stay undoable after a look-and-return with no edits.
+      //
+      // The baseline follows only when the document was clean at enter. The
+      // restored tokens carry the live charge as configured params, so the
+      // non-live text has moved off the old baseline; re-recording it keeps
+      // that round trip reading clean, the convention that running a circuit
+      // must never arm hasUnsavedChanges (App.tsx). A document dirty before
+      // the drill-in keeps its baseline, so its real edits stay flagged.
+      const nextLastSaved = top.cleanAtEnter ? get().toNetlist() : s.lastSaved;
       set({
         view: top.view,
         undoStack: top.undo,
         redoStack: top.redo,
         subcircuitStack: stack.slice(0, -1),
+        lastSaved: nextLastSaved,
         // A prior refused exit may have left a message here; a successful return
         // clears it so the Escape/breadcrumb alert call sites stay silent.
         subcircuitError: null,

@@ -412,6 +412,60 @@ describe('drill-in session integrity', () => {
     expect(useStore.getState().undoStack).toHaveLength(0);
   });
 
+  it('a suspended redo future survives a look-and-return and redo re-applies it', () => {
+    useStore.getState().loadNetlist(
+      HEADER + 'r 0 0 160 0 0 1000\n410 0 0 64 64 1 myCirc\n' + MODEL_LINE + '\n',
+    );
+    // Delete then undo: a real redo future hangs over the outer document.
+    const resistor = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([resistor.id]);
+    useStore.getState().deleteSelected();
+    useStore.getState().undo();
+    expect(useStore.getState().redoStack).toHaveLength(1);
+    expect(useStore.getState().elements.some((e) => e.kind === 'resistor')).toBe(true);
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    useStore.getState().exitSubcircuit();
+
+    expect(useStore.getState().subcircuitStack).toHaveLength(0);
+    // The future came back with the rest of the suspended history.
+    expect(useStore.getState().redoStack).toHaveLength(1);
+    useStore.getState().redo();
+    const redone = useStore.getState();
+    expect(redone.undoStack).toHaveLength(1);
+    expect(redone.elements.some((e) => e.kind === 'resistor')).toBe(false);
+    expect(redone.elements.some((e) => e.kind === 'customComposite')).toBe(true);
+  });
+
+  it('an edited exit drops the redo future', () => {
+    useStore.getState().loadNetlist(
+      HEADER + 'r 0 0 160 0 0 1000\n410 0 0 64 64 1 myCirc\n' + PARALLEL_LINE + '\n',
+    );
+    const outerResistor = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([outerResistor.id]);
+    useStore.getState().deleteSelected();
+    useStore.getState().undo();
+    expect(useStore.getState().redoStack).toHaveLength(1);
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    const inner = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([inner.id]);
+    useStore.getState().deleteSelected();
+    useStore.getState().exitSubcircuit();
+
+    const s = useStore.getState();
+    expect(s.subcircuitStack).toHaveLength(0);
+    // The redo future is gone: the model change replaced history wholesale and
+    // nothing can follow it, the way every edit clears the future. The only
+    // entry left is this exit's baseline, since the delete had already been
+    // undone when the drill-in suspended an empty outer stack.
+    expect(s.redoStack).toHaveLength(0);
+    useStore.getState().redo();
+    expect(useStore.getState().elements.some((e) => e.kind === 'resistor')).toBe(true);
+    expect(useStore.getState().undoStack).toHaveLength(1);
+    expect(useStore.getState().subcircuitStack).toHaveLength(0);
+  });
+
   it('the entry snapshot carries the live reactive charge through a look-and-return', () => {
     useStore.getState().loadNetlist(
       HEADER + 'c 0 0 32 0 4 0.00001 5 0 0\n410 0 64 64 128 1 myCirc\n' + MODEL_LINE + '\n',
@@ -485,6 +539,63 @@ describe('drill-in document integrity', () => {
     const s = useStore.getState();
     expect(s.lastSaved).toBe(baseline);
     expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(false);
+  });
+
+  it('a clean charged circuit comes home reading clean with its charge intact', () => {
+    useStore.getState().loadNetlist(
+      HEADER + 'c 0 0 32 0 4 0.00001 5 0 0\n410 0 64 64 128 1 myCirc\n' + MODEL_LINE + '\n',
+    );
+    // Running the sim charged the capacitor; by app convention live charge
+    // alone never arms the close guard, so the document still reads clean.
+    const capId = useStore.getState().elements.find((e) => e.kind === 'capacitor')!.id;
+    useStore.getState().setLiveStateProvider(() => ({ [capId]: { voltDiff: 8.16 } }));
+    expect(hasUnsavedChanges(useStore.getState().lastSaved, useStore.getState().toNetlist())).toBe(
+      false,
+    );
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    useStore.getState().exitSubcircuit();
+
+    const s = useStore.getState();
+    expect(s.subcircuitStack).toHaveLength(0);
+    // The operating point rode home inside the restored tokens...
+    expect(s.toNetlist()).toContain('c 0 0 32 0 4 0.00001 8.16 0 0');
+    // ...and the baseline followed them, so the round trip never armed the
+    // unsaved-changes guard: the reload moved the params off the old baseline,
+    // and leaving it there would flag a circuit nobody edited.
+    expect(s.lastSaved).toBe(s.toNetlist());
+    expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(false);
+  });
+
+  it('a dirty charged circuit keeps its baseline through a look-and-return', () => {
+    useStore.getState().loadNetlist(
+      HEADER +
+        'r 0 0 160 0 0 1000\n' +
+        'c 32 0 64 0 4 0.00001 5 0 0\n410 0 64 64 128 1 myCirc\n' +
+        MODEL_LINE +
+        '\n',
+    );
+    // A real outer edit first: this one IS unsaved work.
+    const resistor = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([resistor.id]);
+    useStore.getState().deleteSelected();
+    // And a running sim on top of it.
+    const capId = useStore.getState().elements.find((e) => e.kind === 'capacitor')!.id;
+    useStore.getState().setLiveStateProvider(() => ({ [capId]: { voltDiff: 8.16 } }));
+    const baseline = useStore.getState().lastSaved;
+    expect(hasUnsavedChanges(baseline, useStore.getState().toNetlist())).toBe(true);
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    useStore.getState().exitSubcircuit();
+
+    const s = useStore.getState();
+    expect(s.subcircuitStack).toHaveLength(0);
+    // The charge came home...
+    expect(s.toNetlist()).toContain('c 32 0 64 0 4 0.00001 8.16 0 0');
+    // ...but the baseline did not move: the deletion is genuine unsaved work,
+    // and rebasing would silently bless it.
+    expect(s.lastSaved).toBe(baseline);
+    expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(true);
   });
 
   it('an outer edit keeps the close guard armed through enter and exit', () => {

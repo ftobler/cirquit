@@ -77,6 +77,14 @@ export interface SubcircuitStackEntry {
    *  them with it, so nothing stale restores onto the wrong document. */
   undo: Snapshot[];
   redo: Snapshot[];
+  /** Whether the enclosing document read clean against `lastSaved` at enter,
+   *  by the app's own non-live comparison (App.tsx's beforeunload guard). The
+   *  exit reload bakes live reactive charge into the restored params, so on a
+   *  no-edit return of a clean circuit the baseline must move to that restored
+   *  text or the round trip arms hasUnsavedChanges with no user edit. A
+   *  document already dirty at enter keeps its baseline, so its real edits
+   *  stay flagged after coming home. */
+  cleanAtEnter: boolean;
 }
 
 /** A point-in-time copy of everything undo needs to restore. Settings and view
