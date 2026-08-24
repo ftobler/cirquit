@@ -3156,9 +3156,14 @@ function createAppStore() {
   revertScrollValuePopover: () => {
     const p = get().scrollValuePopover;
     if (!p) return;
-    // Restore the opening value. The undo baseline taken on open keeps the
-    // whole session one undo step either way (ScrollValuePopup.close(false)).
-    get().setParam(p.session.id, p.session.param, p.session.original);
+    // Restore the opening value only when a step moved away from it: upstream
+    // guards setElmValue with if (i != lastidx) (ScrollValuePopup.java:202),
+    // so Space on an untouched popup must not bump paramRevision and queue an
+    // identical engine write. The undo baseline taken on open keeps the whole
+    // session one undo step either way (ScrollValuePopup.close(false)).
+    if (selectionValue(p.session) !== p.session.original) {
+      get().setParam(p.session.id, p.session.param, p.session.original);
+    }
     set({ scrollValuePopover: null });
   },
 

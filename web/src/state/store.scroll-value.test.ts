@@ -107,14 +107,32 @@ describe('closeScrollValuePopover', () => {
 });
 
 describe('revertScrollValuePopover', () => {
-  it('restores the opening value and clears the field', () => {
+  it('restores the opening value and clears the field with exactly the stepped writes', () => {
     const { id } = openOn();
     useStore.getState().stepScrollValuePopover(200);
+    const before = useStore.getState();
 
     useStore.getState().revertScrollValuePopover();
 
     expect(useStore.getState().scrollValuePopover).toBeNull();
     expect(useStore.getState().elements.find((e) => e.id === id)?.params.resistance).toBe(1000);
+    // One revision bump from the step itself; the revert adds none beyond it
+    // once the selection differs and one restore write goes out.
+    expect(useStore.getState().paramRevision).toBe(before.paramRevision + 1);
+  });
+
+  it('with nothing stepped, Space commits nothing: no paramRevision bump', () => {
+    // Upstream guards setElmValue with if (i != lastidx)
+    // (ScrollValuePopup.java:202): reverting an untouched popup must not
+    // queue an identical engine write.
+    const before = useStore.getState();
+    openOn();
+
+    useStore.getState().revertScrollValuePopover();
+
+    const after = useStore.getState();
+    expect(after.scrollValuePopover).toBeNull();
+    expect(after.paramRevision).toBe(before.paramRevision);
   });
 
   it('is a no-op with no session open', () => {
