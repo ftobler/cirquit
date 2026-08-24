@@ -92,6 +92,19 @@ export function scopeDrawPayload(
   };
 }
 
+/**
+ * The id list a frame paints as selected. While a move drag is in flight that
+ * is the group the drag froze at pointer-down: stepMoveDrag moves those ids no
+ * matter what later selects do, so the highlight and the move handles must
+ * follow them too, or a programmatic select landing mid-gesture (keyboard
+ * events fire while the button is down) paints handles onto parts that are not
+ * moving. With no move armed the live selection drives, exactly as before.
+ * Pure, so the choice is testable without a canvas.
+ */
+export function paintedSelection(drag: Drag, selectedIds: number[]): number[] {
+  return drag.mode === 'move' ? drag.ids : selectedIds;
+}
+
 export function useFrameLoop(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   engine: SimEngine | null,
@@ -440,6 +453,10 @@ export function useFrameLoop(
           // many elements draw.
           const scopeDraw = scopeDrawPayload(engine, settings, dark);
 
+          // One selection list paints the whole frame: the frozen group while
+          // a move drag is armed (paintedSelection), else the live selection.
+          const painted = paintedSelection(dragRef.current, selectedIds);
+
           for (const e of elements) {
             const def = defFor(e.kind);
             if (!def) continue;
@@ -576,7 +593,7 @@ export function useFrameLoop(
               conventional: settings.conventional,
               euroResistors: settings.euroResistors,
               euroGates: settings.euroGates,
-              selected: selectedIds.includes(e.id),
+              selected: painted.includes(e.id),
               hovered: hoveredId === e.id,
               onHighlightedNet,
               voltageRange: settings.voltageRange,
@@ -732,7 +749,9 @@ export function useFrameLoop(
             // drawHandles on a body drag (CircuitElm.java:747-761). None is the
             // grabbed point: the drag moves the element as a unit, so no handle
             // is enlarged.
-            for (const id of selectedIds) {
+            // The frozen group, not the live selection: the drag moves what
+            // it froze, so the handles stay on it (paintedSelection).
+            for (const id of painted) {
               const moved = elements.find((e) => e.id === id);
               if (!moved) continue;
               const posts = handlePoints(moved);

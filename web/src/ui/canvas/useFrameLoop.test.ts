@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { SimEngine } from '../../engine/simulator';
-import { DEFAULT_SETTINGS } from '../../model/types';
-import { buildReport, frameSafely, scopeDrawPayload } from './useFrameLoop';
+import { DEFAULT_SETTINGS, type Point } from '../../model/types';
+import type { Drag } from './useCanvasInteractions';
+import {
+  buildReport,
+  frameSafely,
+  paintedSelection,
+  scopeDrawPayload,
+} from './useFrameLoop';
 
 describe('frameSafely', () => {
   it('reports a throw instead of letting it escape the loop', () => {
@@ -98,5 +104,28 @@ describe('scopeDrawPayload', () => {
 
   it('builds nothing without an engine, touching no clock', () => {
     expect(scopeDrawPayload(null, DEFAULT_SETTINGS, false)).toBeUndefined();
+  });
+});
+
+describe('paintedSelection', () => {
+  const at = (x: number, y: number): Point => ({ x, y });
+
+  it('a move drag paints its frozen ids even when the live selection moved on', () => {
+    // stepMoveDrag translates the group frozen at pointer-down, so a select
+    // landing mid-gesture must not pull the highlight or the move handles
+    // onto elements the drag is not carrying.
+    const drag: Drag = { mode: 'move', ids: [1, 2], last: at(0, 0), moved: true };
+    expect(paintedSelection(drag, [3])).toEqual([1, 2]);
+  });
+
+  it('with no move armed the frame paints the live selection', () => {
+    expect(paintedSelection({ mode: 'none' }, [3])).toEqual([3]);
+    expect(
+      paintedSelection(
+        { mode: 'select', start: at(0, 0), current: at(8, 8), shift: false },
+        [3],
+      ),
+    ).toEqual([3]);
+    expect(paintedSelection({ mode: 'rowcol', axis: 'col', captured: [], last: at(0, 0) }, [3])).toEqual([3]);
   });
 });
