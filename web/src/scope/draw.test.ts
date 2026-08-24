@@ -16,6 +16,7 @@ import {
   isDrawable,
   PLOT_COLORS,
   plotColors,
+  sameUnits,
   trailFadeAlpha,
   trailSliderToSteps,
   trailStepsToSlider,
@@ -1254,5 +1255,21 @@ describe('drawGridLines visibility', () => {
 
   it('same-units scopes always get their division lines', () => {
     expect(horizontalCount(true, false)).toBeGreaterThan(1);
+  });
+});
+
+describe('sameUnits', () => {
+  it('groups transistor subvalues with their unit family, like upstream plot.units', () => {
+    // Upstream compares ScopePlot.units (Scope.java:657-661), not the plotted
+    // value: TransistorElm maps Vbe/Vbc/Vce to UNITS_V and Ib/Ic/Ie to UNITS_A
+    // (TransistorElm.java:595-602). A V+Vbe scope must still relocate zero,
+    // and an Ib+Ic scope must count as mixed with nothing else.
+    expect(sameUnits([plot(1, 'voltage'), plot(2, 'vbe')])).toBe(true);
+    expect(sameUnits([plot(1, 'ib'), plot(2, 'ic')])).toBe(true);
+    expect(sameUnits([plot(1, 'current'), plot(2, 'ie')])).toBe(true);
+    expect(sameUnits([plot(1, 'voltage')])).toBe(true);
+    expect(sameUnits([plot(1, 'voltage'), plot(2, 'current')])).toBe(false);
+    expect(sameUnits([plot(1, 'power'), plot(2, 'charge')])).toBe(false);
+    expect(sameUnits([plot(1, 'ib'), plot(2, 'vce')])).toBe(false);
   });
 });

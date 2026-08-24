@@ -271,9 +271,13 @@ export interface PlotTransform {
 
 /** Upstream's allPlotsSameUnits (Scope.java:656-661): every plot in the list
  *  samples the same unit family. Gates zero relocation and the horizontal
- *  gridlines, so a V+I scope never stretches one trace around the other. */
-function sameUnits(plots: ScopePlot[]): boolean {
-  return plots.every((p) => p.value === plots[0].value);
+ *  gridlines, so a V+I scope never stretches one trace around the other.
+ *  Families, not values: upstream compares ScopePlot.units, where TransistorElm
+ *  maps Vbe/Vbc/Vce to UNITS_V and Ib/Ic/Ie to UNITS_A, so a V+Vbe scope still
+ *  relocates zero and an Ib+Ic one keeps its division lines (Scope.java:357,
+ *  TransistorElm.java:595-602). Exported for the headless parity tests. */
+export function sameUnits(plots: DrawablePlot[]): boolean {
+  return plots.every((p) => UNIT[p.value] === UNIT[plots[0].value]);
 }
 
 function transformFor(
