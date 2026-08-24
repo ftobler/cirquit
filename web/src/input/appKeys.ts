@@ -80,10 +80,12 @@ export function handleAppKeyDown(s: AppState, ev: AppKeyEvent, host: AppKeyHost)
   // With editing disabled the edit keys are dropped, not ignored: the status
   // bar explains why nothing happened (CommandManager.java:22-24). View and
   // file commands (zoom, save, open) stay live, and an unmatched key keeps
-  // its browser default, notably Ctrl+= and Ctrl+- page zoom.
+  // its browser default, notably Ctrl+= and Ctrl+- page zoom. True still
+  // comes back: the key matched, so the browser default (Space and arrows
+  // scroll the page) must die with the refusal.
   if (!s.settings.editable && EDIT_ACTIONS.has(action.type)) {
     s.setStatus('Editing disabled. Re-enable from the Options menu.');
-    return false;
+    return true;
   }
   // A held rotate key turns once, not at the key-repeat rate: Space is rotate
   // now, and a resting thumb would otherwise spin the part. The nudge, delete

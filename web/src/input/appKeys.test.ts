@@ -182,6 +182,38 @@ describe('with every surface closed', () => {
   });
 });
 
+describe('with editing disabled', () => {
+  it('a dropped edit key is consumed after the status message, so the page does not scroll', () => {
+    const id = addResistor();
+    useStore.getState().select([id]);
+    useStore.getState().updateSettings({ editable: false });
+    const host = recordingHost();
+
+    // Space scrolls the page by default; Delete's default is inert but the
+    // contract is the same: a matched key under Disable Editing is consumed.
+    expect(handleAppKeyDown(useStore.getState(), key({ key: 'Delete' }), host)).toBe(true);
+    expect(handleAppKeyDown(useStore.getState(), key({ key: ' ' }), host)).toBe(true);
+    expect(useStore.getState().status).toBe('Editing disabled. Re-enable from the Options menu.');
+
+    // The circuit behind the message is untouched.
+    expect(useStore.getState().elements).toHaveLength(1);
+    expect(useStore.getState().tool).toBeNull();
+    expect(host.calls).toEqual([]);
+  });
+
+  it('an unmatched key keeps its browser default', () => {
+    useStore.getState().updateSettings({ editable: false });
+    expect(handleAppKeyDown(useStore.getState(), key({ key: '?' }), recordingHost())).toBe(false);
+  });
+
+  it('view commands stay live', () => {
+    useStore.getState().updateSettings({ editable: false });
+    const before = useStore.getState().view.scale;
+    expect(handleAppKeyDown(useStore.getState(), key({ key: '+' }), recordingHost())).toBe(true);
+    expect(useStore.getState().view.scale).toBeGreaterThan(before);
+  });
+});
+
 describe('Escape ownership', () => {
   it('one Escape with the menubar open closes only the menu: shortcuts and drill-in stand down', () => {
     // With a dropdown dropped, plain keys and Delete must not act behind it,
