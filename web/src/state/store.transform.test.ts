@@ -465,17 +465,49 @@ describe('rotate under an in-flight pointer gesture', () => {
     expect(useStore.getState().undoStack.length).toBe(before + 1);
   });
 
-  it('the gesture flag is transient: a snapshot restore never touches it', () => {
-    // Unlike scopeGesture, an element gesture outlives an undo: the canvas
-    // drag ref is still armed and the pointer is still down, so only the
-    // canvas teardown may lower the flag. It must not be part of Snapshot.
-    grabbed();
-    useStore.getState().beginElementGesture('place');
-    useStore.getState().rotateSelection();
-    const banked = useStore.getState().elementGesture;
+  it('undo drops an in-flight element gesture', () => {
+    // Keyboard undo fires while the drag button is still held (appKeys applies
+    // it unconditionally mid-drag), and an in-flight gesture cannot survive a
+    // state revert: left raised it would swallow the next rotate's commit and
+    // leave the drag mutating with no fresh baseline.
+    const id = grabbed();
     useStore.getState().commit();
+    useStore.getState().beginElementGesture('move');
+    useStore.getState().updateElement(id, { x1: 16 });
+    expect(useStore.getState().elementGesture).toEqual({ kind: 'move', placeTurns: 0 });
+
     useStore.getState().undo();
-    expect(useStore.getState().elementGesture).toEqual(banked);
+    expect(useStore.getState().elementGesture).toBeNull();
+  });
+
+  it('redo drops an in-flight element gesture too', () => {
+    grabbed();
+    useStore.getState().commit();
+    useStore.getState().beginElementGesture('move');
+    useStore.getState().undo();
+    // A Ctrl+Shift+Z landing on a drag still armed must not leave the flag
+    // raised over the future it just brought back.
+    useStore.setState({ elementGesture: { kind: 'move', placeTurns: 0 } });
+    expect(useStore.getState().elementGesture).toEqual({ kind: 'move', placeTurns: 0 });
+
+    useStore.getState().redo();
+    expect(useStore.getState().elementGesture).toBeNull();
+  });
+
+  it('a rotate after a mid-drag undo costs exactly one own entry', () => {
+    const id = grabbed();
+    useStore.getState().commit();
+    useStore.getState().beginElementGesture('move');
+    useStore.getState().undo();
+    // The undo cleared the selection like any revert; the user re-selects and
+    // turns. With no gesture armed the command must commit normally again,
+    // not ride the dead gesture branch into a free mutation.
+    useStore.getState().select([id]);
+    const before = useStore.getState().undoStack.length;
+
+    useStore.getState().rotateSelection();
+
+    expect(useStore.getState().undoStack.length).toBe(before + 1);
   });
 
   it('a selection the menu greys out is a no-op in every gesture state', () => {

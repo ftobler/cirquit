@@ -3087,9 +3087,11 @@ function createAppStore() {
       undoStack: s.undoStack.slice(0, -1),
       redoStack: [...s.redoStack, clone(s)],
       selectedIds: [],
-      // An in-flight gesture cannot survive a state revert; drop the flag so it
-      // does not strand a single undo entry open.
+      // An in-flight gesture cannot survive a state revert: a scope drag would
+      // keep mutating past its reverted baseline and an element gesture would
+      // swallow the next rotate's commit, so both flags drop with the state.
       scopeGesture: false,
+      elementGesture: null,
       ...bumpRevision(s),
     });
     // The `.` lines that came back define library models, so the session half
@@ -3111,7 +3113,9 @@ function createAppStore() {
       redoStack: s.redoStack.slice(0, -1),
       undoStack: [...s.undoStack, clone(s)],
       selectedIds: [],
+      // Same gesture teardown as undo.
       scopeGesture: false,
+      elementGesture: null,
       ...bumpRevision(s),
     });
     syncSessionModels(s.passthrough, next.passthrough);
