@@ -18,7 +18,7 @@ import {
   parseCompositeModelLine,
   registerSessionModel,
 } from '../io/subcircuits';
-import type { CircuitElement } from './types';
+import type { CircuitElement, Point } from './types';
 
 const element = (
   kind: string,
@@ -742,6 +742,22 @@ describe('selection group pivot', () => {
     expect(selectionTurnPivot(pair)).toEqual({ x: 80, y: 16 });
   });
 
+  it('truncates a negative-span bounding box toward zero, as Java division does', () => {
+    // The pair spans x -163..0 and y -133..0, so both centres divide an odd
+    // negative sum: truncation gives -81 and -66, where a Math.floor
+    // regression would answer -82 and -67.
+    const pair = [element('wire', -163, 0, 0, 0), element('wire', 0, -133, 0, 0)];
+    expect(selectionMirrorCentre(pair)).toBe(-81);
+    // The snapped axis is snapGrid(-81 + 66) = -16, so the pivot is
+    // (-66 - 16, -66); turning about it reproduces upstream's composed flips.
+    expect(selectionTurnPivot(pair)).toEqual({ x: -82, y: -66 });
+    const turned = rotateElement(pair[0], selectionTurnPivot(pair)!);
+    // Cross-checked against CommandManager.rotate by hand: center2 = -132,
+    // xmy = -16, so (x,y) lands on (y - 16, -148 - x).
+    expect([turned.x1, turned.y1]).toEqual([-16, 15]);
+    expect([turned.x2, turned.y2]).toEqual([-16, -148]);
+  });
+
   it('turns the stacked pair rigidly to the upstream coordinates', () => {
     // CommandManager.rotate on this exact pair puts R1 at x=116 and R2 at
     // x=148; the invariant form is the 32-unit column gap with no coordinate
@@ -751,8 +767,30 @@ describe('selection group pivot', () => {
     const t2 = rotateElement(r2, pivot);
     expect([t1.x1, t1.y1, t1.x2, t1.y2]).toEqual([116, 148, 116, 84]);
     expect([t2.x1, t2.y1, t2.x2, t2.y2]).toEqual([148, 148, 148, 84]);
-    expect(new Set([t1.x1, t1.y1, t2.x1, t2.y1]).size).toBe(2);
+    // The invariant: each element collapses to one column and the columns are
+    // distinct, 32 apart. Endpoint coordinates may still coincide across the
+    // elements (t1's top row is t2's column value here), so only the x axes
+    // say "no overlap".
+    expect(t1.x1).toBe(t1.x2);
+    expect(t2.x1).toBe(t2.x2);
     expect(Math.abs(t1.x1 - t2.x1)).toBe(32);
+  });
+
+  it('turns a non-collinear three-element L rigidly, every pairwise distance kept', () => {
+    // Rigidity in general, not an invariant tailored to one axis of the
+    // stacked pair: two perpendicular bars and a diagonal brace turn about
+    // the shared pivot, and all three centroid distances must survive
+    // exactly. The squared distances are integers, so toBe is exact.
+    const arms = [element('wire', 0, 0, 160, 0), element('wire', 0, 0, 0, 160), element('wire', 160, 0, 320, 160)];
+    const pivot = selectionTurnPivot(arms)!;
+    expect(pivot).toEqual({ x: 160, y: 80 });
+    const centroid = (e: CircuitElement) => ({ x: (e.x1 + e.x2) / 2, y: (e.y1 + e.y2) / 2 });
+    const sq = (p: Point, q: Point) => (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
+    const before = arms.map(centroid);
+    const after = arms.map((e) => rotateElement(e, pivot)).map(centroid);
+    for (const [i, j] of [[0, 1], [0, 2], [1, 2]] as const) {
+      expect(sq(after[i], after[j])).toBe(sq(before[i], before[j]));
+    }
   });
 
   it('keeps the SPDT throw where it was under a group pivot', () => {
@@ -805,5 +843,21 @@ describe('selection group pivot', () => {
       const e = { ...element(kind, x1, y1, x2, y2), state: 1, params: { position: 1 } };
       expect(mirrorElement(e, (e.x1 + e.x2) / 2)).toStrictEqual(mirrorElement(e));
     }
+    // Both DPDT orientations spelled out: the fan shift rides the shared-axis
+    // refactor unchanged, down to the throw reversal.
+    const horizontal = { ...element('dpdtSwitch', 0, 0, 96, 0), state: 1, params: { position: 1 } };
+    const mh = mirrorElement(horizontal, 48);
+    expect([mh.x1, mh.y1, mh.x2, mh.y2]).toEqual([96, 48, 0, 48]);
+    expect(mh.state).toBe(0);
+    expect(mh.params.position).toBe(0);
+    const vertical = {
+      ...element('dpdtSwitch', 48, -48, 48, 48),
+      state: 1,
+      params: { position: 1 },
+    };
+    const mv = mirrorElement(vertical, 48);
+    expect([mv.x1, mv.y1, mv.x2, mv.y2]).toEqual([96, -48, 96, 48]);
+    expect(mv.state).toBe(0);
+    expect(mv.params.position).toBe(0);
   });
 });

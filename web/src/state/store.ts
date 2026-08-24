@@ -1218,9 +1218,9 @@ function createAppStore() {
     if (gesture === null) {
       // One pivot for the whole selection: upstream walks the bounding box
       // once and turns every part about it (CommandManager.prepareFlip,
-      // CommandManager.java:385-428), so a multi-select comes out rigid. A
-      // lone element keeps upstreamTurn: its grid-snapped axis is what holds
-      // odd-defaultLength kinds to the grid.
+      // CommandManager.java:385-405, rotate :419-431), so a multi-select
+      // comes out rigid. A lone element keeps upstreamTurn: its grid-snapped
+      // axis is what holds odd-defaultLength kinds to the grid.
       const pivot = selectionTurnPivot(selectedElements());
       transformSelected(canRotate, pivot ? (e) => rotateElement(e, pivot) : rotateElement);
       return;
@@ -1240,7 +1240,7 @@ function createAppStore() {
   },
   mirrorSelection: () => {
     // The analogous shared axis: upstream reflects every selected part across
-    // the one bbox centre (CommandManager.java:403-411), so the group mirrors
+    // the one bbox centre (CommandManager.java:408-417), so the group mirrors
     // as a body instead of each part folding about its own centre.
     const centre = selectionMirrorCentre(selectedElements());
     transformSelected(

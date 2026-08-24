@@ -313,6 +313,35 @@ describe('the selection group pivot', () => {
     expect(mo.y1 - mt.y1).toBe(32);
   });
 
+  it('mirrors a transistor and SPDT about the shared axis, reversing the lever once', () => {
+    // The mirror's single-reversal semantics survive the shared axis: the
+    // lever reverses once and the parity bumps once, exactly as a lone
+    // switch's mirror does, while both bodies reflect about the group centre.
+    const t = addAt('transistor', 0, 0, 160, 0, { pnp: 1 });
+    const sw = useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 200,
+      y1: 160,
+      x2: 360,
+      y2: 160,
+      flags: 0,
+      params: { position: 1, momentary: 0, throwCount: 2, link: 3 },
+      state: 1,
+    });
+    useStore.getState().select([t, sw]);
+
+    useStore.getState().mirrorSelection();
+
+    const [mt, ms] = useStore.getState().elements;
+    expect(ms.state).toBe(0);
+    expect(ms.params.position).toBe(0);
+    expect(ms.params.flipParity).toBe(1);
+    // Reflected about the bounding-box centre x=180, not folded into its own
+    // span (a per-element axis would have kept it inside 200..360).
+    expect([ms.x1, ms.y1, ms.x2, ms.y2]).toEqual([160, 160, 0, 160]);
+    expect([mt.x1, mt.y1, mt.x2, mt.y2]).toEqual([360, 0, 200, 0]);
+  });
+
   it('a lone element keeps the upstreamTurn axis, odd-length kinds included', () => {
     // The single-element command must stay exactly what the Rotate axis
     // finding pinned: the grid-snapped axis that holds odd-defaultLength

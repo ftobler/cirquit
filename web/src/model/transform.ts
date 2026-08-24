@@ -98,7 +98,7 @@ function snapGrid(v: number): number {
 /**
  * The quarter turn a settled selection gets: upstream's rotate, a diagonal
  * flip about the snapped axis `x - y = xmy` followed by a vertical flip about
- * the element's centre line (CommandManager.java:414-429, `flipXY` then
+ * the element's centre line (CommandManager.java:419-431, `flipXY` then
  * `flipY`, CircuitElm.java:688-703). Composed, the two are exactly the turn
  * `turnPointAbout` performs about the element's midpoint, with one difference
  * that is the whole point of doing it this way: the axis is snapped to the
@@ -122,7 +122,7 @@ function upstreamTurn(e: CircuitElement): (p: Point) => Point {
   return (p) => ({ x: p.y + xmy, y: 2 * cy - (p.x - xmy) });
 }
 
-/** The prepareFlip walk (CommandManager.java:385-399): min and max over both
+/** The prepareFlip walk (CommandManager.java:385-405): min and max over both
  *  endpoints of every selected element, then one centre per axis. The centres
  *  truncate because Java's integer division does, and rounding here instead
  *  would drift every odd-span selection by a grid square. */
@@ -143,7 +143,7 @@ function flipCentres(selected: CircuitElement[]): { cx: number; cy: number } {
 /**
  * One shared pivot for a whole selection's quarter turn. Upstream computes a
  * single pivot from the selection bounding box and turns every part about it
- * (prepareFlip plus CommandManager.java:414-428), so a multi-select comes out
+ * (prepareFlip plus CommandManager.java:419-431), so a multi-select comes out
  * as a rigid body instead of each part circling its own midpoint and
  * scrambling the group. The returned point is exactly the one that makes
  * `turnPointAbout(p, pivot, 1)` reproduce upstream's composed
@@ -152,7 +152,8 @@ function flipCentres(selected: CircuitElement[]): { cx: number; cy: number } {
  *
  * Undefined for fewer than two elements on purpose: the single-element
  * command keeps `upstreamTurn`, whose axis shift for odd-defaultLength kinds
- * is documented deliberate behaviour (feature/overview.md, Rotate axis).
+ * is deliberate (c8912da: the snapped axis is what holds such a part to the
+ * grid, at the cost of drifting up to one square per turn).
  */
 export function selectionTurnPivot(selected: CircuitElement[]): Point | undefined {
   if (selected.length < 2) return undefined;
@@ -164,7 +165,7 @@ export function selectionTurnPivot(selected: CircuitElement[]): Point | undefine
 /**
  * One shared axis for a whole selection's mirror: the bounding box centre
  * upstream's mirror command reflects every selected part across
- * (CommandManager.java:403-411), truncated like the turn's, so the group
+ * (CommandManager.java:408-417), truncated like the turn's, so the group
  * mirrors as a body instead of each part folding about its own centre.
  * Undefined for fewer than two elements, leaving the single-element command
  * exactly as it was.
