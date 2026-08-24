@@ -356,6 +356,26 @@ describe('momentary switches', () => {
     releaseHeldMomentary(5, r);
     expect(useStore.getState().elements[0].state).toBe(1);
   });
+
+  it('the release kills a redo future staged by an undo mid-hold', () => {
+    // The press's commit is the hold's undo baseline, but a Ctrl+Z landing
+    // while the finger is still down builds a fresh redo future over which
+    // the entry-free release throw would ride: Ctrl+Shift+Z after the release
+    // would silently rewind it along with everything else.
+    const id = addEl('switch', { params: { position: 1, momentary: 1 }, state: 1 });
+    const r = refs();
+    beginPointerGesture(down(), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
+    expect(hit(id).state).toBe(0); // closed while held
+    useStore.getState().updateElement(id, { x2: 320 });
+    useStore.getState().undo();
+    expect(useStore.getState().redoStack.length).toBe(1);
+    // The revert also restored the rested throw (the snapshot predates the
+    // press), and upstream's one-toggle-per-event mouseUp still runs against
+    // whatever state now stands.
+    releaseHeldMomentary(1, r);
+    expect(hit(id).state).toBe(0);
+    expect(useStore.getState().redoStack).toEqual([]);
+  });
 });
 
 describe('momentary SPDT switches', () => {

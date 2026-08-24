@@ -641,6 +641,20 @@ describe('run-mode mutations kill the stale redo future', () => {
       params: { resistance: 0.0613, i2t: 6.73 },
     });
 
+  const addKeyedMomentary = () =>
+    useStore.getState().addElement({
+      kind: 'switch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      // Resting open, like the pointer tests' momentary: position 1, thrown.
+      params: { position: 1, momentary: 1 },
+      state: 1,
+      keyShortcut: 'm',
+    });
+
   it('a keyboard throw truncates the future, so a later redo cannot rewind it', () => {
     const id = addKeyedSwitch();
     useStore.getState().commit();
@@ -694,6 +708,35 @@ describe('run-mode mutations kill the stale redo future', () => {
     useStore.getState().redo();
     expect(useStore.getState().settings.voltageRange).toBe(5);
     expect(useStore.getState().elements.find((e) => e.id === id)?.params.resistance).toBe(1000);
+  });
+
+  it('a momentary key release kills the future like its keydown did', () => {
+    const id = addKeyedMomentary();
+    useStore.getState().commit();
+    useStore.getState().updateElement(id, { x2: 320 });
+    useStore.getState().undo();
+    const baseline = useStore.getState().undoStack.length;
+
+    // Keydown throws entry-free and truncates, exactly like the plain switch
+    // test above.
+    expect(useStore.getState().toggleSwitchByKey('m')).toBe(true);
+    expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(0);
+    expect(useStore.getState().redoStack).toEqual([]);
+
+    // An undo landing while the key is still down stages a fresh future over
+    // which the keyup's release would otherwise ride free.
+    useStore.getState().commit();
+    useStore.getState().updateElement(id, { x2: 480 });
+    useStore.getState().undo();
+    expect(useStore.getState().redoStack.length).toBe(1);
+
+    useStore.getState().releaseMomentaryByKey('m');
+    expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(1);
+    expect(useStore.getState().redoStack).toEqual([]);
+    // Both halves stay run-mode actions: no entry anywhere.
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+    useStore.getState().redo();
+    expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(1);
   });
 });
 

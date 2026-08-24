@@ -1964,7 +1964,7 @@ function createAppStore() {
     // The throw rides the snapshots without an entry of its own, so a redo
     // future left standing would silently rewind it on Ctrl+Shift+Z. Truncate,
     // matching the commit-per-toggle rule the pointer path follows.
-    if (toggled) set({ redoStack: [] });
+    if (toggled) get().discardRedoFuture();
     return toggled;
   },
 
@@ -1974,6 +1974,7 @@ function createAppStore() {
     // (UIManager.java:1113-1131), the keyboard mirror of the pointer-up
     // releaseHeldMomentary path.
     const k = normalizeKey(key);
+    let toggled = false;
     for (const e of s.elements) {
       if (
         (e.kind === 'switch' || e.kind === 'switch2' || e.kind === 'mbbSwitch' || e.kind === 'dpdtSwitch') &&
@@ -1981,9 +1982,15 @@ function createAppStore() {
         e.keyShortcut === k
       ) {
         s.toggleSwitch(e.id);
+        toggled = true;
       }
     }
+    // Same rule as the keydown throw above: the release writes snapshot-carried
+    // state with no entry, so it must not leave a redo future standing over it.
+    if (toggled) get().discardRedoFuture();
   },
+
+  discardRedoFuture: () => set({ redoStack: [] }),
 
   clearPending: () =>
     set((s) =>

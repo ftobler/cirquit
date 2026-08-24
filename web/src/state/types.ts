@@ -563,6 +563,12 @@ export interface AppState {
    *  un-blows the models, and this keeps the serialized copies from re-injecting
    *  `blown true` on the next frame. */
   unblowFuses(): void;
+  /** Kills the redo future without touching the undo past. Every entry-free
+   *  run-mode mutation (a keyboard throw, a momentary release, a settings
+   *  write) must end with its future dead the way a commit leaves it: switch
+   *  throws, fuse state and settings all ride the snapshots, so a future left
+   *  standing would silently rewind the mutation on Ctrl+Shift+Z. */
+  discardRedoFuture(): void;
   /** Drops queued value edits; the frame loop calls this after applying them. */
   clearPending(): void;
 

@@ -110,11 +110,19 @@ export function releaseHeldMomentary(pointerId: number, refs: PointerDownRefs): 
   // is one toggle per event for every SwitchElm subclass, so a multi-throw
   // kind steps forward again rather than rewinding: an MBB rests one stop on
   // from where the press found it, while a two-stop DPDT lands back at rest.
+  // Both release forms write snapshot-carried run-mode state with no undo
+  // entry of their own, so neither may leave a redo future standing over it:
+  // an undo landing mid-hold builds exactly such a future, and a Ctrl+Shift+Z
+  // after the release would silently rewind the release along with everything
+  // else.
+  const live = useStore.getState();
   if (e.kind === 'switch2' || e.kind === 'mbbSwitch') {
-    useStore.getState().toggleSwitch(id);
+    live.toggleSwitch(id);
+    live.discardRedoFuture();
     return;
   }
-  useStore.getState().setElementState(id, ((e.state ?? 0) + 1) % 2);
+  live.setElementState(id, ((e.state ?? 0) + 1) % 2);
+  live.discardRedoFuture();
 }
 
 /**
