@@ -19,9 +19,16 @@ import { canMirror, canRotate } from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
 import { makeGhostElement, useStore } from '../state/store';
+import { runFullScreenToggle } from './fullscreen';
 import { menubarButtonClass } from './controlClasses';
 import { useMenuKeyboard } from './menuKeyboard';
-import { dcOutcomeReport, findDcOperatingPointRow, type MenuItemDef } from './menuRows';
+import {
+  dcOutcomeReport,
+  fileMenuTailRows,
+  findDcOperatingPointRow,
+  toggleFullScreenRow,
+  type MenuItemDef,
+} from './menuRows';
 
 interface Props {
   engine: SimEngine | null;
@@ -535,8 +542,15 @@ export function Menubar({ engine }: Props) {
       disabled: !hasRecovery,
       onClick: fire(() => useStore.getState().recoverAutoSave()),
     },
-    { label: 'Print…', shortcut: 'Ctrl+P', onClick: fire(doPrint) },
-    { label: 'About…', onClick: fire(() => openDialog('about')) },
+    // Upstream's File tail (Menus.java:139-143): Print, then the Full Screen
+    // toggle after a separator, then About. The command toggles the browser
+    // surface on the document element and re-centres the circuit afterwards
+    // (CommandManager.java:305-311), so the schematic fills the new viewport.
+    ...fileMenuTailRows(
+      { label: 'Print…', shortcut: 'Ctrl+P', onClick: fire(doPrint) },
+      toggleFullScreenRow(fire(() => runFullScreenToggle(document, centerCircuit))),
+      { label: 'About…', onClick: fire(() => openDialog('about')) },
+    ),
   ];
 
   const editItems: MenuItemDef[] = [

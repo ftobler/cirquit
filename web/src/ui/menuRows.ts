@@ -40,6 +40,27 @@ export function findDcOperatingPointRow(onRun: () => void): MenuItemDef {
   };
 }
 
+/** The File > Toggle Full Screen row, upstream's Menus.java:141 entry (icon
+ *  "resize-full-alt", no shortcut). Built by a factory like the DC row above,
+ *  so the headless tests can pin its shape against drift. */
+export function toggleFullScreenRow(onToggle: () => void): MenuItemDef {
+  return {
+    label: 'Toggle Full Screen',
+    onClick: onToggle,
+  };
+}
+
+/** The File menu's last three rows in upstream order (Menus.java:139-143):
+ *  Print, the Full Screen toggle after a separator, then About. One factory
+ *  so the position stays pinned by test rather than by reading JSX. */
+export function fileMenuTailRows(
+  print: MenuItemDef,
+  fullScreen: MenuItemDef,
+  about: MenuItemDef,
+): MenuItemDef[] {
+  return [print, fullScreen, about];
+}
+
 /** Where the command's facade result lands: null means found and flashes the
  *  transient notice, "degraded" means the nonlinear iteration converged on
  *  nothing and says so in the same channel, anything else is the engine's
@@ -53,7 +74,10 @@ export function dcOutcomeReport(result: string | null): {
     return { notice: 'Found the DC operating point', problem: null };
   }
   if (result === 'degraded') {
-    return { notice: 'No DC operating point exists; the circuit restarted uncharged', problem: null };
+    return {
+      notice: 'No DC operating point exists; the circuit restarted uncharged',
+      problem: null,
+    };
   }
   return { notice: null, problem: result };
 }

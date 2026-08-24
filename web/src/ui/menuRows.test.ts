@@ -2,15 +2,17 @@ import { describe, expect, it } from 'vitest';
 import {
   dcOutcomeReport,
   deferred,
+  fileMenuTailRows,
   findDcOperatingPointRow,
+  toggleFullScreenRow,
   type MenuItemDef,
 } from './menuRows';
 
 // The upstream menu rows the port does not implement, label and reason exactly
 // as the menubar renders them. Pinning the list in the test keeps the Menus.java
 // audit honest: a row that gets ported must be removed from Menubar.tsx and
-// from here together. Find DC Operating Point left this list when its one-shot
-// command landed.
+// from here together. Find DC Operating Point and Toggle Full Screen left this
+// list when their commands landed.
 const UNPORTED_ROWS: readonly [label: string, reason: string][] = [];
 
 describe('deferred', () => {
@@ -81,5 +83,40 @@ describe('dcOutcomeReport', () => {
       notice: null,
       problem: 'The circuit has no solution: check for shorted sources or missing connections.',
     });
+  });
+});
+
+describe('toggleFullScreenRow', () => {
+  it('is present, enabled, and carries no shortcut, like Menus.java:141', () => {
+    let ran = false;
+    const row = toggleFullScreenRow(() => {
+      ran = true;
+    });
+    expect(row.label).toBe('Toggle Full Screen');
+    expect(row.disabled).toBeUndefined();
+    expect(row.deferred).toBeUndefined();
+    expect(row.shortcut).toBeUndefined();
+    row.onClick();
+    expect(ran).toBe(true);
+  });
+});
+
+describe('fileMenuTailRows', () => {
+  it('keeps the upstream tail order: Print, Toggle Full Screen, About', () => {
+    // Menus.java:139-143 puts the toggle between Print and About. Pinning the
+    // assembled tail here keeps the position honest without rendering JSX.
+    const fired: string[] = [];
+    const row = (label: string): MenuItemDef => ({
+      label,
+      onClick: () => void fired.push(label),
+    });
+    const rows = fileMenuTailRows(
+      row('Print…'),
+      toggleFullScreenRow(() => void fired.push('Toggle Full Screen')),
+      row('About…'),
+    );
+    expect(rows.map((r) => r.label)).toEqual(['Print…', 'Toggle Full Screen', 'About…']);
+    for (const r of rows) r.onClick();
+    expect(fired).toEqual(['Print…', 'Toggle Full Screen', 'About…']);
   });
 });
