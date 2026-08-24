@@ -640,7 +640,7 @@ describe('building a model from a selection', () => {
       '0_1000',
       '4_0.00001_0_0.001_0',
       '1_0.805904783',
-      '0_0.001_0_0_0',
+      '0_1_0_0_0',
     ]);
     // The `.` line round trip needs a name, which only the save step assigns.
     const reparsed = parseCompositeModelLine(

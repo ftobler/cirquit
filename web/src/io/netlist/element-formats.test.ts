@@ -275,6 +275,16 @@ describe('inductor file format', () => {
     expect(e.params.saturationCurrent).toBe(0);
     expect(elementLine).toBe('l 384 80 384 352 0 1 0.03 0 0');
   });
+
+  it('a fresh inductor dumps the upstream toolbar default of 1 H', () => {
+    // InductorElm(xx, yy) winds one henry (InductorElm.java:34); the engine's
+    // file-side fallback stays at the old seed, but nothing fresh may reach it.
+    const e = makeElement('inductor', 0, 0, 64, 0);
+    expect(e.params.inductance).toBe(1);
+    expect(e.flags).toBe(0);
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('l 0 0 64 0 0 1 0 0 0');
+  });
 });
 
 describe('zener file format', () => {
@@ -1017,6 +1027,61 @@ describe('voltage source file format', () => {
     const { e, elementLine } = voltageLine('v 1 2 3 4 32 1 40.0 5.0 0.0 0.0 0.5');
     expect(e.flags & 32).toBe(32);
     expect(elementLine).toBe('v 1 2 3 4 32 1 40 5 0 0 0.5');
+  });
+
+  it('a fresh voltage source dumps the upstream constructor defaults', () => {
+    // The toolbar constructor runs 60 Hz at 5 V with the caption flag on
+    // (VoltageElm.java:52-58); the file constructor's 40 Hz seed must not
+    // reach a fresh part.
+    const e = makeElement('voltage', 0, 0, 0, 64);
+    expect(e.params.frequency).toBe(60);
+    expect(e.flags).toBe(16);  // VOLTAGE_SHOW_VOLTAGE
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('v 0 0 0 64 16 0 60 5 0 0 0.5');
+  });
+
+  it('a v line that stops after the waveform token keeps the file constructor seed', () => {
+    // grid2.txt's shape: upstream's token constructor seeds frequency 40 and
+    // only the tokens present override it (VoltageElm.java:65-77), so a short
+    // legacy line loads there even though a fresh part starts at 60.
+    const { e } = voltageLine('v 272 256 272 208 0 0');
+    expect(e.params.waveform).toBe(0);
+    expect(e.params.frequency).toBe(40);
+    expect(e.params.maxVoltage).toBe(5);
+  });
+});
+
+describe('rail file format', () => {
+  /** Parses a single `R` line and re-emits it, returning the `R` line. */
+  const railLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('R ')) ?? '';
+    return { e, out, elementLine };
+  };
+
+  it('round-trips the six source tokens', () => {
+    const { e, elementLine } = railLine('R 128 176 96 176 0 1 1000 2 0 0 0.5');
+    expect(e.kind).toBe('rail');
+    expect(e.params.waveform).toBe(1);
+    expect(elementLine).toBe('R 128 176 96 176 0 1 1000 2 0 0 0.5');
+  });
+
+  it('a bare R line keeps the file constructor frequency seed', () => {
+    // grid.txt's shape: no tokens at all, so everything stays where upstream's
+    // token constructor seeds it (RailElm extends VoltageElm's file
+    // constructor, VoltageElm.java:65-66).
+    const { e } = railLine('R 272 64 272 16 0');
+    expect(e.params.frequency).toBe(40);
+    expect(e.params.maxVoltage).toBe(5);
+  });
+
+  it('a fresh rail dumps the upstream constructor defaults', () => {
+    const e = makeElement('rail', 0, 0, 64, 0);
+    expect(e.params.frequency).toBe(60);
+    expect(e.flags).toBe(16);  // VOLTAGE_SHOW_VOLTAGE, inherited from VoltageElm
+    const out = serializeCircuit([{ ...e, id: 1 }], { ...DEFAULT_SETTINGS }).trim();
+    expect(out).toContain('R 0 0 64 0 16 0 60 5 0 0 0.5');
   });
 });
 

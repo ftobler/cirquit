@@ -11,7 +11,7 @@ import {
 } from '../../../render/draw';
 import { RAIL_CLOCK, RAIL_SHOW_VOLTAGE, VOLTAGE_COS, VOLTAGE_PULSE_DUTY, VOLTAGE_SHOW_VOLTAGE } from '../flags';
 import { drawWaveformGlyph, onePost, readParams, writeParams, endpointBox } from '../shared';
-import { amplitudeLabel, waveformRows, WAVEFORM_CHOICES } from './voltage';
+import { amplitudeLabel, FILE_FREQUENCY, waveformRows, WAVEFORM_CHOICES } from './voltage';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** The duty cycle old pulse lines are stuck with (VoltageElm.java:51). */
@@ -128,9 +128,24 @@ export const RAIL_DEF: ElementDef = {
   posts: onePost,
   draggablePosts: 2,  // the free end is a control point, not a terminal
   defaultFlags: VOLTAGE_SHOW_VOLTAGE,  // RailElm.java:23-24, inherits the voltage source flag
-  defaults: { waveform: 0, frequency: 40, maxVoltage: 5, bias: 0, phaseShift: 0, dutyCycle: 0.5, riseTime: 0 },
+  defaults: {
+    // The toolbar constructor's values, reached through RailElm's
+    // `super(xx, yy, WF_DC)` (RailElm.java:22-24): 60 Hz like every fresh
+    // source (VoltageElm.java:57). A short loaded line keeps the file
+    // constructor's 40 Hz seed instead; see parse.
+    waveform: 0,
+    frequency: 60,
+    maxVoltage: 5,
+    bias: 0,
+    phaseShift: 0,
+    dutyCycle: 0.5,
+    riseTime: 0,
+  },
   parse: (t, e) => {
     readParams(t, e, ['waveform', 'frequency', 'maxVoltage', 'bias', 'phaseShift', 'dutyCycle']);
+    // Same short-line rule as the voltage source: the token constructor seeds
+    // 40 Hz and only present tokens override it (VoltageElm.java:65-66).
+    if (t.length < 2) e.params.frequency = FILE_FREQUENCY;
     // The rail shares the voltage source's load-time flag conversions
     // (VoltageElm.java:80-88), since RailElm extends VoltageElm.
     if (e.flags & VOLTAGE_COS) {

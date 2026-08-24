@@ -459,14 +459,48 @@ const PUSH_SWITCHES: ToolboxEntry[] = [
   },
 ];
 
-/** Every pickable tool, in display order within each category. */
+/** The dedicated AC entries upstream's component menu carries beside the DC
+ *  sources (Menus.java:307-309): each is the base kind constructed with WF_AC
+ *  and 120*sqrt(2) V peak, the rms of a 120 V mains line (ACVoltageElm.java:
+ *  23-26, ACRailElm.java:23-26). Params-only like the push switch, so both
+ *  dump as their base kinds' plain v/R lines; no shortcut exists on either
+ *  (ACRailElm's getShortcut returns 0). */
+const AC_PEAK_VOLTAGE = 120 * Math.sqrt(2);
+
+const ENTRIES_AFTER_KIND: Record<string, ToolboxEntry[]> = {
+  voltage: [
+    {
+      id: 'acVoltage',
+      kind: 'voltage',
+      label: 'AC Voltage Source',
+      category: 'Sources',
+      defaults: { waveform: 1, maxVoltage: AC_PEAK_VOLTAGE, frequency: 60 },
+    },
+  ],
+  rail: [
+    {
+      id: 'acRail',
+      kind: 'rail',
+      label: 'AC Voltage Rail',
+      category: 'Sources',
+      defaults: { waveform: 1, maxVoltage: AC_PEAK_VOLTAGE, frequency: 60 },
+    },
+  ],
+};
+
+/** Every pickable tool, in display order within each category. Entries in
+ *  `ENTRIES_AFTER_KIND` are injected directly after their base kind's entry,
+ *  so an AC source sits beside its DC sibling as upstream's menu does. */
 export const TOOLBOX: ToolboxEntry[] = [
-  ...ELEMENT_DEFS.filter((d) => d.kind !== 'transistor' && d.kind !== 'mosfet' && d.kind !== 'jfet' && d.kind !== 'darlington').map((d) => ({
-    id: d.kind,
-    kind: d.kind,
-    label: d.label,
-    category: d.category,
-  })),
+  ...ELEMENT_DEFS.filter((d) => d.kind !== 'transistor' && d.kind !== 'mosfet' && d.kind !== 'jfet' && d.kind !== 'darlington').flatMap((d) => [
+    {
+      id: d.kind,
+      kind: d.kind,
+      label: d.label,
+      category: d.category,
+    },
+    ...(ENTRIES_AFTER_KIND[d.kind] ?? []),
+  ]),
   ...SPLIT_SEMICONDUCTORS,
   ...PUSH_SWITCHES,
   ...SWAPPED_OPAMPS,

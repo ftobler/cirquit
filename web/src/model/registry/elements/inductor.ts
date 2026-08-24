@@ -35,7 +35,10 @@ export const INDUCTOR_DEF: ElementDef = {
   // The second token is the running state the file was saved with
   // (InductorElm.java:42), kept so a mid-transient save reloads where it
   // left off; a zero here is indistinguishable from no saved state.
-  defaults: { inductance: 1e-3, current: 0, initialCurrent: 0, saturationCurrent: 0 },
+  // The 1 H is the toolbar constructor's value (InductorElm.java:34), not the
+  // engine's file-side fallback of 1 mH, so a fresh LC tank rings where
+  // upstream's does.
+  defaults: { inductance: 1, current: 0, initialCurrent: 0, saturationCurrent: 0 },
   parse: (t, e) =>
     readParams(t, e, ['inductance', 'current', 'initialCurrent', 'saturationCurrent']),
   dump: writeParams(['inductance', 'current', 'initialCurrent', 'saturationCurrent']),

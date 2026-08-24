@@ -17,6 +17,13 @@ import type { CircuitElement, ElementDef, FieldDef } from '../../types';
 /** The duty cycle old pulse lines are stuck with (VoltageElm.java:51). */
 const DEFAULT_PULSE_DUTY = 1 / (2 * Math.PI);
 
+/**
+ * The frequency a loaded line seeds when its token is missing
+ * (VoltageElm.java:66): the file constructor runs at 40 Hz, and only the
+ * toolbar constructor starts a fresh part at 60 (VoltageElm.java:57).
+ */
+export const FILE_FREQUENCY = 40;
+
 /** The Waveform choice's options, identical for the voltage source and the
  *  rail (VoltageElm.java:521-532). */
 export const WAVEFORM_CHOICES = [
@@ -152,8 +159,10 @@ export const VOLTAGE_DEF: ElementDef = {
   defaultLength: 4,     // 64 px, default getDragLength()
   defaultFlags: VOLTAGE_SHOW_VOLTAGE,
   defaults: {
+    // The toolbar constructor's values (VoltageElm.java:52-58). A short
+    // loaded line keeps the file constructor's 40 Hz seed instead; see parse.
     waveform: 0,
-    frequency: 40,
+    frequency: 60,
     maxVoltage: 5,
     bias: 0,
     phaseShift: 0,
@@ -162,6 +171,10 @@ export const VOLTAGE_DEF: ElementDef = {
   },
   parse: (t, e) => {
     readParams(t, e, ['waveform', 'frequency', 'maxVoltage', 'bias', 'phaseShift', 'dutyCycle']);
+    // A line that stops before the frequency token keeps the file
+    // constructor's seed (VoltageElm.java:65-66), not the fresh part's 60:
+    // grid2.txt's `v` carries nothing but its waveform token.
+    if (t.length < 2) e.params.frequency = FILE_FREQUENCY;
     // Old files flagged a cosine as a sine with FLAG_COS; upstream clears the
     // bit and materialises the pi/2 phase so a save is canonical
     // (VoltageElm.java:80-83).

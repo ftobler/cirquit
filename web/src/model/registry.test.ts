@@ -832,6 +832,92 @@ describe('push-switch toolbox tool', () => {
   });
 });
 
+describe('fresh-part placement defaults', () => {
+  // Upstream's toolbar constructors set what a freshly picked part starts at:
+  // InductorElm(xx, yy) winds 1 H (InductorElm.java:34) and VoltageElm's
+  // parameterised constructor runs 60 Hz (VoltageElm.java:57). The port kept
+  // the file constructors' seeds instead, so a fresh LC tank rang 31.6x above
+  // upstream's and every new source ran 40 Hz.
+  it('places a 1 H inductor', () => {
+    expect(makeToolElement('inductor', 192, 160, 320, 160).params.inductance).toBe(1);
+  });
+
+  it('places voltage sources and rails at 60 Hz', () => {
+    expect(makeToolElement('voltage', 192, 160, 192, 288).params.frequency).toBe(60);
+    expect(makeToolElement('rail', 192, 160, 256, 160).params.frequency).toBe(60);
+  });
+});
+
+describe('AC source toolbox tools', () => {
+  // Upstream's component menu carries dedicated AC entries beside the DC
+  // sources: ACVoltageElm places a two-terminal source preset to WF_AC at
+  // 120*sqrt(2) V peak (ACVoltageElm.java:23-26) and ACRailElm does the same
+  // for the one-terminal rail. Both are ordinary VoltageElms, so they share
+  // the kind and dump code and differ only in placement params, the way the
+  // swapped op-amp shares its kind.
+  const AC_PEAK = 120 * Math.sqrt(2);
+
+  it('offers both entries in Sources, beside their DC siblings', () => {
+    const ids = TOOLBOX.map((t) => t.id);
+    expect(ids).toContain('acVoltage');
+    expect(ids).toContain('acRail');
+    expect(ids.indexOf('acVoltage')).toBe(ids.indexOf('voltage') + 1);
+    expect(ids.indexOf('acRail')).toBe(ids.indexOf('rail') + 1);
+    for (const id of ['acVoltage', 'acRail']) {
+      const entry = TOOLBOX.find((t) => t.id === id);
+      expect(entry?.category).toBe('Sources');
+      expect(entry?.shortcut).toBeUndefined();  // upstream getShortcut() 0
+    }
+  });
+
+  it('places an AC voltage source preset to sine at 120 V rms', () => {
+    const placed = { ...makeToolElement('acVoltage', 192, 160, 192, 288), id: 1 };
+    expect(placed.kind).toBe('voltage');
+    expect(placed.params.waveform).toBe(1);
+    expect(placed.params.maxVoltage).toBe(AC_PEAK);
+    expect(placed.params.frequency).toBe(60);
+    expect(placed.flags & 16).not.toBe(0);  // VOLTAGE_SHOW_VOLTAGE
+  });
+
+  it('places an AC rail with the same presets', () => {
+    const placed = { ...makeToolElement('acRail', 192, 160, 256, 160), id: 1 };
+    expect(placed.kind).toBe('rail');
+    expect(placed.params.waveform).toBe(1);
+    expect(placed.params.maxVoltage).toBe(AC_PEAK);
+    expect(placed.params.frequency).toBe(60);
+  });
+
+  it('round-trips as ordinary source lines', () => {
+    // getDumpClass returns the base class, so either tool saves as the plain
+    // v/R stream with its waveform token; no new dump code exists.
+    const src = { ...makeToolElement('acVoltage', 192, 160, 192, 288), id: 1 };
+    const text = serializeCircuit([src], { ...DEFAULT_SETTINGS });
+    const line = text.split('\n').find((l) => l.startsWith('v '));
+    expect(line).toBeDefined();
+    const back = parseCircuit(text).elements[0];
+    expect(back.kind).toBe('voltage');
+    expect(back.params.waveform).toBe(1);
+    expect(back.params.maxVoltage).toBe(AC_PEAK);
+
+    const rail = { ...makeToolElement('acRail', 192, 160, 256, 160), id: 2 };
+    const railText = serializeCircuit([rail], { ...DEFAULT_SETTINGS });
+    const railLine = railText.split('\n').find((l) => l.startsWith('R '));
+    expect(railLine).toContain(' 169.7056274847714 ');
+    const railBack = parseCircuit(railText).elements[0];
+    expect(railBack.kind).toBe('rail');
+    expect(railBack.params.maxVoltage).toBe(AC_PEAK);
+  });
+
+  it('leaves the DC tools untouched', () => {
+    const dcSource = makeToolElement('voltage', 192, 160, 192, 288);
+    expect(dcSource.params.waveform).toBe(0);
+    const dcRail = makeToolElement('rail', 192, 160, 256, 160);
+    expect(dcRail.params.waveform).toBe(0);
+    expect(TOOLBOX.find((t) => t.id === 'voltage')?.defaults).toBeUndefined();
+    expect(TOOLBOX.find((t) => t.id === 'rail')?.defaults).toBeUndefined();
+  });
+});
+
 describe('transformer posts', () => {
   // Terminal coordinates must match upstream's getPost exactly or wires in
   // loaded circuits will not connect. These assert the corpus layouts.
