@@ -144,13 +144,14 @@ describe('parseCircuit attachment', () => {
     // mean the walk drifted off by one and silently dropped the trace.
     const plots = scopes[0].embedded!.plots;
     expect(plots).toHaveLength(2);
-    // File indexes 156 and 157 are both output markers, the two nets this
-    // X-Y window plots against each other.
+    // File slots 156 and 157 are both output markers, the two nets this X-Y
+    // window plots against each other. Hand-counting lines: the `$` header
+    // takes no slot, so slot n sits on line n+2, putting 156 and 157 on the
+    // two O lines (158 and 159) and the three M lines before them at slots
+    // 153 to 155. The order matters, hence the exact pair.
     const byId = new Map(parsed.elements.map((e) => [e.id, e]));
-    for (const p of plots) {
-      expect(p.elementId).not.toBeNull();
-      expect(byId.get(p.elementId!)!.kind).toBe('output');
-    }
+    expect(plots.map((p) => p.elementId).every((id) => id !== null)).toBe(true);
+    expect(plots.map((p) => byId.get(p.elementId!)!.kind)).toEqual(['output', 'output']);
   });
 
   it('leaves a fresh unattached scope without embedded state', () => {
