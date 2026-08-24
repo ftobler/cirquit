@@ -299,7 +299,17 @@ fetch it).
   width on load, and hex-mode `0b` tokens parse as the numbers they are;
   element-placement keys are rebindable in Edit Shortcuts with the default
   table behaviourally unchanged; and File > Toggle Full Screen landed,
-  re-fitting the circuit when the fullscreen transition actually lands.
+   re-fitting the circuit when the fullscreen transition actually lands.
+- Interaction-audit batch 2026-08-24: every modal surface owns the keyboard
+  through one shared predicate (the device-model editor and context menu no
+  longer leak Delete, undo and placement letters to the circuit behind them,
+  and one Escape closes only the open menu); touch long-press, two-finger
+  abandon and pointercancel clean up armed placements and wire tools instead
+  of stranding zero-length parts; Remove Plot removes the clicked plot by
+  identity while protecting raw-only plots that exist only to preserve `o`
+  line tokens, and Show Value checkboxes became their own undo step; and a
+  right-click during a group drag can no longer hijack it (move drags freeze
+  their id list and the frame paints from it).
 - 514 Rust tests, of which 436 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
