@@ -192,6 +192,32 @@ describe('parseContentsText', () => {
     expect(parsed.pairs).toEqual([[0, 15]]);
   });
 
+  it('parses a bare 0b token as eleven in hex mode', () => {
+    // Upstream's prefix order (SRAMElm.java:216-224, reordered in 902f965)
+    // tries the radix digits before the 0b prefix, so a hex-mode token like
+    // 0b is legal hex (eleven), not a malformed binary literal. Both the
+    // address and the value take the path.
+    const parsed = parseContentsText('0b: 0b\n', HEX);
+    expect(parsed.error).toBeNull();
+    expect(parsed.pairs).toEqual([[11, 11]]);
+  });
+
+  it('reads a mixed 0b-prefixed token as plain hex in hex mode', () => {
+    // The same ordering makes 0b101 hex 0xB101 in hex mode; only outside hex
+    // mode does the 0b prefix mean binary.
+    const parsed = parseContentsText('0: 0b101\n', { hex: true, dataBits: 16 });
+    expect(parsed.error).toBeNull();
+    expect(parsed.pairs).toEqual([[0, 0xb101]]);
+  });
+
+  it('reads 0b-prefixed binary tokens under the decimal radix', () => {
+    // Outside hex mode the radix-digit check rejects the b, so the 0b branch
+    // parses the rest as base two (radix 2 under radix 10 display).
+    const parsed = parseContentsText('0: 0b101 0b\n', DEC);
+    expect(parsed.error).not.toBeNull();
+    expect(parsed.pairs).toEqual([[0, 5]]);
+  });
+
   it('rejects trailing junk parseInt would silently accept', () => {
     expect(parseContentsText('0: 12abc\n', DEC).error).toContain('12abc');
     expect(parseContentsText('0: 12ag\n', HEX).error).toContain('12ag');

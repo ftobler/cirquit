@@ -84,20 +84,25 @@ const HEX_DIGITS = /^[0-9a-fA-F]+$/;
 const DEC_DIGITS = /^[0-9]+$/;
 const BIN_DIGITS = /^[01]+$/;
 
-/** Upstream's parseNumber (SRAMElm.java:216-224): a `0x` prefix always, bare
- *  hex when hex mode is on, a `0b` binary prefix, else decimal. Strict where
- *  parseInt would accept trailing junk: the whole token must be the number.
+/** Upstream's parseNumber (SRAMElm.java:216-224, prefix order per 902f965):
+ *  an `0x` prefix always, then the bare radix digits, then an `0b` binary
+ *  prefix, else decimal. Hex mode comes before the `0b` check so a hex token
+ *  like `0b` (eleven) still parses; strict where parseInt would accept
+ *  trailing junk: the whole token must be the number.
  *  Null means the token is not a number at all. */
 function parseNumber(token: string, hex: boolean): number | null {
   if (token.startsWith('0x')) {
     const digits = token.slice(2);
     return HEX_DIGITS.test(digits) ? parseInt(digits, 16) : null;
   }
+  if ((hex ? HEX_DIGITS : DEC_DIGITS).test(token)) {
+    return parseInt(token, hex ? 16 : 10);
+  }
   if (token.startsWith('0b')) {
     const digits = token.slice(2);
     return BIN_DIGITS.test(digits) ? parseInt(digits, 2) : null;
   }
-  return (hex ? HEX_DIGITS : DEC_DIGITS).test(token) ? parseInt(token, hex ? 16 : 10) : null;
+  return null;
 }
 
 /** Parses the editor's text into address/value pairs, upstream's
