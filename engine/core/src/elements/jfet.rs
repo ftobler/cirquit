@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::diode::Diode;
-use crate::elements::junction::CONVERGENCE_V;
+use crate::elements::junction::convergence_ladder;
 use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
 
@@ -217,9 +217,12 @@ impl Element for Jfet {
             .max(self.last_v2 - MAX_STEP_V)
             .min(self.last_v2 + MAX_STEP_V);
 
-        if (sv1 - self.last_v1).abs() > CONVERGENCE_V
-            || (sv2 - self.last_v2).abs() > CONVERGENCE_V
-            || (vg - self.last_v0).abs() > CONVERGENCE_V
+        // The JFET inherits the mosfet's convergence ladder through
+        // super.doStep() (JfetElm.java:119-122), so the same shared call
+        // with this device's own model beta runs here (MosfetElm.java:595).
+        if convergence_ladder(self.beta, ctx.subiter, self.last_v1, sv1)
+            || convergence_ladder(self.beta, ctx.subiter, self.last_v2, sv2)
+            || convergence_ladder(self.beta, ctx.subiter, self.last_v0, vg)
         {
             s.not_converged();
         }

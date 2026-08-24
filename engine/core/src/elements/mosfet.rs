@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::diode::Diode;
-use crate::elements::junction::CONVERGENCE_V;
+use crate::elements::junction::convergence_ladder;
 use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
 
@@ -149,35 +149,6 @@ impl Mosfet {
         }
         self.diode.do_step(ctx, s);
     }
-
-    /// Upstream's tolerance ladder for one terminal's move between
-    /// iterations (MosfetElm.java:517-533). True means Newton has not
-    /// converged on this terminal yet. Four stages: a plain 10 mV absolute
-    /// bar; a x100 difference multiplier when beta exceeds 1, because a
-    /// high-beta part turns millivolt wobble into ampere-scale current
-    /// error; a relative pass past subiteration 10 (under 0.1% of the
-    /// terminal's
-    /// own value), so a settled large signal is not chased forever; and a
-    /// linear loosening past subiteration 100 for closures that genuinely
-    /// struggle. The multiplier applies before every branch, so it rides
-    /// the relative and loosened tests too. A high-beta part therefore
-    /// settles to a tenth of the bar a default part asks for.
-    fn non_convergence(&self, ctx: &SimCtx, last: f64, now: f64) -> bool {
-        let mut diff = (last - now).abs();
-        if self.beta > 1.0 {
-            diff *= 100.0;
-        }
-        if diff < CONVERGENCE_V {
-            return false;
-        }
-        if ctx.subiter > 10 && diff < now.abs() * 0.001 {
-            return false;
-        }
-        if ctx.subiter > 100 && diff < CONVERGENCE_V + (ctx.subiter as f64 - 100.0) * 1e-4 {
-            return false;
-        }
-        true
-    }
 }
 
 impl Element for Mosfet {
@@ -211,12 +182,11 @@ impl Element for Mosfet {
             .max(self.last_v2 - MAX_STEP_V)
             .min(self.last_v2 + MAX_STEP_V);
 
-        // The gate is not clamped; upstream limits only nodes 1 and 2, and
-        // its convergence row compares the clamped values against lastv
-        // through nonConvergence (MosfetElm.java:595).
-        if self.non_convergence(ctx, self.last_v1, sv1)
-            || self.non_convergence(ctx, self.last_v2, sv2)
-            || self.non_convergence(ctx, self.last_v0, vg)
+        // The convergence row compares the clamped values against lastv
+        // through the shared ladder (MosfetElm.java:595).
+        if convergence_ladder(self.beta, ctx.subiter, self.last_v1, sv1)
+            || convergence_ladder(self.beta, ctx.subiter, self.last_v2, sv2)
+            || convergence_ladder(self.beta, ctx.subiter, self.last_v0, vg)
         {
             s.not_converged();
         }
@@ -347,75 +317,5 @@ impl Element for Mosfet {
         self.last_v0 = self.base.volts[0];
         self.last_v1 = self.base.volts[1];
         self.last_v2 = self.base.volts[2];
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn mosfet_with_beta(beta: f64) -> Mosfet {
-        Mosfet::new(&ElementSpec {
-            id: 0,
-            kind: "mosfet".into(),
-            posts: Vec::new(),
-            params: [("beta", beta)]
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
-                .collect(),
-            label: None,
-            model: None,
-            flags: 0,
-        })
-    }
-
-    fn ctx_at(subiter: usize) -> SimCtx {
-        SimCtx {
-            subiter,
-            ..Default::default()
-        }
-    }
-
-    /// The tolerance ladder against upstream's table of cases
-    /// (MosfetElm.java:517-533): the absolute bar, the beta multiplier that
-    /// rides every later branch too, the relative pass past subiteration 10,
-    /// and the linear loosening past 100.
-    #[test]
-    fn non_convergence_tolerance_table() {
-        let low = mosfet_with_beta(0.02);
-        let high = mosfet_with_beta(10.0);
-
-        // A plain 20 mV move on a 50 V signal: over the absolute bar, and the
-        // relative pass needs more than ten iterations behind it.
-        assert!(low.non_convergence(&ctx_at(5), 49.98, 50.0));
-        // Same move at subiteration 50 passes relatively: 20 mV is far under
-        // 0.1% of 50 V.
-        assert!(!low.non_convergence(&ctx_at(50), 49.98, 50.0));
-
-        // The same 20 mV move near ground gets no relative rescue (it is not
-        // below 0.1% of a small signal), so only the loosening helps, and it
-        // helps gradually: 15 mV at 150, 25 mV at 250.
-        assert!(low.non_convergence(&ctx_at(5), 0.0, 0.02));
-        assert!(low.non_convergence(&ctx_at(50), 0.0, 0.02));
-        assert!(low.non_convergence(&ctx_at(150), 0.0, 0.02));
-        assert!(!low.non_convergence(&ctx_at(250), 0.0, 0.02));
-
-        // The absolute bar itself, strict inequality like upstream's `<`.
-        assert!(!low.non_convergence(&ctx_at(5), 0.0, 0.0095));
-        assert!(low.non_convergence(&ctx_at(5), 0.0, 0.01));
-
-        // Beta above 1 multiplies the difference by 100 before any branch:
-        // the same 9.5 mV move that a default part accepts fails here, while
-        // one under 0.1 mV still passes.
-        assert!(high.non_convergence(&ctx_at(5), 0.0, 0.0095));
-        assert!(!high.non_convergence(&ctx_at(5), 0.0, 0.00005));
-        // The multiplier reaches into the relative branch too (upstream
-        // compares the scaled diff there), so a high-beta part on a large
-        // node still refuses a move its default sibling would accept.
-        assert!(high.non_convergence(&ctx_at(150), 49.998, 50.0));
-        assert!(!high.non_convergence(&ctx_at(150), 50.0, 50.00004));
-
-        // A settled terminal never reports motion, whatever the budget.
-        assert!(!high.non_convergence(&ctx_at(150), 50.0, 50.0));
     }
 }

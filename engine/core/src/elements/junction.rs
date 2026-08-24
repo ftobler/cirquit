@@ -41,6 +41,37 @@ pub(crate) const MAX_EXP_ARG: f64 = 40.0;
 /// Voltage change per iteration beyond which the solution is not settled.
 pub(crate) const CONVERGENCE_V: f64 = 0.01;
 
+/// Upstream's MOSFET/JFET tolerance ladder for one terminal's move between
+/// Newton iterations (MosfetElm.java:517-533). True means the terminal has
+/// not settled yet. Four stages: a plain 10 mV absolute bar; a x100
+/// difference multiplier when the part's beta exceeds 1, because a
+/// high-beta channel turns millivolt wobble into ampere-scale current
+/// error; a relative pass past subiteration 10, when a move under 0.1% of
+/// the terminal's own value is accepted so a settled large signal is not
+/// chased forever; and a linear loosening past subiteration 100 for
+/// closures that genuinely struggle. The multiplier applies before every
+/// branch, so it rides the relative and loosened tests too: a high-beta
+/// part settles to a hundredth of the absolute bar a default part asks
+/// for. JFETs share the ladder because upstream's JfetElm extends
+/// MosfetElm and reaches it through super.doStep() (JfetElm.java:24,
+/// :119-122), each device contributing its own model beta.
+pub(crate) fn convergence_ladder(beta: f64, subiter: usize, last: f64, now: f64) -> bool {
+    let mut diff = (last - now).abs();
+    if beta > 1.0 {
+        diff *= 100.0;
+    }
+    if diff < CONVERGENCE_V {
+        return false;
+    }
+    if subiter > 10 && diff < now.abs() * 0.001 {
+        return false;
+    }
+    if subiter > 100 && diff < CONVERGENCE_V + (subiter as f64 - 100.0) * 1e-4 {
+        return false;
+    }
+    true
+}
+
 /// Subiteration at which the geometric junction-conductance ramp starts,
 /// upstream's `sim.subIterations > 100` (Diode.java:150).
 pub(crate) const GMIN_RAMP_START: u32 = 100;
@@ -134,5 +165,59 @@ mod tests {
         // TransistorElm.java hardcodes 1e-12 (its leakage*0.01 line commented
         // out), so the shared constant must not drift with the diode fix.
         assert_eq!(JUNCTION_GMIN, 1e-12);
+    }
+
+    /// The tolerance ladder against upstream's table of cases
+    /// (MosfetElm.java:517-533): the absolute bar, the beta multiplier that
+    /// rides every later branch too, the relative pass past subiteration 10,
+    /// and the linear loosening past 100. The beta=0.02 rows are the mosfet
+    /// default; the jfet rows pin that the same ladder keys on whatever
+    /// model beta the device carries.
+    #[test]
+    fn convergence_ladder_tolerance_table() {
+        let mosfet_default = 0.02;
+        let jfet_default = 0.00125;
+
+        // A plain 20 mV move on a 50 V signal: over the absolute bar, and the
+        // relative pass needs more than ten iterations behind it.
+        assert!(convergence_ladder(mosfet_default, 5, 49.98, 50.0));
+        // Same move at subiteration 50 passes relatively: 20 mV is far under
+        // 0.1% of 50 V.
+        assert!(!convergence_ladder(mosfet_default, 50, 49.98, 50.0));
+
+        // The same 20 mV move near ground gets no relative rescue (it is not
+        // below 0.1% of a small signal), so only the loosening helps, and it
+        // helps gradually: 15 mV at 150, 25 mV at 250.
+        assert!(convergence_ladder(mosfet_default, 5, 0.0, 0.02));
+        assert!(convergence_ladder(mosfet_default, 50, 0.0, 0.02));
+        assert!(convergence_ladder(mosfet_default, 150, 0.0, 0.02));
+        assert!(!convergence_ladder(mosfet_default, 250, 0.0, 0.02));
+
+        // The absolute bar itself, strict inequality like upstream's `<`.
+        assert!(!convergence_ladder(mosfet_default, 5, 0.0, 0.0095));
+        assert!(convergence_ladder(mosfet_default, 5, 0.0, 0.01));
+
+        // Beta above 1 multiplies the difference by 100 before any branch:
+        // the same 9.5 mV move that a default part accepts fails here, while
+        // one under 0.1 mV still passes.
+        assert!(convergence_ladder(10.0, 5, 0.0, 0.0095));
+        assert!(!convergence_ladder(10.0, 5, 0.0, 0.00005));
+        // The multiplier reaches into the relative branch too (upstream
+        // compares the scaled diff there), so a high-beta part on a large
+        // node still refuses a move its default sibling would accept.
+        assert!(convergence_ladder(10.0, 150, 49.998, 50.0));
+        assert!(!convergence_ladder(10.0, 150, 50.0, 50.00004));
+
+        // A settled terminal never reports motion, whatever the budget.
+        assert!(!convergence_ladder(10.0, 150, 50.0, 50.0));
+
+        // JFET rows. Upstream's stock JFET models are small-beta (the
+        // default-jfet carries 0.00125), so one behaves like these low-beta
+        // rows; but MosfetModel.beta is a user-editable model parameter with
+        // no upper clamp, so a custom high-beta JFET reaches the multiplier
+        // through the inherited ladder exactly as a mosfet does.
+        assert!(!convergence_ladder(jfet_default, 5, 0.0, 0.0095));
+        assert!(!convergence_ladder(jfet_default, 150, 49.998, 50.0));
+        assert!(convergence_ladder(2.0, 5, 0.0, 0.0095));
     }
 }
