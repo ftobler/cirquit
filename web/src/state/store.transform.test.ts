@@ -248,6 +248,84 @@ describe('rotate, mirror and swap terminals', () => {
   });
 });
 
+describe('the selection group pivot', () => {
+  const addAt = (kind: string, x1: number, y1: number, x2: number, y2: number, params = {}) =>
+    useStore.getState().addElement({ kind, x1, y1, x2, y2, flags: 0, params });
+
+  it('rotates a stacked pair rigidly instead of collapsing it onto one column', () => {
+    // Upstream's prepareFlip turns both resistors about the one bounding-box
+    // pivot: R1 lands at x=116 and R2 at x=148 (CommandManager.java:385-428).
+    // Per-element pivots stacked both onto x=132.
+    const a = addAt('resistor', 100, 100, 164, 100);
+    const b = addAt('resistor', 100, 132, 164, 132, { resistance: 2200 });
+    useStore.getState().select([a, b]);
+
+    useStore.getState().rotateSelection();
+
+    const [ra, rb] = useStore.getState().elements;
+    expect([ra.x1, ra.y1, ra.x2, ra.y2]).toEqual([116, 148, 116, 84]);
+    expect([rb.x1, rb.y1, rb.x2, rb.y2]).toEqual([148, 148, 148, 84]);
+    expect(Math.abs(ra.x1 - rb.x1)).toBe(32);
+    expect(new Set([ra.x1, ra.x2, rb.x1, rb.x2]).size).toBe(2);
+  });
+
+  it('turns a mixed resistor and SPDT rigidly, leaving the throw unflipped', () => {
+    // The rotate rework's net-zero guarantee is pivot-independent: the group
+    // turn moves both bodies as one while the lever stays thrown where it was.
+    const r = addAt('resistor', 0, 0, 160, 0);
+    const sw = useStore.getState().addElement({
+      kind: 'switch2',
+      x1: 0,
+      y1: 160,
+      x2: 160,
+      y2: 160,
+      flags: 0,
+      params: { position: 1, momentary: 0, throwCount: 2, link: 3 },
+      state: 1,
+    });
+    useStore.getState().select([r, sw]);
+
+    useStore.getState().rotateSelection();
+
+    const [rr, rs] = useStore.getState().elements;
+    expect(rs.state).toBe(1);
+    expect(rs.params).toEqual({ position: 1, momentary: 0, throwCount: 2, link: 3 });
+    // Rigid: the two rows on y=0 and y=160 come out as columns x=0 and x=160,
+    // the group turned about its bounding-box centre (80,80).
+    expect([rr.x1, rr.y1, rr.x2, rr.y2]).toEqual([0, 160, 0, 0]);
+    expect([rs.x1, rs.y1, rs.x2, rs.y2]).toEqual([160, 160, 160, 0]);
+  });
+
+  it('mirrors a two-element selection about the one bounding-box centre', () => {
+    // Different widths on different rows, so both own centres differ from the
+    // shared one: per-element axes would fold each part in place, while the
+    // shared axis reflects the whole group about x=148 without either row
+    // leaving the original bounding box.
+    const t = addAt('transistor', 100, 100, 164, 100, { pnp: 1 });
+    const o = addAt('opamp', 100, 132, 196, 132);
+    useStore.getState().select([t, o]);
+
+    useStore.getState().mirrorSelection();
+
+    const [mt, mo] = useStore.getState().elements;
+    expect([mt.x1, mt.y1, mt.x2, mt.y2]).toEqual([196, 100, 132, 100]);
+    expect([mo.x1, mo.y1, mo.x2, mo.y2]).toEqual([196, 132, 100, 132]);
+    expect(mo.y1 - mt.y1).toBe(32);
+  });
+
+  it('a lone element keeps the upstreamTurn axis, odd-length kinds included', () => {
+    // The single-element command must stay exactly what the Rotate axis
+    // finding pinned: the grid-snapped axis that holds odd-defaultLength
+    // kinds to the grid, not a turn about the exact midpoint.
+    const id = addAt('busSplitter', 80, 112, 128, 112);
+    useStore.getState().select([id]);
+
+    useStore.getState().rotateSelection();
+
+    expect(useStore.getState().elements[0]).toMatchObject({ x1: 96, y1: 128, x2: 96, y2: 80 });
+  });
+});
+
 describe('rotate under an in-flight pointer gesture', () => {
   /** A horizontal resistor at (0,0)-(160,0), selected: the element a drag has
    *  just grabbed. */

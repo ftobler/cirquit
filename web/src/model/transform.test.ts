@@ -6,6 +6,8 @@ import {
   canSwap,
   mirrorElement,
   rotateElement,
+  selectionMirrorCentre,
+  selectionTurnPivot,
   swapTerminalOrder,
   turnPointAbout,
 } from './transform';
@@ -709,5 +711,99 @@ describe('rotate about an explicit pivot', () => {
   it('refuses a post-only annotation whatever the pivot', () => {
     const text = element('decoration', 8, 8, 8, 8);
     expect(rotateElement(text, { x: 0, y: 0 })).toBe(text);
+  });
+});
+
+describe('selection group pivot', () => {
+  // The plan's stacked pair: two horizontal resistors sharing an x range one
+  // grid row apart. Per-element pivots stack both onto x=132; upstream's one
+  // bounding-box pivot turns them rigidly to x=116 and x=148.
+  const r1 = element('resistor', 100, 100, 164, 100);
+  const r2 = element('resistor', 100, 132, 164, 132);
+
+  it('derives no shared pivot for an empty or single-element selection', () => {
+    // The lone-element command stays `upstreamTurn`, whose grid-snapped axis
+    // shift for odd-defaultLength kinds is documented deliberate behaviour.
+    expect(selectionTurnPivot([])).toBeUndefined();
+    expect(selectionTurnPivot([r1])).toBeUndefined();
+    expect(selectionMirrorCentre([])).toBeUndefined();
+    expect(selectionMirrorCentre([r1])).toBeUndefined();
+  });
+
+  it('walks the selection bounding box once, truncating like Java integer division', () => {
+    // Upstream prepareFlip: min and max over both endpoints of every selected
+    // element, then (min+max)/2 as an int. This pair spans x 0..163 and
+    // y 0..33, so the centres are 81 and 16, not 81.5 and 16.5; rounding
+    // instead of truncating would drift every odd-span selection by a square.
+    const pair = [element('wire', 0, 0, 163, 0), element('wire', 0, 33, 160, 33)];
+    expect(selectionMirrorCentre(pair)).toBe(81);
+    // The turn pivot encodes the snapped axis (x - y = snapGrid(81 - 16) = 64)
+    // and the doubled centre (x + y = 2*cy + xmy): (16 + 64, 16).
+    expect(selectionTurnPivot(pair)).toEqual({ x: 80, y: 16 });
+  });
+
+  it('turns the stacked pair rigidly to the upstream coordinates', () => {
+    // CommandManager.rotate on this exact pair puts R1 at x=116 and R2 at
+    // x=148; the invariant form is the 32-unit column gap with no coordinate
+    // shared between the elements.
+    const pivot = selectionTurnPivot([r1, r2])!;
+    const t1 = rotateElement(r1, pivot);
+    const t2 = rotateElement(r2, pivot);
+    expect([t1.x1, t1.y1, t1.x2, t1.y2]).toEqual([116, 148, 116, 84]);
+    expect([t2.x1, t2.y1, t2.x2, t2.y2]).toEqual([148, 148, 148, 84]);
+    expect(new Set([t1.x1, t1.y1, t2.x1, t2.y1]).size).toBe(2);
+    expect(Math.abs(t1.x1 - t2.x1)).toBe(32);
+  });
+
+  it('keeps the SPDT throw where it was under a group pivot', () => {
+    // The rotate rework's net-zero reversal is pivot-independent:
+    // rotateElement never reaches the position logic from the pivot argument,
+    // so a mixed-kind group turn must leave the lever exactly as it was.
+    const sw = {
+      ...element('switch2', 0, 160, 160, 160, 0, { position: 1, throwCount: 2 }),
+      state: 1,
+    };
+    const pivot = selectionTurnPivot([element('resistor', 0, 0, 160, 0), sw])!;
+    const turned = rotateElement(sw, pivot);
+    expect(turned.state).toBe(1);
+    expect(turned.params.position).toBe(1);
+    expect(turned.params.flipParity ?? 0).toBe(0);
+  });
+
+  it('mirrors about the shared centre so neither element leaves its row', () => {
+    // Different widths on different rows: each own centre differs from the
+    // shared one (x 100..196 truncates to 148), which is what makes per-element
+    // axes scramble the group while the shared axis mirrors it in place.
+    const t = { ...element('transistor', 100, 100, 164, 100), params: { pnp: 1 } };
+    const o = element('opamp', 100, 132, 196, 132);
+    const centre = selectionMirrorCentre([t, o])!;
+    expect(centre).toBe(148);
+    const mt = mirrorElement(t, centre);
+    const mo = mirrorElement(o, centre);
+    expect([mt.x1, mt.y1, mt.x2, mt.y2]).toEqual([196, 100, 132, 100]);
+    expect([mo.x1, mo.y1, mo.x2, mo.y2]).toEqual([196, 132, 100, 132]);
+    // The rows stay 32 apart and inside the original span, 16 apart in centre
+    // terms before and after.
+    expect(Math.abs((mt.x1 + mt.x2) / 2 - (mo.x1 + mo.x2) / 2)).toBe(16);
+  });
+
+  it('reproduces the single-element mirror byte-for-byte when handed the own centre', () => {
+    // Regression net for parameterising the mirror: every asymmetric kind,
+    // given its own midpoint as the shared centre, must come out identical to
+    // the default call, switches and their flip bookkeeping included.
+    const cases = [
+      ['transistor', 16, 32, 176, 32],
+      ['opamp', 0, 0, 160, 0],
+      ['mosfet', 80, -80, 80, 80],
+      ['triode', 0, 0, 160, 0],
+      ['triState', 0, 0, 96, 0],
+      ['dpdtSwitch', 0, 0, 96, 0],  // horizontal: the fan shifts along y
+      ['dpdtSwitch', 48, -48, 48, 48],  // vertical: the fan shifts along x
+      ['switch2', 0, 0, 160, 0],
+    ] as const;
+    for (const [kind, x1, y1, x2, y2] of cases) {
+      const e = { ...element(kind, x1, y1, x2, y2), state: 1, params: { position: 1 } };
+      expect(mirrorElement(e, (e.x1 + e.x2) / 2)).toStrictEqual(mirrorElement(e));
+    }
   });
 });

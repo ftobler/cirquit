@@ -122,6 +122,58 @@ function upstreamTurn(e: CircuitElement): (p: Point) => Point {
   return (p) => ({ x: p.y + xmy, y: 2 * cy - (p.x - xmy) });
 }
 
+/** The prepareFlip walk (CommandManager.java:385-399): min and max over both
+ *  endpoints of every selected element, then one centre per axis. The centres
+ *  truncate because Java's integer division does, and rounding here instead
+ *  would drift every odd-span selection by a grid square. */
+function flipCentres(selected: CircuitElement[]): { cx: number; cy: number } {
+  let minx = Infinity;
+  let maxx = -Infinity;
+  let miny = Infinity;
+  let maxy = -Infinity;
+  for (const e of selected) {
+    minx = Math.min(e.x1, e.x2, minx);
+    maxx = Math.max(e.x1, e.x2, maxx);
+    miny = Math.min(e.y1, e.y2, miny);
+    maxy = Math.max(e.y1, e.y2, maxy);
+  }
+  return { cx: Math.trunc((minx + maxx) / 2), cy: Math.trunc((miny + maxy) / 2) };
+}
+
+/**
+ * One shared pivot for a whole selection's quarter turn. Upstream computes a
+ * single pivot from the selection bounding box and turns every part about it
+ * (prepareFlip plus CommandManager.java:414-428), so a multi-select comes out
+ * as a rigid body instead of each part circling its own midpoint and
+ * scrambling the group. The returned point is exactly the one that makes
+ * `turnPointAbout(p, pivot, 1)` reproduce upstream's composed
+ * flipXY-then-flipY: its `x - y` is the snapped axis `snapGrid(cx - cy)` and
+ * its `x + y` is `2*cy + xmy`.
+ *
+ * Undefined for fewer than two elements on purpose: the single-element
+ * command keeps `upstreamTurn`, whose axis shift for odd-defaultLength kinds
+ * is documented deliberate behaviour (feature/overview.md, Rotate axis).
+ */
+export function selectionTurnPivot(selected: CircuitElement[]): Point | undefined {
+  if (selected.length < 2) return undefined;
+  const { cx, cy } = flipCentres(selected);
+  const xmy = snapGrid(cx - cy);
+  return { x: cy + xmy, y: cy };
+}
+
+/**
+ * One shared axis for a whole selection's mirror: the bounding box centre
+ * upstream's mirror command reflects every selected part across
+ * (CommandManager.java:403-411), truncated like the turn's, so the group
+ * mirrors as a body instead of each part folding about its own centre.
+ * Undefined for fewer than two elements, leaving the single-element command
+ * exactly as it was.
+ */
+export function selectionMirrorCentre(selected: CircuitElement[]): number | undefined {
+  if (selected.length < 2) return undefined;
+  return flipCentres(selected).cx;
+}
+
 /**
  * One quarter turn per unit about `pivot`, the same sense as `rotateElement`:
  * relative to the pivot, `(dx,dy)` becomes `(dy,-dx)`. `turns` is taken mod 4
@@ -257,7 +309,8 @@ function rotateFlags(e: CircuitElement): number {
   return flags;
 }
 /**
- * Reflect across the vertical axis through the element's midpoint. A mirror
+ * Reflect across the vertical axis through the element's midpoint, or through
+ * `centre` when a selection hands in the shared bounding box centre. A mirror
  * reverses the axis direction, so for a horizontal part the `dsign` term alone
  * moves the hanging terminals to the true mirror side; only a vertical part
  * (whose axis direction is unchanged) needs its orientation flag flipped. The
@@ -267,9 +320,9 @@ function rotateFlags(e: CircuitElement): number {
  * without the bit its electrode side is a fixed 1 rather than dsign
  * (TriodeElm.java:251-255).
  */
-export function mirrorElement(e: CircuitElement): CircuitElement {
+export function mirrorElement(e: CircuitElement, centre?: number): CircuitElement {
   if (!canMirror(e)) return e;
-  const cx = (e.x1 + e.x2) / 2;
+  const cx = centre ?? (e.x1 + e.x2) / 2;
   const vertical = e.x1 === e.x2;
   // The tri-state's control offset is absolute (a fixed sign, TriStateElm.java:
   // 122), so a mirror must flip FLAG_FLIP unconditionally, unlike the
@@ -306,7 +359,8 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
     // pairing inverts (`position = 1-position`) and the body shifts one pole
     // gap along the perpendicular so the pole fan stays on the same physical
     // side of the axis (DPDTSwitchElm.java:89, :256-267). The base mirror then
-    // reflects the shifted endpoints about the element's own midpoint.
+    // reflects the shifted endpoints, about the shared centre when a
+    // selection provides one.
     const dx = e.x2 - e.x1;
     const dy = e.y2 - e.y1;
     const dn = Math.hypot(dx, dy);
@@ -318,9 +372,9 @@ export function mirrorElement(e: CircuitElement): CircuitElement {
     }
     return flipDpdtPosition({
       ...withoutRoute(e),
-      x1: e.x2 - shiftX,
+      x1: 2 * cx - (e.x1 + shiftX),
       y1: e.y1 + shiftY,
-      x2: e.x1 - shiftX,
+      x2: 2 * cx - (e.x2 + shiftX),
       y2: e.y2 + shiftY,
     });
   }

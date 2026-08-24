@@ -42,6 +42,8 @@ import {
   canSwap,
   mirrorElement,
   rotateElement,
+  selectionMirrorCentre,
+  selectionTurnPivot,
   swapTerminalOrder,
   switch2PosCount,
 } from '../model/transform';
@@ -1214,7 +1216,13 @@ function createAppStore() {
     }
     // Nothing grabbed: the settled-selection command, one undo entry.
     if (gesture === null) {
-      transformSelected(canRotate, rotateElement);
+      // One pivot for the whole selection: upstream walks the bounding box
+      // once and turns every part about it (CommandManager.prepareFlip,
+      // CommandManager.java:385-428), so a multi-select comes out rigid. A
+      // lone element keeps upstreamTurn: its grid-snapped axis is what holds
+      // odd-defaultLength kinds to the grid.
+      const pivot = selectionTurnPivot(selectedElements());
+      transformSelected(canRotate, pivot ? (e) => rotateElement(e, pivot) : rotateElement);
       return;
     }
     if (gesture.kind === 'move') {
@@ -1230,7 +1238,16 @@ function createAppStore() {
     const turned = transformSelected(canRotate, (e) => rotateElement(e, { x: e.x1, y: e.y1 }), true);
     if (turned) set({ elementGesture: { ...gesture, placeTurns: (gesture.placeTurns + 1) % 4 } });
   },
-  mirrorSelection: () => transformSelected(canMirror, mirrorElement),
+  mirrorSelection: () => {
+    // The analogous shared axis: upstream reflects every selected part across
+    // the one bbox centre (CommandManager.java:403-411), so the group mirrors
+    // as a body instead of each part folding about its own centre.
+    const centre = selectionMirrorCentre(selectedElements());
+    transformSelected(
+      canMirror,
+      centre === undefined ? mirrorElement : (e) => mirrorElement(e, centre),
+    );
+  },
   swapTerminals: () => transformSelected(canSwap, swapTerminalOrder),
 
   convertWiresToRouted: () => {
@@ -3184,6 +3201,13 @@ function modelLinesFor(s: AppState, elements: CircuitElement[]): string[] {
   return lines;
 }
 
+/** The current selection in document order, the list the geometry commands
+ *  and their shared-pivot computation both walk. */
+function selectedElements(): CircuitElement[] {
+  const s = useStore.getState();
+  return s.elements.filter((e) => s.selectedIds.includes(e.id));
+}
+
 /**
  * One-undo-step geometry command over the selection. Refuses to touch a mixed
  * or unsupported selection, which keeps the menu's disabled state and the
@@ -3197,14 +3221,13 @@ function transformSelected(
   apply: (e: CircuitElement) => CircuitElement,
   skipCommit = false,
 ): boolean {
-  const s = useStore.getState();
-  const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
+  const selected = selectedElements();
   if (selected.length === 0 || !selected.every(guard)) return false;
   // skipCommit is the in-flight pointer gesture's escape hatch, the same
   // reasoning as deleteSelected(true): the drag already committed its baseline
   // at pointer-down, and a second commit here would cost the gesture an extra
   // undo entry that reverts to a half-turned element.
-  if (!skipCommit) s.commit();
+  if (!skipCommit) useStore.getState().commit();
   useStore.setState((st) => ({
     elements: st.elements.map((e) => (st.selectedIds.includes(e.id) ? apply(e) : e)),
     ...bumpRevision(st),
