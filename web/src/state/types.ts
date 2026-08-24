@@ -360,8 +360,8 @@ export interface AppState {
    *  After those endpoint splits each drawn segment also breaks at every
    *  junction-dot post lying on its interior (upstream's WireElm.draggingDone),
    *  dropping any sub-segment that would lie parallel on an existing
-   *  colinear two-terminal part. Returns the new ids, empty when the run had
-   *  no length. */
+   *  colinear two-terminal part. Returns the surviving new ids, empty when
+   *  the run had no length or nothing of it was kept. */
   addWires(segments: WireSegment[]): number[];
   /** Splits the wire at `id` at `point` (circuit coordinates, snapped to the
    *  grid here like upstream's doSplit), replacing it with the two halves. The

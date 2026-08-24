@@ -628,6 +628,37 @@ describe('the wire tool draws a run instead of placing a part', () => {
     expect(elements.some((e) => e.id === crossed)).toBe(false);
     expect(elements).toHaveLength(3);
   });
+
+  it('a run fully duplicated by existing wires leaves the old selection standing', () => {
+    // Redrawing an existing connection across its junction drops every piece
+    // as a parallel duplicate (upstream's hasDirectConnection), so the
+    // gesture has no live id to select and must not clobber what was held.
+    const st = useStore.getState();
+    st.addElement({ kind: 'wire', x1: 0, y1: 0, x2: 80, y2: 0, flags: 0, params: {} });
+    st.addElement({ kind: 'wire', x1: 80, y1: 0, x2: 160, y2: 0, flags: 0, params: {} });
+    const stub = st.addElement({
+      kind: 'wire',
+      x1: 80,
+      y1: 0,
+      x2: 80,
+      y2: -64,
+      flags: 0,
+      params: {},
+    });
+    useStore.getState().select([stub]);
+
+    const r = wireDrag({ x: 4, y: 4 });
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'wire') throw new Error('expected a wire drag');
+    finishWireDrag({ ...drag, current: { x: 160, y: 0 }, axis: 'h' }, useStore.getState());
+
+    const s = useStore.getState();
+    expect(s.elements.filter((e) => e.kind === 'wire')).toHaveLength(3);
+    expect(s.selectedIds).toEqual([stub]);
+    for (const id of s.selectedIds) {
+      expect(s.elements.some((e) => e.id === id)).toBe(true);
+    }
+  });
 });
 
 describe('finishPlacement splitting what the new part landed on', () => {

@@ -4248,6 +4248,39 @@ describe('a drawn wire connects where it crosses junction posts', () => {
     expect(useStore.getState().elements.filter((e) => e.kind === 'wire')).toHaveLength(3);
   });
 
+  it('never splits at a plain seam between two colinear wires', () => {
+    // The case upstream's postDrawList choice exists for: two posts meeting
+    // end to end count exactly 2, draw no dot, and are not meant to become a
+    // distinct node of their own, so drawing through the seam must leave
+    // them alone.
+    addWire(0, 0, 80, 0);
+    addWire(80, 0, 160, 0);
+
+    useStore.getState().addWires([{ x1: 80, y1: -64, x2: 80, y2: 64 }]);
+
+    expect(spans()).toContainEqual([80, -64, 80, 64]);
+    expect(useStore.getState().elements.filter((e) => e.kind === 'wire')).toHaveLength(3);
+  });
+
+  it('returns no ids when every piece of a drawn leg duplicates existing parts', () => {
+    // Redrawing an existing connection across its junction drops every piece
+    // as a parallel duplicate, so the gesture ends with no id to select
+    // rather than one no element holds.
+    addWire(0, 0, 80, 0);
+    addWire(80, 0, 160, 0);
+    addWire(80, 0, 80, -64);
+
+    const ids = useStore.getState().addWires([{ x1: 0, y1: 0, x2: 160, y2: 0 }]);
+    const s = useStore.getState();
+
+    expect(ids).toEqual([]);
+    // Whatever the caller kept from this gesture is real geometry.
+    for (const id of [...ids, ...s.selectedIds]) {
+      expect(s.elements.some((e) => e.id === id)).toBe(true);
+    }
+    expect(s.elements.filter((e) => e.kind === 'wire')).toHaveLength(3);
+  });
+
   it('keeps the drawn wire id on its first surviving piece', () => {
     // Upstream turns the dragged element itself into the first segment, so
     // what the gesture selected survives the split.

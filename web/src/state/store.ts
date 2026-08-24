@@ -541,9 +541,12 @@ function patchChangesElement(e: CircuitElement, patch: Partial<CircuitElement>):
  * whose ends some existing two-terminal part already joins directly is
  * dropped rather than laid parallel on it.
  *
- * The dot scan reads the scene WITHOUT this gesture's own wires, the
- * equivalent of upstream running off its pre-gesture analysis: only then does
- * a quiet pass-through coordinate stay unsplit. Routed wires are exempt,
+ * The dot scan reads `scene`, the element list minus every id in `madeIds`,
+ * the equivalent of upstream running off its pre-gesture analysis: only then
+ * does a quiet pass-through coordinate stay unsplit. The same made set rides
+ * into the twin search as `duplicatesColinearElement`'s skip list, so neither
+ * a replaced wire nor its own replacement pieces can count as the existing
+ * connection a piece would lie parallel on. Routed wires are exempt,
  * mirroring upstream's draggingDone override (they route around posts).
  *
  * Pure over the snapshot: returns the made ids to drop and their replacement
@@ -567,6 +570,10 @@ function connectNewWiresAcrossPosts(
   for (const id of madeIds) {
     const w = elements.find((e) => e.id === id);
     if (!w || w.kind !== 'wire') continue;
+    // Routed wires route around posts instead of crossing them, upstream's
+    // RoutedWireElm draggingDone override. Untestable through the only
+    // caller: the wire tool's helpers never set a route, so this guard stays
+    // defence against a future caller that does.
     if (w.route && w.route.length >= 2) continue;
     const hits = interiorPostHits({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 }, dots);
     if (hits.length === 0) continue;
@@ -607,7 +614,9 @@ function connectNewWiresAcrossPosts(
  *  button share this same state. */
 function defaultPartsOpen(): boolean {
   return !isNarrow();
-}/** True on the narrow (mobile) layout where the side panels stop being flex
+}
+
+/** True on the narrow (mobile) layout where the side panels stop being flex
  *  siblings and become edge-anchored overlays, so only one can be shown at a
  *  time without stacking two popovers over the canvas. */
 function isNarrow(): boolean {
@@ -1027,14 +1036,19 @@ function createAppStore() {
     // splits: the run breaks at every junction post its segments crossed, so
     // drawing through a T-junction connects there. Still the gesture's single
     // undo entry, owned by the commit above.
-    const pass = connectNewWiresAcrossPosts(get().elements, made.map((e) => e.id));
+    const madeIds = made.map((e) => e.id);
+    const pass = connectNewWiresAcrossPosts(get().elements, madeIds);
     if (pass) {
       set((st) => ({
         elements: st.elements.filter((e) => !pass.gone.has(e.id)).concat(pass.added),
         ...bumpRevision(st),
       }));
     }
-    return made.map((e) => e.id);
+    // A leg whose every piece dropped as a parallel duplicate left nothing in
+    // the store behind it: only ids that still hold an element may reach
+    // finishWireDrag's select.
+    const surviving = new Set(get().elements.map((e) => e.id));
+    return madeIds.filter((id) => surviving.has(id));
   },
 
   placeWireEnd: (id, x, y) => {

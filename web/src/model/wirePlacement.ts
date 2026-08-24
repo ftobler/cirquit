@@ -107,12 +107,12 @@ export function interiorPostHits(seg: WireSegment, posts: readonly Point[]): Poi
 
 /**
  * Whether some other two-terminal element already joins `a` to `b` directly,
- * upstream's hasDirectConnection (WireElm.java:268-283): both of its posts sit
+ * upstream's hasDirectConnection (WireElm.java:245-256): both of its posts sit
  * exactly on those two coordinates. A sub-segment with such a twin would lie
  * parallel on top of the existing part, an electrical loop over an already
- * made connection, so the splitter drops it instead of adding it. `skip`
- * carries the ids this gesture is replacing; upstream only excludes the one
- * wire it came from (`ce == this`), the port excludes every wire of the run.
+ * made connection, so the splitter drops it instead of adding it. `skip` is
+ * the caller's exclusion set: the store hands in every id its gesture is
+ * replacing, the port's wider form of upstream's single `ce == this` check.
  */
 export function duplicatesColinearElement(
   elements: readonly CircuitElement[],
