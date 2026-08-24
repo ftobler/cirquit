@@ -663,6 +663,104 @@ describe('time-spec commit', () => {
   });
 });
 
+describe('source phase and duty dialog units', () => {
+  // The dialog speaks upstream's edit-item units, degrees and percent
+  // (VoltageElm.java:573,:578-580), while params and files store radians and
+  // fractions. Every test here pins one direction of that bridge.
+
+  it('the phase row displays degrees, raw like upstream', () => {
+    // Upstream shows phaseShift*180/pi as-is (:573), so a hand-edited
+    // negative radian token displays its negative degrees.
+    const f = field('voltage', 'phaseShift');
+    expect(f.unit).toBe('deg');
+    expect(fieldValue(elm({ kind: 'voltage', params: { phaseShift: Math.PI / 4 } }), f)).toBeCloseTo(45, 12);
+    expect(fieldValue(elm({ kind: 'voltage', params: { phaseShift: -Math.PI / 2 } }), f)).toBeCloseTo(-90, 12);
+  });
+
+  it('committing degrees stores radians through pi/180', () => {
+    const { calls, actions } = recorder();
+    applyFieldChange(
+      elm({ kind: 'voltage', params: { phaseShift: 0 } }),
+      field('voltage', 'phaseShift'),
+      90,
+      actions,
+    );
+    expect(calls).toEqual([['setParam', 1, 'phaseShift', Math.PI / 2]]);
+  });
+
+  it('a phase commit wraps into [0, 2pi) exactly as upstream setEditValue', () => {
+    // ((rad % 2pi) + 2pi) % 2pi (VoltageElm.java:648-650): typing -90 lands
+    // at a stored phase of 3*pi/2, 450 folds back to 90, -180 folds to +180.
+    const commit = (v: number) => {
+      const { calls, actions } = recorder();
+      applyFieldChange(
+        elm({ kind: 'voltage', params: { phaseShift: 0 } }),
+        field('voltage', 'phaseShift'),
+        v,
+        actions,
+      );
+      return (calls[0] as [string, number, string, number] | undefined)?.[3];
+    };
+    expect(commit(-90)).toBeCloseTo((3 * Math.PI) / 2, 12);
+    expect(commit(450)).toBeCloseTo(Math.PI / 2, 12);
+    expect(commit(-180)).toBeCloseTo(Math.PI, 12);
+    // Wrapping 0 back onto a stored 0 changes nothing, so the diff dispatches
+    // no setParam at all.
+    expect(commit(0)).toBeUndefined();
+  });
+
+  it('degrees round-trip: pi/2 stored reads back 90', () => {
+    const e = elm({ kind: 'voltage', params: { phaseShift: Math.PI / 2 } });
+    expect(fieldValue(e, field('voltage', 'phaseShift'))).toBeCloseTo(90, 12);
+  });
+
+  it('the rail shares the degree row', () => {
+    const e = elm({ kind: 'rail', params: { phaseShift: Math.PI / 2 } });
+    expect(fieldValue(e, field('rail', 'phaseShift'))).toBeCloseTo(90, 12);
+    const { calls, actions } = recorder();
+    applyFieldChange(e, field('rail', 'phaseShift'), -90, actions);
+    expect(calls).toEqual([['setParam', 1, 'phaseShift', (3 * Math.PI) / 2]]);
+  });
+
+  it('the duty row shows percent within a 0..100 range', () => {
+    const f = field('voltage', 'dutyCycle');
+    expect(f.min).toBe(0);
+    expect(f.max).toBe(100);
+    expect(f.scale).toBe(100);
+    expect(fieldValue(elm({ kind: 'voltage', params: { dutyCycle: 0.25 } }), f)).toBeCloseTo(25, 12);
+  });
+
+  it('committing percent stores hundredths with the boundaries preserved', () => {
+    const commit = (v: number) => {
+      const { calls, actions } = recorder();
+      applyFieldChange(
+        elm({ kind: 'voltage', params: { dutyCycle: 0.5 } }),
+        field('voltage', 'dutyCycle'),
+        v,
+        actions,
+      );
+      return (calls[0] as [string, number, string, number])[3];
+    };
+    // Upstream commits ei.value * .01 with no clamp (:660), so 0 and 100 are
+    // the pass-through boundaries of the range.
+    expect(commit(50)).toBe(0.5);
+    expect(commit(38)).toBeCloseTo(0.38, 12);
+    expect(commit(0)).toBe(0);
+    expect(commit(100)).toBe(1);
+  });
+
+  it('displaying the rows never rewrites the stored truth', () => {
+    // Opening the dialog resolves every visible row; the radians and the
+    // fraction must come out exactly as they went in, so a save after merely
+    // looking is byte-for-byte.
+    const params = { waveform: 5, frequency: 125, phaseShift: 1.5707963267948966, dutyCycle: 0.56 };
+    const e = elm({ kind: 'voltage', params });
+    fieldRows(e);
+    expect(e.params.phaseShift).toBe(1.5707963267948966);
+    expect(e.params.dutyCycle).toBe(0.56);
+  });
+});
+
 describe('Specify As toggling', () => {
   it('sets and clears bit 32 through updateElement and swaps the rows', () => {
     const base = elm({ kind: 'voltage', params: { waveform: 5 } });

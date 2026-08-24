@@ -93,6 +93,14 @@ describe('adjustable fields', () => {
     expect(resolveParam('switch2', 1, '')).toBeNull();
   });
 
+  it('keeps the phase row offered despite its get/apply pair', () => {
+    // The phase row converts degrees into the stored radians of its own param
+    // (VoltageElm.java:573,:648), so unlike the High/Low Time pair it still
+    // has a single stored param a slider can drive, and the caption binds.
+    expect(adjustableFields('voltage').map((f) => f.name)).toContain('phaseShift');
+    expect(resolveParam('voltage', 0, 'Phase Offset')).toMatchObject({ name: 'phaseShift' });
+  });
+
   it('editItem indexes the adjustable list the same way resolveParam binds', () => {
     // resolveParam's caption-free fallback indexes into this exact list, so a
     // dialog creating a slider at index 1 saves a line that resolves back.
@@ -209,8 +217,11 @@ describe('slider value/position conversion', () => {
   it('paramScale converts the file range into the param unit', () => {
     // Upstream's duty-cycle edit item is the percent (VoltageElm.java:578),
     // the port's dutyCycle param the fraction, so a slider value is scaled by
-    // 0.01 before set_param. Every other param shares its file range.
+    // 0.01 before set_param. The phase offset's edit item is degrees
+    // (:573), the param radians, scaled by pi/180 like setEditValue (:648).
+    // Every other param shares its file range.
     expect(paramScale('dutyCycle')).toBe(0.01);
+    expect(paramScale('phaseShift')).toBeCloseTo(Math.PI / 180, 15);
     expect(paramScale('resistance')).toBe(1);
   });
 });

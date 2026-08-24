@@ -1029,6 +1029,18 @@ describe('voltage source file format', () => {
     expect(elementLine).toBe('v 1 2 3 4 32 1 40 5 0 0 0.5');
   });
 
+  it('an untouched line with phase and duty tokens saves byte-for-byte', () => {
+    // The dialog edits degrees and percent (VoltageElm.java:573,:578) but the
+    // file stores radians and fractions on both sides, so a load-save pair
+    // that never commits an edit reproduces the line exactly.
+    const { e, elementLine } = voltageLine(
+      'v 64 128 64 48 4 5 40.0 5.0 0.0 1.5707963267948966 0.56',
+    );
+    expect(e.params.phaseShift).toBe(Math.PI / 2);
+    expect(e.params.dutyCycle).toBe(0.56);
+    expect(elementLine).toBe('v 64 128 64 48 4 5 40 5 0 1.5707963267948966 0.56');
+  });
+
   it('a fresh voltage source dumps the upstream constructor defaults', () => {
     // The toolbar constructor runs 60 Hz at 5 V with the caption flag on
     // (VoltageElm.java:52-58); the file constructor's 40 Hz seed must not

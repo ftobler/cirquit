@@ -112,8 +112,19 @@ export function waveformRows(): FieldDef[] {
     {
       name: 'phaseShift',
       label: 'Phase offset',
-      unit: 'rad',
+      // Upstream edits the phase in degrees and stores radians; files carry
+      // radians on both sides, so this pair is dialog presentation only
+      // (VoltageElm.java:573,:588,:648-650).
+      unit: 'deg',
       visible: hasFrequencyRows,
+      get: (e) => (e.params.phaseShift ?? 0) * (180 / Math.PI),
+      apply: (e, v) => {
+        // Degrees commit through pi/180 and wrap into [0, 2*pi), upstream's
+        // setEditValue: typing -90 lands at a stored phase of 3*pi/2, so the
+        // next display reads 270 like upstream's own editor.
+        const rad = (v * Math.PI) / 180;
+        e.params.phaseShift = ((rad % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      },
     },
     {
       name: 'lowTime',
@@ -134,8 +145,13 @@ export function waveformRows(): FieldDef[] {
     {
       name: 'dutyCycle',
       label: 'Duty cycle',
+      // Edited in percent like upstream's dutyCycle*100 row with its 0..100
+      // bounds (VoltageElm.java:578-580); the scale commits hundredths into
+      // the stored fraction (:660). Files keep the fraction, so this too is
+      // dialog presentation only.
       min: 0,
-      max: 1,
+      max: 100,
+      scale: 100,
       visible: (e) => hasTimingOptions(e) && !timeSpec(e),
     },
     {

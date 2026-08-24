@@ -57,6 +57,19 @@ function sliderDisabled(kind: string, f: FieldDef): boolean {
   return kind === 'switch2' && f.name === 'link';
 }
 
+/** Rows whose get/apply pair is only a dialog unit conversion of the field's
+ *  own param, so they still have the single stored param a slider binds,
+ *  unlike the High/Low Time pair whose apply recomputes two other params.
+ *  The phase offset row is the member: edited in degrees, stored in radians
+ *  (VoltageElm.java:573,:648), with PARAM_SCALE bridging the units. */
+const UNIT_CONVERTED_ROWS: ReadonlySet<string> = new Set(['phaseShift']);
+
+/** Whether a numeric row can host a slider: nothing derived unless it is one
+ *  of the known unit-conversion rows. */
+function sliderBindable(f: FieldDef): boolean {
+  return (f.get === undefined && f.apply === undefined) || UNIT_CONVERTED_ROWS.has(f.name);
+}
+
 /**
  * The numeric fields an element can host a slider on: the `getEditInfo` rows
  * that carry a value a slider can set, in field order. The choice, checkbox,
@@ -86,9 +99,8 @@ export function adjustableFields(kind: string): FieldDef[] {
       // A derived row (the source's High Time / Low Time, get/apply) has no
       // single stored param to bind: a slider on it would write a phantom
       // param the engine cannot patch, the same failure the contents row
-      // guards against.
-      f.get === undefined &&
-      f.apply === undefined &&
+      // guards against. A unit-converted row keeps its own param and stays.
+      sliderBindable(f) &&
       !sliderDisabled(kind, f),
   );
 }
@@ -118,11 +130,11 @@ export function resolveParam(
       // A dynamic label (the source's "Voltage"/"Max Voltage" row) has no
       // single caption to match; the alias table and the index fallback cover
       // those rows. A derived row (the High/Low Time pair, get/apply) has no
-      // stored param either, so a caption naming it must not bind a phantom.
+      // stored param either, so a caption naming it must not bind a phantom;
+      // a unit-converted row keeps its own param and binds.
       if (
         typeof f.label === 'string' &&
-        f.get === undefined &&
-        f.apply === undefined &&
+        sliderBindable(f) &&
         !sliderDisabled(kind, f) &&
         normalize(f.label) === key
       )
@@ -153,6 +165,10 @@ export function resolveParam(
  */
 const PARAM_SCALE: Record<string, number> = {
   dutyCycle: 0.01,
+  // The phase offset's slider line speaks degrees, upstream's edit-item unit
+  // (VoltageElm.java:573), while the param is radians: a drag commits
+  // through pi/180, the same conversion setEditValue does (:648).
+  phaseShift: Math.PI / 180,
 };
 
 /** The scale from a slider's file range to the named param's unit, 1 when they
