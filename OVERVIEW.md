@@ -760,8 +760,9 @@ For the `402` row the OTA is a `CompositeElm` of two rails and sixteen
 transistors (OTAElm.java:8-9), and every token after the flags is one composite
 child's dump, `_`-joined by the old text format and carried raw so a save
 round-trips them byte-for-byte. The first two tokens are the rails, whose
-`maxVoltage` fields are the loaded supply values; the frontend does not read
-them, leaving `posVolt`/`negVolt` on their +/-9 V defaults. The token list
+`maxVoltage` fields are the loaded supply values; the frontend reads them back
+into `posVolt`/`negVolt` exactly as upstream does (OTAElm.java:39-43), leaving
+the +/-9 V defaults in force only when no rail tokens arrive. The token list
 reaches the engine in `spec.model` as a JSON array of the raw strings, the same
 string carrier the custom-logic model uses, and the engine maps each token onto
 the matching child spec (ota.rs). The five posts are the non-inverting input,

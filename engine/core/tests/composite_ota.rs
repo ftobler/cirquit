@@ -683,6 +683,12 @@ const OTA_GAIN_TOKENS: &[&str] = &[
 /// The OTA follower: non-inverting input driven, output wired straight back
 /// to the inverting input. Returns the output node voltage.
 fn ota_follower(tokens: &[&str], vin: f64) -> f64 {
+    ota_follower_supplied(tokens, vin, 9.0, -9.0)
+}
+
+/// The same follower at other supply rails, the params a saved file's rail
+/// tokens imply once the frontend's read-back has extracted them.
+fn ota_follower_supplied(tokens: &[&str], vin: f64, pos_volt: f64, neg_volt: f64) -> f64 {
     let c = &mut build(
         vec![
             elm(
@@ -696,7 +702,7 @@ fn ota_follower(tokens: &[&str], vin: f64) -> f64 {
                 3,
                 &[[100, 0], [100, 200], [300, 100], [300, 200], [300, 300]],
                 tokens,
-                &[("posVolt", 9.0), ("negVolt", -9.0)],
+                &[("posVolt", pos_volt), ("negVolt", neg_volt)],
             ),
             elm(4, "wire", &[[300, 300], [100, 200]], &[]),
             elm(
@@ -852,6 +858,29 @@ fn ota_parses_the_corpus_child_dump_tokens() {
     assert!(
         close(from_tokens, 1.0, 0.03),
         "token-carrying follower output was {from_tokens}, expected to track 1 V"
+    );
+}
+
+#[test]
+fn ota_rail_token_supplies_reach_the_rail_children() {
+    // The saved rail tokens ARE the supplies: upstream reads negVolt/posVolt
+    // back off the two rail children after a load (OTAElm.java:39-43), and
+    // the frontend's read-back turns those maxVoltage fields into exactly the
+    // params this test passes. A +15/-15 part must therefore track an input
+    // past the +/-9 V defaults, while the same tokens at the default params
+    // clip below 9.5 V. This pins the engine half of the restore contract:
+    // the params must really land on the rail children, not just ride along.
+    let mut tokens15 = vec!["0_0_40_-15_0_0_0.5", "0_0_40_15_0_0_0.5"];
+    tokens15.extend_from_slice(&OTA_GAIN_TOKENS[2..]);
+    let wide = ota_follower_supplied(&tokens15, 10.0, 15.0, -15.0);
+    assert!(
+        close(wide, 10.0, 0.03),
+        "+15/-15 follower output was {wide}, expected it to track 10 V past the 9 V default rail"
+    );
+    let defaults = ota_follower_supplied(&tokens15, 10.0, 9.0, -9.0);
+    assert!(
+        defaults < 9.5,
+        "follower with +/-9 V params reached {defaults} V for a 10 V input, expected clipping"
     );
 }
 

@@ -15,12 +15,12 @@
  *
  * The `posVolt`/`negVolt` supply fields default to the LM13700's +/-9 V and
  * are sent to the engine as ordinary params, which override the two rail
- * children's `maxVoltage`. They are deliberately not read from the file: the
- * composite dump has no dedicated supply tokens, the rails carry their
- * voltages inside the first two child dumps, and the engine applies the params
- * to those rails itself, so parsing them here would duplicate that work. They
- * are written back, though, whenever there are no carried tokens to re-emit
- * (otaChildTokens below), so a freshly placed OTA saves its real supplies.
+ * children's `maxVoltage`. On load they are read back off those same rail
+ * dumps' maxVoltage field, exactly as upstream does (OTAElm.java:39-43): the
+ * saved values ARE the supplies, so a part saved at other rails reloads at
+ * them instead of falling back to +/-9. They are also written back, though,
+ * whenever there are no carried tokens to re-emit (otaChildTokens below), so
+ * a freshly placed OTA saves its real supplies.
  */
 
 import {
@@ -169,6 +169,20 @@ function otaChildTokens(e: CircuitElement): string[] {
   ];
 }
 
+/** The supply a rail child's dump token carries: field 3 of
+ *  `flags_waveform_frequency_maxVoltage_...` (VoltageElm.java:69-75), the
+ *  same value upstream reads back into negVolt/posVolt after a load. A token
+ *  that is missing, too short or carries a non-finite number answers
+ *  undefined so the element keeps its +/-9 V defaults rather than inheriting
+ *  garbage (upstream's reader would throw and drop the element instead). */
+function railSupply(token: string | undefined): number | undefined {
+  if (token === undefined) {
+    return undefined;
+  }
+  const volts = Number(token.split('_')[3]);
+  return Number.isFinite(volts) ? volts : undefined;
+}
+
 function otaPosts(e: CircuitElement): Point[] {
   const g = otaGeometry(e);
   return [g.in1[0], g.in2[0], g.in3[0], g.in4[0], g.point2bis];
@@ -234,6 +248,18 @@ export const OTA_DEF: ElementDef = {
     // verbatim into the engine's `spec.model` string carrier. The engine
     // parses them itself; the frontend stores the list and nothing else.
     e.model = t;
+    // Upstream reads negVolt off rail child 0 and posVolt off child 1 after a
+    // load (OTAElm.java:39-43): the saved values ARE the supplies. Only the
+    // params move; the token list above stays untouched so a save round-trips
+    // byte-for-byte. A short or malformed list leaves the +/-9 V defaults.
+    const neg = railSupply(t[0]);
+    if (neg !== undefined) {
+      e.params.negVolt = neg;
+    }
+    const pos = railSupply(t[1]);
+    if (pos !== undefined) {
+      e.params.posVolt = pos;
+    }
   },
   // A carried token list always wins, so a loaded file round-trips
   // byte-for-byte. The fallback is keyed on an empty list rather than on "is

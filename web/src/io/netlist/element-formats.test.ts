@@ -2575,13 +2575,30 @@ describe('ota file format', () => {
     expect(model[2]).toMatch(/^0_1_/);
   });
 
-  it('does not read the supply voltages from the file; the +-9 V defaults apply', () => {
-    // The composite dump has no separate posVolt/negVolt tokens; the rails
-    // carry them inside their child dumps, and the engine re-derives them from
-    // the params, so the loaded element keeps its defaults (ota.rs).
-    const [e] = parseCircuit(otaLine).elements;
-    expect(e.params.posVolt).toBe(9);
-    expect(e.params.negVolt).toBe(-9);
+  /** The corpus line with both rails raised to a +15/-15 supply, the shape a
+   *  file saved upstream after editing the OTA's supply voltages carries. */
+  const ota15 = (() => {
+    const f = otaLine.split(/\s+/);
+    f[6] = '0_0_40_-15_0_0_0.5';
+    f[7] = '0_0_40_15_0_0_0.5';
+    return f.join(' ');
+  })();
+
+  it('reads the supply voltages back off the two rail tokens', () => {
+    // Upstream reads negVolt off rail child 0 and posVolt off child 1 after a
+    // load (OTAElm.java:39-43): the saved maxVoltage fields ARE the supplies.
+    // Without this read-back a +15/-15 part reloads at the +/-9 V defaults
+    // and clips about 40% lower than where it was saved.
+    const [e] = parseCircuit(ota15).elements;
+    expect(e.params.negVolt).toBe(-15);
+    expect(e.params.posVolt).toBe(15);
+  });
+
+  it('re-emits the original child tokens verbatim even with non-default rails', () => {
+    // Reading the rails into params must not disturb the carried token list,
+    // or the round trip would rewrite bytes upstream wrote.
+    const [e] = parseCircuit(ota15).elements;
+    expect(lineFor(e)).toBe(ota15);
   });
 
   it('a fresh OTA dumps the eighteen child tokens upstream demands', () => {
@@ -2635,6 +2652,9 @@ describe('ota file format', () => {
     // and the line becomes loadable.
     const [e] = parseCircuit('402 512 528 624 528 0').elements;
     expect(e.model).toEqual([]);
+    // No rail tokens to read, so the LM13700 defaults survive untouched.
+    expect(e.params.posVolt).toBe(9);
+    expect(e.params.negVolt).toBe(-9);
     const line = lineFor(e);
     expect(line.split(/\s+/).slice(0, 6)).toEqual(['402', '512', '528', '624', '528', '0']);
     expect(childTokens(line)).toHaveLength(18);
