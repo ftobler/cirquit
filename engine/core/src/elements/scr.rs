@@ -91,6 +91,16 @@ impl Scr {
     }
 
     /// Linearises the internal junction across inode to cathode.
+    /// The latch decision: `-icmult*ic + ia*iamult` with `icmult =
+    /// 1/triggerI` and `iamult = 1/holdingI - 1/triggerI` reduces to
+    /// `ig/triggerI + ia/holdingI` because `ic = -ig - ia`
+    /// (SCRElm.java:229-232, :248-252). A gate current past trigger fires
+    /// it, and an anode current past holding keeps it latched once the gate
+    /// drive is gone.
+    fn latched(&self) -> bool {
+        self.ig / self.trigger_i + self.ia / self.holding_i > 1.0
+    }
+
     fn stamp_junction(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         let (n_in, n_c) = (self.base.nodes[3], self.base.nodes[1]);
         let mut v = self.base.volts[3] - self.base.volts[1];
@@ -151,12 +161,8 @@ impl Element for Scr {
 
         self.stamp_junction(ctx, s);
 
-        // The latch: `-icmult*ic + ia*iamult` with `icmult = 1/triggerI` and
-        // `iamult = 1/holdingI - 1/triggerI` reduces to `ig/triggerI +
-        // ia/holdingI` because `ic = -ig - ia` (SCRElm.java:229-232,
-        // :248-252). A gate current past trigger fires it, and an anode
-        // current past holding keeps it latched once the gate drive is gone.
-        let on = self.ig / self.trigger_i + self.ia / self.holding_i > 1.0;
+        // The latch: see `latched`.
+        let on = self.latched();
         self.a_resistance = if on { ON_RESISTANCE } else { OFF_RESISTANCE };
         s.resistor(self.base.nodes[0], self.base.nodes[3], self.a_resistance);
     }
@@ -233,13 +239,70 @@ impl Element for Scr {
     }
 
     fn reset(&mut self) {
+        // Upstream zeroes the terminal volts, the junction anchor and the
+        // lastvac/lastvag convergence anchors plus curcounts, nothing else
+        // (SCRElm.java:75-79): ia and ig survive, so the next do_step
+        // re-derives a_resistance from the stale currents and a latched SCR
+        // stays latched through Reset.
         self.base.reset();
-        self.ia = 0.0;
-        self.ig = 0.0;
         self.last_vac = 0.0;
         self.last_vag = 0.0;
-        self.a_resistance = OFF_RESISTANCE;
         self.junction_last_v = 0.0;
         self.junction_ieq = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    fn spec(kind: &str) -> ElementSpec {
+        ElementSpec {
+            id: 1,
+            kind: kind.into(),
+            posts: Vec::new(),
+            params: HashMap::new(),
+            label: None,
+            model: None,
+            flags: 0,
+        }
+    }
+
+    #[test]
+    fn scr_latch_survives_reset_like_upstream() {
+        let mut s = Scr::new(&spec("scr"));
+        s.ia = 10.0 * DEF_HOLDING_I;
+        s.ig = 0.0;
+        assert!(s.latched());
+        s.reset();
+        // Upstream's reset clears lastvac/lastvag but leaves ia/ic/ig alone
+        // (SCRElm.java:75-79), so do_step keeps deriving the low on-state
+        // resistance from the stale anode current through Reset.
+        assert!(
+            s.latched(),
+            "the anode current feeding the latch must survive Reset"
+        );
+    }
+
+    #[test]
+    fn scr_gate_current_alone_survives_reset_and_fires() {
+        let mut s = Scr::new(&spec("scr"));
+        s.ig = 10.0 * DEF_TRIGGER_I;
+        s.reset();
+        assert!(s.latched());
+    }
+
+    #[test]
+    fn scr_reset_still_clears_the_convergence_anchors() {
+        let mut s = Scr::new(&spec("scr"));
+        s.last_vac = -3.0;
+        s.last_vag = 4.0;
+        s.junction_last_v = 0.7;
+        s.reset();
+        assert_eq!(s.last_vac, 0.0);
+        assert_eq!(s.last_vag, 0.0);
+        assert_eq!(s.junction_last_v, 0.0);
     }
 }

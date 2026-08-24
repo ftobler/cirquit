@@ -233,12 +233,64 @@ impl Element for Triac {
     }
 
     fn reset(&mut self) {
+        // Upstream zeroes only the terminal volts, the two junction anchors
+        // and the curcounts here (TriacElm.java:74-79): i2, ig and state all
+        // survive, so start_iteration re-derives the latch from the stale
+        // currents and a conducting triac keeps conducting through Reset.
         self.base.reset();
-        self.i2 = 0.0;
-        self.ig = 0.0;
-        self.state = false;
-        self.a_resistance = OFF_RESISTANCE;
         self.forward_last_v = 0.0;
         self.reverse_last_v = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    fn spec(kind: &str) -> ElementSpec {
+        ElementSpec {
+            id: 1,
+            kind: kind.into(),
+            posts: Vec::new(),
+            params: HashMap::new(),
+            label: None,
+            model: None,
+            flags: 0,
+        }
+    }
+
+    #[test]
+    fn triac_latch_survives_reset_like_upstream() {
+        let mut t = Triac::new(&spec("triac"));
+        t.state = true;
+        t.ig = 0.0;
+        t.i2 = 10.0 * DEF_HOLDING_I;
+        t.start_iteration(&SimCtx::default());
+        assert_eq!(t.a_resistance, ON_RESISTANCE);
+        t.reset();
+        // Upstream's reset leaves i2/ig/state alone (TriacElm.java:74-79),
+        // so start_iteration re-derives the latch from the stale currents
+        // and a conducting triac keeps conducting through Reset until the
+        // main-terminal current genuinely falls below holding.
+        t.start_iteration(&SimCtx::default());
+        assert_eq!(
+            t.a_resistance,
+            ON_RESISTANCE,
+            "Reset must not clear the latch while i2 exceeds holding"
+        );
+    }
+
+    #[test]
+    fn triac_reset_still_zeroes_volts_and_junction_anchors() {
+        let mut t = Triac::new(&spec("triac"));
+        t.base.volts = vec![5.0, 1.0, 0.5, 3.0];
+        t.forward_last_v = 0.7;
+        t.reverse_last_v = -0.7;
+        t.reset();
+        assert!(t.base.volts.iter().all(|v| *v == 0.0));
+        assert_eq!(t.forward_last_v, 0.0);
+        assert_eq!(t.reverse_last_v, 0.0);
     }
 }

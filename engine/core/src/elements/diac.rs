@@ -224,10 +224,63 @@ impl Element for Diac {
     }
 
     fn reset(&mut self) {
+        // Upstream has no reset override at all (DiacElm), so only the base
+        // volts and curcount are zeroed: state survives, and start_iteration
+        // re-derives the latch from the element current, which upstream's
+        // base reset also leaves alone.
+        let current = self.base.current;
         self.base.reset();
-        self.resistance = self.off_resistance;
-        self.state = false;
+        self.base.current = current;
         self.j1.reset();
         self.j2.reset();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    fn spec(kind: &str) -> ElementSpec {
+        ElementSpec {
+            id: 1,
+            kind: kind.into(),
+            posts: Vec::new(),
+            params: HashMap::new(),
+            label: None,
+            model: None,
+            flags: 0,
+        }
+    }
+
+    #[test]
+    fn diac_latch_survives_reset_like_upstream() {
+        let mut d = Diac::new(&spec("diac"));
+        d.state = true;
+        d.resistance = d.on_resistance;
+        // Upstream's CircuitElm.reset zeroes volts and curcount but never
+        // `current` (CircuitElm.java:258-263), and DiacElm has no reset
+        // override at all, so start_iteration re-derives the on state from
+        // the surviving element current (DiacElm.java:123-127).
+        d.base.current = 10.0 * DEF_HOLDCURRENT;
+        d.reset();
+        assert_eq!(
+            d.base.current,
+            10.0 * DEF_HOLDCURRENT,
+            "the element current feeding the latch must survive Reset"
+        );
+        d.start_iteration(&SimCtx::default());
+        assert!(d.state, "a conducting diac must still be on after Reset");
+    }
+
+    #[test]
+    fn diac_reset_still_zeroes_the_terminal_volts_and_junction_anchors() {
+        let mut d = Diac::new(&spec("diac"));
+        d.base.volts = vec![40.0, 5.0];
+        d.j1.last_v = 0.7;
+        d.reset();
+        assert!(d.base.volts.iter().all(|v| *v == 0.0));
+        assert_eq!(d.j1.last_v, 0.0);
     }
 }

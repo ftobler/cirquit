@@ -111,3 +111,35 @@ impl Element for SparkGap {
         self.state = false;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    fn spec(kind: &str) -> ElementSpec {
+        ElementSpec {
+            id: 1,
+            kind: kind.into(),
+            posts: Vec::new(),
+            params: HashMap::new(),
+            label: None,
+            model: None,
+            flags: 0,
+        }
+    }
+
+    #[test]
+    fn spark_gap_clears_its_latch_on_reset() {
+        // Unlike the thyristor family, upstream's SparkGapElm explicitly
+        // resets its own state (SparkGapElm.java:103-106), so this behaviour
+        // is correct and must not change alongside them.
+        let mut g = SparkGap::new(&spec("sparkGap"));
+        g.state = true;
+        g.resistance = g.r_on;
+        g.reset();
+        assert!(!g.state);
+        assert_eq!(g.resistance, g.r_off);
+    }
+}
