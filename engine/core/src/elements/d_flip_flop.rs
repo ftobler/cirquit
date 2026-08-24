@@ -124,6 +124,10 @@ impl Element for DFlipFlop {
         self.chip.state_tokens()
     }
 
+    fn chip_pin_levels(&self) -> Option<Vec<bool>> {
+        Some(self.chip.pin_levels())
+    }
+
     fn current_into_node(&self, post: usize) -> f64 {
         self.chip.current_into_node(post)
     }

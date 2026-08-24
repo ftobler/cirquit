@@ -456,6 +456,14 @@ pub trait Element {
         vec![]
     }
 
+    /// The committed Boolean level of every pin of a digital chip, in pin
+    /// order, or None outside the chip family. A headless inspection seam so
+    /// tests can assert chip state without solving a circuit; nothing calls
+    /// it per frame.
+    fn chip_pin_levels(&self) -> Option<Vec<bool>> {
+        None
+    }
+
     /// Per-element sample array the renderer can pull on demand, one value per
     /// drawn segment of the element body. Default: nothing. The transmission
     /// line ships its delay-line wave here, already averaged from the two

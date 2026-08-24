@@ -43,7 +43,7 @@ impl PisoShift {
             pins.push(ChipPin::input()); // the D parallel inputs
         }
         let mut p = Self {
-            chip: Chip::new(spec, pins),
+            chip: Chip::new(spec, pins).with_sticky_clock(),
             bits,
             data: vec![false; bits],
             data_index: 0,
@@ -162,6 +162,10 @@ impl Element for PisoShift {
 
     fn current_into_node(&self, post: usize) -> f64 {
         self.chip.current_into_node(post)
+    }
+
+    fn chip_pin_levels(&self) -> Option<Vec<bool>> {
+        Some(self.chip.pin_levels())
     }
 
     fn set_param(&mut self, name: &str, value: f64) -> bool {

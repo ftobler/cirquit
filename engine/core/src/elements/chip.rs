@@ -90,6 +90,15 @@ pub struct Chip {
     /// with an active-low reset would otherwise read as a spurious reset
     /// (DFlipFlopElm.java:76-80, JKFlipFlopElm.java:62-66).
     pub just_loaded: bool,
+    /// True when this kind's upstream edge detector survives Reset. The
+    /// latch's lastLoad (LatchElm.java:111), the SIPO clockstate
+    /// (SipoShiftElm.java:30), the PISO clockState (PisoShiftElm.java:32) and
+    /// the SeqGen clockstate (SeqGenElm.java:37) are private fields their own
+    /// reset() overrides never touch, unlike the shared lastClock that
+    /// ChipElm.reset() clears for the flip-flops and counters. The port keeps
+    /// all of those memories in `last_clock`, so the kinds mark themselves
+    /// here to have it survive [`Chip::reset`].
+    pub sticky_clock: bool,
     pub pins: Vec<ChipPin>,
 }
 
@@ -103,10 +112,18 @@ impl Chip {
             high_voltage: spec.param("highVoltage", 5.0),
             last_clock: false,
             just_loaded: false,
+            sticky_clock: false,
             pins,
         };
         chip.restore_state(spec);
         chip
+    }
+
+    /// Marks the clock memory as surviving [`Chip::reset`], for the kinds
+    /// whose upstream edge detector is private state rather than lastClock.
+    pub fn with_sticky_clock(mut self) -> Self {
+        self.sticky_clock = true;
+        self
     }
 
     /// Applies the file's saved output levels: each `state` pin's voltage
@@ -228,6 +245,12 @@ impl Chip {
         0.0
     }
 
+    /// The committed level of every pin, in pin order. Backs the Element
+    /// trait's `chip_pin_levels` inspection seam; never called per frame.
+    pub fn pin_levels(&self) -> Vec<bool> {
+        self.pins.iter().map(|p| p.value).collect()
+    }
+
     /// Live values of the saved `voltage{i}` tokens, one per state-carrying
     /// pin, named by pin index exactly as `restore_state` reads them
     /// (ChipElm.java:64-67). An output enable or a combinational chip that
@@ -254,6 +277,12 @@ impl Chip {
         for pin in self.pins.iter_mut() {
             pin.value = false;
         }
-        self.last_clock = false;
+        // Upstream clears only the shared lastClock here; the sticky kinds'
+        // private edge memories sit outside this function's reach upstream,
+        // so a clock or load pin held high through Reset must not read as a
+        // fresh rising edge on the next step.
+        if !self.sticky_clock {
+            self.last_clock = false;
+        }
     }
 }

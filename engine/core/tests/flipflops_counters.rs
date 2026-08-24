@@ -793,3 +793,237 @@ fn counter2_counts_modulo_the_modulus_token() {
     assert_eq!(count(c), 0, "clear did not zero the count");
     c.set_state(4, 1);
 }
+
+// ─── Reset edge memory ───
+
+#[test]
+fn latch_holding_load_high_through_reset_does_not_reload() {
+    // Upstream's latch keeps its lastLoad edge memory outside ChipElm.reset()'s
+    // reach (LatchElm.java:111, reset at :131-132), so a load pin held high
+    // across Reset must not read as a fresh rising edge on the first step
+    // afterwards. The port carries that memory in chip.last_clock, which its
+    // reset used to clear unconditionally and re-triggered the load.
+    let spec = elm(
+        1,
+        "latch",
+        &[[0, 0], [0, 16], [96, 0], [96, 16], [0, 32]],
+        &[("bits", 2.0), ("highVoltage", 5.0)],
+    );
+    let mut l = build_element(&spec).expect("latch kind is registered");
+    let ctx = SimCtx::default();
+    // I0 high with the load pin rising: the edge latches bit 0.
+    {
+        let v = &mut l.base_mut().volts;
+        v[0] = 5.0; // I0
+        v[4] = 5.0; // load, held high from here through Reset
+    }
+    l.start_iteration(&ctx);
+    assert_eq!(
+        l.chip_pin_levels(),
+        Some(vec![true, false, true, false, true]),
+        "the load edge did not latch bit 0 before Reset"
+    );
+    l.reset();
+    assert_eq!(
+        l.chip_pin_levels(),
+        Some(vec![false; 5]),
+        "Reset did not clear the latch"
+    );
+    // Same volts re-driven: the load pin never dropped, so no new edge may
+    // exist and the outputs stay cleared.
+    {
+        let v = &mut l.base_mut().volts;
+        v[0] = 5.0;
+        v[4] = 5.0;
+    }
+    l.start_iteration(&ctx);
+    assert_eq!(
+        l.chip_pin_levels(),
+        Some(vec![true, false, false, false, true]),
+        "holding the load pin high through Reset reloaded the latch"
+    );
+}
+
+#[test]
+fn sipo_shift_holding_clock_high_through_reset_does_not_reshift() {
+    // The SIPO keeps its clockstate across Reset upstream (SipoShiftElm.java:
+    // 30), so its clock held high through Reset must not shift once more. A
+    // 1-bit register fed D = SER = high makes any extra shift visible as Q0
+    // going high again after Reset cleared it.
+    let spec = elm(
+        1,
+        "sipoShift",
+        &[[0, 0], [0, 16], [96, 0]],
+        &[("bits", 1.0), ("highVoltage", 5.0)],
+    );
+    let mut s = build_element(&spec).expect("sipoShift kind is registered");
+    let ctx = SimCtx::default();
+    // D held high the whole test; clock rises once so the 1 lands in Q0.
+    {
+        let v = &mut s.base_mut().volts;
+        v[0] = 5.0; // D
+        v[1] = 5.0; // clock
+    }
+    s.start_iteration(&ctx);
+    assert_eq!(
+        s.chip_pin_levels(),
+        Some(vec![true, true, true]),
+        "the clock edge did not load D into Q0"
+    );
+    s.reset();
+    assert_eq!(
+        s.chip_pin_levels(),
+        Some(vec![false; 3]),
+        "Reset did not clear the register"
+    );
+    // Clock still high, same volts: no fresh edge, so Q0 stays low.
+    {
+        let v = &mut s.base_mut().volts;
+        v[0] = 5.0;
+        v[1] = 5.0;
+    }
+    s.start_iteration(&ctx);
+    assert_eq!(
+        s.chip_pin_levels(),
+        Some(vec![true, true, false]),
+        "holding the clock high through Reset reshifted into Q0"
+    );
+}
+
+#[test]
+fn piso_shift_holding_clock_high_through_reset_does_not_reshift() {
+    // The PISO keeps clockState (and loadState) across Reset upstream
+    // (PisoShiftElm.java:32, reset at :75-78). With a 1-bit register and SER
+    // held high, one spurious shift writes SER into the register and shows it
+    // on Q immediately, so the sticky memory is observable.
+    let spec = elm_flags(
+        1,
+        "pisoShift",
+        &[[0, 0], [0, 16], [96, 0], [0, 32], [32, -16]],
+        &[("bits", 1.0), ("highVoltage", 5.0)],
+        2, // FLAG_NEW_BEHAVIOR, so the SER pin exists and shifts in
+    );
+    let mut p = build_element(&spec).expect("pisoShift kind is registered");
+    let ctx = SimCtx::default();
+    // LD stays low the whole test; SER held high; clock rises once so the
+    // shifted-in 1 reaches Q.
+    {
+        let v = &mut p.base_mut().volts;
+        v[1] = 5.0; // clock
+        v[3] = 5.0; // SER
+    }
+    p.start_iteration(&ctx);
+    assert_eq!(
+        p.chip_pin_levels(),
+        Some(vec![false, true, true, true, false]),
+        "the clock edge did not shift the high SER onto Q"
+    );
+    p.reset();
+    assert_eq!(
+        p.chip_pin_levels(),
+        Some(vec![false; 5]),
+        "Reset did not clear the register"
+    );
+    // Clock still high, same volts: no fresh edge may exist, so Q stays low.
+    {
+        let v = &mut p.base_mut().volts;
+        v[1] = 5.0;
+        v[3] = 5.0;
+    }
+    p.start_iteration(&ctx);
+    assert_eq!(
+        p.chip_pin_levels(),
+        Some(vec![false, true, false, true, false]),
+        "holding the clock high through Reset reshifted onto Q"
+    );
+}
+
+#[test]
+fn seq_gen_holding_clock_high_through_reset_does_not_reemit() {
+    // The sequence generator keeps its clockstate across Reset upstream
+    // (SeqGenElm.java:37, reset at :100-104), so its clock held high through
+    // Reset must not emit the next bit once more.
+    let spec = elm(
+        1,
+        "seqGen",
+        &[[0, 0], [96, 0]],
+        &[("bitCount", 1.0), ("data0", 1.0), ("highVoltage", 5.0)],
+    );
+    let mut g = build_element(&spec).expect("seqGen kind is registered");
+    let ctx = SimCtx::default();
+    {
+        let v = &mut g.base_mut().volts;
+        v[0] = 5.0; // clock
+    }
+    g.start_iteration(&ctx);
+    assert_eq!(
+        g.chip_pin_levels(),
+        Some(vec![true, true]),
+        "the clock edge did not emit the stored 1"
+    );
+    g.reset();
+    assert_eq!(
+        g.chip_pin_levels(),
+        Some(vec![false; 2]),
+        "Reset did not clear the generator"
+    );
+    // Clock still high, same volts: no fresh edge, so Q stays low.
+    {
+        let v = &mut g.base_mut().volts;
+        v[0] = 5.0;
+    }
+    g.start_iteration(&ctx);
+    assert_eq!(
+        g.chip_pin_levels(),
+        Some(vec![true, false]),
+        "holding the clock high through Reset re-emitted the bit"
+    );
+}
+
+#[test]
+fn d_flip_flop_still_resamples_once_after_reset_with_its_clock_held_high() {
+    // Regression guard on the other side of the split: the plain flip-flops
+    // share upstream's lastClock, which ChipElm.reset() clears
+    // unconditionally (ChipElm.java:353), so holding the DFF clock high
+    // through Reset DOES resample D on the first step afterwards. If the
+    // shared memory ever went sticky too, this catches it.
+    let spec = elm(
+        1,
+        "dFlipFlop",
+        &[[0, 0], [96, 0], [96, 32], [0, 16]],
+        &[("highVoltage", 5.0)],
+    );
+    let mut d = build_element(&spec).expect("dFlipFlop kind is registered");
+    let ctx = SimCtx::default();
+    // D high, clock high from the start: the first step samples D into Q.
+    {
+        let v = &mut d.base_mut().volts;
+        v[0] = 5.0; // D
+        v[3] = 5.0; // clock
+    }
+    d.start_iteration(&ctx);
+    assert_eq!(
+        d.chip_pin_levels(),
+        Some(vec![true, true, false, true]),
+        "the clock edge did not capture D"
+    );
+    d.reset();
+    assert_eq!(
+        d.chip_pin_levels(),
+        Some(vec![false, false, true, false]),
+        "Reset did not clear the flip-flop to Q low, Qbar high"
+    );
+    // Same volts re-driven: the cleared memory reads as a fresh edge and D
+    // is sampled once more.
+    {
+        let v = &mut d.base_mut().volts;
+        v[0] = 5.0;
+        v[3] = 5.0;
+    }
+    d.start_iteration(&ctx);
+    assert_eq!(
+        d.chip_pin_levels(),
+        Some(vec![true, true, false, true]),
+        "the DFF clock memory should clear on Reset, so D resamples once"
+    );
+}

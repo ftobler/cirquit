@@ -155,6 +155,7 @@ impl CustomLogic {
             high_voltage: spec.param("highVoltage", 5.0),
             last_clock: false,
             just_loaded: false,
+            sticky_clock: false,
             pins,
         };
         // Restore the file's saved output levels, one `voltage{k}` token per

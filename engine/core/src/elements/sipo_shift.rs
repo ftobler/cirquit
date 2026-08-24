@@ -26,7 +26,7 @@ impl SipoShift {
             pins.push(ChipPin::output(false)); // 2..2+bits Q0..Q_{bits-1}
         }
         let mut s = Self {
-            chip: Chip::new(spec, pins),
+            chip: Chip::new(spec, pins).with_sticky_clock(),
             bits,
         };
         s.restore_outputs(spec);
@@ -105,6 +105,10 @@ impl Element for SipoShift {
 
     fn current_into_node(&self, post: usize) -> f64 {
         self.chip.current_into_node(post)
+    }
+
+    fn chip_pin_levels(&self) -> Option<Vec<bool>> {
+        Some(self.chip.pin_levels())
     }
 
     fn set_param(&mut self, name: &str, value: f64) -> bool {

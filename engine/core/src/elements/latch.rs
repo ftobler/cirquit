@@ -113,7 +113,7 @@ impl Latch {
         };
 
         let mut latch = Self {
-            chip: Chip::new(spec, pins),
+            chip: Chip::new(spec, pins).with_sticky_clock(),
             bits,
             has_reset,
             has_set,
@@ -317,6 +317,10 @@ impl Element for Latch {
 
     fn state_tokens(&self) -> Vec<(String, f64)> {
         self.chip.state_tokens()
+    }
+
+    fn chip_pin_levels(&self) -> Option<Vec<bool>> {
+        Some(self.chip.pin_levels())
     }
 
     fn current_into_node(&self, post: usize) -> f64 {
