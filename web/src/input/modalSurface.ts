@@ -28,3 +28,6 @@ export function modalSurface(s: ModalSurfaces): boolean {
     s.contextMenu !== null
   );
 }
+
+// Deliberately not gated: scopeMenu stays ungated like upstream's Swing scope
+// popup, and the wheel scroll-value popover is a known pending surface.

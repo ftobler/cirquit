@@ -1,4 +1,4 @@
-/** The modal-surface keyboard gate (feature/modal-keyboard-ownership.md),
+/** The modal-surface keyboard gate (UIManager.java:996-1013),
  *  table driven over every blocking surface: while one is up no shortcut
  *  reaches the app on keydown, keyup releases nothing, and an open context
  *  menu owns Escape exclusively. Everything runs against the real store with
