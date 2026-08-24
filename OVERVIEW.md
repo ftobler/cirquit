@@ -261,11 +261,31 @@ fetch it).
   temporarily-true autoDC option, wasm and facade crossings carrying found /
   degraded / singular distinctly (upstream surfaces the same three outcomes as
   stop messages), with four Rust tests in the new dc_command.rs file and seven
-  TypeScript ones across the facade and menu-row suites.
-- 510 Rust tests, of which 436 are the end-to-end circuit checks across
+   TypeScript ones across the facade and menu-row suites.
+- Owner-bug batch 2026-08-23b: a mid-discharge save now carries the battery's
+  running charge (the dump prefers overlayLiveState's `soc` token over the
+  configured initialSoc, an over-discharged negative percent seeds the live
+  route while the config slot stays clamped, and committing Initial SOC moves
+  the live state too); three engine-hygiene fixes (a rejected set_circuit
+  build commits nothing, so the previous circuit keeps solving; reset and
+  reanalyze own their warnings, so switch throws no longer grow the vector;
+  the adaptive timestep attempts every halved step down to the floor,
+  upstream's halve-first rule, with the stale budget comment made honest);
+  the junction-dot scan collapses each chip bus bank to one counted post per
+  element, so a labeled node anchored on a bank no longer paints a permanent
+  grey dot on its origin (and an untouched bank covered without connecting is
+  now eligible for the red lonely-post dot); and embedded 403 scope windows
+  decode their config token, register real engine traces and draw live
+  waveforms inside their frame, so multivib-a's four windows and qam-256's
+  X-Y window render instead of placeholder frames while the raw token stays
+  byte-for-byte.
+- 514 Rust tests, of which 436 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2764 TypeScript tests (one corpus report test skipped). The relay pulldown
+  2802 TypeScript tests (one corpus report test skipped); the owner-bug batch
+  added four of the Rust tests (the new analysis_hygiene.rs) and thirty-eight
+  TypeScript ones across the battery, junction, embedded-scope and facade
+  suites. The relay pulldown
   parity fix added three Rust tests: the flag grounds an unwired throw in
   either settled position, a flag-clear guard keeps the old pole coupling,
   and the mid-travel position stamps identically with and without the flag.
