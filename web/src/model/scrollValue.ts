@@ -116,6 +116,22 @@ export function selectionValue(session: ScrollValueSession): number {
   return session.values[selectionIndex(session)];
 }
 
+/** What one key does to an open popover, upstream's close(true)/close(false)
+ *  split (ScrollValuePopup.java:156-164): commit keeps the current selection,
+ *  revert restores the opening value. */
+export type PopupKeyAction = 'commit' | 'revert';
+
+/** The keys the popover itself answers while it shows, everything else being
+ *  blocked by the modal-surface gate (UIManager.java:1060-1064): Escape and
+ *  Space close(false), Enter close(true). Escape deliberately maps to commit
+ *  here, not upstream's revert: this port's popup has always closed its
+ *  Escape the same way as its mouse-out, which commits. */
+export function popupKeyAction(key: string): PopupKeyAction | null {
+  if (key === 'Escape' || key === 'Enter') return 'commit';
+  if (key === ' ') return 'revert';
+  return null;
+}
+
 /** Normalize a browser wheel delta to pixels: line and page modes use other
  *  units, and without the conversion one notch would move the selection a
  *  different distance in every browser. */

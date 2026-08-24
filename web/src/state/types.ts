@@ -11,6 +11,7 @@ import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
 import type { ModelFamily, UserModelEntry, UserModelSnapshot } from '../model/deviceModels';
 import type { ShortcutOverlay } from '../input/shortcuts';
+import type { ScrollValueSession } from '../model/scrollValue';
 import type { CircuitElement, Point, SimSettings } from '../model/types';
 import type { WireSegment } from '../model/wirePlacement';
 import type { SampleCacheSnapshot } from '../model/sampleCache';
@@ -128,6 +129,19 @@ export interface Slider {
   shared: number | null;
   /** Every token after `38`, so the line round-trips exactly. */
   raw: string[];
+}
+
+/** The open mouse-wheel value popover, positioned at the cursor. Lives in the
+ *  store rather than in component state so `modalSurface` can count it the
+ *  way upstream counts `scrollValuePopup.isShowing()` (UIManager.java:1007-
+ *  1008): while it shows, no shortcut may act on the circuit behind it. */
+export interface ScrollValuePopover {
+  session: ScrollValueSession;
+  /** The stepped field's display label, resolved at open (a dynamic label
+   *  needs the element's state, which the session itself does not carry). */
+  name: string;
+  x: number;
+  y: number;
 }
 
 export interface AppState {
@@ -270,6 +284,10 @@ export interface AppState {
   scopeMenu: { x: number; y: number; scopeId: number; plotId: number } | null;
   /** Scope id whose properties dialog is open, or null. */
   scopeProperties: number | null;
+  /** The open mouse-wheel value popover (see ScrollValuePopover), or null.
+   *  Transient UI state like `contextMenu`: never part of the undo Snapshot,
+   *  and one of the surfaces the keyboard gate counts. */
+  scrollValuePopover: ScrollValuePopover | null;
   /** Netlist text of the last copied or cut selection. */
   clipboard: string | null;
   /** Netlist text of the last export; null means no baseline yet (clean). */
@@ -676,6 +694,22 @@ export interface AppState {
   beginEdit(): void;
   undo(): void;
   redo(): void;
+
+  /** Opens the wheel value popover session. Pushes no undo entry: the wheel
+   *  path commits its baseline before calling this, upstream's constructor
+   *  pushUndo (ScrollValuePopup.java:59), and a second commit here would
+   *  split the session across two undo steps. */
+  openScrollValuePopover(popover: ScrollValuePopover): void;
+  /** Steps the open session by one wheel event's normalized pixels, writing
+   *  the stepped value through `setParam` so it stays live. A no-op when no
+   *  session is open. */
+  stepScrollValuePopover(deltaY: number): void;
+  /** Closes the popover keeping the current selection; mouse-out, Escape and
+   *  Enter. The value is already live, so only the field clears. */
+  closeScrollValuePopover(): void;
+  /** Restores the opening value and closes; right-click and Space
+   *  (ScrollValuePopup.close(false)). */
+  revertScrollValuePopover(): void;
 
   openContextMenu(
     x: number,

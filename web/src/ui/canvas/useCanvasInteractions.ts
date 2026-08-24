@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
 import {
   axisConstrained,
@@ -14,7 +14,6 @@ import {
   stepScrollValue,
   wheelPixels,
 } from '../../model/scrollValue';
-import type { ScrollValueSession } from '../../model/scrollValue';
 import type { CircuitElement, Point } from '../../model/types';
 import { fieldLabel } from '../../model/types';
 import { wireDragAxis } from '../../model/wirePlacement';
@@ -43,16 +42,6 @@ import { useStoreRef } from './useStoreRef';
 
 export type { Drag } from './pointerDown';
 
-/** The open mouse-wheel value popover, positioned at the cursor. */
-export interface ScrollValuePopover {
-  session: ScrollValueSession;
-  /** The stepped field's display label, resolved at open (a dynamic label
-   *  needs the element's state, which the session itself does not carry). */
-  name: string;
-  x: number;
-  y: number;
-}
-
 export function useCanvasInteractions(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   dragRef: React.MutableRefObject<Drag>,
@@ -63,11 +52,6 @@ export function useCanvasInteractions(
 ) {
   const stateRef = useStoreRef();
 
-  // The value popover session. A ref mirrors the state so the wheel handler
-  // can step an open session without a stale closure, while the state drives
-  // the render.
-  const popoverRef = useRef<ScrollValuePopover | null>(null);
-  const [popover, setPopoverState] = useState<ScrollValuePopover | null>(null);
   // A momentary switch held down: its id, until the pointer comes back up.
   const heldMomentaryRef = useRef<number | null>(null);
   // Which pointer id pressed that switch, so a second finger's lift during a
@@ -183,38 +167,6 @@ export function useCanvasInteractions(
     }
     pinchPrevMidRef.current = { x: a.midX, y: a.midY };
   };
-  const setPopover = useCallback(
-    (p: ScrollValuePopover | null) => {
-      popoverRef.current = p;
-      setPopoverState(p);
-    },
-    [],
-  );
-
-  const stepPopover = useCallback(
-    (deltaY: number) => {
-      const p = popoverRef.current;
-      if (!p) return;
-      // wheelSensitivity is steps per notch, read live so a settings change
-      // mid-session takes effect on the next wheel tick (ScrollValuePopup.java:214).
-      const sensitivity = useStore.getState().settings.wheelSensitivity;
-      const session = stepScrollValue(p.session, deltaY, sensitivity);
-      useStore.getState().setParam(session.id, session.param, selectionValue(session));
-      setPopover({ ...p, session });
-    },
-    [setPopover],
-  );
-
-  const closePopover = useCallback(() => setPopover(null), [setPopover]);
-
-  const revertPopover = useCallback(() => {
-    const p = popoverRef.current;
-    if (!p) return;
-    // Restore the opening value. The undo baseline taken on open keeps the
-    // whole session one undo step either way (ScrollValuePopup.close(false)).
-    useStore.getState().setParam(p.session.id, p.session.param, p.session.original);
-    setPopover(null);
-  }, [setPopover]);
 
   const toCircuit = useCallback((clientX: number, clientY: number): Point => {
     const canvas = canvasRef.current;
@@ -629,8 +581,8 @@ export function useCanvasInteractions(
       ev.stopPropagation();
       // The pointer drifted back off the popover onto the canvas mid-session:
       // step the open session rather than opening a second one.
-      if (popoverRef.current?.session.id === hit.id) {
-        stepPopover(wheelPixels(ev.deltaY, ev.deltaMode));
+      if (state.scrollValuePopover?.session.id === hit.id) {
+        state.stepScrollValuePopover(wheelPixels(ev.deltaY, ev.deltaMode));
         return;
       }
       // The first scroll of a session is one undo step, exactly as upstream's
@@ -651,7 +603,7 @@ export function useCanvasInteractions(
       const stepped = def?.fields?.find((f) => f.name === session.param);
       const titled = stepped ?? def?.fields?.[0];
       const name = titled ? fieldLabel(hit, titled) : session.param;
-      setPopover({ session, name, x: ev.clientX, y: ev.clientY });
+      state.openScrollValuePopover({ session, name, x: ev.clientX, y: ev.clientY });
       return;
     }
 
@@ -749,9 +701,5 @@ export function useCanvasInteractions(
     onContextMenu,
     onDoubleClick,
     onPointerLeave,
-    popover,
-    stepPopover,
-    closePopover,
-    revertPopover,
   };
 }

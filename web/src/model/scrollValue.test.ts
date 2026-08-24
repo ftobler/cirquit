@@ -5,6 +5,7 @@ import {
   ZOOM_ONLY_WINDOW_MS,
   isZoomOnly,
   openScrollValue,
+  popupKeyAction,
   scrollableParam,
   selectionIndex,
   selectionValue,
@@ -157,6 +158,27 @@ describe('wheelPixels', () => {
     expect(wheelPixels(100, 0)).toBe(100);
     expect(wheelPixels(3, 1)).toBe(48);
     expect(wheelPixels(1, 2)).toBe(100);
+  });
+});
+
+describe('popupKeyAction', () => {
+  // Upstream's key row while the popup shows (UIManager.java:1060-1064):
+  // Escape/Space close(false), Enter close(true). The port's Escape keeps the
+  // current selection like mouse-out instead of reverting, a deliberate
+  // difference from its upstream namesake that predates the gating.
+  it('Escape and Enter keep the current selection', () => {
+    expect(popupKeyAction('Escape')).toBe('commit');
+    expect(popupKeyAction('Enter')).toBe('commit');
+  });
+
+  it('Space reverts to the opening value, exactly as upstream closes(false)', () => {
+    expect(popupKeyAction(' ')).toBe('revert');
+  });
+
+  it('every other key belongs to nobody while the popup is up', () => {
+    expect(popupKeyAction('Delete')).toBeNull();
+    expect(popupKeyAction('z')).toBeNull();
+    expect(popupKeyAction('r')).toBeNull();
   });
 });
 

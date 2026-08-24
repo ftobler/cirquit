@@ -13,21 +13,31 @@ import type { AppState } from '../state/types';
  *  hand without constructing a whole store. */
 export type ModalSurfaces = Pick<
   AppState,
-  'dialog' | 'scopeProperties' | 'elementProperties' | 'deviceModelEditor' | 'contextMenu'
+  | 'dialog'
+  | 'scopeProperties'
+  | 'elementProperties'
+  | 'deviceModelEditor'
+  | 'contextMenu'
+  | 'scrollValuePopover'
 >;
 
 /** True while a modal surface owns the keyboard and no app shortcut may run.
  *  An open context menu blocks like a dialog; Escape still reaches the menu
- *  itself through its own listener, which is what makes the close exclusive. */
+ *  itself through its own listener, which is what makes the close exclusive.
+ *  The wheel value popover blocks the same way: upstream counts
+ *  scrollValuePopup.isShowing() here (UIManager.java:1007-1008), and its key
+ *  row answers Escape/Space/Enter directly (:1060-1064), so Delete, undo and
+ *  placement letters cannot act on the circuit behind it. */
 export function modalSurface(s: ModalSurfaces): boolean {
   return (
     s.dialog !== null ||
     s.scopeProperties !== null ||
     s.elementProperties !== null ||
     s.deviceModelEditor !== null ||
-    s.contextMenu !== null
+    s.contextMenu !== null ||
+    s.scrollValuePopover !== null
   );
 }
 
 // Deliberately not gated: scopeMenu stays ungated like upstream's Swing scope
-// popup, and the wheel scroll-value popover is a known pending surface.
+// popup.

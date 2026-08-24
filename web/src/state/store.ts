@@ -73,6 +73,7 @@ import { normalizeRingBits } from '../model/registry/elements/ringCounter';
 import { normalizePoleCount } from '../model/registry/elements/dpdtSwitch';
 import { normalizeInputCount } from '../model/registry/shared';
 import { duplicatesColinearElement, interiorPostHits } from '../model/wirePlacement';
+import { selectionValue, stepScrollValue } from '../model/scrollValue';
 import { DEFAULT_MODEL_NAME } from '../model/registry/elements/customComposite';
 import { createTestHarness, selectHarnessChip } from '../model/testHarness';
 import {
@@ -106,7 +107,7 @@ import {
   type Point,
   type SimSettings,
 } from '../model/types';
-import type { AppState, Slider, Snapshot, ViewTransform } from './types';
+import type { AppState, ScrollValuePopover, Slider, Snapshot, ViewTransform } from './types';
 import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
 import { loadScopeDefaults } from './scopeDefaults';
 import { readRecovery } from './recovery';
@@ -671,6 +672,7 @@ function createAppStore() {
   contextMenu: null,
   scopeMenu: null,
   scopeProperties: null,
+  scrollValuePopover: null,
   partsOpen: defaultPartsOpen(),
   panelOpen: false,
   elementProperties: null,
@@ -3134,6 +3136,31 @@ function createAppStore() {
     }),
 
   closeContextMenu: () => set({ contextMenu: null }),
+
+  // ─── Wheel value popover ───
+
+  openScrollValuePopover: (popover: ScrollValuePopover) => set({ scrollValuePopover: popover }),
+
+  stepScrollValuePopover: (deltaY) => {
+    const p = get().scrollValuePopover;
+    if (!p) return;
+    // wheelSensitivity is steps per notch, read live so a settings change
+    // mid-session takes effect on the next wheel tick (ScrollValuePopup.java:214).
+    const session = stepScrollValue(p.session, deltaY, get().settings.wheelSensitivity);
+    get().setParam(session.id, session.param, selectionValue(session));
+    set({ scrollValuePopover: { ...p, session } });
+  },
+
+  closeScrollValuePopover: () => set({ scrollValuePopover: null }),
+
+  revertScrollValuePopover: () => {
+    const p = get().scrollValuePopover;
+    if (!p) return;
+    // Restore the opening value. The undo baseline taken on open keeps the
+    // whole session one undo step either way (ScrollValuePopup.close(false)).
+    get().setParam(p.session.id, p.session.param, p.session.original);
+    set({ scrollValuePopover: null });
+  },
 
   openScopeMenu: (x, y, scopeId, plotId) => set({ scopeMenu: { x, y, scopeId, plotId } }),
   closeScopeMenu: () => set({ scopeMenu: null }),

@@ -1,11 +1,13 @@
 /** The modal-surface keyboard gate (UIManager.java:996-1013),
  *  table driven over every blocking surface: while one is up no shortcut
- *  reaches the app on keydown, keyup releases nothing, and an open context
- *  menu owns Escape exclusively. Everything runs against the real store with
- *  a recording host; no DOM anywhere. */
+ *  reaches the app on keydown, keyup releases nothing, an open context
+ *  menu owns Escape exclusively and so does the wheel value popover.
+ *  Everything runs against the real store with a recording host; no DOM
+ *  anywhere. */
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { clearUserModels } from '../model/deviceModels';
+import { openScrollValue } from '../model/scrollValue';
 import type { AppState } from '../state/types';
 import { useStore } from '../state/store';
 import { addResistor, fresh } from '../state/store.test-helpers';
@@ -51,6 +53,15 @@ const diodeEntry = (name: string) => ({
 
 const menuAt = () => ({ x: 24, y: 24, target: null, circuit: { x: 0, y: 0 }, focusSearch: false });
 
+const popoverAt = () => ({
+  scrollValuePopover: {
+    session: openScrollValue('resistor', 7, 1000),
+    name: 'Resistance',
+    x: 24,
+    y: 24,
+  },
+});
+
 /** Every surface the gate must treat as owning the keyboard, each opened by
  *  writing its own store field directly. */
 const SURFACES: readonly (readonly [string, () => Partial<AppState>])[] = [
@@ -62,6 +73,7 @@ const SURFACES: readonly (readonly [string, () => Partial<AppState>])[] = [
     () => ({ deviceModelEditor: { family: 'diode', initial: diodeEntry('draft') } }),
   ],
   ['contextMenu', () => ({ contextMenu: menuAt() })],
+  ['scrollValuePopover', popoverAt],
 ];
 
 describe('modalSurface', () => {
@@ -199,6 +211,25 @@ describe('Escape ownership', () => {
     const s = useStore.getState();
     expect(host.calls).toEqual([]);
     expect(s.contextMenu).toBeNull();
+    expect(s.subcircuitStack).toHaveLength(1);
+    expect(s.tool).toBe('resistor');
+  });
+
+  it('one Escape with the wheel popover up closes only the popover: the drill-in and tool survive', () => {
+    drillIn();
+    useStore.setState({ scrollValuePopover: popoverAt().scrollValuePopover });
+    const host = recordingHost();
+
+    // The app-level handler stands down entirely; the popup owns the key.
+    expect(handleAppKeyDown(useStore.getState(), key({ key: 'Escape' }), host)).toBe(false);
+
+    // ScrollValuePopup.tsx's own window listener is what closes the popup;
+    // mirror it here to represent the one thing this Escape press does.
+    useStore.getState().closeScrollValuePopover();
+
+    const s = useStore.getState();
+    expect(host.calls).toEqual([]);
+    expect(s.scrollValuePopover).toBeNull();
     expect(s.subcircuitStack).toHaveLength(1);
     expect(s.tool).toBe('resistor');
   });

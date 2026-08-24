@@ -12,7 +12,8 @@ import { useCanvasInteractions, type Drag } from './canvas/useCanvasInteractions
  * live in `useFrameLoop` and `useCanvasInteractions`; this component only
  * wires their shared refs to the canvas element. The wheel value popover is a
  * fixed sibling of the canvas, so wheel events over it never reach the zoom
- * handler.
+ * handler; its session lives in the store (see ScrollValuePopover) so the
+ * keyboard gate can see it.
  */
 export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -28,6 +29,11 @@ export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
   const [, forceRender] = useState(0);
   const setViewSize = useStore((s) => s.setViewSize);
   const centerRequest = useStore((s) => s.centerRequest);
+  const popover = useStore((s) => s.scrollValuePopover);
+  // Store actions are created once, so these references never change.
+  const stepPopover = useStore((s) => s.stepScrollValuePopover);
+  const closePopover = useStore((s) => s.closeScrollValuePopover);
+  const revertPopover = useStore((s) => s.revertScrollValuePopover);
   useFrameLoop(canvasRef, engine, dragRef, pointerRef, hoverRef);
   const interactions = useCanvasInteractions(
     canvasRef,
@@ -82,15 +88,15 @@ export function CircuitCanvas({ engine }: { engine: SimEngine | null }) {
         onContextMenu={interactions.onContextMenu}
         onDoubleClick={interactions.onDoubleClick}
       />
-      {interactions.popover && (
+      {popover && (
         <ScrollValuePopup
-          session={interactions.popover.session}
-          name={interactions.popover.name}
-          x={interactions.popover.x}
-          y={interactions.popover.y}
-          onStep={interactions.stepPopover}
-          onClose={interactions.closePopover}
-          onRevert={interactions.revertPopover}
+          session={popover.session}
+          name={popover.name}
+          x={popover.x}
+          y={popover.y}
+          onStep={stepPopover}
+          onClose={closePopover}
+          onRevert={revertPopover}
         />
       )}
     </>

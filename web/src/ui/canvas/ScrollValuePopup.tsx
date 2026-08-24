@@ -8,7 +8,12 @@
  */
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { selectionIndex, wheelPixels, type ScrollValueSession } from '../../model/scrollValue';
+import {
+  popupKeyAction,
+  selectionIndex,
+  wheelPixels,
+  type ScrollValueSession,
+} from '../../model/scrollValue';
 import { formatValue } from '../../render/draw';
 
 const LABEL_COUNT = 5;
@@ -22,9 +27,9 @@ interface Props {
   y: number;
   /** A wheel tick on the popover; delta is normalized pixels. */
   onStep: (deltaY: number) => void;
-  /** Keep the current selection and close (mouse-out, Escape). */
+  /** Keep the current selection and close (mouse-out, Escape, Enter). */
   onClose: () => void;
-  /** Restore the opening value and close (right-click). */
+  /** Restore the opening value and close (right-click, Space). */
   onRevert: () => void;
 }
 
@@ -43,15 +48,20 @@ export function ScrollValuePopup({ session, name, x, y, onStep, onClose, onRever
     el.style.top = `${Math.max(4, y - (h * 7) / 12)}px`;
   }, [x, y]);
 
-  // Escape commits, same as mouse-out. The window keydown listener is needed
-  // because the popover never takes keyboard focus.
+  // The popup's own key row (UIManager.java:1060-1064): Escape and Enter keep
+  // the current selection, Space reverts to the opening value. The window
+  // listener is needed because the popover never takes keyboard focus; every
+  // other key stands down through the modal-surface gate, so nothing acts on
+  // the circuit behind the popup.
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') onClose();
+      const action = popupKeyAction(ev.key);
+      if (action === 'revert') onRevert();
+      else if (action === 'commit') onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, onRevert]);
 
   const onWheel = (ev: React.WheelEvent) => {
     ev.stopPropagation();
