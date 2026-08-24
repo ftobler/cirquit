@@ -290,11 +290,20 @@ fetch it).
   tokens do not parse are skipped verbatim like upstream's per-line catch
   instead of loading at coordinate zero (fractional, exponent and hex
   coordinate forms stay a deliberate accommodation), with the undocked
-  popup's message listener also checking the sender origin.
+   popup's message listener also checking the sender origin.
+- Scout batch 2026-08-24b: a wire drawn across an existing junction post
+  splits and connects there like upstream's draggingDone (sub-segments
+  duplicating an existing part are dropped, plain colinear seams stay whole,
+  one undo entry per gesture, the first piece keeps the drawn id); SRAM
+  gained upstream's Load File button, bytes masked to the configured data
+  width on load, and hex-mode `0b` tokens parse as the numbers they are;
+  element-placement keys are rebindable in Edit Shortcuts with the default
+  table behaviourally unchanged; and File > Toggle Full Screen landed,
+  re-fitting the circuit when the fullscreen transition actually lands.
 - 514 Rust tests, of which 436 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2835 TypeScript tests (one corpus report test skipped); the owner-bug batch
+  2860 TypeScript tests (one corpus report test skipped); the owner-bug batch
   added four of the Rust tests (the new analysis_hygiene.rs) and thirty-eight
   TypeScript ones across the battery, junction, embedded-scope and facade
   suites. The relay pulldown
