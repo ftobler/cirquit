@@ -22,7 +22,7 @@ import {
   axisSamplesFit,
   calcGridParams,
   gridStepX,
-  gridStepY,
+  gridStepYFromGridMax,
   nextAxisScale,
   nextModScale,
   nextScaleState,
@@ -260,13 +260,20 @@ function scanWindow(data: Float32Array, win: Window): { maxSample: number; minSa
 }
 
 /** The horizontal and vertical transform for one plot's trace. */
-interface PlotTransform {
+export interface PlotTransform {
   gridMid: number;
   gridMult: number;
   gridMax: number;
   showNegative: boolean;
   positionOffset: number;
   stepY: number;
+}
+
+/** Upstream's allPlotsSameUnits (Scope.java:656-661): every plot in the list
+ *  samples the same unit family. Gates zero relocation and the horizontal
+ *  gridlines, so a V+I scope never stretches one trace around the other. */
+function sameUnits(plots: ScopePlot[]): boolean {
+  return plots.every((p) => p.value === plots[0].value);
 }
 
 function transformFor(
@@ -276,6 +283,7 @@ function transformFor(
   maxSample: number,
   minSample: number,
   h: number,
+  allSameUnits: boolean,
 ): PlotTransform {
   const maxy = Math.floor((h - 1) / 2);
   if (scope.manualScale) {
@@ -293,7 +301,7 @@ function transformFor(
       stepY: manScale,
     };
   }
-  const opts = { maxScale: scope.maxScale };
+  const opts = { maxScale: scope.maxScale, allSameUnits };
   const grid = calcGridParams(maxSample, minSample, state.gridMax, state.showNegative, h, opts);
   return {
     gridMid: grid.gridMid,
@@ -301,7 +309,9 @@ function transformFor(
     gridMax: grid.gridMax,
     showNegative: grid.showNegative,
     positionOffset: 0,
-    stepY: gridStepY(state, h),
+    // The /div label and gridlines read the same span the frame draws with:
+    // upstream computes gridStepY after the Max Scale snap (Scope.java:772-786).
+    stepY: gridStepYFromGridMax(grid.gridMax, h),
   };
 }
 
@@ -357,7 +367,7 @@ function drawTrace(
   ctx.stroke();
 }
 
-function drawGridLines(
+export function drawGridLines(
   ctx: CanvasRenderingContext2D,
   t: PlotTransform,
   w: number,
@@ -366,14 +376,15 @@ function drawGridLines(
   speed: number,
   timeStep: number,
   allSameUnits: boolean,
+  manualScale: boolean,
   theme: Theme,
   triggerAnchor?: { time: number } | null,
 ): void {
   const maxy = Math.floor((h - 1) / 2);
   const stepX = gridStepX(speed, timeStep);
-  // Horizontal lines: only the centre line unless every plot shares units
-  // (Scope.java:657-661, 812-821).
-  const showH = allSameUnits;
+  // Horizontal lines: only the centre line unless every plot shares units or
+  // the scope is manually scaled (Scope.java:657-661, 812-813).
+  const showH = manualScale || allSameUnits;
   for (let ll = -100; ll <= 100; ll++) {
     if (ll !== 0 && !showH) continue;
     const yl = maxy - (ll * t.stepY - t.gridMid) * t.gridMult;
@@ -534,10 +545,34 @@ function measurementBlock(
   const stack: string[] = [];
   if (m.showMax) stack.push(`Max=${formatValue(maxV, unit, decimalDigits)}`);
   if (m.showP2P) stack.push(`P-P=${formatValue(maxV - minV, unit, decimalDigits)}`);
-  if (m.showRMS) stack.push(`${formatValue(rms(s.min, s.max, s.count, mid), unit, decimalDigits)}rms`);
-  if (m.showAverage)
-    stack.push(`${formatValue(average(s.min, s.max, s.count, mid), unit, decimalDigits)} average`);
-  if (m.showDutyCycle) stack.push(`Duty cycle ${Math.round(dutyCycle(s.min, s.max, s.count, mid))}%`);
+  // Upstream's canShowRMS (Scope.java:1076-1081): a root mean square needs
+  // voltage- or current-like units; anything else silently degrades to
+  // Average (ScopeOverlays.java:92-98) instead of printing an X Wrms.
+  const canShowRMS =
+    s.plot.value === 'voltage' ||
+    s.plot.value === 'current' ||
+    s.plot.value === 'ib' ||
+    s.plot.value === 'ic' ||
+    s.plot.value === 'ie' ||
+    s.plot.value === 'vbe' ||
+    s.plot.value === 'vbc' ||
+    s.plot.value === 'vce';
+  // Each cycle readout draws only when a full cycle fit the window: null on a
+  // flat or DC trace, matching upstream's span > 0 guards.
+  if (m.showRMS && canShowRMS) {
+    const r = rms(s.min, s.max, s.count, mid);
+    if (r !== null) stack.push(`${formatValue(r, unit, decimalDigits)}rms`);
+  }
+  if (m.showAverage || (m.showRMS && !canShowRMS)) {
+    const a = average(s.min, s.max, s.count, mid);
+    if (a !== null) stack.push(`${formatValue(a, unit, decimalDigits)} average`);
+  }
+  if (m.showDutyCycle) {
+    const d = dutyCycle(s.min, s.max, s.count, mid);
+    // Truncated like upstream's Java int division (ScopeOverlays.java:134):
+    // 66.67% prints as 66%, not a rounded 67%.
+    if (d !== null) stack.push(`Duty cycle ${Math.trunc(d)}%`);
+  }
   if (m.showFreq) {
     const f = estimateFrequency(s.min, s.max, s.count, speed, timeStep);
     if (f !== 0) stack.push(formatValue(f, 'Hz', decimalDigits));
@@ -1133,7 +1168,15 @@ export function drawScope(
     if (infoPlot) {
       // A synthesized transform drives only the scale /div label, which is
       // harmless when no trace is drawn to measure against.
-      const transform = transformFor(scope, infoPlot, scaleStateFor(infoPlot.id, infoPlot.value), 0, 0, h);
+      const transform = transformFor(
+        scope,
+        infoPlot,
+        scaleStateFor(infoPlot.id, infoPlot.value),
+        0,
+        0,
+        h,
+        sameUnits(visible),
+      );
       drawHeader(ctx, scope, transform, infoPlot, speed, timeStep, h, theme, traceColors, decimalDigits, elmInfo);
     }
     return;
@@ -1158,6 +1201,8 @@ export function drawScope(
     : null;
   trig?.free();
 
+  const allSameUnits = sameUnits(plots.map((p) => p.plot));
+
   const states: MeasurableState[] = plots.map(({ plot, index }) => {
     const data = engine.scopeData(index);
     // The anchored trigger window applies only once a trigger has fired;
@@ -1165,7 +1210,7 @@ export function drawScope(
     const win = trigInfo && trigInfo.triggered ? triggerWindow(data, trigInfo, w) : plainWindow(data, w);
     const { maxSample, minSample } = scanWindow(data, win);
     const state = scaleStateFor(plot.id, plot.value);
-    const opts = { maxScale: scope.maxScale && !scope.manualScale };
+    const opts = { maxScale: scope.maxScale && !scope.manualScale, allSameUnits };
     // Two scales, one frame, in upstream's order. `drawn` is calcPlotScale
     // alone -- doubling until the peak fits -- and it is what this frame
     // renders and what the band check measures against, exactly as upstream
@@ -1177,13 +1222,12 @@ export function drawScope(
     const drawn = nextScaleState(state, maxSample, minSample, false, opts);
     const fit = extremesFit(maxSample, minSample, drawn, h, opts);
     setScaleState(plot.id, nextScaleState(state, maxSample, minSample, fit, opts));
-    const transform = transformFor(scope, plot, drawn, maxSample, minSample, h);
+    const transform = transformFor(scope, plot, drawn, maxSample, minSample, h, allSameUnits);
     const m = toMeasurable(data, win);
     return { plot, index, data, win, transform, ...m };
   });
 
   const first = states[0];
-  const allSameUnits = states.every((s) => s.plot.value === states[0].plot.value);
 
   // The trigger-stabilized window centre anchors the time grid and cursor.
   const triggerAnchor = trigInfo && trigInfo.triggered ? { time: trigInfo.time } : null;
@@ -1198,6 +1242,7 @@ export function drawScope(
     speed,
     timeStep,
     allSameUnits,
+    scope.manualScale,
     theme,
     triggerAnchor,
   );
@@ -1297,10 +1342,11 @@ export function selectPlotAt(
   const k = Math.round(x) - win.xOffset;
   let best = -1;
   let bestDist = Infinity;
+  const allSameUnits = sameUnits(plots.map((p) => p.plot));
   for (let i = 0; i < plots.length; i++) {
     const { plot } = plots[i];
     const state = scaleStateFor(plot.id, plot.value);
-    const t = transformFor(scope, plot, state, 0, 0, h);
+    const t = transformFor(scope, plot, state, 0, 0, h, allSameUnits);
     const pos = win.posOf(k);
     if (pos < 0) continue;
     const vy = yOf(t, maxy, data[pos * 2 + 1]);

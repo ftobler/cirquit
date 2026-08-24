@@ -18,6 +18,11 @@ export interface ScaleState {
 export interface ScaleOpts {
   /** Pin the scale to the measured max/min instead of doubling (Max Scale). */
   maxScale: boolean;
+  /** Whether every visible trace shares one unit family. Upstream guards the
+   *  zero-relocation block of calcGridParams on allPlotsSameUnits
+   *  (Scope.java:657-661, 766-774); mixed-unit scopes keep each trace centred
+   *  on mid-screen. Default true. */
+  allSameUnits?: boolean;
 }
 
 export interface GridParams {
@@ -83,11 +88,13 @@ export function gridStepX(speed: number, timeStep: number): number {
   return gridStep(20 * speed * timeStep);
 }
 
-/** Value per vertical division, from the display span (Scope.java:783-786). */
-export function gridStepY(state: ScaleState, heightPx: number): number {
+/** Value per vertical division from the display span actually drawn
+ *  (Scope.java:783-786). Takes the frame's computed gridMax, so Max Scale's
+ *  snapped boundaries set the /div label and the gridlines; deriving it from
+ *  the sticky peak instead reads about half the true volts per division. */
+export function gridStepYFromGridMax(gridMax: number, heightPx: number): number {
   const maxy = Math.floor((heightPx - 1) / 2);
-  const display = calcGridParams(state.gridMax, 0, state.gridMax, state.showNegative, heightPx);
-  return gridStep((20 * display.gridMax) / maxy);
+  return gridStep((20 * gridMax) / maxy);
 }
 
 /**
@@ -104,6 +111,11 @@ export function calcGridParams(
   opts: ScaleOpts = { maxScale: false },
 ): GridParams {
   const maxy = Math.floor((heightPx - 1) / 2);
+  // Mixed-unit scopes skip zero relocation entirely: each trace stays centred
+  // on mid-screen at its raw scale, with no Max Scale snap (Scope.java:766).
+  if (opts.allSameUnits === false) {
+    return { gridMid: 0, gridMax: scale, gridMult: maxy / scale, showNegative };
+  }
   let mx = scale;
   let mn = 0;
   if (opts.maxScale) {

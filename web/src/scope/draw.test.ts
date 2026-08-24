@@ -10,6 +10,7 @@ import {
   clearXYPersistence,
   DIVERGED_CAPTION,
   divergedCaption,
+  drawGridLines,
   drawScope,
   emptyCursor,
   isDrawable,
@@ -24,6 +25,7 @@ import {
   xyColorChannel,
   xyCrossColors,
   xyPairFor,
+  type PlotTransform,
   type ScopeCursor,
 } from './draw';
 
@@ -1150,5 +1152,107 @@ describe('drawScope per-trace measurements', () => {
     );
     expect(mins).toHaveLength(1);
     expect(mins[0].color).toBe('#00ff00');
+  });
+});
+
+/** A ring engine over `columns` min/max pairs produced by `valueAt`. */
+const ringEngine = (valueAt: (i: number) => number, columns = 300): SimEngine => {
+  const data = new Float32Array(columns * 2);
+  for (let i = 0; i < columns; i++) {
+    const v = valueAt(i);
+    data[i * 2] = v;
+    data[i * 2 + 1] = v;
+  }
+  return {
+    scopeIndexOf: () => 0,
+    scopeData: () => data,
+    scopeDiverged: () => false,
+  } as unknown as SimEngine;
+};
+
+describe('drawScope measurement gating', () => {
+  const flags = { showMax: false, showRMS: true, showAverage: true, showDutyCycle: true };
+  const square = (i: number) => (i % 50 < 25 ? 0 : 1.2);
+
+  it('paints none of the RMS, Average or Duty readouts on a flat DC trace', () => {
+    // Upstream draws each readout only when the cycle walk found a span
+    // (ScopeOverlays.java:107-108, 120-121, 133-134); a DC line shows nothing.
+    const scope = scopeOf([plot(1, 'voltage')], flags);
+    const { ctx, texts } = mkCtx();
+    drawScope(ctx, ringEngine(() => 1.2), scope, 200, 150, emptyCursor(), 0, 5e-6, false, 3);
+    expect(texts.some((t) => t.endsWith('rms'))).toBe(false);
+    expect(texts.some((t) => t.endsWith(' average'))).toBe(false);
+    expect(texts.some((t) => t.startsWith('Duty cycle'))).toBe(false);
+  });
+
+  it('keeps every readout once a real cycle is visible', () => {
+    const scope = scopeOf([plot(1, 'voltage')], flags);
+    const { ctx, texts } = mkCtx();
+    drawScope(ctx, ringEngine(square), scope, 200, 150, emptyCursor(), 0, 5e-6, false, 3);
+    expect(texts.some((t) => t.endsWith('rms'))).toBe(true);
+    expect(texts.some((t) => t.endsWith(' average'))).toBe(true);
+    expect(texts).toContain('Duty cycle 50%');
+  });
+
+  it('truncates the duty cycle like upstream int division', () => {
+    // Two high columns of three: 200*2/3 = 66.67, printed as 66%.
+    const scope = scopeOf([plot(1, 'voltage')], { showMax: false, showDutyCycle: true });
+    const { ctx, texts } = mkCtx();
+    drawScope(ctx, ringEngine((i) => (i % 3 === 0 ? 0 : 1)), scope, 200, 150, emptyCursor(), 0, 5e-6, false, 3);
+    expect(texts).toContain('Duty cycle 66%');
+    expect(texts.some((t) => t.includes('67'))).toBe(false);
+  });
+
+  it('a power plot degrades RMS to Average, upstream canShowRMS', () => {
+    // ScopeOverlays.java:92-98: RMS needs V or A units; anything else falls
+    // through to Average instead of printing an X Wrms readout.
+    const scope = scopeOf([plot(1, 'power')], { showMax: false, showRMS: true });
+    const { ctx, texts } = mkCtx();
+    drawScope(ctx, ringEngine(square), scope, 200, 150, emptyCursor(), 0, 5e-6, false, 3);
+    expect(texts.some((t) => t.endsWith('rms'))).toBe(false);
+    expect(texts.some((t) => t.endsWith(' average'))).toBe(true);
+  });
+
+  it('a current plot still shows RMS', () => {
+    const scope = scopeOf([plot(1, 'current')], { showMax: false, showRMS: true });
+    const { ctx, texts } = mkCtx();
+    drawScope(ctx, ringEngine(square), scope, 200, 150, emptyCursor(), 0, 5e-6, false, 3);
+    expect(texts.some((t) => t.endsWith('rms'))).toBe(true);
+  });
+});
+
+describe('drawGridLines visibility', () => {
+  const W = 200;
+  const H = 150;
+  const transform = (): PlotTransform => ({
+    gridMid: 0,
+    gridMult: 74 / 5,
+    gridMax: 5,
+    showNegative: true,
+    positionOffset: 0,
+    stepY: 2,
+  });
+  // Horizontal gridlines are the only strokes whose moveTo starts at x = 0
+  // with y > 0 at simTime 0.
+  const horizontalCount = (allSameUnits: boolean, manualScale: boolean): number => {
+    const { ctx } = mkCtx(W, H);
+    drawGridLines(ctx, transform(), W, H, 0, 64, 5e-6, allSameUnits, manualScale, makeTheme());
+    return (ctx.moveTo as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([x, y]) => x === 0 && y > 0,
+    ).length;
+  };
+
+  it('mixed units in auto scale keeps only the centre line', () => {
+    expect(horizontalCount(false, false)).toBe(1);
+  });
+
+  it('manual scale shows division lines even on mixed-unit scopes', () => {
+    // Scope.java:812: showHGridLines = gridStepY != 0 && (isManualScale() ||
+    // allPlotsSameUnits).
+    expect(horizontalCount(false, true)).toBeGreaterThan(1);
+  });
+
+  it('same-units scopes always get their division lines', () => {
+    expect(horizontalCount(true, false)).toBeGreaterThan(1);
   });
 });

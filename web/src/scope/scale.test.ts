@@ -6,7 +6,7 @@ import {
   dragPlotYPosition,
   gridStep,
   gridStepX,
-  gridStepY,
+  gridStepYFromGridMax,
   nextAxisScale,
   nextHighestScale,
   nextLowestScale,
@@ -172,9 +172,45 @@ describe('calcGridParams zero placement', () => {
     expect(p.gridMax).toBe(5.5);
   });
 
-  it('gridStepY for a 5 V bipolar signal on a 150 px scope is 2', () => {
+  it('gridStepYFromGridMax for a 5 V bipolar signal on a 150 px scope is 2', () => {
     // display span 5.5, maxy 74: target 20*5.5/74 = 1.49 -> 2.
-    expect(gridStepY({ gridMax: 5, showNegative: true }, 150)).toBe(2);
+    expect(gridStepYFromGridMax(5.5, 150)).toBe(2);
+  });
+});
+
+describe('mixed-unit scopes', () => {
+  const H = 150;
+
+  it('calcGridParams with allSameUnits false keeps zero centred on the raw scale', () => {
+    // Upstream guards the whole zero-relocation block on allPlotsSameUnits
+    // (Scope.java:766-774): a V+I scope holds each trace centred instead of
+    // stretching a unipolar one over the full height.
+    const p = calcGridParams(5, 0, 5, false, H, { maxScale: false, allSameUnits: false });
+    expect(p.gridMid).toBe(0);
+    expect(p.gridMax).toBe(5);
+    expect(p.showNegative).toBe(false);
+    expect(p.gridMult).toBeCloseTo(74 / 5, 9);
+  });
+
+  it('the Max Scale boundary snap also waits for same units', () => {
+    const p = calcGridParams(10, 2, 5, false, H, { maxScale: true, allSameUnits: false });
+    expect(p.gridMid).toBe(0);
+    expect(p.gridMax).toBe(5);
+  });
+
+  it('stepY comes from the drawn gridMax, so Max Scale reads the measured span', () => {
+    // A +/-5 V sine in Max Scale snaps the boundaries to +/-5: display span
+    // 5.5 over maxy 74 gives target 1.49 -> 2 V/div (Scope.java:772-786).
+    // The sticky peak alone would have claimed 5 V/div, about half wrong.
+    const p = calcGridParams(5, -5, 8, false, H, { maxScale: true, allSameUnits: true });
+    expect(gridStepYFromGridMax(p.gridMax, H)).toBe(2);
+    expect(gridStepYFromGridMax(8, H)).toBe(5);
+  });
+
+  it('allSameUnits defaults to true, so existing callers keep zero relocation', () => {
+    const p = calcGridParams(5, 0, 5, false, H);
+    expect(p.gridMid).toBe(2.5);
+    expect(p.gridMax).toBe(2.75);
   });
 });
 

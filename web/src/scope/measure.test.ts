@@ -60,6 +60,23 @@ describe('measurement overlays', () => {
     expect(estimateFrequency(min, max, min.length, 4, 5e-6)).toBe(0);
   });
 
+  it('a flat DC line has no cycle, so rms, average and dutyCycle return null', () => {
+    // Upstream guards every readout on span > 0 (ScopeOverlays.java:107-108,
+    // 120-121, 133-134) and draws nothing for a trace that never crosses mid.
+    const min = new Array(100).fill(1.2);
+    const max = new Array(100).fill(1.2);
+    expect(rms(min, max, min.length, 0.6)).toBeNull();
+    expect(average(min, max, min.length, 0.6)).toBeNull();
+    expect(dutyCycle(min, max, min.length, 0.6)).toBeNull();
+  });
+
+  it('an all-zero trace is unmeasurable too', () => {
+    const zeros = new Array(50).fill(0);
+    expect(rms(zeros, zeros, zeros.length, 0)).toBeNull();
+    expect(average(zeros, zeros, zeros.length, 0)).toBeNull();
+    expect(dutyCycle(zeros, zeros, zeros.length, 0)).toBeNull();
+  });
+
   it('iterateCycles spans the first to last rising edge', () => {
     const { min, max } = squareStream(150);
     let cycles = 0;

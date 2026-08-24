@@ -58,8 +58,10 @@ export function iterateCycles(
   return end - start;
 }
 
-/** RMS over the visible cycles (ScopeOverlays.java:91-109). */
-export function rms(min: ArrayLike<number>, max: ArrayLike<number>, count: number, mid: number): number {
+/** RMS over the visible cycles (ScopeOverlays.java:91-109). Null when no full
+ *  cycle fits the window, matching upstream's `span > 0` guard: a DC or flat
+ *  trace draws no readout at all instead of a misleading zero. */
+export function rms(min: ArrayLike<number>, max: ArrayLike<number>, count: number, mid: number): number | null {
   let avg = 0;
   let endAvg = 0;
   const span = iterateCycles(
@@ -78,12 +80,13 @@ export function rms(min: ArrayLike<number>, max: ArrayLike<number>, count: numbe
       endAvg = avg;
     },
   );
-  if (span <= 0) return 0;
+  if (span <= 0) return null;
   return Math.sqrt(endAvg / span);
 }
 
-/** Average over the visible cycles (ScopeOverlays.java:111-122). */
-export function average(min: ArrayLike<number>, max: ArrayLike<number>, count: number, mid: number): number {
+/** Average over the visible cycles (ScopeOverlays.java:111-122). Null when no
+ *  full cycle fits the window, like upstream. */
+export function average(min: ArrayLike<number>, max: ArrayLike<number>, count: number, mid: number): number | null {
   let avg = 0;
   let endAvg = 0;
   const span = iterateCycles(
@@ -101,12 +104,13 @@ export function average(min: ArrayLike<number>, max: ArrayLike<number>, count: n
       endAvg = avg;
     },
   );
-  if (span <= 0) return 0;
+  if (span <= 0) return null;
   return endAvg / span;
 }
 
-/** Duty cycle in percent over the visible cycles (ScopeOverlays.java:124-135). */
-export function dutyCycle(min: ArrayLike<number>, max: ArrayLike<number>, count: number, mid: number): number {
+/** Duty cycle in percent over the visible cycles (ScopeOverlays.java:124-135).
+ *  Null when no full cycle fits the window, like upstream. */
+export function dutyCycle(min: ArrayLike<number>, max: ArrayLike<number>, count: number, mid: number): number | null {
   let dutyLen = 0;
   let prevDuty = 0;
   const span = iterateCycles(
@@ -124,7 +128,7 @@ export function dutyCycle(min: ArrayLike<number>, max: ArrayLike<number>, count:
       prevDuty = dutyLen;
     },
   );
-  if (span <= 0) return 0;
+  if (span <= 0) return null;
   return (100 * prevDuty) / span;
 }
 
