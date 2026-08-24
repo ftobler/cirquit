@@ -1060,6 +1060,15 @@ function drawSettingsWheel(
   ctx.stroke();
 }
 
+/** Per-call draw options. Only the embedded windows pass one today. */
+export interface DrawScopeOptions {
+  /** The settings gear is interactive chrome: it opens the properties dialog
+   *  on the docked panels, which own the pointer handlers for it. An embedded
+   *  window has no pointer handling at all, so it draws without the gear
+   *  rather than advertising a click that does nothing. Default true. */
+  settingsWheel?: boolean;
+}
+
 /** The per-frame entry point: draws one scope canvas. `dark` follows the White
  *  Background setting so the panel, text and trace colours stay legible on a
  *  white backdrop. `decimalDigits` is the readout digit count and `colors` the
@@ -1077,6 +1086,7 @@ export function drawScope(
   decimalDigits = 3,
   colors?: ThemeColors,
   elmInfo?: (elementId: number) => string[] | null,
+  options?: DrawScopeOptions,
 ): void {
   const theme = makeTheme(dark, colors);
   ctx.fillStyle = theme.background;
@@ -1104,7 +1114,7 @@ export function drawScope(
   if (scope.plotXY) {
     drawXY(ctx, engine, scope, w, h, simTime, timeStep, theme);
     drawScopeLabel(ctx, scope, h, theme);
-    drawSettingsWheel(ctx, cursor, w, h, theme);
+    if (options?.settingsWheel !== false) drawSettingsWheel(ctx, cursor, w, h, theme);
     return;
   }
 
@@ -1263,7 +1273,7 @@ export function drawScope(
     decimalDigits,
   );
   // The settings wheel draws on top of the traces, like the HTML close button.
-  drawSettingsWheel(ctx, cursor, w, h, theme);
+  if (options?.settingsWheel !== false) drawSettingsWheel(ctx, cursor, w, h, theme);
 }
 
 /** Index of the plot whose trace is nearest the pointer, for manual-mode

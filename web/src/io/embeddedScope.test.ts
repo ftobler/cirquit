@@ -134,13 +134,23 @@ describe('parseCircuit attachment', () => {
     ]);
   });
 
-  it('attaches the qam-256 X-Y window', () => {
+  it('attaches the qam-256 X-Y window with every plot resolved', () => {
     const parsed = parseCircuit(read('qam-256.txt'));
     const scopes = parsed.elements.filter((e) => e.kind === 'scope');
     expect(scopes).toHaveLength(1);
     expect(scopes[0].text).toBe('157_64_0_4802_4.999999999999999e-16_1e-17_0_2_156_0');
     expect(scopes[0].embedded!.display.plotXY).toBe(true);
-    expect(scopes[0].embedded!.plots).toHaveLength(2);
+    // Both indexes must land on readable element lines: a null here would
+    // mean the walk drifted off by one and silently dropped the trace.
+    const plots = scopes[0].embedded!.plots;
+    expect(plots).toHaveLength(2);
+    // File indexes 156 and 157 are both output markers, the two nets this
+    // X-Y window plots against each other.
+    const byId = new Map(parsed.elements.map((e) => [e.id, e]));
+    for (const p of plots) {
+      expect(p.elementId).not.toBeNull();
+      expect(byId.get(p.elementId!)!.kind).toBe('output');
+    }
   });
 
   it('leaves a fresh unattached scope without embedded state', () => {

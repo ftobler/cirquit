@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildReport, frameSafely } from './useFrameLoop';
+import type { SimEngine } from '../../engine/simulator';
+import { DEFAULT_SETTINGS } from '../../model/types';
+import { buildReport, frameSafely, scopeDrawPayload } from './useFrameLoop';
 
 describe('frameSafely', () => {
   it('reports a throw instead of letting it escape the loop', () => {
@@ -67,5 +69,34 @@ describe('buildReport', () => {
 
   it('reports nothing on either channel for a clean build', () => {
     expect(buildReport(null, [], null)).toEqual({ problem: null, notice: null });
+  });
+});
+
+describe('scopeDrawPayload', () => {
+  it('reads the engine clock exactly once per payload build', () => {
+    // `time` is a wasm crossing, so the getter here counts accesses: one
+    // build must mean one read, which is what lets the frame loop hoist the
+    // payload above the element loop and share it by reference.
+    let reads = 0;
+    const engine = {
+      get time() {
+        reads += 1;
+        return 0.0025;
+      },
+    } as unknown as SimEngine;
+    const payload = scopeDrawPayload(engine, DEFAULT_SETTINGS, true);
+    expect(reads).toBe(1);
+    expect(payload).toMatchObject({
+      source: engine,
+      simTime: 0.0025,
+      timeStep: DEFAULT_SETTINGS.timeStep,
+      dark: true,
+      decimalDigits: DEFAULT_SETTINGS.decimalDigits,
+    });
+    expect(payload?.themeColors).toBe(DEFAULT_SETTINGS);
+  });
+
+  it('builds nothing without an engine, touching no clock', () => {
+    expect(scopeDrawPayload(null, DEFAULT_SETTINGS, false)).toBeUndefined();
   });
 });

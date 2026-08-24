@@ -1150,7 +1150,34 @@ function createAppStore() {
     // state and still needs its own commit.
     if (!skipCommit) get().commit();
     set((s) => ({
-      elements: s.elements.filter((e) => !selectedIds.includes(e.id)),
+      // One pass over the survivors of the delete: an embedded window whose
+      // traced element just went degrades to its placeholder frame, its
+      // plots' targets nulled the way a docked scope's whole line goes below.
+      // The window element and its raw config token stay, so undo puts the
+      // traces back.
+      elements: s.elements
+        .filter((e) => !selectedIds.includes(e.id))
+        .map((e) => {
+          if (e.kind !== 'scope' || !e.embedded) return e;
+          if (
+            !e.embedded.plots.some(
+              (p) => p.elementId !== null && selectedIds.includes(p.elementId),
+            )
+          ) {
+            return e;
+          }
+          return {
+            ...e,
+            embedded: {
+              ...e.embedded,
+              plots: e.embedded.plots.map((p) =>
+                p.elementId !== null && selectedIds.includes(p.elementId)
+                  ? { ...p, elementId: null }
+                  : p,
+              ),
+            },
+          };
+        }),
       // A scope goes when any of its plots names a deleted element, matching
       // upstream's cleanup of scopes whose element is gone.
       scopes: s.scopes.filter(

@@ -3,11 +3,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { frameStatsOf, scopePlotsToSpecs, SimEngine } from './simulator';
-import { traceScopes } from '../scope/embedded';
+import { traceScopes, embeddedScopeOf } from '../scope/embedded';
 import { decodeEmbeddedScope } from '../io/embeddedScope';
+import { SvgRecorder } from '../render/svg';
+import { makeTheme } from '../render/draw';
+import type { CircuitElement, DrawContext } from '../model/types';
 import { DEFAULT_SETTINGS } from '../model/types';
-import type { CircuitElement } from '../model/types';
-import { postsOf } from '../model/registry';
+import { defFor, postsOf } from '../model/registry';
 import { useStore } from '../state/store';
 import { fresh } from '../state/store.test-helpers';
 import { overlayLiveState } from '../io/liveState';
@@ -936,6 +938,38 @@ describe('embedded scope registration', () => {
   const CIRCUITS_DIR = fileURLToPath(new URL('../../public/circuits', import.meta.url));
   const MULTIVIB = readFileSync(join(CIRCUITS_DIR, 'multivib-a.txt'), 'utf8');
 
+  /** A neutral draw context for the placeholder-degradation checks, the same
+   *  shape the render tests build. */
+  const context = (ctx: SvgRecorder): DrawContext => ({
+    ctx,
+    theme: makeTheme(),
+    voltages: [],
+    current: 0,
+    voltage: 0,
+    power: 0,
+    value: 0,
+    state: 0,
+    wave: [],
+    dotPhase: 0,
+    postCurrents: [],
+    postDotPhases: [],
+    showCurrent: false,
+    showValues: false,
+    showVoltageColor: true,
+    showPowerColor: false,
+    conventional: true,
+    euroResistors: true,
+    euroGates: true,
+    selected: false,
+    hovered: false,
+    onHighlightedNet: false,
+    voltageRange: 5,
+    powerRange: 50,
+    scale: 1,
+    valueDigits: 1,
+    valueFontSize: 12,
+  });
+
   /** Loads multivib-a through the store, exactly like opening the file. */
   const loadMultivib = () => {
     useStore.setState(fresh());
@@ -1012,7 +1046,7 @@ describe('embedded scope registration', () => {
       scopeElm,
     ];
     const engine = await SimEngine.create();
-    const scopes = traceScopes([], [scopeElm]);
+    const scopes = traceScopes([], elements);
     expect(scopes).toHaveLength(1);
     expect(engine.setCircuit(elements, DEFAULT_SETTINGS, scopes)).toBeNull();
     engine.run(300);
@@ -1024,5 +1058,76 @@ describe('embedded scope registration', () => {
       expect(engine.scopeData(index!).some((v) => v !== 0)).toBe(true);
     }
     expect(engine.scopeIndexOf(-1)).toBeUndefined();
+  });
+
+  it('deleting a traced source drops its traces and degrades the window', async () => {
+    useStore.setState(fresh());
+    useStore.getState().loadNetlist(MULTIVIB, { noCenter: true, noBaseline: true });
+    const st0 = useStore.getState();
+    // One docked panel plus four windows, ten engine traces in all.
+    const beforeScopes = traceScopes(st0.scopes, st0.elements);
+    expect(beforeScopes).toHaveLength(5);
+    expect(scopePlotsToSpecs(beforeScopes, st0.settings)).toHaveLength(10);
+
+    // C1 is the capacitor the fourth window (the `7_128` token) traces; both
+    // of its plots die with it, the way a docked scope's whole line would.
+    const c1 = st0.elements.find(
+      (e) => e.kind === 'capacitor' && e.x1 === 112 && e.y1 === 176,
+    )!;
+    useStore.getState().select([c1.id]);
+    useStore.getState().deleteSelected();
+
+    const state = useStore.getState();
+    expect(state.elements.some((e) => e.id === c1.id)).toBe(false);
+    const orphaned = state.elements.find(
+      (e) => e.kind === 'scope' && e.text!.startsWith('7_'),
+    )!;
+    expect(orphaned.embedded!.plots.every((p) => p.elementId === null)).toBe(true);
+    // The surviving windows are untouched and the spec count dropped by the
+    // orphaned pair alone.
+    const afterScopes = traceScopes(state.scopes, state.elements);
+    expect(afterScopes).toHaveLength(4);
+    expect(embeddedScopeOf(orphaned)).toBeNull();
+
+    // The engine still accepts the reduced list.
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(state.elements, state.settings, afterScopes)).toBeNull();
+    expect(scopePlotsToSpecs(afterScopes, state.settings)).toHaveLength(8);
+
+    // The draw degrades to the placeholder frame without throwing.
+    const rec = new SvgRecorder();
+    defFor('scope')!.draw(context(rec), orphaned);
+    expect(rec.toString(64, 32)).toContain('>Scope<');
+  });
+
+  it('duplicating a window and its source allocates disjoint plot ids', () => {
+    useStore.setState(fresh());
+    useStore.getState().loadNetlist(MULTIVIB, { noCenter: true, noBaseline: true });
+    const st0 = useStore.getState();
+    const win = st0.elements.find((e) => e.kind === 'scope')!;
+    const source = st0.elements.find((e) => e.id === win.embedded!.plots[0].elementId)!;
+    const originalIds = new Set(win.embedded!.plots.map((p) => p.id));
+
+    useStore.getState().select([win.id, source.id]);
+    useStore.getState().duplicateSelection();
+
+    const st1 = useStore.getState();
+    const copies = st1.elements.filter(
+      (e) => e.kind === 'scope' && !st0.elements.some((old) => old.id === e.id),
+    );
+    expect(copies).toHaveLength(1);
+    // The copy re-parsed its config token, so every plot got a fresh session
+    // id: two windows must never share a trace identity, or one would draw
+    // the other's ring.
+    const copyIds = copies[0].embedded!.plots.map((p) => p.id);
+    expect(copyIds).toHaveLength(2);
+    for (const id of copyIds) {
+      expect(originalIds.has(id)).toBe(false);
+    }
+    // And every other window in the document still owns its own ids.
+    const allWindowPlotIds = st1.elements
+      .filter((e) => e.kind === 'scope')
+      .flatMap((e) => e.embedded!.plots.map((p) => p.id));
+    expect(new Set(allWindowPlotIds).size).toBe(allWindowPlotIds.length);
   });
 });

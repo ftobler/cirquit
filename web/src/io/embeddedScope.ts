@@ -73,8 +73,10 @@ export interface EmbeddedScopeState {
  * index to its kind, which decides both the value mapping (a transistor's
  * token 6 is VCE) and whether a per-unit scale token follows a value token;
  * it is the same resolver the `o` lines use. Returns null for anything
- * upstream draws as an empty scope: element index -1 (nothing traced yet),
- * a truncated or non-numeric header, or no plot list at all.
+ * upstream draws as an empty scope: any negative element index (upstream's
+ * -1, nothing traced yet, is what its own fresh dump writes, but a negative
+ * index can never resolve so all of them are treated alike), a truncated or
+ * non-numeric header, or no plot list at all.
  */
 export function decodeEmbeddedScope(
   config: string,
@@ -86,7 +88,8 @@ export function decodeEmbeddedScope(
   if (tokens.length < 6) return null;
   const elementIndex = Number(tokens[0]);
   // Upstream returns before touching anything else when e is -1, the fresh
-  // scope's own dump (ScopeSerializer.java:193-195).
+  // scope's own dump (ScopeSerializer.java:193-195); a negative index can
+  // never resolve to an element, so every negative is treated alike here.
   if (!Number.isFinite(elementIndex) || elementIndex < 0) return null;
 
   // Everything after the element index has exactly the layout decodeScopeLine

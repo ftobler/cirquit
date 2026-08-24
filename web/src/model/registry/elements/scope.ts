@@ -62,6 +62,10 @@ function drawScopeElm(g: DrawContext, e: CircuitElement): void {
       live.dark,
       live.decimalDigits,
       live.themeColors,
+      undefined,
+      // No settings gear: the window accepts no pointer gestures, so the
+      // wheel would advertise a properties dialog nothing can open.
+      { settingsWheel: false },
     );
     g.ctx.restore();
   }

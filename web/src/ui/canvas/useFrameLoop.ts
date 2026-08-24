@@ -4,7 +4,7 @@ import { scopeParamsFingerprint } from '../../engine/simulator';
 import { defFor, toolDef } from '../../model/registry';
 import { cachedBusWidths, postsForRender } from '../../model/busWidths';
 import { storedBusWidth } from '../../model/registry/elements/wire';
-import type { CircuitElement, DrawContext, Point } from '../../model/types';
+import type { CircuitElement, DrawContext, Point, SimSettings } from '../../model/types';
 import { dotPhaseStep, stepPostPhases, TOO_FAST, wrapPhase } from '../../render/dots';
 import { dragpostHandlesFrom, elementLength, makeTheme } from '../../render/draw';
 import { neutralDrawContext } from '../../render/drawContext';
@@ -65,6 +65,30 @@ export function buildReport(
   return {
     problem: mergeProblem(unsupportedProblem, err ? [err] : []),
     notice: mergeProblem(null, err ? [] : warnings),
+  };
+}
+
+/**
+ * The embedded-scope draw payload, built once per frame. `engine.time` is a
+ * wasm crossing, so it is read here and the result shared by reference
+ * through every element's draw context; building it inside the element loop
+ * would pay one crossing plus an allocation per element instead of one per
+ * frame. Pure given its arguments, so the single-read contract is testable
+ * without a canvas.
+ */
+export function scopeDrawPayload(
+  engine: SimEngine | null,
+  settings: SimSettings,
+  dark: boolean,
+): DrawContext['scopeDraw'] {
+  if (engine === null) return undefined;
+  return {
+    source: engine,
+    simTime: engine.time,
+    timeStep: settings.timeStep,
+    dark,
+    decimalDigits: settings.decimalDigits,
+    themeColors: settings,
   };
 }
 
@@ -411,6 +435,11 @@ export function useFrameLoop(
             ctx.stroke();
           }
 
+          // One draw payload per frame, hoisted out of the element loop so
+          // its engine.time read stays a single wasm crossing no matter how
+          // many elements draw.
+          const scopeDraw = scopeDrawPayload(engine, settings, dark);
+
           for (const e of elements) {
             const def = defFor(e.kind);
             if (!def) continue;
@@ -533,17 +562,7 @@ export function useFrameLoop(
               // The embedded scope windows draw their waveforms through the
               // same trace rings and display settings the docked panels use;
               // every other element def ignores it.
-              scopeDraw:
-                engine !== null
-                  ? {
-                      source: engine,
-                      simTime: engine.time,
-                      timeStep: settings.timeStep,
-                      dark,
-                      decimalDigits: settings.decimalDigits,
-                      themeColors: settings,
-                    }
-                  : undefined,
+              scopeDraw,
               busWidth:
                 e.kind === 'wire'
                   ? Math.max(busWidths.get(e.id) ?? 1, storedBusWidth(e))
