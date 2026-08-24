@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { ELEMENT_DEFS, PLACEMENT_BY_CHAR, TOOLBOX } from '../model/registry';
 import type { StorageLike } from '../state/appPrefs';
 import {
+  actionLabel,
   chordOf,
+  COMMAND_ACTIONS,
+  ASSIGNABLE_ACTIONS,
   defaultBindingFor,
   hasDuplicateChords,
   isDefaultBinding,
+  isPlacementAction,
   loadShortcutOverlay,
   matchShortcut,
   overlayFromRows,
@@ -14,6 +18,7 @@ import {
   SHORTCUTS,
   type KeyEventLike,
   type ShortcutOverlay,
+  type ShortcutRow,
 } from './shortcuts';
 
 const ev = (partial: Partial<KeyEventLike>): KeyEventLike => ({
@@ -616,5 +621,117 @@ describe('shortcut overlay persistence', () => {
     } as StorageLike;
     expect(() => saveShortcutOverlay({ undo: 'g' }, throwing)).not.toThrow();
     expect(() => saveShortcutOverlay({ undo: 'g' }, undefined)).not.toThrow();
+  });
+});
+
+// ─── Rebindable element-placement keys ───
+
+describe('rebindable element-placement keys', () => {
+  const fakeStorage = () => {
+    const map = new Map<string, string>();
+    return {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    } as StorageLike;
+  };
+  /** The chord a placement char seeds: uppercase letters fold into Shift+ the
+   *  way chordOf reports them; everything else is the char itself. */
+  const seedChord = (char: string): string =>
+    char >= 'A' && char <= 'Z' ? `Shift+${char.toLowerCase()}` : char;
+
+  it('every placement char gets an assignable row seeded with its registry letter', () => {
+    const rows = rowsFromOverlay({});
+    const placed = rows.filter((r) => isPlacementAction(r.action));
+    expect(placed.length).toBe(PLACEMENT_BY_CHAR.size);
+    for (const [char, tool] of PLACEMENT_BY_CHAR) {
+      const row = rows.find((r) => r.action === `place:${tool}`);
+      expect(row?.chord).toBe(seedChord(char));
+    }
+  });
+
+  it('the default behaviour is unchanged: every letter still places what it did', () => {
+    // The behavioural invariant over the whole table with an empty overlay.
+    for (const [char, tool] of PLACEMENT_BY_CHAR) {
+      expect(matchShortcut(ev({ key: char, shiftKey: char >= 'A' && char <= 'Z' }))).toEqual({
+        type: 'place',
+        kind: tool,
+      });
+    }
+  });
+
+  it('rebinding a placement key arms the element on the new chord', () => {
+    const overlay: ShortcutOverlay = { 'place:resistor': 'q' };
+    expect(matchShortcut(ev({ key: 'q' }), overlay)).toEqual({ type: 'place', kind: 'resistor' });
+  });
+
+  it('rebinding frees the old letter', () => {
+    const overlay: ShortcutOverlay = { 'place:resistor': 'q' };
+    expect(matchShortcut(ev({ key: 'r' }), overlay)).toBeNull();
+  });
+
+  it('an Alt chord carries a placement assignment and frees the bare letter', () => {
+    const overlay: ShortcutOverlay = { 'place:wire': 'Alt+w' };
+    expect(matchShortcut(ev({ key: 'w', altKey: true }), overlay)).toEqual({
+      type: 'place',
+      kind: 'wire',
+    });
+    expect(matchShortcut(ev({ key: 'w' }), overlay)).toBeNull();
+  });
+
+  it('a placement assignment sharing another row’s chord flags duplicates in the dialog', () => {
+    const rows = rowsFromOverlay({ undo: 'g' });
+    expect(rows.find((r) => r.action === 'place:ground')?.chord).toBe('g');
+    expect(hasDuplicateChords(rows)).toBe(true);
+  });
+
+  it('overlayFromRows keeps only genuine placement overrides, never a default letter', () => {
+    const rows: ShortcutRow[] = [
+      { action: 'place:wire', chord: 'w' },  // the default
+      { action: 'place:ground', chord: 'f' },  // a real override
+    ];
+    expect(overlayFromRows(rows)).toEqual({ 'place:ground': 'f' });
+  });
+
+  it('defaultBindingFor reports the seed letter, folding case into Shift', () => {
+    expect(defaultBindingFor('place:wire')).toBe('w');
+    expect(defaultBindingFor('place:rail')).toBe('Shift+v');
+    expect(defaultBindingFor('place:nmos')).toBe('Shift+n');
+    expect(defaultBindingFor('place:battery')).toBe('Shift+b');
+    expect(defaultBindingFor('place:nandGate')).toBe('@');
+    // The Default button restores it after a move.
+    expect(isDefaultBinding({ action: 'place:resistor', chord: 'r' })).toBe(true);
+    expect(isDefaultBinding({ action: 'place:resistor', chord: 'q' })).toBe(false);
+  });
+
+  it('placement assignments round-trip through storage', () => {
+    const storage = fakeStorage();
+    saveShortcutOverlay({ 'place:zener': 'Shift+k', 'place:nmos': 'Ctrl+m' }, storage);
+    expect(loadShortcutOverlay(storage)).toEqual({
+      'place:zener': 'Shift+k',
+      'place:nmos': 'Ctrl+m',
+    });
+  });
+
+  it('unknown placement actions and reserved named keys are dropped on load', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      'shortcuts.v1',
+      JSON.stringify({ 'place:bogus': 'q', 'place:wire': 'Enter', 'place:zener': '?' }),
+    );
+    expect(loadShortcutOverlay(storage)).toEqual({ 'place:zener': '?' });
+  });
+
+  it('row labels come from the registry defs, not a second name table', () => {
+    expect(actionLabel('undo')).toBe('Undo');
+    expect(actionLabel('place:npn')).toBe('NPN');
+    expect(actionLabel('place:opampSwap')).toBe('Swapped Op-Amp');
+    expect(actionLabel('place:resistor')).toBe(
+      ELEMENT_DEFS.find((d) => d.kind === 'resistor')?.label,
+    );
+  });
+
+  it('the assignable rows stay commands first, one per placement tool', () => {
+    expect(ASSIGNABLE_ACTIONS.filter((a) => !isPlacementAction(a))).toEqual([...COMMAND_ACTIONS]);
+    expect(ASSIGNABLE_ACTIONS.length).toBe(COMMAND_ACTIONS.length + PLACEMENT_BY_CHAR.size);
   });
 });

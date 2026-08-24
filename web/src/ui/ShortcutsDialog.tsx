@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import {
-  ACTION_LABELS,
+  actionLabel,
   chordOf,
   defaultBindingFor,
   hasDuplicateChords,
@@ -92,14 +92,14 @@ export function ShortcutsDialog() {
         <tbody>
           {rows.map((row, i) => (
             <tr key={row.action} className={duplicate && row.chord !== '' ? 'duplicate' : ''}>
-              <td>{ACTION_LABELS[row.action]}</td>
+              <td>{actionLabel(row.action)}</td>
               <td>
                 <input
                   type="text"
                   readOnly
                   value={row.chord}
                   placeholder="(none)"
-                  aria-label={`${ACTION_LABELS[row.action]} shortcut`}
+                  aria-label={`${actionLabel(row.action)} shortcut`}
                   onKeyDown={(ev) => capture(i, ev)}
                 />
               </td>

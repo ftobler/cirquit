@@ -2,9 +2,12 @@
  *  descriptor to an action id, and App.tsx does the dispatch. Stage 3 adds the
  *  user-assignable overlay: a runtime map from assignable action to a chord
  *  signature, consulted before the hardcoded table (the ShortcutsDialog edits
- *  it). */
+ *  it). Element-placement keys are assignable too, keyed per tool: upstream's
+ *  Edit Shortcuts dialog lists every Draw-menu item beside the commands
+ *  (ShortcutsDialog.java:69-76), so a placement letter can move like any
+ *  command chord can. */
 
-import { PLACEMENT_BY_CHAR } from '../model/registry';
+import { PLACEMENT_BY_CHAR, toolboxEntry } from '../model/registry';
 import type { StorageLike } from '../state/appPrefs';
 
 export type ShortcutAction =
@@ -136,7 +139,7 @@ export const SHORTCUTS: ShortcutEntry[] = [
 /** The commands the ShortcutsDialog can rebind: upstream's assignable menu
  *  items plus the Start/Stop row (ShortcutsDialog.java:72-94). Nudge is
  *  excluded: its binding is the four-arrow chord, not a single key. */
-export const ASSIGNABLE_ACTIONS = [
+export const COMMAND_ACTIONS = [
   'undo',
   'redo',
   'delete',
@@ -158,10 +161,41 @@ export const ASSIGNABLE_ACTIONS = [
   'toggleRunning',
 ] as const;
 
-export type AssignableAction = (typeof ASSIGNABLE_ACTIONS)[number];
+export type CommandAction = (typeof COMMAND_ACTIONS)[number];
 
-/** The dialog's row labels, one per assignable command. */
-export const ACTION_LABELS: Record<AssignableAction, string> = {
+/** The per-tool placement actions, one per entry of PLACEMENT_BY_CHAR, keyed
+ *  by the toolbox id a `place` action arms (`place:resistor`, `place:npn`).
+ *  Upstream's dialog rows are exactly these Draw-menu items. */
+export const PLACE_ACTION_PREFIX = 'place:';
+export type PlacementAction = `${typeof PLACE_ACTION_PREFIX}${string}`;
+
+export function isPlacementAction(action: AssignableAction): action is PlacementAction {
+  return action.startsWith(PLACE_ACTION_PREFIX);
+}
+
+export function placementToolOf(action: PlacementAction): string {
+  return action.slice(PLACE_ACTION_PREFIX.length);
+}
+
+/** Registry order, so the dialog lists placement keys in the same order the
+ *  defs scan. Deduplicated defensively: a duplicate toolbox id would silently
+ *  collapse two rows into one otherwise. */
+export const PLACEMENT_ACTIONS: readonly PlacementAction[] = [
+  ...new Set(PLACEMENT_BY_CHAR.values()),
+].map((id) => `${PLACE_ACTION_PREFIX}${id}` as PlacementAction);
+
+/** Everything the ShortcutsDialog shows a row for: commands first, then the
+ *  placement tools. */
+export const ASSIGNABLE_ACTIONS: readonly AssignableAction[] = [
+  ...COMMAND_ACTIONS,
+  ...PLACEMENT_ACTIONS,
+];
+
+export type AssignableAction = CommandAction | PlacementAction;
+
+/** The dialog's row labels for the command rows. Placement-row labels come
+ *  from the registry via actionLabel, so no second name table exists here. */
+export const ACTION_LABELS: Record<CommandAction, string> = {
   undo: 'Undo',
   redo: 'Redo',
   delete: 'Delete',
@@ -182,6 +216,14 @@ export const ACTION_LABELS: Record<AssignableAction, string> = {
   selectMode: 'Select mode',
   toggleRunning: 'Start/Stop Simulation',
 };
+
+/** The dialog's row label for any assignable action: the command table for
+ *  commands, the registry's own label for placement tools (upstream shows the
+ *  menu item name, ShortcutsDialog.java:73). */
+export function actionLabel(action: AssignableAction): string {
+  if (isPlacementAction(action)) return toolboxEntry(placementToolOf(action)).label;
+  return ACTION_LABELS[action];
+}
 
 /** A user-assigned binding: assignable action -> chord signature. Empty when
  *  unassigned. The dialog edits this map; matchShortcut consults it before the
@@ -247,6 +289,28 @@ export function hasChord(overlay: ShortcutOverlay, chord: string): boolean {
   return actionForChord(overlay, chord) !== null;
 }
 
+/** The base placement map minus every tool the overlay reassigns elsewhere:
+ *  moving a key off a letter must free the letter, which the raw map alone
+ *  never models (it only knows what each char arms). The new chords themselves
+ *  resolve earlier through actionForChord, so this map needs only deletions.
+ *  The base object is returned untouched while no placement is assigned, which
+ *  is the every-keystroke case. */
+function freedPlacements(
+  base: ReadonlyMap<string, string>,
+  overlay: ShortcutOverlay,
+): ReadonlyMap<string, string> {
+  const moved = new Set<string>();
+  for (const [action, chord] of Object.entries(overlay) as [AssignableAction, string][]) {
+    if (chord !== '' && isPlacementAction(action)) moved.add(placementToolOf(action));
+  }
+  if (moved.size === 0) return base;
+  const out = new Map(base);
+  for (const [char, tool] of out) {
+    if (moved.has(tool)) out.delete(char);
+  }
+  return out;
+}
+
 export function matchShortcut(
   ev: KeyEventLike,
   overlay: ShortcutOverlay = {},
@@ -256,9 +320,14 @@ export function matchShortcut(
   // (UIManager.java:1174). The overlay is exact per chord, so assigning 'x' to
   // copy never changes Ctrl+X. An Alt chord is only a chord if the overlay
   // says so: chordOf carries alt, so an assignment to Alt+r round-trips here
-  // even though the table's plain-letter rows no longer collide with it.
+  // even though the table's plain-letter rows no longer collide with it. A
+  // placement assignment resolves to the same `place` action its registry
+  // letter produces.
   const assigned = actionForChord(overlay, chordOf(ev));
-  if (assigned) return { type: assigned } as ShortcutAction;
+  if (assigned !== null) {
+    if (isPlacementAction(assigned)) return { type: 'place', kind: placementToolOf(assigned) };
+    return { type: assigned } as ShortcutAction;
+  }
   // Letters match on the lowercase form (Shift+r is still r), punctuation and
   // named keys on the exact char.
   const key = normalizeKey(ev.key);
@@ -270,25 +339,42 @@ export function matchShortcut(
     if (entry.key !== key) continue;
     return entry.action;
   }
-  // Element placement: a plain printable key that no command or user
-  // assignment binds arms the element whose registry shortcut it is, the same
-  // MODE_ADD_ELM the toolbox buttons arm (UIManager.java:1273-1284). Modifiers
-  // suppress this path, so Ctrl+W (browser close-tab) and Alt+key browser
-  // gestures never arm a tool, and the char is looked up raw, not lowercased:
-  // 'p' and 'P' are different elements, exactly as the map keys them.
+  // Element placement: a plain printable key that no command, user assignment
+  // or surviving registry letter binds arms the element whose registry
+  // shortcut it is, the same MODE_ADD_ELM the toolbox buttons arm
+  // (UIManager.java:1273-1284). Modifiers suppress this path, so Ctrl+W
+  // (browser close-tab) and Alt+key browser gestures never arm a tool, and
+  // the char is looked up raw, not lowercased: 'p' and 'P' are different
+  // elements, exactly as the map keys them. A tool the overlay reassigned is
+  // missing here: its old letter is free.
   if (!modHeld && !ev.altKey && isPrintableKey(ev.key)) {
-    const kind = placement.get(ev.key);
+    const kind = freedPlacements(placement, overlay).get(ev.key);
     if (kind !== undefined) return { type: 'place', kind };
   }
   return null;
 }
 
-/** The chord the SHORTCUTS table binds an action to by default, or '' when
- *  none (toggleRunning, and selectMode since Space became rotate). The dialog
- *  shows it in a row the user has not reassigned, so the table is the single
- *  source of truth for the defaults. An action with two table rows (rotate:
- *  Space and Alt+r) reports the first, so the dialog names one binding. */
+/** The uppercase placement chars seed a Shift+ chord, the form chordOf
+ *  reports for a shifted letter; everything else seeds itself. */
+function seedChordOfChar(char: string): string {
+  return char >= 'A' && char <= 'Z' ? `Shift+${char.toLowerCase()}` : char;
+}
+
+const PLACE_DEFAULT_CHORDS = new Map<string, string>();
+for (const [char, id] of PLACEMENT_BY_CHAR) {
+  PLACE_DEFAULT_CHORDS.set(`${PLACE_ACTION_PREFIX}${id}`, seedChordOfChar(char));
+}
+
+/** The chord an action is bound to by default: the table binding for commands,
+ *  the registry letter (case folded into Shift) for placement tools, or ''
+ *  when none (toggleRunning, and selectMode since Space became rotate). The
+ *  dialog shows it in a row the user has not reassigned, so these are the two
+ *  single sources of truth for the defaults. An action with two table rows
+ *  (rotate: Space and Alt+r) reports the first, so the dialog names one
+ *  binding. */
 export function defaultBindingFor(type: AssignableAction): string {
+  const seeded = PLACE_DEFAULT_CHORDS.get(type);
+  if (seeded !== undefined) return seeded;
   for (const entry of SHORTCUTS) {
     if (entry.action.type === type) return chordFromEntry(entry);
   }
