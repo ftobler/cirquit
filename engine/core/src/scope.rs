@@ -152,7 +152,8 @@ impl TriggerTracker {
         columns: usize,
     ) -> usize {
         if mode == TriggerMode::FreeRun || !self.fired || self.state == TriggerState::AutoRun {
-            return head + columns - w;
+            let ptr = (head + columns - 1) % columns;
+            return ptr + columns - w;
         }
         self.trigger_ptr + columns - w / 2
     }
@@ -170,7 +171,13 @@ impl TriggerTracker {
         if !self.is_triggered(mode) {
             return w;
         }
-        let count = (head + columns - ipa) % columns + 1;
+        // Upstream counts through plot.ptr, the column currently being
+        // accumulated (ScopeTrigger.validDataCount). The ring only exposes
+        // completed columns, so the port's equivalent is the slot one behind
+        // head; counting through head itself would run the window's leading
+        // edge onto stale pre-trigger data after wrap.
+        let ptr = (head + columns - 1) % columns;
+        let count = (ptr + columns - ipa) % columns + 1;
         count.min(w)
     }
 
@@ -721,7 +728,51 @@ mod tests {
         // Trigger point sits at the centre of the window: the display starts
         // `w/2` columns before the trigger column and extends `w` wide.
         assert_eq!(info.start_index, 3 + 64 - 32);
-        assert_eq!(info.valid_count, (6 + 64 - info.start_index) % 64 + 1);
+        // The valid window counts through the newest COMPLETED column,
+        // (head + 64 - 1) % 64 = 5 here: counting through head instead would
+        // reach slot 6, which nothing has written yet.
+        assert_eq!(info.valid_count, 35);
+    }
+
+    #[test]
+    fn triggered_window_never_counts_past_the_newest_completed_column() {
+        // After wrap the slot at head holds the oldest surviving column, not
+        // fresh data: counting the valid window through head paints one column
+        // of stale pre-trigger signal as current for roughly w/2 columns after
+        // each trigger. Upstream counts through plot.ptr, the column being
+        // accumulated (ScopeTrigger.validDataCount); the port's newest
+        // completed column sits one behind head, so the window stops there.
+        let mut t = ScopeTrace::new(trigger_spec(1, 16, TriggerMode::Normal, 2.0), Some(0));
+        // Fire on column 3 like the test above, then run well past a full
+        // wrap: 40 completed columns leave head at 8, a slot whose contents
+        // predate the trigger.
+        for v in [0.0, 0.0, 0.0] {
+            t.push(v, 0.0);
+        }
+        for v in [3.0, 3.0, 3.0] {
+            t.push(v, 0.0);
+        }
+        for _ in 6..40 {
+            t.push(3.0, 0.0);
+        }
+        let info = t.trigger_info(16);
+        assert!(info.triggered);
+        assert_eq!(info.columns, 16);
+        assert_eq!(info.written, 16);
+        // The trigger fired at column 3 and the display is 16 wide, so the
+        // window starts at 3 + 16 - 8.
+        assert_eq!(info.start_index, 11);
+        // Valid data runs from slot 11 around to the newest completed column,
+        // slot (40 - 1) % 16 = 7: 13 columns. Counting through head would
+        // claim 14 and lead with stale slot 8.
+        assert_eq!(info.valid_count, 13);
+        // Cross-check against the capture itself: the window's leading edge
+        // must be exactly the newest snapshot entry.
+        let snap = t.snapshot();
+        assert_eq!(snap.len(), 32);
+        let newest_ring = (info.snapshot_start + snap.len() / 2 - 1) % 16;
+        let leading_ring = (info.start_index + info.valid_count - 1) % 16;
+        assert_eq!(leading_ring, newest_ring);
     }
 
     #[test]
