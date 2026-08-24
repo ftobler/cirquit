@@ -228,7 +228,7 @@ describe('strict element-line coordinates', () => {
     expect(parsed.passthrough).toEqual(['r 1 abc 64 0 1000']);
     expect(parsed.order).toContainEqual({ kind: 'other', line: 'r 1 abc 64 0 1000' });
     expect(parsed.warnings).toEqual([
-      'Resistor line with unreadable coordinates was kept as an unrecognised line',
+      'Resistor line with unreadable coordinates or flags was kept as an unrecognised line',
     ]);
   });
 
@@ -239,6 +239,34 @@ describe('strict element-line coordinates', () => {
     expect(parsed.elements.map((e) => e.kind)).toEqual(['resistor']);
     expect(parsed.passthrough).toEqual(['r 0 0 16']);
     expect(parsed.warnings).toHaveLength(1);
+  });
+
+  it('a missing or non-finite flags token makes the line unreadable too', () => {
+    // The flags token sits inside the same per-line try upstream
+    // (CircuitLoader.java:190), so a line stopping after the coordinates, or
+    // carrying junk there, skips there as well. Every writer emits flags, so
+    // requiring one cannot strand a real file.
+    const truncated = parseCircuit(`${HEADER}r 16 0 32 0\nr 48 0 64 0 0 330\n`);
+    expect(truncated.elements.map((e) => e.kind)).toEqual(['resistor']);
+    expect(truncated.passthrough).toEqual(['r 16 0 32 0']);
+    expect(truncated.warnings).toHaveLength(1);
+    const junkFlags = parseCircuit(`${HEADER}r 16 0 32 0 many\n`);
+    expect(junkFlags.elements).toEqual([]);
+    expect(junkFlags.warnings).toHaveLength(1);
+  });
+
+  it('an unknown-head line keeps riding through silently, whatever its tokens look like', () => {
+    // Branch boundary: coordinate and flags strictness only applies once the
+    // dump code resolves to a def. A line unknown to both builds degrades
+    // before that point, with no warning of its own and, unlike a known code,
+    // without a scope slot (pinned by 'an unrecognized code does not consume
+    // a scope index'). Every code in the upstream snapshot is modelled here
+    // today, so this path carries only codes newer than both builds.
+    const parsed = parseCircuit(`${HEADER}999 1 abc 0 100\nr 16 0 32 0 0 220\n`);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['resistor']);
+    expect(parsed.unsupported).toContain('999');
+    expect(parsed.passthrough).toContain('999 1 abc 0 100');
+    expect(parsed.warnings).toEqual([]);
   });
 
   it('a degraded line still takes its slot in the scope index space', () => {

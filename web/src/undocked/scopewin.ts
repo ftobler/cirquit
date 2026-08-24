@@ -31,7 +31,10 @@ let receivedFrameAt = -1;
 window.addEventListener('message', (ev) => {
   // Only the opener may drive this page, and only from this page's own
   // origin: anything else (another tab, a stray iframe, a re-hosted document)
-  // is dropped before its payload is even inspected.
+  // is dropped before its payload is even inspected. Opaque origins (a file://
+  // page) serialize inconsistently across browsers, which this check does not
+  // try to reconcile: the site deploys over https, so a legitimate opener
+  // always presents the same origin string.
   if (!fromTrustedSender(ev, window.opener, window.location.origin)) return;
   if (ev.data === null || typeof ev.data !== 'object') return;
   if (!deliverToSource(source, ev.data)) return;

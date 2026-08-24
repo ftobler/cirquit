@@ -36,4 +36,23 @@ describe('the undocked child transport guard', () => {
       ),
     ).toBe(false);
   });
+
+  it('rejects a stranger at a foreign origin, both halves failing together', () => {
+    const stranger = {};
+    expect(
+      fromTrustedSender(
+        { source: stranger, origin: 'https://elsewhere.test' },
+        opener,
+        'https://app.test',
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects everything when the page has no opener', () => {
+    // A directly opened page has window.opener null, which no real sender
+    // window equals.
+    expect(
+      fromTrustedSender({ source: {}, origin: 'https://app.test' }, null, 'https://app.test'),
+    ).toBe(false);
+  });
 });
