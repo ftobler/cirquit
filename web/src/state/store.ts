@@ -760,7 +760,14 @@ function createAppStore() {
         patch.minTimeStep !== undefined ||
         patch.adaptiveTimeStep !== undefined ||
         patch.autoDC !== undefined;
-      return { settings: merged, ...(reload ? bumpRevision(s) : {}) };
+      return {
+        settings: merged,
+        ...(reload ? bumpRevision(s) : {}),
+        // Settings ride the snapshots but deliberately take no undo entry, so
+        // a stale redo future would snap an undone setting back on redo. Kill
+        // the future without committing; the no-entry design stays.
+        redoStack: [],
+      };
     });
   },
 
@@ -1908,6 +1915,10 @@ function createAppStore() {
       return {
         ...(stateChanged ? { elements } : {}),
         ...(pendingChanged ? { pendingStates } : {}),
+        // Run-mode reset: no undo entry, but the fuse state rides the
+        // snapshots, so a stale redo future would rewind the reset along with
+        // everything else. Kill the future like a commit would.
+        redoStack: [],
       };
     }),
 
@@ -1950,6 +1961,10 @@ function createAppStore() {
         toggled = true;
       }
     }
+    // The throw rides the snapshots without an entry of its own, so a redo
+    // future left standing would silently rewind it on Ctrl+Shift+Z. Truncate,
+    // matching the commit-per-toggle rule the pointer path follows.
+    if (toggled) set({ redoStack: [] });
     return toggled;
   },
 

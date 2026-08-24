@@ -609,6 +609,94 @@ describe('unblowFuses is a run-mode reset, not an undoable edit', () => {
   });
 });
 
+describe('run-mode mutations kill the stale redo future', () => {
+  // toggleSwitchByKey, unblowFuses and updateSettings mutate without pushing
+  // an undo entry, and switch throws, fuse state and settings all ride the
+  // snapshots. A redo future left standing over such a mutation would rewind
+  // it along with everything else on Ctrl+Shift+Z, so each action truncates
+  // the future while staying entry-free, matching the commit-per-pointer-
+  // toggle rule the pointer path already follows.
+
+  const addKeyedSwitch = () =>
+    useStore.getState().addElement({
+      kind: 'switch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0 },
+      state: 0,
+      keyShortcut: 'k',
+    });
+
+  const addFuse = () =>
+    useStore.getState().addElement({
+      kind: 'fuse',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 0.0613, i2t: 6.73 },
+    });
+
+  it('a keyboard throw truncates the future, so a later redo cannot rewind it', () => {
+    const id = addKeyedSwitch();
+    useStore.getState().commit();
+    useStore.getState().updateElement(id, { x2: 320 });
+    useStore.getState().undo();
+    expect(useStore.getState().redoStack.length).toBe(1);
+
+    expect(useStore.getState().toggleSwitchByKey('k')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().redoStack).toEqual([]);
+
+    // The rewound throw must not come back on Ctrl+Shift+Z.
+    useStore.getState().redo();
+    expect(useStore.getState().elements[0].state).toBe(1);
+  });
+
+  it('unblowFuses truncates the future without taking an undo entry', () => {
+    const id = addFuse();
+    useStore.getState().commit();
+    useStore.getState().updateElement(id, { x2: 320 });
+    useStore.getState().undo();
+    const baseline = useStore.getState().undoStack.length;
+    useStore.getState().setElementState(id, 1);
+    expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(1);
+    expect(useStore.getState().redoStack.length).toBe(1);
+
+    useStore.getState().unblowFuses();
+    expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(0);
+    expect(useStore.getState().redoStack).toEqual([]);
+    // Still a run-mode reset: the undo past is untouched.
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+
+    useStore.getState().redo();
+    expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(0);
+  });
+
+  it('updateSettings kills the future but stays entry-free', () => {
+    const id = addResistor();
+    useStore.getState().commit();
+    useStore.getState().setParam(id, 'resistance', 2200);
+    useStore.getState().undo();
+    expect(useStore.getState().redoStack.length).toBe(1);
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().updateSettings({ voltageRange: 5 });
+    expect(useStore.getState().settings.voltageRange).toBe(5);
+    expect(useStore.getState().redoStack).toEqual([]);
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+
+    // The no-op redo leaves both the settings write and the undone edit alone.
+    useStore.getState().redo();
+    expect(useStore.getState().settings.voltageRange).toBe(5);
+    expect(useStore.getState().elements.find((e) => e.id === id)?.params.resistance).toBe(1000);
+  });
+});
+
 describe('context menu state', () => {
   it('openContextMenu stores coordinates, the circuit point and an element target', () => {
     useStore.getState().openContextMenu(10, 20, 7, { x: 3, y: 4 });
