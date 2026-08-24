@@ -88,11 +88,13 @@ const BIN_DIGITS = /^[01]+$/;
  *  (SRAMLoadFile.java:31-48): the `0x0:` label then every byte as a
  *  zero-padded uppercase hex value behind an `0x` prefix, one run starting at
  *  address 0. The prefixes make the text parse identically in either display
- *  radix, so it rides the textarea's commit untouched. */
-export function bytesToHexRun(bytes: ArrayLike<number>): string {
+ *  radix, so it rides the textarea's commit untouched. Bytes are folded to
+ *  `mask` (the element's data width) before formatting, so a file loads at
+ *  any width instead of refusing wholesale. */
+export function bytesToHexRun(bytes: ArrayLike<number>, mask = 0xff): string {
   let text = '0x0:';
   for (let i = 0; i < bytes.length; i++) {
-    text += ' 0x' + (bytes[i] & 0xff).toString(16).toUpperCase().padStart(2, '0');
+    text += ' 0x' + (bytes[i] & mask).toString(16).toUpperCase().padStart(2, '0');
   }
   return text;
 }

@@ -219,7 +219,10 @@ export const SRAM_DEF: ElementDef = {
     // The Load Contents From File row (SRAMElm.java:154, SRAMLoadFile
     // .java:31-48). No value rides the field: the picked bytes are encoded
     // into the contents run and committed through setMemoryContents, so
-    // nothing here reaches params or the file line. The ROM has no such row.
+    // nothing here reaches params or the file line. Loaded bytes wider than
+    // the configured data width fold to their low bits, matching what the
+    // engine reads out of upstream's raw stored ints, so a file loads at any
+    // width instead of refusing. The ROM has no such row.
     { name: 'loadFile', label: 'Load Contents From File', type: 'file', fileLoad: 'binary' },
     {
       name: 'reloadOnReset',

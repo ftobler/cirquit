@@ -20,7 +20,9 @@ import {
   commitContentsField,
   compositeEditModelState,
   deviceModelButtons,
+  draftForToken,
   fieldRows,
+  type DraftCell,
 } from './elementFields';
 import { UnitNumberInput } from './UnitNumberInput';
 
@@ -31,6 +33,7 @@ function Field({
   onChange,
   onBeginEdit,
   onDownload,
+  resetToken,
 }: {
   field: FieldDef;
   label: string;
@@ -38,6 +41,9 @@ function Field({
   onChange: (v: number | string | FileList | null) => boolean | void;
   onBeginEdit: () => void;
   onDownload?: () => void;
+  /** Only the contents row uses it: the external-write token that drops an
+   *  open draft when a binary file load lands. */
+  resetToken?: number;
 }) {
   if (field.type === 'download') {
     // A one-shot button, the data recorder's export: the recorded samples
@@ -82,6 +88,7 @@ function Field({
         value={String(value ?? '')}
         onBeginEdit={onBeginEdit}
         onCommit={onChange}
+        resetToken={resetToken ?? 0}
       />
     );
   }
@@ -296,23 +303,29 @@ function Field({
  * The SRAM/ROM contents editor row: a five-line monospace textarea. The value
  * is the pair text re-derived per render, so it always shows the current
  * contents in the current radix while the user is not editing; a local draft
- * holds the typing while focused. Commit parses and stores on blur and
- * Ctrl+Enter. A parse error alerts and keeps the draft so the bad value stays
- * on screen for fixing, and focus opens the edit session so the whole spell is
- * one undo entry, the bracketing every other field uses.
+ * holds the typing while focused. The draft rides a token: an external write
+ * to the contents (a binary file load) bumps it, which drops the draft, so a
+ * later blur cannot commit stale text over the loaded pairs. Commit parses
+ * and stores on blur and Ctrl+Enter. A parse error alerts and keeps the draft
+ * so the bad value stays on screen for fixing, and focus opens the edit
+ * session so the whole spell is one undo entry, the bracketing every other
+ * field uses.
  */
 function ContentsField({
   label,
   value,
   onBeginEdit,
   onCommit,
+  resetToken = 0,
 }: {
   label: string;
   value: string;
   onBeginEdit: () => void;
   onCommit: (text: string) => boolean | void;
+  resetToken?: number;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
+  const [cell, setCell] = useState<DraftCell>({ token: 0, text: null });
+  const draft = draftForToken(cell, resetToken);
   const text = draft !== null ? draft : value;
   return (
     <label className="field">
@@ -324,20 +337,23 @@ function ContentsField({
         onFocus={() => {
           onBeginEdit();
           // Seed the draft only when there is none: after a failed commit the
-          // bad text must survive a refocus so the user can fix it.
-          setDraft((d) => d ?? value);
+          // bad text must survive a refocus so the user can fix it. A stale
+          // cell (its token bumped under it) seeds fresh like no draft at all.
+          setCell((c) =>
+            draftForToken(c, resetToken) !== null ? c : { token: resetToken, text: value },
+          );
         }}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => setCell({ token: resetToken, text: e.target.value })}
         onBlur={() => {
           if (draft === null) return;
-          if (onCommit(draft)) setDraft(null);
+          if (onCommit(draft)) setCell({ token: resetToken, text: null });
         }}
         onKeyDown={(e) => {
           if (e.ctrlKey && e.key === 'Enter') {
             e.preventDefault();
             if (draft === null) return;
             if (onCommit(draft)) {
-              setDraft(null);
+              setCell({ token: resetToken, text: null });
               e.currentTarget.blur();
             }
           }
@@ -364,6 +380,7 @@ function loadFileInto(
   loadAudioFile: (id: number, samples: number[], samplingRate: number, fileName: string) => void,
   loadDataFile: (id: number, samples: number[], fileName: string) => void,
   setMemoryContents: (id: number, pairs: [number, number][]) => void,
+  onBinaryLoaded: () => void,
 ): void {
   const file = files && files[0];
   if (!file) return;
@@ -373,10 +390,16 @@ function loadFileInto(
       return;
     }
     // Same asynchronous shape as the two sample loaders: when the read lands,
-    // the bytes are encoded into the editor's run and committed through the
-    // textarea's own parse-and-store path.
+    // any open contents draft drops first, then the bytes are encoded into
+    // the editor's run and committed through the textarea's own parse-and-
+    // store path.
     const reader = new FileReader();
+    // A failed or aborted read must not strand the dialog silently; every
+    // audio loader route alerts the same way.
+    reader.onerror = () => window.alert('Cannot load: That file could not be read!');
+    reader.onabort = reader.onerror;
     reader.onload = () => {
+      onBinaryLoaded();
       commitBinaryFile(
         e,
         new Uint8Array(reader.result as ArrayBuffer),
@@ -524,6 +547,9 @@ export function ElementFields({ element, engine }: Props) {
   const loadAudioFile = useStore((s) => s.loadAudioFile);
   const loadDataFile = useStore((s) => s.loadDataFile);
   const openDeviceModelEditor = useStore((s) => s.openDeviceModelEditor);
+  // Bumped when a binary file load lands, dropping any open contents draft so
+  // the stale text cannot be committed over the loaded pairs on blur.
+  const [contentsReset, bumpContentsReset] = useState(0);
 
   return (
     <>
@@ -534,6 +560,7 @@ export function ElementFields({ element, engine }: Props) {
             label={label}
             value={value}
             onBeginEdit={beginEdit}
+            resetToken={field.type === 'contents' ? contentsReset : undefined}
             onDownload={
               field.type === 'download'
                 ? () => {
@@ -560,6 +587,7 @@ export function ElementFields({ element, engine }: Props) {
                   loadAudioFile,
                   loadDataFile,
                   setMemoryContents,
+                  () => bumpContentsReset((n) => n + 1),
                 );
                 return;
               }

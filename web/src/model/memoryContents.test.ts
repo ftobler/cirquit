@@ -235,6 +235,12 @@ describe('bytesToHexRun', () => {
     expect(bytesToHexRun([])).toBe('0x0:');
   });
 
+  it('folds bytes past the configured mask to their low bits', () => {
+    // A load must succeed at any data width: values wider than the element's
+    // mask fold to the bits the chip would read anyway.
+    expect(bytesToHexRun([0xff, 0x2a], 0xf)).toBe('0x0: 0x0F 0x0A');
+  });
+
   it('round-trips through the parser to one pair per byte', () => {
     // The 0x prefixes make the run parse identically in either display radix,
     // which is what lets it ride the textarea's commit untouched.

@@ -11,9 +11,11 @@ import {
   commitContentsField,
   compositeEditModelState,
   deviceModelButtons,
+  draftForToken,
   fieldRows,
   fieldValue,
   visibleFields,
+  type DraftCell,
   type FieldEditActions,
 } from './elementFields';
 
@@ -455,18 +457,19 @@ describe('binary contents file load', () => {
     expect(calls).toEqual([[1, [[0, 222], [1, 173]]]]);
   });
 
-  it('bytes past the data width alert the codec error and store nothing', () => {
-    // A byte cannot fit a narrower data width; the port reports that where
-    // upstream silently stored the raw parsed value.
-    const e = elm({ kind: 'sram', params: { dataBits: 2 } });
+  it('loaded bytes mask to the configured data width', () => {
+    // A byte cannot fit a narrower width; folding to the low bits matches
+    // what the engine reads out of upstream's raw stored ints, and lets any
+    // file load at any width instead of refusing wholesale.
+    const e = elm({ kind: 'sram', params: { dataBits: 4 } });
     const alerts: string[] = [];
-    const calls: unknown[] = [];
-    const ok = commitBinaryFile(e, [222], (m) => alerts.push(m), {
+    const calls: Array<[number, [number, number][]]> = [];
+    const ok = commitBinaryFile(e, [0xff, 0x21], (m) => alerts.push(m), {
       setMemoryContents: (id, pairs) => calls.push([id, pairs]),
     });
-    expect(ok).toBe(false);
-    expect(alerts[0]).toContain('does not fit in 2 bits');
-    expect(calls).toEqual([]);
+    expect(ok).toBe(true);
+    expect(alerts).toEqual([]);
+    expect(calls).toEqual([[1, [[0, 0x0f], [1, 0x01]]]]);
   });
 
   it('an empty file commits an empty pair list, clearing the contents', () => {
@@ -476,6 +479,43 @@ describe('binary contents file load', () => {
       setMemoryContents: (id, pairs) => calls.push([id, pairs]),
     });
     expect(calls).toEqual([[1, []]]);
+  });
+});
+
+describe('contents draft versus a landed binary load', () => {
+  // The race: with a typing draft still open, a binary file lands through the
+  // store; blurring the stale draft afterwards must not overwrite the loaded
+  // pairs (upstream dodges it by repopulating the dialog, SRAMLoadFile
+  // .java:47). The live draft is derived from the external-write token, so
+  // the whole sequence pins here without a DOM.
+  it('a draft typed before the load drops, and blur leaves the loaded pairs standing', () => {
+    const e = elm({ kind: 'sram', params: { dataBits: 8 } });
+    const alerts: string[] = [];
+    const calls: Array<[number, [number, number][]]> = [];
+    const actions = { setMemoryContents: (id: number, pairs: [number, number][]) => void calls.push([id, pairs]) };
+    // The user has typed a draft under token 0.
+    const cell: DraftCell = { token: 0, text: '9: 9\n' };
+    expect(draftForToken(cell, 0)).toBe('9: 9\n');
+    // The binary file lands: the parent bumps the token, then the store
+    // receives the file's pairs.
+    expect(commitBinaryFile(e, [2, 3], (m) => alerts.push(m), actions)).toBe(true);
+    const token = 1;
+    // Blur hands the commit whatever draft is live under the new token:
+    // nothing. The stale text never reaches the parser, so no second store
+    // call can happen and the file's pairs stand.
+    expect(draftForToken(cell, token)).toBeNull();
+    expect(calls).toEqual([[1, [[0, 2], [1, 3]]]]);
+  });
+
+  it('a draft typed under the current token still commits', () => {
+    const e = elm({ kind: 'sram', params: { dataBits: 8 } });
+    const calls: Array<[number, [number, number][]]> = [];
+    const draft = draftForToken({ token: 3, text: '0: 7\n' }, 3);
+    expect(draft).toBe('0: 7\n');
+    commitContentsField(e, draft!, () => {}, {
+      setMemoryContents: (id, pairs) => calls.push([id, pairs]),
+    });
+    expect(calls).toEqual([[1, [[0, 7]]]]);
   });
 });
 

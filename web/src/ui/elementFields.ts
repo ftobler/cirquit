@@ -161,17 +161,35 @@ export function commitContentsField(
 
 /** Commits a loaded binary file as memory contents, upstream's Load Contents
  *  From File row (SRAMElm.java:154, SRAMLoadFile.java:31-48): the raw bytes
- *  are encoded into the editor's `0x0:` hex run and handed to the textarea's
- *  own commit, so the parse, the width check and the store action cannot
- *  diverge from what typing the same text would do. A byte past the element's
- *  data width alerts the codec error and stores nothing. */
+ *  are folded to the element's data width and encoded into the editor's
+ *  `0x0:` hex run, then handed to the textarea's own commit, so the parse,
+ *  the width check and the store action cannot diverge from what typing the
+ *  same text would do. Masking keeps every value inside the width, so any
+ *  file loads at any data width. */
 export function commitBinaryFile(
   e: CircuitElement,
   bytes: ArrayLike<number>,
   alert: (message: string) => void,
   actions: ContentsCommitActions,
 ): boolean {
-  return commitContentsField(e, bytesToHexRun(bytes), alert, actions);
+  const { dataBits } = contentsOptions(e);
+  return commitContentsField(e, bytesToHexRun(bytes, (1 << dataBits) - 1), alert, actions);
+}
+
+/** One contents editor's typing buffer, stamped with the external-write token
+ *  it was typed under. */
+export interface DraftCell {
+  token: number;
+  text: string | null;
+}
+
+/** The live draft: what the cell holds when it was typed under the current
+ *  token, else nothing. A landed binary load bumps the token before its pairs
+ *  reach the store, so any draft typed earlier drops and a later blur has
+ *  nothing to commit; upstream dodges the same race by repopulating the
+ *  dialog after a load (SRAMLoadFile.java:47). */
+export function draftForToken(cell: DraftCell, token: number): string | null {
+  return cell.token === token ? cell.text : null;
 }
 
 /**
