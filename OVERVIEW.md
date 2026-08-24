@@ -279,10 +279,22 @@ fetch it).
   waveforms inside their frame, so multivib-a's four windows and qam-256's
   X-Y window render instead of placeholder frames while the raw token stays
   byte-for-byte.
+- Review batch 2026-08-24: entering and leaving a subcircuit keeps the outer
+  undo history and the live reactive charge (stack snapshots travel on the
+  stack entry, the entry document is captured live, a clean look-and-return
+  comes home reading clean, redo futures restore verbatim on a no-edit exit
+  and die on an edited one); multi-select rotate and mirror turn about one
+  shared bounding-box pivot exactly as upstream's prepareFlip walk does, so
+  selections no longer collapse onto themselves while single-element turns
+  keep their grid-snapped axis; and element lines whose coordinate or flags
+  tokens do not parse are skipped verbatim like upstream's per-line catch
+  instead of loading at coordinate zero (fractional, exponent and hex
+  coordinate forms stay a deliberate accommodation), with the undocked
+  popup's message listener also checking the sender origin.
 - 514 Rust tests, of which 436 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 73 in-module unit tests and one doctest.
-  2802 TypeScript tests (one corpus report test skipped); the owner-bug batch
+  2835 TypeScript tests (one corpus report test skipped); the owner-bug batch
   added four of the Rust tests (the new analysis_hygiene.rs) and thirty-eight
   TypeScript ones across the battery, junction, embedded-scope and facade
   suites. The relay pulldown
