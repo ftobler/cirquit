@@ -343,7 +343,30 @@ fetch it).
   flip-flop 156, latch 168) consuming exactly the attributes upstream
   writes for those classes, with anything beyond staying a trace comment,
   so future upstream XML circuits containing them convert losslessly.
-- 529 Rust tests, of which 451 are the end-to-end circuit checks across
+- Scout batch 2026-08-24d: six findings from four parallel scouts, each
+  implemented on its own worktree branch and reviewed by an independent agent
+  before landing. The triac, SCR and diac keep their latch state through Reset
+  like upstream's base reset (the port's shared Base::reset zeroes more than
+  upstream's, so the diac preserves its element current around it). Elements
+  gained a channel to halt the run with a message
+  (`Stamper::request_stop` + `StepError::Stopped`, bypassing halve-and-retry),
+  used by the transmission line for upstream's "delay too large" stop; its
+  delay ring also truncates instead of rounding, matching upstream's `(int)`
+  cast. The XML converter re-admits the live `ssd` tag to BO_TAGS (4bd3cbe had
+  dropped the live form along with the dead ones), seeds missing `fr` at the
+  fresh-constructor 60 Hz, and defaults `<ctr>`'s missing `in` to active-high.
+  Scope overlays hide RMS/Average/Duty when span is zero like upstream's
+  guards, degrade RMS to Average off the voltage/current unit families, gate
+  zero relocation and gridline visibility on allPlotsSameUnits, derive the Max
+  Scale `/div` from the drawn span, and truncate duty cycle. Undo/redo clears
+  elementGesture beside scopeGesture, entry-free run-mode mutations (keyboard
+  switch throws, momentary releases, fuse unblow, settings edits) truncate the
+  stale redo future via one shared action, and an undo under a scope plot drag
+  cancels the drag so one gesture stays one entry. The engine clears every
+  scope capture when the effective timestep changes (upstream's resetGraphs on
+  maxTimeStep change) and preserves samples across a columns-only resize like
+  upstream's index-mapped copy.
+- 546 Rust tests, of which 451 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 77 in-module unit tests and one doctest.
   2984 TypeScript tests (one corpus report test skipped); the owner-bug batch
