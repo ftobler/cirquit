@@ -324,10 +324,29 @@ fetch it).
   60 Hz sources) while tokenless loaded v/R lines keep the file-constructor
   40 Hz seed, and AC voltage/rail toolbox entries carry the 120 V rms sine
   presets.
-- 514 Rust tests, of which 436 are the end-to-end circuit checks across
+- Scout-leftover batch 2026-08-24c: digital chips whose clock/load edge
+  memory is private state (latch, SIPO shift, PISO shift, sequence
+  generator) keep it across Reset like upstream's ChipElm.reset, so a clock
+  or load pin held high through Reset no longer re-triggers a load or
+  shift; DFF/JK/T/counters still clear their lastClock, and the port's
+  deliberately broader saved-state load deferral (every chip skips its
+  first execute when any voltage{i} token exists, where upstream arms the
+  skip in exactly three kinds) is documented in chip.rs with a counter
+  that reloads 9 through an active-low reset pin; the OTA restores its
+  supply voltages from the first two composite child-dump tokens on load,
+  where upstream reads them off the loaded rail children (OTAElm.java), so
+  a +15/-15 part no longer silently clips at +/-9 V after a reload: the
+  parse is finite-guarded with defaults on short lists, supply edits reach
+  the file, save re-derives only the two rail slots and carries the
+  sixteen transistor tokens verbatim; and the XML converter maps the five
+  remaining plain chip tags (dmux 185, ctr 164, T flip-flop 193, JK
+  flip-flop 156, latch 168) consuming exactly the attributes upstream
+  writes for those classes, with anything beyond staying a trace comment,
+  so future upstream XML circuits containing them convert losslessly.
+- 529 Rust tests, of which 451 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
-  files), plus 73 in-module unit tests and one doctest.
-  2860 TypeScript tests (one corpus report test skipped); the owner-bug batch
+  files), plus 77 in-module unit tests and one doctest.
+  2984 TypeScript tests (one corpus report test skipped); the owner-bug batch
   added four of the Rust tests (the new analysis_hygiene.rs) and thirty-eight
   TypeScript ones across the battery, junction, embedded-scope and facade
   suites. The relay pulldown
@@ -653,7 +672,7 @@ Dump codes implemented so far, with their trailing field order:
 | `425` | relay coil     | label, inductance, coilCurrent, onCurrent, coilR, offCurrent, switchingTime, type, state, switchPosition |
 | `426` | relay contact  | label, r_on, r_off, [i_position]                           |
 | `a`   | op-amp         | maxOut, minOut, gbw, volts0, volts1, gain                  |
-| `402` | OTA            | one raw `_`-joined child-dump token per composite child (2 rails + 16 transistors), carried verbatim |
+| `402` | OTA            | one raw `_`-joined child-dump token per composite child (2 rails + 16 transistors); the two rail tokens re-derived from posVolt/negVolt on save, the sixteen transistor tokens carried verbatim |
 | `409` | realistic op-amp | slewRate, capValue, currentLimit, modelType              |
 | `407` | optocoupler    | three raw `_`-joined child-dump tokens (LED, CCCS, phototransistor), then ctr |
 | `401` | comparator     | one raw `_`-joined child-dump token per composite child (internal op-amp, analog switch, ground) |

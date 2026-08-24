@@ -2595,8 +2595,8 @@ describe('ota file format', () => {
   });
 
   it('re-emits the original child tokens verbatim even with non-default rails', () => {
-    // Reading the rails into params must not disturb the carried token list,
-    // or the round trip would rewrite bytes upstream wrote.
+    // Save now rewrites the two rail slots from posVolt/negVolt, but the
+    // re-derivation reproduces identical bytes for canonical tokens.
     const [e] = parseCircuit(ota15).elements;
     expect(lineFor(e)).toBe(ota15);
   });
