@@ -262,7 +262,7 @@ describe('xml to text conversion', () => {
   it('seeds a DC source or rail without fr at upstream frequency 60', () => {
     // Upstream never writes fr for DC sources (VoltageElm.dumpXml) and its
     // XML reader builds a fresh element first, whose constructor seeds
-    // frequency 60 (VoltageElm.java:56). The port's fresh-part seed is 60
+    // frequency 60 (VoltageElm.java:57). The port's fresh-part seed is 60
     // too, so a converted file matches what a fresh part would save.
     const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
   <R x="288 96 288 48" f="0" wf="0" maxv="5"/>
@@ -599,9 +599,9 @@ describe('xml to text conversion', () => {
   });
 
   it('defaults a missing counter polarity to the active-high reset', () => {
-    // CounterElm.invertreset defaults false (CounterElm.java:29) and its
+    // CounterElm.invertreset defaults false (CounterElm.java:28) and its
     // reader parses a missing "in" against that default
-    // (CounterElm.java:61): active-HIGH reset. Seeding true would flip every
+    // (CounterElm.java:60): active-HIGH reset. Seeding true would flip every
     // hand-written counter's reset polarity.
     const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
   <ctr x="304 160 368 160" f="0" bi="2" mo="0"/>

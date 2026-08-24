@@ -235,8 +235,8 @@ const WRITERS: Record<string, Writer> = {
     // text order interleaves those levels between the high voltage and the
     // polarity pair. Lowercasing in mirrors Boolean.parseBoolean, which
     // accepts any case. The seed is false, upstream's invertreset field
-    // default (CounterElm.java:29): parseBooleanAttr("in", ...) hands a
-    // missing attribute back that default (CounterElm.java:61), an
+    // default (CounterElm.java:28): parseBooleanAttr("in", ...) hands a
+    // missing attribute back that default (CounterElm.java:60), an
     // active-HIGH reset.
     const bits = attr(n, 'bi', 4);
     const state: (string | number)[] = [];
@@ -279,7 +279,7 @@ const WRITERS: Record<string, Writer> = {
 /** The `R`/`v` six-token stream (VoltageElm.java:45-56). The missing-fr seed
  *  is 60, not the text-format constructor's 40: upstream never writes fr for
  *  DC sources, so its XML reader meets a fresh element whose constructor set
- *  frequency = 60 (VoltageElm.java:56), and the port seeds fresh parts at 60
+ *  frequency = 60 (VoltageElm.java:57), and the port seeds fresh parts at 60
  *  too. */
 function voltageTokens(n: XmlNode): (string | number)[] {
   return [
