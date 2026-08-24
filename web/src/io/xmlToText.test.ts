@@ -438,4 +438,124 @@ describe('xml to text conversion', () => {
     expect(posts[2]).toEqual(posts[5]);
     expect(posts[6]).toEqual(posts[13]);
   });
+
+  it('converts a demultiplexer to its 185 line', () => {
+    // DeMultiplexerElm writes only se beyond the chip base (DeMultiplexerElm.
+    // java:63-71), so a plain dmux maps losslessly: no bits token (the class
+    // has needsBits false), one select-bit-count token after the flags.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dmux x="192 160 304 160" f="0" se="3"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('185 192 160 304 160 0 3');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['deMultiplexer']);
+    expect(parsed.elements[0].params.selectBits).toBe(3);
+    // Eight outputs, three select bits and the data input.
+    expect(postsOf(parsed.elements[0])).toHaveLength(12);
+  });
+
+  it('marks a demultiplexer output mode as a trace comment', () => {
+    // om/dw select upstream's bus output layouts, which the port's text
+    // format does not model for the demultiplexer: the line converts as
+    // individual outputs under a visible trace.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dmux x="192 160 304 160" f="0" se="2" om="2" dw="8"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('185 192 160 304 160 0 2');
+    expect(text).toContain(
+      '# dmux om="2" dw="8" not modelled: converted as individual outputs',
+    );
+  });
+
+  it('converts a counter to its 164 line with polarity, modulus and state', () => {
+    // CounterElm.dumpXml writes in (a Boolean string) and mo always, plus the
+    // saved Q levels as v{i} on pins 2..bits+1 (CounterElm.java:52-57). The
+    // port's text order interleaves those levels between the bits token and
+    // the polarity pair.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ctr x="304 160 368 160" f="4" bi="3" in="false" mo="7" v2="5" v4="5"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('164 304 160 368 160 4 3 5 0 5 false 7');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['counter']);
+    expect(parsed.elements[0].params.bits).toBe(3);
+    expect(parsed.elements[0].params.invertreset).toBe(0);
+    expect(parsed.elements[0].params.modulus).toBe(7);
+    expect(parsed.elements[0].params.voltage2).toBe(5);
+    expect(parsed.elements[0].params.voltage4).toBe(5);
+  });
+
+  it('converts a T flip-flop to its 193 line, carrying a custom high voltage', () => {
+    // TFlipFlopElm adds nothing beyond the ChipElm base but its saved Q level
+    // v1 (pin 1 is the only state pin), so hv != 5 must raise
+    // FLAG_CUSTOM_VOLTAGE exactly as the port's own writer would.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <TFlipFlop x="224 144 288 144" f="2" hv="3" v1="5"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    // The reset-pin flag from f rides beside FLAG_CUSTOM_VOLTAGE.
+    expect(text).toContain(`193 224 144 288 144 ${(1 << 13) | 2} 3 5`);
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['tFlipFlop']);
+    expect(parsed.elements[0].params.highVoltage).toBe(3);
+    // f=2 is the reset-pin flag, giving T, Q, Qbar, clock and R.
+    expect(postsOf(parsed.elements[0])).toHaveLength(5);
+  });
+
+  it('converts a JK flip-flop to its 156 line', () => {
+    // JKFlipFlopElm likewise adds nothing beyond the base; its Q lives at
+    // pin 3, the only state-carrying pin (JKFlipFlopElm.java setupPins).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <JKFlipFlop x="224 144 288 144" f="4"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('156 224 144 288 144 4 0');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['jkFlipFlop']);
+    // J, clock, K, Q and Qbar: the reset pin needs flag bit 2, absent here.
+    expect(postsOf(parsed.elements[0])).toHaveLength(5);
+  });
+
+  it('converts a latch to its 168 line with its saved output levels', () => {
+    // LatchElm carries bi/hv/bo from the base and nothing of its own; the O
+    // outputs at pins bits..2*bits-1 hold the state (LatchElm.java:76-77),
+    // read positionally into voltage{bits+i} tokens.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <Latch x="496 288 528 288" f="2" bi="2" v2="5"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('168 496 288 528 288 2 2 5 0');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['latch']);
+    expect(parsed.elements[0].params.bits).toBe(2);
+    expect(parsed.elements[0].params.voltage2).toBe(5);
+    // Two I pins, two O pins and the load clock.
+    expect(postsOf(parsed.elements[0])).toHaveLength(5);
+    // The converted line round-trips through a save unchanged.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('168 496 288 528 288 2 2 5 0');
+  });
+
+  it('traces a dropped bit order on the newly mapped counter and latch', () => {
+    // Both are allowBus chips upstream, so bo reaches their XML; neither has
+    // a bus layout in this build, so it degrades loudly instead of silently.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ctr x="304 160 368 160" f="0" bi="3" in="true" mo="0" bo="2"/>
+  <Latch x="496 288 528 288" f="2" bi="2" bo="2"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('# ctr bo="2" not modelled: converted as non-bus pin rows');
+    expect(text).toContain('# Latch bo="2" not modelled: converted as non-bus pin rows');
+    expect(text).not.toContain(String(CHIP_BIT_ORDER_BUS));
+  });
 });

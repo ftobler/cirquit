@@ -32,6 +32,13 @@
  * battery (`Battery`) to a real 438 line carrying its SOC table. The counter
  * bit orders honoured end to end are ctr2/FullAdder/ROM/SRAM
  * (`bo="2"` into the port's chip flag bit).
+ *
+ * The remaining plain chip tags map for real too: `dmux`, `ctr`, `Latch`,
+ * `TFlipFlop` and `JKFlipFlop` emit their dump-code lines, each consuming
+ * exactly the attribute set upstream's own writer produces. What sits beyond
+ * that set keeps the trace path: the demultiplexer's bus output modes
+ * (`om`/`dw`) and a nonzero bit order on any chip this build does not lay
+ * out as a bus.
  */
 
 import { parseXml, type XmlNode } from './xml';
@@ -217,6 +224,37 @@ const WRITERS: Record<string, Writer> = {
     return chipTail(n, true, [...state, attr(n, 'mo', 0)]);
   },
   dd: (n) => chipTail(n, false, [attr(n, 'bc', 4), attr(n, 'dm', 0)]),
+  dmux: (n) =>
+    // The demultiplexer writes only se beyond the base; needsBits is false,
+    // so no bits token precedes it (DeMultiplexerElm.java:63-71). Its bus
+    // output modes ride om/dw and stay behind a trace comment.
+    chipTail(n, false, [attr(n, 'se', 2)]),
+  ctr: (n) => {
+    // CounterElm writes in (a Boolean string) and mo always, plus each saved
+    // Q level as v{i} on pins 2..bits+1 (CounterElm.java:52-57). The port's
+    // text order interleaves those levels between the high voltage and the
+    // polarity pair.
+    const bits = attr(n, 'bi', 4);
+    const state: (string | number)[] = [];
+    for (let i = 0; i < bits; i++) state.push(attr(n, `v${i + 2}`, 0));
+    return chipTail(n, true, [...state, n.attrs.in ?? 'true', attr(n, 'mo', 0)]);
+  },
+  TFlipFlop: (n) =>
+    // Nothing beyond the base but the saved level of pin 1, the only state
+    // pin (TFlipFlopElm.setupPins).
+    chipTail(n, false, [attr(n, 'v1', 0)]),
+  JKFlipFlop: (n) =>
+    // Pin 3 (Q) is the only state pin (JKFlipFlopElm.setupPins).
+    chipTail(n, false, [attr(n, 'v3', 0)]),
+  Latch: (n) => {
+    // The latch adds nothing of its own; its O outputs at pins
+    // bits..2*bits-1 hold the state (makeBitPins, LatchElm.java:76-77),
+    // which map onto voltage{bits+i} tokens.
+    const bits = attr(n, 'bi', 4);
+    const state: (string | number)[] = [];
+    for (let i = 0; i < bits; i++) state.push(attr(n, `v${bits + i}`, 0));
+    return chipTail(n, true, state);
+  },
   ROM: romTokens,
   // The SRAM is the ROM's writer twin: same ab/db attrs and the same
   // body-run format (SRAMElm.dumpXmlModel shares ROMElm's contents text).
@@ -314,6 +352,7 @@ const DUMP_CODES: Record<string, string> = {
   ctr2: '421', dd: '419', ROM: '436', cc: '410', cr: '412',
   VCCS: '213', VCVS: '212', CCVS: '214',
   ins: '434', SRAM: '413',
+  dmux: '185', ctr: '164', TFlipFlop: '193', JKFlipFlop: '156', Latch: '168',
 };
 
 /** The port kind each element tag maps to, for scope value decoding. */
@@ -330,6 +369,8 @@ const KIND_BY_TAG: Record<string, string> = {
   mux: 'multiplexer', ctr2: 'counter2', dd: 'decimalDisplay', ROM: 'rom',
   cc: 'customComposite', cr: 'crystal', VCCS: 'vccs', VCVS: 'vcvs', CCVS: 'ccvs',
   ins: 'instructionDisplay', SRAM: 'sram',
+  dmux: 'deMultiplexer', ctr: 'counter', TFlipFlop: 'tFlipFlop',
+  JKFlipFlop: 'jkFlipFlop', Latch: 'latch',
 };
 
 /** The flags an element line carries: the XML `f` plus the bits the port's own
@@ -351,7 +392,9 @@ function flagsFor(node: XmlNode): number {
   if (
     (tag === 'DFlipFlop' || tag === 'PhaseComp' || tag === 'VCO' || tag === 'ADC' ||
       tag === 'FullAdder' || tag === 'SevenSegDecoder' || tag === 'ssd' || tag === 'mux' ||
-      tag === 'ctr2' || tag === 'dd' || tag === 'ROM' || tag === 'bs' || tag === 'bt') &&
+      tag === 'ctr2' || tag === 'dd' || tag === 'ROM' || tag === 'bs' || tag === 'bt' ||
+      tag === 'dmux' || tag === 'ctr' || tag === 'TFlipFlop' || tag === 'JKFlipFlop' ||
+      tag === 'Latch') &&
     hv !== undefined &&
     Number(hv) !== 5
   ) {
@@ -390,7 +433,9 @@ const BO_TAGS = new Set([
   ...BO_HONOURED,
   'ADC',
   'DAC',
-  'Counter',
+  // CounterElm's getXmlDumpType is "ctr" (CounterElm.java:175), so the class
+  // name never appears as a tag; the tag string is what reaches a document.
+  'ctr',
   'Latch',
   'dd',
   'SevenSegDecoder',
@@ -417,6 +462,14 @@ function droppedTraces(node: XmlNode): string[] {
         `# mux im="1" not modelled: converted as individual inputs with one output`,
       );
     }
+  }
+  if (tag === 'dmux' && (node.attrs.om !== undefined || node.attrs.dw !== undefined)) {
+    // DeMultiplexerElm.java:29-33: output modes 1 and 2 route buses, which
+    // the port models only for the multiplexer. The line keeps the
+    // individual-output shape under a visible trace.
+    traces.push(
+      `# dmux om="${node.attrs.om ?? 0}" dw="${node.attrs.dw ?? 4}" not modelled: converted as individual outputs`,
+    );
   }
   if (BO_TAGS.has(tag) && attr(node, 'bo', 0) !== 0) {
     if (!BO_HONOURED.has(tag)) {
