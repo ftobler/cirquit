@@ -51,10 +51,14 @@ export interface SubcircuitStorage {
 }
 
 function defaultStorage(): SubcircuitStorage | undefined {
-  if (typeof globalThis === 'undefined') return undefined;
-  const ls = (globalThis as { localStorage?: Storage }).localStorage;
-  if (!ls) return undefined;
-  return {
+  // Guarded like every storage module: with site data blocked the property
+  // access itself throws SecurityError, and this runs under a default
+  // argument where no body-level try/catch could cover it.
+  try {
+    if (typeof globalThis === 'undefined') return undefined;
+    const ls = (globalThis as { localStorage?: Storage }).localStorage;
+    if (!ls) return undefined;
+    return {
     getItem: (key) => {
       try {
         return ls.getItem(key);
@@ -89,7 +93,11 @@ function defaultStorage(): SubcircuitStorage | undefined {
       }
       return out;
     },
-  };
+    };
+  } catch {
+    // Storage denied: run without persistence rather than crash.
+    return undefined;
+  }
 }
 
 /** Models the loaded circuit introduced: the interpreted `.` lines of the file

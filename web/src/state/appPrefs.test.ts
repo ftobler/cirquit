@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { denyGlobalStorage } from '../../test/denyGlobalStorage';
 import { DEFAULT_SETTINGS, type SimSettings } from '../model/types';
 import {
   APP_PREF_KEYS,
@@ -159,5 +160,25 @@ describe('app prefs', () => {
     } as StorageLike;
     expect(() => saveAppPrefs({ ...DEFAULT_SETTINGS }, throwing)).not.toThrow();
     expect(() => saveAppPrefs({ ...DEFAULT_SETTINGS }, undefined)).not.toThrow();
+  });
+});
+
+describe('denied-storage browsers', () => {
+  /** Site data blocked makes the localStorage property access itself throw
+   *  SecurityError. The store initializer calls loadAppPrefs() with no
+   *  argument on module scope, so the default argument is what must be
+   *  guarded, not just the getItem/setItem bodies. */
+  let restore = () => {};
+  beforeEach(() => {
+    restore = denyGlobalStorage();
+  });
+  afterEach(() => restore());
+
+  it('loadAppPrefs falls back to {} when the storage access itself throws', () => {
+    expect(loadAppPrefs()).toEqual({});
+  });
+
+  it('saveAppPrefs is quiet when the storage access itself throws', () => {
+    expect(() => saveAppPrefs({ ...DEFAULT_SETTINGS })).not.toThrow();
   });
 });

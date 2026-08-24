@@ -446,10 +446,19 @@ export function hasDuplicateChords(rows: ShortcutRow[]): boolean {
  *  the appPrefs pattern. */
 export const SHORTCUT_STORAGE_KEY = 'shortcuts.v1';
 
-/** The browser storage, or undefined in a node test environment. */
+/** The browser storage, or undefined in a node test environment. Guarded
+ *  because both callers reach it through a default argument, which evaluates
+ *  before any body-level try/catch: with site data blocked the property
+ *  access itself throws SecurityError, and this sits at store creation on
+ *  module scope, so an unguarded read was a white screen at boot. */
 function defaultStorage(): StorageLike | undefined {
-  if (typeof globalThis === 'undefined') return undefined;
-  return (globalThis as { localStorage?: StorageLike }).localStorage;
+  try {
+    if (typeof globalThis === 'undefined') return undefined;
+    return (globalThis as { localStorage?: StorageLike }).localStorage;
+  } catch {
+    // Storage denied: run without persistence rather than crash.
+    return undefined;
+  }
 }
 
 const NAMED_KEY = /^[A-Z][A-Za-z]*$/;

@@ -21,10 +21,18 @@ export type ScopeDefaultsPatch = ReturnType<typeof scopeFieldsFromFlags> & {
   trigger: { level: number };
 };
 
-/** The browser storage, or undefined in a node test environment. */
+/** The browser storage, or undefined in a node test environment. Guarded
+ *  because the callers reach it through a default argument: with site data
+ *  blocked the property access itself throws SecurityError, and makeScope
+ *  runs this while loading any circuit with scopes. */
 function defaultStorage(): StorageLike | undefined {
-  if (typeof globalThis === 'undefined') return undefined;
-  return (globalThis as { localStorage?: StorageLike }).localStorage;
+  try {
+    if (typeof globalThis === 'undefined') return undefined;
+    return (globalThis as { localStorage?: StorageLike }).localStorage;
+  } catch {
+    // Storage denied: run without persistence rather than crash.
+    return undefined;
+  }
 }
 
 /** Writes a scope's modelled display flags, speed and trigger level, exactly

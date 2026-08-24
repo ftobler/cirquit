@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { denyGlobalStorage } from '../../test/denyGlobalStorage';
 import { ELEMENT_DEFS, PLACEMENT_BY_CHAR, TOOLBOX } from '../model/registry';
 import type { StorageLike } from '../state/appPrefs';
 import {
@@ -637,6 +638,26 @@ describe('shortcut overlay persistence', () => {
     } as StorageLike;
     expect(() => saveShortcutOverlay({ undo: 'g' }, throwing)).not.toThrow();
     expect(() => saveShortcutOverlay({ undo: 'g' }, undefined)).not.toThrow();
+  });
+});
+
+describe('denied-storage browsers', () => {
+  /** Site data blocked (Firefox "Delete cookies and site data", Chrome
+   *  "Block third-party cookies" strictness) makes the localStorage property
+   *  access itself throw SecurityError. No injected storage here: the default
+   *  argument is what must be guarded. */
+  let restore = () => {};
+  beforeEach(() => {
+    restore = denyGlobalStorage();
+  });
+  afterEach(() => restore());
+
+  it('loadShortcutOverlay falls back to {} when the storage access itself throws', () => {
+    expect(loadShortcutOverlay()).toEqual({});
+  });
+
+  it('saveShortcutOverlay is quiet when the storage access itself throws', () => {
+    expect(() => saveShortcutOverlay({ undo: 'g' })).not.toThrow();
   });
 });
 

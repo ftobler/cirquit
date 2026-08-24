@@ -3,6 +3,7 @@
  *  the library's storage round-trip. */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { denyGlobalStorage } from '../../test/denyGlobalStorage';
 import {
   buildModelFromSelection,
   clearSessionModels,
@@ -1732,5 +1733,33 @@ describe('placing a custom composite 410', () => {
     const after = useStore.getState().elements.find((e) => e.id === id);
     expect(after?.text).toBe('nope');
     expect(after?.model).toBeUndefined();
+  });
+});
+
+describe('denied-storage browsers', () => {
+  // getModel and listModels run with no injected storage during netlist
+  // resolution, so the default argument itself must survive a throwing
+  // localStorage access (site data blocked).
+  let restore = () => {};
+  beforeEach(() => {
+    restore = denyGlobalStorage();
+  });
+  afterEach(() => restore());
+
+  it('getModel and listModels degrade to the session map when storage is denied', () => {
+    const model = { ...parseCompositeModelLine(MODEL_LINE)!, name: 'fromFile' };
+    registerSessionModel(model);
+    expect(listModels()).toEqual([model]);
+    expect(getModel('fromFile')).toEqual(model);
+    expect(getModel('stored')).toBeUndefined();
+    expect(nameTaken('fromFile')).toBe(true);
+  });
+
+  it('saveModel and removeModel are quiet when the storage access itself throws', () => {
+    const model = { ...parseCompositeModelLine(MODEL_LINE)! };
+    expect(() => saveModel(model)).not.toThrow();
+    // The model still lands in the session map.
+    expect(getModel(model.name)).toEqual(model);
+    expect(() => removeModel(model.name)).not.toThrow();
   });
 });

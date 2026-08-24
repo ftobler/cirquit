@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { denyGlobalStorage } from '../../test/denyGlobalStorage';
 import type { Scope } from '../engine/simulator';
 import { SCOPE_DEFAULTS_STORAGE_KEY, loadScopeDefaults, saveScopeDefaults } from './scopeDefaults';
 import type { StorageLike } from './appPrefs';
@@ -185,5 +186,23 @@ describe('scope defaults persistence', () => {
     } as StorageLike;
     expect(() => saveScopeDefaults(scopeOf(), throwing)).not.toThrow();
     expect(() => saveScopeDefaults(scopeOf(), undefined)).not.toThrow();
+  });
+});
+
+describe('denied-storage browsers', () => {
+  // makeScope calls loadScopeDefaults() with no argument while a circuit
+  // loads, so the default argument itself must survive a throwing storage.
+  let restore = () => {};
+  beforeEach(() => {
+    restore = denyGlobalStorage();
+  });
+  afterEach(() => restore());
+
+  it('loadScopeDefaults falls back to null when the storage access itself throws', () => {
+    expect(loadScopeDefaults()).toBeNull();
+  });
+
+  it('saveScopeDefaults is quiet when the storage access itself throws', () => {
+    expect(() => saveScopeDefaults(scopeOf())).not.toThrow();
   });
 });

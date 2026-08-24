@@ -15,10 +15,19 @@ export interface RecoveryStorage extends StorageLike {
   removeItem(key: string): void;
 }
 
-/** The browser storage, or undefined in a node test environment. */
+/** The browser storage, or undefined in a node test environment. Guarded
+ *  because readRecovery() is reached through a default argument at store
+ *  creation on module scope: with site data blocked the property access
+ *  itself throws SecurityError, and an unguarded read was a white screen at
+ *  boot. */
 function defaultStorage(): RecoveryStorage | undefined {
-  if (typeof globalThis === 'undefined') return undefined;
-  return (globalThis as { localStorage?: RecoveryStorage }).localStorage;
+  try {
+    if (typeof globalThis === 'undefined') return undefined;
+    return (globalThis as { localStorage?: RecoveryStorage }).localStorage;
+  } catch {
+    // Storage denied: run without persistence rather than crash.
+    return undefined;
+  }
 }
 
 /** Dumps the netlist into the recovery slot. A storage failure (private mode,
