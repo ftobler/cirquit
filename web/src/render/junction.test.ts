@@ -248,6 +248,16 @@ describe('collapsed bus banks', () => {
     expect(badConnectionPoints(parts)).toEqual([]);
   });
 
+  it('paints an untouched bank red when a wire crosses without a post there', () => {
+    // Counting the bank once makes it an ordinary lonely post, so a wire
+    // passing over its coordinate without connecting now qualifies for the
+    // red-dot scan. That is upstream's answer too: each bank bit sits alone
+    // at its z-keyed point, and the point lands inside the crossing wire.
+    // Before the fix the inflated count hid this case entirely.
+    const across = { ...el('wire', 400, 180, 400, 420), id: 2 };
+    expect(badConnectionPoints([splitter(), across])).toEqual([{ x: 400, y: 300 }]);
+  });
+
   it('draws one dot when a wire end and a label share the bank', () => {
     const parts = [splitter(), { ...el('wire', 320, 300, 400, 300), id: 2 }, labelAt(3, 'DBUS')];
     const counts = postDotPoints(parts);
@@ -275,5 +285,58 @@ describe('collapsed bus banks', () => {
     expect(withLabel.get('400,300')).toBe(2);
     expect(shouldDrawDot(withLabel.get('400,300')!)).toBe(false);
     expect(badConnectionPoints(labelled)).toEqual([]);
+  });
+
+  it('counts a collapsed counter2 bank once in bus mode', () => {
+    // bitOrder 2 collapses the Q and I groups onto row 1 of their sides:
+    // four Q pins share "496,332", four I pins share "400,332".
+    const c = el('counter2', 400, 300, 496, 300);
+    c.params.bitOrder = 2;
+    const counts = postDotPoints([c]);
+
+    expect(counts.get('400,332')).toBe(1);
+    expect(counts.get('496,332')).toBe(1);
+  });
+
+  it('counts a collapsed fullAdder bank once in bus mode', () => {
+    // Bus mode parks A on west row 0, B on west row 1 and S on east row 2,
+    // each group's bits all on one coordinate.
+    const f = el('fullAdder', 400, 300, 496, 300);
+    f.params.bitOrder = 2;
+    const counts = postDotPoints([f]);
+
+    expect(counts.get('400,300')).toBe(1);
+    expect(counts.get('400,332')).toBe(1);
+    expect(counts.get('496,364')).toBe(1);
+  });
+
+  it('counts the collapsed memory banks once in bus mode', () => {
+    // Both banks ride row 1 of their side in bus mode, addresses west and
+    // data east; ROM shares memoryPins with one pin fewer.
+    const chip = el('sram', 400, 300, 496, 300);
+    chip.params.bitOrder = 2;
+    const counts = postDotPoints([chip]);
+
+    expect(counts.get('400,332')).toBe(1);
+    expect(counts.get('496,332')).toBe(1);
+
+    const rom = el('rom', 400, 300, 496, 300);
+    rom.id = 2;
+    rom.params.bitOrder = 2;
+    const romCounts = postDotPoints([rom]);
+    expect(romCounts.get('400,332')).toBe(1);
+    expect(romCounts.get('496,332')).toBe(1);
+  });
+
+  it('counts the multiplexer bus-bus banks once each', () => {
+    // Bus/bus mode lays outputCount 4-bit input groups down the west and one
+    // 4-bit output bus east; every group collapses onto its coordinate.
+    const m = el('multiplexer', 400, 300, 528, 300);
+    m.params.inputMode = 2;
+    const counts = postDotPoints([m]);
+
+    expect(counts.get('400,300')).toBe(1);
+    expect(counts.get('400,332')).toBe(1);
+    expect(counts.get('528,300')).toBe(1);
   });
 });

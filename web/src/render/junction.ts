@@ -51,6 +51,13 @@ function bankedPinsOf(e: CircuitElement): ChipPinDef[] | undefined {
  * makePostDrawList on whole Points including the bit axis; this port keeps
  * flat "x,y" keys and skips each element's z > 0 pins instead, so a bank
  * contributes 1 like the one lead it paints.
+ *
+ * The generalization is deliberate: an untouched bank counts 1, which makes
+ * it eligible for the lonely-post red-dot scan like any other dead end, so a
+ * wire passing over the bank coordinate without connecting paints it red.
+ * Upstream behaves the same: each bank bit sits alone at its z-keyed point,
+ * and that point lands inside whatever covers the coordinate. Before the fix
+ * the inflated count hid this case entirely.
  */
 function countedPosts(e: CircuitElement): Point[] {
   const posts = postsOf(e);
