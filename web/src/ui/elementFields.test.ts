@@ -5,6 +5,7 @@ import { SRAM_HEX_DISPLAY } from '../model/registry/elements/sram';
 import { VOLTAGE_TIME_SPEC } from '../model/registry/flags';
 import { fieldLabel, type CircuitElement, type FieldDef } from '../model/types';
 import {
+  armedForElement,
   applyFieldChange,
   changeArmsBaseline,
   clampInteger,
@@ -17,6 +18,7 @@ import {
   fieldValue,
   visibleFields,
   type DraftCell,
+  type FieldArmCell,
   type FieldEditActions,
 } from './elementFields';
 
@@ -905,5 +907,26 @@ describe('Safari checkbox and select baseline fallback', () => {
     // held focus on other browsers.
     const first = changeArmsBaseline(false);
     expect(changeArmsBaseline(first.armed)).toEqual({ arm: false, armed: true });
+  });
+
+  it('a self-armed session does not carry across elements', () => {
+    // The dialog reuses its row components across elements (they key by
+    // field name), so element B's shared-name row must read as unarmed even
+    // though element A's flip left the cell armed: each element's first
+    // Safari flip takes its own baseline and lands as its own undo entry,
+    // while repeated flips on one element still group.
+    let cell: FieldArmCell = { id: 1, armed: false };
+    let entries = 0;
+    const flip = (id: number) => {
+      const decision = changeArmsBaseline(armedForElement(cell, id));
+      if (decision.arm) entries += 1;
+      cell = { id, armed: decision.armed };
+    };
+    flip(1);
+    expect(entries).toBe(1);
+    flip(2);
+    expect(entries).toBe(2);
+    flip(2);
+    expect(entries).toBe(2);
   });
 });

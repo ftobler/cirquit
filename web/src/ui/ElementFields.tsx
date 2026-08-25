@@ -15,6 +15,7 @@ import type { CircuitElement, FieldDef } from '../model/types';
 import { useStore } from '../state/store';
 import {
   applyFieldChange,
+  armedForElement,
   changeArmsBaseline,
   clampInteger,
   commitBinaryFile,
@@ -24,6 +25,7 @@ import {
   draftForToken,
   fieldRows,
   type DraftCell,
+  type FieldArmCell,
 } from './elementFields';
 import { UnitNumberInput } from './UnitNumberInput';
 
@@ -35,6 +37,7 @@ function Field({
   onBeginEdit,
   onDownload,
   resetToken,
+  elementId,
 }: {
   field: FieldDef;
   label: string;
@@ -45,19 +48,25 @@ function Field({
   /** Only the contents row uses it: the external-write token that drops an
    *  open draft when a binary file load lands. */
   resetToken?: number;
+  /** The row components are reused across elements (they key by field name),
+   *  so the self-arming record below must know which element it belongs to. */
+  elementId: number;
 }) {
   // Whether the pending edit's undo baseline was already armed, by focus or
-  // by an earlier self-arming change below. Only the checkbox and select rows
-  // consult it; the text and number rows always receive real focus events.
-  const armedRef = useRef(false);
+  // by an earlier self-arming change below, stamped with the element the
+  // session belongs to: a Safari flip on one element must not suppress the
+  // baseline of a shared-name row on the next element the dialog shows.
+  // Only the checkbox and select rows consult this; the text and number rows
+  // always receive real focus events.
+  const armCellRef = useRef<FieldArmCell>({ id: elementId, armed: false });
   const armOnFocus = () => {
-    armedRef.current = true;
+    armCellRef.current = { id: elementId, armed: true };
     onBeginEdit();
   };
   const armOnChange = () => {
-    const decision = changeArmsBaseline(armedRef.current);
+    const decision = changeArmsBaseline(armedForElement(armCellRef.current, elementId));
     if (decision.arm) onBeginEdit();
-    armedRef.current = decision.armed;
+    armCellRef.current = { id: elementId, armed: decision.armed };
   };
 
   if (field.type === 'download') {
@@ -586,6 +595,7 @@ export function ElementFields({ element, engine }: Props) {
             field={field}
             label={label}
             value={value}
+            elementId={element.id}
             onBeginEdit={beginEdit}
             resetToken={field.type === 'contents' ? contentsReset : undefined}
             onDownload={
