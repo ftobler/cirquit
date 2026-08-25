@@ -137,7 +137,8 @@ fn composite_with_a_transistor_child_reports_nonlinear() {
         &[1, 3],
         None,
         "composite",
-    );
+    )
+    .unwrap();
     assert!(
         with_transistor.nonlinear(),
         "transistor composite was linear"
@@ -148,7 +149,8 @@ fn composite_with_a_transistor_child_reports_nonlinear() {
         &[1, 3],
         None,
         "composite",
-    );
+    )
+    .unwrap();
     assert!(!divider.nonlinear(), "resistor composite was nonlinear");
 }
 
@@ -970,7 +972,8 @@ fn composite_gate_child_infers_its_input_count_from_the_model_line() {
         &[1, 2, 3, 4],
         None,
         "composite",
-    );
+    )
+    .unwrap();
     assert_eq!(three_in.post_count(), 4);
     assert!(close(
         composite_gate_output("OrGateElm 1 2 3 4", &[], &[0.0, 0.0, 5.0]),

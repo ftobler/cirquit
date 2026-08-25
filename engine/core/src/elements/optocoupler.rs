@@ -34,7 +34,11 @@ const CTR_BASE: &str = "max(0,min(.0001, select(i-.003, \
 (9000000*(i)^5-998113*(i)^4+42174*(i)^3-861.32*(i)^2+9.0836*(i)-.0078)*.945/700)))";
 
 pub fn from_spec(spec: &ElementSpec) -> Option<Composite> {
-    let mut opto = Composite::from_model(MODEL, EXTERNAL, None, "optocoupler");
+    // Folding a child-expression failure into the Option contract is
+    // deliberate: the model builds with no dump tokens at all, so
+    // `from_model` cannot fail here; if it ever did, the built-in composite
+    // tests would fail loudly.
+    let mut opto = Composite::from_model(MODEL, EXTERNAL, None, "optocoupler").ok()?;
     // Upstream forces the internal LED to its own `default-optocoupler-led`
     // model (OptocouplerElm.java:25, DiodeModel.java:92:
     // (1.714e-7, 0., 4.077, 0., null)). Only the emission coefficient (4.077

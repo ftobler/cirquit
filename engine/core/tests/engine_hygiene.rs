@@ -360,3 +360,71 @@ fn a_refused_stamp_during_the_dc_solve_is_an_error_not_a_degraded_start() {
         "a refused stamp must not read as a singular circuit, got: {msg}"
     );
 }
+
+// ─── Composite child expressions are load-checked, never aborts ───
+
+/// A one-child composite whose vccs child carries `expr` as its dump-token
+/// expression (the fields after flags and input count), the shape a
+/// hand-edited `.` model line or corrupted save produces.
+fn composite_with_child_expr(expr: &str) -> CircuitSpec {
+    let model = serde_json::json!({
+        "model": "VCCSElm 1 2 3",
+        "external": [1, 2, 3],
+        "dumps": [format!("0_1_{expr}")],
+    });
+    CircuitSpec {
+        preserve_run: false,
+        elements: vec![{
+            let mut e = elm(1, "composite", &[[0, 0], [100, 0], [100, 100]], &[]);
+            e.model = Some(model.to_string());
+            e
+        }],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    }
+}
+
+#[test]
+fn composite_child_bad_expression_is_a_named_build_error() {
+    // A corrupt child-dump expression used to panic! and take the whole wasm
+    // instance with it; it must refuse the load instead, naming the child.
+    let mut c = Circuit::new();
+    let err = c
+        .set_circuit(&composite_with_child_expr("not an expression"))
+        .expect_err("an unparseable child expression must fail the build");
+    assert!(
+        err.contains("unparseable expression"),
+        "rejection should say why, got: {err}"
+    );
+    assert!(
+        err.contains("vccs"),
+        "rejection should name the offending child kind, got: {err}"
+    );
+}
+
+#[test]
+fn a_refused_composite_leaves_the_engine_working() {
+    // set_circuit commits nothing on a rejected element, so the same engine
+    // object keeps building circuits after the refusal.
+    let mut c = Circuit::new();
+    assert!(c.set_circuit(&composite_with_child_expr("?")).is_err());
+    c.set_circuit(&divider(1000.0, 1000.0))
+        .expect("the engine must keep building circuits afterwards");
+    c.run(3);
+    assert!(
+        close(c.element_voltages()[2], 5.0, 1e-9),
+        "the fresh divider should divide 10 V into 5 V, got {}",
+        c.element_voltages()[2]
+    );
+}
+
+#[test]
+fn composite_child_good_expression_still_builds_and_runs() {
+    // Positive control over the same model shape: a valid expression builds
+    // and steps cleanly.
+    let mut c = Circuit::new();
+    c.set_circuit(&composite_with_child_expr("a*0"))
+        .expect("a valid child expression must build");
+    let report = c.run(3);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+}

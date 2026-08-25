@@ -148,8 +148,13 @@ fn dump_tokens(dump: &str) -> Vec<String> {
     dump.split('/').map(|t| t.replace(' ', "_")).collect()
 }
 
-fn from_741(spec: &ElementSpec) -> Composite {
-    let mut op = Composite::from_model(MODEL_741, EXTERNAL_741, None, "opampReal");
+// The three builders below fold `from_model`'s child-expression failure into
+// their Option contract with `.ok()`, deliberately: their dumps are const
+// strings whose expressions parse today and are covered by the built-in
+// composite tests, so the Err arm is unreachable in practice.
+
+fn from_741(spec: &ElementSpec) -> Option<Composite> {
+    let mut op = Composite::from_model(MODEL_741, EXTERNAL_741, None, "opampReal").ok()?;
     // The 741 configuration, `init741` (OpAmpRealElm.java:101-120). The
     // current multiplier scales the two output-stage resistors and the two
     // output transistors' betas together, so the delivered current follows
@@ -166,12 +171,12 @@ fn from_741(spec: &ElementSpec) -> Composite {
     }
     op.set_child_param(13, "beta", current_mult * 100.0);
     op.set_child_param(18, "beta", current_mult * 100.0);
-    op
+    Some(op)
 }
 
-fn from_324(spec: &ElementSpec) -> Composite {
+fn from_324(spec: &ElementSpec) -> Option<Composite> {
     let tokens = dump_tokens(DUMP_324);
-    let mut op = Composite::from_model(MODEL_324, EXTERNAL_324, Some(&tokens), "opampReal");
+    let mut op = Composite::from_model(MODEL_324, EXTERNAL_324, Some(&tokens), "opampReal").ok()?;
     // The 324 configuration, `init324` (OpAmpRealElm.java:122-137): its own
     // slew-rate constant (10e-12 against the 741's 30e-12, tuned for the
     // 0.55 V/us default) and a different output-stage: one resistor and four
@@ -186,16 +191,16 @@ fn from_324(spec: &ElementSpec) -> Composite {
     for &i in &LM324_OUT_TRANSISTORS {
         op.set_child_param(i, "beta", current_mult * 100.0);
     }
-    op
+    Some(op)
 }
 
-fn from_324v2() -> Composite {
+fn from_324v2() -> Option<Composite> {
     let tokens = dump_tokens(DUMP_324V2);
     // The v2 model takes no tuning after the dump (init324v2,
     // OpAmpRealElm.java:139-142): its compensation is fixed in the netlist and
     // `getCapacitor()` returns null (:149-153), so the slew rate and current
     // limit fields are carried but rescale nothing.
-    Composite::from_model(MODEL_324V2, EXTERNAL_324V2, Some(&tokens), "opampReal")
+    Composite::from_model(MODEL_324V2, EXTERNAL_324V2, Some(&tokens), "opampReal").ok()
 }
 
 pub fn from_spec(spec: &ElementSpec) -> Option<Composite> {
@@ -206,11 +211,11 @@ pub fn from_spec(spec: &ElementSpec) -> Option<Composite> {
     // values the token can carry instead.
     let model_type = spec.param("modelType", 0.0);
     if model_type == 1.0 {
-        Some(from_324(spec))
+        from_324(spec)
     } else if model_type == 2.0 {
-        Some(from_324v2())
+        from_324v2()
     } else {
-        Some(from_741(spec))
+        from_741(spec)
     }
 }
 

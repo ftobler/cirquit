@@ -335,10 +335,10 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
             let c = model_composite(spec, ota::from_spec(spec))?;
             Box::new(c)
         }
-        "composite" => {
-            let c = model_composite(spec, composite::Composite::from_spec(spec))?;
-            Box::new(c)
-        }
+        // The generic composite's model blob is file content, so its builder
+        // reports failures itself and they surface verbatim; the built-in
+        // kinds keep the Option contract via `model_composite`.
+        "composite" => Box::new(composite::Composite::from_spec(spec)?),
         "comparator" => {
             let c = model_composite(spec, comparator::from_spec(spec))?;
             Box::new(c)
