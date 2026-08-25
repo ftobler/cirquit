@@ -1257,51 +1257,62 @@ function createAppStore() {
     // placement outright. Every other caller deletes real, pre-existing
     // state and still needs its own commit.
     if (!skipCommit) get().commit();
-    set((s) => ({
-      // One pass over the survivors of the delete: an embedded window whose
-      // traced element just went degrades to its placeholder frame, its
-      // plots' targets nulled the way a docked scope's whole line goes below.
-      // The window element and its raw config token stay, so undo puts the
-      // traces back.
-      elements: s.elements
-        .filter((e) => !selectedIds.includes(e.id))
-        .map((e) => {
-          if (e.kind !== 'scope' || !e.embedded) return e;
-          if (
-            !e.embedded.plots.some(
-              (p) => p.elementId !== null && selectedIds.includes(p.elementId),
-            )
-          ) {
-            return e;
-          }
-          return {
-            ...e,
-            embedded: {
-              ...e.embedded,
-              plots: e.embedded.plots.map((p) =>
-                p.elementId !== null && selectedIds.includes(p.elementId)
-                  ? { ...p, elementId: null }
-                  : p,
-              ),
-            },
-          };
-        }),
+    set((s) => {
       // A scope goes when any of its plots names a deleted element, matching
       // upstream's cleanup of scopes whose element is gone.
-      scopes: s.scopes.filter(
+      const scopes = s.scopes.filter(
         (x) => !x.plots.some((p) => p.elementId !== null && selectedIds.includes(p.elementId)),
-      ),
-      // A slider bound to a deleted element goes with it, matching upstream's
-      // deleteSliders (CirSim.java:523-531). Its order slot stays, exactly like
-      // a dropped scope's: the line stops serialising because no config
-      // resolves it, and an undo restores both and puts the line back in
-      // place.
-      sliders: s.sliders.filter(
-        (x) => x.elementId === undefined || !selectedIds.includes(x.elementId),
-      ),
-      selectedIds: [],
-      ...bumpRevision(s),
-    }));
+      );
+      return {
+        // One pass over the survivors of the delete: an embedded window whose
+        // traced element just went degrades to its placeholder frame, its
+        // plots' targets nulled the way a docked scope's whole line goes below.
+        // The window element and its raw config token stay, so undo puts the
+        // traces back.
+        elements: s.elements
+          .filter((e) => !selectedIds.includes(e.id))
+          .map((e) => {
+            if (e.kind !== 'scope' || !e.embedded) return e;
+            if (
+              !e.embedded.plots.some(
+                (p) => p.elementId !== null && selectedIds.includes(p.elementId),
+              )
+            ) {
+              return e;
+            }
+            return {
+              ...e,
+              embedded: {
+                ...e.embedded,
+                plots: e.embedded.plots.map((p) =>
+                  p.elementId !== null && selectedIds.includes(p.elementId)
+                    ? { ...p, elementId: null }
+                    : p,
+                ),
+              },
+            };
+          }),
+        scopes,
+        // A deleted element can take the open Scope Properties dialog's scope
+        // with it (the context menu's Delete row works while that dialog is
+        // up), and a surviving id would hold modalSurface() shut with nothing
+        // on screen, the same invisible gate removeScope clears.
+        scopeProperties:
+          s.scopeProperties !== null && scopes.some((x) => x.id === s.scopeProperties)
+            ? s.scopeProperties
+            : null,
+        // A slider bound to a deleted element goes with it, matching upstream's
+        // deleteSliders (CirSim.java:523-531). Its order slot stays, exactly like
+        // a dropped scope's: the line stops serialising because no config
+        // resolves it, and an undo restores both and puts the line back in
+        // place.
+        sliders: s.sliders.filter(
+          (x) => x.elementId === undefined || !selectedIds.includes(x.elementId),
+        ),
+        selectedIds: [],
+        ...bumpRevision(s),
+      };
+    });
     // A writable model whose last referencing element just went leaves the
     // session namespace with it. A file model's `34`/`32` line is never
     // touched, so it survives in passthrough and re-registers on the next
@@ -1979,10 +1990,17 @@ function createAppStore() {
     const k = normalizeKey(key);
     let toggled = false;
     for (const e of s.elements) {
+      const rest = e.params.position ?? 0;
       if (
         (e.kind === 'switch' || e.kind === 'switch2' || e.kind === 'mbbSwitch' || e.kind === 'dpdtSwitch') &&
         (e.params.momentary ?? 0) !== 0 &&
-        e.keyShortcut === k
+        e.keyShortcut === k &&
+        // Only a switch away from its rest position is held. The keyup now
+        // outranks every gate, so this path also sees keyups with no canvas
+        // press behind it: typing an assigned letter into a search box, or a
+        // duplicate keyup, must find nothing held instead of throwing a
+        // resting switch and stranding it there.
+        (e.state ?? rest) !== rest
       ) {
         s.toggleSwitch(e.id);
         toggled = true;
@@ -3149,6 +3167,14 @@ function createAppStore() {
       undoStack: s.undoStack.slice(0, -1),
       redoStack: [...s.redoStack, clone(s)],
       selectedIds: [],
+      // The restored snapshot's scope list may no longer hold the open
+      // dialog's scope (an undone addScope): a surviving id would hold
+      // modalSurface() true forever with nothing on screen, the same invisible
+      // gate removeScope clears. The Edit menu row is reachable by mouse while
+      // that dialog is up, so this path is live.
+      scopeProperties: prev.scopes.some((x) => x.id === s.scopeProperties)
+        ? s.scopeProperties
+        : null,
       // An in-flight gesture cannot survive a state revert: a scope drag would
       // keep mutating past its reverted baseline and an element gesture would
       // swallow the next rotate's commit, so both flags drop with the state.
@@ -3175,6 +3201,11 @@ function createAppStore() {
       redoStack: s.redoStack.slice(0, -1),
       undoStack: [...s.undoStack, clone(s)],
       selectedIds: [],
+      // Same stale-id rule as undo: the redone snapshot may not hold the open
+      // dialog's scope either.
+      scopeProperties: next.scopes.some((x) => x.id === s.scopeProperties)
+        ? s.scopeProperties
+        : null,
       // Same gesture teardown as undo.
       scopeGesture: false,
       elementGesture: null,

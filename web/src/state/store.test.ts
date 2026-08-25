@@ -888,6 +888,27 @@ describe('switch keyboard shortcuts', () => {
     expect(useStore.getState().elements[0].state).toBe(1);
   });
 
+  it('a keyup for an assigned key leaves resting momentaries alone', () => {
+    // The release outranks every gate now, so it also sees keyups with no
+    // canvas press behind it: typing an assigned letter into a text field
+    // lands here. Nothing is held, so nothing may move.
+    addSwitch({ momentary: 1, position: 1 }, 'k'); // rest open
+    addSwitch({ momentary: 1, position: 0 }, 'j'); // rest closed
+    expect(useStore.getState().releaseMomentaryByKey('k')).toBe(false);
+    expect(useStore.getState().releaseMomentaryByKey('j')).toBe(false);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().elements[1].state).toBe(0);
+  });
+
+  it('a duplicate keyup cannot walk a released momentary off its rest', () => {
+    addSwitch({ momentary: 1, position: 1 }, 'k'); // rest open
+    useStore.getState().toggleSwitchByKey('k'); // held closed
+    expect(useStore.getState().releaseMomentaryByKey('k')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().releaseMomentaryByKey('k')).toBe(false);
+    expect(useStore.getState().elements[0].state).toBe(1);
+  });
+
   it('releaseHeldMomentaries returns every held momentary to rest, for window blur', () => {
     // A key-held switch and one armed by pointer throw: blur mid-press loses
     // the keyup and the pointerup alike, so the release-all is the safety net.
@@ -3204,6 +3225,63 @@ describe('scope mutator coverage', () => {
     useStore.getState().newCircuit();
     expect(useStore.getState().scopeProperties).toBeNull();
     expect(modalSurface(useStore.getState())).toBe(false);
+  });
+
+  it('deleteSelected closes the gate of a scope whose element went', () => {
+    // The context menu's Delete row works while Scope Properties is up: both
+    // are modal store fields and neither closes the other, so this path is
+    // live even though the keyboard gate blocks the Delete key itself.
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    useStore.getState().openScopeProperties(useStore.getState().scopes[0].id);
+    useStore.getState().select([r]);
+
+    useStore.getState().deleteSelected();
+    expect(useStore.getState().scopeProperties).toBeNull();
+    expect(modalSurface(useStore.getState())).toBe(false);
+  });
+
+  it('deleteSelected keeps the gate when the scoped scope survives', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    const other = addCapacitor();
+    useStore.getState().openScopeProperties(scopeId);
+    useStore.getState().select([other]);
+
+    useStore.getState().deleteSelected();
+    expect(useStore.getState().scopeProperties).toBe(scopeId);
+    expect(modalSurface(useStore.getState())).toBe(true);
+  });
+
+  it('undoing past a scope closes its Scope Properties gate', () => {
+    // addScope commits, so one undo lands on the scope-less list while the
+    // dialog id lives on. The menubar's Undo row is clickable by mouse even
+    // though the modal gate blocks Ctrl+Z, so this path needs its own clear.
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    useStore.getState().openScopeProperties(useStore.getState().scopes[0].id);
+    expect(modalSurface(useStore.getState())).toBe(true);
+
+    useStore.getState().undo();
+    expect(useStore.getState().scopes).toHaveLength(0);
+    expect(useStore.getState().scopeProperties).toBeNull();
+    expect(modalSurface(useStore.getState())).toBe(false);
+  });
+
+  it('an undo that keeps the scoped scope keeps its gate', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    // The capacitor's own commit is the undo target, and its snapshot still
+    // holds the scope.
+    addCapacitor();
+    useStore.getState().openScopeProperties(scopeId);
+
+    useStore.getState().undo();
+    expect(useStore.getState().scopes.some((x) => x.id === scopeId)).toBe(true);
+    expect(useStore.getState().scopeProperties).toBe(scopeId);
+    expect(modalSurface(useStore.getState())).toBe(true);
   });
 
   it('setScopeTrigger patches the trigger and forces a reload; unknown id is a no-op', () => {
