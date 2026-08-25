@@ -138,24 +138,25 @@ function modelsInLines(lines: string[]): Map<string, CompositeModel> {
 }
 
 /** Moves the session map from one set of document lines to another, for undo
- *  and redo of a subcircuit rename: the `.` lines come back, so the library
- *  entries they stand for have to come back with them, or the Manager would
- *  list the new name while the file says the old one.
+ *  and redo of a subcircuit rename or of an edited drill-in exit: the `.`
+ *  lines come back, so the library entries they stand for have to come back
+ *  with them, or the Manager would list the new name while the file says the
+ *  old one.
  *
  *  The loops touch every name one of the two line sets alone defines,
  *  whatever put its library entry there. The delete loop drops a name only the
  *  before-lines carry, so a paste model whose name sits on a `.` line that
  *  undo retracts goes with it; the `now` loop registers each model the
  *  after-lines define, so the file's copy wins on a collision and a `.` line
- *  coming back on undo overwrites any paste model sharing its name. Only a
- *  name in neither set is provably left alone: a session model no `.` line
- *  introduced (one storage refused, one a paste brought in) keeps its entry
- *  exactly when no line in either set collides with it. A name both sets carry
- *  is left alone too, and keeps whatever the library currently says about it:
- *  it may since have been saved, and re-registering the file's copy would
- *  resurrect a shadow the user's own save had cleared. This is deliberately
- *  not the wholesale `clearSessionModels`-and-re-register a load performs,
- *  because an undo is not a load and must not take those models with it. */
+ *  coming back on undo overwrites any paste model sharing its name. A name
+ *  both sets carry moves only when the two bodies differ: undoing an edited
+ *  exit (or a same-name body-replacing paste) rewrites the `.` line under one
+ *  name, and leaving the entry alone would keep serving the pre-undo body
+ *  against a document that no longer defines it. An unchanged body stays
+ *  alone, which is what keeps a storage shadow a save cleared from being
+ *  resurrected by a wholesale re-register. This is deliberately not the
+ *  wholesale `clearSessionModels`-and-re-register a load performs, because an
+ *  undo is not a load and must not take those models with it. */
 export function syncSessionModels(before: string[], after: string[]): void {
   const was = modelsInLines(before);
   const now = modelsInLines(after);
@@ -163,7 +164,10 @@ export function syncSessionModels(before: string[], after: string[]): void {
     if (!now.has(name)) sessionModels.delete(name);
   }
   for (const [name, model] of now) {
-    if (!was.has(name)) sessionModels.set(name, model);
+    const beforeModel = was.get(name);
+    if (beforeModel === undefined || !sameCompositeModel(beforeModel, model)) {
+      sessionModels.set(name, model);
+    }
   }
 }
 

@@ -3,7 +3,7 @@
  *  that reset it. The engine is untouched; everything here is frontend state. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseCompositeModelLine, saveModel } from '../io/subcircuits';
+import { compositeModelLine, getModel, parseCompositeModelLine, saveModel } from '../io/subcircuits';
 import {
   clearUserModels,
   forwardVoltageFor,
@@ -710,6 +710,49 @@ describe('drill-in document integrity', () => {
     const s = useStore.getState();
     expect(s.lastSaved).toBe(baseline);
     expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(false);
+  });
+
+  it('undo of an edited exit re-registers the restored model body', () => {
+    useStore.getState().loadNetlist(HEADER + '410 0 0 64 64 1 myCirc\n' + PARALLEL_LINE + '\n');
+    expect(getModel('myCirc')).toEqual(parseCompositeModelLine(PARALLEL_LINE));
+
+    // Edit the internals and come home: the document's `.` line is rewritten
+    // and the session library serves the new one-resistor body.
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    const resistor = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([resistor.id]);
+    useStore.getState().deleteSelected();
+    useStore.getState().exitSubcircuit();
+    expect(getModel('myCirc')!.nodeList).toBe('ResistorElm 1 2');
+
+    useStore.getState().undo();
+
+    // The restored `.` line defines the two-resistor body again, so a second
+    // drill-in edits what the document actually says, not the undone body.
+    expect(useStore.getState().toNetlist().split('\n').find((l) => l.startsWith('. '))).toBe(
+      PARALLEL_LINE,
+    );
+    expect(getModel('myCirc')).toEqual(parseCompositeModelLine(PARALLEL_LINE));
+  });
+
+  it('undo of a same-name body-replacing paste restores the previous model', () => {
+    useStore.getState().loadNetlist(HEADER + '410 0 0 64 64 1 amp\n' + PARALLEL_LINE.replace('myCirc', 'amp') + '\n');
+    const bodyA = parseCompositeModelLine(PARALLEL_LINE.replace('myCirc', 'amp'))!;
+    const bodyB = parseCompositeModelLine(
+      '. amp 0 2 2 2 in 1 0 0 out 3 0 1 ' +
+        'ResistorElm\\s1\\s2 ' +
+        '0\\\\s2200',
+    )!;
+
+    // The paste's `.` line replaces the document line under the same name.
+    useStore.setState({
+      clipboard: [compositeModelLine(bodyB), '410 320 0 384 0 1 amp'].join('\n'),
+    });
+    useStore.getState().pasteFromClipboard();
+    expect(getModel('amp')).toEqual(bodyB);
+
+    useStore.getState().undo();
+    expect(getModel('amp')).toEqual(bodyA);
   });
 
   it('a session device model survives an enter/exit round trip and still resolves', () => {
