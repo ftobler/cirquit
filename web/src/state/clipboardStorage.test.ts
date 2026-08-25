@@ -91,15 +91,28 @@ describe('copy survives a store restart', () => {
     first.useStore.getState().copySelection();
     expect(map.get(CLIPBOARD_STORAGE_KEY)).toBe(first.useStore.getState().clipboard);
 
-    // A fresh registry re-runs the initializer that boots at import time:
-    // the simulated F5. The clipboard comes back from storage with it.
+    // A fresh module registry re-runs the initializer that boots at import
+    // time: the simulated F5. The store also caches its instance on globalThis,
+    // which resetModules does not clear, so that slot has to go too or the
+    // second import would hand back the very store that did the copy instead
+    // of creating one whose clipboard is read from storage.
     vi.resetModules();
+    Reflect.deleteProperty(globalThis, '__falstadCirquitStore');
     const second = await import('./store');
     expect(second.useStore.getState().clipboard).not.toBeNull();
     expect(second.useStore.getState().clipboard).toBe(map.get(CLIPBOARD_STORAGE_KEY));
 
     // Cut persists too, sharing copy's write path.
-    second.useStore.getState().select([id]);
+    const cutId = second.useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    second.useStore.getState().select([cutId]);
     second.useStore.getState().cutSelection();
     expect(second.useStore.getState().elements).toHaveLength(0);
     expect(map.get(CLIPBOARD_STORAGE_KEY)).toBe(second.useStore.getState().clipboard);

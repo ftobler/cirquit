@@ -74,7 +74,10 @@ export default function App() {
         await loadStartupCircuit({
           load: (text) => useStore.getState().loadNetlist(text),
           setStatus: (message) => useStore.getState().setStatus(message),
-          setProblem: (problem) => useStore.getState().setProblem(problem),
+          // Both banner channels: the frame loop seeds every rebuild report
+          // from unsupportedProblem, so a refusal only in problem dies with
+          // the fallback circuit's first engine build.
+          setProblem: (p) => useStore.setState({ problem: p, unsupportedProblem: p }),
           alive: () => !cancelled,
         });
       })

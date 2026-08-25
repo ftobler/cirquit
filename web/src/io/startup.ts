@@ -23,6 +23,10 @@ export interface StartupDeps {
   /** Installs a parsed circuit; returns the failure message or null. */
   load(text: string): string | null;
   setStatus(message: string): void;
+  /** Raises the refusal in BOTH banner channels: `problem` for immediate
+   *  display, `unsupportedProblem` as the sticky seed the frame loop merges
+   *  into every rebuild report. A message only in `problem` would be wiped by
+   *  the starter circuit's first engine build one frame later. */
   setProblem(problem: string | null): void;
   /** False once the mounting effect has been torn down (React strict mode
    *  remounts); a late fetch must not load into a dead component. */
