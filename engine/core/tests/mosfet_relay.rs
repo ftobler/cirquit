@@ -1081,4 +1081,219 @@ fn relay_latching_coil_keeps_its_contact_after_deenergising() {
     );
 }
 
+/// A type-N 425 coil labelled Q1 driving one normally-closed contact in a
+/// 1 k divider across 5 V. The coil hangs on its own drive source through
+/// wires; a lowered inductance puts the L/R time constant at 1 ms so the
+/// pick-up ramp and release decay settle within a couple of milliseconds,
+/// keeping the delay edges under test well clear of the electrical ones.
+/// Element indices: 0 = coil drive, 1 = coil, 7 = contact series resistor.
+fn typed_coil(coil_type: f64, switching_time: f64) -> Circuit {
+    let mut spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 0.0)]),
+            elm(
+                2,
+                "relayCoil",
+                &[[100, 0], [100, 100]],
+                &[
+                    ("type", coil_type),
+                    ("switchingTime", switching_time),
+                    ("inductance", 0.02),
+                ],
+            ),
+            elm(3, "wire", &[[0, 0], [100, 0]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(
+                6,
+                "voltage",
+                &[[400, -96], [400, 0]],
+                &[("maxVoltage", 5.0)],
+            ),
+            elm(7, "ground", &[[400, -96]], &[]),
+            elm(
+                8,
+                "resistor",
+                &[[400, 0], [300, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm_flags(9, "relayContact", &[[300, 0], [300, 100]], &[], 2),
+            elm(10, "ground", &[[300, 100]], &[]),
+        ],
+        options: Some(opts(1e-4, true)),
+        scopes: Vec::new(),
+    };
+    spec.elements[1].label = Some("Q1".to_string());
+    spec.elements[8].label = Some("Q1".to_string());
+    let mut c = Circuit::new();
+    c.set_circuit(&spec).expect("circuit should analyse");
+    c
+}
+
+#[test]
+fn relay_on_delay_coil_switches_only_after_its_delay() {
+    // Type 1 delays the pick-up by switchingTime and drops out with none
+    // (RelayCoilElm.java:284-287). Driven at 2 V the coil current crosses
+    // the filtered on-current inside a millisecond, so the contact must
+    // still be closed at 12 ms, open past the 20 ms edge, and closed again
+    // immediately on drop-out.
+    let c = &mut typed_coil(1.0, 0.02);
+    c.set_param(1, "maxVoltage", 2.0);
+    c.run(120);
+    assert!(
+        close(c.element_currents()[7], 5.0 / 1000.05, 1e-6),
+        "on-delay contact fired early: {}",
+        c.element_currents()[7]
+    );
+    c.run(200);
+    assert!(
+        c.element_currents()[7].abs() < 1e-5,
+        "on-delay contact did not fire after its delay: {}",
+        c.element_currents()[7]
+    );
+    // The off edge carries no delay: one short run closes it again.
+    c.set_param(1, "maxVoltage", 0.0);
+    c.run(60);
+    assert!(
+        close(c.element_currents()[7], 5.0 / 1000.05, 1e-6),
+        "on-delay contact did not drop out instantly: {}",
+        c.element_currents()[7]
+    );
+}
+
+#[test]
+fn relay_off_delay_coil_picks_up_at_once_and_holds_past_drop_out() {
+    // Type 2 is the mirror: no pick-up delay, switchingTime of hold after
+    // the coil current falls away (RelayCoilElm.java:287-290). The contact
+    // opens within milliseconds of energising, stays open through the hold
+    // window after de-energising, and only recloses once the window ends.
+    let c = &mut typed_coil(2.0, 0.02);
+    c.set_param(1, "maxVoltage", 2.0);
+    c.run(60);
+    assert!(
+        c.element_currents()[7].abs() < 1e-5,
+        "off-delay contact should open without an on delay: {}",
+        c.element_currents()[7]
+    );
+    c.set_param(1, "maxVoltage", 0.0);
+    c.run(80);
+    assert!(
+        c.element_currents()[7].abs() < 1e-5,
+        "off-delay contact released before its hold elapsed: {}",
+        c.element_currents()[7]
+    );
+    c.run(300);
+    assert!(
+        close(c.element_currents()[7], 5.0 / 1000.05, 1e-6),
+        "off-delay contact did not reclose after its hold: {}",
+        c.element_currents()[7]
+    );
+}
+
+/// A type-4 set coil and a type-5 reset coil sharing the label Q1, both
+/// driving one normally-closed contact. Set/reset coils skip the resting
+/// announcement, so the contact starts where its file put it (closed) and
+/// moves only when a coil actually fires. Element indices: 0 = set drive,
+/// 1 = set coil, 5 = reset drive, 6 = reset coil, 12 = contact resistor.
+fn set_reset_pair() -> Circuit {
+    let mut spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 0.0)]),
+            elm(
+                2,
+                "relayCoil",
+                &[[100, 0], [100, 100]],
+                &[
+                    ("type", 4.0),
+                    ("switchingTime", 0.005),
+                    ("inductance", 0.02),
+                ],
+            ),
+            elm(3, "wire", &[[0, 0], [100, 0]], &[]),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+            elm(6, "voltage", &[[0, 300], [0, 200]], &[("maxVoltage", 0.0)]),
+            elm(
+                7,
+                "relayCoil",
+                &[[100, 200], [100, 300]],
+                &[
+                    ("type", 5.0),
+                    ("switchingTime", 0.005),
+                    ("inductance", 0.02),
+                ],
+            ),
+            elm(8, "wire", &[[0, 200], [100, 200]], &[]),
+            elm(9, "wire", &[[100, 300], [0, 300]], &[]),
+            elm(10, "ground", &[[0, 300]], &[]),
+            elm(
+                11,
+                "voltage",
+                &[[400, -96], [400, 0]],
+                &[("maxVoltage", 5.0)],
+            ),
+            elm(12, "ground", &[[400, -96]], &[]),
+            elm(
+                13,
+                "resistor",
+                &[[400, 0], [300, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm_flags(14, "relayContact", &[[300, 0], [300, 100]], &[], 2),
+            elm(15, "ground", &[[300, 100]], &[]),
+        ],
+        options: Some(opts(1e-4, true)),
+        scopes: Vec::new(),
+    };
+    for id in [1usize, 6, 13] {
+        spec.elements[id].label = Some("Q1".to_string());
+    }
+    let mut c = Circuit::new();
+    c.set_circuit(&spec).expect("circuit should analyse");
+    c
+}
+
+#[test]
+fn relay_set_and_reset_coils_drive_their_contact_both_ways() {
+    // The set coil (type 4) drives matching contacts to the energised-on
+    // position when it fires and never touches them again; the reset coil
+    // (type 5) drives them to the energised-off position (RelayCoilElm.java:
+    // 319-326). Together they form the upstream relay flip-flop: set opens
+    // the normally-closed contact and it latches open after the set coil
+    // drops out, then the reset coil closes it again.
+    let c = &mut set_reset_pair();
+    c.set_param(1, "maxVoltage", 2.0);
+    c.run(30);
+    assert!(
+        close(c.element_currents()[12], 5.0 / 1000.05, 1e-6),
+        "set coil fired before its delay: {}",
+        c.element_currents()[12]
+    );
+    c.run(150);
+    assert!(
+        c.element_currents()[12].abs() < 1e-5,
+        "set coil did not open the contact: {}",
+        c.element_currents()[12]
+    );
+    // Drop the set coil out: a latching type keeps its switchPosition, so
+    // the contact holds open with no coil energised.
+    c.set_param(1, "maxVoltage", 0.0);
+    c.run(250);
+    assert!(
+        c.element_currents()[12].abs() < 1e-5,
+        "the set state did not latch: {}",
+        c.element_currents()[12]
+    );
+    // Now the reset coil fires and drives the contact back.
+    c.set_param(6, "maxVoltage", 2.0);
+    c.run(150);
+    assert!(
+        close(c.element_currents()[12], 5.0 / 1000.05, 1e-6),
+        "reset coil did not restore the contact: {}",
+        c.element_currents()[12]
+    );
+}
+
 // ─── Transformers ────────────────────────────────────────────────────────────

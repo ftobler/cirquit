@@ -6,6 +6,60 @@ mod common;
 use common::*;
 
 #[test]
+fn output_element_reads_its_node_voltage_without_loading_it() {
+    // The output is upstream's passive readout (OutputElm): one post, no
+    // stamps, infinite impedance (OutputElm.java:55, :86). On a 10 V divider
+    // midpoint it must read exactly the node voltage and carry no current,
+    // and adding one must not move the divider by so much as a volt.
+    let divider = |with_output: bool| {
+        let mut elements = vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ];
+        if with_output {
+            elements.push(elm(6, "output", &[[100, 0]], &[]));
+        }
+        elements
+    };
+    let plain = &mut build(divider(false), opts(1e-5, true));
+    plain.run(5);
+    let with = &mut build(divider(true), opts(1e-5, true));
+    with.run(5);
+
+    assert!(
+        close(plain.element_voltages()[2], 5.0, 1e-9),
+        "plain midpoint was {}",
+        plain.element_voltages()[2]
+    );
+    assert!(
+        close(with.element_voltages()[2], 5.0, 1e-9),
+        "the output loaded the midpoint to {}",
+        with.element_voltages()[2]
+    );
+    // The readback is the node voltage it hangs on (a one-post element plots
+    // its single node), and an ideal meter reports zero current.
+    assert!(
+        close(with.element_voltages()[5], 5.0, 1e-9),
+        "output read {}",
+        with.element_voltages()[5]
+    );
+    assert_eq!(with.element_currents()[5], 0.0);
+}
+
+#[test]
 fn ohmmeter_reads_the_resistance_across_its_terminals() {
     // An ohmmeter is a 0.01 A ideal current source (OhmMeterElm extends
     // CurrentElm); connected across an unknown resistor it drives 0.01 A
