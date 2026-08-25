@@ -264,8 +264,10 @@ pub const KINDS: &[&str] = &[
 /// Builds the model for a spec. Errors name the element and the offending
 /// parameter when a spec value would silently vanish at stamp time (a
 /// resistance of zero stamps no conductance, so upstream's loud 1/0 must be
-/// answered by an equally loud build rejection here), or `unknown element
-/// type` for a kind this engine does not implement.
+/// answered by an equally loud build rejection here), or would attempt an
+/// unbounded allocation before the global size guards ever run (an LED array
+/// grid outside the dialog range, a custom transformer above the coil cap),
+/// or `unknown element type` for a kind this engine does not implement.
 pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
     let e: Box<dyn Element> = match spec.kind.as_str() {
         "wire" => Box::new(wire::Wire::new(spec)),
@@ -306,7 +308,7 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
         "zener" => Box::new(diode::Diode::new_zener(spec)),
         "varactor" => Box::new(diode::Diode::new_varactor(spec)),
         "led" => Box::new(led::Led::new(spec)),
-        "ledArray" => Box::new(led_array::LedArray::new(spec)),
+        "ledArray" => Box::new(led_array::LedArray::new(spec)?),
         "tunnelDiode" => Box::new(tunnel_diode::TunnelDiode::new(spec)),
         "diac" => Box::new(diac::Diac::new(spec)),
         "transistor" => Box::new(transistor::BipolarTransistor::new(spec)),

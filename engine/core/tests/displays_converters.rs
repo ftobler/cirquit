@@ -1,7 +1,7 @@
 //! Decimal display, DAC, noise source, seven-segment reader, LED array, ADC, multiplexer, demultiplexer and VCO.
 
 use circuit_core::elements::instruction_display::InstructionDisplay;
-use circuit_core::{Circuit, ScopeSpec, ScopeValue};
+use circuit_core::{Circuit, CircuitSpec, ElementSpec, ScopeSpec, ScopeValue};
 
 mod common;
 use common::*;
@@ -925,4 +925,244 @@ fn vco_crossing_steps(snap: &[f32]) -> Vec<usize> {
         }
     }
     out
+}
+
+// ─── LED array grid clamps ───
+
+/// An ledArray spec carrying the given raw grid tokens. The post list stays
+/// a 4-post placeholder: build_element runs before the post-count check, so
+/// an out-of-range grid is rejected by name first, which is also why a
+/// refused line can arrive with any posts at all.
+fn led_array_raw(id: u32, size_x: f64, size_y: f64) -> ElementSpec {
+    elm(
+        id,
+        "ledArray",
+        &[[0, 0], [0, 16], [16, 0], [16, 16]],
+        &[("sizeX", size_x), ("sizeY", size_y)],
+    )
+}
+
+/// An ledArray spec with the full post list its grid implies, columns on
+/// y = 200 then rows down x = -16, matching what the legal-build tests wire.
+fn led_array_posts(id: u32, sx: usize, sy: usize, params: &[(&str, f64)]) -> ElementSpec {
+    let mut posts: Vec<[i32; 2]> = (0..sx).map(|i| [(16 * i) as i32, 200]).collect();
+    posts.extend((0..sy).map(|i| [-16, (16 * i) as i32]));
+    ElementSpec {
+        id,
+        kind: "ledArray".into(),
+        posts,
+        params: params
+            .iter()
+            .map(|(k, v)| (k.to_string(), *v))
+            .collect(),
+        label: None,
+        model: None,
+        flags: 0,
+    }
+}
+
+fn lone(spec: ElementSpec) -> CircuitSpec {
+    CircuitSpec {
+        preserve_run: false,
+        elements: vec![spec],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    }
+}
+
+#[test]
+fn led_array_grid_over_the_dialog_maximum_is_rejected_by_name() {
+    // Upstream's dialog is the only sanctioned range, setChipEditValue's
+    // "must be between 2 and 16" (LEDArrayElm.java:194-216); 17 sits just
+    // above the clamp and must name kind, id, dimension and value.
+    let err = Circuit::new()
+        .set_circuit(&lone(led_array_raw(7, 17.0, 8.0)))
+        .expect_err("a 17-wide grid must be rejected");
+    assert_eq!(
+        err,
+        "led array (id 7) grid width must be between 2 and 16, got 17"
+    );
+}
+
+#[test]
+fn led_array_below_the_dialog_minimum_is_rejected() {
+    let err = Circuit::new()
+        .set_circuit(&lone(led_array_raw(8, 1.0, 2.0)))
+        .expect_err("a 1-wide grid must be rejected");
+    assert!(
+        err.contains("led array") && err.contains("width") && err.contains("got 1"),
+        "{err}"
+    );
+}
+
+#[test]
+fn led_array_grid_bounds_are_inclusive() {
+    // 2x2 and 16x16 are the legal extremes; both build with exactly the post
+    // count the frontend derives from the same numbers, and both step.
+    for &(sx, sy) in [(2usize, 2usize), (16usize, 16usize)].iter() {
+        let mut c = build(
+            vec![led_array_posts(
+                7,
+                sx,
+                sy,
+                &[("sizeX", sx as f64), ("sizeY", sy as f64)],
+            )],
+            opts(1e-5, false),
+        );
+        assert_eq!(
+            c.element_post_currents().len(),
+            sx + sy,
+            "{sx}x{sy} should carry {} posts",
+            sx + sy
+        );
+        let report = c.run(3);
+        assert!(report.converged, "{sx}x{sy} failed to step");
+        assert!(c.element_post_currents().iter().all(|v| v.is_finite()));
+    }
+}
+
+#[test]
+fn led_array_sixteen_by_sixteen_lights_every_cell_from_one_low_column_bus() {
+    // The boundary-legal simulate case: all 16 columns wired into one bus a
+    // logic input drives low, every row fed by its own 1k resistor from a 5 V
+    // rail. Each cell then sees its row about a diode drop above its column,
+    // so all 256 light and `value()` keeps the low 64 bits all set; driving
+    // the bus high leaves every cell dark. The sixteen feeds are symmetric,
+    // so their currents must agree to within the Newton residual, an analytic
+    // check over the whole grid at once.
+    //
+    // Insertion order pins the flat indices: input 0, ledArray 1, then the
+    // column stubs (2..18), bus segments (18..33), row feed wires (33..49),
+    // feed resistors (49..65) and rails (65..81).
+    let mut elements = vec![
+        // The input sits directly on a bus segment endpoint, so the whole
+        // column net is one driven node.
+        elm(
+            100,
+            "logicInput",
+            &[[128, 240]],
+            &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
+        ),
+        led_array_posts(
+            7,
+            16,
+            16,
+            &[("sizeX", 16.0), ("sizeY", 16.0)],
+        ),
+    ];
+    for i in 0..16usize {
+        elements.push(elm(
+            200 + i as u32,
+            "wire",
+            &[[(16 * i) as i32, 200], [(16 * i) as i32, 240]],
+            &[],
+        ));
+    }
+    for i in 0..15usize {
+        elements.push(elm(
+            300 + i as u32,
+            "wire",
+            &[[(16 * i) as i32, 240], [(16 * (i + 1)) as i32, 240]],
+            &[],
+        ));
+    }
+    for i in 0..16usize {
+        let y = (16 * i) as i32;
+        elements.push(elm(
+            400 + i as u32,
+            "wire",
+            &[[-48, y], [-16, y]],
+            &[],
+        ));
+        elements.push(elm(
+            500 + i as u32,
+            "resistor",
+            &[[-80, y], [-48, y]],
+            &[("resistance", 1000.0)],
+        ));
+        elements.push(elm(
+            600 + i as u32,
+            "rail",
+            &[[-80, y]],
+            &[("maxVoltage", 5.0)],
+        ));
+    }
+    let c = &mut build(elements, opts(1e-5, true));
+    c.run(3);
+    // Cells 0..63 lit is the most `value()` can report; the rest of the
+    // pattern cannot ride an f64.
+    assert_eq!(
+        c.element_values()[1] as u64,
+        u64::MAX,
+        "a low column bus must light every cell"
+    );
+    let currents = c.element_currents();
+    for i in 0..16usize {
+        let feed = currents[49 + i];
+        // Identical feeds up to the per-bank Newton linearisation residual:
+        // each row's sixteen junctions limit independently, so exact equality
+        // is not available, but a microamp pins the symmetric behaviour.
+        assert!(
+            close(feed, currents[49], 1e-6),
+            "row {i} fed {feed}, row 0 fed {}",
+            currents[49]
+        );
+        // Each row drains a few milliamps from its rail through its cells,
+        // the direction the diode drop sets (row above column, current
+        // flowing rail to row).
+        assert!(
+            feed > 0.001 && feed < 0.01,
+            "row {i} feed {feed} off the diode-drop scale"
+        );
+    }
+    c.set_state(100, 1);
+    c.run(3);
+    assert_eq!(
+        c.element_values()[1] as u64,
+        0,
+        "a high column bus must leave every cell dark"
+    );
+}
+
+#[test]
+fn led_array_zero_and_garbage_sizes_keep_the_eight_fallback() {
+    // Missing params, zeros, NaN, negatives and sub-one fractions keep the
+    // documented 8x8 fallback (LEDArrayElm.java:60-64), 16 posts, exactly as
+    // before the clamp landed.
+    let cases: Vec<(Option<f64>, Option<f64>)> = vec![
+        (None, None),
+        (Some(0.0), Some(0.0)),
+        (Some(f64::NAN), Some(f64::NAN)),
+        (Some(-4.0), Some(8.0)),
+        (Some(8.0), Some(-1.0)),
+        (Some(0.4), Some(8.0)),
+    ];
+    for (sx, sy) in cases {
+        let mut e = led_array_posts(7, 8, 8, &[]);
+        if let Some(x) = sx {
+            e.params.insert("sizeX".into(), x);
+        }
+        if let Some(y) = sy {
+            e.params.insert("sizeY".into(), y);
+        }
+        // The frontend derives 16 posts for whatever an 8x8 fallback
+        // produces, so the placeholder list must say 8x8 even while the
+        // tokens themselves are garbage.
+        let c = build(vec![e], opts(1e-5, false));
+        assert_eq!(
+            c.element_post_currents().len(),
+            16,
+            "({sx:?}, {sy:?}) must fall back to 8x8"
+        );
+    }
+}
+
+#[test]
+fn oversized_led_array_line_cannot_hang_the_build() {
+    // A single hostile line used to attempt 1e10 cells inside LedArray::new;
+    // the rejection now fires before any allocation, promptly.
+    let err = Circuit::new()
+        .set_circuit(&lone(led_array_raw(7, 100000.0, 100000.0)))
+        .expect_err("the bomb line must be rejected");
+    assert!(err.contains("led array") && err.contains("got 100000"), "{err}");
 }
