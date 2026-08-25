@@ -142,16 +142,18 @@ const INPUT_COUNT_KINDS: ReadonlySet<string> = new Set([
 
 /** Every kind whose keyShortcut the key loops honour: upstream's keypress and
  *  keyup scans match every SwitchElm subclass carrying an assignment
- *  (UIManager.java:1256-1268, :1113-1131), and the crossover switch is one.
- *  One constant feeds both loops so they cannot drift apart again; a registry
- *  def that exposes the Keyboard Shortcut field must be listed here, or its
- *  advertised assignment silently goes dead. */
+ *  (UIManager.java:1256-1268, :1113-1131), and the crossover switch and logic
+ *  input both extend SwitchElm there. One constant feeds both loops so they
+ *  cannot drift apart again; a registry def that exposes the Keyboard
+ *  Shortcut field must be listed here, or its advertised assignment silently
+ *  goes dead. */
 const SWITCH_KEY_KINDS: ReadonlySet<string> = new Set([
   'switch',
   'switch2',
   'mbbSwitch',
   'dpdtSwitch',
   'crossSwitch',
+  'logicInput',
 ]);
 
 /**

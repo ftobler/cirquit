@@ -89,6 +89,9 @@ export const LOGIC_INPUT_DEF: ElementDef = {
     { name: 'momentary', label: 'Momentary Switch', type: 'bool' },
     { name: 'ternary', label: 'Ternary', type: 'bool', flag: LOGIC_INPUT_TERNARY },
     { name: 'numeric', label: 'Numeric', type: 'bool', flag: LOGIC_INPUT_NUMERIC },
+    // The inherited SwitchElm shortcut row, upstream's edit index 5
+    // (LogicInputElm.java:144-146): session-only, never in the netlist.
+    { name: 'keyShortcut', label: 'Keyboard Shortcut', type: 'text', target: 'keyShortcut' },
   ],
   draw: drawLogicInput,
 };

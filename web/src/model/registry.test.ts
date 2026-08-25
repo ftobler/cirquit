@@ -1252,16 +1252,18 @@ describe('bus logic input', () => {
 describe('logic input edit fields', () => {
   beforeEach(() => useStore.setState(fresh()));
 
-  it('exposes the two voltages, then Momentary, Ternary and Numeric', () => {
+  it('exposes the two voltages, then Momentary, Ternary and Numeric, then the shortcut', () => {
     // Upstream's getEditInfo order is Momentary, High Voltage, Low Voltage,
-    // Numeric, Ternary; the port keeps its hiV/loV first and appends the three
-    // rows after them (LogicInputElm.java:125-144).
+    // Numeric, Ternary, then the inherited Keyboard Shortcut
+    // (LogicInputElm.java:125-146); the port keeps its hiV/loV first and
+    // appends the three rows plus the shortcut after them.
     expect((LOGIC_INPUT_DEF.fields ?? []).map((f) => f.name)).toEqual([
       'hiV',
       'loV',
       'momentary',
       'ternary',
       'numeric',
+      'keyShortcut',
     ]);
     expect(LOGIC_INPUT_DEF.fields?.[2]).toEqual({
       name: 'momentary',
@@ -1280,9 +1282,15 @@ describe('logic input edit fields', () => {
       type: 'bool',
       flag: LOGIC_INPUT_NUMERIC,
     });
+    expect(LOGIC_INPUT_DEF.fields?.[5]).toEqual({
+      name: 'keyShortcut',
+      label: 'Keyboard Shortcut',
+      type: 'text',
+      target: 'keyShortcut',
+    });
   });
 
-  it('shows all five rows on a fresh logic input', () => {
+  it('shows all six rows on a fresh logic input', () => {
     const li: CircuitElement = { ...makeToolElement('logicInput', 192, 160, 256, 160), id: 1 };
     expect(fieldRows(li).map((r) => r.field.name)).toEqual([
       'hiV',
@@ -1290,6 +1298,7 @@ describe('logic input edit fields', () => {
       'momentary',
       'ternary',
       'numeric',
+      'keyShortcut',
     ]);
     // The momentary row is a plain bool bound to the param, never a flag bit.
     expect(fieldRows(li).find((r) => r.field.name === 'momentary')?.value).toBe(0);

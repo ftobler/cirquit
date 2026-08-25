@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { matchShortcut } from '../input/shortcuts';
 import { modalSurface } from '../input/modalSurface';
 import { DEFAULT_SETTINGS, GRID_SIZE, type SimSettings } from '../model/types';
+import { LOGIC_INPUT_TERNARY } from '../model/registry/flags';
 import { postsOf } from '../model/registry';
 import { hitTestElement } from '../render/geometry';
 import { scopePlotsToSpecs } from '../engine/simulator';
@@ -1412,6 +1413,62 @@ describe('crossover switch keyboard shortcuts', () => {
     expect(useStore.getState().releaseMomentaryByKey('x')).toBe(true);
     expect(useStore.getState().elements[0].state).toBe(1);
     expect(useStore.getState().releaseMomentaryByKey('x')).toBe(false);
+  });
+});
+
+describe('logic input keyboard shortcuts', () => {
+  // Upstream's LogicInputElm extends SwitchElm, so its scans toggle an
+  // assigned logic input too, deliberately without needAnalyze: the toggle is
+  // a voltage flip done in doStep, not a restamp (UIManager.java:1263-1265).
+  const addLogic = (
+    opts: { flags?: number; params?: Record<string, number> } = {},
+    keyShortcut?: string,
+  ) =>
+    useStore.getState().addElement({
+      kind: 'logicInput',
+      x1: 0,
+      y1: 0,
+      x2: 64,
+      y2: 64,
+      flags: opts.flags ?? 0,
+      params: { hiV: 5, loV: 0, position: 0, momentary: 0, ...(opts.params ?? {}) },
+      state: 0,
+      ...(keyShortcut !== undefined ? { keyShortcut } : {}),
+    });
+
+  it('toggleSwitchByKey flips a logic input between low and high', () => {
+    addLogic({}, 'h');
+    expect(useStore.getState().toggleSwitchByKey('h')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().toggleSwitchByKey('h')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(0);
+  });
+
+  it('a ternary logic input walks all three positions', () => {
+    addLogic({ flags: LOGIC_INPUT_TERNARY }, 'h');
+    for (const expected of [1, 2, 0]) {
+      expect(useStore.getState().toggleSwitchByKey('h')).toBe(true);
+      expect(useStore.getState().elements[0].state).toBe(expected);
+    }
+  });
+
+  it('the keyboard flip queues an engine param, never a rebuild', () => {
+    // The needAnalyze skip: like every keyboard throw, the edit rides
+    // pendingStates, so revision (the rebuild counter) stays put.
+    addLogic({}, 'h');
+    const before = useStore.getState().revision;
+    useStore.getState().toggleSwitchByKey('h');
+    expect(useStore.getState().pendingStates.get(useStore.getState().elements[0].id)).toBe(1);
+    expect(useStore.getState().revision).toBe(before);
+  });
+
+  it('releases a momentary logic input on keyup', () => {
+    addLogic({ params: { momentary: 1 } }, 'h');
+    expect(useStore.getState().toggleSwitchByKey('h')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().releaseMomentaryByKey('h')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(0);
+    expect(useStore.getState().releaseMomentaryByKey('h')).toBe(false);
   });
 });
 
