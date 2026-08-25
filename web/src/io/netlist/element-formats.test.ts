@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseCircuit, serializeCircuit } from './index';
 import { makeElement, makeToolElement } from '../../state/store';
 import { postsOf } from '../../model/registry';
-import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE, OUTPUT_FIXED, OUTPUT_SHOW_VOLTAGE, OPAMP_SWAP } from '../../model/registry/flags';
+import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE, OUTPUT_FIXED, OUTPUT_SHOW_VOLTAGE, OPAMP_SWAP, VOLTAGE_SHOW_VOLTAGE } from '../../model/registry/flags';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
 import type { CustomLogicModel } from './types';
 import { clearSessionModels, parseCompositeModelLine, registerSessionModel } from '../subcircuits';
@@ -2470,6 +2470,30 @@ describe('custom logic file format', () => {
     expect(postsOf(cl)).toHaveLength(6);
   });
 
+  it('the same line saves only the fallback output count', () => {
+    // The writer emits one voltage per output pin of the resolved-or-fallback
+    // pin table, so an unresolvable model writes two tokens where the loaded
+    // smiley line carried eight. The name still rides through, so a later
+    // load resolves the model once its `!` line exists; the extra voltages
+    // stay session-only and die with the element.
+    const parsed = parseCircuit(HEADER + ELEMENT_LINE + '\n');
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    const line = out.split('\n').find((l) => l.startsWith('208 ')) ?? '';
+    expect(line).toBe('208 528 336 624 336 0 smiley 0 0');
+    // And a reload of that shape stays on the fallback body.
+    const [again] = parseCircuit(line).elements;
+    expect(again.text).toBe('smiley');
+    expect(again.params.voltage1).toBe(0);
+    expect(again.params.voltage2).toBeUndefined();
+    expect(postsOf(again)).toHaveLength(6);
+  });
+
   it('parses the pattern dedup upstream applies to repeated left-side letters', () => {
     // `aa` written as the same letter twice dedups to the save/compare pair
     // (CustomLogicModel.java:231-237): the second `a` becomes `A`, so the
@@ -3220,3 +3244,440 @@ describe('op-amp file format and the swapped variant', () => {
     expect(postsOf(swapped)[0]).toEqual({ x: 192, y: 176 });
   });
 });
+
+describe('thermistor file format', () => {
+  /** Parses a single `350` line and re-emits it, returning that line. */
+  const thermistorLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('350 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips the five values and the escaped slider text byte-for-byte', () => {
+    // r25 r50 minTempr maxTempr position sliderText (ThermistorNTCElm.java:
+    // 60-70). Upstream's own text dump would drop all six tokens (the base
+    // CircuitElm.dump quirk the registry row documents), so the canonical
+    // form below is what a save from this port produces.
+    const line = '350 96 64 208 64 0 4700 1800 -25 125 0.5 Panel\\sTemp';
+    const { e, elementLine } = thermistorLine(line);
+    expect(e.params.r25).toBe(4700);
+    expect(e.params.r50).toBe(1800);
+    expect(e.params.minTempr).toBe(-25);
+    expect(e.params.maxTempr).toBe(125);
+    expect(e.params.position).toBe(0.5);
+    expect(e.text).toBe('Panel Temp');
+    expect(elementLine).toBe(line);
+  });
+
+  it('a slider text-less line saves the upstream Temperature caption', () => {
+    // The writer falls back to the constructor default when the text is
+    // empty, so a reload never loses the slider label.
+    const { e, elementLine } = thermistorLine('350 96 64 208 64 0');
+    expect(e.params.r25).toBe(10000);
+    expect(e.params.position).toBe(0.34);
+    expect(e.text).toBeUndefined();
+    expect(elementLine).toBe('350 96 64 208 64 0 10000 3605 -40 150 0.34 Temperature');
+  });
+});
+
+describe('LDR file format', () => {
+  /** Parses a single `374` line and re-emits it, returning that line. */
+  const ldrLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('374 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips the slider position and the escaped slider text byte-for-byte', () => {
+    // position then sliderText, the LDR's whole token stream. The same
+    // base-dump quirk as the thermistor applies: this port writes what
+    // upstream's text save never did.
+    const line = '374 96 64 208 64 0 0.62 Light\\sLevel';
+    const { e, elementLine } = ldrLine(line);
+    expect(e.params.position).toBe(0.62);
+    expect(e.text).toBe('Light Level');
+    expect(elementLine).toBe(line);
+  });
+
+  it('a bare LDR line saves the Light Brightness caption', () => {
+    const { e, elementLine } = ldrLine('374 96 64 208 64 0');
+    expect(e.params.position).toBe(0.34);
+    expect(e.text).toBeUndefined();
+    // The caption is one escaped token on the line, like any slider text.
+    expect(elementLine).toBe('374 96 64 208 64 0 0.34 Light\\sBrightness');
+  });
+});
+
+describe('spark gap file format', () => {
+  /** Parses a single `187` line and re-emits it, returning that line. */
+  const sparkGapLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('187 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips its four tokens byte-for-byte', () => {
+    // r_on r_off breakdown holdcurrent (SparkGapElm.java:41-51). The tesla.txt
+    // family carries exactly this shape; numeric tokens normalise like every
+    // other element, so 1.0E9 writes back expanded.
+    const line = '187 256 144 352 256 0 1000 1000000000 4000 0.0015';
+    const { e, elementLine } = sparkGapLine(line);
+    expect(e.params.r_on).toBe(1000);
+    expect(e.params.r_off).toBe(1e9);
+    expect(e.params.breakdown).toBe(4000);
+    expect(e.params.holdcurrent).toBe(0.0015);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a bare spark gap loads the constructor defaults', () => {
+    const { e } = sparkGapLine('187 256 144 352 256 0');
+    expect(e.params.r_on).toBe(1000);
+    expect(e.params.r_off).toBe(1e9);
+    expect(e.params.breakdown).toBe(1000);
+    expect(e.params.holdcurrent).toBe(0.001);
+  });
+});
+
+describe('lamp file format', () => {
+  /** Parses a single `181` line and re-emits it, returning that line. */
+  const lampLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('181 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips its five tokens byte-for-byte', () => {
+    // temp nomPower nomVoltage warmTime coolTime (LampElm.java:43-54); the
+    // temperature is saved operating state like the fuse's heat.
+    const line = '181 688 208 688 496 0 293 100 120 0.4 0.4';
+    const { e, elementLine } = lampLine(line);
+    expect(e.params.temp).toBe(293);
+    expect(e.params.nomPower).toBe(100);
+    expect(e.params.nomVoltage).toBe(120);
+    expect(e.params.warmTime).toBe(0.4);
+    expect(e.params.coolTime).toBe(0.4);
+    expect(elementLine).toBe(line);
+  });
+
+  it('the triacdimmer corpus line keeps its warm filament state', () => {
+    // triacdimmer.txt:10 verbatim: a lamp saved hot, at 1325 K against a
+    // 100 W / 120 V rating. Losing temp would restart the bulb cold on
+    // every load.
+    const line = '181 1184 272 1264 272 0 1325.2174570769737 100 120 0.4 0.4';
+    const { e, elementLine } = lampLine(line);
+    expect(e.params.temp).toBeCloseTo(1325.2174570769737, 15);
+    expect(elementLine).toBe(line);
+  });
+});
+
+describe('antenna file format', () => {
+  /** Parses a single `A` line and re-emits it, returning that line. */
+  const antennaLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('A ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips the six source tokens byte-for-byte', () => {
+    // AntennaElm extends RailElm, so the tail is the voltage source's
+    // waveform frequency maxVoltage bias phaseShift dutyCycle stream. The
+    // waveform is forced to AC on load (AntennaElm.java:24-28), which the
+    // canonical line already carries.
+    const line = 'A 144 144 144 112 16 1 40 5 0 0 0.5';
+    const { e, elementLine } = antennaLine(line);
+    expect(e.kind).toBe('antenna');
+    expect(e.flags & VOLTAGE_SHOW_VOLTAGE).toBe(VOLTAGE_SHOW_VOLTAGE);
+    expect(e.params.waveform).toBe(1);
+    expect(e.params.frequency).toBe(40);
+    expect(e.params.maxVoltage).toBe(5);
+    expect(e.params.bias).toBe(0);
+    expect(e.params.phaseShift).toBe(0);
+    expect(e.params.dutyCycle).toBe(0.5);
+    expect(elementLine).toBe(line);
+  });
+
+  it('forces a non-AC waveform token back to AC on load', () => {
+    // The token constructor reads the waveform but overwrites it with WF_AC
+    // whatever it says (AntennaElm.java:24-28), and the save writes the
+    // forced value so a reload agrees.
+    const { e, elementLine } = antennaLine('A 144 144 144 112 0 5 40 5 0 0 0.5');
+    expect(e.params.waveform).toBe(1);
+    expect(elementLine).toBe('A 144 144 144 112 0 1 40 5 0 0 0.5');
+  });
+
+  it('the corpus bare line gains the seeded source tokens on save', () => {
+    // amdetect.txt's only antenna line stops after the flags. Upstream's
+    // token constructor seeds frequency 40 and maxVoltage 5 before reading
+    // (VoltageElm.java:66-67), so the save restores those seeds instead of
+    // writing zeros a reload would turn into a silent DC rail.
+    const { e, elementLine } = antennaLine('A 144 144 144 112 0');
+    expect(e.params.frequency).toBe(40);
+    expect(e.params.maxVoltage).toBe(5);
+    expect(e.params.waveform).toBe(1);
+    expect(elementLine).toBe('A 144 144 144 112 0 1 40 5 0 0 0.5');
+  });
+});
+
+describe('ammeter file format', () => {
+  /** Parses a single `370` line and re-emits it, returning that line. */
+  const ammeterLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('370 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips the meter mode, scale and flag bits byte-for-byte', () => {
+    // meter scale (AmmeterElm.java's token constructor). Flags 3 are the
+    // ammeter's own pair: bit 1 Show Current, bit 2 Circular Symbol.
+    const line = '370 512 336 640 336 3 1 2';
+    const { e, elementLine } = ammeterLine(line);
+    expect(e.flags).toBe(3);
+    expect(e.params.meter).toBe(1);
+    expect(e.params.scale).toBe(2);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a wheatstone corpus line missing the scale token saves it as auto', () => {
+    // wheatstone.txt carries `... 1 0`: meter only. The defaults seed scale
+    // to 0, so the save appends the token rather than shortening the stream.
+    const { e, elementLine } = ammeterLine('370 512 336 640 336 1 0');
+    expect(e.params.meter).toBe(0);
+    expect(e.params.scale).toBe(0);
+    expect(elementLine).toBe('370 512 336 640 336 1 0 0');
+  });
+});
+
+describe('jfet file format', () => {
+  /** Parses a single `j` line and re-emits it, returning that line. */
+  const jfetLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('j ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips a p-channel line byte-for-byte', () => {
+    // The channel type lives in FLAG_PNP (bit 1); the two trailing tokens are
+    // threshold then beta, the legacy `vt beta` pair the mosfet base reads
+    // (MosfetElm.java:96-99).
+    const line = 'j 240 176 272 176 1 -4 0.00125';
+    const { e, elementLine } = jfetLine(line);
+    expect(e.params.pnp).toBe(-1);
+    expect(e.params.threshold).toBe(-4);
+    expect(e.params.beta).toBe(0.00125);
+    expect(e.flags).toBe(1);
+    expect(elementLine).toBe(line);
+  });
+
+  it('an n-channel line clears the pnp bit through the round trip', () => {
+    const { e, elementLine } = jfetLine('j 240 224 272 224 0 -4 0.00125');
+    expect(e.params.pnp).toBe(1);
+    expect(elementLine).toBe('j 240 224 272 224 0 -4 0.00125');
+  });
+});
+
+describe('tunnel diode file format', () => {
+  it('round-trips a tokenless 175 line byte-for-byte', () => {
+    // The curve is hardcoded in the engine model, so no tokens follow the
+    // common fields and there is nothing to decode beyond the kind.
+    const line = '175 240 176 320 176 0';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('tunnelDiode');
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    expect(out.split('\n').find((l) => l.startsWith('175 ')) ?? '').toBe(line);
+  });
+});
+
+describe('diac file format', () => {
+  /** Parses a single `203` line and re-emits it, returning that line. */
+  const diacLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('203 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips the triacdimmer corpus line byte-for-byte', () => {
+    // r_on r_off breakdown holdcurrent (DiacElm.java:45-48).
+    const line = '203 1264 432 1328 432 0 500 100000000 30 0.01';
+    const { e, elementLine } = diacLine(line);
+    expect(e.params.r_on).toBe(500);
+    expect(e.params.r_off).toBe(1e8);
+    expect(e.params.breakdown).toBe(30);
+    expect(e.params.holdcurrent).toBe(0.01);
+    expect(elementLine).toBe(line);
+  });
+});
+
+describe('scr file format', () => {
+  /** Parses a single `177` line and re-emits it, returning that line. */
+  const scrLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('177 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips the operating point and model tokens byte-for-byte', () => {
+    // lastvac lastvag triggerI holdingI gResistance (SCRElm.java:51-59). The
+    // first two are saved junction state, the rest the model.
+    const line = '177 384 160 368 288 0 0.5 -0.25 0.01 0.0082 50';
+    const { e, elementLine } = scrLine(line);
+    expect(e.params.lastvac).toBe(0.5);
+    expect(e.params.lastvag).toBe(-0.25);
+    expect(e.params.triggerI).toBe(0.01);
+    expect(e.params.holdingI).toBe(0.0082);
+    expect(e.params.gResistance).toBe(50);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a scr.txt line truncated after lastvag gains the model tokens on save', () => {
+    // The corpus files stop after the two operating-point voltages; the
+    // try/catch around upstream's reads (SCRElm.java:51-60) leaves the model
+    // on its defaults, which the save then records explicitly.
+    const { e, elementLine } = scrLine('177 384 160 368 288 0 0.0 0.0');
+    expect(e.params.lastvac).toBe(0);
+    expect(e.params.triggerI).toBe(0.01);
+    expect(e.params.holdingI).toBe(0.0082);
+    expect(e.params.gResistance).toBe(50);
+    expect(elementLine).toBe('177 384 160 368 288 0 0 0 0.01 0.0082 50');
+  });
+});
+
+describe('triac file format', () => {
+  /** Parses a single `206` line and re-emits it, returning that line. */
+  const triacLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('206 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it.each(['false', 'true'])('round-trips the corpus shape with a %s latch state', (state) => {
+    // triggerI holdingI cresistance state (TriacElm.java:52-56); the latch
+    // state is a Java-style boolean token, not a number.
+    const line = `206 1360 272 1312 528 0 0.011 0.008 100 ${state}`;
+    const { e, elementLine } = triacLine(line);
+    expect(e.params.triggerI).toBe(0.011);
+    expect(e.params.holdingI).toBe(0.008);
+    expect(e.params.cresistance).toBe(100);
+    expect(e.params.state).toBe(state === 'true' ? 1 : 0);
+    expect(elementLine).toBe(line);
+  });
+});
+
+describe('triode file format', () => {
+  /** Parses a single `173` line and re-emits it, returning that line. */
+  const triodeLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('173 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips mu and kg1 byte-for-byte', () => {
+    // mu kg1 (TriodeElm.java's token constructor). Numeric normalisation
+    // turns the corpus's 93.0/1360.0 spellings into integers on save, so the
+    // canonical line below already uses the integer form.
+    const line = '173 304 240 368 240 0 93 680';
+    const { e, elementLine } = triodeLine(line);
+    expect(e.params.mu).toBe(93);
+    expect(e.params.kg1).toBe(680);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a triodeamp corpus spelling normalises its trailing zeros on save', () => {
+    const { elementLine } = triodeLine('173 272 224 368 224 0 93.0 1360.0');
+    expect(elementLine).toBe('173 272 224 368 224 0 93 1360');
+  });
+});
+
+describe('led array file format', () => {
+  /** Parses a single `405` line and re-emits it, returning that line. */
+  const ledArrayLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('405 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips the grid size byte-for-byte', () => {
+    // sizeX sizeY after the optional high-voltage token (LEDArrayElm.java:
+    // 32-35). No pin is a state pin, so nothing else follows.
+    const line = '405 720 336 784 336 0 8 8';
+    const { e, elementLine } = ledArrayLine(line);
+    expect(e.params.sizeX).toBe(8);
+    expect(e.params.sizeY).toBe(8);
+    expect(postsOf(e)).toHaveLength(16);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a non-square grid keeps both dimensions and its post count', () => {
+    const { e, elementLine } = ledArrayLine('405 720 336 784 336 0 4 2');
+    expect(e.params.sizeX).toBe(4);
+    expect(e.params.sizeY).toBe(2);
+    expect(postsOf(e)).toHaveLength(6);
+    expect(elementLine).toBe('405 720 336 784 336 0 4 2');
+  });
+});
+
+describe('7-segment display file format', () => {
+  /** Parses a single `157` line and re-emits it, returning that line. */
+  const sevenSegLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('157 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips the 7segdecoder corpus line byte-for-byte', () => {
+    // baseSegments extraSegment diodeDirection after the optional high
+    // voltage (SevenSegElm.java's dump). No saved output levels follow.
+    const line = '157 880 232 1000 232 0 7 0 0';
+    const { e, elementLine } = sevenSegLine(line);
+    expect(e.params.baseSegments).toBe(7);
+    expect(e.params.extraSegment).toBe(0);
+    expect(e.params.diodeDirection).toBe(0);
+    expect(postsOf(e)).toHaveLength(7);
+    expect(elementLine).toBe(line);
+  });
+
+  it('a custom-voltage colon display carries the hv token before its three', () => {
+    // FLAG_CUSTOM_VOLTAGE puts the high voltage first in the chip stream,
+    // exactly where the parser looks for it (ChipElm.java:356-366).
+    const line = '157 880 232 1000 232 8192 6 14 2 1';
+    const { e, elementLine } = sevenSegLine(line);
+    expect(e.params.highVoltage).toBe(6);
+    expect(e.params.baseSegments).toBe(14);
+    expect(e.params.extraSegment).toBe(2);
+    expect(e.params.diodeDirection).toBe(1);
+    expect(elementLine).toBe(line);
+  });
+});
+
+describe('demultiplexer file format', () => {
+  /** Parses a single `185` line and re-emits it, returning that line. */
+  const demuxLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('185 ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips the ledarray corpus line byte-for-byte', () => {
+    // One select-bit-count token (DeMultiplexerElm.java:61). Three select
+    // bits give eight outputs plus three selects plus the data input.
+    const line = '185 480 656 656 656 0 3';
+    const { e, elementLine } = demuxLine(line);
+    expect(e.params.selectBits).toBe(3);
+    expect(postsOf(e)).toHaveLength(12);
+    expect(elementLine).toBe(line);
+  });
+});
+

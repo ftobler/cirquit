@@ -269,7 +269,16 @@ fn decoration_refuses_a_phantom_anchor_post() {
 }
 
 #[test]
-fn antenna_across_a_resistor_is_bounded_and_finite() {
+fn antenna_across_a_resistor_tracks_the_analytic_waveform() {
+    // The antenna drives its node through an ideal source, so the captured
+    // trace must equal the synthesized waveform sample for sample: the three
+    // AM carriers evaluated at each end-of-step time plus the FM term whose
+    // phase integrates once per converged step (AntennaElm.java:35-44). The
+    // loop below replays that arithmetic alongside the engine, which pins
+    // the carrier frequencies, modulation depths and the FM integrand, not
+    // just their envelope.
+    let dt = 1e-5;
+    let steps = 1024u32;
     let c = &mut build_with(
         vec![
             elm(1, "antenna", &[[0, 0]], &[]),
@@ -282,7 +291,7 @@ fn antenna_across_a_resistor_is_bounded_and_finite() {
             elm(3, "wire", &[[100, 0], [100, 100]], &[]),
             elm(4, "ground", &[[100, 100]], &[]),
         ],
-        opts(1e-5, false),
+        opts(dt, false),
         vec![ScopeSpec {
             element_id: 1,
             value: ScopeValue::Voltage,
@@ -294,26 +303,41 @@ fn antenna_across_a_resistor_is_bounded_and_finite() {
             display_width: 0,
         }],
     );
-    let report = c.run(2000);
+    let report = c.run(steps);
     assert!(report.converged, "antenna broke Newton convergence");
     assert!(c.error().is_none(), "error: {:?}", c.error());
     let snap = c.scopes()[0].snapshot();
-    assert!(
-        snap.len() >= 1024,
+    assert_eq!(
+        snap.len(),
+        2 * steps as usize,
         "expected a full scope ring, got {}",
         snap.len()
     );
-    // The antenna is an ideal source to ground across a plain resistor, so the
-    // node reads the injected value exactly. Each AM carrier is bounded by
-    // 3*(1.3+1)*3 = 6.9 V and the FM term by 3 V, so the value never leaves
-    // [-23.7, 23.7]; 30 keeps a comfortable headroom while still catching a
-    // 2x amplitude or a stamping sign error.
-    for v in snap {
-        assert!(v.is_finite(), "non-finite antenna sample {v}");
-        assert!(
-            (-30.0..=30.0).contains(&(v as f64)),
-            "antenna sample {v} left [-30, 30]"
-        );
+
+    use std::f64::consts::PI;
+    let w = |t: f64, hz: f64| 2.0 * PI * hz * t;
+    let mut fm_phase: f64 = 0.0;
+    for (k, chunk) in snap.chunks(2).enumerate() {
+        // Column k holds step k+1's single sample; `do_step` saw the
+        // end-of-step time and the phase accumulated by the steps before it,
+        // and `step_finished` then advanced the phase with that same time.
+        let t = (k + 1) as f64 * dt;
+        let expected = w(t, 3000.0).sin() * (1.3 + w(t, 12.0).sin()) * 3.0
+            + w(t, 2710.0).sin() * (1.3 + w(t, 13.0).sin()) * 3.0
+            + w(t, 2433.0).sin() * (1.3 + w(t, 14.0).sin()) * 3.0
+            + 3.0 * fm_phase.sin();
+        fm_phase += 2.0 * PI * (2200.0 + w(t, 13.0).sin() * 100.0) * dt;
+        for v in chunk {
+            let v = *v as f64;
+            assert!(v.is_finite(), "non-finite antenna sample {v}");
+            // The ring stores f32; everything above is exact linear solving,
+            // so a loose-looking 1e-3 still catches any wrong carrier or a
+            // sign error, whose deviations grow to volts within microseconds.
+            assert!(
+                close(v, expected, 1e-3),
+                "antenna sample {k} was {v}, expected {expected}"
+            );
+        }
     }
 }
 
