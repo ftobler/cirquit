@@ -3313,11 +3313,16 @@ function createAppStore() {
     const recovery = readRecovery();
     if (recovery === null) return;
     const before = get();
+    // A payload parseCircuit refuses has already raised the malformed-load
+    // banner and left document, revisions, stacks and lastSaved untouched, so
+    // the early return is a no-op beyond that banner. The row stays enabled:
+    // the bytes are still in storage, repeated refusals re-raise only the
+    // banner, and good bytes written later make it truthful again.
+    if (before.loadNetlist(recovery) !== null) return;
     // The undo entry is the pre-recovery circuit, and it must be pushed after
     // the load: loadNetlist wipes both stacks, so committing before it would
     // lose the entry upstream's doRecover takes (UndoManager.java:83-88).
     const pre = clone(before);
-    before.loadNetlist(recovery);
     set((s) => ({
       // The row stays disabled for the session; later autosave writes do not
       // re-enable it, exactly as upstream never re-enables recoverItem.
