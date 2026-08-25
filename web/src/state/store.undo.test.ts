@@ -609,6 +609,41 @@ describe('unblowFuses is a run-mode reset, not an undoable edit', () => {
   });
 });
 
+describe('revertToBaseline: the collapse guards revert', () => {
+  // The zero-length collapse guards (a post drag onto its partner, a row or
+  // column sweep that folds both posts together) refuse the collapsed geometry
+  // by reverting to the drag's baseline. A plain undo() would push that
+  // refused state onto the redo stack, so an immediate Ctrl+Y resurrects
+  // exactly the degenerate element the guard exists to prevent. The revert
+  // must restore the top snapshot while leaving the redo future empty.
+
+  it('restores the baseline and stages no redo future', () => {
+    const id = addResistor();
+    const original = useStore.getState().elements[0];
+    useStore.getState().commit();
+    useStore.getState().updateElement(id, { x2: 0, y2: 0 }); // the refused collapse
+    expect(useStore.getState().elements[0].x2).toBe(0);
+
+    useStore.getState().revertToBaseline();
+
+    expect(useStore.getState().elements[0]).toEqual(original);
+    expect(useStore.getState().redoStack).toEqual([]);
+
+    // Ctrl+Y after the refusal brings nothing back.
+    useStore.getState().redo();
+    expect(useStore.getState().elements[0]).toEqual(original);
+  });
+
+  it('with an empty undo stack is a safe no-op', () => {
+    // Nothing committed yet: there is no baseline to restore and nothing to
+    // refuse, so the call must leave the circuit alone.
+    useStore.getState().revertToBaseline();
+
+    expect(useStore.getState().elements).toEqual([]);
+    expect(useStore.getState().redoStack).toEqual([]);
+  });
+});
+
 describe('run-mode mutations kill the stale redo future', () => {
   // toggleSwitchByKey, unblowFuses and updateSettings mutate without pushing
   // an undo entry, and switch throws, fuse state and settings all ride the

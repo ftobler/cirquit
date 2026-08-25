@@ -2036,6 +2036,18 @@ function createAppStore() {
 
   discardRedoFuture: () => set({ redoStack: [] }),
 
+  // The zero-length collapse guards' revert (the post drag onto its partner
+  // and the row or column sweep that folds both posts together): same restore
+  // as undo, but no redo future. A plain undo() would push the just-refused
+  // collapsed geometry onto the redoStack, so an immediate Ctrl+Y would bring
+  // back the degenerate element the guard exists to prevent. The mid-gesture
+  // nuance is unchanged: undo() still drops elementGesture here, which stays
+  // harmless because every caller tears its drag down right after.
+  revertToBaseline: () => {
+    get().undo();
+    set({ redoStack: [] });
+  },
+
   clearPending: () =>
     set((s) =>
       s.pendingParams.size === 0 && s.pendingStates.size === 0

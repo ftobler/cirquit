@@ -580,6 +580,12 @@ export interface AppState {
    *  throws, fuse state and settings all ride the snapshots, so a future left
    *  standing would silently rewind the mutation on Ctrl+Shift+Z. */
   discardRedoFuture(): void;
+  /** Restores the top undo snapshot exactly like `undo` but stages no redo
+   *  future. The zero-length collapse guards revert through this: pushing the
+   *  just-refused collapsed geometry onto the redo stack would let an
+   *  immediate Ctrl+Y resurrect the degenerate element they exist to prevent.
+   *  Callers still tear their drag down right after, as with `undo`. */
+  revertToBaseline(): void;
   /** Drops queued value edits; the frame loop calls this after applying them. */
   clearPending(): void;
 

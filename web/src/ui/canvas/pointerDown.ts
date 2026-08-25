@@ -283,7 +283,9 @@ export function finishPostDrag(drag: Drag, state: AppState): void {
   // almost never meant. Do not delete mid-drag: the user may be passing
   // through on the way somewhere. On release, undo the whole drag and say why.
   if (def && collapsedToPoint(e)) {
-    state.undo();
+    // revertToBaseline, not undo: a plain undo would push the just-refused
+    // collapsed geometry onto the redo stack, and Ctrl+Y would bring it back.
+    state.revertToBaseline();
     state.setStatus('Reverted: that drag would have collapsed the element to a point.');
     return;
   }

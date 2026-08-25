@@ -1216,6 +1216,30 @@ describe('finishPostDrag', () => {
     expect(s.elements.find((e) => e.id === dragged)).toMatchObject({ y1: 80, y2: 80 });
     expect(s.status).toMatch(/collapsed/);
   });
+
+  it('the revert stages no redo future for Ctrl+Y to resurrect', () => {
+    // The refusal exists to keep degenerate geometry out; undo() alone pushes
+    // the just-refused collapsed state onto the redo stack, so an immediate
+    // Ctrl+Y would bring it back.
+    addWire(0, 0, 160, 0);
+    const dragged = addWire(80, 80, 80, 80);
+    useStore.getState().commit();
+    useStore.getState().updateElement(dragged, { x1: 80, y1: 0, x2: 80, y2: 0 });
+
+    finishPostDrag(postDrag(dragged, 2), useStore.getState());
+
+    expect(useStore.getState().redoStack).toEqual([]);
+    expect(useStore.getState().elements.find((e) => e.id === dragged)).toMatchObject({
+      y1: 80,
+      y2: 80,
+    });
+    // And a redo attempt changes nothing.
+    useStore.getState().redo();
+    expect(useStore.getState().elements.find((e) => e.id === dragged)).toMatchObject({
+      y1: 80,
+      y2: 80,
+    });
+  });
 });
 
 describe('selection semantics on pointer-down', () => {

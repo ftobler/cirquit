@@ -537,7 +537,10 @@ export function useCanvasInteractions(
         return e !== undefined && collapsedToPoint(e);
       });
       if (collapsed) {
-        state.undo();
+        // revertToBaseline, not undo: a plain undo would push the just-refused
+        // collapsed geometry onto the redo stack, and Ctrl+Y would bring it
+        // back.
+        state.revertToBaseline();
         state.setStatus('Reverted: that drag would have collapsed the element to a point.');
       }
     }
