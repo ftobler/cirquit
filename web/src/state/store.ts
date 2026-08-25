@@ -109,7 +109,7 @@ import {
   type SimSettings,
 } from '../model/types';
 import type { AppState, ScrollValuePopover, Slider, Snapshot, ViewTransform } from './types';
-import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
+import { APP_PREF_KEYS, loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
 import { loadStoredClipboard, saveStoredClipboard } from './clipboardStorage';
 import { loadScopeDefaults } from './scopeDefaults';
 import { readRecovery } from './recovery';
@@ -273,6 +273,19 @@ const snapshotKey = (s: Snapshot): string =>
     // the top of the stack and undo would skip the step.
     unmatchedScopes: s.unmatchedScopes,
   });
+
+/** The snapshot's settings with the live app-pref values re-applied. SimSettings
+ *  is snapshotted whole, but the pure app prefs (colours, digit counts, font
+ *  size, wheel sensitivity, crosshair, symbol and hitbox toggles) take no undo
+ *  entry of their own, so a stack restore must hand today's values back or
+ *  undoing an unrelated circuit edit would silently rewind them. Header-borne
+ *  keys stay snapshot-carried on purpose: upstream keeps those in the dump
+ *  header, so its undo genuinely rolls them back. */
+function withLiveAppPrefs(snapshotSettings: SimSettings, live: SimSettings): SimSettings {
+  const out = { ...snapshotSettings };
+  for (const k of APP_PREF_KEYS) out[k] = live[k];
+  return out;
+}
 
 const UNDO_LIMIT = 100;
 
@@ -3244,6 +3257,7 @@ function createAppStore() {
     if (!prev) return;
     set({
       ...prev,
+      settings: withLiveAppPrefs(prev.settings, s.settings),
       undoStack: s.undoStack.slice(0, -1),
       redoStack: [...s.redoStack, clone(s)],
       selectedIds: [],
@@ -3278,6 +3292,7 @@ function createAppStore() {
     if (!next) return;
     set({
       ...next,
+      settings: withLiveAppPrefs(next.settings, s.settings),
       redoStack: s.redoStack.slice(0, -1),
       undoStack: [...s.undoStack, clone(s)],
       selectedIds: [],

@@ -2,10 +2,72 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { clearSampleCache, getDataSamples } from '../model/sampleCache';
 import { parseCircuit } from '../io/netlist';
 import { postPatch } from '../render/geometry';
+import { DEFAULT_SETTINGS } from '../model/types';
 import { hasUnsavedChanges, useStore } from './store';
 import { addCapacitor, addResistor, fresh } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
+
+describe('app preferences survive undo and redo', () => {
+  it('undo of an unrelated edit keeps the preferences set after the commit', () => {
+    const id = addResistor();  // one commit, taken while prefs were default
+    useStore.getState().updateSettings({ decimalDigits: 5, wheelSensitivity: 3 });
+
+    useStore.getState().undo();
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(0);
+    // The colour/digit/wheel block rides no undo entry of its own, so the
+    // restore must hand today's values back instead of the snapshot's.
+    expect(s.settings.decimalDigits).toBe(5);
+    expect(s.settings.wheelSensitivity).toBe(3);
+    expect(s.undoStack).toHaveLength(0);
+    void id;
+  });
+
+  it('redo re-applies the live preferences over the restored future', () => {
+    addResistor();
+    useStore.getState().updateSettings({ decimalDigits: 5 });
+    addCapacitor();
+    useStore.getState().undo();
+    // Change the pref again after the undo: redo must not clobber it with
+    // the future snapshot's older value.
+    useStore.getState().updateSettings({ decimalDigits: 7 });
+    useStore.getState().redo();
+    expect(useStore.getState().settings.decimalDigits).toBe(7);
+  });
+
+  it('header-borne keys still rewind with the stack', () => {
+    addResistor();  // snapshot holds voltageRange 5 (the default)
+    useStore.getState().updateSettings({ voltageRange: 42 });
+    useStore.getState().undo();
+    // Upstream keeps these in the dump header, so an undo genuinely rolls
+    // them back; only the pure app-pref keys are exempt.
+    expect(useStore.getState().settings.voltageRange).toBe(DEFAULT_SETTINGS.voltageRange);
+  });
+
+  it('a whole block of preferences survives an undo round trip', () => {
+    addResistor();
+    useStore.getState().updateSettings({
+      decimalDigits: 6,
+      wheelSensitivity: 2,
+      showCrosshair: !DEFAULT_SETTINGS.showCrosshair,
+      positiveColor: '#ff0000',
+      euroGates: !DEFAULT_SETTINGS.euroGates,
+      mouseWheelEdit: !DEFAULT_SETTINGS.mouseWheelEdit,
+    });
+
+    useStore.getState().undo();
+
+    const s = useStore.getState().settings;
+    expect(s.decimalDigits).toBe(6);
+    expect(s.wheelSensitivity).toBe(2);
+    expect(s.showCrosshair).toBe(!DEFAULT_SETTINGS.showCrosshair);
+    expect(s.positiveColor).toBe('#ff0000');
+    expect(s.euroGates).toBe(!DEFAULT_SETTINGS.euroGates);
+    expect(s.mouseWheelEdit).toBe(!DEFAULT_SETTINGS.mouseWheelEdit);
+  });
+});
 
 describe('ctrl-drag post movement undo', () => {
   it('collapses a multi-move post drag into one undo step', () => {
