@@ -102,6 +102,52 @@ fn rejected_set_circuit_keeps_the_previous_circuit_running() {
 }
 
 #[test]
+fn rejected_clamped_elements_keep_the_previous_circuit_running() {
+    // The size clamps reject inside build_element, partway down the same
+    // loop the earlier cases fail in, so the per-stage atomicity that
+    // protects the divider from a bad kind must also protect it from an
+    // oversized LED grid or coil list: the old circuit stays loaded and
+    // keeps solving.
+    let mut c = Circuit::new();
+    c.set_circuit(&divider()).expect("the divider should build");
+
+    let mut oversized_grid = divider();
+    oversized_grid.elements.push(elm(
+        9,
+        "ledArray",
+        &[[500, 0], [500, 16], [516, 0], [516, 16]],
+        &[("sizeX", 17.0), ("sizeY", 8.0)],
+    ));
+    let mut too_many_coils = divider();
+    let mut coils = elm(
+        9,
+        "customTransformer",
+        &[[500, 0]; 66],
+        &[("inductance", 4.0)],
+    );
+    coils.label = Some(vec!["1"; 33].join(","));
+    too_many_coils.elements.push(coils);
+
+    for bad in [oversized_grid, too_many_coils] {
+        c.set_circuit(&bad)
+            .expect_err("the clamped element must be rejected");
+        assert_eq!(c.element_count(), 5);
+        assert_eq!(c.element_ids(), &[1, 2, 3, 4, 5]);
+        let report = c.run(1);
+        assert!(
+            report.converged,
+            "run after a rejected clamp failed: {:?}",
+            report.error
+        );
+        assert!(
+            close(c.node_voltages()[2], 5.0, 1e-9),
+            "midpoint read {}",
+            c.node_voltages()[2]
+        );
+    }
+}
+
+#[test]
 fn an_element_list_over_the_terminal_limit_is_rejected_before_reserving() {
     // The three build reservations used to size themselves from
     // spec.elements.len() before any bound check ran, so a spec claiming an

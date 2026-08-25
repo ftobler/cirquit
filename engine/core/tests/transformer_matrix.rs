@@ -1584,3 +1584,86 @@ fn transformer_matrix_connects_couples_a_loaded_secondary_at_dc() {
 }
 
 // ─── Three-phase motor ───────────────────────────────────────────────────────
+
+// ─── Custom transformer coil cap ───
+
+/// A 32-coil custom transformer: every coil one turn, coil `i` spanning posts
+/// `(2i, 2i+1)` at x = 32i and 32i+16, spaced so neighbouring coils cannot
+/// merge at a shared coordinate. Coil 0 hangs across the 10 V source, the
+/// remaining far posts are grounded, so each open winding reads k·V1 = 9.99 V
+/// exactly as the two-coil case does.
+fn at_cap_spec() -> CircuitSpec {
+    let mut posts: Vec<[i32; 2]> = Vec::new();
+    for i in 0..32usize {
+        posts.push([(32 * i) as i32, 0]);
+        posts.push([(32 * i + 16) as i32, 0]);
+    }
+    let mut elements = vec![elm(
+        1,
+        "customTransformer",
+        &posts,
+        &[("inductance", 4.0), ("couplingCoef", 0.999)],
+    )];
+    elements[0].label = Some(vec!["1"; 32].join(","));
+    elements.push(elm(2, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 10.0)]));
+    elements.push(elm(3, "ground", &[[0, 200]], &[]));
+    for i in 0..32usize {
+        elements.push(elm(
+            10 + i as u32,
+            "ground",
+            &[[(32 * i + 16) as i32, 0]],
+            &[],
+        ));
+    }
+    CircuitSpec {
+        preserve_run: false,
+        elements,
+        options: Some(opts(1e-5, false)),
+        scopes: vec![
+            tr_scope(1, ScopeValue::NodeVoltage, 2),
+            tr_scope(1, ScopeValue::NodeVoltage, 4),
+            tr_scope(1, ScopeValue::NodeVoltage, 30),
+            tr_scope(1, ScopeValue::NodeVoltage, 62),
+        ],
+    }
+}
+
+#[test]
+fn custom_transformer_over_the_coil_cap_is_rejected_by_name() {
+    // 33 comma coils sits just above MAX_CUSTOM_COILS; the rejection must
+    // name kind, id and both counts.
+    let mut spec = at_cap_spec();
+    spec.elements[0].label = Some(vec!["1"; 33].join(","));
+    let err = Circuit::new()
+        .set_circuit(&spec)
+        .expect_err("33 coils must be rejected");
+    assert_eq!(
+        err,
+        "custom transformer (id 1) has 33 coils, above the limit of 32"
+    );
+}
+
+#[test]
+fn custom_transformer_at_the_coil_cap_builds_and_solves() {
+    // The boundary-legal case: set_circuit accepting the element is itself
+    // the post-count proof (the build compares the model's posts against this
+    // spec's 64), and the open windings must still read their k-scaled
+    // secondary voltage after stepping.
+    let mut c = Circuit::new();
+    c.set_circuit(&at_cap_spec()).expect("32 coils must build");
+    let report = c.run(5);
+    assert!(
+        report.converged && c.error().is_none(),
+        "the capped transformer failed to step: {:?}",
+        c.error()
+    );
+    for scope in 0..4 {
+        let v = last_sample(&c, scope);
+        assert!(
+            close(v, 9.99, 1e-4),
+            "open winding behind scope {scope} read {v}, expected 9.99"
+        );
+        let snap = c.scopes()[scope].snapshot();
+        assert!(snap.iter().all(|s| s.is_finite()), "non-finite sample");
+    }
+}

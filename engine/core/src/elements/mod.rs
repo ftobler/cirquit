@@ -327,7 +327,7 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
         "analogMux" => Box::new(analog_mux::AnalogMux::new(spec)),
         "transformer" => Box::new(transformer::Transformer::new_basic(spec)),
         "tappedTransformer" => Box::new(transformer::Transformer::new_tapped(spec)),
-        "customTransformer" => Box::new(transformer::Transformer::new_custom(spec)),
+        "customTransformer" => Box::new(transformer::Transformer::new_custom(spec)?),
         "transmissionLine" => Box::new(transmission_line::TransmissionLine::new(spec)),
         "relay" => Box::new(relay::Relay::new(spec)),
         "relayCoil" => Box::new(relay::RelayCoil::new(spec)),
