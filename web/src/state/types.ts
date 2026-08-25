@@ -86,6 +86,15 @@ export interface SubcircuitStackEntry {
    *  document already dirty at enter keeps its baseline, so its real edits
    *  stay flagged after coming home. */
   cleanAtEnter: boolean;
+  /** When the enclosing document read clean at enter, the non-live baseline
+   *  text it compared clean against. An edited exit rebuilds its undo
+   *  baseline from this text instead of from the live-charged entry capture:
+   *  loading the charged tokens into the undo target would bake the operating
+   *  point into its params and arm hasUnsavedChanges spuriously once the
+   *  model edit is undone. Absent when the document was dirty at enter (the
+   *  entered document itself is then the right undo target) or when nothing
+   *  had ever been saved. */
+  baseline?: string;
 }
 
 /** A point-in-time copy of everything undo needs to restore. Settings and view

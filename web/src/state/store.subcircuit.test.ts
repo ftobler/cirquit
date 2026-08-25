@@ -625,6 +625,77 @@ describe('drill-in document integrity', () => {
     expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(true);
   });
 
+  it('undoing an edited exit of a clean charged circuit reads clean again', () => {
+    // PARALLEL_LINE so deleting one inner resistor keeps every pin on a used
+    // net and the exit write-back succeeds.
+    useStore.getState().loadNetlist(
+      HEADER + 'c 0 0 32 0 4 0.00001 5 0 0\n410 0 64 64 128 1 myCirc\n' + PARALLEL_LINE + '\n',
+    );
+    const capId = useStore.getState().elements.find((e) => e.kind === 'capacitor')!.id;
+    useStore.getState().setLiveStateProvider(() => ({ [capId]: { voltDiff: 8.16 } }));
+    // Clean at enter by app convention: running never arms the guard.
+    expect(hasUnsavedChanges(useStore.getState().lastSaved, useStore.getState().toNetlist())).toBe(
+      false,
+    );
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    // The entry carries the non-live baseline text for exactly this path.
+    expect(useStore.getState().subcircuitStack[0].cleanAtEnter).toBe(true);
+    expect(useStore.getState().subcircuitStack[0].baseline).toBe(
+      useStore.getState().lastSaved,
+    );
+
+    // Edit inside, then leave: one outer undo entry covering the model change.
+    const resistor = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([resistor.id]);
+    useStore.getState().deleteSelected();
+    useStore.getState().exitSubcircuit();
+
+    // The model edit is genuine unsaved work.
+    expect(useStore.getState().subcircuitStack).toHaveLength(0);
+    expect(
+      hasUnsavedChanges(useStore.getState().lastSaved, useStore.getState().toNetlist()),
+    ).toBe(true);
+
+    useStore.getState().undo();
+
+    const s = useStore.getState();
+    expect(s.undoStack).toHaveLength(0);
+    // Every edit is undone, so the guard must not arm: the undo target was
+    // rebuilt from the recorded non-live baseline, not from the live-charged
+    // capture whose tokens would have moved the restored params off it.
+    expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(false);
+  });
+
+  it('a document dirty at enter records no baseline and keeps its edits flagged', () => {
+    useStore.getState().loadNetlist(
+      HEADER + 'r 0 0 160 0 0 1000\n410 0 0 64 64 1 myCirc\n' + PARALLEL_LINE + '\n',
+    );
+    const baseline = useStore.getState().lastSaved;
+    // A real outer edit before drilling in: the document is dirty at enter.
+    const loose = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([loose.id]);
+    useStore.getState().deleteSelected();
+    const afterEdit = useStore.getState().toNetlist();
+
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+    expect(useStore.getState().subcircuitStack[0].cleanAtEnter).toBe(false);
+    expect(useStore.getState().subcircuitStack[0].baseline).toBeUndefined();
+
+    const inner = useStore.getState().elements.find((e) => e.kind === 'resistor')!;
+    useStore.getState().select([inner.id]);
+    useStore.getState().deleteSelected();
+    useStore.getState().exitSubcircuit();
+    useStore.getState().undo();
+
+    const s = useStore.getState();
+    // The pre-drill deletion is real unsaved work and stays flagged after the
+    // model-change undo rewinds to the entered document.
+    expect(s.lastSaved).toBe(baseline);
+    expect(s.toNetlist()).toBe(afterEdit);
+    expect(hasUnsavedChanges(s.lastSaved, s.toNetlist())).toBe(true);
+  });
+
   it('Save As from inside does not move the baseline onto the inner sheet', () => {
     useStore.getState().loadNetlist(outer());
     const baseline = useStore.getState().lastSaved;

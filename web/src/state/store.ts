@@ -2994,6 +2994,7 @@ function createAppStore() {
     // about to be replaced, and the entry is set after the load re-pushed the
     // cleared stack position. The session caches freeze here too: the inner
     // load wipes them like any load, and only the exit brings this world back.
+    const cleanAtEnter = !hasUnsavedChanges(s.lastSaved, s.toNetlist());
     const entry = {
       modelName: name,
       // saveNetlist, not toNetlist: the exit reloads this text, so the outer
@@ -3017,7 +3018,10 @@ function createAppStore() {
       // charge alone never reads dirty against lastSaved, so a charged but
       // unsaved-looking circuit counts as clean here exactly as it does in
       // App.tsx's beforeunload guard.
-      cleanAtEnter: !hasUnsavedChanges(s.lastSaved, s.toNetlist()),
+      cleanAtEnter,
+      // The non-live text the clean check passed against, kept for the edited
+      // exit's undo baseline (see SubcircuitStackEntry.baseline).
+      ...(cleanAtEnter && s.lastSaved !== null ? { baseline: s.lastSaved } : {}),
     };
     const stack = s.subcircuitStack;
     // noBaseline keeps lastSaved on the outer document for the whole session.
@@ -3104,7 +3108,17 @@ function createAppStore() {
     // text, loaded once to parse it, then the after text is loaded and the
     // stack is popped. The view comes back from the entry, the way upstream
     // restores its transform.
-    s.loadNetlist(top.document, { noCenter: true });
+    //
+    // When the document read clean at enter, the baseline is rebuilt from the
+    // recorded non-live text rather than from the live-charged entry capture.
+    // Loading the charged tokens into the undo target would bake the enter-time
+    // operating point into its params while lastSaved still holds the load-time
+    // text, so undoing back to it would arm hasUnsavedChanges with every edit
+    // undone: the exact false positive the no-edit path's rebaseline avoids,
+    // reached here through the stack instead of through lastSaved. A document
+    // dirty at enter (no baseline) keeps the entered document as its target,
+    // so its real edits stay flagged after the undo.
+    s.loadNetlist(top.baseline ?? top.document, { noCenter: true });
     const pre = clone(get());
     pre.view = top.view;
     s.loadNetlist(outer, { noCenter: true });
