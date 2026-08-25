@@ -2927,6 +2927,14 @@ function createAppStore() {
     // the frame loop joins the engine warnings, so a rebuild cannot wipe them.
     const loadProblem = mergeProblem(describeMissingComponents(parsed.unsupported), parsed.warnings);
 
+    // A load is a new document, so an undocked window mirroring the previous
+    // one goes with it. The mirror's vanished-scope check cannot be trusted
+    // here: scope ids are session counters that restart with their module,
+    // so a fresh document's small integer ids can collide with the mirrored
+    // id, and then the window would quietly mirror another circuit's panel.
+    // Any load closes it, including the drill-in round trip's inner loads.
+    get().closeUndockedScope();
+
     set((s) => ({
       elements: resolved,
       scopes,
@@ -3230,6 +3238,9 @@ function createAppStore() {
     // cache: New is a fresh document, so no model from the old one may haunt
     // the new circuit's picker.
     clearUserModels();
+    // Same as a load: the fresh document must not inherit an undocked window
+    // mirroring the old one's scope id.
+    get().closeUndockedScope();
     set((s) => ({
       elements: [],
       scopes: [],

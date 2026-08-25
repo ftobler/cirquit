@@ -333,8 +333,11 @@ export interface AppState {
   shortcuts: ShortcutOverlay;
   /** The open undocked scope window: the id of the scope it mirrors and the
    *  handle postMessage pushes go to. Transient UI state like `dialog`: never
-   *  part of Snapshot, no undo entry, dropped when the child window closes or
-   *  the mirrored scope disappears under it (a remove, an undo, a load). */
+   *  part of Snapshot, no undo entry, closed when the child window closes or
+   *  its scope vanishes under it (a remove, an undo), and closed outright by
+   *  any load or New: a fresh document's small integer scope ids can collide
+   *  with the mirrored one, and then the mirror would silently track another
+   *  circuit's panel. */
   undocked: { scopeId: number; windowRef: Window | null } | null;
 
   /**
