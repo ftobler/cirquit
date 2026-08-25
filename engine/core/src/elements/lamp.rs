@@ -56,14 +56,14 @@ impl Lamp {
     /// checks (LampElm.java:207-215).
     pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let nom_pow = spec.param("nomPower", Self::DEFAULT_NOM_POW);
-        if !(nom_pow > 0.0) {
+        if nom_pow <= 0.0 || nom_pow.is_nan() {
             return Err(format!(
                 "lamp (id {}) nomPower must be positive, got {}",
                 spec.id, nom_pow
             ));
         }
         let nom_v = spec.param("nomVoltage", Self::DEFAULT_NOM_V);
-        if !(nom_v > 0.0) {
+        if nom_v <= 0.0 || nom_v.is_nan() {
             return Err(format!(
                 "lamp (id {}) nomVoltage must be positive, got {}",
                 spec.id, nom_v

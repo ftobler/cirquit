@@ -137,6 +137,13 @@ enum StepError {
     /// condition of the circuit, not the step length, so halving and
     /// retrying must not touch it.
     Stopped(String),
+    /// An element produced a value the matrix must never see: a non-finite
+    /// conductance or source current, or a non-positive resistance, each of
+    /// which the stamper refuses and tallies instead of stamping. Solving
+    /// over the remaining stamps would commit a plausible wrong answer, GMIN
+    /// pinning every orphaned row, so like `Stopped` this fails the attempt
+    /// for good: no timestep length can fix a model overflowing its numbers.
+    BadStamp(String),
 }
 
 pub struct Circuit {
@@ -1062,7 +1069,21 @@ impl Circuit {
             }
             // The set survives onto the circuit so the step loop's fresh
             // Stampers keep treating these sources as collapsed.
+            let (dropped, culprit) = s.take_dropped();
             self.collapsed_vs = s.take_collapsed_sources();
+            if dropped > 0 {
+                // The constant pass refused a stamp, so the snapshot below
+                // would enshrine a half-built matrix. Settle into the same
+                // closure-less state the build_closures failure path does:
+                // run() then no-ops until a fresh build succeeds, and the
+                // error travels out through this return.
+                self.clear_closure_state();
+                return Err(format!(
+                    "Element {} (id {}) produced a non-finite value while stamping; its contribution was dropped.",
+                    self.elements[culprit].kind(),
+                    self.ids[culprit]
+                ));
+            }
         }
         for c in self.closures.iter_mut() {
             c.sys.snapshot();
@@ -1294,6 +1315,9 @@ impl Circuit {
                 }
             }
 
+            // The stamp pass also reports stamps it had to refuse; written
+            // inside the block, read after it.
+            let mut refused_by: Option<usize> = None;
             let converged = {
                 let mut s = Stamper::new(
                     &mut self.closures,
@@ -1319,9 +1343,24 @@ impl Circuit {
                     self.ctx.time = committed_time;
                     return Err(StepError::Stopped(msg));
                 }
+                let (dropped, culprit) = s.take_dropped();
+                if dropped > 0 {
+                    refused_by = Some(culprit);
+                }
                 last_failing = std::mem::take(&mut s.failing);
                 s.converged
             };
+            if let Some(culprit) = refused_by {
+                // A dropped stamp means the remaining stamps describe a
+                // different circuit than the elements think they built, so
+                // the solve would be a plausible lie. Report instead.
+                self.ctx.time = committed_time;
+                return Err(StepError::BadStamp(format!(
+                    "Element {} (id {}) produced a non-finite value while stamping; its contribution was dropped.",
+                    self.elements[culprit].kind(),
+                    self.ids[culprit]
+                )));
+            }
             // The pin stamps happen outside the recorder, so a newly-pinned
             // open current-source row looks "fixed" to the elimination and
             // trips the drift check, falling back to the full path. Exact,
@@ -1460,6 +1499,15 @@ impl Circuit {
                     // A deliberate element stop carries its own message,
                     // upstream's stopMessage shown verbatim. No halving and
                     // no retry: the condition does not depend on the step.
+                    report.converged = false;
+                    report.error = Some(msg);
+                    self.error = report.error.clone();
+                    return report;
+                }
+                Err(StepError::BadStamp(msg)) => {
+                    // A model overflowed whatever number its stamp needed.
+                    // Like an element stop, no halving and no retry: the
+                    // condition does not depend on the step.
                     report.converged = false;
                     report.error = Some(msg);
                     self.error = report.error.clone();

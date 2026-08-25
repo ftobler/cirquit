@@ -41,7 +41,7 @@ impl Fuse {
     /// line behind an open circuit. `set_param` keeps the same rule.
     pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let resistance = spec.param("resistance", Self::DEFAULT_RESISTANCE);
-        if !(resistance > 0.0) {
+        if resistance <= 0.0 || resistance.is_nan() {
             return Err(format!(
                 "fuse (id {}) resistance must be positive, got {}",
                 spec.id, resistance

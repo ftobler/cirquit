@@ -76,6 +76,18 @@ pub struct Stamper<'a> {
     /// per frame is enough, and the earliest element's reason is the one a
     /// user can act on.
     stop: Option<String>,
+    /// Stamps refused this pass because their value was outside the matrix's
+    /// numeric domain: a non-finite conductance or source value, a
+    /// non-positive resistance. Refusing is right (stamping them would
+    /// poison the solve), but the refusal used to be invisible: GMIN pinned
+    /// every orphaned row and the circuit solved to a plausible wrong answer
+    /// that the dense NaN scan could never catch, because it only inspects
+    /// entries that were actually stamped. The solver reads the tally after
+    /// the pass and fails loudly instead.
+    dropped_stamps: u32,
+    /// Element index of the first drop this pass, so the surfaced report can
+    /// name a culprit. First wins, like `stop`.
+    dropped_first_by: usize,
 }
 
 impl<'a> Stamper<'a> {
@@ -102,6 +114,8 @@ impl<'a> Stamper<'a> {
             record: None,
             collapsed_vs: HashSet::new(),
             stop: None,
+            dropped_stamps: 0,
+            dropped_first_by: 0,
         }
     }
 
@@ -204,9 +218,16 @@ impl<'a> Stamper<'a> {
         }
     }
 
-    /// A conductance `g` bridging two nodes.
+    /// A conductance `g` bridging two nodes. An exact zero contributes
+    /// nothing mathematically and is skipped in silence; anything non-finite
+    /// would poison the solve if stamped, so it is refused and tallied (see
+    /// [`Stamper::take_dropped`]).
     pub fn conductance(&mut self, n1: usize, n2: usize, g: f64) {
-        if !g.is_finite() || g == 0.0 {
+        if !g.is_finite() {
+            self.drop_stamp();
+            return;
+        }
+        if g == 0.0 {
             return;
         }
         self.node_pair(n1, n1, g);
@@ -215,17 +236,23 @@ impl<'a> Stamper<'a> {
         self.node_pair(n2, n1, -g);
     }
 
-    /// A resistor of `r` ohms bridging two nodes.
+    /// A resistor of `r` ohms bridging two nodes. A zero or negative value
+    /// stamps no conductance at all, which reads downstream as a silent open
+    /// circuit; a non-finite one would divide into a poisoned matrix. Both
+    /// are refused and tallied rather than ignored.
     pub fn resistor(&mut self, n1: usize, n2: usize, r: f64) {
-        if r > 0.0 && r.is_finite() {
-            self.conductance(n1, n2, 1.0 / r);
+        if !r.is_finite() || r <= 0.0 {
+            self.drop_stamp();
+            return;
         }
+        self.conductance(n1, n2, 1.0 / r);
     }
 
     /// An independent current source delivering `i` amps into `n2`, drawn
     /// from `n1`.
     pub fn current_source(&mut self, n1: usize, n2: usize, i: f64) {
         if !i.is_finite() {
+            self.drop_stamp();
             return;
         }
         self.node_rhs(n1, -i);
@@ -406,5 +433,141 @@ impl<'a> Stamper<'a> {
     #[inline]
     pub fn take_stop(&mut self) -> Option<String> {
         self.stop.take()
+    }
+
+    /// Records one refused stamp against the element currently stamping.
+    /// Two integer writes, so the hot path stays allocation-free.
+    #[inline]
+    fn drop_stamp(&mut self) {
+        if self.dropped_stamps == 0 {
+            self.dropped_first_by = self.current;
+        }
+        self.dropped_stamps = self.dropped_stamps.saturating_add(1);
+    }
+
+    /// Takes the drop tally and the first element that dropped, for the
+    /// solver to surface after the pass.
+    #[inline]
+    pub fn take_dropped(&mut self) -> (u32, usize) {
+        (
+            std::mem::take(&mut self.dropped_stamps),
+            std::mem::replace(&mut self.dropped_first_by, 0),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::matrix::Solver;
+    use crate::spec::SolverType;
+
+    /// A Stamper over one two-node dense closure, the smallest rig that can
+    /// exercise the value guards. Field-wise destructuring keeps every borrow
+    /// disjoint so `stamper` can hand out `&mut` to all of them at once.
+    struct Rig {
+        closures: Vec<Closure>,
+        node_closure: Vec<usize>,
+        node_row: Vec<usize>,
+        vs_closure: Vec<usize>,
+        vs_row: Vec<usize>,
+        element_closure: Vec<usize>,
+    }
+
+    impl Rig {
+        fn new() -> Self {
+            let mut sys = Solver::new();
+            sys.resize(2, SolverType::Dense)
+                .expect("two rows fit the dense cap");
+            Rig {
+                closures: vec![Closure {
+                    node_rows: vec![1, 2],
+                    vs_rows: Vec::new(),
+                    sys,
+                    nonlinear: false,
+                    simplified: None,
+                }],
+                node_closure: vec![0, 0, 0],
+                node_row: vec![0, 0, 1],
+                vs_closure: Vec::new(),
+                vs_row: Vec::new(),
+                // Long enough that set_current can name any culprit index
+                // these tests use.
+                element_closure: vec![0; 16],
+            }
+        }
+
+        fn stamper(&mut self) -> Stamper<'_> {
+            let Rig {
+                closures,
+                node_closure,
+                node_row,
+                vs_closure,
+                vs_row,
+                element_closure,
+            } = self;
+            Stamper::new(
+                closures,
+                node_closure,
+                node_row,
+                vs_closure,
+                vs_row,
+                element_closure,
+            )
+        }
+    }
+
+    #[test]
+    fn non_finite_conductances_are_tallied_and_named() {
+        let mut rig = Rig::new();
+        let mut s = rig.stamper();
+        s.set_current(7);
+        s.conductance(1, 2, f64::NAN);
+        s.conductance(1, 2, f64::INFINITY);
+        assert_eq!(
+            s.take_dropped(),
+            (2, 7),
+            "both drops name the first culprit"
+        );
+        // An exact zero is a mathematical no-op, not a divergence signal.
+        s.conductance(1, 2, 0.0);
+        assert_eq!(s.take_dropped().0, 0);
+        // The finite stamp still lands: one self term of 2 per node.
+        s.conductance(1, 2, 2.0);
+        drop(s);
+        assert_eq!(rig.closures[0].sys.get(0, 0), 2.0);
+    }
+
+    #[test]
+    fn non_positive_resistances_are_tallied() {
+        let mut rig = Rig::new();
+        {
+            let mut s = rig.stamper();
+            s.set_current(3);
+            s.resistor(1, 2, 0.0);
+            s.resistor(1, 2, -5.0);
+            s.resistor(1, 2, f64::NAN);
+            assert_eq!(s.take_dropped(), (3, 3));
+            s.resistor(1, 2, 1000.0);
+            assert_eq!(s.take_dropped().0, 0);
+        }
+        // The finite resistor stamped its 1 mS conductance; the refusals
+        // before it left nothing behind.
+        assert_eq!(rig.closures[0].sys.get(0, 0), 1e-3);
+        assert_eq!(rig.closures[0].sys.get(1, 1), 1e-3);
+    }
+
+    #[test]
+    fn non_finite_source_currents_are_tallied() {
+        let mut rig = Rig::new();
+        let mut s = rig.stamper();
+        s.set_current(11);
+        s.current_source(1, 2, f64::NAN);
+        s.current_source(1, 2, f64::NEG_INFINITY);
+        assert_eq!(s.take_dropped(), (2, 11));
+        // A finite current stops being tallied; its two half-injections land
+        // in the right-hand side, which the solve tests cover end to end.
+        s.current_source(1, 2, 1e-3);
+        assert_eq!(s.take_dropped().0, 0);
     }
 }

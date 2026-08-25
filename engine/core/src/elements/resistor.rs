@@ -18,7 +18,7 @@ impl Resistor {
     /// positivity rule, so both entry points agree.
     pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let resistance = spec.param("resistance", 1000.0);
-        if !(resistance > 0.0) {
+        if resistance <= 0.0 || resistance.is_nan() {
             return Err(format!(
                 "resistor (id {}) resistance must be positive, got {}",
                 spec.id, resistance

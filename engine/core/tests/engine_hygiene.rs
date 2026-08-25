@@ -5,8 +5,8 @@
 
 mod common;
 
-use common::*;
 use circuit_core::{Circuit, CircuitSpec};
+use common::*;
 
 /// A 10 V source across two 1k resistors: the reusable good circuit for the
 /// rejection tests.
@@ -15,8 +15,18 @@ fn divider(resistance_a: f64, resistance_b: f64) -> CircuitSpec {
         preserve_run: false,
         elements: vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
-            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", resistance_a)]),
-            elm(3, "resistor", &[[100, 0], [100, 100]], &[("resistance", resistance_b)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", resistance_a)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", resistance_b)],
+            ),
             elm(4, "wire", &[[100, 100], [0, 100]], &[]),
             elm(5, "ground", &[[0, 100]], &[]),
         ],
@@ -26,7 +36,6 @@ fn divider(resistance_a: f64, resistance_b: f64) -> CircuitSpec {
 }
 
 // ─── E3: build-time rejection of values that would stamp as nothing ───
-
 
 #[test]
 fn a_zero_negative_or_nan_resistance_line_is_rejected_at_build() {
@@ -43,7 +52,10 @@ fn a_zero_negative_or_nan_resistance_line_is_rejected_at_build() {
             err.contains("resistor") && err.contains("resistance"),
             "rejection of r = {r} should name the element and parameter, got: {err}"
         );
-        assert!(err.contains("id 2"), "rejection should carry the id, got: {err}");
+        assert!(
+            err.contains("id 2"),
+            "rejection should carry the id, got: {err}"
+        );
     }
 }
 
@@ -76,7 +88,12 @@ fn a_zero_resistance_fuse_line_is_rejected_at_build() {
                 preserve_run: false,
                 elements: vec![
                     elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 3.0)]),
-                    elm(2, "fuse", &[[0, 0], [0, 100]], &[("resistance", r), ("i2t", 1e6)]),
+                    elm(
+                        2,
+                        "fuse",
+                        &[[0, 0], [0, 100]],
+                        &[("resistance", r), ("i2t", 1e6)],
+                    ),
                     elm(3, "ground", &[[0, 100]], &[]),
                 ],
                 options: Some(opts(1e-3, false)),
@@ -234,4 +251,66 @@ fn the_walk_still_damps_exactly_one_of_a_parallel_ideal_pair() {
         close(v, 0.5, 1e-6),
         "the pair should settle at the charge-weighted 0.5 V, got {v}"
     );
+}
+
+// ─── E2: a non-finite stamp is surfaced, never dropped into silence ───
+
+#[test]
+fn a_non_finite_current_source_value_is_surfaced_at_build() {
+    // The stamper's guard used to return early on a non-finite value, so the
+    // contribution vanished, GMIN pinned the orphaned node, and the circuit
+    // solved to a plausible wrong answer nothing downstream could see. The
+    // build must now refuse it loudly.
+    // The source sits in parallel with a resistor, so its terminals have a
+    // DC path and the element stamps as a real current source rather than
+    // falling into the broken-source stand-in resistor.
+    let mut c = Circuit::new();
+    let err = c
+        .set_circuit(&CircuitSpec {
+            preserve_run: false,
+            elements: vec![
+                elm(1, "resistor", &[[0, 0], [0, 16]], &[("resistance", 1000.0)]),
+                elm(2, "current", &[[0, 0], [0, 16]], &[("current", f64::NAN)]),
+                elm(3, "ground", &[[0, 16]], &[]),
+            ],
+            options: Some(opts(1e-5, false)),
+            scopes: Vec::new(),
+        })
+        .expect_err("a NaN source current must not load");
+    assert!(
+        err.contains("non-finite") && err.contains("id 2"),
+        "rejection should name the element and say why, got: {err}"
+    );
+}
+
+#[test]
+fn a_lamp_computing_an_out_of_range_resistance_fails_the_step_loudly() {
+    // A hand-edited `temp` token below about 190 K drives the filament curve
+    // negative. The stamper's resistor guard drops such a stamp, which used
+    // to make the lamp simply vanish from the matrix mid-run; now the step
+    // fails and names the element instead of committing a plausible lie.
+    let mut c = Circuit::new();
+    c.set_circuit(&CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "lamp", &[[0, 0], [0, 100]], &[("temp", 150.0)]),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        options: Some(opts(1e-3, false)),
+        scopes: Vec::new(),
+    })
+    .expect("the lamp's bad temperature cannot be seen until it stamps");
+    let report = c.run(1);
+    assert!(!report.converged, "the step must not report success");
+    let msg = report.error.expect("the failure must carry a message");
+    assert!(
+        msg.contains("non-finite") || msg.contains("dropped"),
+        "the message should explain the dropped stamp, got: {msg}"
+    );
+    assert!(
+        msg.contains("lamp") && msg.contains("id 2"),
+        "the message should name the offending element, got: {msg}"
+    );
+    assert!(c.error().is_some(), "the side channel must carry it too");
 }
