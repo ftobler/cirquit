@@ -297,7 +297,7 @@ describe('drawScope auto-scale window', () => {
       const { ctx } = mkCtx();
       drawScope(ctx, engine, scope, w, h, emptyCursor(), 0, 5e-6, false, 3);
     }
-    expect(scaleStateFor(p.id, p.value ?? undefined).gridMax).toBeLessThan(0.2);
+    expect(scaleStateFor(scope.id, 'voltage').gridMax).toBeLessThan(0.2);
   });
 });
 

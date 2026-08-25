@@ -3,13 +3,14 @@
  * `calcPlotScale` (doubling), `reduceRange` (halving) and `calcGridParams`
  * (zero placement), plus the 1-2-5-10 grid series.
  *
- * The scale state is keyed by plot id in a module-level map so it survives
- * frame redraws. All functions are pure; the map is the only state and it is
- * pruned by the panel each frame.
+ * The scale state lives in a module-level map so it survives frame redraws,
+ * keyed by scope id and units family. All functions are pure; the map is the
+ * only state and it is pruned by the panel each frame.
  */
 
-/** Sticky per-plot scale state: the power-of-two display maximum and whether
- *  the display has room for negative values. */
+/** Sticky scale state shared by one units family on one scope: the
+ *  power-of-two display maximum and whether the display has room for negative
+ *  values. */
 export interface ScaleState {
   gridMax: number;
   showNegative: boolean;
@@ -35,23 +36,48 @@ export interface GridParams {
   showNegative: boolean;
 }
 
-const states = new Map<number, ScaleState>();
+// Upstream keeps one scale per units category per scope: `double scale[]`
+// indexed by UNITS_V/A/W/OHMS/C, defaulted at initialize (Scope.java:266-267)
+// and read and written by calcPlotScale through `scale[plot.units]`
+// (Scope.java:724, 739). Same-unit traces therefore share a gridline set and
+// overlay exactly; keying per plot instead would let two stacked voltage
+// traces zoom apart.
+const states = new Map<number, Map<string, ScaleState>>();
+
+/** The key inside a scope: the plot's units family, '' for raw-only plots
+ *  (they never sample, so their entry only ever holds the default). */
+const familyOf = (value?: string | null): string => value ?? '';
 
 /** Default sticky scale per units, matching upstream's `scale[]` initial
  *  values: V/W/Ohm/C start at 5, A at 0.1 (Scope.java:266-267). */
-function defaultGridMax(value?: string): number {
+function defaultGridMax(value?: string | null): number {
   return value === 'current' ? 0.1 : 5;
 }
 
-export function scaleStateFor(plotId: number, value?: string): ScaleState {
-  return states.get(plotId) ?? { gridMax: defaultGridMax(value), showNegative: false };
+export function scaleStateFor(scopeId: number, value?: string | null): ScaleState {
+  return (
+    states.get(scopeId)?.get(familyOf(value)) ?? {
+      gridMax: defaultGridMax(value),
+      showNegative: false,
+    }
+  );
 }
 
-export function setScaleState(plotId: number, state: ScaleState): void {
-  states.set(plotId, state);
+export function setScaleState(
+  scopeId: number,
+  value: string | null | undefined,
+  state: ScaleState,
+): void {
+  let perScope = states.get(scopeId);
+  if (!perScope) {
+    perScope = new Map();
+    states.set(scopeId, perScope);
+  }
+  perScope.set(familyOf(value), state);
 }
 
-/** Drops scale state for ids that no longer exist (a removed scope's plots). */
+/** Drops every units family of scopes that no longer exist. Takes live scope
+ *  ids, like pruneXYScales. */
 export function pruneScaleStates(live: Iterable<number>): void {
   const keep = new Set(live);
   for (const id of states.keys()) {
@@ -59,7 +85,7 @@ export function pruneScaleStates(live: Iterable<number>): void {
   }
 }
 
-/** Drops scale state for the given ids (the Reset command). */
+/** Drops every units family of the given scopes (the Reset command). */
 export function clearScaleStates(ids: Iterable<number>): void {
   for (const id of ids) states.delete(id);
 }

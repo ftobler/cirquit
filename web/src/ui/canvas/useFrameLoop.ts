@@ -212,9 +212,10 @@ export function useFrameLoop(
           // on the plot ids the load allocated. Memoised on the element list.
           const allScopes = traceScopes(scopes, elements);
 
-          // Drop sticky auto-scale state for plots that no longer exist (a removed
-          // scope), keeping the map bounded across a session.
-          pruneScaleStates(allScopes.flatMap((s) => s.plots.map((p) => p.id)));
+          // Drop sticky auto-scale state for scopes that no longer exist (a
+          // removed panel or element), keeping the map bounded across a
+          // session.
+          pruneScaleStates(allScopes.map((s) => s.id));
           pruneXYScales(allScopes.map((s) => s.id));
           // Same rule for the X-Y persistence canvases: an embedded window has
           // no docked panel to clear its entry on unmount, so a deleted 403

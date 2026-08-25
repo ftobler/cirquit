@@ -93,7 +93,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
       // setManualScale(true, true) (Scope.java:172-183).
       for (const plot of scope.plots) {
         if (plot.manScale === null) {
-          const gridMax = scaleStateFor(plot.id).gridMax;
+          const gridMax = scaleStateFor(scope.id, plot.value).gridMax;
           useStore.getState().setPlotManScale(
             plot.id,
             seedManScale(gridMax, scope.manDivisions || MAN_DIVISIONS),

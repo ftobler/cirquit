@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Scope, ScopePlot, ScopeTrigger, ScopeValue } from '../engine/simulator';
 import { measurementsFromScope } from '../engine/simulator';
 import { scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
-import { positionToOffset, clearScaleStates } from '../scope/scale';
+import { positionToOffset } from '../scope/scale';
 import {
   allocateId,
   parseCircuit,
@@ -2509,15 +2509,17 @@ function createAppStore() {
     // Removing must never empty the panel.
     if (!scope || scope.plots.length <= 1) return;
     s.commit();
+    // The removed plot leaves no sticky-scale entry behind: the auto-scale is
+    // keyed by (scope id, units family) like upstream's per-scope scale[]
+    // (Scope.java:266-267), so the family entry either still backs a sibling
+    // trace on this panel or dies with the scope when the frame loop prunes
+    // dead ids.
     set((st) => ({
       scopes: st.scopes.map((x) =>
         x.id === scopeId ? { ...x, plots: x.plots.filter((p) => p.id !== plotId) } : x,
       ),
       ...bumpRevision(st),
     }));
-    // The sticky auto-scale is keyed by plot id outside the store; a dead id
-    // must not hand its scale to whatever comes after, like Reset does.
-    clearScaleStates([plotId]);
   },
 
   /** The properties dialog's Show Vce vs Ic row, upstream's showvcevsic menu

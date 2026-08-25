@@ -3,6 +3,7 @@ import {
   axisSamplesFit,
   barToSpeed,
   calcGridParams,
+  clearScaleStates,
   dragPlotYPosition,
   gridStep,
   gridStepX,
@@ -277,13 +278,40 @@ describe('scale state map', () => {
     expect(scaleStateFor(99, 'current').gridMax).toBe(0.1);
   });
 
-  it('keeps state per plot id across calls and prunes removed ids', () => {
-    setScaleState(1, { gridMax: 40, showNegative: true });
-    setScaleState(2, { gridMax: 5, showNegative: false });
-    expect(scaleStateFor(1, 'voltage')).toEqual({ gridMax: 40, showNegative: true });
-    expect(scaleStateFor(2, 'voltage').gridMax).toBe(5);
-    pruneScaleStates([1]);
-    expect(scaleStateFor(1, 'voltage').gridMax).toBe(40);
-    expect(scaleStateFor(2, 'voltage').gridMax).toBe(5);  // 5 = default, id 2 was pruned
+  it('shares one state across same-unit plots of one scope, like upstream scale[]', () => {
+    // Upstream reads and writes scale[plot.units] per scope (Scope.java:724,
+    // 739), so two voltage traces on one panel converge onto one entry no
+    // matter which plot id wrote it, and a second scope stays independent.
+    setScaleState(7, 'voltage', { gridMax: 40, showNegative: true });
+    expect(scaleStateFor(7, 'voltage')).toEqual({ gridMax: 40, showNegative: true });
+    expect(scaleStateFor(8, 'voltage')).toEqual({ gridMax: 5, showNegative: false });
+  });
+
+  it('keeps unit families independent within one scope', () => {
+    // The V and A columns of one panel zoom separately, as upstream's
+    // UNITS_V/UNITS_A entries do.
+    setScaleState(7, 'current', { gridMax: 40, showNegative: true });
+    expect(scaleStateFor(7, 'current')).toEqual({ gridMax: 40, showNegative: true });
+    expect(scaleStateFor(7, 'voltage')).toEqual({ gridMax: 5, showNegative: false });
+  });
+
+  it('prunes whole scopes by live scope id, dropping every family', () => {
+    setScaleState(1, 'voltage', { gridMax: 40, showNegative: true });
+    setScaleState(1, 'current', { gridMax: 0.2, showNegative: false });
+    setScaleState(2, 'voltage', { gridMax: 9, showNegative: false });
+    pruneScaleStates([2]);
+    expect(scaleStateFor(1, 'voltage')).toEqual({ gridMax: 5, showNegative: false });  // pruned -> default
+    expect(scaleStateFor(1, 'current')).toEqual({ gridMax: 0.1, showNegative: false });
+    expect(scaleStateFor(2, 'voltage')).toEqual({ gridMax: 9, showNegative: false });  // still live
+  });
+
+  it('clearScaleStates wipes every family of the named scopes only', () => {
+    setScaleState(1, 'voltage', { gridMax: 40, showNegative: true });
+    setScaleState(1, 'current', { gridMax: 0.2, showNegative: false });
+    setScaleState(2, 'voltage', { gridMax: 9, showNegative: false });
+    clearScaleStates([1]);
+    expect(scaleStateFor(1, 'voltage').gridMax).toBe(5);
+    expect(scaleStateFor(1, 'current').gridMax).toBe(0.1);
+    expect(scaleStateFor(2, 'voltage').gridMax).toBe(9);
   });
 });

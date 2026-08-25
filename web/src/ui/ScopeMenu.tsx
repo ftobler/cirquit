@@ -137,7 +137,10 @@ export function ScopeMenu({ engine, nameOf }: Props) {
     {
       label: 'Reset',
       action: () => {
-        clearScaleStates(scope.plots.map((p) => p.id));
+        // The sticky scales are per (scope, units family): wiping the scope's
+        // whole entry covers every trace at once, like upstream resetting
+        // scale[] in initialize().
+        clearScaleStates([scope.id]);
         useStore.getState().resetScope(scope.id);
       },
     },
