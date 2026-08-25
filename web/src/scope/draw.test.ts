@@ -10,10 +10,10 @@ import type { ThemeColors } from '../model/types';
 import { makeTheme } from '../render/draw';
 import { nextModScale, pruneScaleStates, scaleStateFor } from './scale';
 import { PHASE_COLOR } from './spectrum';
+import { clearXYPersistence } from './xyPersistence';
 import {
   advanceFadeCounter,
   assignColor,
-  clearXYPersistence,
   DIVERGED_CAPTION,
   divergedCaption,
   drawGridLines,

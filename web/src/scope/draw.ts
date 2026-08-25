@@ -40,6 +40,7 @@ import { buildCsv } from './csv';
 import { tracePolyline } from './trace';
 import { drawInfo, type InfoLine } from './info';
 import { drawFFT, drawPhaseBand } from './spectrum';
+import { xyPersistenceFor } from './xyPersistence';
 
 export const UNIT: Record<ScopeValue, string> = {
   voltage: 'V',
@@ -739,27 +740,6 @@ function drawCursor(
  *  math plus the frequency grid and cursor readout in `spectrum.ts`. */
 
 
-/** Offscreen persistence canvases for X-Y mode, keyed by scope id. The locus
- *  is drawn into one and faded over time, so slow signals leave a trail
- *  (ScopePlot2d.java:191-221). */
-const xyPersistence = new Map<
-  number,
-  {
-    canvas: HTMLCanvasElement;
-    ctx: CanvasRenderingContext2D | null;
-    w: number;
-    h: number;
-    lastTrailSimTime: number;
-    /** Frames since the last fade; see FADE_FRAME_INTERVAL. */
-    fadeCounter: number;
-  }
->();
-
-/** Drops a scope's X-Y persistence canvas (called when a scope is removed). */
-export function clearXYPersistence(id: number): void {
-  xyPersistence.delete(id);
-}
-
 /** Logarithmic trail-persistence slider mapping (ScopePropertiesDialog.java:
  *  763-776): slider 0 = 0 timesteps (the default fade); slider n ->
  *  round(10^(n/10)) timesteps. */
@@ -935,14 +915,7 @@ function drawXY(
   const xsTo = (v: number) => (w * (1 + v / scale.x) * 0.499) | 0;
   const ysTo = (v: number) => (h * (1 - v / scale.y) * 0.499) | 0;
 
-  let entry = xyPersistence.get(scope.id);
-  if (!entry || entry.w !== w || entry.h !== h) {
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    entry = { canvas, ctx: canvas.getContext('2d'), w, h, lastTrailSimTime: -1, fadeCounter: 0 };
-    xyPersistence.set(scope.id, entry);
-  }
+  const entry = xyPersistenceFor(scope.id, w, h);
   const pctx = entry.ctx;
   if (!pctx) return;
   // Fade the previous trace by repainting the background with the trail alpha:

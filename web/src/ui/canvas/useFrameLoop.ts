@@ -15,6 +15,7 @@ import { cachedBadConnectionPoints, postDotPoints, shouldDrawDot } from '../../r
 import { scopeWidth } from '../../scope/geometry';
 import { traceScopes } from '../../scope/embedded';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
+import { pruneXYPersistence } from '../../scope/xyPersistence';
 import { GRID_SIZE } from '../../model/types';
 import { wireSegments } from '../../model/wirePlacement';
 import { mergeProblem, makeGhostElement, useStore } from '../../state/store';
@@ -215,6 +216,10 @@ export function useFrameLoop(
           // scope), keeping the map bounded across a session.
           pruneScaleStates(allScopes.flatMap((s) => s.plots.map((p) => p.id)));
           pruneXYScales(allScopes.map((s) => s.id));
+          // Same rule for the X-Y persistence canvases: an embedded window has
+          // no docked panel to clear its entry on unmount, so a deleted 403
+          // element (or another document load) would leak one canvas each.
+          pruneXYPersistence(allScopes.map((s) => s.id));
 
           // Reload the engine whenever the netlist changed.
           if (engine && loadedRevision.current !== state.revision) {

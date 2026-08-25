@@ -17,7 +17,6 @@ import {
   inSettingsWheel,
 } from '../scope/geometry';
 import {
-  clearXYPersistence,
   drawScope,
   emptyCursor,
   isDrawable,
@@ -27,6 +26,7 @@ import {
   type ScopeCursor,
 } from '../scope/draw';
 import { clearXYScale, dragPlotYPosition } from '../scope/scale';
+import { clearXYPersistence } from '../scope/xyPersistence';
 import { useStore } from '../state/store';
 import { ScopeMenu } from './ScopeMenu';
 import { ScopeProperties } from './ScopeProperties';
