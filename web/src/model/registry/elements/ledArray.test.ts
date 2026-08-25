@@ -64,7 +64,7 @@ describe('ledArray geometry clamps', () => {
     // bounded so nothing unbounded is laid out while the banner shows.
     const e = mk({ sizeX: 100000, sizeY: 8 });
     expect(e.params.sizeX).toBe(100000);
-    expect(LED_ARRAY_DEF.posts!(e)).toHaveLength(24); // 16 clamped + 8
+    expect(LED_ARRAY_DEF.posts!(e)).toHaveLength(24);  // 16 clamped + 8
     expect(() => LED_ARRAY_DEF.draw!(ctx(), e)).not.toThrow();
   });
 

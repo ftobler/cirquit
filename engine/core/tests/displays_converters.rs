@@ -1058,15 +1058,24 @@ fn led_array_sixteen_by_sixteen_lights_every_cell_from_one_low_column_bus() {
             &[],
         ));
     }
+    // Grouped by kind in row order so the flat index ranges pinned above
+    // hold exactly: every feed wire lands in 33..49, every resistor in
+    // 49..65, every rail in 65..81.
     for i in 0..16usize {
         let y = (16 * i) as i32;
         elements.push(elm(400 + i as u32, "wire", &[[-48, y], [-16, y]], &[]));
+    }
+    for i in 0..16usize {
+        let y = (16 * i) as i32;
         elements.push(elm(
             500 + i as u32,
             "resistor",
             &[[-80, y], [-48, y]],
             &[("resistance", 1000.0)],
         ));
+    }
+    for i in 0..16usize {
+        let y = (16 * i) as i32;
         elements.push(elm(
             600 + i as u32,
             "rail",

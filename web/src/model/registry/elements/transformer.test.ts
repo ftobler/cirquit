@@ -94,7 +94,7 @@ describe('custom transformer coil cap', () => {
     e.params.coilCount = 1000000000;
     CUSTOM_TRANSFORMER_DEF.parse!([], e);
     expect(e.params.coilCount).toBeUndefined();
-    expect(Object.keys(e.params).filter((k) => k.startsWith('coilCurrent'))).toHaveLength(3); // what "1,1:1" actually describes
+    expect(Object.keys(e.params).filter((k) => k.startsWith('coilCurrent'))).toHaveLength(3);  // what "1,1:1" actually describes
     const out = CUSTOM_TRANSFORMER_DEF.dump!(e) as unknown[];
     expect(out[3]).toBe(3);
     expect(out).toHaveLength(4 + 3);
