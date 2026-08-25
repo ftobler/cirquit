@@ -2889,6 +2889,25 @@ describe('scope speed', () => {
     expect(line).toBe('o 0 1 0 4099 20 0.05 0 2 0 3');
   });
 
+  it('a no-op speed set writes no state and queues no engine patch', () => {
+    const id = addResistor();
+    useStore.getState().addScope(id, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    const speed = useStore.getState().scopes[0].speed;
+    const beforeScopes = useStore.getState().scopes;
+    const beforeRevision = useStore.getState().revision;
+
+    useStore.getState().setScopeSpeed(scopeId, speed);
+
+    // The guard returns before any set: the scopes array keeps its identity,
+    // so nothing notifies and nothing re-renders. The engine patch queue is
+    // driven by the scope fingerprint those scopes feed, so state that did
+    // not change cannot queue one either.
+    expect(useStore.getState().scopes).toBe(beforeScopes);
+    expect(useStore.getState().scopes[0].speed).toBe(speed);
+    expect(useStore.getState().revision).toBe(beforeRevision);
+  });
+
   it('loadNetlist restores a non-default o-line speed and saves it back', () => {
     useStore
       .getState()

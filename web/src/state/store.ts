@@ -306,9 +306,11 @@ function withLiveAppPrefs(snapshotSettings: SimSettings, live: SimSettings): Sim
   return out as SimSettings;
 }
 
-/** Undo entries beyond this cap fall off the front of the stack. Every push
- *  site slices, so the oldest entries are evicted silently, without notice
- *  and without touching the redo side. */
+/** Undo entries beyond this cap fall off the front of the stack, silently
+ *  and without touching the redo side. The push sites that can meet a full
+ *  stack (commit, the drill-in exit, recovery) slice; redo pushes without
+ *  slicing because it writes back onto a stack that just shrank by its pop,
+ *  so the cap holds on its own there. */
 const UNDO_LIMIT = 100;
 
 /** Push-time fingerprint cache, keyed by snapshot identity. A fingerprint is
