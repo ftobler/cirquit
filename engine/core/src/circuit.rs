@@ -847,43 +847,49 @@ impl Circuit {
     /// ground symbol is merged onto node 0, exactly what upstream's
     /// `CircuitNode.ground` case (FindPathInfo.java:42-46, :71-83) provides.
     /// `skip` is the element being validated, never traversed.
+    ///
+    /// The pending-node list is explicit rather than a call stack: the depth
+    /// of this walk equals the traversed chain length, and [`MAX_MATRIX_ROWS`]
+    /// admits far more nodes than any wasm stack can recurse over, so a few
+    /// thousand series ideal capacitors would abort the runtime instead of
+    /// answering. Reachability has no order-sensitive work in it, so popping
+    /// in reverse discovery order changes nothing observable.
     fn cap_v_path(&self, start: usize, dest: usize, skip: usize) -> bool {
         let mut visited = vec![false; self.node_count];
-        self.cap_v_visit(start, dest, skip, &mut visited)
-    }
-
-    fn cap_v_visit(&self, n: usize, dest: usize, skip: usize, visited: &mut [bool]) -> bool {
-        if n == dest {
-            return true;
-        }
-        if visited[n] {
-            return false;
-        }
-        visited[n] = true;
-        for (ei, elm) in self.elements.iter().enumerate() {
-            if ei == skip {
+        let mut pending = vec![start];
+        while let Some(n) = pending.pop() {
+            if n == dest {
+                return true;
+            }
+            if visited[n] {
                 continue;
             }
-            if !(elm.is_ideal_capacitor() || elm.is_voltage_source()) {
-                continue;
-            }
-            let nodes = &elm.base().nodes;
-            if elm.post_count() >= 2 {
-                if nodes[0] == n && self.cap_v_visit(nodes[1], dest, skip, visited) {
-                    return true;
+            visited[n] = true;
+            for (ei, elm) in self.elements.iter().enumerate() {
+                if ei == skip {
+                    continue;
                 }
-                if nodes[1] == n && self.cap_v_visit(nodes[0], dest, skip, visited) {
-                    return true;
+                if !(elm.is_ideal_capacitor() || elm.is_voltage_source()) {
+                    continue;
                 }
-            } else {
-                // A rail's single post spans to the reference node, which is
-                // the port's node 0 in the merged graph, so it crosses either
-                // way: terminal to ground, and ground to terminal.
-                if nodes[0] == n && self.cap_v_visit(GROUND, dest, skip, visited) {
-                    return true;
-                }
-                if n == GROUND && self.cap_v_visit(nodes[0], dest, skip, visited) {
-                    return true;
+                let nodes = &elm.base().nodes;
+                if elm.post_count() >= 2 {
+                    if nodes[0] == n {
+                        pending.push(nodes[1]);
+                    }
+                    if nodes[1] == n {
+                        pending.push(nodes[0]);
+                    }
+                } else {
+                    // A rail's single post spans to the reference node, which is
+                    // the port's node 0 in the merged graph, so it crosses either
+                    // way: terminal to ground, and ground to terminal.
+                    if nodes[0] == n {
+                        pending.push(GROUND);
+                    }
+                    if n == GROUND {
+                        pending.push(nodes[0]);
+                    }
                 }
             }
         }

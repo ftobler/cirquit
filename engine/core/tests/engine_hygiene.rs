@@ -27,6 +27,7 @@ fn divider(resistance_a: f64, resistance_b: f64) -> CircuitSpec {
 
 // ─── E3: build-time rejection of values that would stamp as nothing ───
 
+
 #[test]
 fn a_zero_negative_or_nan_resistance_line_is_rejected_at_build() {
     // Upstream computes 1/r and dies loudly (SimulationManager.java:1184-1188);
@@ -148,4 +149,89 @@ fn a_zero_max_resistance_potentiometer_still_builds() {
     c.run(5);
     let amps = c.element_currents();
     assert!(amps[1].is_finite(), "track current must stay finite");
+}
+
+// ─── E1: the capacitor-voltage walk on an explicit stack ───
+
+/// A ground symbol, a chain of `n` DC voltage sources stacked end to end, and
+/// a capacitor from the top of the chain to ground. The capacitor's CAP_V
+/// walk can only cross ideal capacitors and voltage sources, so it enters the
+/// chain and traverses all of it before concluding there is no loop: the
+/// traversal depth equals the chain length. Nothing in the circuit is
+/// solvable-interesting; it exists to drive the walk deep.
+fn deep_source_chain(n: usize) -> CircuitSpec {
+    let mut elements = vec![elm(1, "ground", &[[-16, 0]], &[])];
+    let mut id = 2u32;
+    for k in 0..n {
+        elements.push(elm(
+            id,
+            "voltage",
+            &[[0, 16 * k as i32], [0, 16 * (k + 1) as i32]],
+            &[("maxVoltage", 0.0)],
+        ));
+        id += 1;
+    }
+    elements.push(elm(
+        id,
+        "capacitor",
+        &[[0, 16 * n as i32], [32, 16 * n as i32]],
+        &[],
+    ));
+    id += 1;
+    elements.push(elm(id, "ground", &[[32, 16 * n as i32]], &[]));
+    CircuitSpec {
+        preserve_run: false,
+        elements,
+        options: Some(opts(5e-6, false)),
+        scopes: Vec::new(),
+    }
+}
+
+#[test]
+fn a_deep_cap_v_chain_walks_without_recursing_the_stack_away() {
+    // Before the explicit stack, this walk was the one recursive traversal in
+    // the module, and its depth equalled the traversed chain length:
+    // MAX_MATRIX_ROWS admits 100k nodes against a ~1 MiB wasm stack, so a few
+    // thousand series capacitors aborted instead of erroring. The test runs
+    // on a deliberately small thread stack so the recursion (or its absence)
+    // is visible on native too: with recursion, 4000 frames do not fit.
+    const CHAIN: usize = 4000;
+    let result = std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(|| -> Result<(bool, usize, Vec<f64>), String> {
+            let mut c = Circuit::new();
+            c.set_circuit(&deep_source_chain(CHAIN))?;
+            let report = c.run(10);
+            Ok((report.converged, c.node_count(), c.node_voltages().to_vec()))
+        })
+        .expect("test thread spawns")
+        .join()
+        .expect("deep walk must not panic")
+        .expect("the deep circuit must analyse");
+    let (converged, nodes, volts) = result;
+    assert!(converged, "the chained circuit must step");
+    // n sources give n + 1 distinct non-ground nodes plus the reference.
+    assert_eq!(nodes, CHAIN + 2);
+    assert!(
+        volts.iter().all(|v| v.is_finite()),
+        "every solved voltage must be finite"
+    );
+}
+
+#[test]
+fn the_walk_still_damps_exactly_one_of_a_parallel_ideal_pair() {
+    // Visit-order semantics are reachability here, so the conversion to an
+    // explicit stack must not move the damping decision: of two parallel
+    // ideal capacitors, exactly one gains a series resistance (one internal
+    // node), and the charge shared between 1 V and 0 V settles on the common
+    // node at the charge-weighted average, 0.5 V.
+    let dt = 5e-9;
+    let mut c = parallel_ideal_pair(dt);
+    assert_eq!(c.node_count(), 3, "exactly one capacitor may be damped");
+    c.run(200);
+    let v = c.node_voltages()[1];
+    assert!(
+        close(v, 0.5, 1e-6),
+        "the pair should settle at the charge-weighted 0.5 V, got {v}"
+    );
 }
