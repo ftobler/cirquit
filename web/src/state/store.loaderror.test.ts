@@ -5,7 +5,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useStore } from './store';
-import { addResistor, fresh } from './store.test-helpers';
+import { fresh } from './store.test-helpers';
 
 const GOOD = '$ 1 0.000005 10 50 5 5 1e-9\nr 0 0 160 0 0 1000\n';
 // isXml matches (the first line opens `<cir `), and the parser's nesting check
