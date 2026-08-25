@@ -3,11 +3,51 @@ import type { SimEngine } from '../../engine/simulator';
 import { DEFAULT_SETTINGS, type Point } from '../../model/types';
 import type { Drag } from './useCanvasInteractions';
 import {
+  backingStoreSize,
   buildReport,
   frameSafely,
   paintedSelection,
   scopeDrawPayload,
 } from './useFrameLoop';
+
+describe('backingStoreSize', () => {
+  it('rounds once so a fractional dpr settles against an odd CSS width', () => {
+    // 967 x 1.5 is 1450.5: comparing the stored integer attribute against the
+    // raw product never agrees, so the bitmap was reallocated and cleared
+    // every frame of the session. The rounded value is exactly what the
+    // attribute holds after assignment, so the next frame's compare settles.
+    const first = backingStoreSize(967, 553, 1.5);
+    expect(first.width).toBe(Math.round(967 * 1.5));
+    expect(Number.isInteger(first.width)).toBe(true);
+    expect(Number.isInteger(first.height)).toBe(true);
+    // The compare-and-assign cycle is stable: recomputing for the same CSS
+    // size and dpr returns what is already stored.
+    expect(backingStoreSize(967, 553, 1.5)).toEqual(first);
+  });
+
+  it('is stable across the common scaling factors and browser zoom steps', () => {
+    // 1.25 and 1.5 are the common Windows/Linux scalings; ~1.1 is a typical
+    // browser zoom product. None may leave a fractional target behind.
+    const cases: [number, number, number][] = [
+      [1281, 721, 1.1],
+      [1921, 1081, 1.25],
+      [1441, 901, 1.5],
+      [1000, 500, 1],
+      [800, 600, 2],
+    ];
+    for (const [w, h, dpr] of cases) {
+      const s = backingStoreSize(w, h, dpr);
+      expect(Number.isInteger(s.width)).toBe(true);
+      expect(Number.isInteger(s.height)).toBe(true);
+      expect(backingStoreSize(w, h, dpr)).toEqual(s);
+    }
+  });
+
+  it('keeps the exact doubling at integral dpr', () => {
+    expect(backingStoreSize(800, 600, 2)).toEqual({ width: 1600, height: 1200 });
+    expect(backingStoreSize(800, 600, 1)).toEqual({ width: 800, height: 600 });
+  });
+});
 
 describe('frameSafely', () => {
   it('reports a throw instead of letting it escape the loop', () => {
