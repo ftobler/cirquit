@@ -2,7 +2,8 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { frameStatsOf, scopePlotsToSpecs, SimEngine } from './simulator';
+import { frameStatsOf, scopePlotsToSpecs, sharedPlotElement, SimEngine } from './simulator';
+import type { ScopePlot } from './simulator';
 import { traceScopes, embeddedScopeOf } from '../scope/embedded';
 import { decodeEmbeddedScope } from '../io/embeddedScope';
 import { SvgRecorder } from '../render/svg';
@@ -1129,5 +1130,42 @@ describe('embedded scope registration', () => {
       .filter((e) => e.kind === 'scope')
       .flatMap((e) => e.embedded!.plots.map((p) => p.id));
     expect(new Set(allWindowPlotIds).size).toBe(allWindowPlotIds.length);
+  });
+});
+
+describe('sharedPlotElement', () => {
+  // The Properties dialog's per-element Plots rows (a transistor's pin plots,
+  // Show Charge, Show Resistance) are offered only when every plot names the
+  // same element, upstream's allPlotsOneElm gate (Scope.java:1239-1246).
+  const p = (id: number, elementId: number | null): ScopePlot => ({
+    id,
+    elementId,
+    value: 'voltage',
+    manScale: null,
+    manVPosition: 0,
+    acCoupled: false,
+    measurements: null,
+    origValueToken: null,
+    origElementIndex: null,
+  });
+
+  it('returns the one element when every plot shares it', () => {
+    expect(sharedPlotElement([p(1, 5), p(2, 5)])).toBe(5);
+    expect(sharedPlotElement([p(1, 5)])).toBe(5);
+  });
+
+  it('returns null when two plots name different elements', () => {
+    expect(sharedPlotElement([p(1, 5), p(2, 6)])).toBe(null);
+  });
+
+  it('ignores raw-only plots that carry no element', () => {
+    // A preserved raw plot has no element id and no opinion about the shared
+    // one; the resolvable plots still agree.
+    expect(sharedPlotElement([p(1, 5), p(2, null), p(3, 5)])).toBe(5);
+  });
+
+  it('returns null when nothing resolves or the list is empty', () => {
+    expect(sharedPlotElement([p(1, null)])).toBe(null);
+    expect(sharedPlotElement([])).toBe(null);
   });
 });

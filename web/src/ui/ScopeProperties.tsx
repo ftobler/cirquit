@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import type { PlotMeasurementKey, ScopeValue } from '../engine/simulator';
-import { anyPlotOverrides, effectiveMeasurements, plotOverridesScope } from '../engine/simulator';
+import { anyPlotOverrides, effectiveMeasurements, plotOverridesScope, sharedPlotElement } from '../engine/simulator';
 import { seedManScale, barToSpeed, speedToBar, gridStepX, scaleStateFor, nextHighestScale, nextLowestScale } from '../scope/scale';
 import { formatValue, makeTheme } from '../render/draw';
 import { MAN_DIVISIONS, trailSliderToSteps, trailStepsToSlider, UNIT, plotColors, visiblePlotsOf } from '../scope/draw';
@@ -162,11 +162,11 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
     );
   };
 
-  // The scope's single element, when there is exactly one and its kind is
-  // known: which extra Plots boxes the dialog offers (ScopePropertiesDialog
-  // shows the transistor pin plots for a transistor, Show Charge only for a
-  // capacitor, ScopePropertiesDialog.java:544-607).
-  const singleElement = scope.plots.find((p) => p.elementId !== null)?.elementId ?? null;
+  // The scope's shared element, present only when every plot names the same
+  // one and its kind is known: which extra Plots boxes the dialog offers
+  // (upstream gates those rows on all plots sharing one element,
+  // Scope.java:1239-1246, so a mixed scope is offered none).
+  const singleElement = sharedPlotElement(scope.plots);
   const element = singleElement === null ? null : useStore.getState().elements.find((e) => e.id === singleElement)?.kind ?? null;
   // Upstream's Show Vce vs Ic checked state (isShowingVceAndIc, Scope.java:
   // 1258-1260): the 2D plot on and exactly the VCE/IC pair showing.

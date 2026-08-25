@@ -236,6 +236,23 @@ export function anyPlotOverrides(scope: Scope): boolean {
   return scope.plots.some((p) => plotOverridesScope(scope, p));
 }
 
+/** The one element every plot shares, or null when they do not. Upstream
+ *  shows the per-element Plots rows only under this all-plots-one-element
+ *  gate (Scope.java:1239-1246): taking the first plot's element instead would
+ *  let a mixed-element scope check Show Ic and attach an ic plot to whichever
+ *  element happened to come first, a wrong-value round trip on save. Raw-only
+ *  plots (elementId null) carry no opinion, exactly like upstream's absence of
+ *  unresolvable plots. */
+export function sharedPlotElement(plots: ScopePlot[]): number | null {
+  let shared: number | null = null;
+  for (const p of plots) {
+    if (p.elementId === null) continue;
+    if (shared === null) shared = p.elementId;
+    else if (shared !== p.elementId) return null;
+  }
+  return shared;
+}
+
 export interface FrameStats {
   steps: number;
   iterations: number;
