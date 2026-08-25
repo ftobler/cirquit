@@ -393,6 +393,25 @@ fetch it).
   walk is iterative so deep chains cannot overflow the wasm stack, and refused
   non-finite or non-positive stamps are surfaced through a tally plus a new
   StepError::BadStamp instead of silently vanishing.
+- Review-pass batch 2026-08-24f: five more fixes from the review lanes. Loads:
+  a malformed circuit now routes into the problem banner from every entry
+  path, the startup share link falls back to the starter with a status
+  message instead of the engine-fatal page. Editing: repeated pastes fan out
+  right-or-below from the circuit bounds like upstream's bbox rule and the
+  internal clipboard persists across reloads; undo no longer arms a false
+  unsaved-changes after an edited drill-in exit on a charged circuit, the
+  session subcircuit library follows a changed body under the same name, and
+  app preferences survive undo while header-borne keys still rewind. Canvas:
+  fractional DPR no longer reallocates the backing store every frame, read-only
+  circuits ignore the row/column chords, chorded mouse buttons leave armed
+  drags alone. Relay: legacy short `178` lines seed upstream's old-constructor
+  defaults and run the faithful old model when switchingTime is zero.
+  Keyboard: crossover switch and logic input honour their shortcuts through one
+  shared kind set, modifier/junk keys are refused, F-keys survive reloads, IME
+  Enter no longer commits dialogs early, placement-char collisions warn.
+  Scopes: regenerating an edited scope line preserves plot tokens it cannot
+  interpret, mixed-element scopes hide the per-element rows like upstream's
+  shared-element rule, deleted embedded X-Y windows free their canvases.
 - 563 Rust tests, of which 451 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 77 in-module unit tests and one doctest.
