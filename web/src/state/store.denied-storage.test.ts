@@ -12,7 +12,10 @@ let restoreStorage = () => {};
 afterEach(() => restoreStorage());
 
 describe('boot with site data blocked', () => {
-  it('store creation survives a throwing localStorage access', async () => {
+  // The resetModules re-import rebuilds the whole module graph and
+  // instantiates the wasm engine again, several seconds on its own; under a
+  // loaded parallel suite run the default 5s budget is not enough.
+  it('store creation survives a throwing localStorage access', { timeout: 30_000 }, async () => {
     restoreStorage = denyGlobalStorage();
 
     // A fresh module registry re-runs the store initializer that boots at
