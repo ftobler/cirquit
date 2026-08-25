@@ -366,7 +366,34 @@ fetch it).
   scope capture when the effective timestep changes (upstream's resetGraphs on
   maxTimeStep change) and preserves samples across a columns-only resize like
   upstream's index-mapped copy.
-- 546 Rust tests, of which 451 are the end-to-end circuit checks across
+- Review-pass batch 2026-08-24e: seven fixes from the parallel session's
+  review lanes, each worktree-implemented and independently reviewed. Keyboard:
+  denied-storage no longer crashes app boot (every defaultStorage lookup is
+  guarded, five modules), a stale scopeProperties id can no longer leave an
+  invisible modal gate (cleared on remove/load/new/undo/redo/delete), open
+  menubar dropdowns own the keyboard via a store flag in ModalSurfaces,
+  Disable Editing refusals consume the key so the page stops scrolling, and
+  momentary holds release through text-field keyup, gated surfaces and window
+  blur. Elements: opampReal FLAG_SWAP keeps rails and triangle fixed like
+  upstream's hsswap split (mirror no longer toggles the bit), and text became
+  a true zero-post annotation with FLAG_BAR and per-line drawing ported from
+  TextElm. Sources: phase edits in degrees and duty cycle in percent with
+  file bytes unchanged. Scopes: valid_data_count counts to the newest written
+  column (stale pre-trigger pixels after triggers gone), memristor and
+  ohmmeter resistance plots decode, walk and regenerate correctly with real
+  engine values behind them, showScale gates the H=/V= row, manual headers sit
+  beside their bullets and wrap. XML: nine more tags convert to real lines
+  (Timer, Comparator, OTA incl. child vbe/vbc splice, OpAmpReal, DAC,
+  AnalogMux, DelayBuffer, both analog switches). Undo: collapse reverts no
+  longer stage the refused element into redo, mirror/swap/delete fold into an
+  in-flight gesture like rotate, setKeyShortcut truncates the stale future,
+  and the model-outside-undo comment now records the deliberate divergence.
+  Engine: zero-resistance resistor/fuse/lamp specs are rejected at build
+  naming the element (build_element returns Result), the capacitor-voltage
+  walk is iterative so deep chains cannot overflow the wasm stack, and refused
+  non-finite or non-positive stamps are surfaced through a tally plus a new
+  StepError::BadStamp instead of silently vanishing.
+- 563 Rust tests, of which 451 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus 77 in-module unit tests and one doctest.
   2984 TypeScript tests (one corpus report test skipped); the owner-bug batch
