@@ -1,8 +1,9 @@
 /**
  * The chip family's pin tables, keyed by kind: every port kind whose upstream
  * class extends ChipElm, directly or through SRAMElm (ROM), which is exactly
- * the set the Create Test harness targets (TestCreator.java:
- * `instanceof ChipElm`). The pins carry the side, output and bus metadata the
+ * the set the Create Test harness targets. Upstream ships TestCreator with
+ * `enabled = false` and its whole body commented out, so the port treats the
+ * algorithm as the spec. The pins carry the side, output and bus metadata the
  * harness needs to place its logic inputs and outputs.
  *
  * Two deliberate absences despite chip-looking bodies. The four controlled
