@@ -1079,7 +1079,7 @@ impl Circuit {
                 // error travels out through this return.
                 self.clear_closure_state();
                 return Err(format!(
-                    "Element {} (id {}) produced a non-finite value while stamping; its contribution was dropped.",
+                    "Element {} (id {}) produced a non-finite or non-positive value while stamping; its contribution was dropped.",
                     self.elements[culprit].kind(),
                     self.ids[culprit]
                 ));
@@ -1356,7 +1356,7 @@ impl Circuit {
                 // the solve would be a plausible lie. Report instead.
                 self.ctx.time = committed_time;
                 return Err(StepError::BadStamp(format!(
-                    "Element {} (id {}) produced a non-finite value while stamping; its contribution was dropped.",
+                    "Element {} (id {}) produced a non-finite or non-positive value while stamping; its contribution was dropped.",
                     self.elements[culprit].kind(),
                     self.ids[culprit]
                 )));
