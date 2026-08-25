@@ -498,6 +498,7 @@ pub fn parse(input: &str) -> Result<Expr, String> {
         toks,
         pos: 0,
         err: None,
+        depth: 0,
     };
     let e = p.parse_expr();
     match p.err {
@@ -505,6 +506,17 @@ pub fn parse(input: &str) -> Result<Expr, String> {
         None => Ok(e),
     }
 }
+
+/// Recursion budget for the parser, counted in grammar levels. Every paren
+/// nesting level costs about 13 frames through the precedence chain, and both
+/// the ternary's right-recursion and unary operator chains descend without
+/// consuming input, so nothing bounds the recursion naturally: thousands of
+/// nested parens used to overflow the wasm stack and trap the instance.
+/// Legitimate files sit far below this, the deepest bundled expression being
+/// single digits deep (`pwl` argument lists are flat, sequential calls do not
+/// accumulate depth), so 64 leaves more than 10x headroom while capping
+/// worst-case recursion near 850 frames, comfortably inside the wasm stack.
+const MAX_EXPR_DEPTH: usize = 64;
 
 #[derive(Debug, Clone)]
 enum Tok {
@@ -601,6 +613,9 @@ struct Parser {
     toks: Vec<Tok>,
     pos: usize,
     err: Option<String>,
+    /// Current recursion level against [`MAX_EXPR_DEPTH`], counted around the
+    /// two entry points that can nest without consuming input.
+    depth: usize,
 }
 
 impl Parser {
@@ -656,17 +671,26 @@ impl Parser {
     }
 
     /// Top of the grammar, where the ternary sits: `parseOr ? parseOr : parse`
-    /// (Expr.java:314-326).
+    /// (Expr.java:314-326). Guarded because three paths recurse back into it
+    /// without bound: parenthesised groups (through `parse_term`), function
+    /// arguments, and the ternary's own right-recursive else branch.
     fn parse(&mut self) -> Expr {
+        if self.depth >= MAX_EXPR_DEPTH {
+            self.set_error("expression nested too deeply".to_string());
+            return Expr::constant(0.0);
+        }
+        self.depth += 1;
         let cond = self.parse_or();
-        if self.skip_word("?") {
+        let e = if self.skip_word("?") {
             let a = self.parse_or();
             self.skip_or_error(":");
             let b = self.parse();
             Expr::ternary(cond, a, b)
         } else {
             cond
-        }
+        };
+        self.depth -= 1;
+        e
     }
 
     fn parse_or(&mut self) -> Expr {
@@ -784,18 +808,35 @@ impl Parser {
     }
 
     /// Unary operators bind tighter than `^`, so `-2^2` parses as `-(2^2)`
-    /// (Expr.java:416-423). A leading `+` is a no-op.
+    /// (Expr.java:416-423). A leading `+` is a no-op. Only the `-`/`!`
+    /// branches recurse back down here, and they do it through
+    /// [`Parser::parse_unary_step`], which carries the depth counter: the
+    /// plain pass-through to `parse_pow` must stay free, or every paren level
+    /// would pay the counter twice.
     fn parse_uminus(&mut self) -> Expr {
         self.skip_word("+");
         if self.skip_word("!") {
-            let e = self.parse_uminus();
+            let e = self.parse_unary_step();
             Expr::unary(Un::Not, e)
         } else if self.skip_word("-") {
-            let e = self.parse_uminus();
+            let e = self.parse_unary_step();
             Expr::unary(Un::Negate, e)
         } else {
             self.parse_pow()
         }
+    }
+
+    /// One `-` or `!` step, guarded against [`MAX_EXPR_DEPTH`] because an
+    /// operator chain descends without consuming any operand.
+    fn parse_unary_step(&mut self) -> Expr {
+        if self.depth >= MAX_EXPR_DEPTH {
+            self.set_error("expression nested too deeply".to_string());
+            return Expr::constant(0.0);
+        }
+        self.depth += 1;
+        let e = self.parse_uminus();
+        self.depth -= 1;
+        e
     }
 
     fn parse_pow(&mut self) -> Expr {
@@ -1023,5 +1064,49 @@ mod tests {
         assert!(parse("(").is_err());
         // `sawtooth` is not a function; upstream spells it `saw`.
         assert!(parse("sawtooth(1)").is_err());
+    }
+
+    #[test]
+    fn deeply_nested_parentheses_error_instead_of_abort() {
+        // Thousands of nested parens used to recurse the parser straight off
+        // the wasm stack; the depth bound must turn that into a clean parse
+        // error naming the nesting.
+        let input = format!("{}1{}", "(".repeat(5000), ")".repeat(5000));
+        let err = parse(&input).expect_err("deep nesting must be rejected");
+        assert!(err.contains("nested"), "got: {err}");
+    }
+
+    #[test]
+    fn deep_ternary_chain_is_rejected_too() {
+        // The ternary's else branch recurses rightward without consuming a
+        // closing token, so it is unbounded exactly like the parens.
+        let input = format!("{}0", "0?1:".repeat(5000));
+        let err = parse(&input).expect_err("a deep ternary chain must be rejected");
+        assert!(err.contains("nested"), "got: {err}");
+    }
+
+    #[test]
+    fn deep_unary_chain_is_rejected_too() {
+        // Each `-` descends into parse_uminus again, so unary chains nest
+        // without consuming operands either.
+        let input = format!("-{}", "-".repeat(5000) + "1");
+        let err = parse(&input).expect_err("a deep unary chain must be rejected");
+        assert!(err.contains("nested"), "got: {err}");
+    }
+
+    #[test]
+    fn nesting_below_the_limit_still_parses() {
+        // 50-deep parens sit under the 64 budget and must evaluate normally.
+        let parens = format!("{}a{}", "(".repeat(50), ")".repeat(50));
+        assert_eq!(parse(&parens).unwrap().eval(&state()), 3.0);
+        // A flat argument list is sequential tokens, not depth: a 200-point
+        // pwl call parses and interpolates at x = 100.5 between (100, 200)
+        // and (101, 202).
+        let mut pwl = String::from("pwl(100.5");
+        for k in 0..200 {
+            pwl.push_str(&format!(", {k}, {}", 2 * k));
+        }
+        pwl.push(')');
+        assert_eq!(parse(&pwl).unwrap().eval(&state()), 201.0);
     }
 }
