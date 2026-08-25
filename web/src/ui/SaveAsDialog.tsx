@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { defaultSaveFilename, saveCircuit } from '../io/fileIO';
 import { useStore } from '../state/store';
+import { isCommitEnter } from './dialogEnter';
 import { Dialog } from './Dialog';
 
 export function SaveAsDialog() {
@@ -52,7 +53,7 @@ export function SaveAsDialog() {
           onFocus={(ev) => ev.target.select()}
           onChange={(ev) => setFilename(ev.target.value)}
           onKeyDown={(ev) => {
-            if (ev.key === 'Enter') save();
+            if (isCommitEnter(ev)) save();
           }}
         />
       </label>

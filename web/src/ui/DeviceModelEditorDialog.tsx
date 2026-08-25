@@ -21,6 +21,7 @@ import {
 import { useStore } from '../state/store';
 import type { AppState } from '../state/store';
 import { Dialog } from './Dialog';
+import { isCommitEnter } from './dialogEnter';
 
 /** One numeric row: a plain number box accepting scientific notation, with the
  *  value kept as a string so an empty or half-typed field stays editable. */
@@ -238,7 +239,7 @@ function EditorDialogBody({
             setError(null);
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') ok();
+            if (isCommitEnter(e)) ok();
           }}
         />
       </label>

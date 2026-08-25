@@ -10,6 +10,7 @@ import { renderCircuitToCanvas } from '../render/export';
 import { renderCircuitToSvg } from '../render/svg';
 import { useStore } from '../state/store';
 import { Dialog } from './Dialog';
+import { isCommitEnter } from './dialogEnter';
 
 interface Props {
   engine: SimEngine | null;
@@ -74,7 +75,7 @@ export function SaveAsImageDialog({ engine, format = 'png' }: Props) {
           onFocus={(ev) => ev.target.select()}
           onChange={(ev) => setFilename(ev.target.value)}
           onKeyDown={(ev) => {
-            if (ev.key === 'Enter') void save();
+            if (isCommitEnter(ev)) void save();
           }}
         />
       </label>

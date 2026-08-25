@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { nameTaken } from '../io/subcircuits';
 import { useStore } from '../state/store';
 import { Dialog } from './Dialog';
+import { isCommitEnter } from './dialogEnter';
 import { commitSubcircuitCreate } from './subcircuitManager';
 
 export function CreateSubcircuitDialog() {
@@ -68,7 +69,7 @@ export function CreateSubcircuitDialog() {
             setError(null);
           }}
           onKeyDown={(ev) => {
-            if (ev.key === 'Enter') save();
+            if (isCommitEnter(ev)) save();
           }}
         />
       </label>

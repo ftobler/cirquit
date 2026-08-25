@@ -10,6 +10,7 @@ import { useCallback, useReducer, useState } from 'react';
 import { listModels, nameTaken, removeModel } from '../io/subcircuits';
 import { useStore } from '../state/store';
 import { Dialog } from './Dialog';
+import { isCommitEnter } from './dialogEnter';
 import {
   commitSubcircuitEdit,
   deleteSubcircuit,
@@ -113,7 +114,7 @@ export function SubcircuitManagerDialog() {
                 value={edit.draftName}
                 onChange={(ev) => setEdit(setSubcircuitDraft(edit, ev.target.value))}
                 onKeyDown={(ev) => {
-                  if (ev.key === 'Enter') commitEdit();
+                  if (isCommitEnter(ev)) commitEdit();
                 }}
               />
               <button type="button" onClick={commitEdit}>
