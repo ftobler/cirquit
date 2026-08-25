@@ -951,10 +951,7 @@ fn led_array_posts(id: u32, sx: usize, sy: usize, params: &[(&str, f64)]) -> Ele
         id,
         kind: "ledArray".into(),
         posts,
-        params: params
-            .iter()
-            .map(|(k, v)| (k.to_string(), *v))
-            .collect(),
+        params: params.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
         label: None,
         model: None,
         flags: 0,
@@ -1043,12 +1040,7 @@ fn led_array_sixteen_by_sixteen_lights_every_cell_from_one_low_column_bus() {
             &[[128, 240]],
             &[("hiV", 5.0), ("loV", 0.0), ("position", 0.0)],
         ),
-        led_array_posts(
-            7,
-            16,
-            16,
-            &[("sizeX", 16.0), ("sizeY", 16.0)],
-        ),
+        led_array_posts(7, 16, 16, &[("sizeX", 16.0), ("sizeY", 16.0)]),
     ];
     for i in 0..16usize {
         elements.push(elm(
@@ -1068,12 +1060,7 @@ fn led_array_sixteen_by_sixteen_lights_every_cell_from_one_low_column_bus() {
     }
     for i in 0..16usize {
         let y = (16 * i) as i32;
-        elements.push(elm(
-            400 + i as u32,
-            "wire",
-            &[[-48, y], [-16, y]],
-            &[],
-        ));
+        elements.push(elm(400 + i as u32, "wire", &[[-48, y], [-16, y]], &[]));
         elements.push(elm(
             500 + i as u32,
             "resistor",
@@ -1164,5 +1151,8 @@ fn oversized_led_array_line_cannot_hang_the_build() {
     let err = Circuit::new()
         .set_circuit(&lone(led_array_raw(7, 100000.0, 100000.0)))
         .expect_err("the bomb line must be rejected");
-    assert!(err.contains("led array") && err.contains("got 100000"), "{err}");
+    assert!(
+        err.contains("led array") && err.contains("got 100000"),
+        "{err}"
+    );
 }

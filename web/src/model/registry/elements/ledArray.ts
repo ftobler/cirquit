@@ -28,17 +28,27 @@ import {
 import { circle } from '../../../render/draw';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
-/** The grid sizes, with the token constructor's 0 -> 8x8 fallback
- *  (LEDArrayElm.java:60-64), so the engine and this layout always agree on the
- *  post count. */
+/** The grid bounds upstream's edit dialog enforces, setChipEditValue's
+ *  "must be between 2 and 16" (LEDArrayElm.java:194-216). The engine twin
+ *  rejects out-of-range grids by name at build time
+ *  (engine/core/src/elements/led_array.rs); this side keeps its derived
+ *  geometry inside the same window so nothing unbounded is ever laid out. */
+const GRID_MIN = 2;
+const GRID_MAX = 16;
+
+/** The grid sizes. Missing, zero or non-finite sizes keep the token
+ *  constructor's 8x8 fallback (LEDArrayElm.java:60-64); any other size
+ *  clamps into the dialog range, so a hostile stored size cannot blow up
+ *  pins, posts and draw while the banner reports the engine's rejection.
+ *  The raw params are never rewritten here: dump still writes the original
+ *  tokens back byte-for-byte. */
 function ledArraySize(e: CircuitElement): { sizeX: number; sizeY: number } {
-  let sizeX = Math.round(e.params.sizeX ?? 0);
-  let sizeY = Math.round(e.params.sizeY ?? 0);
-  if (sizeX === 0 || sizeY === 0) {
-    sizeX = 8;
-    sizeY = 8;
-  }
-  return { sizeX, sizeY };
+  const size = (raw?: number) => {
+    const v = Math.round(raw ?? 0);
+    if (!(v > 0)) return 8;  // also catches NaN
+    return Math.min(GRID_MAX, Math.max(GRID_MIN, v));
+  };
+  return { sizeX: size(e.params.sizeX), sizeY: size(e.params.sizeY) };
 }
 
 /** The pin table, from `setupPins` (LEDArrayElm.java:66-70): the columns on

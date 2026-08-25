@@ -1605,7 +1605,12 @@ fn at_cap_spec() -> CircuitSpec {
         &[("inductance", 4.0), ("couplingCoef", 0.999)],
     )];
     elements[0].label = Some(vec!["1"; 32].join(","));
-    elements.push(elm(2, "voltage", &[[0, 200], [0, 0]], &[("maxVoltage", 10.0)]));
+    elements.push(elm(
+        2,
+        "voltage",
+        &[[0, 200], [0, 0]],
+        &[("maxVoltage", 10.0)],
+    ));
     elements.push(elm(3, "ground", &[[0, 200]], &[]));
     for i in 0..32usize {
         elements.push(elm(

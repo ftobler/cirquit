@@ -93,9 +93,10 @@ impl LedArray {
         let mut size_y = spec.param("sizeY", 0.0).round();
         // A missing or non-positive size falls back to 8x8, the guard in
         // `setupPins` that also catches a token constructor whose parse threw
-        // (LEDArrayElm.java:60-64); NaN fails both `> 0` comparisons, so it
-        // lands in the fallback rather than in the range check below.
-        if !(size_x > 0.0) || !(size_y > 0.0) {
+        // (LEDArrayElm.java:60-64); non-finite tokens fail the finiteness
+        // test and land in the fallback rather than in the range check
+        // below.
+        if !size_x.is_finite() || !size_y.is_finite() || size_x <= 0.0 || size_y <= 0.0 {
             size_x = 8.0;
             size_y = 8.0;
         }
@@ -112,7 +113,9 @@ impl LedArray {
             size_x: size_x as usize,
             size_y: size_y as usize,
             vcrit: critical_voltage(LED_VSCALE, LED_LEAKAGE),
-            cells: (0..(size_x * size_y) as usize).map(|_| LedCell::new()).collect(),
+            cells: (0..(size_x * size_y) as usize)
+                .map(|_| LedCell::new())
+                .collect(),
         })
     }
 }
@@ -294,7 +297,10 @@ mod tests {
             "led array (id 7) grid height must be between 2 and 16, got 33"
         );
         let err = err_of(LedArray::new(&spec(Some(1.0), Some(2.0))));
-        assert_eq!(err, "led array (id 7) grid width must be between 2 and 16, got 1");
+        assert_eq!(
+            err,
+            "led array (id 7) grid width must be between 2 and 16, got 1"
+        );
     }
 
     #[test]

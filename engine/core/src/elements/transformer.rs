@@ -694,4 +694,3 @@ mod tests {
         assert!(Transformer::new_custom(&custom(&desc)).is_err());
     }
 }
-
