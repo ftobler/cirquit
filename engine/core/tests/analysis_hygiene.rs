@@ -105,9 +105,10 @@ fn rejected_set_circuit_keeps_the_previous_circuit_running() {
 fn an_element_list_over_the_terminal_limit_is_rejected_before_reserving() {
     // The three build reservations used to size themselves from
     // spec.elements.len() before any bound check ran, so a spec claiming an
-    // absurd count died in the allocator instead of failing validation.
-    // Every element carries at least one terminal, so the terminal limit
-    // bounds the list length too; the hoisted guard rejects with a message,
+    // absurd count died in the allocator instead of failing validation. The
+    // guard is a deliberate pathological-input rejection rather than a tight
+    // bound: terminal-carrying kinds are covered by assign_nodes' limit,
+    // annotation-only kinds by the cap itself. It rejects with a message,
     // and because it sits before anything commits, per-stage atomicity keeps
     // both the previous circuit and its options in force.
     let mut c = Circuit::new();

@@ -430,11 +430,13 @@ impl Circuit {
         // Sized from untrusted input before any bound check ran: the three
         // reservations below must not reserve capacity for an element count
         // no valid circuit can carry, or a hand-crafted spec dies in the
-        // allocator instead of failing validation. Every element has at
-        // least one terminal, so assign_nodes' terminal limit bounds the
-        // list length too; checking it here, before anything commits,
-        // rejects with a message and leaves even the previous options in
-        // force.
+        // allocator instead of failing validation. The bound is a
+        // pathological-input rejection, not a tight derivation: most kinds
+        // carry terminals whose count assign_nodes caps at this same limit,
+        // but annotation-only elements (text, box, line) carry none at all,
+        // so a sheet stacked with those is covered deliberately rather than
+        // exactly. Checking here, before anything commits, rejects with a
+        // message and leaves even the previous options in force.
         if spec.elements.len() > MAX_MATRIX_ROWS {
             return Err(format!(
                 "The circuit is too large: it lists {} elements, above the limit of {}.",
@@ -1254,6 +1256,13 @@ impl Circuit {
                 self.last_dc_converged = false;
                 self.ctx.dc_analysis = false;
                 self.ctx.time = 0.0;
+                // Leave transient stamps behind, not the DC-mode ones this
+                // solve built: both sibling exits restamp before returning,
+                // and a skipped one would let later frames solve stale
+                // linear closures holding an open capacitor and a shorted
+                // inductor. Best effort only: the condition being reported
+                // must not be replaced by a secondary restamp failure.
+                let _ = self.restamp();
                 return Err(msg);
             }
             Err(StepError::Singular(_)) | Err(StepError::NotConverged(..)) => false,
@@ -2561,17 +2570,114 @@ mod tests {
         // steps and delivers the full value on the fourth, slot counting
         // being per committed step regardless of their length. Twelve slots,
         // the carried-step capture, would still read zero here.
-        c.run(3);
+        let filling = c.run(3);
+        assert!(filling.converged, "{:?}", filling.error);
         assert!(
             last_sample(&c).abs() < 1e-9,
             "far end moved early: {}",
             last_sample(&c)
         );
-        c.run(1);
+        let delivery = c.run(1);
+        assert!(delivery.converged, "{:?}", delivery.error);
         assert!(
             (last_sample(&c) - 10.0).abs() < 1e-3,
             "far end read {} on the delivery step",
             last_sample(&c)
+        );
+    }
+
+    #[test]
+    fn a_failed_dc_solve_leaves_transient_stamps_behind_not_dc_ones() {
+        // Both sibling exits of solve_operating_point restamp for the
+        // transient before returning; the element-halt and refused-stamp
+        // exit must too. Without it, dc_analysis is already false again
+        // while the closures keep the DC-mode stamps (the capacitor open),
+        // and every later frame solves those stale linear factors until some
+        // rebuild happens to restamp. The discriminator is the capacitor's
+        // companion conductance, 2C/dt = 0.2 S here and unique in this toy
+        // circuit against the DC open's 1e-8. This test lives in-module
+        // because it reads the closure matrices directly.
+        let elm_spec =
+            |id: u32, kind: &str, posts: Vec<[i32; 2]>, params: Vec<(&str, f64)>| ElementSpec {
+                id,
+                kind: kind.into(),
+                posts,
+                params: params
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
+                label: None,
+                model: None,
+                flags: 0,
+            };
+        let mut c = Circuit::new();
+        c.set_circuit(&CircuitSpec {
+            preserve_run: false,
+            elements: vec![
+                elm_spec(
+                    1,
+                    "resistor",
+                    vec![[0, 16], [0, 0]],
+                    vec![("resistance", 1000.0)],
+                ),
+                elm_spec(
+                    2,
+                    "capacitor",
+                    vec![[0, 16], [0, 0]],
+                    vec![("capacitance", 1e-6)],
+                ),
+                elm_spec(
+                    3,
+                    "current",
+                    vec![[0, 0], [0, 16]],
+                    vec![("current", 0.01), ("maxVoltage", 5.0)],
+                ),
+                elm_spec(4, "ground", vec![[0, 0]], vec![]),
+            ],
+            options: Some(SimOptions {
+                time_step: 1e-5,
+                dc_operating_point: true,
+                ..SimOptions::default()
+            }),
+            scopes: Vec::new(),
+        })
+        .expect("the healthy circuit should analyse");
+        assert!(c.set_param(3, "current", f64::NAN), "live edit accepted");
+        c.reset();
+        assert!(c.error().is_some(), "the DC solve must have failed");
+
+        // The companion conductance lands on node A's diagonal, summed with
+        // the load resistor: 2C/dt + 1/R = 0.201 S here, against about
+        // 0.001 S when the stale DC open's 1e-8 occupies the row instead.
+        let cap_node = c.elements[1].base().nodes[0];
+        let cl = &mut c.closures[c.node_closure[cap_node]];
+        let row = c.node_row[cap_node];
+        let sys = cl.sys.dense_mut().expect("the toy circuit stays dense");
+        let diag = sys.get(row, row);
+        assert!(
+            (diag - 0.201).abs() < 1e-9,
+            "the capacitor row holds {diag}, not the transient companion"
+        );
+
+        // End to end on the same state: once the poison is healed, the cap
+        // uncharged by the reset must charge through its RC ramp rather than
+        // sit at the resistive operating point near 4.88 V. The healing edit
+        // restamps by itself, so this half is lifecycle coverage rather than
+        // the regression above.
+        assert!(c.set_param(3, "current", 0.01), "healing edit accepted");
+        let report = c.run(12);
+        assert!(report.converged, "{:?}", report.error);
+        let mid = c.element_voltages()[1];
+        assert!(
+            mid > 0.05 && mid < 3.0,
+            "capacitor must be mid-charge after 12 steps, was {mid}"
+        );
+        let report = c.run(300);
+        assert!(report.converged, "{:?}", report.error);
+        let settled = c.element_voltages()[1];
+        assert!(
+            settled > 4.5,
+            "capacitor must settle near the operating point, was {settled}"
         );
     }
 
