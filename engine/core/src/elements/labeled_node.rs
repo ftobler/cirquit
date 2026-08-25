@@ -67,4 +67,14 @@ impl Element for LabeledNode {
     fn connects(&self, a: usize, b: usize) -> bool {
         a == b
     }
+    /// An annotation injects nothing anywhere: the label carries no device
+    /// between its posts, so it contributes zero to the wire-recovery KCL
+    /// sum, and the port keeps no per-bit label currents to animate stem dots
+    /// with (upstream overrides getCurrentIntoNode to feed its own label dots
+    /// from the wire currents, LabeledNodeElm.java:230-234). Stated explicitly
+    /// rather than left to the trait default, whose debug_assert aborts debug
+    /// builds for any width >= 3.
+    fn current_into_node(&self, _post: usize) -> f64 {
+        0.0
+    }
 }

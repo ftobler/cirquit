@@ -787,3 +787,79 @@ fn wide_label_meets_a_plain_wire_only_at_bit_0() {
         vn[nodes[6] as usize]
     );
 }
+
+// ─── Wide labels and per-post currents (LabeledNodeElm.java:230-234) ───
+
+#[test]
+fn wide_labeled_node_currents_are_zero_and_debug_safe() {
+    // A label is an annotation: it carries no device between its posts, so
+    // every post must report exactly 0.0 from `current_into_node`. Before the
+    // explicit override the trait default's debug_assert aborted debug builds
+    // for any width >= 3, the moment `element_post_currents` walked it on
+    // frame one.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 64], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(2, "ground", &[[0, 0]], &[]),
+            labeled(3, 0, 64, 3, "A"),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    let posts = c.element_post_currents();
+    // Flats: source 0-1, ground 2, label 3-5.
+    assert_eq!(posts.len(), 6);
+    for k in 0..3 {
+        assert_eq!(posts[3 + k], 0.0, "label post {k} carried a current");
+    }
+}
+
+#[test]
+fn wide_label_on_a_wire_end_leaves_wire_recovery_untouched() {
+    // 16 V through two 500 ohm legs into a wire chain whose middle coordinate
+    // carries a 3-wide label. The wire-current recovery sums
+    // `current_into_node` over every non-removable occupant of each
+    // coordinate; three explicit zero injections must leave that KCL exactly
+    // balanced, so the loop still reads its analytic 16 mA.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 0], [0, 64]], &[("maxVoltage", 16.0)]),
+            elm(2, "ground", &[[0, 0]], &[]),
+            elm(
+                3,
+                "resistor",
+                &[[0, 64], [96, 64]],
+                &[("resistance", 500.0)],
+            ),
+            elm(4, "wire", &[[96, 64], [160, 64]], &[]),
+            labeled(5, 160, 64, 3, "A"),
+            elm(6, "wire", &[[160, 64], [224, 64]], &[]),
+            elm(
+                7,
+                "resistor",
+                &[[224, 64], [288, 64]],
+                &[("resistance", 500.0)],
+            ),
+            elm(8, "ground", &[[288, 64]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    c.run(3);
+    let amps = c.element_currents();
+    assert!(
+        close(amps[0], 16e-3, 1e-9),
+        "source read {} A, expected the full 16 mA",
+        amps[0]
+    );
+    assert!(
+        close(amps[3].abs(), 16e-3, 1e-9),
+        "wire recovery read {} A across the labelled seam",
+        amps[3]
+    );
+    let posts = c.element_post_currents();
+    // Flats: source 0-1, ground 2, r1 3-4, wire 5-6, label 7-9, wire 10-11,
+    // r2 12-13.
+    for k in 0..3 {
+        assert_eq!(posts[7 + k], 0.0, "label post {k} perturbed the KCL");
+    }
+}
