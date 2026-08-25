@@ -3,8 +3,8 @@
  * context and the engine/store data; the panel owns the frame loop and the
  * pointer state, this module owns the pixels.
  *
- * The per-plot sticky auto-scale state lives in `scale.ts`, keyed by plot id,
- * so it survives frame redraws here.
+ * The per-plot sticky auto-scale state lives in `scale.ts`, keyed by scope id
+ * and units family, so it survives frame redraws here.
  */
 
 import type {
@@ -41,20 +41,12 @@ import { tracePolyline } from './trace';
 import { drawInfo, type InfoLine } from './info';
 import { drawFFT, drawPhaseBand } from './spectrum';
 import { xyPersistenceFor } from './xyPersistence';
+import { UNIT } from './units';
 
-export const UNIT: Record<ScopeValue, string> = {
-  voltage: 'V',
-  current: 'A',
-  power: 'W',
-  charge: 'C',
-  resistance: 'Ω',
-  ib: 'A',
-  ic: 'A',
-  ie: 'A',
-  vbe: 'V',
-  vbc: 'V',
-  vce: 'V',
-};
+// The units table lives in units.ts so scale.ts can key sticky scales by the
+// same family without importing this module; re-exported for the dialog rows
+// and axis labels that read it from here.
+export { UNIT };
 
 /** Cursor and drag state, kept in a ref so it survives frame redraws. */
 export interface ScopeCursor {

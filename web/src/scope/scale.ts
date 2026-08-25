@@ -8,6 +8,8 @@
  * only state and it is pruned by the panel each frame.
  */
 
+import { UNIT, unitsFamily } from './units';
+
 /** Sticky scale state shared by one units family on one scope: the
  *  power-of-two display maximum and whether the display has room for negative
  *  values. */
@@ -45,19 +47,24 @@ export interface GridParams {
 const states = new Map<number, Map<string, ScaleState>>();
 
 /** The key inside a scope: the plot's units family, '' for raw-only plots
- *  (they never sample, so their entry only ever holds the default). */
-const familyOf = (value?: string | null): string => value ?? '';
+ *  (they never sample, so their entry only ever holds the default). Values
+ *  collapse onto their unit like upstream's getScopeUnits, so Ib and Ic
+ *  share an entry while Vbe does not join them. */
+const familyOf = (value?: string | null): string =>
+  value === null || value === undefined ? '' : (unitsFamily(value) ?? value);
 
-/** Default sticky scale per units, matching upstream's `scale[]` initial
- *  values: V/W/Ohm/C start at 5, A at 0.1 (Scope.java:266-267). */
-function defaultGridMax(value?: string | null): number {
-  return value === 'current' ? 0.1 : 5;
+/** Default sticky scale per family, matching upstream's `scale[]` initial
+ *  values: every category starts at 5 except amps at 0.1
+ *  (Scope.java:266-267). */
+function defaultGridMax(family: string): number {
+  return family === UNIT.current ? 0.1 : 5;
 }
 
 export function scaleStateFor(scopeId: number, value?: string | null): ScaleState {
+  const family = familyOf(value);
   return (
-    states.get(scopeId)?.get(familyOf(value)) ?? {
-      gridMax: defaultGridMax(value),
+    states.get(scopeId)?.get(family) ?? {
+      gridMax: defaultGridMax(family),
       showNegative: false,
     }
   );

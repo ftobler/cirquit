@@ -276,6 +276,25 @@ describe('scale state map', () => {
     expect(scaleStateFor(99, 'voltage').gridMax).toBe(5);
     expect(scaleStateFor(99, 'power').gridMax).toBe(5);
     expect(scaleStateFor(99, 'current').gridMax).toBe(0.1);
+    // The amp-family pins inherit UNITS_A's 0.1 seed like any current trace.
+    expect(scaleStateFor(99, 'ic').gridMax).toBe(0.1);
+    expect(scaleStateFor(99, 'vbe').gridMax).toBe(5);
+  });
+
+  it('collapses transistor pin values onto their unit family, like getScopeUnits', () => {
+    // Upstream indexes scale[] by ScopePlot.units (TransistorElm.java:595-602):
+    // Ib/Ic/Ie land on UNITS_A and Vbe/Vbc/Vce on UNITS_V, so an Ib trace and
+    // an Ic trace converge onto one gridline set while Vbe zooms separately.
+    setScaleState(7, 'ib', { gridMax: 0.04, showNegative: true });
+    expect(scaleStateFor(7, 'ic')).toEqual({ gridMax: 0.04, showNegative: true });
+    expect(scaleStateFor(7, 'ie')).toEqual({ gridMax: 0.04, showNegative: true });
+    expect(scaleStateFor(7, 'current')).toEqual({ gridMax: 0.04, showNegative: true });
+    expect(scaleStateFor(7, 'vbe')).toEqual({ gridMax: 5, showNegative: false });
+    // The voltage-family pins share the plain voltage entry, as upstream's
+    // single UNITS_V slot always did.
+    setScaleState(7, 'vce', { gridMax: 2, showNegative: true });
+    expect(scaleStateFor(7, 'vbe')).toEqual({ gridMax: 2, showNegative: true });
+    expect(scaleStateFor(7, 'voltage')).toEqual({ gridMax: 2, showNegative: true });
   });
 
   it('shares one state across same-unit plots of one scope, like upstream scale[]', () => {
