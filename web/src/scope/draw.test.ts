@@ -373,6 +373,27 @@ describe('drawScope showElmInfo header', () => {
   });
 });
 
+describe('drawScope showScale header', () => {
+  const engine = captionEngine(false);
+
+  it('gates the H=/V= scale row behind Show Scale', () => {
+    // Upstream wraps the whole scale row in `if (scope.showScale)`
+    // (ScopeOverlays.draw calling drawScale), so unchecking Scale must leave
+    // the canvas without any per-division label.
+    const off = scopeOf([plot(1, 'voltage')], { showScale: false });
+    const { ctx, texts } = mkCtx();
+    drawScope(ctx, engine, off, 200, 120, emptyCursor(), 0, 5e-6, false, 3);
+    expect(texts.filter((t) => t.includes('/div'))).toEqual([]);
+  });
+
+  it('paints the scale row when Show Scale is on', () => {
+    const on = scopeOf([plot(1, 'voltage')], { showScale: true });
+    const { ctx, texts } = mkCtx();
+    drawScope(ctx, engine, on, 200, 120, emptyCursor(), 0, 5e-6, false, 3);
+    expect(texts.some((t) => t.startsWith('H=') && t.includes('/div'))).toBe(true);
+  });
+});
+
 /** Every drawScope knob a colour test needs to vary. `dark` is the White
  *  Background flag inverted, `themeColors` the user's Other Options overrides,
  *  and `simTime` matters because the time grid and the cursor are both
@@ -873,13 +894,16 @@ describe('drawScope colour overrides', () => {
     // The manual-scale header bullet used to call the colour helper without
     // the user's overrides, so a custom trace colour got a stock green bullet
     // beside it. Both now read the one per-frame assignment map.
-    const scope = scopeOf([plot(1, 'voltage')], { manualScale: true });
+    const scope = scopeOf([plot(1, 'voltage')], { manualScale: true, showScale: true });
     const engine = twoTraceEngine([1, 1, 2, 2], [1, 1, 2, 2]);
     const { strokes, fills } = recordDraw(engine, scope, 200, 150, emptyCursor(), {
       themeColors: onlyPositive('#123456'),
     });
     expect(strokes).toContain('#123456');
+    // The bullet's arc fill, not just a measurement readout drawn in the
+    // trace colour: Show Scale gates the whole bullet row off otherwise.
     expect(fills).toContain('#123456');
+    expect(fills.filter((c) => c === '#123456').length).toBeGreaterThanOrEqual(2);
   });
 });
 

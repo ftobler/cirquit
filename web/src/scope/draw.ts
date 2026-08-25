@@ -493,36 +493,41 @@ function drawHeader(
       }
     }
   }
-  const hs = `H=${formatValue(gridStepX(speed, timeStep), 's', decimalDigits)}/div`;
-  if (scope.manualScale) {
-    // Per-plot coloured /div labels (ScopeOverlays.drawScale, manual mode).
-    lines.push({ text: hs, y });
-    let x = 0;
-    // Only the visible plots get a bullet and /div label (ScopeOverlays.drawScale
-    // iterates `visiblePlots`), so a plot hidden by showV/showI stays off the
-    // header.
-    for (const p of visiblePlotsOf(scope).filter(isDrawable)) {
-      const divisions = scope.manDivisions || MAN_DIVISIONS;
-      const manScale = p.manScale ?? seedManScale(5, divisions);
-      const s = `=${formatValue(manScale, UNIT[p.value], decimalDigits)}/div`;
-      ctx.font = canvasFont(10);
-      const width = ctx.measureText(s).width + 20;
-      if (x + width > ctx.canvas.width) break;
-      ctx.fillStyle = traceColor(traceColors, p, theme);
-      ctx.beginPath();
-      ctx.arc(4 + x + 8, y + 5, 4, 0, Math.PI * 2);
-      ctx.fill();
-      lines.push({ text: s, y });
-      x += width;
+  // Upstream gates the whole scale row behind Show Scale (ScopeOverlays.draw
+  // only calls drawScale when scope.showScale), so the H= label, and with it
+  // the manual-mode bullet row or auto V= suffix, draws only when it is on.
+  if (scope.showScale) {
+    const hs = `H=${formatValue(gridStepX(speed, timeStep), 's', decimalDigits)}/div`;
+    if (scope.manualScale) {
+      // Per-plot coloured /div labels (ScopeOverlays.drawScale, manual mode).
+      lines.push({ text: hs, y });
+      let x = 0;
+      // Only the visible plots get a bullet and /div label (ScopeOverlays.drawScale
+      // iterates `visiblePlots`), so a plot hidden by showV/showI stays off the
+      // header.
+      for (const p of visiblePlotsOf(scope).filter(isDrawable)) {
+        const divisions = scope.manDivisions || MAN_DIVISIONS;
+        const manScale = p.manScale ?? seedManScale(5, divisions);
+        const s = `=${formatValue(manScale, UNIT[p.value], decimalDigits)}/div`;
+        ctx.font = canvasFont(10);
+        const width = ctx.measureText(s).width + 20;
+        if (x + width > ctx.canvas.width) break;
+        ctx.fillStyle = traceColor(traceColors, p, theme);
+        ctx.beginPath();
+        ctx.arc(4 + x + 8, y + 5, 4, 0, Math.PI * 2);
+        ctx.fill();
+        lines.push({ text: s, y });
+        x += width;
+      }
+    } else {
+      // Auto scale: the V label is hidden when both V and I plots are shown
+      // (ScopeOverlays.drawScale, ScopeOverlays.java:21-25).
+      const vs =
+        scope.showV && scope.showI
+          ? ''
+          : ` V=${formatValue(firstTransform.stepY, UNIT[firstPlot.value], decimalDigits)}/div`;
+      lines.push({ text: hs + vs, y });
     }
-  } else {
-    // Auto scale: the V label is hidden when both V and I plots are shown
-    // (ScopeOverlays.drawScale, ScopeOverlays.java:21-25).
-    const vs =
-      scope.showV && scope.showI
-        ? ''
-        : ` V=${formatValue(firstTransform.stepY, UNIT[firstPlot.value], decimalDigits)}/div`;
-    lines.push({ text: hs + vs, y });
   }
   drawInfo(ctx, lines, h, theme.whiteColor);
 }
