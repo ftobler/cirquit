@@ -210,7 +210,8 @@ export interface AppState {
   problem: string | null;
   /** The load-time part of `problem`, kept apart from it so the frame loop can
    *  merge it with the engine's report instead of letting one rebuild wipe it.
-   *  Set by `loadNetlist`, cleared by `newCircuit`. */
+   *  Set by a successful `loadNetlist`, cleared by `newCircuit`; a refused
+   *  load produces none. */
   unsupportedProblem: string | null;
   /** The transient notice: something the port handled on its own and only
    *  mentions in passing (a substituted ground reference, a pinned floating

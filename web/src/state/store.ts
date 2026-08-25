@@ -2836,8 +2836,13 @@ function createAppStore() {
     try {
       parsed = parseCircuit(text);
     } catch (e) {
+      // `problem` only: the sticky channel carries the load-time part of the
+      // open document, and a refusal produces none, so seeding it would
+      // resurrect a dismissed banner over unrelated rebuilds of the healthy
+      // circuit still on screen. Share-link startup re-asserts both channels
+      // itself after its starter fallback.
       const banner = `Could not load the circuit: ${e instanceof Error ? e.message : String(e)}`;
-      set({ problem: banner, unsupportedProblem: banner });
+      set({ problem: banner });
       return banner;
     }
     // The sample cache belongs to the open file, like the session models: the
