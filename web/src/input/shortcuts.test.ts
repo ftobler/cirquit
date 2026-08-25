@@ -644,6 +644,22 @@ describe('shortcut overlay persistence', () => {
     expect(loadShortcutOverlay(storage)).toEqual({ toggleRunning: 'Space' });
   });
 
+  it('an F-key assignment survives save and reload', () => {
+    // Upstream explicitly supports this class ("keys like F3, Home",
+    // UIManager.java:1179-1180); the named-key grammar used to reject digits,
+    // so an assignment worked all session and silently vanished on reload.
+    const storage = fakeStorage();
+    saveShortcutOverlay({ zoomIn: 'F5' }, storage);
+    expect(loadShortcutOverlay(storage)).toEqual({ zoomIn: 'F5' });
+
+    const handEdited = fakeStorage();
+    handEdited.setItem(
+      'shortcuts.v1',
+      JSON.stringify({ toggleRunning: 'F3', undo: 'Ctrl+F9' }),
+    );
+    expect(loadShortcutOverlay(handEdited)).toEqual({ toggleRunning: 'F3', undo: 'Ctrl+F9' });
+  });
+
   it('a Delete chord is not assignable, so the Default button is the only way back', () => {
     // Delete stays a dialog-reserved clear key (NON_ASSIGNABLE_KEYS), so not
     // even a hand-edited delete:'Delete' blob persists. Restoring the cleared

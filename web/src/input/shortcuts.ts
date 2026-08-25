@@ -461,7 +461,11 @@ function defaultStorage(): StorageLike | undefined {
   }
 }
 
-const NAMED_KEY = /^[A-Z][A-Za-z]*$/;
+// A capital letter followed by letters or digits: F-keys and their kin.
+// The digits matter, upstream supports the class explicitly ("keys like
+// F3, Home", UIManager.java:1179-1180) and a grammar without them dropped
+// every F-key assignment on reload, after it had worked all session.
+const NAMED_KEY = /^[A-Z][A-Za-z0-9]*$/;
 
 /** The key values a lone modifier keydown reports. The dialog's capture box
  *  ignores them: an assignment to bare Shift would fire on every Shift press
