@@ -632,6 +632,36 @@ fn vccs_with_no_dc_path_reports_zero_current() {
 }
 
 #[test]
+fn vccs_shift_expression_matches_java_masking() {
+    // A file-borne expression must evaluate like Java's masked int shift, not
+    // abort the instance under debug assertions: `a >> 34` masks the count to
+    // its low five bits (JLS 15.19), so a 16 V input yields 16 >> 2 = 4 A into
+    // the 1 ohm load, 4 V at C+.
+    let c = &mut build(
+        vec![
+            elm(1, "rail", &[[0, 0]], &[("maxVoltage", 16.0)]),
+            // Posts: input A, C+, C-.
+            elm_expr(2, "vccs", &[[0, 0], [100, 0], [100, 100]], 1.0, "a >> 34"),
+            elm(3, "resistor", &[[100, 0], [200, 0]], &[("resistance", 1.0)]),
+            elm(4, "ground", &[[200, 0]], &[]),
+            elm(5, "ground", &[[100, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let v = c.node_voltages();
+    // Flats: rail 0, vccs 1(A) 2(C+) 3(C-), resistor 4-5, grounds 6-7.
+    let cp = nodes[2] as usize;
+    assert!(
+        close(v[cp], 4.0, 1e-6),
+        "C+ was {} V, expected 16 >> 34 == 16 >> 2 == 4 A across 1 ohm",
+        v[cp]
+    );
+}
+
+#[test]
 fn open_current_source_output_is_pinned_before_the_opamp_runaway() {
     // The qam-256 failure shape: a multiplier vccs (an ideal current source)
     // drives a node whose only load is an open analog switch's `r_off`, here a

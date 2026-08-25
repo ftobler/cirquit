@@ -262,7 +262,12 @@ impl Expr {
                     Bin::Mod => a % b,
                     Bin::BitAnd => (as_int(a) & as_int(b)) as f64,
                     Bin::BitOr => (as_int(a) | as_int(b)) as f64,
-                    Bin::Shift => (as_int(a) >> as_int(b)) as f64,
+                    // Java masks an int shift count to its low five bits
+                    // (JLS 15.19), which is also what a wasm release shift
+                    // does; masking keeps dev builds from panicking on
+                    // out-of-range counts and all three bit-identical
+                    // (Expr.java:89).
+                    Bin::Shift => (as_int(a) >> (as_int(b) & 31)) as f64,
                     Bin::And => {
                         if a != 0.0 && b != 0.0 {
                             1.0
@@ -955,6 +960,18 @@ mod tests {
         assert_eq!(ev("5 & 3"), 1.0);
         assert_eq!(ev("5 | 3"), 7.0);
         assert_eq!(ev("8 >> 2"), 2.0);
+    }
+
+    #[test]
+    fn shift_counts_mask_like_java() {
+        // Java int shifts mask the count to its low five bits (JLS 15.19,
+        // Expr.java:89), so dev, release and Java must agree bit for bit,
+        // including counts Rust would panic on under debug assertions.
+        assert_eq!(ev("8 >> 32"), 8.0); // count wraps to 0: identity shift
+        assert_eq!(ev("8 >> 34"), 2.0); // low five bits say 2
+        assert_eq!(ev("-1 >> 40"), -1.0); // arithmetic shift sign-extends
+        assert_eq!(ev("8 >> -1"), 0.0); // -1 & 31 == 31
+        assert_eq!(ev("-16 >> 31"), -1.0);
     }
 
     #[test]
