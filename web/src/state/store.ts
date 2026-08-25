@@ -306,7 +306,31 @@ function withLiveAppPrefs(snapshotSettings: SimSettings, live: SimSettings): Sim
   return out as SimSettings;
 }
 
+/** Undo entries beyond this cap fall off the front of the stack, silently
+ *  and without touching the redo side. The push sites that can meet a full
+ *  stack (commit, the drill-in exit, recovery) slice; redo pushes without
+ *  slicing because it writes back onto a stack that just shrank by its pop,
+ *  so the cap holds on its own there. */
 const UNDO_LIMIT = 100;
+
+/** Push-time fingerprint cache, keyed by snapshot identity. A fingerprint is
+ *  a full-document stringify, megabytes on SRAM/ROM sheets, and commit
+ *  compares the live state against the stack top on every call; caching each
+ *  pushed snapshot's key beside it makes that comparison a WeakMap lookup,
+ *  so a commit stringifies only the live state once. Snapshots are never
+ *  mutated after they are pushed, so a cached key cannot go stale; snapshots
+ *  pushed without a key already computed (undo/redo pushes, the drill-in and
+ *  recovery exits) simply compute and cache theirs on the first comparison.
+ *  Evicted entries drop out of the map with their snapshots. */
+const snapshotKeyCache = new WeakMap<Snapshot, string>();
+
+function cachedSnapshotKey(s: Snapshot): string {
+  const hit = snapshotKeyCache.get(s);
+  if (hit !== undefined) return hit;
+  const key = snapshotKey(s);
+  snapshotKeyCache.set(s, key);
+  return key;
+}
 
 /** The one serialization body shared by `toNetlist` (the non-live document)
  *  and `saveNetlist` (the live overlay). Building the scope configs, the
@@ -710,7 +734,6 @@ function createAppStore() {
   elementGesture: null,
   toolTurns: 0,
   revision: 0,
-  scopeRevision: 0,
   paramRevision: 0,
   pendingParams: new Map(),
   pendingStates: new Map(),
@@ -963,11 +986,16 @@ function createAppStore() {
       // (a repeat click, or a field focus that changed nothing) and must not
       // grow the stack. The redo stack is still cleared, exactly as upstream's
       // pushUndo clears it before its own dedup check.
-      const key = snapshotKey(s);
+      const key = cachedSnapshotKey(s);
       const top = s.undoStack[s.undoStack.length - 1];
-      if (top && key === snapshotKey(top)) return { redoStack: [] };
+      if (top && key === cachedSnapshotKey(top)) return { redoStack: [] };
+      // The pushed clone holds the same content the key was computed from, so
+      // the fingerprint travels with it and the next comparison never pays a
+      // second stringify for the same bytes.
+      const snap = clone(s);
+      snapshotKeyCache.set(snap, key);
       return {
-        undoStack: [...s.undoStack, clone(s)].slice(-UNDO_LIMIT),
+        undoStack: [...s.undoStack, snap].slice(-UNDO_LIMIT),
         redoStack: [],
       };
     }),
@@ -2228,14 +2256,14 @@ function createAppStore() {
     const s = get();
     const clamped = scopeSpeed(speed);
     const scope = s.scopes.find((x) => x.id === id);
-    // A no-op must not touch scopeRevision, or a wheel tick with nothing to
-    // do would still patch the engine; committing it would also push a
-    // spurious undo entry.
+    // A no-op must not queue an engine patch, or a wheel tick with nothing to
+    // do would still touch the engine; committing it would also push a
+    // spurious undo entry. The frame loop's fingerprint comparison picks the
+    // change up without any counter.
     if (!scope || scope.speed === clamped) return;
     if (!s.scopeGesture) s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) => (x.id === id ? { ...x, speed: clamped } : x)),
-      scopeRevision: st.scopeRevision + 1,
     }));
   },
 
@@ -2299,9 +2327,9 @@ function createAppStore() {
     const fresh = makeScope(scope.id, scope.raw, plots, UI_SCOPE_SPEED, scope.position);
     set((st) => ({
       scopes: st.scopes.map((x) => (x.id === id ? fresh : x)),
-      // The trigger and the plot set are part of the engine spec, and the speed
-      // is part of the scope patch, so both revisions move.
-      scopeRevision: st.scopeRevision + 1,
+      // The trigger and the plot set are part of the engine spec, so the
+      // rebuild gate moves; the frame loop's scope fingerprint picks up the
+      // rest on its own comparison.
       ...bumpRevision(st),
     }));
   },
@@ -2900,6 +2928,14 @@ function createAppStore() {
     // the frame loop joins the engine warnings, so a rebuild cannot wipe them.
     const loadProblem = mergeProblem(describeMissingComponents(parsed.unsupported), parsed.warnings);
 
+    // A load is a new document, so an undocked window mirroring the previous
+    // one goes with it. The mirror's vanished-scope check cannot be trusted
+    // here: scope ids are session counters that restart with their module,
+    // so a fresh document's small integer ids can collide with the mirrored
+    // id, and then the window would quietly mirror another circuit's panel.
+    // Any load closes it, including the drill-in round trip's inner loads.
+    get().closeUndockedScope();
+
     set((s) => ({
       elements: resolved,
       scopes,
@@ -3183,7 +3219,9 @@ function createAppStore() {
       // model-change baseline lands on top of it, so pre-drill edits stay
       // undoable past an edited drill-in too; upstream's popContext restores
       // its stashed stacks the same way (CirSim.java:500-506). The redo future
-      // dies with the model change, the way every other edit clears it.
+      // dies with the model change, the way every other edit clears it. The
+      // cap evicts from the front, silently dropping the oldest entries
+      // exactly as commit's push does.
       undoStack: [...top.undo, pre].slice(-UNDO_LIMIT),
       redoStack: [],
       view: top.view,
@@ -3203,6 +3241,9 @@ function createAppStore() {
     // cache: New is a fresh document, so no model from the old one may haunt
     // the new circuit's picker.
     clearUserModels();
+    // Same as a load: the fresh document must not inherit an undocked window
+    // mirroring the old one's scope id.
+    get().closeUndockedScope();
     set((s) => ({
       elements: [],
       scopes: [],
@@ -3284,6 +3325,8 @@ function createAppStore() {
       // lastSaved to the recovered netlist, which would read as clean; the
       // RECOVERED_UNSAVED sentinel can never equal a serialised dump.
       lastSaved: RECOVERED_UNSAVED,
+      // The cap evicts from the front, silently dropping the oldest entries
+      // exactly as commit's push does.
       undoStack: [...s.undoStack, pre].slice(-UNDO_LIMIT),
       redoStack: [],
     }));
@@ -3299,6 +3342,10 @@ function createAppStore() {
       undoStack: s.undoStack.slice(0, -1),
       redoStack: [...s.redoStack, clone(s)],
       selectedIds: [],
+      // Same stale-pointer rule as loadNetlist: the restored element list may
+      // no longer hold the hovered element, so a surviving id would highlight
+      // a different part until the mouse moves again.
+      hoveredId: null,
       // The restored snapshot's scope list may no longer hold the open
       // dialog's scope (an undone addScope): a surviving id would hold
       // modalSurface() true forever with nothing on screen, the same invisible
@@ -3334,6 +3381,10 @@ function createAppStore() {
       redoStack: s.redoStack.slice(0, -1),
       undoStack: [...s.undoStack, clone(s)],
       selectedIds: [],
+      // Same stale-pointer rule as undo: the redone element list may no
+      // longer hold the hovered element, so a surviving id would highlight
+      // a different part until the mouse moves again.
+      hoveredId: null,
       // Same stale-id rule as undo: the redone snapshot may not hold the open
       // dialog's scope either.
       scopeProperties: next.scopes.some((x) => x.id === s.scopeProperties)

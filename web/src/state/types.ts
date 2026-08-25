@@ -238,9 +238,6 @@ export interface AppState {
   toolTurns: number;
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
   revision: number;
-  /** Bumped by scope capture-parameter edits (speed), which the frame loop
-   *  applies through the engine's fast path instead of a rebuild. */
-  scopeRevision: number;
   /** Bumped by value-only edits, applied to the live engine without a rebuild. */
   paramRevision: number;
   /** Value edits not yet pushed to the engine, keyed `${id}:${name}`. */
@@ -333,8 +330,11 @@ export interface AppState {
   shortcuts: ShortcutOverlay;
   /** The open undocked scope window: the id of the scope it mirrors and the
    *  handle postMessage pushes go to. Transient UI state like `dialog`: never
-   *  part of Snapshot, no undo entry, dropped when the child window closes or
-   *  the mirrored scope disappears under it (a remove, an undo, a load). */
+   *  part of Snapshot, no undo entry, closed when the child window closes or
+   *  its scope vanishes under it (a remove, an undo), and closed outright by
+   *  any load or New: a fresh document's small integer scope ids can collide
+   *  with the mirrored one, and then the mirror would silently track another
+   *  circuit's panel. */
   undocked: { scopeId: number; windowRef: Window | null } | null;
 
   /**

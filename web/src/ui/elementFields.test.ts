@@ -5,7 +5,9 @@ import { SRAM_HEX_DISPLAY } from '../model/registry/elements/sram';
 import { VOLTAGE_TIME_SPEC } from '../model/registry/flags';
 import { fieldLabel, type CircuitElement, type FieldDef } from '../model/types';
 import {
+  armedForElement,
   applyFieldChange,
+  changeArmsBaseline,
   clampInteger,
   commitBinaryFile,
   commitContentsField,
@@ -16,6 +18,7 @@ import {
   fieldValue,
   visibleFields,
   type DraftCell,
+  type FieldArmCell,
   type FieldEditActions,
 } from './elementFields';
 
@@ -882,5 +885,48 @@ describe('rail rows', () => {
       );
       expect(rows, `waveform ${wf}`).toContain('showVoltage');
     }
+  });
+});
+
+describe('Safari checkbox and select baseline fallback', () => {
+  it('an unarmed change arms the baseline itself', () => {
+    // Safari never focuses a checkbox or select on click, so the change is
+    // the first event of the edit: the caller must take the undo baseline
+    // before applying the value.
+    expect(changeArmsBaseline(false)).toEqual({ arm: true, armed: true });
+  });
+
+  it('a focus-armed session stays armed through the change', () => {
+    // Chromium and Firefox deliver focus first; the caller must not commit
+    // twice (the dedup would make that harmless but the intent stands).
+    expect(changeArmsBaseline(true)).toEqual({ arm: false, armed: true });
+  });
+
+  it('a self-armed session counts as armed for the next click', () => {
+    // Repeated clicks group into one undo step exactly as they do under a
+    // held focus on other browsers.
+    const first = changeArmsBaseline(false);
+    expect(changeArmsBaseline(first.armed)).toEqual({ arm: false, armed: true });
+  });
+
+  it('a self-armed session does not carry across elements', () => {
+    // The dialog reuses its row components across elements (they key by
+    // field name), so element B's shared-name row must read as unarmed even
+    // though element A's flip left the cell armed: each element's first
+    // Safari flip takes its own baseline and lands as its own undo entry,
+    // while repeated flips on one element still group.
+    let cell: FieldArmCell = { id: 1, armed: false };
+    let entries = 0;
+    const flip = (id: number) => {
+      const decision = changeArmsBaseline(armedForElement(cell, id));
+      if (decision.arm) entries += 1;
+      cell = { id, armed: decision.armed };
+    };
+    flip(1);
+    expect(entries).toBe(1);
+    flip(2);
+    expect(entries).toBe(2);
+    flip(2);
+    expect(entries).toBe(2);
   });
 });

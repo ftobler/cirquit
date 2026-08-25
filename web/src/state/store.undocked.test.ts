@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
 import type { ElementReadoutSource } from '../engine/simulator';
+import { resetIds } from '../io/netlist';
 import { addResistor, fresh } from './store.test-helpers';
 import { useStore } from './store';
 import { detachUndockedWindow, noteUndockedHello, pushUndockedScopeFrame } from '../undocked/opener';
@@ -154,5 +155,53 @@ describe('undocked scope window', () => {
     expect(message.time).toBeCloseTo(0.002);
     expect(message.traces.map((t) => t.plotId)).toEqual(scope.plots.map((p) => p.id));
     expect(message.title).toContain('Circuit Simulator');
+  });
+});
+
+describe('undocked window across documents', () => {
+  let win: FakeWin;
+
+  beforeEach(() => {
+    useStore.setState(fresh());
+    win = fakeWindow();
+    vi.stubGlobal('window', {
+      open: vi.fn(() => win),
+      location: { href: 'http://localhost/' },
+    });
+  });
+
+  afterEach(() => {
+    detachUndockedWindow(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('a load reusing the mirrored scope id closes the mirror instead of tracking the new panel', () => {
+    // Scope ids are session counters that restart with their module (a hot
+    // reload of the parser), so a freshly loaded document can genuinely
+    // allocate the mirrored scope's small integer id again.
+    resetIds();
+    const elementId = addResistor();
+    useStore.getState().openUndockedScope(elementId);
+    const mirrored = useStore.getState().undocked?.scopeId;
+    expect(mirrored).toBeDefined();
+    resetIds();
+    // One element line and one o line: under the restarted counter the o line
+    // takes exactly the id the undocked entry holds.
+    useStore
+      .getState()
+      .loadNetlist('$ 1 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\no 0 64 0 4099\n');
+    const loaded = useStore.getState().scopes[0];
+    expect(loaded?.id).toBe(mirrored);
+    // The collision would have made the mirror push this document's trace to
+    // the old window; the load closed it instead.
+    expect(useStore.getState().undocked).toBeNull();
+    expect(win.close).toHaveBeenCalled();
+  });
+
+  it('newCircuit closes the mirror too', () => {
+    useStore.getState().openUndockedScope(addResistor());
+    useStore.getState().newCircuit();
+    expect(useStore.getState().undocked).toBeNull();
+    expect(win.close).toHaveBeenCalled();
   });
 });

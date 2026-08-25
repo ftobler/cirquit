@@ -208,8 +208,11 @@ export function pushUndockedScopeFrame(args: {
   // yet: nothing can be mirrored, but the window should survive until the
   // real readback flows.
   if (!args.source) return;
-  // The scope can disappear under the window (a remove, an undo, a load); a
-  // window mirroring nothing closes rather than freezing on stale samples.
+  // The scope can disappear under the window (a remove, an undo); a window
+  // mirroring nothing closes rather than freezing on stale samples. A load
+  // never relies on this check: it closes the popup outright, because a
+  // fresh document's small integer scope ids can collide with the mirrored
+  // one and leave this find answering with the wrong panel.
   const scope = args.scopes.find((s) => s.id === args.scopeId);
   if (!scope) {
     loseAttachment(current);

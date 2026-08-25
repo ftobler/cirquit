@@ -19,7 +19,10 @@ export function saveBlob(filename: string, blob: Blob): void {
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  // Revoked on a later task, never inside this synchronous block: Safari has
+  // historically cancelled a download whose object URL was already gone by
+  // the time the click's download task came to consume it.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /** Opens the file picker and hands the first chosen file's text and name to

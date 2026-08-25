@@ -2,7 +2,7 @@
  *  uses, with a live summary so the user sees what a load would bring in. */
 
 import { useState } from 'react';
-import { summarizeImport } from '../io/importSummary';
+import { importIsLoadable, summarizeImport } from '../io/importSummary';
 import { useStore } from '../state/store';
 import { Dialog } from './Dialog';
 
@@ -26,7 +26,10 @@ export function ImportFromTextDialog() {
       onClose={closeDialog}
       actions={
         <>
-          <button type="button" onClick={importText}>
+          {/* Garbage that parses to zero elements must not silently replace
+              the working circuit with an empty sheet; blank text stays
+              allowed, since clearing the sheet is a real intent. */}
+          <button type="button" onClick={importText} disabled={!importIsLoadable(text)}>
             OK
           </button>
           <button type="button" onClick={closeDialog}>

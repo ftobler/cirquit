@@ -183,6 +183,35 @@ export interface DraftCell {
   text: string | null;
 }
 
+/** The Safari fallback decision for a checkbox or select change. These
+ *  controls bracket their edit with a focus-time commit, but Safari never
+ *  focuses a checkbox or select on click, so the change can fire with no
+ *  edit session open and the flip would merge into the next committing
+ *  action instead of being its own undo step. An arm result means the caller
+ *  must run its beginEdit itself before applying the value; the session
+ *  counts as armed afterwards either way, so repeated clicks group into one
+ *  undo step exactly as they do under a held focus on browsers that do
+ *  deliver the events. */
+export function changeArmsBaseline(armed: boolean): { arm: boolean; armed: boolean } {
+  return { arm: !armed, armed: true };
+}
+
+/** One control's self-arming record, stamped with the element it was armed
+ *  under. The property rows are reused across elements (they key by field
+ *  name only), so the stamp is what keeps element A's self-armed Safari
+ *  session from suppressing element B's baseline on a shared-name row. */
+export interface FieldArmCell {
+  id: number;
+  armed: boolean;
+}
+
+/** The armed state a change actually sees: an earlier element's session
+ *  never carries over, so its flip reads as unarmed and takes its own
+ *  baseline. Same-element sessions pass through untouched. */
+export function armedForElement(cell: FieldArmCell, elementId: number): boolean {
+  return cell.id === elementId && cell.armed;
+}
+
 /** The live draft: what the cell holds when it was typed under the current
  *  token, else nothing. A landed binary load bumps the token before its pairs
  *  reach the store, so any draft typed earlier drops and a later blur has
