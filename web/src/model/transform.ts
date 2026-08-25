@@ -12,7 +12,7 @@
  */
 
 import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP, postCountOf } from './registry';
-import { COMPARATOR_SWAP, OPAMPREAL_SWAP, SWITCH2_CENTER_OFF } from './registry/flags';
+import { COMPARATOR_SWAP, SWITCH2_CENTER_OFF } from './registry/flags';
 import { GRID_SIZE, type CircuitElement, type Point } from './types';
 
 /** Whether the element can turn a quarter turn. A stem-bearing one-post part
@@ -295,13 +295,15 @@ function rotateFlags(e: CircuitElement): number {
     if (e.x1 === e.x2) flags ^= UJT_FLIP;
     return flags;
   }
-  if (e.kind === 'comparator' || e.kind === 'opampReal') {
-    // The same flipXY-then-flipY sequence as the op-amp, with each type's own
-    // swap bit (ComparatorElm.java:109-112, OpAmpRealElm.java:319-320): a
-    // horizontal part toggles once, a vertical one twice, which cancels.
-    const bit = e.kind === 'comparator' ? COMPARATOR_SWAP : OPAMPREAL_SWAP;
-    let flags = e.flags ^ bit;
-    if (e.x1 === e.x2) flags ^= bit;
+  if (e.kind === 'comparator') {
+    // The comparator overrides both flips with its own swap bit
+    // (ComparatorElm.java:97-112): a horizontal part toggles once, a vertical
+    // one twice, which cancels. The realistic op-amp has no such overrides:
+    // OpAmpRealElm.java:319-320 are canFlipX/canFlipY only, so its swap bit
+    // rides every transform untouched and falls through to the generic
+    // return below.
+    let flags = e.flags ^ COMPARATOR_SWAP;
+    if (e.x1 === e.x2) flags ^= COMPARATOR_SWAP;
     return flags;
   }
   if (e.kind !== 'opamp' && e.kind !== 'transistor') return e.flags;
@@ -397,7 +399,6 @@ export function mirrorElement(e: CircuitElement, centre?: number): CircuitElemen
   else if (e.kind === 'transformer') flipBit = TRANSFORMER_FLIP;
   else if (e.kind === 'opamp' || e.kind === 'transistor') flipBit = FLAG_SWAP;
   else if (e.kind === 'comparator') flipBit = COMPARATOR_SWAP;
-  else if (e.kind === 'opampReal') flipBit = OPAMPREAL_SWAP;
   else if (e.kind === 'tappedTransformer' || e.kind === 'customTransformer') flipBit = TAPPED_FLIP;
   else if (e.kind === 'unijunction') flipBit = UJT_FLIP;
   const flags = vertical && flipBit !== 0 ? e.flags ^ flipBit : e.flags;

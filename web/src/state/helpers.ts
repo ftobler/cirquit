@@ -135,9 +135,9 @@ export const DEFAULT_PLACEMENT_LENGTH = 4;
  *  the press creates are the same element and it cannot jump under the cursor
  *  on click. The turn goes through `rotateElement` rather than raw coordinate
  *  arithmetic so the orientation flags come with it: an op-amp, transistor,
- *  mosfet, relay, triode, transformer, UJT, comparator or opampReal placed
- *  turned carries the same flag bit it would have carried had it been placed
- *  flat and then rotated. */
+ *  mosfet, relay, triode, transformer, UJT or comparator placed turned
+ *  carries the same flag bit it would have carried had it been placed flat
+ *  and then rotated. */
 export function makeGhostElement(
   tool: string,
   x: number,

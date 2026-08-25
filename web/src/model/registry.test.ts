@@ -1948,13 +1948,17 @@ describe('batch C composite draws and posts', () => {
       { x: 48, y: -32 }, // V+ supply, the far outer rail end
       { x: 48, y: 32 },  // V- supply
     ]);
-    // FLAG_SWAP (bit 1) moves the minus side and with it the rail pair.
+    // FLAG_SWAP (bit 1) moves the input pair only: upstream negates hs into
+    // hsswap for in1p/in2p/textp alone (OpAmpRealElm.java:222-238), so the
+    // rail posts stay where the plain dsign term puts them. A swapped file
+    // saved by upstream therefore keeps its supply wires connected to the
+    // right rails.
     expect(postsOf(element('opampReal', 0, 0, 96, 0, 2))).toEqual([
-      { x: 0, y: 16 },
-      { x: 0, y: -16 },
-      { x: 96, y: 0 },
-      { x: 48, y: 32 },
-      { x: 48, y: -32 },
+      { x: 0, y: 16 },   // V-, carried across the axis by the swap
+      { x: 0, y: -16 },  // V+
+      { x: 96, y: 0 },   // out
+      { x: 48, y: -32 }, // V+ supply, unmoved
+      { x: 48, y: 32 },  // V- supply, unmoved
     ]);
   });
 

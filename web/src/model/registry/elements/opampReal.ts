@@ -16,7 +16,11 @@
  * unparseable).
  *
  * The input-swap flag is bit 1 (OPAMPREAL_SWAP, OpAmpRealElm.java:65), the
- * composite's escape flag being bit 0.
+ * composite's escape flag being bit 0. The swap reaches the input posts, their
+ * leads and the +/- glyphs only: upstream negates hs into hsswap for in1p,
+ * in2p and textp alone (OpAmpRealElm.java:222-238), while the supply rails
+ * and the triangle keep the plain hs, so posts 3/4 sit at the same ends of
+ * the rails whether the flag is set or not.
  */
 
 import {
@@ -48,22 +52,30 @@ function opBodyLeads(e: CircuitElement): [Point, Point] {
   return [interp(p1, p2, f), interp(p1, p2, 1 - f)];
 }
 
-/** Signed perpendicular of the inverting input, negated by FLAG_SWAP
- *  (OpAmpRealElm.java:222-225). */
-function inputSide(e: CircuitElement): number {
+/** Signed perpendicular of the triangle body: `opheight*dsign`, never
+ *  negated. The rails and the outline hang off this side whatever the swap
+ *  says (OpAmpRealElm.java:222-242), which is what keeps posts 3/4 fixed. */
+function bodySide(e: CircuitElement): number {
   const [p1, p2] = endpoints(e);
-  let hs = OPHEIGHT * dsign(p1, p2);
+  return OPHEIGHT * dsign(p1, p2);
+}
+
+/** Signed perpendicular of the inverting input, negated by FLAG_SWAP
+ *  (OpAmpRealElm.java:222-225). Only the input side: the input posts, their
+ *  leads and the +/- glyphs track it; the rails and triangle use bodySide. */
+function inputSide(e: CircuitElement): number {
+  let hs = bodySide(e);
   if ((e.flags & OPAMPREAL_SWAP) !== 0) hs = -hs;
   return hs;
 }
 
 /** The rail attachment points, `railPos` nudged so the rails sit on the grid
- *  (OpAmpRealElm.java:236-238). */
+ *  (OpAmpRealElm.java:236-238). Plain hs, so the swap never moves them. */
 function railAnchors(e: CircuitElement): [Point, Point, Point, Point] {
   const [lead1, lead2] = opBodyLeads(e);
   const dn = elementLength(e);
   const ww = Math.min(OPWIDTH, dn / 2);
-  const hs = inputSide(e);
+  const hs = bodySide(e);
   // `(dn/2) % gridSize` upstream's grid-fit nudge: the fraction of the
   // half-length that does not land on the grid moves the rails off-centre.
   const railPos = 0.5 - ((dn / 2) % GRID_SIZE) / (ww * 2);
@@ -95,8 +107,9 @@ function drawOpAmpReal(g: DrawContext, e: CircuitElement): void {
   lead(g, rail2, rail2b, voltageColor(g, g.voltages[4]));
 
   // The triangle outline, drawn like the plain op-amp's
-  // (OpAmpRealElm.java:196, 240-242). No fill, so the body stays transparent.
-  const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
+  // (OpAmpRealElm.java:196, 240-242). Plain hs, unmoved by the swap. No
+  // fill, so the body stays transparent.
+  const [t1, t2] = interp2(lead1, lead2, 0, bodySide(e) * 2);
   closedPolyline(g, [t1, t2, lead2, t1], g.theme.wire);
 
   const [minus, plus] = interp2(lead1, lead2, 0.2, hs);
@@ -117,7 +130,7 @@ export const OPAMP_REAL_DEF: ElementDef = {
   dumpCode: '409',
   postCount: 5,
   posts: opAmpRealPosts,
-  canMirror: true,  // OpAmpRealElm.java:319-320
+  canMirror: true,  // OpAmpRealElm.java:319-320, canFlipX/canFlipY only
   noDiagonal: true,  // OpAmpRealElm.java:69, 78
   defaults: { slewRate: 0.6, capValue: 0, currentLimit: 0.0231, modelType: 0 },
   parse: (t, e) => readParams(t, e, ['slewRate', 'capValue', 'currentLimit', 'modelType']),
@@ -162,10 +175,10 @@ export const OPAMP_REAL_DEF: ElementDef = {
     },
   ],
   // The triangle body is a solid pick zone: the base at lead1 grown hs*2, the
-  // apex at lead2 (OpAmpRealElm.java:183).
+  // apex at lead2 (OpAmpRealElm.java:183). Plain hs, like the drawn triangle.
   bodyRect: (e) => {
     const [lead1, lead2] = opBodyLeads(e);
-    const hs = inputSide(e);
+    const hs = bodySide(e);
     const [t1, t2] = interp2(lead1, lead2, 0, hs * 2);
     return boxOfPoints([t1, t2, lead2]);
   },

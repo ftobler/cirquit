@@ -494,6 +494,43 @@ describe('mirrorElement', () => {
   });
 });
 
+describe('opampReal transforms carry no flag', () => {
+  // OpAmpRealElm overrides neither flipX, flipY nor flipXY: its canFlipX and
+  // canFlipY (OpAmpRealElm.java:319-320) only gate which flips the menu
+  // offers. The swap bit therefore never moves under a transform, and the
+  // rails keep their plain-dsign geometry on both sides of one.
+
+  it('mirrors a horizontal part through dsign alone, keeping the flag', () => {
+    // Upstream flipX touches no flag (OpAmpRealElm.java:319-320 are only
+    // canFlipX/canFlipY): the reflected endpoints reverse dsign, so the
+    // swapped inputs land across the axis exactly as upstream leaves them,
+    // while the rails keep their plain-hs geometry at (48,∓32).
+    const e = element('opampReal', 0, 0, 96, 0, 2);
+    const m = mirrorElement(e);
+    expect(m).toMatchObject({ x1: 96, y1: 0, x2: 0, y2: 0 });
+    expect(m.flags).toBe(2);
+    expect(postsOf(m)).toEqual([
+      { x: 96, y: 16 },
+      { x: 96, y: -16 },
+      { x: 0, y: 0 },
+      { x: 48, y: -32 },
+      { x: 48, y: 32 },
+    ]);
+  });
+
+  it('mirrors a vertical part without toggling anything', () => {
+    const e = element('opampReal', 48, -48, 48, 48, 2);
+    expect(mirrorElement(e).flags).toBe(2);
+  });
+
+  it('rotates without touching the swap bit, in either axis', () => {
+    const horizontal = element('opampReal', 0, 0, 96, 0, 2);
+    expect(rotateElement(horizontal).flags).toBe(2);
+    const vertical = element('opampReal', 48, -48, 48, 48, 2);
+    expect(rotateElement(vertical).flags).toBe(2);
+  });
+});
+
 describe('unijunction FLAG_FLIP', () => {
   it('mirrors a horizontal part across the vertical axis without the flag', () => {
     // A horizontal part's mirror reverses dsign, which alone moves the E/B1/B2
