@@ -412,10 +412,10 @@ fetch it).
   Scopes: regenerating an edited scope line preserves plot tokens it cannot
   interpret, mixed-element scopes hide the per-element rows like upstream's
   shared-element rule, deleted embedded X-Y windows free their canvases.
-- 563 Rust tests, of which 451 are the end-to-end circuit checks across
+- 577 Rust tests, of which 475 are the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
-  files), plus 77 in-module unit tests and one doctest.
-  2984 TypeScript tests (one corpus report test skipped); the owner-bug batch
+  files), plus 101 in-module unit tests and one doctest.
+  3232 TypeScript tests (one corpus report test skipped); the owner-bug batch
   added four of the Rust tests (the new analysis_hygiene.rs) and thirty-eight
   TypeScript ones across the battery, junction, embedded-scope and facade
   suites. The relay pulldown
