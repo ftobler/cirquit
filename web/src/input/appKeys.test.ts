@@ -181,6 +181,29 @@ describe('with every surface closed', () => {
     expect(handleAppKeyUp(useStore.getState(), key({ key: 'k' }))).toBe(true);
     expect(useStore.getState().elements[0].state).toBe(1);
   });
+
+  it('an assigned crossover switch throws on its key instead of arming a tool', () => {
+    // The crossover switch advertises a Keyboard Shortcut field but has no
+    // placement char of its own, so an assigned 's' must be consumed by the
+    // switch-key branch; falling through to matchShortcut armed the SPST tool
+    // behind it (UIManager.java:1256-1268 runs before MODE_ADD_ELM).
+    useStore.getState().addElement({
+      kind: 'crossSwitch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0 },
+      state: 0,
+      keyShortcut: 's',
+    });
+    const host = recordingHost();
+
+    expect(handleAppKeyDown(useStore.getState(), key({ key: 's' }), host)).toBe(true);
+    expect(useStore.getState().tool).toBeNull();
+    expect(useStore.getState().elements[0].state).toBe(1);
+  });
 });
 
 describe('with editing disabled', () => {

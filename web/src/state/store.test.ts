@@ -1374,6 +1374,47 @@ describe('switch keyboard shortcuts', () => {
   });
 });
 
+describe('crossover switch keyboard shortcuts', () => {
+  // The def advertises the Keyboard Shortcut field and the pointer path arms
+  // its momentary, so the key loops must honour the kind too: upstream's
+  // scans match every SwitchElm subclass (CrossSwitchElm extends SwitchElm).
+  const addCross = (
+    params: { position?: number; momentary?: number } = {},
+    keyShortcut?: string,
+  ) =>
+    useStore.getState().addElement({
+      kind: 'crossSwitch',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { position: 0, momentary: 0, ...params },
+      state: params.position ?? 0,
+      ...(keyShortcut !== undefined ? { keyShortcut } : {}),
+    });
+
+  it('toggleSwitchByKey throws and resets a crossover switch', () => {
+    addCross({}, 'x');
+    expect(useStore.getState().toggleSwitchByKey('x')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().toggleSwitchByKey('x')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(0);
+  });
+
+  it('releases a momentary crossover switch on keyup', () => {
+    // A momentary cross switch rests open at position 1 like the push switch
+    // (SwitchElm's momentary constructor), so keydown closes to 0 and keyup
+    // must find it held and put it back.
+    addCross({ position: 1, momentary: 1 }, 'x');
+    expect(useStore.getState().toggleSwitchByKey('x')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(0);
+    expect(useStore.getState().releaseMomentaryByKey('x')).toBe(true);
+    expect(useStore.getState().elements[0].state).toBe(1);
+    expect(useStore.getState().releaseMomentaryByKey('x')).toBe(false);
+  });
+});
+
 describe('the s key on an empty circuit', () => {
   it('arms the switch tool for a plain s keydown', () => {
     // The App.tsx keydown order: the switch keyShortcut path first (no switch

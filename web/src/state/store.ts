@@ -140,6 +140,20 @@ const INPUT_COUNT_KINDS: ReadonlySet<string> = new Set([
   ...GATE_INPUT_COUNT_KINDS,
 ]);
 
+/** Every kind whose keyShortcut the key loops honour: upstream's keypress and
+ *  keyup scans match every SwitchElm subclass carrying an assignment
+ *  (UIManager.java:1256-1268, :1113-1131), and the crossover switch is one.
+ *  One constant feeds both loops so they cannot drift apart again; a registry
+ *  def that exposes the Keyboard Shortcut field must be listed here, or its
+ *  advertised assignment silently goes dead. */
+const SWITCH_KEY_KINDS: ReadonlySet<string> = new Set([
+  'switch',
+  'switch2',
+  'mbbSwitch',
+  'dpdtSwitch',
+  'crossSwitch',
+]);
+
 /**
  * The bit-width chips whose `setParam` writes the engine-derived integer back
  * on edit, keyed by `kind:paramName`. The multiplexer truncates, the
@@ -2021,10 +2035,7 @@ function createAppStore() {
     const k = normalizeKey(key);
     let toggled = false;
     for (const e of s.elements) {
-      if (
-        (e.kind === 'switch' || e.kind === 'switch2' || e.kind === 'mbbSwitch' || e.kind === 'dpdtSwitch') &&
-        e.keyShortcut === k
-      ) {
+      if (SWITCH_KEY_KINDS.has(e.kind) && e.keyShortcut === k) {
         s.toggleSwitch(e.id);
         toggled = true;
       }
@@ -2047,7 +2058,7 @@ function createAppStore() {
     for (const e of s.elements) {
       const rest = e.params.position ?? 0;
       if (
-        (e.kind === 'switch' || e.kind === 'switch2' || e.kind === 'mbbSwitch' || e.kind === 'dpdtSwitch') &&
+        SWITCH_KEY_KINDS.has(e.kind) &&
         (e.params.momentary ?? 0) !== 0 &&
         e.keyShortcut === k &&
         // Only a switch away from its rest position is held. The keyup now
