@@ -1168,4 +1168,13 @@ describe('stale transient state', () => {
     useStore.getState().undo();
     expect(useStore.getState().hoveredId).toBeNull();
   });
+
+  it('redo clears the hover too', () => {
+    const id = addResistor();
+    useStore.getState().commit();
+    useStore.getState().undo();
+    useStore.getState().setHovered(id);
+    useStore.getState().redo();
+    expect(useStore.getState().hoveredId).toBeNull();
+  });
 });

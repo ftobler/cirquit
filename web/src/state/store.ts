@@ -3379,6 +3379,10 @@ function createAppStore() {
       redoStack: s.redoStack.slice(0, -1),
       undoStack: [...s.undoStack, clone(s)],
       selectedIds: [],
+      // Same stale-pointer rule as undo: the redone element list may no
+      // longer hold the hovered element, so a surviving id would highlight
+      // a different part until the mouse moves again.
+      hoveredId: null,
       // Same stale-id rule as undo: the redone snapshot may not hold the open
       // dialog's scope either.
       scopeProperties: next.scopes.some((x) => x.id === s.scopeProperties)
