@@ -4,7 +4,7 @@
  *  are and what a change does live next door in `elementFields.ts`, which is
  *  node-tested; this file is the controls and the file-picker plumbing. */
 
-import { Fragment, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import type { SimEngine } from '../engine/simulator';
 import { AUDIO_DECODE_ERROR, decodeAudioFile } from '../model/audioFile';
 import { parseDataFile } from '../model/dataFile';
@@ -15,6 +15,7 @@ import type { CircuitElement, FieldDef } from '../model/types';
 import { useStore } from '../state/store';
 import {
   applyFieldChange,
+  changeArmsBaseline,
   clampInteger,
   commitBinaryFile,
   commitContentsField,
@@ -45,6 +46,20 @@ function Field({
    *  open draft when a binary file load lands. */
   resetToken?: number;
 }) {
+  // Whether the pending edit's undo baseline was already armed, by focus or
+  // by an earlier self-arming change below. Only the checkbox and select rows
+  // consult it; the text and number rows always receive real focus events.
+  const armedRef = useRef(false);
+  const armOnFocus = () => {
+    armedRef.current = true;
+    onBeginEdit();
+  };
+  const armOnChange = () => {
+    const decision = changeArmsBaseline(armedRef.current);
+    if (decision.arm) onBeginEdit();
+    armedRef.current = decision.armed;
+  };
+
   if (field.type === 'download') {
     // A one-shot button, the data recorder's export: the recorded samples
     // come from the engine on demand and land as a Blob download
@@ -138,9 +153,13 @@ function Field({
           checked={v !== 0}
           // Focus opens the edit session so a flag flip is one undo entry,
           // same as the number and text fields; dedup drops a focus that
-          // changed nothing.
-          onFocus={onBeginEdit}
-          onChange={(e) => onChange(e.target.checked ? 1 : 0)}
+          // changed nothing. Safari never focuses a checkbox on click, so
+          // the change handler arms as well when focus did not.
+          onFocus={armOnFocus}
+          onChange={(e) => {
+            armOnChange();
+            onChange(e.target.checked ? 1 : 0);
+          }}
         />
         <span>{label}</span>
       </label>
@@ -160,9 +179,14 @@ function Field({
         <select
           value={v}
           // Focus opens the edit session so a waveform or type change is one
-          // undo entry, same as the number and text fields.
-          onFocus={onBeginEdit}
-          onChange={(e) => onChange(Number(e.target.value))}
+          // undo entry, same as the number and text fields. Safari never
+          // focuses a select on click, so the change handler arms as well
+          // when focus did not.
+          onFocus={armOnFocus}
+          onChange={(e) => {
+            armOnChange();
+            onChange(Number(e.target.value));
+          }}
         >
           {field.choices?.map((c) => (
             <option key={c.value} value={c.value}>
@@ -197,8 +221,11 @@ function Field({
         <span>{label}</span>
         <select
           value={current}
-          onFocus={onBeginEdit}
-          onChange={(e) => onChange(e.target.value)}
+          onFocus={armOnFocus}
+          onChange={(e) => {
+            armOnChange();
+            onChange(e.target.value);
+          }}
         >
           <option value="">(default)</option>
           {options.map((name) => (

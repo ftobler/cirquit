@@ -6,6 +6,7 @@ import { VOLTAGE_TIME_SPEC } from '../model/registry/flags';
 import { fieldLabel, type CircuitElement, type FieldDef } from '../model/types';
 import {
   applyFieldChange,
+  changeArmsBaseline,
   clampInteger,
   commitBinaryFile,
   commitContentsField,
@@ -882,5 +883,27 @@ describe('rail rows', () => {
       );
       expect(rows, `waveform ${wf}`).toContain('showVoltage');
     }
+  });
+});
+
+describe('Safari checkbox and select baseline fallback', () => {
+  it('an unarmed change arms the baseline itself', () => {
+    // Safari never focuses a checkbox or select on click, so the change is
+    // the first event of the edit: the caller must take the undo baseline
+    // before applying the value.
+    expect(changeArmsBaseline(false)).toEqual({ arm: true, armed: true });
+  });
+
+  it('a focus-armed session stays armed through the change', () => {
+    // Chromium and Firefox deliver focus first; the caller must not commit
+    // twice (the dedup would make that harmless but the intent stands).
+    expect(changeArmsBaseline(true)).toEqual({ arm: false, armed: true });
+  });
+
+  it('a self-armed session counts as armed for the next click', () => {
+    // Repeated clicks group into one undo step exactly as they do under a
+    // held focus on other browsers.
+    const first = changeArmsBaseline(false);
+    expect(changeArmsBaseline(first.armed)).toEqual({ arm: false, armed: true });
   });
 });
