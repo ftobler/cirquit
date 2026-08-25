@@ -709,13 +709,15 @@ describe('xml to text conversion', () => {
 
   it('splices OTA transistor junction state out of the child elements', () => {
     // While the circuit has run, CompositeElm.dumpXmlState appends each
-    // transistor as a child element carrying vbe/vbc against its child index
-    // ix; upstream restores them onto the rebuilt children before reading the
-    // supplies. The rail children save nothing, so they never appear.
+    // transistor as a child element tagged "t", the subclasses' shared
+    // printable dump type, carrying vbe/vbc against its child index ix;
+    // upstream restores them onto the rebuilt children before reading the
+    // supplies. The rail children save nothing, so they never appear, and the
+    // polarity comes from the slot position, not from the tag.
     const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
   <OTA x="512 528 624 528" f="1">
-    <NTransistorElm ix="2" vbe="-1.5" vbc="-0.25"/>
-    <PTransistorElm ix="7" vbe="2" vbc="-3"/>
+    <t ix="2" vbe="-1.5" vbc="-0.25"/>
+    <t ix="7" vbe="2" vbc="-3"/>
   </OTA>
 </cir>
 `;
@@ -725,6 +727,19 @@ describe('xml to text conversion', () => {
     expect(tokens[8]).toBe('0_1_-1.5_-0.25_100');   // child index 2
     expect(tokens[13]).toBe('0_-1_2_-3_100');       // child index 7
     expect(tokens[9]).toBe('0_1_0_0_100');          // untouched neighbours stay fresh
+  });
+
+  it('refuses an OTA child index outside the sixteen transistor slots', () => {
+    // CompositeElm.undumpXml itself throws when a state child's index has no
+    // matching child (CompositeElm.java:300-307), so a claim on a rail slot or
+    // past the end must fail loudly instead of landing somewhere wrong.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <OTA x="512 528 624 528" f="1">
+    <t ix="18" vbe="1" vbc="-1"/>
+  </OTA>
+</cir>
+`;
+    expect(() => xmlToText(src)).toThrow(/out of range/);
   });
 
   it('converts a realistic op-amp to its 409 line with its four tokens', () => {

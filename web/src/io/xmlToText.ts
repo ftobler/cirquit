@@ -333,24 +333,27 @@ function analogSwitchTokens(n: XmlNode): (string | number)[] {
 
 /** The OTA's eighteen child dumps: fresh transistors behind rails re-derived
  *  from the pv/nv supplies, then any live junction state spliced in from the
- *  transistor elements upstream appends once the circuit has run
- *  (CompositeElm.dumpXmlState; TransistorElm writes vbe/vbc against its child
- *  index ix). A child index outside the transistor range means the tags and
- *  positions disagree, which upstream itself refuses (CompositeElm.java:
- *  306-309). */
+ *  child elements CompositeElm.dumpXmlState appends once the circuit has run.
+ *  Every state child is tagged "t": both transistor subclasses share the
+ *  printable dump type 't', so getXmlDumpType answers "t" for either
+ *  (CircuitElm.java:113-118, TransistorElm.java:101) and the tag says nothing
+ *  about polarity. The child index alone picks the slot, whose fresh token
+ *  already holds the right sign and beta, so only vbe/vbc move across
+ *  (TransistorElm.java:112-115 writes exactly those). An index outside the
+ *  sixteen transistor slots means the tags and positions disagree, which
+ *  upstream itself refuses (CompositeElm.java:300-307). */
 function otaTokens(node: XmlNode): (string | number)[] {
   const tokens = otaFreshChildren(attr(node, 'pv', 9), attr(node, 'nv', -9));
   for (const child of node.children) {
-    if (child.tag !== 'NTransistorElm' && child.tag !== 'PTransistorElm') continue;
+    if (child.tag !== 't') continue;
     const i = Math.trunc(attr(child, 'ix', -1));
     if (i < 2 || i >= tokens.length) {
       throw new Error(`xml: OTA child index out of range: ${child.attrs.ix}`);
     }
-    const pnp = child.tag === 'PTransistorElm' ? '-1' : '1';
-    // Only vbe/vbc ever ride the child element, so flags stay zero and beta
-    // stays the constructor's 100 (TransistorElm.java:112-115).
-    tokens[i] =
-      ['0', pnp, String(attr(child, 'vbe', 0)), String(attr(child, 'vbc', 0)), '100'].join('_');
+    const fields = tokens[i].split('_');
+    fields[2] = String(attr(child, 'vbe', 0));
+    fields[3] = String(attr(child, 'vbc', 0));
+    tokens[i] = fields.join('_');
   }
   return tokens;
 }
