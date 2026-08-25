@@ -383,9 +383,7 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
         "monostable" => Box::new(monostable::Monostable::new(spec)),
         "adc" => Box::new(adc::Adc::new(spec)),
         "multiplexer" => Box::new(multiplexer::Multiplexer::new(spec)),
-        "customLogic" => Box::new(
-            model_composite(spec, custom_logic::CustomLogic::new(spec))?,
-        ),
+        "customLogic" => Box::new(model_composite(spec, custom_logic::CustomLogic::new(spec))?),
         "triState" => Box::new(tri_state::TriState::new(spec)),
         "schmitt" => Box::new(schmitt::Schmitt::new(spec, false)),
         "invertingSchmitt" => Box::new(schmitt::Schmitt::new(spec, true)),
