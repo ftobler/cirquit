@@ -60,10 +60,11 @@ function inputSide(e: CircuitElement): number {
 
 /** The three child dumps a freshly constructed upstream comparator would
  *  hold, in `modelString` order (ComparatorElm.java:7): the op-amp, the analog
- *  switch, the ground. `CompositeElm.loadComposite` calls `st.nextToken()`
+ *  switch and the ground. `CompositeElm.loadComposite` calls `st.nextToken()`
  *  once per child (CompositeElm.java:85-91), so a 401 line that stops after
  *  the flags makes upstream throw and drop the element; these are the tokens
- *  that keep it loadable.
+ *  that keep it loadable. Also consumed by the XML converter, whose source
+ *  elements never carry child dumps.
  *
  *  Values come from the children's own constructors:
  *  - op-amp `flags_maxOut_minOut_gbw_volts0_volts1_gain`, fresh flags
@@ -78,7 +79,7 @@ function inputSide(e: CircuitElement): number {
  *  - ground `flags_symbolType`, FLAG_OLD_STYLE = 1 because `loadComposite`
  *    calls `setOldStyle()` on every GroundElm child (CompositeElm.java:98-99),
  *    and symbolType 0 (GroundElm.java:46-48). */
-const FRESH_CHILDREN = ['8_15_-15_1000000_0_0_100000', '2_20_10000000000_2.5', '1_0'];
+export const FRESH_CHILDREN = ['8_15_-15_1000000_0_0_100000', '2_20_10000000000_2.5', '1_0'];
 
 function comparatorPosts(e: CircuitElement): Point[] {
   const p1 = endpoints(e)[0];

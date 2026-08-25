@@ -39,6 +39,14 @@
  * that set keeps the trace path: the demultiplexer's bus output modes
  * (`om`/`dw`) and a nonzero bit order on any chip this build does not lay
  * out as a bus.
+ *
+ * The analog ICs convert for real as well: Timer, Comparator, OTA, OpAmpReal,
+ * DAC, AnalogMux and DelayBuffer plus the `as`/`as2` switch pair emit their
+ * dump-code lines from the same per-class attribute sets. The comparator and
+ * OTA rebuild their child dumps fresh, the OTA deriving its rail supplies from
+ * pv/nv and splicing live transistor junction state out of the element's child
+ * elements; a DAC bit order this build does not lay out stays behind a trace
+ * comment like every other chip's.
  */
 
 import { parseXml, type XmlNode } from './xml';
@@ -50,6 +58,8 @@ import type { PlotMeasurements, Scope, ScopeValue } from '../engine/simulator';
 
 import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
 import { batteryTypeTables } from '../model/registry/elements/battery';
+import { FRESH_CHILDREN as comparatorChildren } from '../model/registry/elements/comparator';
+import { otaFreshChildren } from '../model/registry/elements/ota';
 
 const FLAG_MODEL = 2;         // DiodeElm.java:22, shared by the LED
 const FLAG_FWDROP = 1;        // DiodeElm.java:21
@@ -274,7 +284,76 @@ const WRITERS: Record<string, Writer> = {
   VCCS: (n) => [attr(n, 'ic', 2), n.attrs.ex ?? ''],
   VCVS: (n) => [attr(n, 'ic', 2), n.attrs.ex ?? ''],
   CCVS: (n) => [attr(n, 'ic', 2), n.attrs.ex ?? ''],
+  Timer: (n) =>
+    // The chip tail without a bits token (needsBits false): optional high
+    // voltage, then the saved OUT level, pin 5 being the timer's only state
+    // pin (TimerElm.java:55).
+    chipTail(n, false, [attr(n, 'v5', 0)]),
+  Comparator: () =>
+    // ComparatorElm carries no fields of its own beyond the flags word, and
+    // none of its three children saves state into the XML, so the line gets
+    // exactly the child dumps a freshly built comparator holds.
+    comparatorChildren,
+  OTA: otaTokens,
+  OpAmpReal: (n) => [
+    // The port's four-token order (OpAmpRealElm.java:79-86); vd is the
+    // compensation capacitor's saved charge, which upstream restores onto the
+    // rebuilt model's capacitor (OpAmpRealElm.java:171-175).
+    attr(n, 'slr', 0.6),
+    attr(n, 'vd', 0),
+    attr(n, 'cl', 0.0231),
+    attr(n, 'mt', 0),
+  ],
+  DAC: (n) => chipTail(n, true, []),
+  AnalogMux: (n) =>
+    // AnalogMuxElm.dump appends selectBitCount r_on r_off threshold after the
+    // base (:63-65); the class has needsBits false and no state pins.
+    chipTail(n, false, [
+      attr(n, 'sb', 2),
+      attr(n, 'ron', 20),
+      attr(n, 'rof', 1e10),
+      attr(n, 'thr', 2.5),
+    ]),
+  DelayBuffer: (n) => [
+    // delay threshold highVoltage, the reader's own order
+    // (DelayBufferElm.java:39-45). A fresh part's delay field stays 0.
+    attr(n, 'dl', 0),
+    attr(n, 'th', 2.5),
+    attr(n, 'hv', 5),
+  ],
+  as: analogSwitchTokens,
+  as2: analogSwitchTokens,
 };
+
+/** r_on r_off threshold, the triple both analog switch classes carry in text
+ *  (AnalogSwitchElm.java:58-60) and write as ron/roff/th in XML (:62-67). */
+function analogSwitchTokens(n: XmlNode): (string | number)[] {
+  return [attr(n, 'ron', 20), attr(n, 'roff', 1e10), attr(n, 'th', 2.5)];
+}
+
+/** The OTA's eighteen child dumps: fresh transistors behind rails re-derived
+ *  from the pv/nv supplies, then any live junction state spliced in from the
+ *  transistor elements upstream appends once the circuit has run
+ *  (CompositeElm.dumpXmlState; TransistorElm writes vbe/vbc against its child
+ *  index ix). A child index outside the transistor range means the tags and
+ *  positions disagree, which upstream itself refuses (CompositeElm.java:
+ *  306-309). */
+function otaTokens(node: XmlNode): (string | number)[] {
+  const tokens = otaFreshChildren(attr(node, 'pv', 9), attr(node, 'nv', -9));
+  for (const child of node.children) {
+    if (child.tag !== 'NTransistorElm' && child.tag !== 'PTransistorElm') continue;
+    const i = Math.trunc(attr(child, 'ix', -1));
+    if (i < 2 || i >= tokens.length) {
+      throw new Error(`xml: OTA child index out of range: ${child.attrs.ix}`);
+    }
+    const pnp = child.tag === 'PTransistorElm' ? '-1' : '1';
+    // Only vbe/vbc ever ride the child element, so flags stay zero and beta
+    // stays the constructor's 100 (TransistorElm.java:112-115).
+    tokens[i] =
+      ['0', pnp, String(attr(child, 'vbe', 0)), String(attr(child, 'vbc', 0)), '100'].join('_');
+  }
+  return tokens;
+}
 
 /** The `R`/`v` six-token stream (VoltageElm.java:45-56). The missing-fr seed
  *  is 60, not the text-format constructor's 40: upstream never writes fr for
@@ -362,6 +441,8 @@ const DUMP_CODES: Record<string, string> = {
   VCCS: '213', VCVS: '212', CCVS: '214',
   ins: '434', SRAM: '413',
   dmux: '185', ctr: '164', TFlipFlop: '193', JKFlipFlop: '156', Latch: '168',
+  Timer: '165', Comparator: '401', OTA: '402', OpAmpReal: '409', DAC: '166',
+  AnalogMux: '432', DelayBuffer: '422', as: '159', as2: '160',
 };
 
 /** The port kind each element tag maps to, for scope value decoding. */
@@ -380,6 +461,9 @@ const KIND_BY_TAG: Record<string, string> = {
   ins: 'instructionDisplay', SRAM: 'sram',
   dmux: 'deMultiplexer', ctr: 'counter', TFlipFlop: 'tFlipFlop',
   JKFlipFlop: 'jkFlipFlop', Latch: 'latch',
+  Timer: 'timer', Comparator: 'comparator', OTA: 'ota', OpAmpReal: 'opampReal',
+  DAC: 'dac', AnalogMux: 'analogMux', DelayBuffer: 'delayBuffer',
+  as: 'analogSwitch', as2: 'analogSwitch2',
 };
 
 /** The flags an element line carries: the XML `f` plus the bits the port's own
@@ -403,7 +487,7 @@ function flagsFor(node: XmlNode): number {
       tag === 'FullAdder' || tag === 'SevenSegDecoder' || tag === 'ssd' || tag === 'mux' ||
       tag === 'ctr2' || tag === 'dd' || tag === 'ROM' || tag === 'bs' || tag === 'bt' ||
       tag === 'dmux' || tag === 'ctr' || tag === 'TFlipFlop' || tag === 'JKFlipFlop' ||
-      tag === 'Latch') &&
+      tag === 'Latch' || tag === 'Timer' || tag === 'DAC' || tag === 'AnalogMux') &&
     hv !== undefined &&
     Number(hv) !== 5
   ) {

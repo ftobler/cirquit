@@ -160,14 +160,26 @@ function railToken(v: number | undefined, fallback: number): string {
   return `0_0_40_${volts}_0_0_0.5`;
 }
 
-function otaChildTokens(e: CircuitElement): string[] {
+/** The eighteen child dumps a fresh part carries, for supplies
+ *  `posVolt`/`negVolt`. Shared with the XML converter: an upstream `<OTA>`
+ *  element never embeds child model dumps, only the supply attributes and the
+ *  transistors' live junction state, so the converter synthesizes this same
+ *  list (xmlToText.ts). */
+export function otaFreshChildren(posVolt: number, negVolt: number): string[] {
   return [
-    railToken(e.params.negVolt, DEF_NEG_VOLT),
-    railToken(e.params.posVolt, DEF_POS_VOLT),
+    railToken(negVolt, DEF_NEG_VOLT),
+    railToken(posVolt, DEF_POS_VOLT),
     ...Array<string>(5).fill(FRESH_N_TRANSISTOR),
     ...Array<string>(6).fill(FRESH_P_TRANSISTOR),
     ...Array<string>(5).fill(FRESH_N_TRANSISTOR),
   ];
+}
+
+function otaChildTokens(e: CircuitElement): string[] {
+  return otaFreshChildren(
+    e.params.posVolt ?? DEF_POS_VOLT,
+    e.params.negVolt ?? DEF_NEG_VOLT,
+  );
 }
 
 /** The supply a rail child's dump token carries: field 3 of
