@@ -3,8 +3,8 @@
  * context and the engine/store data; the panel owns the frame loop and the
  * pointer state, this module owns the pixels.
  *
- * The per-plot sticky auto-scale state lives in `scale.ts`, keyed by plot id,
- * so it survives frame redraws here.
+ * The per-plot sticky auto-scale state lives in `scale.ts`, keyed by scope id
+ * and units family, so it survives frame redraws here.
  */
 
 import type {
@@ -41,20 +41,12 @@ import { tracePolyline } from './trace';
 import { drawInfo, type InfoLine } from './info';
 import { drawFFT, drawPhaseBand } from './spectrum';
 import { xyPersistenceFor } from './xyPersistence';
+import { UNIT } from './units';
 
-export const UNIT: Record<ScopeValue, string> = {
-  voltage: 'V',
-  current: 'A',
-  power: 'W',
-  charge: 'C',
-  resistance: 'Ω',
-  ib: 'A',
-  ic: 'A',
-  ie: 'A',
-  vbe: 'V',
-  vbc: 'V',
-  vce: 'V',
-};
+// The units table lives in units.ts so scale.ts can key sticky scales by the
+// same family without importing this module; re-exported for the dialog rows
+// and axis labels that read it from here.
+export { UNIT };
 
 /** Cursor and drag state, kept in a ref so it survives frame redraws. */
 export interface ScopeCursor {
@@ -1161,7 +1153,7 @@ export function drawScope(
       const transform = transformFor(
         scope,
         infoPlot,
-        scaleStateFor(infoPlot.id, infoPlot.value),
+        scaleStateFor(scope.id, infoPlot.value),
         0,
         0,
         h,
@@ -1199,7 +1191,7 @@ export function drawScope(
     // before that (and in auto-run) the plain most-recent window is shown.
     const win = trigInfo && trigInfo.triggered ? triggerWindow(data, trigInfo, w) : plainWindow(data, w);
     const { maxSample, minSample } = scanWindow(data, win);
-    const state = scaleStateFor(plot.id, plot.value);
+    const state = scaleStateFor(scope.id, plot.value);
     const opts = { maxScale: scope.maxScale && !scope.manualScale, allSameUnits };
     // Two scales, one frame, in upstream's order. `drawn` is calcPlotScale
     // alone -- doubling until the peak fits -- and it is what this frame
@@ -1211,7 +1203,10 @@ export function drawScope(
     // frame's doubling undoes it, which reads as a flicker.
     const drawn = nextScaleState(state, maxSample, minSample, false, opts);
     const fit = extremesFit(maxSample, minSample, drawn, h, opts);
-    setScaleState(plot.id, nextScaleState(state, maxSample, minSample, fit, opts));
+    // Written per plot in draw order, so a later same-family plot sees the
+    // earlier one's update this frame, exactly as upstream's per-plot
+    // calcPlotScale walks visiblePlots against the shared scale[] entry.
+    setScaleState(scope.id, plot.value, nextScaleState(state, maxSample, minSample, fit, opts));
     const transform = transformFor(scope, plot, drawn, maxSample, minSample, h, allSameUnits);
     const m = toMeasurable(data, win);
     return { plot, index, data, win, transform, ...m };
@@ -1335,7 +1330,7 @@ export function selectPlotAt(
   const allSameUnits = sameUnits(plots.map((p) => p.plot));
   for (let i = 0; i < plots.length; i++) {
     const { plot } = plots[i];
-    const state = scaleStateFor(plot.id, plot.value);
+    const state = scaleStateFor(scope.id, plot.value);
     const t = transformFor(scope, plot, state, 0, 0, h, allSameUnits);
     const pos = win.posOf(k);
     if (pos < 0) continue;

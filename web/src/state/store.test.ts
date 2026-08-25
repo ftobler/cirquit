@@ -3050,16 +3050,17 @@ describe('scope panels', () => {
     expect(useStore.getState().undoStack.length).toBe(before);
   });
 
-  it('removePlot drops the removed plot scale state', () => {
+  it('removePlot leaves the scope-family scale state alone', () => {
     useStore.getState().addScope(addResistor(), 'voltage');
     const scope = useStore.getState().scopes[0];
-    const victim = scope.plots[1].id;
-    setScaleState(victim, { gridMax: 3, showNegative: true });
+    const victim = scope.plots[0];
+    setScaleState(scope.id, victim.value, { gridMax: 3, showNegative: true });
 
-    useStore.getState().removePlot(scope.id, victim);
-    // Same symmetry as the Reset command: a dead plot id must not keep its
-    // sticky auto-scale around for a future plot that reuses nothing of it.
-    expect(scaleStateFor(victim)).toEqual({ gridMax: 5, showNegative: false });
+    useStore.getState().removePlot(scope.id, victim.id);
+    // Upstream never resets scale[] when a plot is removed (the entry belongs
+    // to the scope's units family): removing one trace keeps it for any
+    // sibling, and the frame loop drops it only with the whole scope.
+    expect(scaleStateFor(scope.id, victim.value)).toEqual({ gridMax: 3, showNegative: true });
   });
 
   it('addToScope adds the plot to the right scope, deduping per scope', () => {

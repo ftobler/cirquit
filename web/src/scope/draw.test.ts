@@ -297,7 +297,38 @@ describe('drawScope auto-scale window', () => {
       const { ctx } = mkCtx();
       drawScope(ctx, engine, scope, w, h, emptyCursor(), 0, 5e-6, false, 3);
     }
-    expect(scaleStateFor(p.id, p.value ?? undefined).gridMax).toBeLessThan(0.2);
+    expect(scaleStateFor(scope.id, 'voltage').gridMax).toBeLessThan(0.2);
+  });
+
+  it('an Ib trace and an Ic trace converge onto one sticky scale; Vbe stays apart', () => {
+    // Transistor pin values share upstream's scale[] slots by unit
+    // (TransistorElm.java:595-602): the frame loop reads and writes one entry
+    // per family, so Ic's bigger peak drags Ib's gridlines up with it instead
+    // of the two amp traces zooming apart, while Vbe keeps its own volts
+    // entry untouched.
+    const w = 200;
+    const h = 150;
+    const scope = scopeOf([plot(1, 'ib'), plot(2, 'ic'), plot(3, 'vbe')]);
+    pruneScaleStates([]);
+    // Peaks exact in float32, the engine's sample format: 0.25 doubles the
+    // amps entry from 0.1 to 0.4 and Ic's 0.5 drags the shared entry on to
+    // 0.8, where Ib alone would have sat at 0.4.
+    const peaks = [0.25, 0.5, 3];
+    const engine = {
+      scopeIndexOf: (id: number) => id - 1,
+      scopeData: (index: number) => {
+        const v = peaks[index] ?? 0;
+        return new Float32Array([v, v, v, v]);
+      },
+      scopeDiverged: () => false,
+    } as unknown as SimEngine;
+    for (let frame = 0; frame < 8; frame++) {
+      const { ctx } = mkCtx();
+      drawScope(ctx, engine, scope, w, h, emptyCursor(), 0, 5e-6, false, 3);
+    }
+    expect(scaleStateFor(scope.id, 'ib').gridMax).toBe(0.8);
+    expect(scaleStateFor(scope.id, 'ic').gridMax).toBe(0.8);
+    expect(scaleStateFor(scope.id, 'vbe').gridMax).toBe(5);
   });
 });
 
