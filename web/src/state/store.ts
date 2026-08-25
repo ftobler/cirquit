@@ -1955,20 +1955,30 @@ function createAppStore() {
     }),
 
   setKeyShortcut: (id, key) =>
-    set((s) => ({
-      elements: s.elements.map((e) => {
-        if (e.id !== id) return e;
-        // Upstream takes only the first character, lowercased, and clears on
-        // empty (SwitchElm.java:277-283). Session-only: it never enters the
-        // netlist (SwitchElm.java:79-90 stores it in XML only), so nothing
-        // here forces an engine reload or a redraw.
-        const k = key.trim();
-        const next = { ...e };
-        if (k.length === 0) delete next.keyShortcut;
-        else next.keyShortcut = k.charAt(0).toLowerCase();
-        return next;
-      }),
-    })),
+    set((s) => {
+      const target = s.elements.find((e) => e.id === id);
+      if (target === undefined) return s;
+      // Upstream takes only the first character, lowercased, and clears on
+      // empty (SwitchElm.java:277-283). Session-only: it never enters the
+      // netlist (SwitchElm.java:79-90 stores it in XML only), so nothing
+      // here forces an engine reload or a redraw.
+      const k = key.trim();
+      const next = k.length === 0 ? undefined : k.charAt(0).toLowerCase();
+      if ((target.keyShortcut ?? undefined) === next) return s;
+      return {
+        elements: s.elements.map((e) => {
+          if (e.id !== id) return e;
+          const copy = { ...e };
+          if (next === undefined) delete copy.keyShortcut;
+          else copy.keyShortcut = next;
+          return copy;
+        }),
+        // The assignment rides every snapshot without an undo entry of its
+        // own, like toggleSwitchByKey above: kill the stale redo future or
+        // Ctrl+Shift+Z would rewind it silently along with everything else.
+        redoStack: [],
+      };
+    }),
 
   toggleSwitchByKey: (key) => {
     const s = get();

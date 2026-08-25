@@ -726,6 +726,42 @@ describe('run-mode mutations kill the stale redo future', () => {
     expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(0);
   });
 
+  it('setKeyShortcut truncates the future without taking an undo entry', () => {
+    // The assignment rides every snapshot yet takes no undo entry, so a redo
+    // future left standing would rewind it silently along with everything
+    // else on Ctrl+Shift+Z.
+    const id = addKeyedSwitch();
+    useStore.getState().commit();
+    useStore.getState().updateElement(id, { x2: 320 });
+    useStore.getState().undo();
+    expect(useStore.getState().redoStack.length).toBe(1);
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().setKeyShortcut(id, 'j');
+    expect(useStore.getState().elements.find((e) => e.id === id)?.keyShortcut).toBe('j');
+    expect(useStore.getState().redoStack).toEqual([]);
+    expect(useStore.getState().undoStack.length).toBe(baseline);
+
+    // The rewound assignment must not come back on Ctrl+Shift+Z.
+    useStore.getState().redo();
+    expect(useStore.getState().elements.find((e) => e.id === id)?.keyShortcut).toBe('j');
+  });
+
+  it('a repeated identical shortcut changes nothing and leaves the future alone', () => {
+    // A no-op write must not kill a redo future behind it, matching the
+    // no-op guards the other entry-free mutations carry.
+    const id = addKeyedSwitch(); // already 'k'
+    useStore.getState().commit();
+    useStore.getState().updateElement(id, { x2: 320 });
+    useStore.getState().undo();
+    expect(useStore.getState().redoStack.length).toBe(1);
+
+    useStore.getState().setKeyShortcut(id, 'K'); // normalises to the stored k
+
+    expect(useStore.getState().elements.find((e) => e.id === id)?.keyShortcut).toBe('k');
+    expect(useStore.getState().redoStack.length).toBe(1);
+  });
+
   it('updateSettings kills the future but stays entry-free', () => {
     const id = addResistor();
     useStore.getState().commit();
