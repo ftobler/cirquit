@@ -6,11 +6,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { STARTER_CIRCUIT, loadStartupCircuit, type StartupDeps, type StartupIo } from './startup';
-import type { StartupSource } from './urlShare';
 
 const GOOD = '$ 1 0.000005 10 50 5 5 1e-9\nr 0 0 160 0 0 1000\n';
 
-function harness(source: StartupSource, loadImpl: (text: string) => string | null) {
+function harness(loadImpl: (text: string) => string | null) {
   const loads: string[] = [];
   const statuses: string[] = [];
   const problems: (string | null)[] = [];
@@ -30,7 +29,7 @@ const okLoad = () => null;
 
 describe('startup chain', () => {
   it('a good share link loads and says nothing', async () => {
-    const h = harness({ kind: 'url', netlist: GOOD }, okLoad);
+    const h = harness(okLoad);
     await loadStartupCircuit(h.deps, undefined, { kind: 'url', netlist: GOOD });
     expect(h.loads).toEqual([GOOD]);
     expect(h.statuses).toEqual([]);
@@ -40,7 +39,7 @@ describe('startup chain', () => {
   it('a malformed share link falls back to the starter circuit with a status message and keeps the banner', async () => {
     // The store-level routing reports the failure as a value and puts the
     // banner up; simulate both halves here.
-    const h = harness({ kind: 'url', netlist: '<cir broken>' }, (text) =>
+    const h = harness((text) =>
       text === STARTER_CIRCUIT ? null : 'Could not load the circuit: xml: unclosed element <cir>',
     );
     await loadStartupCircuit(h.deps, undefined, { kind: 'url', netlist: '<cir broken>' });
@@ -52,7 +51,7 @@ describe('startup chain', () => {
   });
 
   it('a failed library deep link falls back to the starter circuit and names the file', async () => {
-    const h = harness({ kind: 'file', file: 'led.txt' }, okLoad);
+    const h = harness(okLoad);
     const io: StartupIo = {
       library: () => Promise.reject(new Error('404')),
       default: () => Promise.reject(new Error('unused')),
@@ -63,7 +62,7 @@ describe('startup chain', () => {
   });
 
   it('the default library entry loads and is named by its title', async () => {
-    const h = harness({ kind: 'starter' }, okLoad);
+    const h = harness(okLoad);
     const io: StartupIo = {
       library: () => Promise.reject(new Error('unused')),
       default: () => Promise.resolve({ entry: { title: 'LED Example' }, netlist: GOOD }),
@@ -74,7 +73,7 @@ describe('startup chain', () => {
   });
 
   it('a missing default library quietly falls back to the starter circuit', async () => {
-    const h = harness({ kind: 'starter' }, okLoad);
+    const h = harness(okLoad);
     const io: StartupIo = {
       library: () => Promise.reject(new Error('unused')),
       default: () => Promise.reject(new Error('offline')),

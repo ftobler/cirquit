@@ -282,9 +282,11 @@ const snapshotKey = (s: Snapshot): string =>
  *  keys stay snapshot-carried on purpose: upstream keeps those in the dump
  *  header, so its undo genuinely rolls them back. */
 function withLiveAppPrefs(snapshotSettings: SimSettings, live: SimSettings): SimSettings {
-  const out = { ...snapshotSettings };
+  // The per-key assignment needs a correlated key/value view; TS cannot prove
+  // the union assignment sound through a plain SimSettings index.
+  const out = { ...snapshotSettings } as Record<(typeof APP_PREF_KEYS)[number], unknown>;
   for (const k of APP_PREF_KEYS) out[k] = live[k];
-  return out;
+  return out as SimSettings;
 }
 
 const UNDO_LIMIT = 100;
