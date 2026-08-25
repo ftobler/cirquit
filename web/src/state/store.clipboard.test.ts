@@ -203,6 +203,24 @@ describe('copy, paste and duplicate', () => {
     expect(s.undoStack).toHaveLength(undoBefore);
   });
 
+  it('pasting a corrupt stored clipboard is a silent no-op', () => {
+    // A first line opening `<cir ` routes parseCircuit through the XML
+    // converter, which throws on this truncated document. The bytes can be
+    // in storage from tampering or another app, so the insert path must
+    // swallow the throw instead of escaping through Ctrl+V.
+    const a = addResistor();
+    useStore.getState().select([a]);
+    useStore.setState({ clipboard: '<cir ><w a="1">' });
+    const undoBefore = useStore.getState().undoStack.length;
+    const revisionBefore = useStore.getState().revision;
+    useStore.getState().pasteFromClipboard();
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(1);
+    expect(s.selectedIds).toEqual([a]);
+    expect(s.revision).toBe(revisionBefore);
+    expect(s.undoStack).toHaveLength(undoBefore);
+  });
+
   it('paste with no clipboard is a no-op', () => {
     const a = addResistor();
     useStore.getState().select([a]);

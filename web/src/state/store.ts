@@ -3609,9 +3609,17 @@ function pasteOffset(
 }
 
 /** Shared insert path for paste and duplicate: parse, re-id, fan out from the
- *  current circuit's bounding box. */
+ *  current circuit's bounding box. A refused parse is a silent no-op: the
+ *  clipboard can hold bytes another app wrote or a user edited by hand, a
+ *  paste replaces nothing, and the memos that gate Paste grey it out first,
+ *  so there is no banner to raise here either. */
 function insertElementsFromText(text: string): void {
-  const parsed = parseCircuit(text);
+  let parsed: ParsedCircuit;
+  try {
+    parsed = parseCircuit(text);
+  } catch {
+    return;
+  }
   if (parsed.elements.length === 0) return;
   // A paste adds to the open circuit instead of replacing it, so its `.` line
   // models join the library rather than resetting it, matching upstream's

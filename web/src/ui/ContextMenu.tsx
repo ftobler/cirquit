@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { parseCircuit } from '../io/netlist';
+import { parsesToElements } from '../io/importSummary';
 import { defFor, type ToolboxEntry } from '../model/registry';
 import { toolShortcut } from '../model/search';
 import type { SimSettings } from '../model/types';
@@ -103,9 +103,11 @@ export function ContextMenu() {
   }, [contextMenu, closeContextMenu]);
 
   // The clipboard only ever holds text this app serialised, but guard anyway:
-  // a manually-set garbage string must grey out Paste, not paste nothing.
+  // a manually-set garbage string must grey out Paste, not paste nothing. The
+  // probe is guarded, so stored garbage degrades to a greyed row instead of
+  // throwing out of this render.
   const canPaste = useMemo(
-    () => clipboard !== null && parseCircuit(clipboard).elements.length > 0,
+    () => clipboard !== null && parsesToElements(clipboard),
     [clipboard],
   );
 

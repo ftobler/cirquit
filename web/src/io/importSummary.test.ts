@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { importIsLoadable, summarizeImport } from './importSummary';
+import { importIsLoadable, parsesToElements, summarizeImport } from './importSummary';
 import { SAMPLE } from './netlist/fixtures';
 
 /** Seven elements and one scope with no unmodelled lines, so the pinned
@@ -47,11 +47,39 @@ describe('summarizeImport', () => {
     // user clicks OK.
     expect(summarizeImport(text)).not.toContain('undefined');
   });
+
+  it('degrades to a failure hint when the converter refuses the text', () => {
+    // Typed XML garbage used to throw out of the per-keystroke render; it
+    // must surface the conversion reason instead.
+    const hint = summarizeImport('<cir ><w a="1">');
+    expect(hint).toContain('conversion failed');
+  });
+});
+
+describe('parsesToElements', () => {
+  it('refuses XML-looking garbage without throwing', () => {
+    // The first line opens `<cir `, so parseCircuit runs the XML converter,
+    // which throws on the truncated document. The probe must degrade to
+    // false, because this exact shape arrives from stored clipboard bytes
+    // and would otherwise crash the paste memos' first render.
+    expect(() => parsesToElements('<cir ><w a="1">')).not.toThrow();
+    expect(parsesToElements('<cir ><w a="1">')).toBe(false);
+  });
+
+  it('accepts text that parses to at least one element', () => {
+    expect(parsesToElements('r 0 0 16 0 0 100\n')).toBe(true);
+    expect(parsesToElements(GOOD)).toBe(true);
+    expect(parsesToElements('hello world\n')).toBe(false);
+  });
 });
 
 describe('importIsLoadable', () => {
   it('refuses non-blank garbage that parses to zero elements', () => {
     expect(importIsLoadable('hello world\nnot a circuit\n')).toBe(false);
+  });
+
+  it('treats XML-looking garbage as unloadable instead of crashing', () => {
+    expect(importIsLoadable('<cir ><w a="1">')).toBe(false);
   });
 
   it('allows blank text, where an empty sheet is the intent', () => {
@@ -62,5 +90,13 @@ describe('importIsLoadable', () => {
   it('allows text that parses to at least one element', () => {
     expect(importIsLoadable(GOOD)).toBe(true);
     expect(importIsLoadable('r 0 0 16 0 0 100\n')).toBe(true);
+  });
+
+  it('allows a valid XML document that converts cleanly', () => {
+    const VALID_XML = `<cir f="1">
+  <r x="192 160 304 160" f="0" r="1000"/>
+</cir>
+`;
+    expect(importIsLoadable(VALID_XML)).toBe(true);
   });
 });
