@@ -637,6 +637,34 @@ describe('scope o-line fidelity', () => {
     expect(parsed.scopes.map((s) => s.plots[0].elementIndex)).toEqual([0, 1]);
   });
 
+  it('maps memristor and ohmmeter VAL_R plots to resistance and skips their scale token', () => {
+    // MemristorElm and OhmMeterElm answer getScopeValue/getScopeUnits for
+    // VAL_R too (MemristorElm.java:144-146, OhmMeterElm.java:40-42), so their
+    // Ω-scale tokens sit where the walk must skip them. Before the fix both
+    // kinds fell through to volts: the 160 was misread as the second plot's
+    // `ne` and a regenerated line dropped the scale token.
+    const parsed = parseCircuit(
+      HEADER +
+        'm 0 0 100 0 0 100 16000 0 1e-8 1e-10 0\n' +
+        '216 80 64 80 288 0 0.01 0\n' +
+        'o 0 64 2 4099 20 0.05 0 2 160 1 3\n',
+    );
+    expect(parsed.scopes[0].plots.map((p) => p.value)).toEqual(['resistance', 'current']);
+    expect(parsed.scopes[0].plots.map((p) => p.elementIndex)).toEqual([0, 1]);
+    expect(unitsOf(2, 'memristor')).toBe(3);
+    expect(unitsOf(2, 'ohmmeter')).toBe(3);
+    // An untouched line keeps its tokens byte-for-byte, Ω-scale token
+    // included, per the no-loss guarantee.
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toContain('o 0 64 2 4099 20 0.05 0 2 160 1 3');
+  });
+
   it('resolves the units-relevant kind straight from a raw dump code', () => {
     // The only kinds `unitsOf`/`scopeValueFromToken` special-case, so these are
     // the only codes an unreadable element line needs to be recognised by.
@@ -644,6 +672,8 @@ describe('scope o-line fidelity', () => {
     expect(kindOfDumpCode('c')).toBe('capacitor');
     expect(kindOfDumpCode('209')).toBe('polarizedCapacitor');
     expect(kindOfDumpCode('t')).toBe('transistor');
+    expect(kindOfDumpCode('m')).toBe('memristor');
+    expect(kindOfDumpCode('216')).toBe('ohmmeter');
     // Every other code, including one with no units-specific meaning at all,
     // reports no kind: `unitsOf`'s token-only branches already get it right.
     expect(kindOfDumpCode('150')).toBeNull();

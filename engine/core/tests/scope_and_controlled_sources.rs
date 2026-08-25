@@ -1218,7 +1218,6 @@ fn element_scope(element_id: u32, value: ScopeValue) -> ScopeSpec {
         display_width: 0,
     }
 }
-
 /// The min/max pair of a trace's newest column.
 fn last_column(c: &Circuit, index: usize) -> (f64, f64) {
     let snap = c.scopes()[index].snapshot();
@@ -1413,6 +1412,84 @@ fn lamp_resistance_scope_samples_the_filament_curve() {
         close(amps[1], from_ohms_law, 1e-3),
         "lamp carried {} A while the scope sampled {lo} ohms",
         amps[1]
+    );
+}
+
+#[test]
+fn memristor_resistance_scope_samples_the_stamped_blend() {
+    // Upstream's Show Resistance box on a memristor: VAL_R samples this
+    // step's stamped resistance (MemristorElm.getScopeValue,
+    // MemristorElm.java:144-146). The circuit is the constant-current rig
+    // from the memristor's own integration test, whose analytic blend after
+    // ten steps is R = r_on*0.8 + r_off*0.2 = 3280 ohm; the trace must read
+    // that same figure instead of falling back to the element voltage.
+    let dt = 1e-6;
+    let i = 1e-3;
+    let (r_on, r_off) = (100.0, 16000.0);
+    let total_width = 1e-8;
+    let mobility = 1e-10;
+    let steps = 10u32;
+    let wd = (steps - 2) as f64 * (dt * mobility * r_on * i / total_width) / total_width;
+    let resistance = r_on * wd + r_off * (1.0 - wd);
+
+    let c = &mut build_with(
+        vec![
+            elm(1, "current", &[[0, 0], [100, 0]], &[("current", i)]),
+            elm(
+                2,
+                "memristor",
+                &[[100, 0], [200, 0]],
+                &[
+                    ("r_on", r_on),
+                    ("r_off", r_off),
+                    ("totalWidth", total_width),
+                    ("mobility", mobility),
+                ],
+            ),
+            elm(3, "ground", &[[0, 0]], &[]),
+            elm(4, "ground", &[[200, 0]], &[]),
+        ],
+        opts(dt, false),
+        vec![element_scope(2, ScopeValue::Resistance)],
+    );
+    c.run(steps);
+    let (lo, hi) = last_column(c, 0);
+    assert!(
+        close(lo, resistance, 1e-9) && close(hi, resistance, 1e-9),
+        "memristor resistance scope sampled {lo}/{hi}, expected {resistance}"
+    );
+}
+
+#[test]
+fn ohmmeter_resistance_scope_samples_the_instrument_reading() {
+    // Upstream's Show Resistance box on an ohmmeter: VAL_R samples
+    // getVoltageDiff()/current (OhmMeterElm.java:40-42), the same reading the
+    // element caption shows. Across a 4.7k resistor the meter drives 0.01 A
+    // and must read +4700 on its trace.
+    let c = &mut build_with(
+        vec![
+            elm(
+                1,
+                "ohmmeter",
+                &[[0, 0], [100, 0]],
+                &[("current", 0.01), ("maxVoltage", 0.0)],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 4700.0)],
+            ),
+            elm(3, "ground", &[[100, 0]], &[]),
+        ],
+        opts(1e-5, true),
+        vec![element_scope(1, ScopeValue::Resistance)],
+    );
+    c.run(5);
+    let (lo, hi) = last_column(c, 0);
+    assert!(
+        close(lo, 4700.0, 1e-6) && close(hi, 4700.0, 1e-6),
+        "ohmmeter resistance scope sampled {lo}/{hi}, expected 4700"
     );
 }
 

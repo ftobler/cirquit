@@ -219,7 +219,13 @@ export function scopeValueFromToken(token: number, kind: string | null): ScopeVa
     case 0:
       return 'voltage';
     case 2:
-      return kind === 'lamp' ? 'resistance' : 'voltage';  // VAL_R on a lamp
+      // VAL_R: a lamp, memristor and ohmmeter answer getScopeValue for it
+      // (LampElm.java:218-219, MemristorElm.java:143-146, OhmMeterElm.java:
+      // 38-42); everything else reads it as its voltage like upstream's
+      // default.
+      return kind === 'lamp' || kind === 'memristor' || kind === 'ohmmeter'
+        ? 'resistance'
+        : 'voltage';
     case 7:
       return 'power';
     case 1:
@@ -269,14 +275,20 @@ export function valueTokenOf(value: ScopeValue | null): number {
 
 /** The units index a value token plots in, mirroring `getScopeUnits`
  *  (CircuitElm.java:1274-1277, TransistorElm.java:595-602, LampElm.java:221-222,
- *  CapacitorElm.java:230-231). Only W and higher carry an extra scale token on
- *  the line, so this decides how far the plot walk advances
- *  (ScopeSerializer.java:221-223, 236-238). A lamp's VAL_R plots in ohms and a
- *  capacitor's VAL_CHARGE in coulombs, both > UNITS_A; skipping their scale
- *  token would read the next plot's `ne` one token early. Shared with the
- *  scope-line decoder, whose walk must agree token-for-token. */
+ *  MemristorElm.java:145-147, OhmMeterElm.java:40-42, CapacitorElm.java:230-231).
+ *  Only W and higher carry an extra scale token on the line, so this decides
+ *  how far the plot walk advances (ScopeSerializer.java:221-223, 236-238). A
+ *  lamp's VAL_R plots in ohms and a capacitor's VAL_CHARGE in coulombs, both >
+ *  UNITS_A; skipping their scale token would read the next plot's `ne` one
+ *  token early. Shared with the scope-line decoder, whose walk must agree
+ *  token-for-token. */
 export function unitsOf(token: number, kind: string | null): number {
-  if (kind === 'lamp' && token === 2) return 3;  // resistance: Ω
+  if (
+    (kind === 'lamp' || kind === 'memristor' || kind === 'ohmmeter') &&
+    token === 2
+  ) {
+    return 3;  // resistance: Ω
+  }
   if ((kind === 'capacitor' || kind === 'polarizedCapacitor') && token === 8) return 4;  // charge: C
   if (kind === 'transistor') {
     if (token === 1 || token === 2 || token === 3) return 1;  // IB/IC/IE: A
@@ -419,6 +431,8 @@ const KIND_BY_DUMP_CODE: Record<string, string> = {
   c: 'capacitor',
   '209': 'polarizedCapacitor',
   t: 'transistor',
+  m: 'memristor',
+  '216': 'ohmmeter',
 };
 
 /**

@@ -147,6 +147,16 @@ impl Element for Ohmmeter {
         self.base.volts[1] - self.base.volts[0]
     }
 
+    /// The resistance plot, upstream's `getScopeValue(VAL_R)`
+    /// (OhmMeterElm.java:40-42): the same reading `value()` captions, the
+    /// terminal resistance the meter is measuring.
+    fn scope_value(&self, value: crate::spec::ScopeValue) -> f64 {
+        match value {
+            crate::spec::ScopeValue::Resistance => self.value(),
+            _ => 0.0,
+        }
+    }
+
     fn power(&self) -> f64 {
         // Negated so a delivering source reads negative (CurrentElm.java:202).
         -self.voltage_diff() * self.base().current

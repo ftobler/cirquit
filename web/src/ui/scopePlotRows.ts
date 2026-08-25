@@ -47,10 +47,13 @@ export function plotValueRows(kind: string | null): PlotValueRow[] {
   if (kind === 'capacitor' || kind === 'polarizedCapacitor') {
     rows.push({ label: 'Show Charge', value: 'charge', disabled: false });
   }
+  // Upstream leaves Show Resistance enabled wherever the element answers
+  // getScopeValue(VAL_R): a lamp, memristor and ohmmeter (LampElm.java:218-219,
+  // MemristorElm.java:143-146, OhmMeterElm.java:38-42).
   rows.push({
     label: 'Show Resistance',
     value: 'resistance',
-    disabled: kind !== 'lamp',
+    disabled: kind !== 'lamp' && kind !== 'memristor' && kind !== 'ohmmeter',
   });
   if (kind === 'transistor') {
     rows.push({ label: 'Show Vce vs Ic', special: 'vceIc', disabled: false });

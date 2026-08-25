@@ -489,3 +489,34 @@ describe('scopeLineMatches', () => {
     expect(scopeLineMatches({ ...loaded(), position: 5 }, RAW, kinds, 0)).toBe(false);
   });
 });
+
+describe('memristor and ohmmeter VAL_R plots', () => {
+  // A resistance plot carries an Ω-scale token after the plot count
+  // (ScopeSerializer.java:221-223), so the walk must skip it or the second
+  // plot's `ne` is read one token early. MemristorElm and OhmMeterElm plot
+  // VAL_R in ohms exactly like a lamp (MemristorElm.java:144-146,
+  // OhmMeterElm.java:40-42).
+  const RAW = ['64', '2', '4099', '20', '0.05', '0', '2', '160', '0', '3'];
+  const plots = [plot(0, 'resistance'), plot(0, 'current')];
+
+  it.each([['memristor'], ['ohmmeter']] as const)(
+    'walks the scale token on a %s and regenerates it',
+    (kind) => {
+      const kinds = [kind, kind];
+      const decoded = decodeScopeLine(RAW, plots, kinds, 0);
+      // The resistance plot sits at the bottom of the manual-mode screen and
+      // the label starts where the walk stopped, not one token early.
+      expect(decoded.perPlot).toEqual([
+        { acCoupled: false, measurements: null, manScale: null, manVPosition: -100 },
+        { acCoupled: false, measurements: null, manScale: null, manVPosition: 0 },
+      ]);
+      expect(decoded.label).toBe('');
+      // An edit flips scopeLineMatches, so the save path regenerates from
+      // state: the Ω-scale token must survive that round trip, written fresh
+      // like every regenerated scale token.
+      expect(encodeScopeLine(loadedScope(decoded, plots), () => 0, kinds)).toEqual([
+        '64', '2', '4099', '20', '0.05', '0', '2', '20', '0', '3',
+      ]);
+    },
+  );
+});

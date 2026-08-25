@@ -39,10 +39,15 @@ describe('plotValueRows', () => {
     expect(valuesOf('resistor')).not.toContain('charge');
   });
 
-  it('renders resistance for everyone but enables it only for a lamp', () => {
+  it('renders resistance for everyone but enables it only where VAL_R is real', () => {
     // Upstream adds the box unconditionally and disables it where
     // canShowResistance() fails (ScopePropertiesDialog.java:577-578, 821-822).
-    expect(plotValueRows('lamp').find((r) => !isVceIcRow(r) && r.value === 'resistance')?.disabled).toBe(false);
+    // A lamp, memristor and ohmmeter answer getScopeValue(VAL_R)
+    // (LampElm.java:218-219, MemristorElm.java:144-146, OhmMeterElm.java:
+    // 40-42), so the box stays enabled for exactly those three.
+    for (const kind of ['lamp', 'memristor', 'ohmmeter']) {
+      expect(plotValueRows(kind).find((r) => !isVceIcRow(r) && r.value === 'resistance')?.disabled).toBe(false);
+    }
     for (const kind of ['resistor', 'transistor', 'capacitor', null]) {
       expect(
         plotValueRows(kind).find((r) => !isVceIcRow(r) && r.value === 'resistance')?.disabled,

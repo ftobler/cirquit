@@ -623,7 +623,12 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
 /** The units index a plot's value token plots in, mirroring `unitsOf`
  *  (parse.ts:156-168). */
 function unitsOfToken(tok: number, kind: string | null): number {
-  if (kind === 'lamp' && tok === 2) return 3;
+  if (
+    (kind === 'lamp' || kind === 'memristor' || kind === 'ohmmeter') &&
+    tok === 2
+  ) {
+    return 3;  // resistance: Ω
+  }
   if ((kind === 'capacitor' || kind === 'polarizedCapacitor') && tok === 8) return 4;
   if (kind === 'transistor') {
     if (tok === 1 || tok === 2 || tok === 3) return 1;
