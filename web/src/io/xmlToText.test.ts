@@ -629,6 +629,275 @@ describe('xml to text conversion', () => {
     expect(text).not.toContain(String(CHIP_BIT_ORDER_BUS));
   });
 
+  it('converts a 555 timer to its 165 line with the saved output level', () => {
+    // TimerElm adds nothing beyond the chip base but its OUT level: pin 5 is
+    // the only state pin (TimerElm.java:55), written by ChipElm.dumpXmlState
+    // as v5 whenever the level was above zero. needsBits is false and the
+    // class is not allowBus, so neither bi nor bo can appear.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <Timer x="304 160 400 160" f="6" hv="3" v5="5"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain(`165 304 160 400 160 ${(1 << 13) | 6} 3 5`);
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['timer']);
+    expect(parsed.elements[0].params.highVoltage).toBe(3);
+    expect(parsed.elements[0].params.voltage5).toBe(5);
+    expect(postsOf(parsed.elements[0])).toHaveLength(8);  // reset and ground pins both set
+    // The converted line round-trips through a save unchanged.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain(`165 304 160 400 160 ${(1 << 13) | 6} 3 5`);
+  });
+
+  it('defaults a bare 555 timer to the zero output level', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <Timer x="304 160 400 160" f="6"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('165 304 160 400 160 6 0');
+  });
+
+  it('converts a comparator to its 401 line with fresh child dumps', () => {
+    // ComparatorElm carries no fields beyond its flags: upstream rebuilds the
+    // three children (op-amp, analog switch, ground) from the model string on
+    // load, and none of them saves state into the XML. The port's fresh-child
+    // list is exactly what upstream would build.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <Comparator x="192 160 320 160" f="1"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain(
+      '401 192 160 320 160 1 8_15_-15_1000000_0_0_100000 2_20_10000000000_2.5 1_0',
+    );
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['comparator']);
+    expect(postsOf(parsed.elements[0])).toHaveLength(3);
+    // The converted line round-trips through a save unchanged.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain(
+      '401 192 160 320 160 1 8_15_-15_1000000_0_0_100000 2_20_10000000000_2.5 1_0',
+    );
+  });
+
+  it('converts an OTA to its 402 line, deriving the rails from pv/nv', () => {
+    // Upstream rebuilds all eighteen children and then re-seeds the two rail
+    // supplies from the attributes (OTAElm.java:157-162), so the converted
+    // line carries the derived rail tokens ahead of sixteen fresh transistors.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <OTA x="512 528 624 528" f="1" pv="12" nv="-12"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    const n = '0_1_0_0_100';
+    const p = '0_-1_0_0_100';
+    expect(text).toContain(
+      `402 512 528 624 528 1 0_0_40_-12_0_0_0.5 0_0_40_12_0_0_0.5 ` +
+        `${[n, n, n, n, n].join(' ')} ${[p, p, p, p, p, p].join(' ')} ${[n, n, n, n, n].join(' ')}`,
+    );
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['ota']);
+    expect(parsed.elements[0].params.posVolt).toBe(12);
+    expect(parsed.elements[0].params.negVolt).toBe(-12);
+    expect(postsOf(parsed.elements[0])).toHaveLength(5);
+    // The converted line round-trips through a save unchanged.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')[1]?.startsWith('402 512 528 624 528 1 0_0_40_-12_0_0_0.5')).toBe(true);
+  });
+
+  it('splices OTA transistor junction state out of the child elements', () => {
+    // While the circuit has run, CompositeElm.dumpXmlState appends each
+    // transistor as a child element carrying vbe/vbc against its child index
+    // ix; upstream restores them onto the rebuilt children before reading the
+    // supplies. The rail children save nothing, so they never appear.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <OTA x="512 528 624 528" f="1">
+    <NTransistorElm ix="2" vbe="-1.5" vbc="-0.25"/>
+    <PTransistorElm ix="7" vbe="2" vbc="-3"/>
+  </OTA>
+</cir>
+`;
+    const text = xmlToText(src);
+    const tokens = text.split('\n').find((l) => l.startsWith('402 '))!.split(' ');
+    expect(tokens).toHaveLength(24);  // code, four coords, flags, eighteen children
+    expect(tokens[8]).toBe('0_1_-1.5_-0.25_100');   // child index 2
+    expect(tokens[13]).toBe('0_-1_2_-3_100');       // child index 7
+    expect(tokens[9]).toBe('0_1_0_0_100');          // untouched neighbours stay fresh
+  });
+
+  it('converts a realistic op-amp to its 409 line with its four tokens', () => {
+    // OpAmpRealElm writes slr/cl/mt plus the capacitor's saved charge vd
+    // (:155-165), which land in the port's slewRate capValue currentLimit
+    // modelType order (OpAmpRealElm.java:79-86).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <OpAmpReal x="224 144 352 144" f="3" slr="1.2" cl="0.05" mt="2" vd="0.001"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('409 224 144 352 144 3 1.2 0.001 0.05 2');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['opampReal']);
+    expect(parsed.elements[0].params.slewRate).toBe(1.2);
+    expect(parsed.elements[0].params.capValue).toBe(0.001);
+    expect(parsed.elements[0].params.currentLimit).toBe(0.05);
+    expect(parsed.elements[0].params.modelType).toBe(2);
+    expect(postsOf(parsed.elements[0])).toHaveLength(5);
+    // The converted line round-trips through a save unchanged.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('409 224 144 352 144 3 1.2 0.001 0.05 2');
+  });
+
+  it('seeds a bare realistic op-amp with its constructor defaults', () => {
+    // slr/cl/mt parse against the fresh instance (.6, .0231, MODEL_741) and a
+    // missing vd answers zero (OpAmpRealElm.java:70-72, :166-171).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <OpAmpReal x="224 144 352 144" f="1"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('409 224 144 352 144 1 0.6 0 0.0231 0');
+  });
+
+  it('converts a DAC to its 166 line with its bit count', () => {
+    // DACElm is a plain bit-width chip: bi always, hv under its flag, and no
+    // state pins anywhere, because the O level is derived, not stored
+    // (DACElm.java:29-41).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <DAC x="800 896 832 896" f="4" bi="4"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('166 800 896 832 896 4 4');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['dac']);
+    expect(parsed.elements[0].params.bits).toBe(4);
+    expect(postsOf(parsed.elements[0])).toHaveLength(6);  // four bits, O, V+
+    // The converted line round-trips through a save unchanged.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('166 800 896 832 896 4 4');
+  });
+
+  it('converts a DAC with a custom high voltage under its flag', () => {
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <DAC x="800 896 832 896" f="0" bi="2" hv="9"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain(`166 800 896 832 896 ${1 << 13} 2 9`);
+    expect(parseCircuit(text).elements[0].params.highVoltage).toBe(9);
+  });
+
+  it('traces a dropped bus bit order on the DAC', () => {
+    // The DAC is allowBus upstream, so bo reaches its XML; this build lays out
+    // no bus rows for it, so the state degrades loudly like every other chip.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <DAC x="800 896 832 896" f="0" bi="2" bo="2"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('166 800 896 832 896 0 2');
+    expect(text).toContain('# DAC bo="2" not modelled: converted as non-bus pin rows');
+    expect(text).not.toContain(String(CHIP_BIT_ORDER_BUS));
+  });
+
+  it('converts an analog mux to its 432 line with its four own tokens', () => {
+    // AnalogMuxElm.dump appends sb ron rof thr to the base (:67-73); the
+    // class has needsBits false and no state pins, and it is not allowBus, so
+    // only the optional high voltage can precede them.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <AnalogMux x="304 160 368 288" f="2" sb="1" ron="10" rof="1000000000" thr="3"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('432 304 160 368 288 2 1 10 1000000000 3');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['analogMux']);
+    expect(parsed.elements[0].params.selectBitCount).toBe(1);
+    expect(parsed.elements[0].params.r_on).toBe(10);
+    expect(parsed.elements[0].params.r_off).toBe(1e9);
+    expect(parsed.elements[0].params.threshold).toBe(3);
+    expect(postsOf(parsed.elements[0])).toHaveLength(4);  // two inputs, one select, Z
+  });
+
+  it('seeds a bare analog mux with its constructor defaults', () => {
+    // Fresh AnalogMuxElm values (AnalogMuxElm.java:35-39), which is what
+    // upstream's attribute reader falls back to.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <AnalogMux x="304 160 368 288" f="2"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('432 304 160 368 288 2 2 20 10000000000 2.5');
+    expect(postsOf(parseCircuit(text).elements[0])).toHaveLength(7);
+  });
+
+  it('converts a delay buffer to its 422 line with all three tokens', () => {
+    // DelayBufferElm writes dl/th/hv directly (:47-52); the port's text order
+    // is delay threshold highVoltage (DelayBufferElm.java:39-45).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <DelayBuffer x="128 80 208 80" f="0" dl="0.005" th="2" hv="3.3"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('422 128 80 208 80 0 0.005 2 3.3');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['delayBuffer']);
+    expect(parsed.elements[0].params.delay).toBe(0.005);
+    expect(parsed.elements[0].params.threshold).toBe(2);
+    expect(parsed.elements[0].params.highVoltage).toBe(3.3);
+    expect(postsOf(parsed.elements[0])).toHaveLength(2);
+    // The converted line round-trips through a save unchanged.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('422 128 80 208 80 0 0.005 2 3.3');
+  });
+
+  it('seeds a bare delay buffer with its reader defaults', () => {
+    // A fresh part's delay field is Java's 0 (never set in the constructor),
+    // threshold 2.5 and highVoltage 5 (DelayBufferElm.java:29-34).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <DelayBuffer x="128 80 208 80" f="0"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('422 128 80 208 80 0 0 2.5 5');
+  });
+
+  it('converts an analog switch to its 159 line', () => {
+    // AnalogSwitchElm writes ron/roff/th (:62-67), the same triple its text
+    // format carries (AnalogSwitchElm.java:58-60).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <as x="192 160 304 160" f="2" ron="50" roff="1000000000" th="1.5"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('159 192 160 304 160 2 50 1000000000 1.5');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['analogSwitch']);
+    expect(parsed.elements[0].params.r_on).toBe(50);
+    expect(parsed.elements[0].params.r_off).toBe(1e9);
+    expect(parsed.elements[0].params.threshold).toBe(1.5);
+    expect(postsOf(parsed.elements[0])).toHaveLength(3);
+    // The converted line round-trips through a save unchanged.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('159 192 160 304 160 2 50 1000000000 1.5');
+  });
+
+  it('converts an SPDT analog switch to its 160 line', () => {
+    // AnalogSwitch2Elm inherits the parent's XML surface unchanged; only the
+    // dump code and post count differ (AnalogSwitch2Elm.java:86-87, :45).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <as2 x="192 160 304 160" f="0" ron="20" roff="10000000000" th="2.5"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('160 192 160 304 160 0 20 10000000000 2.5');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['analogSwitch2']);
+    expect(postsOf(parsed.elements[0])).toHaveLength(4);  // pole, two throws, control
+  });
+
   it('keeps a flagless seven-segment display free of trace comments', () => {
     const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
   <ssd x="224 144 288 144" f="0" ba="7"/>
