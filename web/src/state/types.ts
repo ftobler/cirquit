@@ -238,9 +238,6 @@ export interface AppState {
   toolTurns: number;
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
   revision: number;
-  /** Bumped by scope capture-parameter edits (speed), which the frame loop
-   *  applies through the engine's fast path instead of a rebuild. */
-  scopeRevision: number;
   /** Bumped by value-only edits, applied to the live engine without a rebuild. */
   paramRevision: number;
   /** Value edits not yet pushed to the engine, keyed `${id}:${name}`. */

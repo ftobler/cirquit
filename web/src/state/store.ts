@@ -732,7 +732,6 @@ function createAppStore() {
   elementGesture: null,
   toolTurns: 0,
   revision: 0,
-  scopeRevision: 0,
   paramRevision: 0,
   pendingParams: new Map(),
   pendingStates: new Map(),
@@ -2255,14 +2254,14 @@ function createAppStore() {
     const s = get();
     const clamped = scopeSpeed(speed);
     const scope = s.scopes.find((x) => x.id === id);
-    // A no-op must not touch scopeRevision, or a wheel tick with nothing to
-    // do would still patch the engine; committing it would also push a
-    // spurious undo entry.
+    // A no-op must not queue an engine patch, or a wheel tick with nothing to
+    // do would still touch the engine; committing it would also push a
+    // spurious undo entry. The frame loop's fingerprint comparison picks the
+    // change up without any counter.
     if (!scope || scope.speed === clamped) return;
     if (!s.scopeGesture) s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) => (x.id === id ? { ...x, speed: clamped } : x)),
-      scopeRevision: st.scopeRevision + 1,
     }));
   },
 
@@ -2326,9 +2325,9 @@ function createAppStore() {
     const fresh = makeScope(scope.id, scope.raw, plots, UI_SCOPE_SPEED, scope.position);
     set((st) => ({
       scopes: st.scopes.map((x) => (x.id === id ? fresh : x)),
-      // The trigger and the plot set are part of the engine spec, and the speed
-      // is part of the scope patch, so both revisions move.
-      scopeRevision: st.scopeRevision + 1,
+      // The trigger and the plot set are part of the engine spec, so the
+      // rebuild gate moves; the frame loop's scope fingerprint picks up the
+      // rest on its own comparison.
       ...bumpRevision(st),
     }));
   },
@@ -3218,7 +3217,9 @@ function createAppStore() {
       // model-change baseline lands on top of it, so pre-drill edits stay
       // undoable past an edited drill-in too; upstream's popContext restores
       // its stashed stacks the same way (CirSim.java:500-506). The redo future
-      // dies with the model change, the way every other edit clears it.
+      // dies with the model change, the way every other edit clears it. The
+      // cap evicts from the front, silently dropping the oldest entries
+      // exactly as commit's push does.
       undoStack: [...top.undo, pre].slice(-UNDO_LIMIT),
       redoStack: [],
       view: top.view,
@@ -3322,6 +3323,8 @@ function createAppStore() {
       // lastSaved to the recovered netlist, which would read as clean; the
       // RECOVERED_UNSAVED sentinel can never equal a serialised dump.
       lastSaved: RECOVERED_UNSAVED,
+      // The cap evicts from the front, silently dropping the oldest entries
+      // exactly as commit's push does.
       undoStack: [...s.undoStack, pre].slice(-UNDO_LIMIT),
       redoStack: [],
     }));
@@ -3337,6 +3340,10 @@ function createAppStore() {
       undoStack: s.undoStack.slice(0, -1),
       redoStack: [...s.redoStack, clone(s)],
       selectedIds: [],
+      // Same stale-pointer rule as loadNetlist: the restored element list may
+      // no longer hold the hovered element, so a surviving id would highlight
+      // a different part until the mouse moves again.
+      hoveredId: null,
       // The restored snapshot's scope list may no longer hold the open
       // dialog's scope (an undone addScope): a surviving id would hold
       // modalSurface() true forever with nothing on screen, the same invisible

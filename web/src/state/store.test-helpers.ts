@@ -32,7 +32,6 @@ export const fresh = () => ({
   elementGesture: null,
   toolTurns: 0,
   revision: 0,
-  scopeRevision: 0,
   paramRevision: 0,
   pendingParams: new Map(),
   pendingStates: new Map(),

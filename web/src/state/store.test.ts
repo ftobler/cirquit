@@ -2861,22 +2861,18 @@ describe('scope o-line fidelity', () => {
 });
 
 describe('scope speed', () => {
-  it('setScopeSpeed clamps, bumps scopeRevision only on real change, and serializes', () => {
+  it('setScopeSpeed clamps, keeps the reload gate quiet, and serializes', () => {
     const id = addResistor();
     useStore.getState().addScope(id, 'voltage');
     const scopeId = useStore.getState().scopes[0].id;
-    const beforeScope = useStore.getState().scopeRevision;
     const beforeRevision = useStore.getState().revision;
 
     useStore.getState().setScopeSpeed(scopeId, 128);
     const s = useStore.getState();
     expect(s.scopes[0].speed).toBe(128);
-    expect(s.scopeRevision).toBe(beforeScope + 1);
-    expect(s.revision).toBe(beforeRevision); // scopeRevision is the fast path
-
-    // A no-op must not bump anything.
-    useStore.getState().setScopeSpeed(scopeId, 128);
-    expect(useStore.getState().scopeRevision).toBe(beforeScope + 1);
+    // The speed zoom rides the frame loop's scope fingerprint fast path and
+    // must not force a full circuit reload.
+    expect(s.revision).toBe(beforeRevision);
 
     // Clamps at both ends of 1..1024.
     useStore.getState().setScopeSpeed(scopeId, 99999);
@@ -3215,7 +3211,6 @@ describe('scope coupling fast path', () => {
     useStore.getState().addScope(id, 'voltage');
     const scope = useStore.getState().scopes[0];
     const beforeRevision = useStore.getState().revision;
-    const beforeScopeRevision = useStore.getState().scopeRevision;
 
     useStore.getState().setPlotCoupling(scope.id, scope.plots[0].id, true);
     const s = useStore.getState();
@@ -3223,7 +3218,6 @@ describe('scope coupling fast path', () => {
     // A coupling toggle is a scope-capture flag, so it goes through the scope
     // fast path (applyScopeParams) and must not force a full circuit reload.
     expect(s.revision).toBe(beforeRevision);
-    expect(s.scopeRevision).toBe(beforeScopeRevision);
 
     // Toggling back off also avoids the reload.
     useStore.getState().setPlotCoupling(scope.id, scope.plots[0].id, false);
@@ -3414,7 +3408,6 @@ describe('scope mutator coverage', () => {
     useStore.getState().addScope(r, 'voltage');
     const scopeId = useStore.getState().scopes[0].id;
     const beforeRevision = useStore.getState().revision;
-    const beforeScopeRevision = useStore.getState().scopeRevision;
 
     useStore.getState().setScopeFlags(scopeId, {
       label: 'Renamed',
@@ -3428,7 +3421,6 @@ describe('scope mutator coverage', () => {
     // Display fields are pure scope state: neither the rebuild nor the scope
     // fast path fires (store.ts:1496).
     expect(s.revision).toBe(beforeRevision);
-    expect(s.scopeRevision).toBe(beforeScopeRevision);
   });
 });
 

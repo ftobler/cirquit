@@ -1159,3 +1159,13 @@ describe('commit fingerprint cache', () => {
     expect(useStore.getState().undoStack).toHaveLength(commitsAfterAdd);
   });
 });
+
+describe('stale transient state', () => {
+  it('undo clears the hover like loadNetlist does', () => {
+    const id = addResistor();
+    useStore.getState().commit();
+    useStore.getState().setHovered(id);
+    useStore.getState().undo();
+    expect(useStore.getState().hoveredId).toBeNull();
+  });
+});
