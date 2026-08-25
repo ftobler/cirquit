@@ -25,8 +25,9 @@ describe('copy, paste and duplicate', () => {
     // format's zero-valued fields, as any file load does.
     expect(pasted[0].params).toEqual({ resistance: 1000 });
     expect(pasted[1].params.capacitance).toBe(1e-5);
-    // Relative geometry preserved, offset by one grid step.
-    expect(pasted[0].x1 - original[0].x1).toBe(GRID_SIZE);
+    // Relative geometry preserved; the whole copy sits one grid step below
+    // the source (the larger-gap direction for this flat circuit).
+    expect(pasted[0].x1 - original[0].x1).toBe(0);
     expect(pasted[0].y1 - original[0].y1).toBe(GRID_SIZE);
     expect(pasted[1].x1 - pasted[0].x1).toBe(original[1].x1 - original[0].x1);
     // Fresh ids: a collision here corrupts the circuit silently.
@@ -34,16 +35,51 @@ describe('copy, paste and duplicate', () => {
     expect(pasted[1].id).not.toBe(b);
   });
 
-  it('paste offsets every pasted element by one GRID_SIZE', () => {
+  it('repeated pastes fan out instead of stacking on the last copy', () => {
     const a = addResistor();
     useStore.getState().select([a]);
     useStore.getState().copySelection();
+    const ys: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      useStore.getState().pasteFromClipboard();
+      const copy = useStore.getState().elements.at(-1)!;
+      ys.push(copy.y1);
+      useStore.getState().select([copy.id]);
+      useStore.getState().copySelection();
+    }
+    // Each copy lands one grid step below everything already on the sheet,
+    // upstream's bbox placement (CommandManager.java:583-592).
+    expect(ys[1] - ys[0]).toBe(GRID_SIZE);
+    expect(ys[2] - ys[1]).toBe(GRID_SIZE);
+    expect(new Set(ys).size).toBe(3);
+  });
+
+  it('the paste goes right when the horizontal gap is the larger one', () => {
+    // A tall, narrow circuit leaves more room to its sides than below it.
+    const a = useStore.getState().addElement({
+      kind: 'wire',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 640,
+      flags: 0,
+      params: {},
+    });
+    useStore.getState().select([a]);
+    useStore.getState().copySelection();
     useStore.getState().pasteFromClipboard();
-    const [old, copy] = useStore.getState().elements;
-    expect(copy.x1).toBe(old.x1 + GRID_SIZE);
-    expect(copy.y1).toBe(old.y1 + GRID_SIZE);
-    expect(copy.x2).toBe(old.x2 + GRID_SIZE);
-    expect(copy.y2).toBe(old.y2 + GRID_SIZE);
+    const original = useStore.getState().elements.find((e) => e.id === a)!;
+    const copy = useStore.getState().elements.at(-1)!;
+    expect(copy.x1).toBe(original.x1 + GRID_SIZE);
+    expect(copy.y1).toBe(original.y1);
+  });
+
+  it('pasting into an empty circuit keeps the clipboard coordinates', () => {
+    useStore.setState({ clipboard: '$ 1 0.000005 10 50 5 5 1e-9\nr 320 64 480 64 0 1000\n' });
+    useStore.getState().pasteFromClipboard();
+    const [only] = useStore.getState().elements;
+    expect(only.x1).toBe(320);
+    expect(only.y1).toBe(64);
   });
 
   it('paste selects the pasted elements so an immediate drag moves them', () => {
@@ -213,7 +249,9 @@ describe('subcircuit models ride the clipboard', () => {
     useStore.getState().pasteFromClipboard();
     const out = useStore.getState().toNetlist().split('\n');
     expect(out).toContain(subLine('amp'));
-    expect(out).toContain('410 16 16 80 16 1 amp');
+    // An empty circuit takes the clipboard's own coordinates, so the pasted
+    // chip saves exactly as it was copied.
+    expect(out).toContain('410 0 0 64 0 1 amp');
   });
 
   it('copy of a 410 carries the `.` line that defines its model', () => {
@@ -229,7 +267,7 @@ describe('subcircuit models ride the clipboard', () => {
     useStore.getState().pasteFromClipboard();
     const out = useStore.getState().toNetlist();
     expect(out).toContain(subLine('amp'));
-    expect(out).toContain('410 16 16 80 16 1 amp');
+    expect(out).toContain('410 0 0 64 0 1 amp');
   });
 
   it('same-document paste keeps one `.` line per model', () => {

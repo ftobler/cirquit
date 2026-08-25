@@ -3408,7 +3408,68 @@ export function nextSwitchState(e: CircuitElement): number {
   return ((e.state ?? 0) + 1) % posCount;
 }
 
-/** Shared insert path for paste and duplicate: parse, re-id, offset a grid step. */
+/** The bounding box of a set of elements, endpoint to endpoint. Upstream unions
+ *  `getBoundingBox()` over the same two groups (CommandManager.java:562-568,
+ *  :583-587); leads and bodies never leave the endpoint span here. */
+function elementsBounds(elements: readonly CircuitElement[]): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} | null {
+  if (elements.length === 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const e of elements) {
+    minX = Math.min(minX, e.x1, e.x2);
+    minY = Math.min(minY, e.y1, e.y2);
+    maxX = Math.max(maxX, e.x1, e.x2);
+    maxY = Math.max(maxY, e.y1, e.y2);
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+/** The paste offset between the circuit already on screen and the incoming
+ *  copy, upstream's doPaste rule (CommandManager.java:560-601): the new items
+ *  go to the right or below the whole current circuit depending on which gap
+ *  is larger, so repeated pastes fan out instead of stacking on the first.
+ *  An empty circuit takes the clipboard's own coordinates; upstream instead
+ *  re-centres an empty sheet before reading the dump, and this port has no
+ *  centre step to piggyback on. The near-the-cursor branch is not ported: the
+ *  pointer position is transient canvas state the store cannot see, and the
+ *  bbox fan-out alone is the behaviour the review requires. */
+function pasteOffset(
+  existing: readonly CircuitElement[],
+  incoming: readonly CircuitElement[],
+): { dx: number; dy: number } {
+  const oldbb = elementsBounds(existing);
+  const newbb = elementsBounds(incoming);
+  if (!oldbb || !newbb) return { dx: 0, dy: 0 };
+  const s = useStore.getState();
+  const spacew = s.viewSize.w / s.view.scale - oldbb.w - newbb.w;
+  const spaceh = s.viewSize.h / s.view.scale - oldbb.h - newbb.h;
+  let dx = 0;
+  let dy = 0;
+  const intersects =
+    oldbb.x < newbb.x + newbb.w &&
+    newbb.x < oldbb.x + oldbb.w &&
+    oldbb.y < newbb.y + newbb.h &&
+    newbb.y < oldbb.y + oldbb.h;
+  // Clipboard coordinates can sit far from the current sheet; pull them to
+  // the same origin first, exactly as upstream does for non-intersecting bboxes.
+  if (!intersects) {
+    dx = snap(oldbb.x - newbb.x);
+    dy = snap(oldbb.y - newbb.y);
+  }
+  if (spacew > spaceh) dx = snap(oldbb.x + oldbb.w - newbb.x + GRID_SIZE);
+  else dy = snap(oldbb.y + oldbb.h - newbb.y + GRID_SIZE);
+  return { dx, dy };
+}
+
+/** Shared insert path for paste and duplicate: parse, re-id, fan out from the
+ *  current circuit's bounding box. */
 function insertElementsFromText(text: string): void {
   const parsed = parseCircuit(text);
   if (parsed.elements.length === 0) return;
@@ -3424,16 +3485,18 @@ function insertElementsFromText(text: string): void {
   registerFileModels(parsed.diodeFileModels, parsed.transistorFileModels);
   const state = useStore.getState();
   state.commit();
-  // A paste lands one square away, so the duplicate does not sit on top of
-  // the original (UIManager.java:1001).
+  // One shared offset for the whole copy, derived from the bounding boxes the
+  // way upstream's doPaste does, so the duplicate never sits on top of the
+  // original and a repeat paste lands beyond the last one.
+  const { dx, dy } = pasteOffset(state.elements, parsed.elements);
   const added = parsed.elements
     .map((e) => ({
       ...e,
       id: allocateId(),
-      x1: e.x1 + GRID_SIZE,
-      y1: e.y1 + GRID_SIZE,
-      x2: e.x2 + GRID_SIZE,
-      y2: e.y2 + GRID_SIZE,
+      x1: e.x1 + dx,
+      y1: e.y1 + dy,
+      x2: e.x2 + dx,
+      y2: e.y2 + dy,
     }))
     // A paste or duplicate can carry a 410 whose `.` line is not in the text
     // (a duplicate of a part whose model the document already holds, a copy of
