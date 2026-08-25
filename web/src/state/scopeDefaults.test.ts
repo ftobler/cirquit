@@ -135,6 +135,8 @@ describe('scope defaults persistence', () => {
         showDutyCycle: false,
         showPhaseAngle: false,
       },
+      origValueToken: null,
+      origElementIndex: null,
     };
     saveScopeDefaults(scopeOf({ plots: [maskedPlot] }), storage);
     const blob = JSON.parse(storage.getItem(SCOPE_DEFAULTS_STORAGE_KEY)!) as { flags: number };

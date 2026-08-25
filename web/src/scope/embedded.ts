@@ -33,6 +33,11 @@ export function embeddedScopeOf(e: CircuitElement): Scope | null {
             manVPosition: emb.display.perPlot[i]?.manVPosition ?? 0,
             acCoupled: emb.display.perPlot[i]?.acCoupled ?? false,
             measurements: emb.display.perPlot[i]?.measurements ?? null,
+            // An embedded window's config token round-trips verbatim in the
+            // element's text; there is no o-line regeneration to preserve
+            // tokens for.
+            origValueToken: null,
+            origElementIndex: null,
           },
         ],
   );

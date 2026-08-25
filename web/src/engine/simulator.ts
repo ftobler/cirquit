@@ -102,6 +102,16 @@ export interface ScopePlot {
    *  mask-present sentinel, so every readout can be turned off per trace
    *  and survive a save/load. */
   measurements: PlotMeasurements | null;
+  /** Session-only preservation of this plot's file tokens for what the live
+   *  state cannot re-express: origValueToken is the raw val token when value
+   *  decoded to null (a token this build has no engine meaning for), and
+   *  origElementIndex is the raw ne ordinal when elementId never resolved
+   *  (the index named a line this build cannot construct). encodeScopeLine
+   *  falls back to them so an edit-save-reload cycle keeps such a plot
+   *  unattached instead of silently rewriting it into a wrong one; real
+   *  state always wins when it exists. Null for a UI-created plot. */
+  origValueToken: number | null;
+  origElementIndex: number | null;
 }
 
 export interface Scope {

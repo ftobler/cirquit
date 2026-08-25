@@ -16,6 +16,11 @@ export interface ScopePlotConfig {
   /** The store element id that index resolves to, or undefined when it lands
    *  on an element line this build could not read. */
   elementId?: number;
+  /** The val token exactly as the file wrote it: `v` for the first plot,
+   *  the per-plot `val` after. Kept so a plot whose interpreted value came
+   *  out null can re-emit its own token when a later save regenerates the
+   *  line from state. */
+  valueToken: number;
   /** The interpreted quantity, or null when the value token has no engine
    *  meaning for this element (a transistor's VAL_IB). A null plot is
    *  preserved through the raw line only and is never registered as a trace. */

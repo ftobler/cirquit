@@ -7,6 +7,7 @@ import {
   allocateId,
   parseCircuit,
   serializeCircuit,
+  valueTokenOf,
   type CompositeModel,
   type ParsedCircuit,
   type ScopeConfig,
@@ -344,6 +345,9 @@ function serializeDocument(elements: CircuitElement[]): string {
         id: p.id,
         elementIndex: indexById.get(p.elementId ?? -1) ?? -1,
         elementId: p.elementId ?? undefined,
+        // Only the untouched path reads these configs, and its walk takes the
+        // val token off the raw line; this just keeps the record complete.
+        valueToken: p.value !== null ? valueTokenOf(p.value) : (p.origValueToken ?? -1),
         value: p.value,
       })),
     };
@@ -383,7 +387,13 @@ const DIODE_MODEL_PARAMS = [
  *  upstream's exclusion list (Scope.addValue, Scope.java:360-367). */
 const OUTPUT_LIKE = new Set(['output', 'logicOutput', 'audioOutput', 'testPoint', 'probe']);
 
-function makePlot(id: number, elementId: number | null, value: ScopeValue | null): ScopePlot {
+function makePlot(
+  id: number,
+  elementId: number | null,
+  value: ScopeValue | null,
+  origValueToken: number | null = null,
+  origElementIndex: number | null = null,
+): ScopePlot {
   // Power, charge and resistance plots start at the bottom of the manual-mode
   // screen, the port of ScopePlot's constructor (ScopePlot.java:62-66): ohms
   // can only be positive, watts and coulombs sit low for backward
@@ -398,6 +408,8 @@ function makePlot(id: number, elementId: number | null, value: ScopeValue | null
     manVPosition,
     acCoupled: false,
     measurements: null,
+    origValueToken,
+    origElementIndex,
   };
 }
 
@@ -2844,7 +2856,18 @@ function createAppStore() {
         // position token gets, the same value the save path re-derives from
         // the scope's position in the store array.
         const speed = scopeSpeed(Number(c.raw[0]) || 64);
-        const plots = c.plots.map((p) => makePlot(p.id, p.elementId ?? null, p.value));
+        // Keep the file tokens the interpreted state loses: a val with no
+        // engine meaning and an ne that never resolved would both collapse
+        // into wrong values if a later save regenerated the line.
+        const plots = c.plots.map((p) =>
+          makePlot(
+            p.id,
+            p.elementId ?? null,
+            p.value,
+            p.value === null ? p.valueToken : null,
+            p.elementId === undefined ? p.elementIndex : null,
+          ),
+        );
         const kinds = c.plots.map((p) =>
           p.elementId === undefined ? null : (kindById.get(p.elementId) ?? null),
         );

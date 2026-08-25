@@ -90,6 +90,8 @@ function plot(id: number, value: ScopePlot['value']): ScopePlot {
     manVPosition: 0,
     acCoupled: false,
     measurements: null,
+    origValueToken: null,
+    origElementIndex: null,
   };
 }
 
@@ -959,6 +961,8 @@ describe('xyPairFor', () => {
     manVPosition: 0,
     acCoupled: false,
     measurements: null,
+    origValueToken: null,
+    origElementIndex: null,
   };
 
   it('defaults to the first two samplable plots', () => {
@@ -1001,6 +1005,8 @@ describe('xyPairFor', () => {
       manVPosition: 0,
       acCoupled: false,
       measurements: null,
+      origValueToken: null,
+      origElementIndex: null,
     };
     const scope = scopeOf([raw, plot(1, 'voltage'), plot(2, 'current')], { plotXY: true });
     const pair = xyPairFor(scope, indexById)!;

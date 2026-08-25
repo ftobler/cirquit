@@ -936,6 +936,9 @@ function parseScopeLine(
     id: allocateId(),
     elementIndex: index,
     elementId: idByFileIndex.get(index),
+    // A garbage token is stored as -1, never NaN: a re-emitted val of -1
+    // reads back as unattached, while "NaN" on the line would not parse.
+    valueToken: Number.isFinite(token) ? token : -1,
     value: scopeValueFromToken(token, kindOf(index)),
   });
 

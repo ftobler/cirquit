@@ -706,3 +706,60 @@ describe('per-channel measurement flags', () => {
     ).toBe(true);
   });
 });
+
+describe('uninterpretable plot tokens survive an edit-save cycle', () => {
+  // The second `r` has an unreadable coordinate token, so it degrades to a
+  // preserved line while still taking file slot 1: a plot naming slot 2
+  // resolves to nothing, upstream's unattached-trace case.
+  const UNRESOLVED_NE = [
+    '$ 1 0.000005 10 50 5 50 5e-11',
+    'r 0 0 16 0 0 100',
+    'r 16 0 zz 0 0 100',
+    'o 0 64 0 4098 20 0.05 0 2 2 3 Mx',
+    '',
+  ].join('\n');
+
+  it('an ne that never resolved is written back, not replaced with -1', () => {
+    useStore.getState().loadNetlist(UNRESOLVED_NE);
+    const scope = useStore.getState().scopes[0];
+    expect(scope.plots[1].elementId).toBeNull();
+    // Untouched, the raw line still saves verbatim.
+    expect(useStore.getState().toNetlist()).toBe(UNRESOLVED_NE);
+
+    useStore.getState().setScopeFlags(scope.id, { label: 'Ed' });
+    const saved = useStore.getState().toNetlist();
+    expect(saved).toContain('o 0 64 0 4098 20 0.05 0 2 2 3 Ed');
+
+    // And the regenerated line loads back to the same shape, so the cycle has
+    // a fixed point.
+    useStore.getState().loadNetlist(saved);
+    const again = useStore.getState().scopes[0];
+    expect(again.plots[1].elementId).toBeNull();
+    expect(useStore.getState().toNetlist()).toBe(saved);
+  });
+
+  it('a val token with no engine meaning is written back, not replaced with 0', () => {
+    // Token 9 sits above the transistor's VAL_ table, so plot 1 decodes null;
+    // the file's token must survive an edit instead of becoming voltage (0).
+    const NETLIST = [
+      '$ 1 0.000005 10 50 5 50 5e-11',
+      // A complete t tail (pnp lastVbe lastVbc beta), so the untouched
+      // transistor line saves byte-for-byte and only the scope edit matters.
+      't 0 0 16 0 0 1 0 0 100',
+      'o 0 64 6 4102 20 0.05 0 2 0 9 Tx',
+      '',
+    ].join('\n');
+    useStore.getState().loadNetlist(NETLIST);
+    const scope = useStore.getState().scopes[0];
+    expect(scope.plots[1].value).toBeNull();
+    expect(scope.plots[1].origValueToken).toBe(9);
+    expect(useStore.getState().toNetlist()).toBe(NETLIST);
+
+    useStore.getState().setScopeFlags(scope.id, { label: 'Td' });
+    const saved = useStore.getState().toNetlist();
+    expect(saved).toContain('o 0 64 6 4102 20 0.05 0 2 0 9 Td');
+    useStore.getState().loadNetlist(saved);
+    expect(useStore.getState().scopes[0].plots[1].value).toBeNull();
+    expect(useStore.getState().toNetlist()).toBe(saved);
+  });
+});

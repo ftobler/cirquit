@@ -143,6 +143,8 @@ export function decodeEmbeddedScope(
     manVPosition: 0,
     acCoupled: false,
     measurements: null,
+    origValueToken: null,
+    origElementIndex: null,
   }));
   const kinds = plots.map((p) => kindOf(p.elementIndex));
   const display = decodeScopeLine(raw, stubs, kinds, 0);

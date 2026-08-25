@@ -619,6 +619,9 @@ describe('scope o-line fidelity', () => {
       HEADER + 't 0 0 16 0 0 1 0 0 0 0 0\n' + 'o 0 64 9 4099 20 0.05 0 1\n',
     );
     expect(parsed.scopes[0].plots[0].value).toBeNull();
+    // The raw token rides along, so a save that regenerates an edited line
+    // can write it back instead of collapsing the plot to voltage.
+    expect(parsed.scopes[0].plots[0].valueToken).toBe(9);
   });
 
   it('maps lamp resistance and capacitor charge to their engine values', () => {

@@ -371,9 +371,24 @@ export function encodeScopeLine(
   // turns the word's bit on.
   const anyPlotFlags = scope.plots.some((p) => p.acCoupled || p.measurements !== null);
 
+  // A W, C or Ω plot carries a scale token (ScopeSerializer.java:221-223).
+  // Charge and resistance need the explicit value check for a plot whose kind
+  // is unknown here (its element left the document): only a capacitor's
+  // charge and a lamp's, memristor's or ohmmeter's resistance are ever those
+  // plots, so `unitsOf` with a null kind would wrongly read them as volts and
+  // drop their skip token.
+  const needsScaleToken = (value: ScopeValue | null, kind: string | null): boolean =>
+    value === 'charge' || value === 'resistance' || unitsOf(valueTokenOf(value), kind) > 1;
+  // The val token a plot serializes as: the live quantity when it has one,
+  // otherwise the token the file carried. Only a plot whose value decoded to
+  // null ever falls back, so an edit-save cycle cannot rewrite an
+  // uninterpretable trace into voltage.
+  const valTokenOf = (p: ScopePlot): number =>
+    p.value !== null ? valueTokenOf(p.value) : (p.origValueToken ?? 0);
+
   const tokens = [
     String(scope.speed),
-    String(valueTokenOf(first.value)),
+    String(valTokenOf(first)),
     String(flags),
     String(scope.scaleV),
     String(scope.scaleA),
@@ -383,14 +398,6 @@ export function encodeScopeLine(
   // The divisions token sits between the plot count and the first plot's
   // per-unit scale, exactly where undump reads it (ScopeSerializer.java:219-220).
   if (manual) tokens.push(String(scope.manDivisions));
-  // A W, C or Ω plot carries a scale token (ScopeSerializer.java:221-223).
-  // Charge and resistance need the explicit value check for a plot whose kind
-  // is unknown here (its element left the document): only a capacitor's
-  // charge and a lamp's, memristor's or ohmmeter's resistance are ever those
-  // plots, so `unitsOf` with a null kind would wrongly read them as volts and
-  // drop their skip token.
-  const needsScaleToken = (value: ScopeValue | null, kind: string | null): boolean =>
-    value === 'charge' || value === 'resistance' || unitsOf(valueTokenOf(value), kind) > 1;
   if (needsScaleToken(first.value, kinds[0] ?? null)) tokens.push('20');
   for (let i = 0; i < scope.plots.length; i++) {
     const p = scope.plots[i];
@@ -398,8 +405,11 @@ export function encodeScopeLine(
     // out as '0'/'1' exactly like the AC-only tokens always written.
     if (anyPlotFlags) tokens.push(measurementTokenBits(p.acCoupled, p.measurements).toString(16));
     if (i !== 0) {
-      const index = p.elementId === null ? -1 : (indexOf(p.elementId) ?? -1);
-      tokens.push(String(index), String(valueTokenOf(p.value)));
+      // A resolved element follows the live document order; only a plot whose
+      // id never resolved falls back to the ne ordinal the file gave it.
+      const index =
+        p.elementId !== null ? (indexOf(p.elementId) ?? -1) : (p.origElementIndex ?? -1);
+      tokens.push(String(index), String(valTokenOf(p)));
       if (needsScaleToken(p.value, kinds[i] ?? null)) tokens.push('20');
     }
     if (manual) {

@@ -16,6 +16,8 @@ const plot = (id: number, value: ScopePlot['value']): ScopePlot => ({
   manVPosition: 0,
   acCoupled: false,
   measurements: null,
+  origValueToken: null,
+  origElementIndex: null,
 });
 
 /** A measurement mask with every readout off except the named ones. */
@@ -519,4 +521,61 @@ describe('memristor and ohmmeter VAL_R plots', () => {
       ]);
     },
   );
+});
+
+describe('regeneration preserves uninterpretable plot tokens', () => {
+  // A transistor scope whose second plot carries val 9, a token outside the
+  // VAL_ table that decodes to null, and ne 3 pointing at an element line this
+  // build cannot read. A display edit flips scopeLineMatches and regenerates
+  // the line from state; the once-known tokens must survive that instead of
+  // collapsing into an attached voltage plot.
+  const RAW = ['64', '0', '4102', '20', '0.05', '0', '2', '3', '9', 'Label'];
+  const kinds: (string | null)[] = ['transistor', 'transistor'];
+  const rawPlots = (): ScopePlot[] => [
+    { ...plot(0, 'voltage'), elementId: 7 },
+    { ...plot(1, null), elementId: null, origValueToken: 9, origElementIndex: 3 },
+  ];
+
+  it('decodes the second plot to null and stops the walk at the label', () => {
+    const decoded = decodeScopeLine(RAW, rawPlots(), kinds, 0);
+    expect(decoded.perPlot[1]).toEqual({
+      acCoupled: false,
+      measurements: null,
+      manScale: null,
+      manVPosition: 0,
+    });
+    expect(decoded.label).toBe('Label');
+  });
+
+  it('a display edit regenerates the original val and ne, not val 0 ne -1', () => {
+    const decoded = decodeScopeLine(RAW, rawPlots(), kinds, 0);
+    const edited = { ...loadedScope(decoded, rawPlots()), showFreq: true };
+    const encoded = encodeScopeLine(edited, (id) => (id === 7 ? 0 : undefined), kinds);
+    // The flag word gains FLAG_SHOW_FREQ (8); every other token, including
+    // the preserved `3 9` pair, is exactly what the file had.
+    expect(encoded).toEqual(['64', '0', String(4102 | 8), '20', '0.05', '0', '2', '3', '9', 'Label']);
+  });
+
+  it('prefers live state over the stored originals when both exist', () => {
+    const live = [
+      { ...plot(0, 'voltage'), elementId: 7 },
+      { ...plot(1, 'current'), origValueToken: 9, origElementIndex: 3 },
+    ];
+    const scope = loadedScope(decodeScopeLine(RAW, live, kinds, 0), live);
+    const encoded = encodeScopeLine(scope, () => 5, kinds);
+    // Current encodes as val 3 and indexOf resolves ne 5; the originals are
+    // never written blindly over real state.
+    expect(encoded).toEqual(['64', '0', '4102', '20', '0.05', '0', '2', '5', '3', 'Label']);
+  });
+
+  it('a null plot with no stored originals still encodes the legacy 0 and -1', () => {
+    const bare = [
+      { ...plot(0, 'voltage'), elementId: 7 },
+      { ...plot(1, null), elementId: null },
+    ];
+    const scope = loadedScope(decodeScopeLine(RAW, bare, kinds, 0), bare);
+    expect(encodeScopeLine(scope, () => undefined, kinds)).toEqual([
+      '64', '0', '4102', '20', '0.05', '0', '2', '-1', '0', 'Label',
+    ]);
+  });
 });
