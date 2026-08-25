@@ -321,17 +321,59 @@ describe('drawScope diverged caption', () => {
 const mkCtxTextsY = (
   w = 200,
   h = 150,
-): { ctx: CanvasRenderingContext2D; entries: { text: string; y: number }[] } => {
-  const entries: { text: string; y: number }[] = [];
+): { ctx: CanvasRenderingContext2D; entries: { text: string; x: number; y: number }[] } => {
+  const entries: { text: string; x: number; y: number }[] = [];
   const base = mkCtx(w, h);
   const ctx = {
     ...base.ctx,
-    fillText: vi.fn((text: string, _x: number, y: number) => {
-      entries.push({ text, y });
+    fillText: vi.fn((text: string, x: number, y: number) => {
+      entries.push({ text, x, y });
     }),
   } as unknown as CanvasRenderingContext2D;
   return { ctx, entries };
 };
+
+describe('drawScope manual-scale header layout', () => {
+  // Upstream lays bullet then label side by side and wraps at the right edge
+  // (ScopeOverlays.drawScale): the port used to stack every "=.../div" at the
+  // left margin while the bullets marched right.
+  const engine = captionEngine(false);
+
+  it('places each per-plot label beside its bullet, not stacked at x=4', () => {
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], {
+      manualScale: true,
+      showScale: true,
+    });
+    const { ctx, entries } = mkCtxTextsY(400, 150);
+    drawScope(ctx, engine, scope, 400, 150, emptyCursor(), 0, 5e-6, false, 3);
+    const labels = entries.filter((e) => e.text.startsWith('=') && e.text.endsWith('/div'));
+    expect(labels).toHaveLength(2);
+    // Neither label may overlap the leading H= string or its predecessor;
+    // the stub measures 6 px per character.
+    const hs = entries.find((e) => e.text.startsWith('H='));
+    expect(hs).toBeDefined();
+    let end = hs!.x + hs!.text.length * 6;
+    for (const label of labels) {
+      expect(label.x).toBeGreaterThanOrEqual(end);
+      end = label.x + label.text.length * 6;
+    }
+  });
+
+  it('wraps to the next row when the labels reach the right edge', () => {
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], {
+      manualScale: true,
+      showScale: true,
+    });
+    // Wide enough for H= plus one bullet row, not for two.
+    const { ctx, entries } = mkCtxTextsY(160, 150);
+    drawScope(ctx, engine, scope, 160, 150, emptyCursor(), 0, 5e-6, false, 3);
+    const labels = entries.filter((e) => e.text.startsWith('=') && e.text.endsWith('/div'));
+    expect(labels).toHaveLength(2);
+    expect(labels[1].y).toBe(labels[0].y + 15);
+    // The wrapped row restarts at the left margin, like upstream's x = 0.
+    expect(labels[1].x).toBeLessThan(labels[0].x);
+  });
+});
 
 describe('drawScope showElmInfo header', () => {
   const engine = captionEngine(false);

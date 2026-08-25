@@ -499,9 +499,12 @@ function drawHeader(
   if (scope.showScale) {
     const hs = `H=${formatValue(gridStepX(speed, timeStep), 's', decimalDigits)}/div`;
     if (scope.manualScale) {
-      // Per-plot coloured /div labels (ScopeOverlays.drawScale, manual mode).
+      // Per-plot coloured /div labels (ScopeOverlays.drawScale, manual mode):
+      // each label sits beside its bullet, and a row that would run past the
+      // right edge wraps to the next one instead of being dropped.
       lines.push({ text: hs, y });
-      let x = 0;
+      ctx.font = canvasFont(10);
+      let x = ctx.measureText(hs).width;
       // Only the visible plots get a bullet and /div label (ScopeOverlays.drawScale
       // iterates `visiblePlots`), so a plot hidden by showV/showI stays off the
       // header.
@@ -509,14 +512,19 @@ function drawHeader(
         const divisions = scope.manDivisions || MAN_DIVISIONS;
         const manScale = p.manScale ?? seedManScale(5, divisions);
         const s = `=${formatValue(manScale, UNIT[p.value], decimalDigits)}/div`;
-        ctx.font = canvasFont(10);
         const width = ctx.measureText(s).width + 20;
-        if (x + width > ctx.canvas.width) break;
+        if (x + width > ctx.canvas.width) {
+          x = 0;
+          y += 15;
+          // Upstream returns once a wrapped row falls below the bottom bound
+          // (drawInfo clips the text; this keeps its bullet off too).
+          if (y >= h - 5) break;
+        }
         ctx.fillStyle = traceColor(traceColors, p, theme);
         ctx.beginPath();
         ctx.arc(4 + x + 8, y + 5, 4, 0, Math.PI * 2);
         ctx.fill();
-        lines.push({ text: s, y });
+        lines.push({ text: s, x: 4 + x + 17, y });
         x += width;
       }
     } else {
