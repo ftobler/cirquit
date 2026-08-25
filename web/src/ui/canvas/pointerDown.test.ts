@@ -1429,6 +1429,60 @@ describe('arming the store gesture flag', () => {
   });
 });
 
+describe('the alt chords refuse to sweep when editing is off', () => {
+  // The chords sit above pan so the modifiers win, which also puts them above
+  // the shared editable gate, so each carries its own refusal: a published
+  // read-only circuit must not be reshaped from the keyboard chords any more
+  // than from the pointer, the way EDIT_ACTIONS drops nudge and rotate.
+  const refusedChord = (patch: Partial<PointerDownInput>) => {
+    useStore.getState().updateSettings({ editable: false });
+    const id = addEl('resistor');
+    const r = refs();
+    const before = useStore.getState().undoStack.length;
+    beginPointerGesture(down(patch), { x: 0, y: 0 }, useStore.getState(), hit(id), false, r);
+    return { r, before };
+  };
+
+  it('alt+shift refuses the row sweep', () => {
+    const { r, before } = refusedChord({ altKey: true, shiftKey: true });
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+    expect(useStore.getState().status).toBe('Editing disabled. Re-enable from the Options menu.');
+    // No sweep baseline may be committed behind the refusal.
+    expect(useStore.getState().undoStack.length).toBe(before);
+  });
+
+  it('alt+meta refuses the column sweep', () => {
+    const { r, before } = refusedChord({ altKey: true, metaKey: true });
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+    expect(useStore.getState().status).toBe('Editing disabled. Re-enable from the Options menu.');
+    expect(useStore.getState().undoStack.length).toBe(before);
+  });
+
+  it('editing enabled still arms both sweeps', () => {
+    const id = addEl('resistor');
+    const row = refs();
+    beginPointerGesture(
+      down({ altKey: true, shiftKey: true }),
+      { x: 0, y: 0 },
+      useStore.getState(),
+      hit(id),
+      false,
+      row,
+    );
+    expect(row.dragRef.current).toMatchObject({ mode: 'rowcol', axis: 'row' });
+    const col = refs();
+    beginPointerGesture(
+      down({ altKey: true, metaKey: true }),
+      { x: 0, y: 0 },
+      useStore.getState(),
+      hit(id),
+      false,
+      col,
+    );
+    expect(col.dragRef.current).toMatchObject({ mode: 'rowcol', axis: 'col' });
+  });
+});
+
 describe('a right-click while a move drag is armed', () => {
   /** Three parts on separate rows, so a click can land on one without the
    *  other two. */

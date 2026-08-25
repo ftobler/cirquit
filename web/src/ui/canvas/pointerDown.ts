@@ -368,6 +368,16 @@ export function stepMoveDrag(
   return true;
 }
 
+/** The read-only refusal shared by the editing entry points here: it raises
+ *  the status line and reports true so the caller can return. The alt chords
+ *  sit above pan so the modifiers win, which also puts them above the shared
+ *  editable gate, so they must ask this themselves. */
+function refuseEditing(state: AppState): boolean {
+  if (state.settings.editable) return false;
+  state.setStatus('Editing disabled. Re-enable from the Options menu.');
+  return true;
+}
+
 /** The pointer-down body shared by mouse, pen and touch: hit-test, toggle a
  *  running interactive part, select, arm the mode. `gated` marks the
  *  move/dragpost modes for touch, which must wait for dragArmed before they
@@ -390,11 +400,16 @@ export function beginPointerGesture(
 
   // Alt+Shift sweeps every stored endpoint on the row, Alt+Meta the column;
   // checked before pan so the modifiers win (MouseManager.java:1087-1090).
+  // Editing is refused first: these are edits, so a published read-only
+  // circuit may not be reshaped from them, exactly as EDIT_ACTIONS drops
+  // nudge and rotate on the keyboard path.
   if (ev.button === 0 && ev.altKey && ev.shiftKey) {
+    if (refuseEditing(state)) return;
     startRowCol('row', p, state, dragRef);
     return;
   }
   if (ev.button === 0 && ev.altKey && ev.metaKey) {
+    if (refuseEditing(state)) return;
     startRowCol('col', p, state, dragRef);
     return;
   }
@@ -473,10 +488,7 @@ export function beginPointerGesture(
   // With editing disabled, only pan (above), wheel zoom and the interactive
   // parts above stay live: no select, place, move, post-drag or rubber-band
   // (UIManager.java:1101).
-  if (!state.settings.editable) {
-    state.setStatus('Editing disabled. Re-enable from the Options menu.');
-    return;
-  }
+  if (refuseEditing(state)) return;
 
   if (state.tool) {
     const grid = GRID_SIZE;
