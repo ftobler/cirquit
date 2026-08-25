@@ -14,7 +14,9 @@ export function ExportAsTextDialog() {
   const closeDialog = useStore((s) => s.closeDialog);
 
   const reImport = () => {
-    loadNetlist(text);
+    // A refused load has already routed its reason into the problem banner;
+    // the dialog stays open so the edited text is not lost with it.
+    if (loadNetlist(text) !== null) return;
     setStatus('Circuit re-imported from text');
     closeDialog();
   };

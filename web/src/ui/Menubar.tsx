@@ -396,7 +396,9 @@ export function Menubar({ engine }: Props) {
 
   const openLibraryCircuit = async (file: string, title: string) => {
     try {
-      loadNetlist(await loadLibraryCircuit(file));
+      // A refused load reports through the banner, not this catch (which is
+      // for the fetch); only a real load names the title and closes the menu.
+      if (loadNetlist(await loadLibraryCircuit(file)) !== null) return;
       setStatus(title);
       setLibraryOpen(false);
       setLibraryQuery('');
@@ -506,7 +508,9 @@ export function Menubar({ engine }: Props) {
       label: 'Open File…',
       onClick: fire(() =>
         openCircuit((text, name) => {
-          loadNetlist(text);
+          // A refused load has already put its banner up; the status keeps
+          // describing whatever is actually on screen.
+          if (loadNetlist(text) !== null) return;
           setStatus(name);
         }),
       ),

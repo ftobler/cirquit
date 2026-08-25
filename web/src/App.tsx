@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SimEngine } from './engine/simulator';
 import { handleAppKeyDown, handleAppKeyUp, type AppKeyHost } from './input/appKeys';
 import { openCircuit } from './io/fileIO';
-import { loadDefaultCircuit, loadLibraryCircuit } from './io/library';
-import { startupSource } from './io/urlShare';
+import { loadStartupCircuit } from './io/startup';
 import { printCircuit } from './render/print';
 import { AboutDialog } from './ui/AboutDialog';
 import { CreateSubcircuitDialog } from './ui/CreateSubcircuitDialog';
@@ -34,14 +33,6 @@ import { startAutoSave } from './state/recovery';
 
 /** A small RC circuit, kept as the offline fallback for when the bundled
  *  library cannot be fetched, so the app still opens on something that runs. */
-const STARTER_CIRCUIT = `$ 1 0.000005 10.2 50 5 43 5e-11
-v 176 320 176 96 0 0 40 5 0 0 0.5
-r 176 96 384 96 0 1000
-c 384 96 384 320 0 0.00001 0 0 0
-w 384 320 176 320 0
-g 176 320 176 352 0
-o 2 64 0 4099
-`;
 
 export default function App() {
   const [engine, setEngine] = useState<SimEngine | null>(null);
@@ -68,6 +59,9 @@ export default function App() {
   useAutoPause();
 
   // Bring up the wasm engine once, then load whatever circuit was requested.
+  // The chain's own failures are circuit problems (banner plus fallback) and
+  // live in io/startup.ts; only an engine that never came up reaches the
+  // fatal page below.
   useEffect(() => {
     let cancelled = false;
     SimEngine.create()
@@ -77,44 +71,12 @@ export default function App() {
         // Point the store at the engine's token reader so saveNetlist and the
         // rebuild path can overlay live state onto a copy of the elements.
         useStore.getState().setLiveStateProvider(() => e.elementStateTokens());
-        // Startup precedence, decided by the pure startupSource: a share link
-        // (ctz/cct) carries the whole circuit and wins; else a startCircuit
-        // deep link names a bundled library file, fetched through the same
-        // path the Circuits menu uses, falling back to the starter circuit
-        // with a status message when the fetch fails; else the library's own
-        // default, the entry upstream marks with `>` in setuplist.txt.
-        const source = startupSource();
-        const load = useStore.getState().loadNetlist;
-        if (source.kind === 'url') {
-          load(source.netlist);
-        } else if (source.kind === 'file') {
-          try {
-            const text = await loadLibraryCircuit(source.file);
-            // The fetch can outlive a strict-mode unmount; don't load a circuit
-            // into a component that has been torn down.
-            if (cancelled) return;
-            load(text);
-          } catch {
-            load(STARTER_CIRCUIT);
-            useStore
-              .getState()
-              .setStatus(`Could not load ${source.file}; showing the starter circuit.`);
-          }
-        } else {
-          try {
-            const { entry, netlist } = await loadDefaultCircuit();
-            if (cancelled) return;
-            load(netlist);
-            // Name it the way the Circuits menu does, so the opening circuit
-            // reads as a library entry rather than as anonymous scratch work.
-            useStore.getState().setStatus(entry.title);
-          } catch {
-            // No status here: a missing library is not something the user
-            // asked for, and the fallback circuit is usable on its own.
-            if (cancelled) return;
-            load(STARTER_CIRCUIT);
-          }
-        }
+        await loadStartupCircuit({
+          load: (text) => useStore.getState().loadNetlist(text),
+          setStatus: (message) => useStore.getState().setStatus(message),
+          setProblem: (problem) => useStore.getState().setProblem(problem),
+          alive: () => !cancelled,
+        });
       })
       .catch((e: unknown) => {
         if (!cancelled) setEngineError(e instanceof Error ? e.message : String(e));
@@ -134,7 +96,9 @@ export default function App() {
       openFile: () =>
         openCircuit((text, name) => {
           const st = useStore.getState();
-          st.loadNetlist(text);
+          // A refused load has already put its banner up; the status keeps
+          // describing whatever is actually on screen.
+          if (st.loadNetlist(text) !== null) return;
           st.setStatus(name);
         }),
       print: () => {

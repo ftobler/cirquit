@@ -8,6 +8,7 @@ import {
   parseCircuit,
   serializeCircuit,
   type CompositeModel,
+  type ParsedCircuit,
   type ScopeConfig,
 } from '../io/netlist';
 import { overlayLiveState } from '../io/liveState';
@@ -2751,19 +2752,32 @@ function createAppStore() {
   },
 
   loadNetlist: (text, opts) => {
+    // Conversion and parse failures stop at this boundary: a malformed file
+    // must reach the user as a dismissible banner over the circuit still on
+    // screen, never as a thrown escape from a menu click handler, and never
+    // as the engine-fatal startup page (the engine is fine, the circuit is
+    // not). The document-scoped resets below run only after the parse has
+    // succeeded, so a refused load leaves the open file exactly as it was.
+    let parsed: ParsedCircuit;
+    try {
+      parsed = parseCircuit(text);
+    } catch (e) {
+      const banner = `Could not load the circuit: ${e instanceof Error ? e.message : String(e)}`;
+      set({ problem: banner, unsupportedProblem: banner });
+      return banner;
+    }
     // The sample cache belongs to the open file, like the session models: the
     // previous file's buffers go, this file's fileNum tokens resolve to
     // nothing until the user imports fresh files (upstream clears both caches
     // on load, CircuitLoader.java:239-240).
     clearSampleCache();
     // The writable device-model store is document-scoped too. It must be empty
-    // before the parse runs, or the fresh file's elements would resolve their
-    // model names against the previous document's entries; the current file's
-    // `34`/`32` lines are committed right after, the document-counter reset
-    // the device-model feature rides (feature/overview.md, Live-state
+    // before the registration runs, or the fresh file's elements would resolve
+    // their model names against the previous document's entries; the current
+    // file's `34`/`32` lines are committed right after, the document-counter
+    // reset the device-model feature rides (feature/overview.md, Live-state
     // read-back).
     clearUserModels();
-    const parsed = parseCircuit(text);
     // The subcircuit library's session half belongs to the open file, so a load
     // rebuilds it: the previous file's `.` lines go, this file's arrive. Saved
     // models live in storage and are untouched by either half of this.
@@ -2892,7 +2906,7 @@ function createAppStore() {
     if (opts?.noCenter) {
       // A noCenter caller owns both the view and the baseline afterwards: the
       // drill-in exits are plain restores and must never touch lastSaved.
-      return;
+      return null;
     }
     get().centerCircuit();
     get().requestCenter();
@@ -2905,6 +2919,7 @@ function createAppStore() {
     if (!opts?.noBaseline) {
       set({ lastSaved: get().toNetlist() });
     }
+    return null;
   },
 
   toNetlist: () => {

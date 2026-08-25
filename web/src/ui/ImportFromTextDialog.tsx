@@ -13,7 +13,9 @@ export function ImportFromTextDialog() {
   const closeDialog = useStore((s) => s.closeDialog);
 
   const importText = () => {
-    loadNetlist(text);
+    // A refused load has already routed its reason into the problem banner;
+    // the dialog stays open so the text can be fixed without retyping it.
+    if (loadNetlist(text) !== null) return;
     setStatus('Imported circuit from text');
     closeDialog();
   };

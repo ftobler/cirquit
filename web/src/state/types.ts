@@ -658,8 +658,11 @@ export interface AppState {
   /** Replaces the document with a parsed netlist. `noCenter` skips the
    *  fit-to-view, for the drill-in exit which restores its own saved view;
    *  `noBaseline` skips the `lastSaved` write, for the drill-in enter whose
-   *  baseline must stay on the outer document for the whole session. */
-  loadNetlist(text: string, opts?: { noCenter?: boolean; noBaseline?: boolean }): void;
+   *  baseline must stay on the outer document for the whole session. Returns
+   *  null on success or the failure message: a malformed document reaches the
+   *  caller as a value (and the user as a problem banner), so no menu handler
+   *  or startup chain can lose the throw silently. */
+  loadNetlist(text: string, opts?: { noCenter?: boolean; noBaseline?: boolean }): string | null;
   toNetlist(): string;
   /** Serialises the document the way `toNetlist` does, but overlaid with the
    *  engine's live operating-point tokens where the provider reports them, so
