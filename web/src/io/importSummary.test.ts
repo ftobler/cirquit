@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeImport } from './importSummary';
+import { importIsLoadable, summarizeImport } from './importSummary';
 import { SAMPLE } from './netlist/fixtures';
 
 /** Seven elements and one scope with no unmodelled lines, so the pinned
@@ -46,5 +46,21 @@ describe('summarizeImport', () => {
     // The raw lines survive parseCircuit, so nothing is destroyed before the
     // user clicks OK.
     expect(summarizeImport(text)).not.toContain('undefined');
+  });
+});
+
+describe('importIsLoadable', () => {
+  it('refuses non-blank garbage that parses to zero elements', () => {
+    expect(importIsLoadable('hello world\nnot a circuit\n')).toBe(false);
+  });
+
+  it('allows blank text, where an empty sheet is the intent', () => {
+    expect(importIsLoadable('')).toBe(true);
+    expect(importIsLoadable('   \n\t\n')).toBe(true);
+  });
+
+  it('allows text that parses to at least one element', () => {
+    expect(importIsLoadable(GOOD)).toBe(true);
+    expect(importIsLoadable('r 0 0 16 0 0 100\n')).toBe(true);
   });
 });

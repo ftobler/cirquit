@@ -19,3 +19,11 @@ export function summarizeImport(text: string): string {
   }
   return parts.join(', ');
 }
+
+/** Whether the Import From Text dialog's OK may load the text. Blank text is
+ *  a deliberate empty sheet; non-blank text that parses to zero elements is
+ *  garbage (a paste gone wrong), and loading it would silently replace the
+ *  working circuit with nothing, so OK stays disabled until it parses. */
+export function importIsLoadable(text: string): boolean {
+  return text.trim() === '' || parseCircuit(text).elements.length > 0;
+}
