@@ -43,6 +43,15 @@ pub(crate) fn min_degree_order<'a, F>(n: usize, pattern: F) -> Vec<usize>
 where
     F: Fn(usize) -> &'a [usize],
 {
+    min_degree_order_with_budget(n, pattern, FILL_BUDGET)
+}
+
+/// [`min_degree_order`] with the work budget injected, so the abandonment
+/// branch is reachable from tests without shrinking the production constant.
+fn min_degree_order_with_budget<'a, F>(n: usize, pattern: F, fill_budget: usize) -> Vec<usize>
+where
+    F: Fn(usize) -> &'a [usize],
+{
     let identity = || (0..n).collect::<Vec<usize>>();
     if n < 2 {
         return identity();
@@ -115,7 +124,7 @@ where
         // The fill: eliminating a node makes its remaining neighbours mutually
         // adjacent (Parter's rule).
         work += neighbours.len() * neighbours.len();
-        if work > FILL_BUDGET {
+        if work > fill_budget {
             return identity();
         }
         for (i, &u) in neighbours.iter().enumerate() {
@@ -222,5 +231,52 @@ mod tests {
         let cols = vec![vec![0, 1], vec![0, 1], vec![]];
         let q = order_of(n, &cols);
         assert!(is_permutation(&q, n), "not a permutation: {q:?}");
+    }
+
+    /// A complete graph on `n` nodes: every elimination joins all remaining
+    /// neighbours at once, the fastest possible route past any budget.
+    fn complete_graph_cols(n: usize) -> Vec<Vec<usize>> {
+        (0..n)
+            .map(|c| (0..n).filter(|&r| r != c).collect())
+            .collect()
+    }
+
+    #[test]
+    fn an_over_budget_clique_abandons_to_the_identity() {
+        // The abandonment branch is unreachable with the production constant
+        // on any pattern small enough to test cheaply, so the budget is
+        // injected here: eliminating the first node of K12 joins its eleven
+        // remaining neighbours in one step, 121 edge insertions of work
+        // against an injected budget of 8. The identity is the documented
+        // fallback and must still be a full permutation.
+        let n = 12;
+        let cols = complete_graph_cols(n);
+        let q = min_degree_order_with_budget(n, |c| &cols[c], 8);
+        assert_eq!(q, (0..n).collect::<Vec<usize>>(), "expected the identity");
+        assert!(is_permutation(&q, n));
+    }
+
+    #[test]
+    fn the_same_clique_within_an_injected_budget_still_orders() {
+        // Control for the abandonment test: the identical shape under a
+        // generous injected budget comes back reordered, so the identity
+        // above came from the budget and not from the pattern.
+        let n = 12;
+        let cols = complete_graph_cols(n);
+        let q = min_degree_order_with_budget(n, |c| &cols[c], usize::MAX);
+        assert!(is_permutation(&q, n), "not a permutation: {q:?}");
+        assert_ne!(q, (0..n).collect::<Vec<usize>>());
+    }
+
+    #[test]
+    fn the_production_entry_point_delegates_with_the_documented_budget() {
+        // The wrapper must hand [`FILL_BUDGET`] through, or the module's cost
+        // guarantee would be decoupled from the constant its documentation
+        // cites.
+        let n = 12;
+        let cols = complete_graph_cols(n);
+        let direct = min_degree_order_with_budget(n, |c| &cols[c], FILL_BUDGET);
+        let wrapped = min_degree_order(n, |c| &cols[c]);
+        assert_eq!(direct, wrapped);
     }
 }

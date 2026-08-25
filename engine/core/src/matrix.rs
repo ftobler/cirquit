@@ -577,6 +577,25 @@ mod tests {
     }
 
     #[test]
+    fn dense_poisons_on_nonfinite_entries() {
+        // The dense twin of sparse_poisons_on_nonfinite_entries: f64::max
+        // ignores a NaN operand, so without the explicit non-finite scan a
+        // NaN entry would vanish from the row maximum and the factor would
+        // proceed over poisoned data. Both flavours must report singular.
+        let mut s = LinearSystem::new();
+        s.resize(2).unwrap();
+        s.add(0, 0, f64::NAN);
+        s.add(1, 1, 1.0);
+        assert_eq!(s.solve(), Err(SolveError::Singular));
+
+        let mut s = LinearSystem::new();
+        s.resize(2).unwrap();
+        s.add(1, 1, f64::INFINITY);
+        s.add(0, 0, 1.0);
+        assert_eq!(s.solve(), Err(SolveError::Singular));
+    }
+
+    #[test]
     fn reuses_factors_across_right_hand_sides() {
         let mut s = LinearSystem::new();
         s.resize(2).unwrap();

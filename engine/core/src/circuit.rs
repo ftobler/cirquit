@@ -5,9 +5,7 @@ use std::collections::{HashMap, HashSet};
 use crate::closure::{build_closures, Closure};
 use crate::element::{Element, SimCtx};
 use crate::elements::build_element;
-use crate::matrix::{
-    matrix_too_large, LinearSystem, SolveError, SolverBackend, MAX_DENSE_ROWS, MAX_MATRIX_ROWS,
-};
+use crate::matrix::{matrix_too_large, LinearSystem, SolveError, SolverBackend, MAX_MATRIX_ROWS};
 use crate::scope::ScopeTrace;
 use crate::simplified::build_simplified;
 use crate::spec::{CircuitSpec, ElementSpec, ScopeValue, SimOptions};
@@ -427,6 +425,21 @@ impl Circuit {
             return Err(format!(
                 "minTimeStep must be a positive, finite number of seconds, got {}",
                 options.min_time_step
+            ));
+        }
+        // Sized from untrusted input before any bound check ran: the three
+        // reservations below must not reserve capacity for an element count
+        // no valid circuit can carry, or a hand-crafted spec dies in the
+        // allocator instead of failing validation. Every element has at
+        // least one terminal, so assign_nodes' terminal limit bounds the
+        // list length too; checking it here, before anything commits,
+        // rejects with a message and leaves even the previous options in
+        // force.
+        if spec.elements.len() > MAX_MATRIX_ROWS {
+            return Err(format!(
+                "The circuit is too large: it lists {} elements, above the limit of {}.",
+                spec.elements.len(),
+                MAX_MATRIX_ROWS
             ));
         }
         self.options = options;
@@ -1227,9 +1240,23 @@ impl Circuit {
         // No adaptation here: there is no time to shrink, and reactive stamps
         // ignore `dt` under `dc_analysis`. One attempt at the nominal step
         // with the normal budget, exactly as before.
-        let solved = self
-            .try_step(self.options.time_step, self.options.max_subiterations)
-            .is_ok();
+        let solved = match self.try_step(self.options.time_step, self.options.max_subiterations) {
+            Ok(_) => true,
+            // An element halt or a refused stamp is a condition of the
+            // circuit, not a failed operating point: folding either into the
+            // degradation arm below would silently reset everything and
+            // report nothing, the same misrouting the transient loop avoids
+            // by handling both ahead of its halve-and-retry arms. The message
+            // surfaces verbatim instead, which at build time rejects the
+            // circuit exactly as the constant stamp pass already does.
+            Err(StepError::Stopped(msg)) | Err(StepError::BadStamp(msg)) => {
+                self.last_dc_converged = false;
+                self.ctx.dc_analysis = false;
+                self.ctx.time = 0.0;
+                return Err(msg);
+            }
+            Err(StepError::Singular(_)) | Err(StepError::NotConverged(..)) => false,
+        };
         // Recorded for [`Circuit::find_dc_operating_point`], which observes
         // this solve only through the reset that ran it.
         self.last_dc_converged = solved;
@@ -1282,7 +1309,10 @@ impl Circuit {
 
         // Linear circuits settle in a single pass; the caller's budget is for
         // the nonlinear Newton loop. The `max(2)` guard keeps a pathologically
-        // low budget from making every nonlinear step fail on purpose.
+        // low budget from making every nonlinear step fail on purpose, and
+        // from silently absorbing the confirming subiteration the acceptance
+        // check below requires (subiteration 0 is never accepted for a
+        // nonlinear circuit).
         let max_sub = if self.nonlinear { budget.max(2) } else { 1 };
         let mut converged_at = None;
         // Element indices of whoever was still moving on the last iteration.
@@ -1392,6 +1422,14 @@ impl Circuit {
             }
             self.write_back();
 
+            // Subiteration 0 never settles a nonlinear step: its stamps
+            // describe the previous iterate, so "converged" there says the
+            // old state was already consistent and nothing about the solution
+            // this pass just produced. Every accepted step therefore ends on
+            // a pass whose stamps were evaluated at freshly solved voltages,
+            // and the `max(2)` budget floor above guarantees that confirming
+            // pass exists even when the caller allows a single iteration:
+            // that is why cheap steps pay the doubled budget for the safety.
             if converged && (subiter > 0 || !self.nonlinear) {
                 converged_at = Some(subiter);
                 break;
@@ -2174,12 +2212,25 @@ fn kcl_sum(
     sum
 }
 
+/// Ceiling on the reduced coordinate count one stuck-wire component may Gram
+/// solve with. A closed ring has no leaf, so the whole loop enters this solve
+/// on every committed step it survives, and the dense backend's own row limit
+/// would admit a ring of thousands of hand-drawn segments into a
+/// hundred-megabyte O(n^3) system. Real drawn rings have tens of segments at
+/// most, so 256 leaves an order of magnitude of headroom while bounding one
+/// component's solve to about five million multiply-adds and half a megabyte
+/// of Gram matrix; past the cap the zero-current report below is the honest
+/// answer, which is also what upstream gives such loops ("wire loop detected").
+const MAX_WIRE_LOOP_SOLVE: usize = 256;
+
 /// Solves the KCL system of a stuck wire subgraph (a cycle with no leaf to
 /// resolve from) by minimum norm. Coordinates are the nodes, each unresolved
 /// wire an edge with current positive from post 0 to post 1, so the incidence
 /// matrix `B` satisfies `B I = b` with `b` the negated net injection. The
 /// minimum-norm solution `I = B^T (B B^T)^+ b` is deterministic: parallel
-/// shorts split equally, an undriven ring reports zero everywhere.
+/// shorts split equally, an undriven ring reports zero everywhere. A component
+/// whose reduced coordinate count exceeds [`MAX_WIRE_LOOP_SOLVE`] reports zero
+/// for every edge instead of solving.
 fn resolve_stuck_wires(
     edges: &[[usize; 2]],
     resolved: &mut [bool],
@@ -2228,22 +2279,17 @@ fn resolve_stuck_wires(
         let dropped = m - 1;
         let nr = m - 1;
 
-        // The Gram solve is dense O(n^2), so the entry count is computed with
-        // checked arithmetic and capped the same way the dense backend caps
-        // its systems. A wire component that large is a hand-edited netlist,
-        // not a real circuit; it falls back to the zero-current report a
-        // failed solve already produces instead of overflowing or exhausting
-        // memory.
-        let Some(g_entries) = nr
-            .checked_mul(nr)
-            .filter(|&n| n <= MAX_DENSE_ROWS * MAX_DENSE_ROWS)
-        else {
+        // The Gram solve is dense O(n^3) and reruns on every committed step
+        // the component survives, so [`MAX_WIRE_LOOP_SOLVE`] caps it far
+        // below the dense backend's own row limit. Past the cap the
+        // zero-current report is the documented fallback, not a failure.
+        if nr > MAX_WIRE_LOOP_SOLVE {
             for &i in idxs {
                 currents[i] = 0.0;
                 resolved[i] = true;
             }
             continue;
-        };
+        }
 
         // Right-hand side: negated net injection at each coordinate, where
         // already-resolved wires contribute through `current_into_node`.
@@ -2266,7 +2312,7 @@ fn resolve_stuck_wires(
         // Gram matrix G = B' B'^T over the reduced coordinates. Each edge
         // contributes its column's outer product; a self-loop's column is
         // zero, so it neither constrains the system nor carries current.
-        let mut g = vec![0.0; g_entries];
+        let mut g = vec![0.0; nr * nr];
         let mut col = vec![0.0; nr];
         for &i in idxs {
             let (r0, r1) = (comp_coord[&edges[i][0]], comp_coord[&edges[i][1]]);
@@ -2295,7 +2341,8 @@ fn resolve_stuck_wires(
         // `nr` is bounded by the Gram guard above, so the resize cannot fail;
         // the expect encodes that invariant instead of swallowing a real
         // guard hit.
-        sys.resize(nr).expect("nr is bounded by MAX_DENSE_ROWS");
+        sys.resize(nr)
+            .expect("nr is bounded by MAX_WIRE_LOOP_SOLVE");
         for r in 0..nr {
             for s in 0..nr {
                 if g[r * nr + s] != 0.0 {

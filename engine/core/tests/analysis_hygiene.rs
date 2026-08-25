@@ -3,6 +3,7 @@
 //! owned by the pass that produces them, and the adaptive timestep reaches
 //! the floor upstream reaches.
 
+use circuit_core::matrix::MAX_MATRIX_ROWS;
 use circuit_core::{Circuit, CircuitSpec, ElementSpec};
 
 mod common;
@@ -98,6 +99,42 @@ fn rejected_set_circuit_keeps_the_previous_circuit_running() {
             c.node_voltages()[2]
         );
     }
+}
+
+#[test]
+fn an_element_list_over_the_terminal_limit_is_rejected_before_reserving() {
+    // The three build reservations used to size themselves from
+    // spec.elements.len() before any bound check ran, so a spec claiming an
+    // absurd count died in the allocator instead of failing validation.
+    // Every element carries at least one terminal, so the terminal limit
+    // bounds the list length too; the hoisted guard rejects with a message,
+    // and because it sits before anything commits, per-stage atomicity keeps
+    // both the previous circuit and its options in force.
+    let mut c = Circuit::new();
+    c.set_circuit(&divider()).expect("the divider should build");
+    let bloated = CircuitSpec {
+        preserve_run: false,
+        elements: vec![elm(1, "ground", &[[0, 0]], &[]); MAX_MATRIX_ROWS + 1],
+        options: Some(opts(2e-6, false)),
+        scopes: Vec::new(),
+    };
+    let err = c
+        .set_circuit(&bloated)
+        .expect_err("an over-limit element list must be rejected");
+    assert!(
+        err.contains("too large") && err.contains("elements"),
+        "rejection should say why, got: {err}"
+    );
+    assert_eq!(c.element_count(), 5);
+    assert_eq!(
+        c.options().time_step,
+        1e-6,
+        "the rejected spec's options must not commit either"
+    );
+    assert!(
+        c.run(1).converged,
+        "the kept circuit must still step after a rejected oversized spec"
+    );
 }
 
 /// A closed series loop with no ground symbol anywhere, so every analysis

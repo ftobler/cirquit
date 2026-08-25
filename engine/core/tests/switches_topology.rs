@@ -637,6 +637,139 @@ fn pure_wire_ring_solves() {
 }
 
 #[test]
+fn a_driven_wire_triangle_splits_the_current_asymmetrically() {
+    // Three wires in a closed loop, driven at one corner and loaded at
+    // another: flow conservation pins the direct edge and the return arc up
+    // to one free circulation, and the minimum-norm solve fixes that
+    // circulation where the sum of squares is least. With drive I into A and
+    // load I out of B the family is I_AB = I + t, I_BC = t, I_CA = t, whose
+    // minimum sits at t = -I/3: the direct wire carries 2/3 of the drive and
+    // each return leg -1/3 against its post orientation. This is the
+    // asymmetric companion of the even half/half split the parallel pair
+    // above gets.
+    let i = 2.5e-3; // 5 V across the series 1 k drive and 1 k load
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, -160], [0, -260]],
+                &[("maxVoltage", 5.0)],
+            ),
+            elm(2, "ground", &[[0, -160]], &[]),
+            elm(
+                3,
+                "resistor",
+                &[[0, -260], [0, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[0, 0], [100, 0]], &[]),
+            elm(5, "wire", &[[100, 0], [50, 90]], &[]),
+            elm(6, "wire", &[[50, 90], [0, 0]], &[]),
+            elm(
+                7,
+                "resistor",
+                &[[100, 0], [200, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(8, "ground", &[[200, 0]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(5);
+    assert!(report.converged, "the driven triangle did not solve");
+    assert!(report.error.is_none());
+    assert!(
+        close(c.element_currents()[2], i, 1e-12),
+        "drive resistor took {}",
+        c.element_currents()[2]
+    );
+    assert!(
+        close(c.element_currents()[6], i, 1e-12),
+        "load resistor took {}",
+        c.element_currents()[6]
+    );
+    assert!(
+        close(c.element_currents()[3], 2.0 * i / 3.0, 1e-12),
+        "direct edge took {}",
+        c.element_currents()[3]
+    );
+    assert!(
+        close(c.element_currents()[4], -i / 3.0, 1e-12),
+        "return leg 1 took {}",
+        c.element_currents()[4]
+    );
+    assert!(
+        close(c.element_currents()[5], -i / 3.0, 1e-12),
+        "return leg 2 took {}",
+        c.element_currents()[5]
+    );
+}
+
+#[test]
+fn a_wire_loop_past_the_gram_cap_reports_zero_instead_of_solving() {
+    // A closed ring has no leaf, so every one of its segments enters the
+    // stuck-wire Gram solve whole, on every committed step. The old ceiling
+    // was the dense backend's own row limit, admitting rings of thousands of
+    // segments into a hundred-megabyte O(n^3) system per step; the solve cap
+    // now sits far lower, and this 300-segment driven ring abandons the
+    // solve. Had it solved, flow conservation would put half the drive
+    // current on every segment, so all-zero wire currents here prove the cap
+    // was honoured while the resistors around the loop still read Ohm's law.
+    const N: usize = 300;
+    let mut elements = vec![
+        elm(
+            1,
+            "voltage",
+            &[[0, -160], [0, -260]],
+            &[("maxVoltage", 5.0)],
+        ),
+        elm(2, "ground", &[[0, -160]], &[]),
+        elm(
+            3,
+            "resistor",
+            &[[0, -260], [0, 0]],
+            &[("resistance", 1000.0)],
+        ),
+    ];
+    let mut id = 4u32;
+    for k in 0..N - 1 {
+        elements.push(elm(
+            id,
+            "wire",
+            &[[(16 * k) as i32, 0], [(16 * (k + 1)) as i32, 0]],
+            &[],
+        ));
+        id += 1;
+    }
+    // The closing segment wraps back to the driven corner.
+    let tail = (16 * (N - 1)) as i32;
+    elements.push(elm(id, "wire", &[[tail, 0], [0, 0]], &[]));
+    id += 1;
+    elements.push(elm(
+        id,
+        "resistor",
+        &[[tail, 0], [tail + 160, 0]],
+        &[("resistance", 1000.0)],
+    ));
+    elements.push(elm(id + 1, "ground", &[[tail + 160, 0]], &[]));
+
+    let c = &mut build(elements, opts(1e-5, true));
+    let report = c.run(5);
+    assert!(report.converged, "the oversized ring did not solve");
+    assert!(report.error.is_none());
+    assert_eq!(c.node_count(), 3, "ring, drive junction and reference");
+    assert!(
+        close(c.element_currents()[2], 2.5e-3, 1e-9),
+        "drive resistor took {}",
+        c.element_currents()[2]
+    );
+    for (k, iw) in c.element_currents()[3..3 + N].iter().enumerate() {
+        assert_eq!(*iw, 0.0, "segment {k} escaped the cap fallback");
+    }
+}
+
+#[test]
 fn closed_switch_in_parallel_with_wire_solves() {
     // A closed switch stamps the same constraint as a wire, so the two in
     // parallel used to be a duplicate row. Both merge into the ground node;

@@ -314,3 +314,49 @@ fn a_lamp_computing_an_out_of_range_resistance_fails_the_step_loudly() {
     );
     assert!(c.error().is_some(), "the side channel must carry it too");
 }
+
+// ─── StepError routing in the DC phase ───
+
+#[test]
+fn a_refused_stamp_during_the_dc_solve_is_an_error_not_a_degraded_start() {
+    // solve_operating_point used to collapse every StepError through is_ok(),
+    // so a do_step refusal during the operating-point solve was misrouted
+    // into the silent-degradation path: elements reset, board cleared, no
+    // message. A refused stamp is a condition of the circuit, so it must
+    // surface verbatim the way the transient loop surfaces it, and unlike a
+    // singular matrix it must not read as "no solution".
+    // The voltage-limited current source stamps nothing in the constant pass
+    // (its companion lives entirely in do_step), so poisoning its current by
+    // a live edit sails past restamp and detonates inside the DC Newton
+    // iteration.
+    let mut c = Circuit::new();
+    c.set_circuit(&CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            elm(1, "resistor", &[[0, 0], [0, 16]], &[("resistance", 1000.0)]),
+            elm(
+                2,
+                "current",
+                &[[0, 0], [0, 16]],
+                &[("current", 0.01), ("maxVoltage", 5.0)],
+            ),
+            elm(3, "ground", &[[0, 16]], &[]),
+            elm(4, "ground", &[[0, 0]], &[]),
+        ],
+        options: Some(opts(1e-5, true)),
+        scopes: Vec::new(),
+    })
+    .expect("the healthy circuit should analyse");
+    assert!(c.set_param(2, "current", f64::NAN), "live edit accepted");
+
+    c.reset();
+    let msg = c.error().expect("the DC solve must surface the refusal");
+    assert!(
+        msg.contains("non-finite") && msg.contains("id 2"),
+        "the message should name the element and say why, got: {msg}"
+    );
+    assert!(
+        !msg.contains("no solution"),
+        "a refused stamp must not read as a singular circuit, got: {msg}"
+    );
+}
