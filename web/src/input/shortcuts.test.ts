@@ -11,6 +11,7 @@ import {
   hasChord,
   hasDuplicateChords,
   isDefaultBinding,
+  isModifierKey,
   isPlacementAction,
   loadShortcutOverlay,
   matchShortcut,
@@ -615,6 +616,34 @@ describe('shortcut overlay persistence', () => {
     expect(loadShortcutOverlay(storage)).toEqual({});
   });
 
+  it('drops modifier-only and junk named-key chords', () => {
+    // Assigning bare Shift would fire on every Shift press anywhere in the
+    // editor and persist across reload; CapsLock, Dead and Unidentified are
+    // the wider junk family the named-key grammar otherwise lets through
+    // (review m1). None of them may survive a load, with or without a prefix.
+    const storage = fakeStorage();
+    storage.setItem(
+      'shortcuts.v1',
+      JSON.stringify({
+        undo: 'Shift',
+        copy: 'Control',
+        cut: 'Alt',
+        paste: 'Meta',
+        redo: 'Ctrl+Shift',
+        duplicate: 'CapsLock',
+        selectAll: 'Dead',
+        rotate: 'Unidentified',
+      }),
+    );
+    expect(loadShortcutOverlay(storage)).toEqual({});
+  });
+
+  it('keeps Space assignable through storage', () => {
+    const storage = fakeStorage();
+    storage.setItem('shortcuts.v1', JSON.stringify({ toggleRunning: 'Space' }));
+    expect(loadShortcutOverlay(storage)).toEqual({ toggleRunning: 'Space' });
+  });
+
   it('a Delete chord is not assignable, so the Default button is the only way back', () => {
     // Delete stays a dialog-reserved clear key (NON_ASSIGNABLE_KEYS), so not
     // even a hand-edited delete:'Delete' blob persists. Restoring the cleared
@@ -658,6 +687,23 @@ describe('denied-storage browsers', () => {
 
   it('saveShortcutOverlay is quiet when the storage access itself throws', () => {
     expect(() => saveShortcutOverlay({ undo: 'g' })).not.toThrow();
+  });
+});
+
+describe('modifier-only keydowns', () => {
+  it('isModifierKey names exactly the four keyboard modifiers', () => {
+    for (const k of ['Shift', 'Control', 'Alt', 'Meta']) expect(isModifierKey(k)).toBe(true);
+    // The junk named keys are rejected by the chord grammar instead; they are
+    // not modifiers and a capture box may still want to show them as refused.
+    for (const k of ['CapsLock', 'Dead', 'Unidentified', 'Enter', 'a', ' ']) {
+      expect(isModifierKey(k)).toBe(false);
+    }
+  });
+
+  it('chordOf would fold a lone Shift into the bare chord the grammar must refuse', () => {
+    // Pinning why the capture guard exists: without it, the row would read
+    // 'Shift' and persist, firing paste on every Shift press in the editor.
+    expect(chordOf(ev({ key: 'Shift' }))).toBe('Shift');
   });
 });
 

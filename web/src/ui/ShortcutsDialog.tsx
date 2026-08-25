@@ -12,6 +12,7 @@ import {
   defaultBindingFor,
   hasDuplicateChords,
   isDefaultBinding,
+  isModifierKey,
   overlayFromRows,
   rowsFromOverlay,
   type ShortcutRow,
@@ -55,6 +56,10 @@ export function ShortcutsDialog() {
       setRow(i, '');
       return;
     }
+    // A lone modifier press names no key a chord could own: capturing it
+    // would show 'Shift' and persist an assignment that fires on every Shift
+    // press in the editor. Ignored, so the row keeps whatever it held.
+    if (isModifierKey(ev.key)) return;
     ev.preventDefault();
     setRow(i, chordOf(ev));
   };

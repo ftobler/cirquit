@@ -463,11 +463,29 @@ function defaultStorage(): StorageLike | undefined {
 
 const NAMED_KEY = /^[A-Z][A-Za-z]*$/;
 
+/** The key values a lone modifier keydown reports. The dialog's capture box
+ *  ignores them: an assignment to bare Shift would fire on every Shift press
+ *  anywhere in the editor and persist across reload, and only Shift of the
+ *  four is even representable as a chord prefix (the others self-prefix
+ *  harmlessly). */
+const MODIFIER_KEYS = ['Shift', 'Control', 'Alt', 'Meta'] as const;
+
+export function isModifierKey(key: string): boolean {
+  return (MODIFIER_KEYS as readonly string[]).includes(key);
+}
+
+/** Key values that name no real printable key, so a chord on them can never
+ *  do what its row promises: the four modifiers above plus CapsLock and the
+ *  IME ghosts Dead and Unidentified. Rejected at load like the reserved keys,
+ *  so not even a hand-edited blob binds them. */
+const JUNK_NAMED_KEYS = [...MODIFIER_KEYS, 'CapsLock', 'Dead', 'Unidentified'] as const;
+
 /** Named keys the dialog never assigns, so they must not persist even through
  *  a hand-edited blob. Enter, Tab and the arrows are reserved by the host
  *  (Enter confirms, Tab moves focus, arrows navigate); Backspace/Delete are
- *  the dialog's clear keys; Escape closes the dialog. Upstream leaves all of
- *  these inert too (KeyNames.keyCodeToPlaceholder returns -1 for them). */
+ *  the dialog's clear keys; Escape closes the dialog; the junk family binds
+ *  nothing real. Upstream leaves all of these inert too
+ *  (KeyNames.keyCodeToPlaceholder returns -1 for them). */
 const NON_ASSIGNABLE_KEYS = new Set([
   'Enter',
   'Tab',
@@ -478,6 +496,7 @@ const NON_ASSIGNABLE_KEYS = new Set([
   'ArrowDown',
   'ArrowLeft',
   'ArrowRight',
+  ...JUNK_NAMED_KEYS,
 ]);
 
 /** True when a stored chord is one chordOf could have produced: an optional
