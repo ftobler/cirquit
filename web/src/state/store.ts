@@ -110,6 +110,7 @@ import {
 } from '../model/types';
 import type { AppState, ScrollValuePopover, Slider, Snapshot, ViewTransform } from './types';
 import { loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
+import { loadStoredClipboard, saveStoredClipboard } from './clipboardStorage';
 import { loadScopeDefaults } from './scopeDefaults';
 import { readRecovery } from './recovery';
 import { loadShortcutOverlay, normalizeKey, saveShortcutOverlay } from '../input/shortcuts';
@@ -680,7 +681,10 @@ function createAppStore() {
   elementProperties: null,
   deviceModelEditor: null,
   sliderElementId: null,
-  clipboard: null,
+  // The internal clipboard starts as whatever a previous session copied,
+  // upstream's readClipboardFromStorage fallback (CommandManager.java:517-523),
+  // so Paste is not greyed out after an F5.
+  clipboard: loadStoredClipboard(),
   lastSaved: null,
   liveStateProvider: null,
   document: 0,
@@ -3341,7 +3345,13 @@ function createAppStore() {
     // clipboard, or a paste loses the model. Only the lines backing the
     // selection travel: copying a resistor must not drag the file's whole
     // subcircuit library along.
-    set({ clipboard: serializeCircuit(selected, s.settings, [], modelLinesFor(s, selected)) });
+    const text = serializeCircuit(selected, s.settings, [], modelLinesFor(s, selected));
+    // Persist beside the app prefs so a Copy survives a reload and reaches
+    // another tab of the same browser, upstream's writeClipboardToStorage
+    // (CommandManager.java:441-453). Cut shares this path through its copy
+    // call; duplicate deliberately does not touch either copy.
+    saveStoredClipboard(text);
+    set({ clipboard: text });
   },
 
   cutSelection: () => {
