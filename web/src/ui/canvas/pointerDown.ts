@@ -36,20 +36,34 @@ import type { AppState } from '../../state/types';
 /** The armed gesture a pointer-down leaves behind. `gated` marks the touch
  *  path: a single finger must hold past DRAG_DELAY_MS (dragArmed) before these
  *  modes may move. Mouse and pen leave it unset and move immediately, so the
- *  desktop path is unchanged. */
+ *  desktop path is unchanged.
+ *
+ *  `button`, where set, is the pointer button that armed the gesture or took
+ *  the momentary hold (a hold arms no mode, so it rides on 'none'). Every
+ *  other button's presses are swallowed and its releases ignored until that
+ *  one lifts, so a chorded click can neither enter a new mode mid-gesture nor
+ *  run the up-time cleanup under the user's hand. Touch records 0 like a left
+ *  click; drags without a button keep the permissive pre-chord behaviour. */
 export type Drag =
-  | { mode: 'none' }
-  | { mode: 'place'; start: Point; id: number }
+  | { mode: 'none'; button?: number }
+  | { mode: 'place'; start: Point; id: number; button?: number }
   /** A wire drag. Nothing is in the store until the pointer lifts: a run is 0,
    *  1 or 2 wires depending on where the cursor ends up, so building it
    *  incrementally would mean adding and removing elements under the hand.
    *  `axis` latches the direction the drag first moved, which is what decides
    *  which way the L bends (model/wirePlacement.ts). */
-  | { mode: 'wire'; start: Point; current: Point; axis: WireAxis | null }
+  | { mode: 'wire'; start: Point; current: Point; axis: WireAxis | null; button?: number }
   /** `ids` is the group frozen at pointer-down, read after the press's own
    *  select settled: a mid-drag click or command that changes the selection
    *  must never hand an in-flight group drag to other elements. */
-  | { mode: 'move'; ids: number[]; last: Point; moved: boolean; gated?: boolean }
+  | {
+      mode: 'move';
+      ids: number[];
+      last: Point;
+      moved: boolean;
+      gated?: boolean;
+      button?: number;
+    }
   | {
       mode: 'dragpost';
       id: number;
@@ -59,15 +73,25 @@ export type Drag =
       /** The fixed endpoint, the one not being dragged. The drag-derived
        *  params (a wattmeter's width) are computed against it. */
       start: Point;
+      button?: number;
     }
-  | { mode: 'select'; start: Point; current: Point; shift: boolean }
+  | { mode: 'select'; start: Point; current: Point; shift: boolean; button?: number }
   | {
       mode: 'rowcol';
       axis: 'row' | 'col';
       captured: { id: number; post: 0 | 1 }[];
       last: Point;
+      button?: number;
     }
-  | { mode: 'pan'; startClient: Point; startView: Point };
+  | { mode: 'pan'; startClient: Point; startView: Point; button?: number };
+
+/** True when a pointerup reports a different button than the one that armed
+ *  the live gesture or momentary hold: its release must run no cleanup, or
+ *  releasing right while left is held would finish a placement, spring a push
+ *  switch back and disarm everything while the drag is still under way. */
+export function isChordedRelease(drag: Drag, button: number): boolean {
+  return drag.button !== undefined && drag.button !== button;
+}
 
 /** The refs the gesture decision writes through, held by the hook. */
 export interface PointerDownRefs {
@@ -325,9 +349,11 @@ export function armedHandle(p: Point, hit: CircuitElement, state: AppState): 1 |
 /** A row or column sweep captures every stored endpoint on the line at
  *  pointer-down so a sweep cannot pick up elements it passes over, and only
  *  the stored endpoints count, never derived posts (MouseManager.java:1159-1187).
- *  One undo entry for the whole sweep. */
+ *  One undo entry for the whole sweep. `button` rides along on the armed
+ *  sweep, as on every gesture. */
 export function startRowCol(
   axis: 'row' | 'col',
+  button: number,
   p: Point,
   state: AppState,
   dragRef: { current: Drag },
@@ -346,7 +372,7 @@ export function startRowCol(
     }
   }
   state.commit();
-  dragRef.current = { mode: 'rowcol', axis, captured, last: { x, y } };
+  dragRef.current = { mode: 'rowcol', axis, captured, last: { x, y }, button };
 }
 
 /** One pointer-move step of a group move: the grid-snapped delta against the
@@ -398,6 +424,13 @@ export function beginPointerGesture(
   // an undo step and leave a stale drag state behind the menu.
   if (ev.button === 2) return;
 
+  // Any further press while a gesture already owns its button belongs to that
+  // gesture's end, never to a new mode: a middle press must not turn a move
+  // into a pan, and an alt chord must not start a sweep over a running drag.
+  // Everything armed below records its button, including a momentary hold,
+  // whose drag state stays 'none'.
+  if (dragRef.current.button !== undefined) return;
+
   // Alt+Shift sweeps every stored endpoint on the row, Alt+Meta the column;
   // checked before pan so the modifiers win (MouseManager.java:1087-1090).
   // Editing is refused first: these are edits, so a published read-only
@@ -405,12 +438,12 @@ export function beginPointerGesture(
   // nudge and rotate on the keyboard path.
   if (ev.button === 0 && ev.altKey && ev.shiftKey) {
     if (refuseEditing(state)) return;
-    startRowCol('row', p, state, dragRef);
+    startRowCol('row', ev.button, p, state, dragRef);
     return;
   }
   if (ev.button === 0 && ev.altKey && ev.metaKey) {
     if (refuseEditing(state)) return;
-    startRowCol('col', p, state, dragRef);
+    startRowCol('col', ev.button, p, state, dragRef);
     return;
   }
 
@@ -422,6 +455,7 @@ export function beginPointerGesture(
       mode: 'pan',
       startClient: { x: ev.clientX, y: ev.clientY },
       startView: { x: state.view.x, y: state.view.y },
+      button: ev.button,
     };
     return;
   }
@@ -479,7 +513,10 @@ export function beginPointerGesture(
         } else {
           state.setElementState(hit.id, next);
         }
-        dragRef.current = { mode: 'none' };
+        // No drag mode is armed, but the hold still owns the button: the none
+        // state carries it so a chorded release cannot spring the switch back
+        // mid-hold.
+        dragRef.current = { mode: 'none', button: ev.button };
         return;
       }
     }
@@ -498,7 +535,13 @@ export function beginPointerGesture(
       // A wire run is built on release, not on press: how many wires it is
       // (none, one, or the two of an L) is not known until the drag ends, and
       // there is nothing useful to select or turn in the meantime.
-      dragRef.current = { mode: 'wire', start: { x, y }, current: { x, y }, axis: null };
+      dragRef.current = {
+        mode: 'wire',
+        start: { x, y },
+        current: { x, y },
+        axis: null,
+        button: ev.button,
+      };
       return;
     }
     // The same builder the ghost draws from, so the part cannot shift under
@@ -507,7 +550,7 @@ export function beginPointerGesture(
     // again by finishPlacement, which is what made a click look like nothing
     // happened.
     const id = state.addElement(makeGhostElement(state.tool, x, y, state.toolTurns));
-    dragRef.current = { mode: 'place', start: { x, y }, id };
+    dragRef.current = { mode: 'place', start: { x, y }, id, button: ev.button };
     // The addElement commit above is this gesture's whole undo baseline, so
     // raise the flag before anything else can commit: a Space rotate mid-drag
     // must fold into it, and it must turn about this press anchor.
@@ -549,6 +592,7 @@ export function beginPointerGesture(
         // The fixed endpoint, the one not being dragged: drag-derived params
         // (a wattmeter's width) are computed against it.
         start: post === 1 ? { x: hit.x2, y: hit.y2 } : { x: hit.x1, y: hit.y1 },
+        button: ev.button,
       };
     } else {
       // The group is read from the store after the press's select above
@@ -562,6 +606,7 @@ export function beginPointerGesture(
         last: p,
         moved: false,
         gated,
+        button: ev.button,
       };
       // Same one-gesture-one-undo-entry reasoning as the placement above: the
       // state.commit() before this branch is the move's baseline, and a Space
@@ -578,5 +623,5 @@ export function beginPointerGesture(
   // plain box replaces it and clears up front (selectArea's `add`,
   // MouseManager.java:381,645).
   if (!ev.shiftKey) state.select([]);
-  dragRef.current = { mode: 'select', start: p, current: p, shift: ev.shiftKey };
+  dragRef.current = { mode: 'select', start: p, current: p, shift: ev.shiftKey, button: ev.button };
 }

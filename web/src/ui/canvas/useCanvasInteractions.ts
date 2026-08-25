@@ -32,6 +32,7 @@ import {
   finishPlacement,
   finishPostDrag,
   finishWireDrag,
+  isChordedRelease,
   openMenuAndAbandonForLongPress,
   placementPoint,
   releaseHeldMomentary,
@@ -463,6 +464,13 @@ export function useCanvasInteractions(
     const isTouch = ev.pointerType === 'touch';
     const drag = dragRef.current;
     const state = useStore.getState();
+
+    // A chorded release is not the gesture's end: releasing the right button
+    // while the left is still held must not finish a placement, spring a held
+    // momentary back or disarm anything, so the arming button alone owns the
+    // cleanup until it lifts. Pointercancel routes here too but carries no
+    // meaningful button, and it must always stand everything down.
+    if (ev.type !== 'pointercancel' && isChordedRelease(drag, ev.button)) return;
 
     if (isTouch) {
       const g = gestureRef.current!;
