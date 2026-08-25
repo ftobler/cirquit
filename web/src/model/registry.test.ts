@@ -1642,6 +1642,16 @@ describe('the switch placement chars', () => {
     expect(declared('s')).toBe(1);
     expect(declared('S')).toBe(1);
   });
+
+  it('every declared shortcut survives into the placement map whole', () => {
+    // The whole-map collision guard: a future def or toolbox entry reusing a
+    // live char would last-win inside the builder without a peep, shrinking
+    // the map below the declaration count. Distinct declarations must mean a
+    // distinct char each.
+    const declared = [...ELEMENT_DEFS, ...TOOLBOX].filter((d) => d.shortcut !== undefined);
+    expect(new Set(declared.map((d) => d.shortcut)).size).toBe(declared.length);
+    expect(PLACEMENT_BY_CHAR.size).toBe(declared.length);
+  });
 });
 
 describe('multi-post elements stay on the 90-degree axis', () => {

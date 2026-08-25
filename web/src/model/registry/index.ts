@@ -527,11 +527,23 @@ export function toolDef(tool: string): ElementDef | undefined {
  */
 export const PLACEMENT_BY_CHAR: ReadonlyMap<string, string> = (() => {
   const m = new Map<string, string>();
+  // A second declaration of a live char silently re-arms the key to the later
+  // entry, because the set below is last-write exactly like upstream's table;
+  // upstream at least says so ("already have shortcut", UIManager.java:
+  // 1403-1405), so mirror that while developing. The registry test pins the
+  // no-collision invariant either way.
+  const claim = (char: string, id: string) => {
+    const prev = m.get(char);
+    if (prev !== undefined && import.meta.env.DEV) {
+      console.warn(`placement shortcut '${char}' already arms ${prev}; re-arming to ${id}`);
+    }
+    m.set(char, id);
+  };
   for (const d of ELEMENT_DEFS) {
-    if (d.shortcut !== undefined) m.set(d.shortcut, d.kind);
+    if (d.shortcut !== undefined) claim(d.shortcut, d.kind);
   }
   for (const t of TOOLBOX) {
-    if (t.shortcut !== undefined) m.set(t.shortcut, t.id);
+    if (t.shortcut !== undefined) claim(t.shortcut, t.id);
   }
   return m;
 })();
