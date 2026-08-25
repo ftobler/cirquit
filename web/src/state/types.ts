@@ -467,16 +467,23 @@ export interface AppState {
   /** skipCommit is set by the placement-cancel path (a zero-length drop):
    *  the deleted element's own creation is already the gesture's undo
    *  baseline, so this must not push a second one. Every other caller
-   *  omits it and gets the normal pre-delete commit. */
+   *  omits it and gets the normal pre-delete commit, except while an
+   *  element gesture is in flight: there the deletion folds into that
+   *  gesture's baseline instead of splitting it across two entries,
+   *  exactly as a mid-drag rotate does. */
   deleteSelected(skipCommit?: boolean): void;
   /** Rotates the selection 90 degrees about each element's midpoint, one undo
    *  entry. Under an `elementGesture` it skips the commit (the gesture's
    *  pointer-down commit is the baseline) and a placement turns about its press
    *  anchor instead, banking the turn in `elementGesture.placeTurns`. */
   rotateSelection(): void;
-  /** Mirrors the selection across each element's vertical centre axis. */
+  /** Mirrors the selection across each element's vertical centre axis, one
+   *  undo entry. Under an `elementGesture` it follows rotate: a move drag
+   *  folds into the drag's own entry, and a placement refuses, since a mirror
+   *  has no banked form the placement's cursor-driven endpoint would keep. */
   mirrorSelection(): void;
-  /** Exchanges posts 0 and 1 on each selected two-terminal part. */
+  /** Exchanges posts 0 and 1 on each selected two-terminal part, under the
+   *  same in-flight gesture rule as `mirrorSelection`. */
   swapTerminals(): void;
   /** Merges plain-wire chains into routed wires, one undo entry, engine
    *  reload via the revision bump (the Convert Wires to Routed Wires command). */

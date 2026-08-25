@@ -542,6 +542,144 @@ describe('rotate under an in-flight pointer gesture', () => {
   });
 });
 
+describe('mirror, swap and delete under an in-flight pointer gesture', () => {
+  // rotate dispatches on elementGesture: a settled selection costs its own
+  // entry, a move drag folds into its pointer-down baseline, a placement banks
+  // what it can. Mirror, swap and delete must land on exactly that outcome,
+  // or Alt+M, Alt+T or Delete pressed mid-drag splits one gesture across two
+  // undo steps.
+
+  const addTransistorHere = () =>
+    useStore.getState().addElement({
+      kind: 'transistor',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: { pnp: 1 },
+    });
+
+  const addDiodeHere = () =>
+    useStore.getState().addElement({
+      kind: 'diode',
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+      flags: 0,
+      params: {},
+    });
+
+  /** A selected element with the move gesture armed over it, the state a body
+   *  press leaves: the pointer-down commit is already on the stack. */
+  const grabbedMove = (add: () => number) => {
+    const id = add();
+    useStore.getState().select([id]);
+    useStore.getState().commit();
+    useStore.getState().beginElementGesture('move');
+    return id;
+  };
+
+  it('a mirror mid-move folds into the drag like a rotate does', () => {
+    const id = grabbedMove(addTransistorHere);
+    const original = useStore.getState().elements.find((e) => e.id === id);
+    const before = useStore.getState().undoStack.length;
+    // One drag step first: a command landing on an untouched gesture would
+    // dedup its own commit away, hiding the split this pins.
+    useStore.getState().moveElements([id], 16, 0);
+
+    useStore.getState().mirrorSelection();
+
+    expect(useStore.getState().undoStack).toHaveLength(before);
+    const t = useStore.getState().elements.find((e) => e.id === id)!;
+    expect(t.x1).toBe(176);
+    expect(t.x2).toBe(16);
+    useStore.getState().endElementGesture();
+    useStore.getState().undo();
+    expect(useStore.getState().elements.find((e) => e.id === id)).toEqual(original);
+  });
+
+  it('a swap mid-move folds into the drag too', () => {
+    const id = grabbedMove(addDiodeHere);
+    const original = useStore.getState().elements.find((e) => e.id === id);
+    const before = useStore.getState().undoStack.length;
+    useStore.getState().moveElements([id], 16, 0);
+
+    useStore.getState().swapTerminals();
+
+    expect(useStore.getState().undoStack).toHaveLength(before);
+    const d = useStore.getState().elements.find((e) => e.id === id)!;
+    expect(d.x1).toBe(176);
+    expect(d.x2).toBe(16);
+    useStore.getState().endElementGesture();
+    useStore.getState().undo();
+    expect(useStore.getState().elements.find((e) => e.id === id)).toEqual(original);
+  });
+
+  it('a delete mid-move folds into the drag baseline instead of splitting it', () => {
+    const id = grabbedMove(addResistor);
+    const original = useStore.getState().elements.find((e) => e.id === id);
+    const before = useStore.getState().undoStack.length;
+    useStore.getState().moveElements([id], 16, 0);
+
+    useStore.getState().deleteSelected();
+
+    expect(useStore.getState().elements).toHaveLength(0);
+    expect(useStore.getState().undoStack).toHaveLength(before);
+    useStore.getState().endElementGesture();
+    useStore.getState().undo();
+    expect(useStore.getState().elements.find((e) => e.id === id)).toEqual(original);
+  });
+
+  it('a placement refuses a mirror, which has no banked form a move can keep', () => {
+    // Unlike a turn there is nothing to bank: the next pointer-move rewrites
+    // the free endpoint from the cursor, so an applied mirror would be
+    // silently erased mid-drag. Refusing beats a mirror that vanishes.
+    const id = addTransistorHere();
+    useStore.getState().select([id]);
+    useStore.getState().beginElementGesture('place');
+    const before = useStore.getState().undoStack.length;
+    const beforeElements = useStore.getState().elements.map((e) => ({ ...e }));
+
+    useStore.getState().mirrorSelection();
+
+    const s = useStore.getState();
+    expect(s.elements.map((e) => ({ ...e }))).toEqual(beforeElements);
+    expect(s.undoStack).toHaveLength(before);
+  });
+
+  it('a placement refuses a swap for the same reason', () => {
+    const id = addDiodeHere();
+    useStore.getState().select([id]);
+    useStore.getState().beginElementGesture('place');
+    const before = useStore.getState().undoStack.length;
+    const beforeElements = useStore.getState().elements.map((e) => ({ ...e }));
+
+    useStore.getState().swapTerminals();
+
+    const s = useStore.getState();
+    expect(s.elements.map((e) => ({ ...e }))).toEqual(beforeElements);
+    expect(s.undoStack).toHaveLength(before);
+  });
+
+  it('a delete mid-placement folds into the placement baseline like the cancel path', () => {
+    // addElement's commit at the arm is the placement's whole baseline, the
+    // same state finishPlacement's explicit skipCommit relies on.
+    const id = addResistor();
+    useStore.getState().select([id]);
+    useStore.getState().beginElementGesture('place');
+    const before = useStore.getState().undoStack.length;
+
+    useStore.getState().deleteSelected();
+
+    expect(useStore.getState().elements).toHaveLength(0);
+    expect(useStore.getState().undoStack).toHaveLength(before);
+    useStore.getState().undo();
+    expect(useStore.getState().elements).toHaveLength(0);
+  });
+});
+
 describe('the armed tool ghost turn', () => {
   it('counts quarter turns mod 4 and starts each tool flat', () => {
     useStore.getState().setTool('resistor');

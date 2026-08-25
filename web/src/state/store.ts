@@ -1247,7 +1247,7 @@ function createAppStore() {
   },
 
   deleteSelected: (skipCommit) => {
-    const { selectedIds } = get();
+    const { selectedIds, elementGesture: gesture } = get();
     if (selectedIds.length === 0) return;
     // skipCommit is the placement-cancel path's escape hatch: the element
     // being deleted was created by the same gesture's addElement commit, so
@@ -1256,6 +1256,12 @@ function createAppStore() {
     // element, and the first Ctrl+Z would resurrect it instead of undoing the
     // placement outright. Every other caller deletes real, pre-existing
     // state and still needs its own commit.
+    // A command landing while the pointer owns the selection must not split
+    // one gesture across two undo entries, so it folds into the drag's
+    // pointer-down baseline exactly as a rotate does. Deletion is stable under
+    // the remaining moves (a missing id moves nothing), so both gesture kinds
+    // fold; this is also what makes the explicit flag above work mid-placement.
+    if (!skipCommit && gesture !== null) skipCommit = true;
     if (!skipCommit) get().commit();
     set((s) => {
       // A scope goes when any of its plots names a deleted element, matching
@@ -1356,6 +1362,12 @@ function createAppStore() {
     if (turned) set({ elementGesture: { ...gesture, placeTurns: (gesture.placeTurns + 1) % 4 } });
   },
   mirrorSelection: () => {
+    const { elementGesture: gesture } = get();
+    // The same gesture dispatch rotate takes. A placement cannot take a
+    // mirror: unlike a turn there is nothing to bank, and the next
+    // pointer-move rewrites the free endpoint from the cursor, so an applied
+    // mirror would be silently erased mid-drag; refuse until the drop settles.
+    if (gesture?.kind === 'place') return;
     // The analogous shared axis: upstream reflects every selected part across
     // the one bbox centre (CommandManager.java:408-417), so the group mirrors
     // as a body instead of each part folding about its own centre.
@@ -1363,9 +1375,16 @@ function createAppStore() {
     transformSelected(
       canMirror,
       centre === undefined ? mirrorElement : (e) => mirrorElement(e, centre),
+      gesture?.kind === 'move',
     );
   },
-  swapTerminals: () => transformSelected(canSwap, swapTerminalOrder),
+  swapTerminals: () => {
+    // Mirror's gesture dispatch: fold into a move drag's own entry, refuse a
+    // placement whose next pointer-move would rewrite the swapped endpoints.
+    const { elementGesture: gesture } = get();
+    if (gesture?.kind === 'place') return;
+    return transformSelected(canSwap, swapTerminalOrder, gesture?.kind === 'move');
+  },
 
   convertWiresToRouted: () => {
     const s = get();
