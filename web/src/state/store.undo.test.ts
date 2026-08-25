@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearSampleCache, getDataSamples } from '../model/sampleCache';
 import { parseCircuit } from '../io/netlist';
 import { postPatch } from '../render/geometry';
@@ -1123,5 +1123,39 @@ describe('redo machinery', () => {
     useStore.getState().newCircuit();
     expect(useStore.getState().undoStack).toHaveLength(0);
     expect(useStore.getState().redoStack).toHaveLength(0);
+  });
+});
+
+describe('commit fingerprint cache', () => {
+  it('a deduping commit reuses the pushed snapshot key instead of restringifying it', () => {
+    addResistor();
+    const stringify = vi.spyOn(JSON, 'stringify');
+    try {
+      // The baseline push stringifies the live state once to fingerprint it.
+      useStore.getState().commit();
+      const afterBaseline = useStore.getState().undoStack.length;
+      // A second commit with nothing changed must compare against the top
+      // through the push-time cache: one further stringify (the live state),
+      // never two. On SRAM/ROM sheets each avoided pass is about a megabyte
+      // of flat addrN/valN keys.
+      useStore.getState().commit();
+      expect(stringify).toHaveBeenCalledTimes(2);
+      expect(useStore.getState().undoStack).toHaveLength(afterBaseline);
+    } finally {
+      stringify.mockRestore();
+    }
+  });
+
+  it('dedup stays content-based across undo and redo pushes', () => {
+    // Undo and redo push their own clones onto the opposite stack without a
+    // computed key; the first later comparison must fingerprint them by
+    // content, so an equal state still dedups byte-identically.
+    addResistor();
+    useStore.getState().commit();
+    const commitsAfterAdd = useStore.getState().undoStack.length;
+    useStore.getState().undo();
+    useStore.getState().redo();
+    useStore.getState().commit();
+    expect(useStore.getState().undoStack).toHaveLength(commitsAfterAdd);
   });
 });

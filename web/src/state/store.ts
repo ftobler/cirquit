@@ -306,7 +306,29 @@ function withLiveAppPrefs(snapshotSettings: SimSettings, live: SimSettings): Sim
   return out as SimSettings;
 }
 
+/** Undo entries beyond this cap fall off the front of the stack. Every push
+ *  site slices, so the oldest entries are evicted silently, without notice
+ *  and without touching the redo side. */
 const UNDO_LIMIT = 100;
+
+/** Push-time fingerprint cache, keyed by snapshot identity. A fingerprint is
+ *  a full-document stringify, megabytes on SRAM/ROM sheets, and commit
+ *  compares the live state against the stack top on every call; caching each
+ *  pushed snapshot's key beside it makes that comparison a WeakMap lookup,
+ *  so a commit stringifies only the live state once. Snapshots are never
+ *  mutated after they are pushed, so a cached key cannot go stale; snapshots
+ *  pushed without a key already computed (undo/redo pushes, the drill-in and
+ *  recovery exits) simply compute and cache theirs on the first comparison.
+ *  Evicted entries drop out of the map with their snapshots. */
+const snapshotKeyCache = new WeakMap<Snapshot, string>();
+
+function cachedSnapshotKey(s: Snapshot): string {
+  const hit = snapshotKeyCache.get(s);
+  if (hit !== undefined) return hit;
+  const key = snapshotKey(s);
+  snapshotKeyCache.set(s, key);
+  return key;
+}
 
 /** The one serialization body shared by `toNetlist` (the non-live document)
  *  and `saveNetlist` (the live overlay). Building the scope configs, the
@@ -963,11 +985,16 @@ function createAppStore() {
       // (a repeat click, or a field focus that changed nothing) and must not
       // grow the stack. The redo stack is still cleared, exactly as upstream's
       // pushUndo clears it before its own dedup check.
-      const key = snapshotKey(s);
+      const key = cachedSnapshotKey(s);
       const top = s.undoStack[s.undoStack.length - 1];
-      if (top && key === snapshotKey(top)) return { redoStack: [] };
+      if (top && key === cachedSnapshotKey(top)) return { redoStack: [] };
+      // The pushed clone holds the same content the key was computed from, so
+      // the fingerprint travels with it and the next comparison never pays a
+      // second stringify for the same bytes.
+      const snap = clone(s);
+      snapshotKeyCache.set(snap, key);
       return {
-        undoStack: [...s.undoStack, clone(s)].slice(-UNDO_LIMIT),
+        undoStack: [...s.undoStack, snap].slice(-UNDO_LIMIT),
         redoStack: [],
       };
     }),
