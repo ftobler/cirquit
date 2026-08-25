@@ -483,6 +483,7 @@ impl Circuit {
                 0.0
             },
             dt: self.current_time_step,
+            nominal_dt: self.options.time_step,
             dc_analysis: false,
             subiter: 0,
         };
@@ -2472,6 +2473,106 @@ mod tests {
         c.run(8);
         assert_eq!(c.scopes()[0].columns_written, 2);
         assert_eq!(c.scopes()[0].snapshot().len(), 4);
+    }
+
+    /// An open-ended transmission line fed by a 10 V source behind its
+    /// matched impedance, probed by a scope on the far outer post. The far
+    /// end reads whatever the ring delivers, so its samples time edge
+    /// arrival against the ring length.
+    fn line_harness(preserve_run: bool) -> CircuitSpec {
+        let elm_spec =
+            |id: u32, kind: &str, posts: Vec<[i32; 2]>, params: Vec<(&str, f64)>| ElementSpec {
+                id,
+                kind: kind.into(),
+                posts,
+                params: params
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
+                label: None,
+                model: None,
+                flags: 0,
+            };
+        CircuitSpec {
+            preserve_run,
+            elements: vec![
+                elm_spec(
+                    1,
+                    "transmissionLine",
+                    vec![[0, 100], [400, 100], [0, 0], [400, 0]],
+                    vec![("delay", 15e-6), ("imped", 75.0)],
+                ),
+                elm_spec(2, "ground", vec![[0, 100]], vec![]),
+                elm_spec(3, "ground", vec![[400, 100]], vec![]),
+                elm_spec(
+                    4,
+                    "voltage",
+                    vec![[-100, 100], [-100, 0]],
+                    vec![("maxVoltage", 10.0)],
+                ),
+                elm_spec(
+                    5,
+                    "resistor",
+                    vec![[-100, 0], [0, 0]],
+                    vec![("resistance", 75.0)],
+                ),
+                elm_spec(6, "ground", vec![[-100, 100]], vec![]),
+            ],
+            options: Some(SimOptions {
+                adaptive: true,
+                ..SimOptions::default()
+            }),
+            scopes: vec![ScopeSpec {
+                element_id: 1,
+                value: ScopeValue::NodeVoltage,
+                post: 3,
+                steps_per_column: 1,
+                columns: 16,
+                ac_coupled: false,
+                trigger: TriggerSpec::default(),
+                display_width: 0,
+            }],
+        }
+    }
+
+    #[test]
+    fn a_preserving_rebuild_sizes_the_line_ring_at_the_nominal_step() {
+        // The ring's sizing step is captured at the fresh line's first stamp,
+        // and a rebuild that preserves a running adaptive capture hands that
+        // stamp the carried working step. Capturing it would size this 15 us
+        // line into twelve 1.25 us slots and stretch the delivery fourfold
+        // once the working step returned to the nominal; the timebase must be
+        // inherited from the configured nominal step instead.
+        let mut c = Circuit::new();
+        c.set_circuit(&line_harness(false))
+            .expect("the line should analyse");
+        // The mid-run adaptive state a rejecting frame leaves behind. The
+        // private setter stands in for the halve-and-retry itself, whose
+        // Newton choreography no fixed test circuit reproduces reliably.
+        c.set_time_step(1.25e-6);
+        c.set_circuit(&line_harness(true))
+            .expect("the preserving rebuild should analyse");
+
+        let last_sample = |c: &Circuit| {
+            let s = c.scopes()[0].snapshot();
+            (s[s.len() - 2] + s[s.len() - 1]) / 2.0
+        };
+        // A three-slot ring keeps the far end flat through three committed
+        // steps and delivers the full value on the fourth, slot counting
+        // being per committed step regardless of their length. Twelve slots,
+        // the carried-step capture, would still read zero here.
+        c.run(3);
+        assert!(
+            last_sample(&c).abs() < 1e-9,
+            "far end moved early: {}",
+            last_sample(&c)
+        );
+        c.run(1);
+        assert!(
+            (last_sample(&c) - 10.0).abs() < 1e-3,
+            "far end read {} on the delivery step",
+            last_sample(&c)
+        );
     }
 
     #[test]

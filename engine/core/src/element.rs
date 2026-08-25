@@ -9,6 +9,12 @@ pub struct SimCtx {
     pub time: f64,
     /// Timestep length, in seconds.
     pub dt: f64,
+    /// The configured nominal step (`options.time_step`), constant across a
+    /// rebuild while `dt` follows the adaptive working step. Elements that
+    /// size persistent storage against the nominal step read this rather
+    /// than `dt`, so a preserving rebuild landing on a carried adaptive step
+    /// cannot shrink that storage to fit a temporary step.
+    pub nominal_dt: f64,
     /// True while solving the operating point, where reactive elements are
     /// held at their steady state instead of integrating.
     pub dc_analysis: bool,
@@ -21,6 +27,7 @@ impl Default for SimCtx {
         Self {
             time: 0.0,
             dt: 5e-6,
+            nominal_dt: 5e-6,
             dc_analysis: false,
             subiter: 0,
         }

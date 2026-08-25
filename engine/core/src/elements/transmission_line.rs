@@ -24,10 +24,14 @@ pub struct TransmissionLine {
     base: Base,
     delay: f64,
     imped: f64,
-    /// Nominal timestep the ring is sized against, captured at the first
-    /// `stamp`. It is the port's analog of upstream's `sim.maxTimeStep`; the
-    /// working `dt` can halve under adaptation, but the ring must not shrink
-    /// with it, so the sizing step is fixed after the first pass.
+    /// Nominal timestep the ring is sized against, captured from
+    /// `ctx.nominal_dt` at the first `stamp`. It is the port's analog of
+    /// upstream's `sim.maxTimeStep`; the working `dt` can halve under
+    /// adaptation, but the ring must not shrink with it, so the sizing step
+    /// is fixed after the first pass. The capture reads the nominal step and
+    /// never the working one: a preserving rebuild hands that first stamp a
+    /// carried adaptive step, and sizing against it would stretch the delay
+    /// fourfold the moment adaptation walked back up to the nominal.
     nominal_dt: f64,
     /// Whether the ring has been sized at least once. Replaces the old
     /// `len_steps == 0` sentinel, which an over-long delay would trip forever:
@@ -140,10 +144,11 @@ impl Element for TransmissionLine {
 
     fn stamp(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         if !self.sized {
-            // The first stamp runs at the nominal `options.time_step`, which
-            // is the size the ring keeps for the whole run.
+            // Sized against the nominal step, never the working one: under a
+            // preserving rebuild the first stamp sees the carried adaptive
+            // step, which is not what the delay is measured in.
             self.sized = true;
-            self.nominal_dt = ctx.dt;
+            self.nominal_dt = ctx.nominal_dt;
             self.size_ring(self.delay);
         }
         let n = &self.base.nodes;
