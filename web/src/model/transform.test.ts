@@ -504,7 +504,7 @@ describe('opampReal transforms carry no flag', () => {
     // Upstream flipX touches no flag (OpAmpRealElm.java:319-320 are only
     // canFlipX/canFlipY): the reflected endpoints reverse dsign, so the
     // swapped inputs land across the axis exactly as upstream leaves them,
-    // while the rails keep their plain-hs geometry at (48,∓32).
+    // while the rails keep their plain-hs geometry at (48,-32) and (48,32).
     const e = element('opampReal', 0, 0, 96, 0, 2);
     const m = mirrorElement(e);
     expect(m).toMatchObject({ x1: 96, y1: 0, x2: 0, y2: 0 });
