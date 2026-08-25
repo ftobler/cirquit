@@ -4532,6 +4532,32 @@ describe('a drawn wire connects where it crosses junction posts', () => {
     expect(useStore.getState().elements.filter((e) => e.kind === 'wire')).toHaveLength(3);
   });
 
+  it('never splits at a bare text anchor', () => {
+    // A label parked mid-span is pure drawing (GraphicElm.java:35): upstream
+    // gives TextElm no posts, so the anchor draws no dot and a run drawn
+    // through it stays whole instead of becoming two dangling halves.
+    useStore.getState().addElement({
+      kind: 'decoration',
+      x1: 80,
+      y1: 0,
+      x2: 80,
+      y2: 0,
+      flags: 4,
+      params: {},
+      text: 'note',
+    });
+
+    useStore.getState().addWires([{ x1: 0, y1: 0, x2: 160, y2: 0 }]);
+    const baseline = useStore.getState().undoStack.length;
+
+    useStore.getState().addWires([{ x1: 80, y1: -64, x2: 80, y2: 64 }]);
+
+    expect(spans()).toContainEqual([80, -64, 80, 64]);
+    expect(spans()).toContainEqual([0, 0, 160, 0]);
+    expect(useStore.getState().elements.filter((e) => e.kind === 'wire')).toHaveLength(2);
+    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+  });
+
   it('returns no ids when every piece of a drawn leg duplicates existing parts', () => {
     // Redrawing an existing connection across its junction drops every piece
     // as a parallel duplicate, so the gesture ends with no id to select

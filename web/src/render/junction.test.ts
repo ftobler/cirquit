@@ -137,6 +137,18 @@ describe('bad connections', () => {
     expect(badConnectionPoints([box, stub])).toEqual([]);
   });
 
+  it('gives a text anchor no dot and no red flag where it sits on a part', () => {
+    // Text is upstream's third GraphicElm (GraphicElm.java:35): its anchor is
+    // drawing geometry, so a label parked over a resistor draws no grey dot
+    // at the anchor and paints none of the red bad-connection dots.
+    const resistor = el('resistor', 0, 0, 160, 0);
+    const label = { ...el('decoration', 80, 0, 80, 0), id: 2, text: 'note' };
+    const counts = postDotPoints([resistor, label]);
+
+    expect(counts.has('80,0')).toBe(false);
+    expect(badConnectionPoints([resistor, label])).toEqual([]);
+  });
+
   it('reuses a caller-supplied post count map', () => {
     const across = el('wire', 0, 0, 160, 0);
     const dropped = el('wire', 80, 0, 80, 80);

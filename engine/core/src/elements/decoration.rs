@@ -1,20 +1,22 @@
-//! Annotation with no electrical presence.
+//! Text annotation with no electrical presence (TextElm.java, dump 'x').
 
 use crate::element::{Base, Element};
 use crate::spec::ElementSpec;
 
-/// Annotation with no electrical presence at all (text, boxes, lines).
+/// A free-text label drawn at an arbitrary point to annotate a circuit.
+/// Upstream extends `GraphicElm`, whose post count is zero
+/// (GraphicElm.java:35): the anchor is drawing geometry and never touches a
+/// node, so the model is a shell that exists only so a loaded `x` line keeps
+/// its slot in the element list and round-trips as the element it is, not as
+/// an unknown line.
 pub struct Decoration {
     base: Base,
-    posts: usize,
 }
 
 impl Decoration {
-    pub fn new(spec: &ElementSpec) -> Self {
-        let posts = spec.posts.len();
+    pub fn new(_spec: &ElementSpec) -> Self {
         Self {
-            base: Base::with_posts(posts),
-            posts,
+            base: Base::with_posts(0),
         }
     }
 }
@@ -30,15 +32,11 @@ impl Element for Decoration {
         &mut self.base
     }
     fn post_count(&self) -> usize {
-        self.posts
+        0
     }
+    /// A decoration couples no terminals: there is no current path, so its
+    /// anchor must never merge into a node.
     fn connects(&self, _a: usize, _b: usize) -> bool {
         false
-    }
-    /// An annotation has no electrical presence, so no current can be
-    /// attributed to any of its posts. The explicit zero also keeps the
-    /// multi-post default's debug guard from firing on a boxed annotation.
-    fn current_into_node(&self, _post: usize) -> f64 {
-        0.0
     }
 }

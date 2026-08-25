@@ -115,6 +115,9 @@ export const TAPPED_FLIP = 1;
  *  form. Same bit and same meaning on both text-bearing types
  *  (TextElm.java:38, LabeledNodeElm.java:30); their writers always set it. */
 export const FLAG_ESCAPE = 4;
+/** Free text draws a bar across the top of every line under this bit
+ *  (TextElm.java:37, :135-138). */
+export const TEXT_BAR = 2;
 /** A labeled node marked "Internal Node": its name is a private net of the
  *  circuit, not a pin to expose when the circuit becomes a subcircuit
  *  (LabeledNodeElm.java:31, :76). */

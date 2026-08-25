@@ -24,7 +24,7 @@ import { FUSE_DEF } from './registry/elements/fuse';
 import { LAMP_DEF } from './registry/elements/lamp';
 import { OPAMP_DEF } from './registry/elements/opamp';
 import { THREE_PHASE_MOTOR_DEF } from './registry/elements/threePhaseMotor';
-import { LOGIC_INPUT_TERNARY, OPAMP_SWAP } from './registry/flags';
+import { LOGIC_INPUT_TERNARY, OPAMP_SWAP, TEXT_BAR } from './registry/flags';
 import { makeToolElement, snap } from '../state/helpers';
 import { useStore } from '../state/store';
 import { fresh } from '../state/store.test-helpers';
@@ -195,12 +195,48 @@ describe('zener fields', () => {
 });
 
 describe('text field metadata', () => {
-  it('declares both fields on the text element, the text one targeting e.text', () => {
+  it('declares the text, size and bar fields on the text element', () => {
+    // Text, Size then "Draw Bar On Top" (TextElm.java:128-138), the bar
+    // riding its own flag bit like every sibling bool row.
     const def = ELEMENT_DEFS.find((d) => d.kind === 'decoration');
     expect(def?.fields).toEqual([
       { name: 'text', label: 'Text', type: 'text', target: 'text' },
       { name: 'size', label: 'Size', unit: 'px' },
+      { name: 'bar', label: 'Draw Bar On Top', type: 'bool', flag: TEXT_BAR },
     ]);
+  });
+
+  it('declares no posts on the text element, like every GraphicElm', () => {
+    // GraphicElm.java:35 gives upstream's text zero posts: the anchor is
+    // drawing geometry, so it must not mint a terminal that merges into a
+    // node, draws a dot or splits a wire.
+    const def = ELEMENT_DEFS.find((d) => d.kind === 'decoration');
+    expect(def?.postCount).toBe(0);
+    expect(postsOf(element('decoration', 80, 64, 80, 64))).toEqual([]);
+  });
+
+  it('draws one fillText per line, splitting on the escaped newline pair', () => {
+    // Upstream splits before drawing (TextElm.java:47-84): each `\n` pair in
+    // the stored text starts a new line stepped one font size plus three,
+    // instead of painting the escape literally on one line.
+    const ctx = mkCtx();
+    const e = { ...element('decoration', 100, 200, 100, 200), text: 'top\\nbottom' };
+    defFor('decoration')?.draw?.(context(ctx), e);
+    expect(ctx.fillText.mock.calls.map((c) => c[0])).toEqual(['top', 'bottom']);
+    expect(ctx.fillText.mock.calls.map((c) => c[2])).toEqual([200, 227]);
+    // No bar without the flag.
+    expect(ctx.stroke).not.toHaveBeenCalled();
+  });
+
+  it('draws the bar across each line under TEXT_BAR', () => {
+    // The FLAG_BAR stroke (TextElm.java:71-75): one em above the baseline,
+    // spanning the measured width of its own line.
+    const ctx = mkCtx();
+    const e = { ...element('decoration', 100, 200, 100, 200, TEXT_BAR), text: 'hi' };
+    defFor('decoration')?.draw?.(context(ctx), e);
+    expect(ctx.stroke).toHaveBeenCalled();
+    expect(ctx.moveTo.mock.calls).toContainEqual([100, 188]);  // size 24: half an em up
+    expect(ctx.lineTo.mock.calls).toContainEqual([111, 188]);  // stub width 2*6 minus one
   });
 
   it('gives the labeled node, another e.text label, the same text field', () => {

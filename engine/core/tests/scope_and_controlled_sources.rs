@@ -204,6 +204,72 @@ fn box_does_not_perturb_the_divider() {
 }
 
 #[test]
+fn decoration_does_not_perturb_the_divider() {
+    // Text is upstream's third GraphicElm (TextElm.java, dump 'x'): zero
+    // posts like the box and the line (GraphicElm.java:35), so a label drawn
+    // over the divider must shift nothing by so much as a volt.
+    let divider = || {
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "resistor",
+                &[[100, 0], [100, 100]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ]
+    };
+    let plain = &mut build(divider(), opts(1e-5, true));
+    plain.run(5);
+    let v_plain = plain.element_voltages()[2];
+
+    let mut with_text = divider();
+    with_text.push(elm(6, "decoration", &[], &[]));
+    let decorated = &mut build(with_text, opts(1e-5, true));
+    decorated.run(5);
+    let v_decorated = decorated.element_voltages()[2];
+
+    assert!(close(v_plain, 5.0, 1e-9), "midpoint was {}", v_plain);
+    assert!(
+        close(v_decorated, v_plain, 1e-9),
+        "the text moved the midpoint from {} to {}",
+        v_plain,
+        v_decorated,
+    );
+}
+
+#[test]
+fn decoration_refuses_a_phantom_anchor_post() {
+    // The port once declared the text anchor a real terminal, which minted
+    // a floating node on every bare label, pinned it with GMIN and raised
+    // the floating-nodes warning. Upstream declares no posts
+    // (GraphicElm.java:35), so a spec that still carries one must be refused
+    // outright rather than quietly building the phantom again.
+    let spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![elm(6, "decoration", &[[80, 64]], &[])],
+        options: None,
+        scopes: vec![],
+    };
+    let err = Circuit::new()
+        .set_circuit(&spec)
+        .err()
+        .expect("a one-post decoration must not build");
+    assert!(
+        err.contains("expects 0 posts"),
+        "wrong rejection message: {err}"
+    );
+}
+
+#[test]
 fn antenna_across_a_resistor_is_bounded_and_finite() {
     let c = &mut build_with(
         vec![
