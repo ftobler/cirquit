@@ -62,10 +62,14 @@ export const LOGIC_INPUT_DEF: ElementDef = {
   switchRect: (e) => ({ x: e.x2 - 10, y: e.y2 - 10, w: 20, h: 20 }),
   defaults: { hiV: 5, loV: 0, position: 0, momentary: 0 },
   parse: (t, e) => {
-    // The position token is written as `true`/`false` by some versions, the
-    // same legacy form the switch's parse normalises.
+    // The position token is written as `true`/`false` by some versions, but
+    // upstream's shared switch reader inverts the words for this class only
+    // (SwitchElm.java:56-62): 'true' loads position 0 and 'false' position 1,
+    // because a LogicInputElm drives loV at position 0 where a switch closes.
+    // Numeric tokens fall through un-inverted, the branch every subclass
+    // shares.
     const p = t[0];
-    e.params.position = p === 'true' ? 1 : p === 'false' ? 0 : Number(p) || 0;
+    e.params.position = p === 'true' ? 0 : p === 'false' ? 1 : Number(p) || 0;
     e.params.momentary = t[1] === 'true' ? 1 : 0;
     // The label token only exists under FLAG_LABEL and shifts hiV/loV one
     // token along: SwitchElm reads it before LogicInputElm appends its two

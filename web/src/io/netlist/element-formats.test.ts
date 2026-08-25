@@ -1757,6 +1757,148 @@ describe('logic input file format', () => {
     expect(e.state).toBe(2);
     expect(elementLine).toBe(line);
   });
+
+  it('loads a legacy true position token low', () => {
+    // Upstream's shared switch reader inverts the boolean form for this class
+    // only (SwitchElm.java:56-62): 'true' means position 0, which doStep
+    // drives at loV (LogicInputElm.java:105-110).
+    const { e } = logicLine('L 80 240 48 240 0 true false 5 0');
+    expect(e.params.position).toBe(0);
+    expect(e.state).toBe(0);
+  });
+
+  it('loads a legacy false position token high', () => {
+    const { e } = logicLine('L 80 240 48 240 0 false false');
+    expect(e.params.position).toBe(1);
+    expect(e.state).toBe(1);
+  });
+
+  it('does not invert numeric position tokens', () => {
+    // The numeric branch is the one every SwitchElm subclass shares
+    // (SwitchElm.java:62); only the words invert. Both lines are real corpus
+    // shapes whose trailing word is the momentary token, not the level.
+    const monostable = logicLine('L 80 240 48 240 0 1 true 5 0');  // 555monostable.txt:16
+    expect(monostable.e.params.position).toBe(1);
+    expect(monostable.elementLine).toBe('L 80 240 48 240 0 1 true 5 0');
+    const avr = logicLine('L 304 80 336 80 0 0 false 5 0');  // avr8js-logic.txt:10
+    expect(avr.e.params.position).toBe(0);
+    expect(avr.elementLine).toBe('L 304 80 336 80 0 0 false 5 0');
+  });
+
+  it('keeps a ternary mid position un-inverted in its corpus shape', () => {
+    // 3-cgand.txt:46 verbatim: FLAG_TERNARY riding a numeric position, which
+    // must reach the numeric branch untouched by the boolean inversion.
+    const { e } = logicLine('L 160 192 96 192 1 2 false 5.0 0.0');
+    expect(e.params.position).toBe(2);
+    expect(e.state).toBe(2);
+  });
+
+  it('reads a labelled logic input without shifting levels', () => {
+    // The label occupies index 2 under FLAG_LABEL and pushes hiV/loV along;
+    // the inverted boolean reading must not move those indices.
+    const { e, elementLine } = logicLine('L 80 240 48 240 4 true false clk 5 0');
+    expect(e.text).toBe('clk');
+    expect(e.params.position).toBe(0);
+    expect(e.params.hiV).toBe(5);
+    expect(e.params.loV).toBe(0);
+    expect(elementLine).toBe('L 80 240 48 240 4 0 false clk 5 0');
+  });
+
+  it('reads the momentary word in either spelling independently of the level', () => {
+    // dram.txt carries both `true true` and `false true` rows: the second
+    // word is the momentary flag, never part of the level.
+    const held = logicLine('L 208 360 160 360 0 true true 5.0 0.0').e;  // dram.txt:63
+    expect(held.params.position).toBe(0);
+    expect(held.params.momentary).toBe(1);
+    const released = logicLine('L 208 224 160 224 0 false true 5.0 0.0').e;  // dram.txt:49
+    expect(released.params.position).toBe(1);
+    expect(released.params.momentary).toBe(1);
+  });
+
+  it('a missing position token still lands on 0', () => {
+    // Upstream throws and drops the element; the port-wide loader policy keeps
+    // it at NaN || 0. That tolerance is unchanged by the inversion.
+    const { e } = logicLine('L 80 240 48 240 0');
+    expect(e.params.position).toBe(0);
+    expect(e.state).toBe(0);
+  });
+
+  it('leaves the plain switch boolean mapping alone', () => {
+    // Guard against over-reach: without the instanceof LogicInputElm branch
+    // the reader maps 'true' to closed and 'false' to open
+    // (SwitchElm.java:56-62).
+    const position = (line: string) => parseCircuit(line).elements[0].params.position;
+    expect(position('s 384 80 448 80 0 true')).toBe(1);
+    expect(position('s 384 80 448 80 0 false')).toBe(0);
+  });
+
+  it('boots cmosxor.txt low off its true token and normalises the line on save', () => {
+    // Corpus guard. cmosxor.txt:18 is `L 144 80 64 80 0 true false`, which
+    // upstream boots LOW: position 0 drives loV (SwitchElm.java:56-62,
+    // LogicInputElm.java:105-110). Saving writes integer positions, so the
+    // boolean spelling normalises to the upstream-correct 0.
+    const text = readFileSync(join(CIRCUITS_DIR, 'cmosxor.txt'), 'utf8');
+    expect(text.split('\n')[17]).toBe('L 144 80 64 80 0 true false');
+    const parsed = parseCircuit(text);
+    const statesOf = (c: ReturnType<typeof parseCircuit>) =>
+      c.elements.filter((e) => e.kind === 'logicInput').map((e) => e.state);
+    expect(statesOf(parsed)).toEqual([0, 0]);
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+      parsed.sliders,
+    );
+    // The writer always emits the two levels after the momentary word
+    // (LogicInputElm.java:51-53), so the short corpus line grows its `5 0`
+    // tail while the boolean position normalises to the integer 0.
+    expect(out.split('\n').filter((l) => l.startsWith('L '))).toEqual([
+      'L 144 80 64 80 0 0 false 5 0',
+      'L 144 176 64 176 0 0 false 5 0',
+    ]);
+    // The normalised form is idempotent: same levels, same bytes.
+    const again = parseCircuit(out);
+    expect(statesOf(again)).toEqual([0, 0]);
+    const resaved = serializeCircuit(
+      again.elements,
+      { ...DEFAULT_SETTINGS, ...again.settings },
+      again.scopes,
+      again.passthrough,
+      again.order,
+      again.sliders,
+    );
+    expect(resaved).toBe(out);
+  });
+
+  it('follows the upstream rule for every boolean-position L line in the corpus', () => {
+    // The sweep pins the whole affected set: 75 boolean-position lines over 35
+    // bundled circuits boot at the level SwitchElm.java:56-62 assigns, not
+    // the one the plain-switch reading would give.
+    const files = readdirSync(CIRCUITS_DIR).filter(
+      (f) => f.endsWith('.txt') && f !== 'setuplist.txt',
+    );
+    let matches = 0;
+    const touched = new Set<string>();
+    const anomalies: string[] = [];
+    for (const file of files) {
+      for (const line of readFileSync(join(CIRCUITS_DIR, file), 'utf8').split('\n')) {
+        const m = /^L (\S+ ){5}(true|false)( |$)/.exec(line);
+        if (!m) continue;
+        matches += 1;
+        touched.add(file);
+        const [e] = parseCircuit(line).elements;
+        // 'true' loads LOW and 'false' HIGH for a LogicInputElm
+        // (SwitchElm.java:56-62).
+        const want = m[2] === 'true' ? 0 : 1;
+        if (e.params.position !== want) anomalies.push(`${file}: ${line}`);
+      }
+    }
+    expect(anomalies).toEqual([]);
+    expect(matches).toBeGreaterThanOrEqual(70);
+    expect(touched.size).toBeGreaterThanOrEqual(30);
+  });
 });
 
 describe('memristor file format', () => {
