@@ -62,7 +62,9 @@ describe('copy survives a store restart', () => {
 
   afterEach(() => restore());
 
-  it('a fresh module registry reads the stored clipboard at creation', async () => {
+  // The module re-import instantiates the wasm engine, which brushes the
+  // default budget when the full suite runs beside heavy sibling workers.
+  it('a fresh module registry reads the stored clipboard at creation', { timeout: 30000 }, async () => {
     const map = new Map<string, string>();
     const fake = {
       getItem: (k: string) => map.get(k) ?? null,
