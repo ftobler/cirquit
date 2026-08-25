@@ -8,10 +8,9 @@
  * Upstream's text dump code is effectively 0 (it never overrides
  * getDumpType), so the port uses 434, the smallest unused code in the modern
  * XML-era block. The lookup table rides in `e.text`, written as one escaped
- * token. See feature/instruction-display.md for the geometry deviation
- * (upstream stacks every bus post on one (x,y) point and relies on the post
- * index for node identity; the port spreads them vertically so each bit is a
- * distinct node).
+ * token. Like upstream, all N bus posts stack on the anchor coordinate with
+ * the post index standing in for the bit (getPost(n) = new Point(x, y, n)),
+ * so node identity comes from the index, not from separate coordinates.
  */
 
 import { canvasFont, limbColor, line } from '../../../render/draw';

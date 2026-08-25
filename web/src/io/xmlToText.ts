@@ -13,10 +13,13 @@
  * already Java `Double.toString` output, which JS `String()` reproduces for
  * the same value. Fields the port does not model have no text token and are
  * dropped, exactly as if upstream had saved a text file. The XML-only element
- * classes that still have no port model (Clock, Gyrator, NortonAmp,
+ * classes that still have no port model (Gyrator, NortonAmp,
  * CustomCompositeChip) become `#` comment lines so nothing is lost; a routed
  * wire's path is electrically identical to straight `w` segments, so those
- * convert to real wires. Where an element converts but an attribute it
+ * convert to real wires. A clock needs no special case: ClockElm dumps as its
+ * parent RailElm, so its `<R>` tag runs through the ordinary voltage-token
+ * writer and lands as a real clock-flagged rail line. Where an element
+ * converts but an attribute it
  * carries would change what upstream builds (a multiplexer's bus input
  * modes, a chip bit order this build does not lay out), the line keeps its
  * slot and a visible `#` trace comment rides under it, so no converted file

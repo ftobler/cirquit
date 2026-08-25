@@ -246,13 +246,14 @@ export const VOLTAGE_DEF: ElementDef = {
       const [l1, l2] = interp2(lead1, lead2, 1, 16);
       return boxOfPoints([s1, s2, l1, l2]);
     }
-    // The circle symbol: a source circle of radius 12 around the body centre.
+    // The circle symbol: a source circle of radius 17 around the body centre
+    // (circleSize, VoltageElm.java:240).
     const mid = interp(lead1, lead2, 0.5);
     return boxOfPoints([
-      { x: mid.x - 12, y: mid.y - 12 },
-      { x: mid.x + 12, y: mid.y - 12 },
-      { x: mid.x + 12, y: mid.y + 12 },
-      { x: mid.x - 12, y: mid.y + 12 },
+      { x: mid.x - 17, y: mid.y - 17 },
+      { x: mid.x + 17, y: mid.y - 17 },
+      { x: mid.x + 17, y: mid.y + 17 },
+      { x: mid.x - 17, y: mid.y + 17 },
     ]);
   },
   draw(g, e) {
@@ -283,8 +284,12 @@ export const VOLTAGE_DEF: ElementDef = {
       }
       return;
     }
-    const [lead1, lead2] = drawSourceCircle(g, e, 12);
-    drawWaveformGlyph(g, interp(lead1, lead2, 0.5), wf, 12);
+    // The source circle runs at upstream's circleSize 17, not the current
+    // source's 12 (VoltageElm.java:240-252), and its leads reach radius*2
+    // each side like calcLeads(circleSize*2). The glyph shares the radius so
+    // it keeps filling the disc.
+    const [lead1, lead2] = drawSourceCircle(g, e, 17);
+    drawWaveformGlyph(g, interp(lead1, lead2, 0.5), wf, 17);
     // Same showV gate as the battery plates: the circled +/− symbol and every
     // waveform glyph carry the caption only under FLAG_SHOW_VOLTAGE.
     if ((e.flags & VOLTAGE_SHOW_VOLTAGE) !== 0) {
