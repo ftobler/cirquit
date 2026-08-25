@@ -841,9 +841,14 @@ function createAppStore() {
 
   applyDeviceModelEdit: (family, entry, attachedElementId, prevName) => {
     const s = get();
-    // One undo step for the whole dialog OK; the writable store is module
-    // state, so an undo of the element half below never rolls the model back
-    // (upstream's models live outside its undo stack too).
+    // One undo step for the whole dialog OK. The writable store is module
+    // state outside the stacks by design: a dialog edit is session-persistent
+    // and an undo of the document half below never rolls it back. Only the
+    // stack crossings are compensated: deletes tombstone their models,
+    // undo/redo restore pruned ones, and undo/redo re-sync the session
+    // library from the restored `.` lines. Upstream snapshots carry model
+    // definition nodes and genuinely roll model edits back, so this is a
+    // conscious divergence from it, not parity.
     s.commit();
     putUserModel(family, entry);
     if (prevName !== undefined && prevName !== entry.name) deleteUserModel(family, prevName);
@@ -1260,7 +1265,8 @@ function createAppStore() {
     // one gesture across two undo entries, so it folds into the drag's
     // pointer-down baseline exactly as a rotate does. Deletion is stable under
     // the remaining moves (a missing id moves nothing), so both gesture kinds
-    // fold; this is also what makes the explicit flag above work mid-placement.
+    // fold, which for a placement is precisely what the explicit flag above
+    // has always done.
     if (!skipCommit && gesture !== null) skipCommit = true;
     if (!skipCommit) get().commit();
     set((s) => {

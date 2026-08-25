@@ -43,8 +43,10 @@ describe('device model editor', () => {
     useStore.getState().undo();
 
     // The element goes back to the value form, but the model is module state
-    // and survives the undo, exactly as upstream's models live outside its
-    // undo stack.
+    // and survives the undo by design: dialog edits are session-persistent
+    // and only the stack crossings are compensated (tombstones, pruned-model
+    // restores, `.` line re-syncs). Upstream snapshots genuinely roll model
+    // definitions back, so this is a recorded divergence from it.
     expect(useStore.getState().elements[0].modelName).toBeUndefined();
     expect(userModel('diode', 'mydiode')).toBeDefined();
   });

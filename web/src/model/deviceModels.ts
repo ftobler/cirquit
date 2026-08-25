@@ -182,11 +182,14 @@ export const MODEL_FAMILIES: readonly ModelFamily[] = ['diode', 'transistor', 'm
  * The writable model store, per family a `Map<string, UserEntry>`. Module
  * state, deliberately not a zustand store field: the models belong to the
  * document like parsed file models do, so an undo of an element edit must not
- * roll a created model back (upstream's models live outside its undo stack
- * too). The store clears this at the start of each load and of New (the
- * document-counter reset), then commits the new file's `34`/`32` lines through
- * `registerFileModels`, exactly how the subcircuit library rebuilds its
- * session half per load.
+ * roll a created model back. That is a divergence from upstream, whose undo
+ * snapshots carry model definition nodes and genuinely roll model edits back;
+ * the port compensates only the stack crossings (delete tombstones, pruned
+ * model restores on undo/redo, session-library re-syncs from `.` lines), and
+ * dialog edits stay session-persistent across them. The store clears this at
+ * the start of each load and of New (the document-counter reset), then commits
+ * the new file's `34`/`32` lines through `registerFileModels`, exactly how the
+ * subcircuit library rebuilds its session half per load.
  */
 const userModels: Record<ModelFamily, Map<string, UserModelEntry>> = {
   diode: new Map(),
