@@ -744,8 +744,8 @@ mod tests {
         // completed column sits one behind head, so the window stops there.
         let mut t = ScopeTrace::new(trigger_spec(1, 16, TriggerMode::Normal, 2.0), Some(0));
         // Fire on column 3 like the test above, then run well past a full
-        // wrap: 40 completed columns leave head at 8, a slot whose contents
-        // predate the trigger.
+        // wrap: 40 completed columns leave head at 8, pointing back at the
+        // oldest surviving column instead of fresh data.
         for v in [0.0, 0.0, 0.0] {
             t.push(v, 0.0);
         }

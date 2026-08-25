@@ -385,9 +385,10 @@ export function encodeScopeLine(
   if (manual) tokens.push(String(scope.manDivisions));
   // A W, C or Ω plot carries a scale token (ScopeSerializer.java:221-223).
   // Charge and resistance need the explicit value check for a plot whose kind
-  // is unknown here (its element left the document): only a capacitor's charge
-  // and a lamp's resistance are ever those plots, so `unitsOf` with a null
-  // kind would wrongly read them as volts and drop their skip token.
+  // is unknown here (its element left the document): only a capacitor's
+  // charge and a lamp's, memristor's or ohmmeter's resistance are ever those
+  // plots, so `unitsOf` with a null kind would wrongly read them as volts and
+  // drop their skip token.
   const needsScaleToken = (value: ScopeValue | null, kind: string | null): boolean =>
     value === 'charge' || value === 'resistance' || unitsOf(valueTokenOf(value), kind) > 1;
   if (needsScaleToken(first.value, kinds[0] ?? null)) tokens.push('20');

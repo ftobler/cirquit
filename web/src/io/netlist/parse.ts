@@ -181,9 +181,11 @@ export function importDecOrHex(token: string): number {
  * The `value`/`val` token to a trace quantity. Token 1 is the legacy power id
  * upstream rewrites to power for anything but a transistor
  * (ScopeSerializer.java:197-199); each element family answers the tokens its
- * own `getScopeValue` table owns (TransistorElm.java:582-593, LampElm.java:
- * 218-219): a transistor's IB/IC/IE/VBE/VBC/VCE and a lamp's VAL_R now map to
- * engine-sampled values instead of null plots. On a transistor, voltage (0)
+ * own `getScopeValue` table owns (TransistorElm.java:582-593): a
+ * transistor's IB/IC/IE/VBE/VBC/VCE and the VAL_R of a lamp, memristor or
+ * ohmmeter (LampElm.java:218-219, MemristorElm.java:143-146,
+ * OhmMeterElm.java:38-42) now map to engine-sampled values instead of null
+ * plots. On a transistor, voltage (0)
  * and charge (8) deliberately still fall through to a plain voltage
  * difference, which is friendlier than upstream's flat zero for the same
  * token; only a truly unmodelled token above 8 maps to null, because drawing
@@ -244,8 +246,9 @@ export function scopeValueFromToken(token: number, kind: string | null): ScopeVa
 
 /** The `value`/`val` token a trace quantity serializes as, the inverse of
  *  `scopeValueFromToken`. Shared with the scope-line encoder. The per-element
- *  names are unambiguous without the kind: only a lamp ever carries an
- *  `resistance` plot and only a transistor an `ib`..`vce` one. */
+ *  names are unambiguous without the kind: only a lamp, memristor or ohmmeter
+ *  ever carries a `resistance` plot and only a transistor an `ib`..`vce`
+ *  one. */
 export function valueTokenOf(value: ScopeValue | null): number {
   switch (value) {
     case 'current':

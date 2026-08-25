@@ -19,9 +19,10 @@ import type { LiveState } from '../io/liveState';
 import { scopeColumnCount, scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 
 /** The quantity a scope trace samples. The strings match the engine's serde
- *  names. `resistance` is a lamp's hot resistance and `ib`..`vce` a
- *  transistor's pin plots, upstream's VAL_R and VAL_IB..VAL_VCE
- *  (LampElm.java:218-222, TransistorElm.java:582-602). */
+ *  names. `resistance` is a lamp's hot resistance or the VAL_R reading of a
+ *  memristor or ohmmeter, and `ib`..`vce` a transistor's pin plots, upstream's
+ *  VAL_R and VAL_IB..VAL_VCE (LampElm.java:218-222, MemristorElm.java:143-147,
+ *  OhmMeterElm.java:37-43, TransistorElm.java:582-602). */
 export type ScopeValue =
   | 'voltage'
   | 'current'
