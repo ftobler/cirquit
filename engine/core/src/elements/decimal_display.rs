@@ -19,8 +19,10 @@ pub struct DecimalDisplay {
 
 impl DecimalDisplay {
     pub fn new(spec: &ElementSpec) -> Self {
-        // The edit dialog clamps to 8 bits (the port's limit; upstream lets it
-        // go to 16). A file carrying more is clamped on load too.
+        // The edit dialog clamps to 8 bits, the range upstream's own edit row
+        // declares (EditInfo("# of Bits", ..., 1, 8)); its setter is laxer
+        // and would still accept up to 16, but no dialog offers that. A file
+        // carrying more is clamped on load too.
         let bits = (spec.param("bits", 4.0) as usize).clamp(1, 8);
         // One west input per bit, in pin order bit 0 .. bit (bits-1), matching
         // makeBitPins (DecimalDisplayElm.java:100). The display never writes a

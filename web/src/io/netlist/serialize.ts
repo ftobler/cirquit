@@ -415,11 +415,11 @@ export function serializeCircuit(
       }
     }
   });
-  // A headerless file that holds a circuit still has to save its settings. One
-  // that holds no elements is left exactly as it came in: that is the XML
-  // `<cir>` form, which this build only passes through, and prefixing it with
-  // a `$` line would stop upstream recognising it as XML at all
-  // (CircuitLoader.java:73-80).
+  // A headerless file that holds a circuit still has to save its settings.
+  // The XML converter runs inside parseCircuit, so a `<cir>` document arrives
+  // here already as real text lines and takes the `$` header like any other
+  // file: a converted circuit saves as migrated text, not as XML. Only a
+  // document that yields no lines at all stays headerless.
   if (!sawHeader && rendered.length + scopes.length + sliders.length > 0) {
     lines.unshift(header);
     for (const d of deferred) d.at += 1;

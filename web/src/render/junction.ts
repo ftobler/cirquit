@@ -8,38 +8,9 @@
 import type { CircuitElement, Point } from '../model/types';
 import { postsOf } from '../model/registry';
 import { chipPinsOf } from '../model/registry/chips';
-import type { ChipPinDef } from '../model/registry/elements/dFlipFlop';
-import { busSplitterPins } from '../model/registry/elements/busSplitter';
-import { counter2Pins } from '../model/registry/elements/counter2';
-import { fullAdderPins } from '../model/registry/elements/fullAdder';
-import { memoryPins } from '../model/registry/elements/sram';
 import { cachedBusMismatches } from '../model/busWidths';
 import { pointOnWireInterior } from './geometry';
 import { boxesIntersect, elementBox } from './selection';
-
-/**
- * The pin table behind an element's posts when its kind carries one. The
- * plain chips come through `chipPinsOf`; the splitter, parallel-load counter,
- * bit-serial adder and memory families keep their tables in their own def
- * files and are the kinds whose bus modes collapse banks, which is what the
- * scan needs their `busZ` tags for.
- */
-function bankedPinsOf(e: CircuitElement): ChipPinDef[] | undefined {
-  switch (e.kind) {
-    case 'busSplitter':
-      return busSplitterPins(e);
-    case 'counter2':
-      return counter2Pins(e);
-    case 'fullAdder':
-      return fullAdderPins(e);
-    case 'sram':
-      return memoryPins(e, true);
-    case 'rom':
-      return memoryPins(e, false);
-    default:
-      return chipPinsOf(e);
-  }
-}
 
 /**
  * The posts the dot scan counts. A collapsed bus bank declares one pin per
@@ -68,7 +39,10 @@ function countedPosts(e: CircuitElement): Point[] {
   if (e.kind === 'busLogicInput' || e.kind === 'instructionDisplay') {
     return posts.slice(0, 1);
   }
-  const pins = bankedPinsOf(e);
+  // Every chip kind carries its pin table in CHIP_PINS with the `busZ` tags
+  // intact, so a collapsed bus bank filters down to its one drawn pin while
+  // plain posts all keep busZ 0.
+  const pins = chipPinsOf(e);
   if (!pins) return posts;
   return posts.filter((_, i) => (pins[i]?.busZ ?? 0) === 0);
 }

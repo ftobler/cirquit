@@ -537,10 +537,12 @@ fetch it).
   bus wire's `bw` onto every straight segment it becomes), converts the
   instruction display (`ins` to a real 434 line carrying its lookup table),
   the battery (`Battery` to a real 438 line carrying its SOC table), and
-  degrades routed wires to straight `w` segments. The XML-only element
-  classes still unrealized (Clock, Gyrator, NortonAmp, CustomCompositeChip)
-  stay as `#` comment lines so nothing is lost; RoutedWire is the exception,
-  converting to real segments. All 38 convert and simulate: the last holdouts,
+  degrades routed wires to straight `w` segments. A clock needs no special
+  case either: ClockElm dumps as its parent RailElm, so its `<R>` tag runs
+  through the ordinary voltage-token writer into a real clock rail line
+  carrying FLAG_CLOCK. The XML-only element classes still unrealized
+  (Gyrator, NortonAmp, CustomCompositeChip) stay as `#` comment lines so
+  nothing is lost. All 38 convert and simulate: the last holdouts,
   the td4 family, fell to bus-mode chip support (see the Working bullet above;
   their grounds on enable pins and the PC register's rails were drawn against
   upstream's collapsed pin coordinates, and a non-bus rebuild put those rails
@@ -599,6 +601,12 @@ fetch it).
    rides this same path: it flips `autoDC` on around a single reset, upstream's
    `dcAnalysisFlag` plus `resetAction` (CommandManager.java:361-364), so it
    solves whatever the setting says and puts the setting back afterwards.
+- **Shared sliders parse but never link.** A slider's shared-index token
+  (`ano`, FLAG_SHARED bit 1) lands in `SliderConfig.shared`
+  (`web/src/io/netlist/types.ts`) and round-trips verbatim on save, but the
+  sibling resolution never happens: a slider pointing at another renders and
+  drags independently where upstream mirrors its value onto the shared one
+  (Adjustable.java sharedSlider).
 
 ---
 
@@ -627,8 +635,8 @@ fetch it).
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
 a test. Done so far: **129 kinds implemented** (the `KINDS` list in
 `engine/core/src/elements/mod.rs`); the only upstream types still absent are
-the permanently-deferred XML-only classes (Clock, Gyrator, NortonAmp,
-RoutedWire, CustomCompositeChip).
+the permanently-deferred XML-only classes (Gyrator, NortonAmp,
+CustomCompositeChip).
 
 **Passive / basics** — done: wire, ground, resistor, capacitor, polarised
 capacitor, inductor, transformer, tapped transformer, custom transformer, fuse,

@@ -44,6 +44,45 @@ describe('createTest', () => {
     expect(useStore.getState().elements).toHaveLength(before);
   });
 
+  it('harnesses a newly supported kind like counter2 from its pin table', () => {
+    const chip = useStore.getState().addElement({
+      kind: 'counter2',
+      x1: 0,
+      y1: 0,
+      x2: 3 * GRID_SIZE,
+      y2: 0,
+      flags: 0,
+      params: { bits: 4, modulus: 0, highVoltage: 5 },
+    });
+    useStore.getState().select([chip]);
+    const before = useStore.getState().elements.length;
+
+    expect(useStore.getState().createTest()).toBe(true);
+
+    // The 4-bit counter carries I3..I0, the clock, CLR and EnP on the west
+    // plus LOAD and EnT on the east: nine inputs; Q3..Q0 and RCO are the five
+    // outputs (Counter2Elm.java:70-94).
+    const placed = useStore.getState().elements.slice(before);
+    expect(placed.filter((e) => e.kind === 'logicInput')).toHaveLength(9);
+    expect(placed.filter((e) => e.kind === 'logicOutput')).toHaveLength(5);
+  });
+
+  it('refuses an analog source that draws a chip body but is not a harness target', () => {
+    const id = useStore.getState().addElement({
+      kind: 'vcvs',
+      x1: 0,
+      y1: 0,
+      x2: 6 * GRID_SIZE,
+      y2: 0,
+      flags: 0,
+      params: { gain: 1, inputCount: 2 },
+    });
+    useStore.getState().select([id]);
+
+    expect(useStore.getState().createTest()).toBe(false);
+    expect(useStore.getState().elements).toHaveLength(1);
+  });
+
   it('reports false and places nothing when no single chip is selected', () => {
     const id = addResistor();
     useStore.getState().select([id]);
