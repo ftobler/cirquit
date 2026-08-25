@@ -1,7 +1,7 @@
 import { canvasFont, limbColor } from '../../../render/draw';
 import { FLAG_ESCAPE, TEXT_BAR } from '../flags';
 import { escapeFlags } from '../shared';
-import type { CircuitElement, ElementDef } from '../../types';
+import type { ElementDef } from '../../types';
 
 /**
  * The lines a text element paints: upstream's split() (TextElm.java:47-62)

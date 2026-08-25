@@ -37,8 +37,12 @@ export function elementBox(e: CircuitElement): Box {
   // A stem-bearing one-post part (ground, rails, logic inputs) hangs its symbol
   // off a draggable free end that is not a post. Its box must span the stored
   // endpoints like upstream's getBoundingBox (CircuitElm.java:854-861), or a
-  // rail's circle would sit outside its own selection box. Post-only parts
-  // (text, readouts) keep the single-post box; their stray `x2,y2` stays out.
+  // rail's circle would sit outside its own selection box. A one-post part
+  // without a draggable end (a labeled node) keeps its single-post box. For
+  // the zero-post annotations (text, box, line) the stored endpoints are the
+  // whole geometry, and for an upstream-saved text they carry the drawn
+  // extent (TextElm.draw updates x2,y2 from the bbox), so the span is the
+  // closest thing to upstream's bounding box.
   // The key is `draggablePosts` being SET, never the `postCount` fallback: a
   // transistor or op-amp has many posts hanging off its axis, and collapsing
   // its box to the two stored endpoints would drop them from selection.

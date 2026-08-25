@@ -282,8 +282,9 @@ export function hitRegions(e: CircuitElement): HitRegion[] {
     const regions: HitRegion[] = [{ type: 'post', x: e.x1, y: e.y1 }];
     // A ground's free end is a draggable control point, not a post, so its
     // stem must be hittable along the whole span or the far end could never
-    // be clicked to ctrl-drag it. Other single-post parts (text, readouts)
-    // keep their stray `x2, y2` out of hit-testing.
+    // be clicked to ctrl-drag it. Other anchor parts (a labeled node, and the
+    // zero-post annotations like text) keep their stray `x2, y2` out of
+    // hit-testing.
     const def = defFor(e.kind);
     if ((def?.draggablePosts ?? postCountOf(e)) > 1) {
       regions.push({ type: 'axis', a: { x: e.x1, y: e.y1 }, b: { x: e.x2, y: e.y2 } });

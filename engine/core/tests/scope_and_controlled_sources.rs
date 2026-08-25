@@ -261,8 +261,7 @@ fn decoration_refuses_a_phantom_anchor_post() {
     };
     let err = Circuit::new()
         .set_circuit(&spec)
-        .err()
-        .expect("a one-post decoration must not build");
+        .expect_err("a one-post decoration must not build");
     assert!(
         err.contains("expects 0 posts"),
         "wrong rejection message: {err}"
