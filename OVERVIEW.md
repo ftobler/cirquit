@@ -165,7 +165,14 @@ fetch it).
   another element are drawn red and tallied in the info area. The wire tool has
   its own placement rule (`model/wirePlacement.ts`): no pre-press ghost, and a
   drag inserts 0, 1 or 2 wires, never a diagonal one, with the corner of the L
-  on whichever axis the drag first moved along.
+  on whichever axis the drag first moved along. While a move, placement or
+  post-drag gesture is live, `render/junctionHints.ts` draws thin bars in the
+  conductor colour at the coincidences the static view hides: seams where two
+  distinct elements run one line through a shared coordinate (the colinearity
+  is required, so corners and angled joins stay unmarked), plus each moving
+  post lying on a static wire path or lead stub, the bar normal to the chain
+  it marks. A post drag previews only its travelling endpoint; a whole move
+  still connects nothing on drop.
 - File format: read and write the original `.txt`, `ctz`/`cct` URL sharing,
   and the bundled 373-circuit library.
 - Adaptive timestep: halve-and-retry with step rejection on a non-convergent

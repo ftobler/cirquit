@@ -12,6 +12,7 @@ import { handlePoints, HIT_TOLERANCE_PX } from '../../render/geometry';
 import { drawGrid } from '../../render/grid';
 import { drawHitboxes } from '../../render/hitboxes';
 import { cachedBadConnectionPoints, postDotPoints, shouldDrawDot } from '../../render/junction';
+import { cachedDragHints, dragHintsActive } from '../../render/junctionHints';
 import { scopeWidth } from '../../scope/geometry';
 import { traceScopes } from '../../scope/embedded';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
@@ -659,6 +660,54 @@ export function useFrameLoop(
             ctx.beginPath();
             ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
             ctx.fill();
+          }
+
+          // Drag hints: while an element gesture is live, mark where lines
+          // meet. The static view suppresses a junction circle wherever two
+          // distinct elements share a coordinate, because a pass-through seam
+          // says nothing in a settled schematic; under a drag it is exactly
+          // what matters, since coincidence is what the engine merges on and
+          // what the drop rules act on. Each mark is a short thin bar drawn
+          // normal to the chain it meets, in the conductor colour the wiring
+          // itself wears, so it reads as part of the schematic rather than as
+          // another marker class. A move still connects nothing on drop by
+          // upstream parity; the bars only make the geometry legible
+          // beforehand. Sizes divide by the zoom to stay constant on screen.
+          const gesture = dragRef.current;
+          if (settings.editable && dragHintsActive(gesture)) {
+            let ids: number[] = [];
+            let movers: Point[] | undefined;
+            if (gesture.mode === 'move') {
+              ids = gesture.ids;
+            } else if (gesture.mode === 'place') {
+              ids = [gesture.id];
+            } else if (gesture.mode === 'dragpost') {
+              // Only the grabbed endpoint travels, so only it may promise a
+              // split; its stationary twin keeps quiet even where it rests on
+              // a path.
+              ids = [gesture.id];
+              const dragged = elements.find((e) => e.id === gesture.id);
+              if (dragged) {
+                movers =
+                  gesture.post === 1
+                    ? [{ x: dragged.x1, y: dragged.y1 }]
+                    : [{ x: dragged.x2, y: dragged.y2 }];
+              }
+            }
+            ctx.strokeStyle = theme.wire;
+            ctx.lineWidth = 2 / view.scale;
+            const half = 6 / view.scale;
+            for (const h of cachedDragHints(elements, ids, movers)) {
+              ctx.beginPath();
+              if (h.vertical) {
+                ctx.moveTo(h.x, h.y - half);
+                ctx.lineTo(h.x, h.y + half);
+              } else {
+                ctx.moveTo(h.x - half, h.y);
+                ctx.lineTo(h.x + half, h.y);
+              }
+              ctx.stroke();
+            }
           }
 
           // The hitbox debug overlay, off by default: the regions the pointer
