@@ -35,14 +35,25 @@ impl Fuse {
     /// seconds (FuseElm.java:156).
     const COOLING_SECONDS: f64 = 3.0;
 
-    pub fn new(spec: &ElementSpec) -> Self {
-        Self {
+    /// The spec constructor rejects a non-positive resistance for the same
+    /// reason the resistor does: the stamper would silently stamp nothing,
+    /// and `two_terminal_current` would report zero, hiding a broken fuse
+    /// line behind an open circuit. `set_param` keeps the same rule.
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
+        let resistance = spec.param("resistance", Self::DEFAULT_RESISTANCE);
+        if !(resistance > 0.0) {
+            return Err(format!(
+                "fuse (id {}) resistance must be positive, got {}",
+                spec.id, resistance
+            ));
+        }
+        Ok(Self {
             base: Base::with_posts(2),
-            resistance: spec.param("resistance", Self::DEFAULT_RESISTANCE),
+            resistance,
             i2t: spec.param("i2t", Self::DEFAULT_I2T),
             heat: spec.param("heat", 0.0),
             blown: spec.param("blown", 0.0) != 0.0,
-        }
+        })
     }
 
     fn effective_resistance(&self) -> f64 {

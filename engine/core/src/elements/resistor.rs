@@ -10,11 +10,24 @@ pub struct Resistor {
 }
 
 impl Resistor {
-    pub fn new(spec: &ElementSpec) -> Self {
-        Self {
-            base: Base::with_posts(2),
-            resistance: spec.param("resistance", 1000.0),
+    /// The spec constructor rejects a non-positive resistance instead of
+    /// storing it: the stamper drops such a resistor silently, which would
+    /// turn a hand-edited `r ... 0` line into an unlabelled open circuit,
+    /// where upstream computes 1/r and dies loudly
+    /// (SimulationManager.java:1184-1188). `set_param` keeps the same
+    /// positivity rule, so both entry points agree.
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
+        let resistance = spec.param("resistance", 1000.0);
+        if !(resistance > 0.0) {
+            return Err(format!(
+                "resistor (id {}) resistance must be positive, got {}",
+                spec.id, resistance
+            ));
         }
+        Ok(Self {
+            base: Base::with_posts(2),
+            resistance,
+        })
     }
 }
 

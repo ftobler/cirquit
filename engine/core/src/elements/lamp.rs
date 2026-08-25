@@ -48,7 +48,27 @@ impl Lamp {
     /// (LampElm.java:171-172).
     const MAX_CURVE_TEMP: f64 = 5390.0;
 
-    pub fn new(spec: &ElementSpec) -> Self {
+    /// The spec constructor rejects a zero or negative rating: the stamped
+    /// resistance is `nomVoltage^2 / nomPower` scaled by the filament curve,
+    /// so a zero rating drives it to zero (a silently dropped stamp) or to
+    /// infinity (an equally silent open). `set_param` guards the same two
+    /// fields with the same rule, matching setEditValue's `ei.value > 0`
+    /// checks (LampElm.java:207-215).
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
+        let nom_pow = spec.param("nomPower", Self::DEFAULT_NOM_POW);
+        if !(nom_pow > 0.0) {
+            return Err(format!(
+                "lamp (id {}) nomPower must be positive, got {}",
+                spec.id, nom_pow
+            ));
+        }
+        let nom_v = spec.param("nomVoltage", Self::DEFAULT_NOM_V);
+        if !(nom_v > 0.0) {
+            return Err(format!(
+                "lamp (id {}) nomVoltage must be positive, got {}",
+                spec.id, nom_v
+            ));
+        }
         // The token constructor falls back to room temperature when the
         // saved token is NaN (LampElm.java:44-45); the TypeScript loader
         // already drops non-finite tokens before they reach `params`, so
@@ -56,14 +76,14 @@ impl Lamp {
         let mut lamp = Self {
             base: Base::with_posts(2),
             temp: spec.param("temp", Self::ROOM_TEMP),
-            nom_pow: spec.param("nomPower", Self::DEFAULT_NOM_POW),
-            nom_v: spec.param("nomVoltage", Self::DEFAULT_NOM_V),
+            nom_pow,
+            nom_v,
             warm_time: spec.param("warmTime", Self::DEFAULT_WARM_TIME),
             cool_time: spec.param("coolTime", Self::DEFAULT_COOL_TIME),
             resistance: 0.0,
         };
         lamp.resistance = lamp.resistance_from_temp();
-        lamp
+        Ok(lamp)
     }
 
     /// Resistance-vs-temperature curve, cited upstream to

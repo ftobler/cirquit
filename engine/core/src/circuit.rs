@@ -481,8 +481,7 @@ impl Circuit {
         let mut ids = Vec::with_capacity(spec.elements.len());
         let mut id_index: HashMap<u32, usize> = HashMap::with_capacity(spec.elements.len());
         for es in &spec.elements {
-            let elm = build_element(es)
-                .ok_or_else(|| format!("unknown element type '{}' (id {})", es.kind, es.id))?;
+            let elm = build_element(es)?;
             if elm.post_count() != es.posts.len() {
                 return Err(format!(
                     "element '{}' (id {}) expects {} posts, got {}",

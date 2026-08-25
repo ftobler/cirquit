@@ -261,17 +261,21 @@ pub const KINDS: &[&str] = &[
     "unijunction",
 ];
 
-/// Builds the model for a spec, or `None` if the type is not implemented yet.
-pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
+/// Builds the model for a spec. Errors name the element and the offending
+/// parameter when a spec value would silently vanish at stamp time (a
+/// resistance of zero stamps no conductance, so upstream's loud 1/0 must be
+/// answered by an equally loud build rejection here), or `unknown element
+/// type` for a kind this engine does not implement.
+pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
     let e: Box<dyn Element> = match spec.kind.as_str() {
         "wire" => Box::new(wire::Wire::new(spec)),
         "ground" => Box::new(ground::Ground::new(spec)),
-        "resistor" => Box::new(resistor::Resistor::new(spec)),
+        "resistor" => Box::new(resistor::Resistor::new(spec)?),
         "capacitor" => Box::new(capacitor::Capacitor::new(spec)),
         "polarizedCapacitor" => Box::new(capacitor::Capacitor::new_polarized(spec)),
         "inductor" => Box::new(inductor::Inductor::new(spec)),
-        "fuse" => Box::new(fuse::Fuse::new(spec)),
-        "lamp" => Box::new(lamp::Lamp::new(spec)),
+        "fuse" => Box::new(fuse::Fuse::new(spec)?),
+        "lamp" => Box::new(lamp::Lamp::new(spec)?),
         "thermistor" => Box::new(thermistor::Thermistor::new(spec)),
         "threePhaseMotor" => Box::new(three_phase_motor::ThreePhaseMotor::new(spec)),
         "timer" => Box::new(timer::Timer::new(spec)),
@@ -328,27 +332,27 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "relayContact" => Box::new(relay::RelayContact::new(spec)),
         "opamp" => Box::new(opamp::OpAmp::new(spec)),
         "ota" => {
-            let c = ota::from_spec(spec)?;
+            let c = model_composite(spec, ota::from_spec(spec))?;
             Box::new(c)
         }
         "composite" => {
-            let c = composite::Composite::from_spec(spec)?;
+            let c = model_composite(spec, composite::Composite::from_spec(spec))?;
             Box::new(c)
         }
         "comparator" => {
-            let c = comparator::from_spec(spec)?;
+            let c = model_composite(spec, comparator::from_spec(spec))?;
             Box::new(c)
         }
         "opampReal" => {
-            let c = opamp_real::from_spec(spec)?;
+            let c = model_composite(spec, opamp_real::from_spec(spec))?;
             Box::new(c)
         }
         "optocoupler" => {
-            let c = optocoupler::from_spec(spec)?;
+            let c = model_composite(spec, optocoupler::from_spec(spec))?;
             Box::new(c)
         }
         "crystal" => {
-            let c = crystal::from_spec(spec)?;
+            let c = model_composite(spec, crystal::from_spec(spec))?;
             Box::new(c)
         }
         "phaseComp" => Box::new(phase_comp::PhaseComp::new(spec)),
@@ -379,7 +383,9 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "monostable" => Box::new(monostable::Monostable::new(spec)),
         "adc" => Box::new(adc::Adc::new(spec)),
         "multiplexer" => Box::new(multiplexer::Multiplexer::new(spec)),
-        "customLogic" => Box::new(custom_logic::CustomLogic::new(spec)?),
+        "customLogic" => Box::new(
+            model_composite(spec, custom_logic::CustomLogic::new(spec))?,
+        ),
         "triState" => Box::new(tri_state::TriState::new(spec)),
         "schmitt" => Box::new(schmitt::Schmitt::new(spec, false)),
         "invertingSchmitt" => Box::new(schmitt::Schmitt::new(spec, true)),
@@ -413,7 +419,28 @@ pub fn build_element(spec: &ElementSpec) -> Option<Box<dyn Element>> {
         "ccvs" => Box::new(ccvs::Ccvs::new(spec)),
         "cccs" => Box::new(cccs::Cccs::new(spec)),
         "unijunction" => Box::new(unijunction::Unijunction::new(spec)),
-        _ => return None,
+        _ => {
+            return Err(format!(
+                "unknown element type '{}' (id {})",
+                spec.kind, spec.id
+            ))
+        }
     };
-    Some(e)
+    Ok(e)
+}
+
+/// Names a model-driven composite that failed to build from its `spec.model`
+/// blob. These builders return `None` only when the model definition is
+/// missing or malformed; the error keeps the element's kind and id in the
+/// message so a hand-edited netlist points at the offending line.
+fn model_composite<E: Element + 'static>(
+    spec: &ElementSpec,
+    built: Option<E>,
+) -> Result<E, String> {
+    built.ok_or_else(|| {
+        format!(
+            "element '{}' (id {}) has a missing or malformed model definition",
+            spec.kind, spec.id
+        )
+    })
 }

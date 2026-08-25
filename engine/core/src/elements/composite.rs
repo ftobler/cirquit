@@ -398,7 +398,7 @@ impl Composite {
                 model: None,
                 flags,
             };
-            let Some(child) = build_element(&spec) else {
+            let Ok(child) = build_element(&spec) else {
                 continue;
             };
             // A model line must name every post of its child; a short line is

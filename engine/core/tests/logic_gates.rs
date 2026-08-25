@@ -559,7 +559,7 @@ fn custom_logic_rejects_a_rule_left_longer_than_the_pin_table() {
         &[("00000", "00")],
     );
     assert!(
-        build_element(&spec).is_none(),
+        build_element(&spec).is_err(),
         "a rule-left longer than the pin table must not build"
     );
 }
@@ -577,7 +577,7 @@ fn custom_logic_rejects_a_rule_right_longer_than_the_outputs() {
         &[("00", "000")],
     );
     assert!(
-        build_element(&spec).is_none(),
+        build_element(&spec).is_err(),
         "a rule-right longer than the outputs must not build"
     );
 }
@@ -596,7 +596,7 @@ fn custom_logic_rejects_a_rule_right_side_with_fewer_entries_than_the_left() {
         &["10"],
     );
     assert!(
-        build_element(&spec).is_none(),
+        build_element(&spec).is_err(),
         "a right table shorter than the left table must not build"
     );
 }
@@ -615,7 +615,7 @@ fn custom_logic_builds_a_well_formed_model() {
         &[("00", "00"), ("01", "01"), ("10", "01"), ("11", "11")],
     );
     assert!(
-        build_element(&spec).is_some(),
+        build_element(&spec).is_ok(),
         "a well-formed model must build"
     );
 }
