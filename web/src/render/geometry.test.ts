@@ -163,11 +163,11 @@ describe('distanceToElement', () => {
     expect(distanceToElement({ x: 16, y: 3 }, g)).toBe(0);
   });
 
-  it('ignores the stray far endpoint of other single-post elements', () => {
+  it('ignores the stray far endpoint of anchor-only elements', () => {
     const t = element(100, 200, 0, 0);
     t.kind = 'decoration';
     // A text's (100,200)->(0,0) span is a legacy position, not a drawn stem,
-    // so it must not make the text hittable far from its anchor.
+    // so it must not make the zero-post text hittable far from its anchor.
     expect(distanceToElement({ x: 60, y: 100 }, t)).toBeCloseTo(Math.hypot(40, 100), 9);
   });
 

@@ -112,8 +112,8 @@ export function shouldDrawDot(count: number): boolean {
  * A wire is tested against its drawn path rather than its bounding box, which
  * for a diagonal wire would paint a whole rectangle of false positives; every
  * other element is tested against `elementBox`, this port's `boundingBox`.
- * Parts with no posts (box, line, scope) are upstream's `GraphicElm` and are
- * skipped: they are drawing, not circuit.
+ * Parts with no posts (text, box, line, scope) are upstream's `GraphicElm` and
+ * are skipped: they are drawing, not circuit.
  *
  * `counts` is the `postDotPoints` map, taken as a parameter so a caller that
  * already built it for the junction dots does not build it twice.
