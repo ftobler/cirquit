@@ -709,6 +709,15 @@ const BO_TAGS = new Set([
 function droppedTraces(node: XmlNode): string[] {
   const traces: string[] = [];
   const tag = node.tag;
+  if (tag === 'rw') {
+    // A point component that fails readablePoint() is dropped before the finite
+    // gate with no other signal, so name the source text the way the attribute
+    // traces do, instead of losing the bytes silently.
+    const dropped = node.text.split(';').filter((p) => !readablePoint(p)).length;
+    if (dropped > 0) {
+      traces.push(`# rw point "${singleLine(node.text)}" dropped: unreadable component`);
+    }
+  }
   // Sources carry two XML attributes the six-token stream has no home for:
   // ir is a series resistor upstream builds onto an internal third node when
   // nonzero (VoltageElm.java:148-157) and riseTime ramps a pulse or square's
@@ -825,6 +834,15 @@ function token(value: string | number): string {
   return typeof value === 'string' ? escapeToken(value) : String(value);
 }
 
+/** A routed-wire point reads as two non-empty, finite components. An empty
+ *  component must drop before the finite gate: Number('') is 0 and finite, so
+ *  garbage like `;,160` would otherwise canonicalize into a real leg anchored
+ *  at the origin. coords() filters the same empties out of the x attribute. */
+function readablePoint(p: string): boolean {
+  const comps = p.split(',');
+  return comps.length === 2 && comps.every((v) => v.trim() !== '' && Number.isFinite(Number(v)));
+}
+
 /** One element line, or several for a routed wire's segments, or null when the
  *  tag has no port model. */
 function elementLines(node: XmlNode, ctx: ConvertContext): string[] | null {
@@ -835,20 +853,31 @@ function elementLines(node: XmlNode, ctx: ConvertContext): string[] | null {
     // routed wire (bw > 1) carries its width on every segment it becomes; a
     // tokenless one needs none, because the width pass re-derives it from the
     // wide pins the segments touch.
-    const points = node.text
-      .split(';')
-      .map((p) => p.split(','))
-      .filter((p) => p.length === 2 && p.every((v) => Number.isFinite(Number(v))))
+    const raw = node.text;
+    const parts = raw.split(';');
+    const points = parts
+      .filter(readablePoint)
       // The same canonical re-emission coords() does: a point component padded
       // with newlines passes the finite gate and would split the emitted `w`.
-      .map((p) => p.map((v) => String(Number(v))));
-    if (points.length < 2) return null;
+      .map((p) => p.split(',').map((v) => String(Number(v))));
+    const dropped = parts.length - points.length;
+    if (points.length < 2) {
+      // No segment can form. A dropped component still earns a trace from
+      // droppedTraces below; returning no lines here keeps the file slot count
+      // honest, since a comment does not shift the ordinals a scope or slider
+      // line counts against, and avoids reconstituting the raw tag as a comment.
+      // A genuinely degenerate wire with nothing dropped stays unconverted the
+      // original way.
+      return dropped > 0 ? [] : null;
+    }
     const bw = attr(node, 'bw', 1);
     const lines: string[] = [];
     for (let i = 0; i + 1 < points.length; i++) {
       const head = ['w', ...points[i], ...points[i + 1], attr(node, 'f', 0)];
       lines.push((bw > 1 ? [...head, bw] : head).join(' '));
     }
+    // A dropped middle point rejoins its neighbours as one segment; the loss
+    // rides a trace from droppedTraces, which does not consume a file slot.
     return lines;
   }
   const writer = WRITERS[tag];

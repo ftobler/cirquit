@@ -1303,6 +1303,29 @@ b"/>
     expect(parseCircuit(text).elements.map((e) => e.kind)).toEqual(['wire', 'wire']);
   });
 
+  it('drops a routed wire point whose component is empty instead of emitting a leg at zero', () => {
+    // Number('') is 0 and finite, so the pair ['', '160'] used to pass the
+    // finite gate and became a real wire leg anchored at x=0, where the raw
+    // empty token had been refused on reload before. coords() filters the same
+    // empties out of the x attribute. The dropped point now leaves a trace
+    // instead of vanishing, like every other conversion loss in this module.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <rw x="304 160 560 160" f="0">304,160;,160;560,160</rw>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text.split('\n')).toContain('w 304 160 560 160 0');
+    expect(text.split('\n')).not.toContain('w 0 160 560 160 0');
+    expect(text.split('\n')).toContain(
+      '# rw point "304,160;,160;560,160" dropped: unreadable component',
+    );
+    expect(parseCircuit(text).elements.map((e) => e.kind)).toEqual(['wire']);
+    // Every point losing a component leaves no segment, but the loss is traced.
+    const empty = xmlToText(src.replace('304,160;,160;560,160', ';,160'));
+    expect(empty.split('\n').filter((l) => l.startsWith('w '))).toEqual([]);
+    expect(empty.split('\n')).toContain('# rw point ";,160" dropped: unreadable component');
+  });
+
   it('converts a potentiometer to its 174 line', () => {
     // PotElm writes ma/po/sl (PotElm.java:79-81) onto the port's
     // maxResistance position caption stream.
