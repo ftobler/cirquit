@@ -57,9 +57,10 @@ export const DFF_INVERT_SET_RESET = 8;
 /** One chip pin, the geometry the engine never sees (ChipElm.Pin). `output`
  *  marks a voltage-source pin and `state` one whose level is saved to the
  *  file; the engine's pin table carries the same roles. `busWidth`/`busZ`
- *  describe a multi-bit pin (ChipElm.Pin defaults of 1 and 0); no chip in this
- *  port uses them yet, but the Create Test harness reads them to skip the
- *  duplicate entries of a bus. */
+ *  describe a multi-bit pin (ChipElm.Pin defaults of 1 and 0); bus-mode chips
+ *  like the wide adder or the counter2 collapse each bank onto one row and
+ *  tag every bit with them, and the Create Test harness reads them to skip
+ *  the duplicate entries of a bus. */
 export interface ChipPinDef {
   side: 'W' | 'E' | 'N' | 'S';
   pos: number;

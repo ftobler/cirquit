@@ -20,7 +20,7 @@ import type { CircuitElement, Point } from './types';
 /** One chip pin as the harness sees it: the side the post points along, whether
  *  it is an output, and where the post sits. `busZ`/`busWidth` come from the
  *  chip's pin table (ChipElm.Pin); bus-mode chips like the wide adder or the
- *  counters collapse each bank onto one row and tag every bit with them. */
+ *  counter2 collapse each bank onto one row and tag every bit with them. */
 export interface HarnessPin {
   side: 'W' | 'E' | 'N' | 'S';
   output: boolean;
