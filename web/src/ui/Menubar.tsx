@@ -14,7 +14,7 @@ import {
   type LibraryEntry,
   type LibraryGroup,
 } from '../io/library';
-import { parseCircuit } from '../io/netlist';
+import { parsesToElements } from '../io/importSummary';
 import { canMirror, canRotate } from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
@@ -482,10 +482,12 @@ export function Menubar({ engine }: Props) {
   const canRotateSelection = canRotateGhost || (selected.length > 0 && selected.every(canRotate));
   const canMirrorSelection = selected.length > 0 && selected.every(canMirror);
   // The clipboard only ever holds text this app serialised, but guard anyway:
-  // a manual garbage string must grey out Paste. Memoized like the context
-  // menu's canPaste, since parsing on every render is wasteful.
+  // a manually-set garbage string must grey out Paste. Memoized like the
+  // context menu's canPaste, since parsing on every render is wasteful. The
+  // probe is guarded: stored bytes survive a reload, and a hostile string
+  // must degrade to greyed rows, never crash this first render.
   const canPaste = useMemo(
-    () => clipboard !== null && parseCircuit(clipboard).elements.length > 0,
+    () => clipboard !== null && parsesToElements(clipboard),
     [clipboard],
   );
 

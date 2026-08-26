@@ -2836,8 +2836,13 @@ function createAppStore() {
     try {
       parsed = parseCircuit(text);
     } catch (e) {
+      // `problem` only: the sticky channel carries the load-time part of the
+      // open document, and a refusal produces none, so seeding it would
+      // resurrect a dismissed banner over unrelated rebuilds of the healthy
+      // circuit still on screen. Share-link startup re-asserts both channels
+      // itself after its starter fallback.
       const banner = `Could not load the circuit: ${e instanceof Error ? e.message : String(e)}`;
-      set({ problem: banner, unsupportedProblem: banner });
+      set({ problem: banner });
       return banner;
     }
     // The sample cache belongs to the open file, like the session models: the
@@ -3313,11 +3318,16 @@ function createAppStore() {
     const recovery = readRecovery();
     if (recovery === null) return;
     const before = get();
+    // A payload parseCircuit refuses has already raised the malformed-load
+    // banner and left document, revisions, stacks and lastSaved untouched, so
+    // the early return is a no-op beyond that banner. The row stays enabled:
+    // the bytes are still in storage, repeated refusals re-raise only the
+    // banner, and good bytes written later make it truthful again.
+    if (before.loadNetlist(recovery) !== null) return;
     // The undo entry is the pre-recovery circuit, and it must be pushed after
     // the load: loadNetlist wipes both stacks, so committing before it would
     // lose the entry upstream's doRecover takes (UndoManager.java:83-88).
     const pre = clone(before);
-    before.loadNetlist(recovery);
     set((s) => ({
       // The row stays disabled for the session; later autosave writes do not
       // re-enable it, exactly as upstream never re-enables recoverItem.
@@ -3599,9 +3609,17 @@ function pasteOffset(
 }
 
 /** Shared insert path for paste and duplicate: parse, re-id, fan out from the
- *  current circuit's bounding box. */
+ *  current circuit's bounding box. A refused parse is a silent no-op: the
+ *  clipboard can hold bytes another app wrote or a user edited by hand, a
+ *  paste replaces nothing, and the memos that gate Paste grey it out first,
+ *  so there is no banner to raise here either. */
 function insertElementsFromText(text: string): void {
-  const parsed = parseCircuit(text);
+  let parsed: ParsedCircuit;
+  try {
+    parsed = parseCircuit(text);
+  } catch {
+    return;
+  }
   if (parsed.elements.length === 0) return;
   // A paste adds to the open circuit instead of replacing it, so its `.` line
   // models join the library rather than resetting it, matching upstream's

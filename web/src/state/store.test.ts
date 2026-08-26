@@ -15,6 +15,7 @@ import {
   RECOVERY_STORAGE_KEY,
   readRecovery,
   startAutoSave,
+  writeRecovery,
   type RecoveryStorage,
 } from './recovery';
 import {
@@ -1811,6 +1812,83 @@ r 0 0 16 0 0 100
     expect(s.revision).toBe(before.revision);
     expect(s.hasRecovery).toBe(false);
     expect(s.elements[0].params.resistance).toBe(1000);
+  });
+
+  // A stored payload whose first line opens `<cir ` goes through the XML
+  // converter, and this one is truncated, so parseCircuit refuses it. The
+  // refusal must leave the session exactly as it was: the intact circuit
+  // stays loaded and clean, the recovery row stays enabled for a retry once
+  // good bytes arrive, and no junk undo entry is pushed.
+  it('a refused recovery payload leaves the session untouched', () => {
+    try {
+      withRecovery('<cir ><w a="1">');
+      addResistor();
+      useStore.getState().markSaved();
+      useStore.setState({ hasRecovery: true });
+      const before = useStore.getState();
+
+      useStore.getState().recoverAutoSave();
+      const s = useStore.getState();
+      // The old circuit is still on screen, down to element identity.
+      expect(s.elements).toBe(before.elements);
+      expect(s.elements[0].params.resistance).toBe(1000);
+      // Feedback arrives only through the malformed-load banner path.
+      expect(s.problem).toContain('Could not load');
+      // Dirty state keeps its baseline: lastSaved must not flip to the
+      // RECOVERED_UNSAVED sentinel over an untouched document.
+      expect(s.lastSaved).toBe(before.lastSaved);
+      expect(s.lastSaved).not.toBe('\u0000');
+      // The row stays enabled: the bytes are still in storage.
+      expect(s.hasRecovery).toBe(true);
+      // No junk undo entry, no revision movement for the autosave watcher.
+      expect(s.undoStack).toHaveLength(before.undoStack.length);
+      expect(s.revision).toBe(before.revision);
+      expect(s.paramRevision).toBe(before.paramRevision);
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+  });
+
+  it('a refused recovery keeps the row enabled and repeats inertly', () => {
+    try {
+      withRecovery('<cir ><w a="1">');
+      addResistor();
+      useStore.setState({ hasRecovery: true });
+      useStore.getState().recoverAutoSave();
+      const first = useStore.getState();
+      expect(first.hasRecovery).toBe(true);
+
+      useStore.getState().recoverAutoSave();
+      const second = useStore.getState();
+      expect(second.hasRecovery).toBe(true);
+      expect(second.elements).toEqual(first.elements);
+      expect(second.undoStack).toHaveLength(first.undoStack.length);
+      expect(second.revision).toBe(first.revision);
+      expect(second.problem).toBe(first.problem);
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+  });
+
+  it('a refused recovery clears once good bytes replace it', () => {
+    try {
+      withRecovery('<cir ><w a="1">');
+      useStore.setState({ hasRecovery: true });
+      useStore.getState().recoverAutoSave();
+      expect(useStore.getState().hasRecovery).toBe(true);
+      expect(useStore.getState().elements).toHaveLength(0);
+
+      writeRecovery(RECOVERY);
+      useStore.getState().recoverAutoSave();
+      const s = useStore.getState();
+      expect(s.elements).toHaveLength(1);
+      expect(s.elements[0].params.resistance).toBe(100);
+      expect(s.hasRecovery).toBe(false);
+      expect(s.lastSaved).toBe('\u0000');
+      expect(s.undoStack).toHaveLength(1);
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
   });
 
   it('undo after a recovery restores the pre-recovery unmatchedScopes, not the recovered file\'s', () => {

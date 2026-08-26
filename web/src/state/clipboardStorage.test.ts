@@ -5,6 +5,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StorageLike } from './appPrefs';
+import { parsesToElements } from '../io/importSummary';
 import {
   CLIPBOARD_STORAGE_KEY,
   loadStoredClipboard,
@@ -118,5 +119,40 @@ describe('copy survives a store restart', () => {
     second.useStore.getState().cutSelection();
     expect(second.useStore.getState().elements).toHaveLength(0);
     expect(map.get(CLIPBOARD_STORAGE_KEY)).toBe(second.useStore.getState().clipboard);
+  });
+
+  // Menubar mounts at boot and computes canPaste from the stored bytes, so a
+  // hostile clipboard string must not crash the first render. The store reads
+  // storage at module scope, so this pins the whole surface: creation with
+  // garbage stored succeeds and the probe the memos use degrades to false.
+  it('a corrupt stored clipboard does not break store creation', { timeout: 30000 }, async () => {
+    const map = new Map<string, string>([
+      [CLIPBOARD_STORAGE_KEY, '<cir ><w a="1">'],
+    ]);
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem: (k: string) => map.get(k) ?? null,
+        setItem: (k: string, v: string) => void map.set(k, v),
+      },
+      configurable: true,
+    });
+    restore = () =>
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: prevStorage,
+        configurable: true,
+      });
+
+    vi.resetModules();
+    Reflect.deleteProperty(globalThis, '__falstadCirquitStore');
+    try {
+      const store = await import('./store');
+      expect(store.useStore.getState().clipboard).toBe('<cir ><w a="1">');
+      expect(parsesToElements(store.useStore.getState().clipboard as string)).toBe(false);
+    } finally {
+      // Drop the store created against the fake storage before the real
+      // global comes back, or a later import would hand back this instance.
+      Reflect.deleteProperty(globalThis, '__falstadCirquitStore');
+      vi.resetModules();
+    }
   });
 });
