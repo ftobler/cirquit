@@ -20,9 +20,11 @@ import {
   drawScope,
   emptyCursor,
   isDrawable,
+  layoutHeader,
   PLOT_COLORS,
   plotColors,
   sameUnits,
+  selectPlotAt,
   trailFadeAlpha,
   trailSliderToSteps,
   trailStepsToSlider,
@@ -248,6 +250,10 @@ const mkCtx = (w = 200, h = 150): { ctx: CanvasRenderingContext2D; texts: string
     arc: vi.fn(),
     setLineDash: vi.fn(),
     drawImage: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
     fillText: vi.fn((text: string) => {
       texts.push(text);
     }),
@@ -479,6 +485,36 @@ interface DrawOpts {
   themeColors?: ThemeColors;
   simTime?: number;
 }
+
+/** Runs drawScope pairing every filled text with its fill style, so a test
+ *  can assert which colour a given readout was painted in. */
+const drawnTexts = (
+  engine: SimEngine,
+  scope: Scope,
+  opts: DrawOpts = {},
+): { text: string; color: string }[] => {
+  const { ctx } = mkCtx(200, 150);
+  const out: { text: string; color: string }[] = [];
+  const fillText = ctx.fillText;
+  ctx.fillText = vi.fn((text: string) => {
+    out.push({ text, color: ctx.fillStyle as string });
+    (fillText as unknown as (t: string) => void)(text);
+  }) as unknown as CanvasRenderingContext2D['fillText'];
+  drawScope(
+    ctx,
+    engine,
+    scope,
+    200,
+    150,
+    emptyCursor(),
+    opts.simTime ?? 0,
+    5e-6,
+    opts.dark ?? false,
+    3,
+    opts.themeColors,
+  );
+  return out;
+};
 
 /** Runs `drawScope` while recording the stroke style of every `stroke()` and
  *  the fill style of every `fill()`/`fillText()`, so a test can assert the
@@ -854,6 +890,48 @@ describe('drawScope cursor colours', () => {
   });
 });
 
+/** A triggered scope over a flat zero trace, so the trigger level line lands
+ *  on the canvas centre and the edge glyph paints. The tracker reports the
+ *  fired state, upstream ScopeTrigger.drawIndicator's TRIG. */
+const trigEngine = (): SimEngine =>
+  ({
+    scopeIndexOf: () => 0,
+    scopeData: () => new Float32Array([0, 0, 0, 0]),
+    scopeDiverged: () => false,
+    triggerInfo: () => ({
+      start_index: 0,
+      valid_count: 0,
+      columns: 256,
+      snapshot_start: 0,
+      written: 0,
+      state: 1,
+      triggered: true,
+      waiting: false,
+      time: 0,
+      free: () => {},
+    }),
+  }) as unknown as SimEngine;
+
+const trigScope = () =>
+  scopeOf([plot(1, 'voltage')], {
+    trigger: { mode: 'normal', edge: 'rising', level: 0 },
+  });
+
+describe('drawScope trigger colours', () => {
+  it('fills the T edge glyph with TRIGGER_COLOR instead of a stale fill', () => {
+    // Upstream sets #FF8000 before both of its texts (ScopeTrigger.java:185
+    // and :211); without it the glyph inherited whatever fill ran last, which
+    // here is the background clear, making it invisible on both themes.
+    const glyph = drawnTexts(trigEngine(), trigScope()).find((d) => d.text === 'T↑');
+    expect(glyph?.color).toBe('#ff8000');
+  });
+
+  it('keeps the status readout in TRIGGER_COLOR as well', () => {
+    const status = drawnTexts(trigEngine(), trigScope()).find((d) => d.text === 'TRIG');
+    expect(status?.color).toBe('#ff8000');
+  });
+});
+
 /** The X-Y trail lives on an offscreen canvas `drawXY` builds through
  *  `document.createElement`. The test environment is node with no DOM, so the
  *  canvas is stubbed and its recorder handed to the body: the locus stroke and
@@ -1193,36 +1271,6 @@ describe('drawScope per-trace measurements', () => {
       scopeDiverged: () => false,
     }) as unknown as SimEngine;
 
-  /** Runs drawScope pairing every filled text with its fill style, so a test
-   *  can assert which trace colour a readout was painted in. */
-  const drawnTexts = (
-    engine: SimEngine,
-    scope: Scope,
-    opts: DrawOpts = {},
-  ): { text: string; color: string }[] => {
-    const { ctx } = mkCtx(200, 150);
-    const out: { text: string; color: string }[] = [];
-    const fillText = ctx.fillText;
-    ctx.fillText = vi.fn((text: string) => {
-      out.push({ text, color: ctx.fillStyle as string });
-      (fillText as unknown as (t: string) => void)(text);
-    }) as unknown as CanvasRenderingContext2D['fillText'];
-    drawScope(
-      ctx,
-      engine,
-      scope,
-      200,
-      150,
-      emptyCursor(),
-      opts.simTime ?? 0,
-      5e-6,
-      opts.dark ?? false,
-      3,
-      opts.themeColors,
-    );
-    return out;
-  };
-
   it('draws the Freq readout for plot A alone when only its mask enables it', () => {
     // The user's ask: Freq on the first stacked signal only, not the second.
     const pa = plot(1, 'voltage');
@@ -1388,5 +1436,261 @@ describe('sameUnits', () => {
     expect(sameUnits([plot(1, 'voltage'), plot(2, 'current')])).toBe(false);
     expect(sameUnits([plot(1, 'power'), plot(2, 'charge')])).toBe(false);
     expect(sameUnits([plot(1, 'ib'), plot(2, 'vce')])).toBe(false);
+  });
+});
+
+describe('layoutHeader', () => {
+  const measure6 = (s: string): number => s.length * 6;
+  const t: PlotTransform = {
+    gridMid: 0,
+    gridMult: 74 / 5,
+    gridMax: 5,
+    showNegative: true,
+    positionOffset: 0,
+    stepY: 2,
+  };
+
+  it('wraps /div labels at the viewport width, not the backing store', () => {
+    // The wrap bound is the injected w alone: layoutHeader never sees a
+    // canvas, which is exactly what kept hidpi docked panels from wrapping
+    // until dpr times too late (upstream wraps on scope.rect.width,
+    // ScopeOverlays.java:40). 160 px fits H= plus one bullet row, not two.
+    const pa = plot(1, 'voltage');
+    const pb = plot(2, 'current');
+    const scope = scopeOf([pa, pb], { manualScale: true, showScale: true });
+    const layout = layoutHeader(
+      scope,
+      t,
+      scope.plots[0] as DrawablePlot,
+      64,
+      5e-6,
+      160,
+      150,
+      3,
+      null,
+      measure6,
+    );
+    const labels = layout.lines.filter((l) => l.text.startsWith('=') && l.text.endsWith('/div'));
+    expect(labels).toHaveLength(2);
+    expect(labels[1].y).toBe(labels[0].y + 15);
+    // The wrapped row restarts at the left margin, like upstream's x = 0.
+    expect(labels[1].x!).toBeLessThan(labels[0].x!);
+    // One bullet rode along per label, centred on its own row.
+    expect(layout.bullets.map((b) => b.cy)).toEqual([labels[0].y + 5, labels[1].y + 5]);
+  });
+
+  it('reports endY past tall extended-info headers', () => {
+    // Label at 4, eleven info rows from 19 on: endY lands at 184, so the
+    // measurement rows start below the whole title block instead of over it.
+    const info = Array.from({ length: 11 }, (_, i) => `line ${i}`);
+    const scope = scopeOf([plot(1, 'voltage')], { label: 'Q1', showElmInfo: true });
+    const layout = layoutHeader(
+      scope,
+      t,
+      scope.plots[0] as DrawablePlot,
+      64,
+      5e-6,
+      200,
+      150,
+      3,
+      info,
+      measure6,
+    );
+    expect(layout.endY).toBe(184);
+  });
+
+  it('an empty header ends where it starts', () => {
+    const scope = scopeOf([plot(1, 'voltage')]);
+    const layout = layoutHeader(
+      scope,
+      t,
+      scope.plots[0] as DrawablePlot,
+      64,
+      5e-6,
+      200,
+      150,
+      3,
+      null,
+      measure6,
+    );
+    expect(layout.lines).toEqual([]);
+    expect(layout.bullets).toEqual([]);
+    expect(layout.endY).toBe(4);
+  });
+});
+
+describe('drawScope measurement stacking', () => {
+  const engine = captionEngine(false);
+  // A labelled scope with Show Extended Info: header rows 4, 19, 34, 49, so
+  // the measurement stack begins at 64 instead of the old fixed 35.
+  const labelledScope = () =>
+    scopeOf([plot(1, 'voltage')], {
+      label: 'Q1',
+      showElmInfo: true,
+      showMax: true,
+      showMin: true,
+    });
+  const info = (id: number) => (id === 1 ? ['r1', 'r2', 'r3'] : null);
+
+  it('stacks the first Max= row one pitch under the header end', () => {
+    const { ctx, entries } = mkCtxTextsY();
+    drawScope(ctx, engine, labelledScope(), 200, 150, emptyCursor(), 0, 5e-6, false, 3, undefined, info);
+    const maxes = entries.filter((e) => e.text.startsWith('Max='));
+    expect(maxes.length).toBeGreaterThan(0);
+    expect(maxes[0].y).toBe(4 + 15 * 4 + 15);
+    // Min keeps its bottom-edge pin whatever the header did.
+    const mins = entries.filter((e) => e.text.startsWith('Min='));
+    expect(mins.length).toBeGreaterThan(0);
+    expect(mins[0].y).toBe(150 - 18);
+  });
+
+  it('keeps rows in place while a hover skips the header paint', () => {
+    // Layout runs even when the cursor suppresses painting the header, so the
+    // readouts sit at the same height in both states.
+    const cursor: ScopeCursor = { ...emptyCursor(), hover: true, cursorTime: 0.032 };
+    const { ctx, entries } = mkCtxTextsY();
+    drawScope(ctx, engine, labelledScope(), 200, 150, cursor, 0.064, 5e-6, false, 3, undefined, info);
+    expect(entries.filter((e) => e.text === 'Q1')).toEqual([]);
+    const maxes = entries.filter((e) => e.text.startsWith('Max='));
+    expect(maxes[0]?.y).toBe(4 + 15 * 4 + 15);
+  });
+
+  it('drops a second block past the viewport width, not the canvas width', () => {
+    // The old bound compared against ctx.canvas.width, dpr times too wide on
+    // hidpi docks; the draw width alone decides now, even when the backing
+    // store claims far more room.
+    const two = twoTraceEngine([1, 1, 2, 2], [2, 2, 3, 3]);
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'voltage')]);
+    const { ctx, entries } = mkCtxTextsY();
+    (ctx.canvas as unknown as { width: number }).width = 1000;
+    drawScope(ctx, two, scope, 80, 150, emptyCursor(), 0, 5e-6, false, 3);
+    expect(entries.filter((e) => e.text.startsWith('Max='))).toHaveLength(1);
+  });
+
+  it('clips the overlay pass to the viewport rect', () => {
+    // An embedded window shares the schematic transform, so the overlays need
+    // their own clip to stay inside the frame: save, rect(0,0,w,h), clip,
+    // restore around header and measurements.
+    const { ctx } = mkCtx();
+    drawScope(ctx, engine, scopeOf([plot(1, 'voltage')]), 200, 150, emptyCursor(), 0, 5e-6, false, 3);
+    expect(ctx.rect).toHaveBeenCalledWith(0, 0, 200, 150);
+    expect(ctx.clip).toHaveBeenCalledTimes(1);
+    expect(ctx.save).toHaveBeenCalledTimes(1);
+    expect(ctx.restore).toHaveBeenCalledTimes(1);
+  });
+
+  it('clips the X-Y branch overlays too', () => {
+    // drawXY bounds itself to the panel, but the label is a plain
+    // left-aligned string that can run past an embedded window's frame under
+    // extreme zoom unless the whole branch clips.
+    const xyEngine = {
+      scopeIndexOf: () => 0,
+      recentSamples: () => new Float32Array(0),
+      scopeDiverged: () => false,
+    } as unknown as SimEngine;
+    const { ctx } = mkCtx();
+    drawScope(
+      ctx,
+      xyEngine,
+      scopeOf([plot(1, 'voltage')], { plotXY: true, label: 'locus' }),
+      200,
+      150,
+      emptyCursor(),
+      0,
+      5e-6,
+      false,
+      3,
+    );
+    expect(ctx.rect).toHaveBeenCalledWith(0, 0, 200, 150);
+    expect(ctx.clip).toHaveBeenCalledTimes(1);
+    expect(ctx.save).toHaveBeenCalledTimes(1);
+    expect(ctx.restore).toHaveBeenCalledTimes(1);
+  });
+
+  it('clips the empty-plots info block too', () => {
+    // The Show Extended Info block drawn when no trace is registered takes
+    // the same clip: its lines stack from the top margin and overflow the
+    // frame on exactly the surfaces the clip exists for.
+    const noTrace = { scopeIndexOf: () => undefined } as unknown as SimEngine;
+    const { ctx } = mkCtx();
+    drawScope(
+      ctx,
+      noTrace,
+      scopeOf([plot(1, 'voltage')], { showElmInfo: true, label: 'Q1' }),
+      200,
+      150,
+      emptyCursor(),
+      0,
+      5e-6,
+      false,
+      3,
+      undefined,
+      () => ['r1'],
+    );
+    expect(ctx.rect).toHaveBeenCalledWith(0, 0, 200, 150);
+    expect(ctx.clip).toHaveBeenCalledTimes(1);
+    expect(ctx.save).toHaveBeenCalledTimes(1);
+    expect(ctx.restore).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('selectPlotAt', () => {
+  const w = 200;
+  const h = 150;
+  const flatRing = (v: number): Float32Array => {
+    const data = new Float32Array(w * 2);
+    for (let i = 0; i < w; i++) {
+      data[i * 2] = v;
+      data[i * 2 + 1] = v;
+    }
+    return data;
+  };
+  // Two manually-scaled traces whose rings disagree at the clicked column:
+  // the voltage trace rides at 10 V there, the current one sits at zero.
+  // manScale 5 puts 10 V at y = 74 - (74/20.25)*10 ~ 37; manScale 0.1 keeps
+  // zero amps on the centre line, where the click lands.
+  const splitEngine = (): SimEngine =>
+    ({
+      scopeIndexOf: (id: number) => id - 1,
+      scopeData: (index: number) => flatRing(index === 0 ? 10 : 0),
+      scopeDiverged: () => false,
+    }) as unknown as SimEngine;
+  const splitScope = () => {
+    const pa = plot(1, 'voltage');
+    pa.manScale = 5;
+    const pb = plot(2, 'current');
+    pb.manScale = 0.1;
+    return scopeOf([pa, pb], { manualScale: true });
+  };
+
+  it('scores each plot against its own samples, not the first trace’s', () => {
+    // Upstream reads each plot's own column when scoring (Scope.java:959);
+    // scoring both candidates off plots[0]'s ring resolved the wrong trace
+    // wherever two differing traces crossed near the pointer.
+    const picked = selectPlotAt(splitEngine(), splitScope(), 100, 74, w, h);
+    expect(picked).toBe(1);
+  });
+
+  it('still resolves the lone trace of a single-plot scope', () => {
+    const p = plot(1, 'voltage');
+    p.manScale = 5;
+    const picked = selectPlotAt(
+      {
+        scopeIndexOf: () => 0,
+        scopeData: () => flatRing(10),
+        scopeDiverged: () => false,
+      } as unknown as SimEngine,
+      scopeOf([p], { manualScale: true }),
+      100,
+      74 - (74 / ((8 / 2 + 0.05) * 5)) * 10,
+      w,
+      h,
+    );
+    expect(picked).toBe(0);
+  });
+
+  it('returns -1 when no visible plot is drawable or registered', () => {
+    const noTrace = { scopeIndexOf: () => undefined } as unknown as SimEngine;
+    expect(selectPlotAt(noTrace, scopeOf([plot(1, null)]), 100, 74, w, h)).toBe(-1);
   });
 });

@@ -542,8 +542,36 @@ describe('renderCircuitToSvg', () => {
       params: {},
     };
     const blown = renderCircuitToSvg([fuse], DEFAULT_SETTINGS, false, fakeEngine([2]));
-    expect(blown.match(/<path /g)).toHaveLength(2); // two leads only
+    // Two leads plus the two end dots the export's junction pass now adds: a
+    // lone element's posts count one each, upstream's dead-end case.
+    expect(blown.match(/<path /g)).toHaveLength(4);
     const intact = renderCircuitToSvg([fuse], DEFAULT_SETTINGS, false, fakeEngine([0]));
-    expect(intact.match(/<path /g)).toHaveLength(3); // leads plus the sine body
+    expect(intact.match(/<path /g)).toHaveLength(5); // leads, sine body, end dots
+  });
+
+  it('exports junction circles like the PNG path', () => {
+    // The SVG export funnels through drawAllElements like every other format,
+    // so its postDrawList pass carries over: one true T-junction dot (three
+    // posts meet at (64,0)) plus the five bare wire ends, six radius-3.5
+    // circles in total. Pinned by count, not by coordinates.
+    const elements: CircuitElement[] = [
+      { id: 1, kind: 'wire', x1: 0, y1: 0, x2: 64, y2: 0, flags: 0, params: {} },
+      { id: 2, kind: 'wire', x1: 64, y1: 0, x2: 128, y2: 0, flags: 0, params: {} },
+      { id: 3, kind: 'wire', x1: 64, y1: 0, x2: 64, y2: 64, flags: 0, params: {} },
+      { id: 4, kind: 'wire', x1: 192, y1: 0, x2: 256, y2: 0, flags: 0, params: {} },
+    ];
+    const svg = renderCircuitToSvg(elements, DEFAULT_SETTINGS, false, null);
+    expect(svg.match(/A3\.5 3\.5 0 1 1 /g)).toHaveLength(12);
+    const plain = renderCircuitToSvg(
+      [
+        { id: 1, kind: 'wire', x1: 0, y1: 0, x2: 128, y2: 0, flags: 0, params: {} },
+        { id: 2, kind: 'wire', x1: 128, y1: 0, x2: 64, y2: 64, flags: 0, params: {} },
+        { id: 3, kind: 'wire', x1: 64, y1: 64, x2: 0, y2: 0, flags: 0, params: {} },
+      ],
+      DEFAULT_SETTINGS,
+      false,
+      null,
+    );
+    expect(plain).not.toContain('A3.5 3.5');
   });
 });

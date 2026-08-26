@@ -9,6 +9,7 @@
 import '@fontsource-variable/roboto';
 import '../styles.css';
 import { emptyCursor, drawScope } from '../scope/draw';
+import { backingStoreSize } from '../ui/canvas/backingStoreSize';
 import type { UndockedFrameMessage } from './protocol';
 import { UNDOCKED_HELLO_TYPE, fromTrustedSender } from './protocol';
 import { SnapshotScopeSource, deliverToSource } from './snapshotSource';
@@ -73,9 +74,10 @@ function draw(): void {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
   if (w < 2 || h < 2) return;
-  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
+  const backing = backingStoreSize(w, h, dpr);
+  if (canvas.width !== backing.width || canvas.height !== backing.height) {
+    canvas.width = backing.width;
+    canvas.height = backing.height;
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   // The title rides every frame so a label edit in the properties dialog

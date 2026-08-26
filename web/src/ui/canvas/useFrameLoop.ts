@@ -11,7 +11,7 @@ import { neutralDrawContext } from '../../render/drawContext';
 import { handlePoints, HIT_TOLERANCE_PX } from '../../render/geometry';
 import { drawGrid } from '../../render/grid';
 import { drawHitboxes } from '../../render/hitboxes';
-import { cachedBadConnectionPoints, postDotPoints, shouldDrawDot } from '../../render/junction';
+import { cachedBadConnectionPoints, drawJunctionDots } from '../../render/junction';
 import { cachedDragHints, dragHintsActive } from '../../render/junctionHints';
 import { scopeWidth } from '../../scope/geometry';
 import { traceScopes } from '../../scope/embedded';
@@ -24,6 +24,7 @@ import { pushUndockedScopeFrame } from '../../undocked/opener';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
 import { armedHandle } from './pointerDown';
+import { backingStoreSize } from './backingStoreSize';
 import { overlayLiveState, recordBuildOnSuccess, shouldInjectLiveState } from '../../io/liveState';
 import { drawInfoBox, infoBoxX, infoBoxY } from '../../render/infoBox';
 import { infoBoxLines } from '../infoBoxLines';
@@ -105,23 +106,6 @@ export function scopeDrawPayload(
  */
 export function paintedSelection(drag: Drag, selectedIds: number[]): number[] {
   return drag.mode === 'move' ? drag.ids : selectedIds;
-}
-
-/**
- * The canvas backing-store size for a CSS size at a device pixel ratio,
- * rounded once. The width/height attributes are integers, so comparing them
- * against the raw fractional product never settles at dpr 1.25 or 1.5 with an
- * odd CSS width (or ~1.1 under browser zoom): every frame saw a mismatch,
- * reallocated the bitmap and cleared it. Rounding here mirrors export.ts's
- * export canvas sizing, and makes the second frame's compare agree with what
- * was assigned. Pure, so the settle is testable without a DOM.
- */
-export function backingStoreSize(
-  width: number,
-  height: number,
-  dpr: number,
-): { width: number; height: number } {
-  return { width: Math.round(width * dpr), height: Math.round(height * dpr) };
 }
 
 export function useFrameLoop(
@@ -634,18 +618,11 @@ export function useFrameLoop(
           // exactly 2, so a plain two-element pass-through connection hides while
           // dead ends and real junctions keep theirs, matching makePostDrawList
           // (SimulationManager.java:1056-1108). Drawn after all elements, like the
-          // upstream postDrawList pass. The radius is upstream's drawPost
-          // fillOval(pt.x-3, pt.y-3, 7, 7), a 7 px filled circle (CircuitElm.java:
-          // 851-854), so a junction reads at the same weight as the thicker bodies.
-          const postCounts = postDotPoints(elements);
-          ctx.fillStyle = theme.wire;
-          for (const [key, count] of postCounts) {
-            if (!shouldDrawDot(count)) continue;
-            const [x, y] = key.split(',').map(Number);
-            ctx.beginPath();
-            ctx.arc(x, y, 3.5, 0, Math.PI * 2);
-            ctx.fill();
-          }
+          // upstream postDrawList pass, through the same painter the exports
+          // use. The radius is upstream's drawPost fillOval(pt.x-3, pt.y-3, 7,
+          // 7), a 7 px filled circle (CircuitElm.java:851-854), so a junction
+          // reads at the same weight as the thicker bodies.
+          const postCounts = drawJunctionDots(ctx, elements, theme);
 
           // Bad connections: a post that only touches another element, never
           // joins it. Moving a wire onto another one deliberately does not

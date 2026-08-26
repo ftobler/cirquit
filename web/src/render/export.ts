@@ -11,6 +11,7 @@ import { storedBusWidth } from '../model/registry/elements/wire';
 import { defFor } from '../model/registry';
 import type { CircuitElement, Context2D, DrawContext, SimSettings, Theme } from '../model/types';
 import { CENTER_MARGIN_H, CENTER_MARGIN_W, circuitBounds, type Rect } from '../state/view';
+import { drawJunctionDots } from './junction';
 import { makeTheme } from './draw';
 
 export interface ExportGeometry {
@@ -123,6 +124,13 @@ export function drawAllElements(
     };
     def.draw(g, e);
   }
+
+  // Junction dots, appended after the element loop like upstream's exporter
+  // strokes postDrawList there (ImageExporter.java:220-223), which is how PNG,
+  // clipboard, print and SVG all gain them at once. The shared painter keeps
+  // the rule identical to the live frame loop; red bad-connection dots stay
+  // out, as upstream's export omits them too.
+  drawJunctionDots(ctx, elements, theme);
 }
 
 /** Replays the frame loop's draw calls onto `canvas`: white or themed

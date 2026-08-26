@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { SimEngine } from '../../engine/simulator';
 import { DEFAULT_SETTINGS, type Point } from '../../model/types';
 import type { Drag } from './useCanvasInteractions';
+import { backingStoreSize } from './backingStoreSize';
 import {
-  backingStoreSize,
   buildReport,
   frameSafely,
   paintedSelection,

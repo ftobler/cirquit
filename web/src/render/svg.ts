@@ -297,6 +297,12 @@ export class SvgRecorder implements Context2D {
     }
   }
 
+  /** Accepted and ignored: the recorded exports replay element draws only,
+   *  and the scope overlay pass that clips never runs through the recorder
+   *  today, so a clip needs no `<clipPath>` translation yet. The current path
+   *  survives, matching the canvas rule that clip leaves the path alone. */
+  clip(): void {}
+
   stroke(): void {
     if (!this.d) return;
     const dash = this.dash ? ` stroke-dasharray="${this.dash.join(',')}"` : '';

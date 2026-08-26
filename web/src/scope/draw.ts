@@ -452,38 +452,63 @@ export function triggerTimeAnchor(
   return anchor;
 }
 
-function drawHeader(
-  ctx: CanvasRenderingContext2D,
+/** One manual-scale /div bullet: the plot it colours by and its centre. */
+export interface HeaderBullet {
+  id: number;
+  cx: number;
+  cy: number;
+}
+
+/** The header's geometry, laid out without touching a context so the wrap
+ *  math tests headlessly. */
+export interface HeaderLayout {
+  lines: InfoLine[];
+  bullets: HeaderBullet[];
+  /** Y of the last laid-out row, or the top margin when the header is empty;
+   *  measurement rows stack one pitch below whatever height it reached. */
+  endY: number;
+}
+
+/** Pure layout of the overlay header: the scope label title block, the Show
+ *  Extended Info lines and the scale row with its per-plot manual bullets.
+ *  `elmInfo` is the already-resolved info line list for the plotted element,
+ *  and `measure` returns a string's advance width, both injectable so this
+ *  runs without a DOM. Wrap and stop thresholds use the scope viewport width
+ *  `w`, never the canvas backing store: docked panels scale by dpr and an
+ *  embedded window shares the schematic transform, where only `w` means the
+ *  frame (upstream wraps on scope.rect.width, ScopeOverlays.java:40). */
+export function layoutHeader(
   scope: Scope,
   firstTransform: PlotTransform,
   firstPlot: DrawablePlot,
   speed: number,
   timeStep: number,
+  w: number,
   h: number,
-  theme: Theme,
-  traceColors: Map<number, string>,
   decimalDigits: number,
-  elmInfo?: (elementId: number) => string[] | null,
-): void {
+  elmInfo: string[] | null,
+  measure: (s: string) => number,
+): HeaderLayout {
   const lines: InfoLine[] = [];
+  const bullets: HeaderBullet[] = [];
+  // One cursor from the top margin through label, info block and scale rows;
+  // the measurement rows hang below wherever it ends, upstream's shared
+  // textY walk (ScopeOverlays.java:186-217).
+  let y = 4;
   // The scope's own label renders as a title line above the scale, in the
   // theme text colour, and only when it is set (ScopeOverlays.draw:
   // getScopeLabelOrText). Show Extended Info stacks the plotted element's full
   // getInfo block underneath it, the port of `drawElmInfo`
   // (ScopeOverlays.java:178-192): every line at the 15 px pitch upstream uses,
   // sharing `infoLines` with the hover box so the two surfaces cannot drift.
-  let y = 4;
   if (scope.label) {
     lines.push({ text: scope.label, y });
     y += 15;
   }
-  if (scope.showElmInfo && firstPlot.elementId !== null) {
-    const info = elmInfo ? elmInfo(firstPlot.elementId) : null;
-    if (info) {
-      for (const text of info) {
-        lines.push({ text, y });
-        y += 15;
-      }
+  if (scope.showElmInfo && firstPlot.elementId !== null && elmInfo) {
+    for (const text of elmInfo) {
+      lines.push({ text, y });
+      y += 15;
     }
   }
   // Upstream gates the whole scale row behind Show Scale (ScopeOverlays.draw
@@ -496,27 +521,23 @@ function drawHeader(
       // each label sits beside its bullet, and a row that would run past the
       // right edge wraps to the next one instead of being dropped.
       lines.push({ text: hs, y });
-      ctx.font = canvasFont(10);
-      let x = ctx.measureText(hs).width;
-      // Only the visible plots get a bullet and /div label (ScopeOverlays.drawScale
-      // iterates `visiblePlots`), so a plot hidden by showV/showI stays off the
-      // header.
+      let x = measure(hs);
+      // Only the visible plots get a bullet and /div label
+      // (ScopeOverlays.drawScale iterates `visiblePlots`), so a plot hidden
+      // by showV/showI stays off the header.
       for (const p of visiblePlotsOf(scope).filter(isDrawable)) {
         const divisions = scope.manDivisions || MAN_DIVISIONS;
         const manScale = p.manScale ?? seedManScale(5, divisions);
         const s = `=${formatValue(manScale, UNIT[p.value], decimalDigits)}/div`;
-        const width = ctx.measureText(s).width + 20;
-        if (x + width > ctx.canvas.width) {
+        const width = measure(s) + 20;
+        if (x + width > w) {
           x = 0;
           y += 15;
-          // Upstream returns once a wrapped row falls below the bottom bound
+          // Upstream stops once a wrapped row falls below the bottom bound
           // (drawInfo clips the text; this keeps its bullet off too).
           if (y >= h - 5) break;
         }
-        ctx.fillStyle = traceColor(traceColors, p, theme);
-        ctx.beginPath();
-        ctx.arc(4 + x + 8, y + 5, 4, 0, Math.PI * 2);
-        ctx.fill();
+        bullets.push({ id: p.id, cx: 4 + x + 8, cy: y + 5 });
         lines.push({ text: s, x: 4 + x + 17, y });
         x += width;
       }
@@ -530,7 +551,59 @@ function drawHeader(
       lines.push({ text: hs + vs, y });
     }
   }
-  drawInfo(ctx, lines, h, theme.whiteColor);
+  return { lines, bullets, endY: y };
+}
+
+/** Paints a laid-out header. The bullets colour first so their labels share
+ *  the frame's trace-colour map, then the text rows clip and stack through
+ *  drawInfo like before. */
+function paintHeader(
+  ctx: CanvasRenderingContext2D,
+  layout: HeaderLayout,
+  scope: Scope,
+  h: number,
+  theme: Theme,
+  traceColors: Map<number, string>,
+): void {
+  for (const b of layout.bullets) {
+    const p = visiblePlotsOf(scope).find((q) => q.id === b.id);
+    if (!p || !isDrawable(p)) continue;
+    ctx.fillStyle = traceColor(traceColors, p, theme);
+    ctx.beginPath();
+    ctx.arc(b.cx, b.cy, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  drawInfo(ctx, layout.lines, h, theme.whiteColor);
+}
+
+/** A measurer over a real context at the shared 10 px overlay font, the
+ *  counterpart of the injected measurer layoutHeader takes in tests. The font
+ *  resets per string because drawInfo and the bullet row interleave with other
+ *  draws between calls. */
+function textMeasurer(ctx: CanvasRenderingContext2D): (s: string) => number {
+  return (s) => {
+    ctx.font = canvasFont(10);
+    return ctx.measureText(s).width;
+  };
+}
+
+/** Runs `body` clipped to the scope viewport rect. Every branch that paints
+ *  overlay strings goes through this: an embedded window shares the schematic
+ *  canvas and its transform, so only its own clip keeps long labels inside
+ *  the frame under extreme zoom, where the docked panels' dpr scaling never
+ *  reaches. */
+function clippedToViewport(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  body: () => void,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.clip();
+  body();
+  ctx.restore();
 }
 
 /** One plot's measurement readout strings, computed from its own min/max
@@ -594,17 +667,23 @@ function measurementBlock(
 /** Draws every visible trace's measurement readouts, one column per plot so
  *  a combined scope's numbers sit beside their own trace colour instead of
  *  all reading as the first trace's. Blocks advance left to right like the
- *  manual-scale /div labels already do, stopping at the right edge. */
+ *  manual-scale /div labels already do, stopping at the scope viewport width
+ *  `w` (never the canvas backing store, which is dpr times wider on docked
+ *  panels and shared with the schematic on embedded windows). Rows stack from
+ *  `startY`, the header layout's end, instead of a fixed offset, so a tall
+ *  title block pushes them down rather than being overpainted. */
 function drawMeasurements(
   ctx: CanvasRenderingContext2D,
   scope: Scope,
   states: MeasurableState[],
   h: number,
+  w: number,
   speed: number,
   timeStep: number,
   theme: Theme,
   decimalDigits: number,
   traceColors: Map<number, string>,
+  startY: number,
 ): void {
   ctx.font = canvasFont(10);
   let x = 4;
@@ -613,11 +692,15 @@ function drawMeasurements(
     if (block.stack.length === 0 && block.bottom === null) continue;
     const texts = [...block.stack, ...(block.bottom === null ? [] : [block.bottom])];
     const width = Math.max(...texts.map((t) => ctx.measureText(t).width)) + 12;
-    if (x > 4 && x + width > ctx.canvas.width) break;
+    if (x > 4 && x + width > w) break;
     const color = traceColor(traceColors, s.plot, theme);
-    // The old single-trace row rhythm: stacked rows start one slot under the
-    // header, Min keeps its bottom-edge pin.
-    const info: InfoLine[] = block.stack.map((text, i) => ({ text, x, y: 20 + (i + 1) * 15 }));
+    // One pitch below the header's last row, then per readout; Min keeps its
+    // bottom-edge pin.
+    const info: InfoLine[] = block.stack.map((text, i) => ({
+      text,
+      x,
+      y: startY + (i + 1) * 15,
+    }));
     if (block.bottom !== null) info.push({ text: block.bottom, x, y: h - 18 });
     drawInfo(ctx, info, h, color);
     x += width;
@@ -1017,6 +1100,10 @@ function drawTrigger(
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.font = canvasFont(9);
+    // Upstream sets its own colour before both trigger texts
+    // (ScopeTrigger.java:185 and :211); without it the glyph inherits
+    // whatever fill ran last, here the background, and vanishes.
+    ctx.fillStyle = TRIGGER_COLOR;
     ctx.fillText(scope.trigger.edge === 'rising' ? 'T↑' : 'T↓', w - 25, trigY - 3);
   }
   // The status text keys off the tracker state and its `waiting` flag, never
@@ -1129,8 +1216,12 @@ export function drawScope(
   const traceColors = plotColors(scope, theme);
 
   if (scope.plotXY) {
-    drawXY(ctx, engine, scope, w, h, simTime, timeStep, theme);
-    drawScopeLabel(ctx, scope, h, theme);
+    clippedToViewport(ctx, w, h, () => {
+      drawXY(ctx, engine, scope, w, h, simTime, timeStep, theme);
+      drawScopeLabel(ctx, scope, h, theme);
+    });
+    // The settings wheel stays outside the clip, interactive chrome like the
+    // main path's.
     if (options?.settingsWheel !== false) drawSettingsWheel(ctx, cursor, w, h, theme);
     return;
   }
@@ -1159,7 +1250,19 @@ export function drawScope(
         h,
         sameUnits(visible),
       );
-      drawHeader(ctx, scope, transform, infoPlot, speed, timeStep, h, theme, traceColors, decimalDigits, elmInfo);
+      const header = layoutHeader(
+        scope,
+        transform,
+        infoPlot,
+        speed,
+        timeStep,
+        w,
+        h,
+        decimalDigits,
+        elmInfo ? elmInfo(infoPlot.elementId) : null,
+        textMeasurer(ctx),
+      );
+      clippedToViewport(ctx, w, h, () => paintHeader(ctx, header, scope, h, theme, traceColors));
     }
     return;
   }
@@ -1272,22 +1375,40 @@ export function drawScope(
     }
   }
 
-  if (!(cursor.hover && cursor.cursorTime >= 0)) {
-    drawHeader(
+  // The header layout runs whether or not the hover suppresses painting it,
+  // so the measurement rows sit at the same height in both states. Both
+  // overlays clip to the viewport rect: an embedded window shares the
+  // schematic transform, so only this clip keeps them inside the frame.
+  const header = layoutHeader(
+    scope,
+    first.transform,
+    first.plot,
+    speed,
+    timeStep,
+    w,
+    h,
+    decimalDigits,
+    elmInfo ? elmInfo(first.plot.elementId) : null,
+    textMeasurer(ctx),
+  );
+  clippedToViewport(ctx, w, h, () => {
+    if (!(cursor.hover && cursor.cursorTime >= 0)) {
+      paintHeader(ctx, header, scope, h, theme, traceColors);
+    }
+    drawMeasurements(
       ctx,
       scope,
-      first.transform,
-      first.plot,
+      states,
+      h,
+      w,
       speed,
       timeStep,
-      h,
       theme,
-      traceColors,
       decimalDigits,
-      elmInfo,
+      traceColors,
+      header.endY,
     );
-  }
-  drawMeasurements(ctx, scope, states, h, speed, timeStep, theme, decimalDigits, traceColors);
+  });
   drawCursor(
     ctx,
     cursor,
@@ -1322,14 +1443,18 @@ export function selectPlotAt(
     .map((plot) => ({ plot, index: engine.scopeIndexOf(plot.id) }))
     .filter((p): p is { plot: DrawablePlot; index: number } => p.index !== undefined);
   if (plots.length === 0) return -1;
-  const data = engine.scopeData(plots[0].index);
-  const win = plainWindow(data, w);
-  const k = Math.round(x) - win.xOffset;
   let best = -1;
   let bestDist = Infinity;
   const allSameUnits = sameUnits(plots.map((p) => p.plot));
   for (let i = 0; i < plots.length; i++) {
-    const { plot } = plots[i];
+    const { plot, index } = plots[i];
+    // Each candidate scores against its own ring: lengths differ per plot,
+    // so the window and the clicked column are per-plot too (upstream reads
+    // plot.maxValues[ip] per candidate, Scope.java:959). Scoring every trace
+    // against plots[0]'s samples resolved the wrong plot on mixed scopes.
+    const data = engine.scopeData(index);
+    const win = plainWindow(data, w);
+    const k = Math.round(x) - win.xOffset;
     const state = scaleStateFor(scope.id, plot.value);
     const t = transformFor(scope, plot, state, 0, 0, h, allSameUnits);
     const pos = win.posOf(k);
