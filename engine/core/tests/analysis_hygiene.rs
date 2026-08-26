@@ -303,3 +303,103 @@ fn the_floor_timestep_is_attempted_before_giving_up() {
         report.time_step
     );
 }
+
+#[test]
+fn adaptive_doubles_once_per_frame_below_nominal() {
+    // Upstream declares `goodIterations = 100` per runCircuit call and
+    // checks the doubling at the TOP of its step loop, before stepping
+    // (SimulationManager.java:1311-1318), so every frame's first step
+    // doubles while below nominal regardless of how few easy steps the
+    // previous frame saw. This port seeds `good_iterations = 100` at each
+    // run() and moves the check to the top of step_once to match that
+    // ordering. From a committed floor of 1.25e-6 under a nominal of 5e-6,
+    // recovery is ceil(log2(4)) = 2 single-step frames: one double before
+    // each frame's attempt. The old schedule kept the counter across frames
+    // and doubled only after three easy commits, five frames for the same
+    // climb.
+    let mut c = build(compliance_circuit(0.0), adaptive_opts(5e-6, 1.25e-6, 4));
+    // Walk down to the floor exactly as the floor rule above pins it.
+    let mut floored = false;
+    for _ in 0..200 {
+        let report = c.run(1);
+        assert!(
+            report.converged,
+            "a halving chain must end in a commit: {:?}",
+            report.error
+        );
+        if report.rejected_steps >= 2 {
+            assert!(close(report.time_step, 1.25e-6, 1e-15));
+            floored = true;
+            break;
+        }
+    }
+    assert!(floored, "no step ever walked both halvings down");
+
+    let mut frames = 0;
+    loop {
+        frames += 1;
+        assert!(frames < 50, "never climbed back to the nominal step");
+        let report = c.run(1);
+        assert!(
+            report.converged,
+            "a doubling frame must commit: {:?}",
+            report.error
+        );
+        if close(report.time_step, 5e-6, 1e-15) {
+            break;
+        }
+    }
+    assert_eq!(
+        frames, 2,
+        "recovery from the floor must take one double per frame"
+    );
+}
+
+#[test]
+fn adaptive_results_unchanged_well_posed() {
+    // A well-posed RC charge under adaptation follows the analytic
+    // exponential and lands exactly where the fixed-step run lands: with no
+    // rejections the working step never leaves the nominal, so moving the
+    // doubling decision must not move a single result.
+    fn rc() -> Vec<ElementSpec> {
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(
+                3,
+                "capacitor",
+                &[[100, 0], [100, 100]],
+                &[("capacitance", 1e-9)],
+            ),
+            elm(4, "wire", &[[100, 100], [0, 100]], &[]),
+            elm(5, "ground", &[[0, 100]], &[]),
+        ]
+    }
+    const DT: f64 = 1e-9;
+    // RC = 1 kOhm * 1 nF: 1000 steps to one time constant, the convention
+    // the reactive suite pins its charging curves at.
+    const RC: f64 = 1000.0 * 1e-9;
+
+    let adaptive = &mut build(rc(), adaptive_opts(DT, 50e-12, 100));
+    adaptive.run(1000);
+    let t = adaptive.time();
+    let expected = 10.0 * (1.0 - (-t / RC).exp());
+    let v_adaptive = adaptive.element_voltages()[2];
+    assert!(
+        close(v_adaptive, expected, 0.02),
+        "adaptive read {v_adaptive}, analytic {expected}"
+    );
+
+    let fixed = &mut build(rc(), opts(DT, false));
+    fixed.run(1000);
+    let v_fixed = fixed.element_voltages()[2];
+    assert!(
+        close(v_adaptive, v_fixed, 1e-9),
+        "adaptive {v_adaptive} vs fixed {v_fixed}"
+    );
+}

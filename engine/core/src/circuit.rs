@@ -1482,6 +1482,15 @@ impl Circuit {
     /// Advances one committed timestep, shrinking the step and retrying when
     /// Newton cannot settle, and doubling back up after easy steps.
     fn step_once(&mut self) -> StepReport {
+        // Upstream checks the doubling at the top of its step loop, BEFORE
+        // stepping, so a doubled dt is what the step actually attempts
+        // (SimulationManager.java:1312-1318); the commit-side increment and
+        // failure-zero rules below stay identical (:1415-1418).
+        if self.good_iterations >= 3 && self.current_time_step < self.options.time_step {
+            let doubled = (self.current_time_step * 2.0).min(self.options.time_step);
+            self.set_time_step(doubled);
+            self.good_iterations = 0;
+        }
         let mut report = StepReport {
             steps: 1,
             time: self.ctx.time,
@@ -1528,14 +1537,6 @@ impl Circuit {
                     }
                     if subiter < 3 {
                         self.good_iterations += 1;
-                        if self.good_iterations >= 3
-                            && self.current_time_step < self.options.time_step
-                        {
-                            let doubled =
-                                (self.current_time_step * 2.0).min(self.options.time_step);
-                            self.set_time_step(doubled);
-                            self.good_iterations = 0;
-                        }
                     } else {
                         self.good_iterations = 0;
                     }
@@ -1892,6 +1893,12 @@ impl Circuit {
             converged: true,
             ..Default::default()
         };
+        // Upstream declares goodIterations = 100 fresh on every runCircuit
+        // call (SimulationManager.java:1311), so the loop-top doubling check
+        // fires unconditionally once per frame while below nominal: recovery
+        // from a rejected step climbs one level per frame, not one per three
+        // easy steps.
+        self.good_iterations = 100;
         for _ in 0..steps {
             let r = self.step_once();
             total.steps += r.steps;

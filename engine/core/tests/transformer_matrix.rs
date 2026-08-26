@@ -664,7 +664,7 @@ fn rejected_step_commits_no_state_and_no_time() {
     // (t = 5e-6) inside the compliance transition, so the first attempt
     // exhausts its budget of 5 and must halve to 2.5e-6, where the endpoint
     // sits below the transition and settles. Exactly one halving, which makes
-    // the committed trajectory easy to pin: two committed steps at 2.5e-6.
+    // the committed trajectory easy to pin: one committed step at 2.5e-6.
     let phase = 7.5f64 * PI / 180.0;
     let mut c = build(compliance_circuit(phase), adaptive_opts(5e-6, 50e-12, 5));
     let r1 = c.run(1);
@@ -679,19 +679,16 @@ fn rejected_step_commits_no_state_and_no_time() {
     // ever move by committed steps.
     assert!(close(c.time(), 2.5e-6, 1e-15), "clock was {}", c.time());
 
-    c.run(1);
-    assert!(close(c.time(), 5e-6, 1e-15), "clock was {}", c.time());
-
-    // Reference: a non-adaptive circuit stepping the whole way at 2.5e-6. The
-    // adaptive run's rejected first step must leave no trace, so after two
-    // committed steps both circuits sit at the same time with the same node
-    // voltages, down to floating-point noise. The current source's terminal
-    // voltage is the observable: it would differ if the rejected attempt had
-    // corrupted `last_volt_diff`.
+    // Reference: a non-adaptive circuit committing the same single 2.5e-6
+    // step. The adaptive run's rejected attempt must leave no trace, so
+    // after one committed step both circuits sit at the same time with the
+    // same node voltages, down to floating-point noise. The current source's
+    // terminal voltage is the observable: it would differ if the rejected
+    // attempt had corrupted `last_volt_diff`.
     let mut reference = build(compliance_circuit(phase), opts_budget(2.5e-6, false, 5));
-    let rr = reference.run(2);
+    let rr = reference.run(1);
     assert!(rr.converged, "reference did not converge: {:?}", rr.error);
-    assert!(close(reference.time(), 5e-6, 1e-15));
+    assert!(close(reference.time(), 2.5e-6, 1e-15));
     assert!(
         close(
             c.element_voltages()[2],
@@ -701,6 +698,19 @@ fn rejected_step_commits_no_state_and_no_time() {
         "adaptive state {} differs from the reference {}",
         c.element_voltages()[2],
         reference.element_voltages()[2]
+    );
+
+    // The next frame doubles before attempting (upstream's loop-top order,
+    // SimulationManager.java:1312-1318), so its committed step is larger
+    // than 2.5e-6; whichever size commits, the clock may only grow by that
+    // committed step.
+    let r2 = c.run(1);
+    assert!(r2.converged, "second frame failed: {:?}", r2.error);
+    assert!(
+        close(c.time(), 2.5e-6 + r2.time_step, 1e-15),
+        "clock was {}, last committed step {}",
+        c.time(),
+        r2.time_step
     );
 }
 
