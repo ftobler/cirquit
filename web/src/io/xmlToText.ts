@@ -838,7 +838,13 @@ function elementLines(node: XmlNode, ctx: ConvertContext): string[] | null {
     const points = node.text
       .split(';')
       .map((p) => p.split(','))
-      .filter((p) => p.length === 2 && p.every((v) => Number.isFinite(Number(v))))
+      // An empty component must drop before the finite gate: Number('') is 0
+      // and finite, so garbage like `;,160` would otherwise canonicalize into
+      // a real leg anchored at the origin. coords() filters the same empties
+      // out of the x attribute.
+      .filter(
+        (p) => p.length === 2 && p.every((v) => v.trim() !== '' && Number.isFinite(Number(v))),
+      )
       // The same canonical re-emission coords() does: a point component padded
       // with newlines passes the finite gate and would split the emitted `w`.
       .map((p) => p.map((v) => String(Number(v))));
