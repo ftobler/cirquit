@@ -1,11 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
-import { nextFocusIndex, type Focusable } from './focusTrap';
+import { FOCUSABLE_SELECTOR, nextFocusIndex, type Focusable } from './focusTrap';
 
 // Element-shaped stubs, so the trap never needs a DOM. Each carries an id so a
 // failure message names the row; only `.focus()` is part of the contract.
 function stub(id: string): Focusable {
   return { focus: vi.fn(), id } as unknown as Focusable;
 }
+
+describe('FOCUSABLE_SELECTOR', () => {
+  it('names anchors among the focusable rows', () => {
+    // The About dialog's documentation links are anchors: without a[href] in
+    // the list Tab wraps past them forever while the trap keeps pulling the
+    // stray focus back, leaving them keyboard-dead inside the dialog.
+    expect(FOCUSABLE_SELECTOR).toContain('a[href]');
+  });
+});
 
 describe('nextFocusIndex', () => {
   it('returns null for an empty list', () => {
@@ -41,6 +50,22 @@ describe('nextFocusIndex', () => {
     const rows = [stub('only')];
     expect(nextFocusIndex(rows, rows[0], false)).toBe(0);
     expect(nextFocusIndex(rows, rows[0], true)).toBe(0);
+  });
+
+  it('anchors participate in the wrap like any row', () => {
+    // The caller's querySelectorAll order is the list order, so a dialog of
+    // button, link, button walks straight through the anchor and wraps over
+    // it, never past it.
+    const buttonA = stub('button-a');
+    const link = stub('link');
+    const buttonB = stub('button-b');
+    const rows = [buttonA, link, buttonB];
+    expect(nextFocusIndex(rows, buttonA, false)).toBe(1);
+    expect(nextFocusIndex(rows, link, false)).toBe(2);
+    expect(nextFocusIndex(rows, buttonB, true)).toBe(1);
+    expect(nextFocusIndex(rows, link, true)).toBe(0);
+    expect(nextFocusIndex(rows, buttonB, false)).toBe(0);
+    expect(nextFocusIndex(rows, buttonA, true)).toBe(2);
   });
 
   // Disabled filtering is the caller's job: the hook drops disabled elements

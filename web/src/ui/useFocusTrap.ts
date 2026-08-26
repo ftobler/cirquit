@@ -7,10 +7,7 @@
  *  deliberately not under test). */
 
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { nextFocusIndex, type Focusable } from './focusTrap';
-
-const FOCUSABLE_SELECTOR =
-  'button, textarea, input, select, [tabindex]:not([tabindex="-1"])';
+import { FOCUSABLE_SELECTOR, nextFocusIndex, type Focusable } from './focusTrap';
 
 export function useFocusTrap<T extends HTMLElement>(opts: {
   returnFocus?: boolean;
