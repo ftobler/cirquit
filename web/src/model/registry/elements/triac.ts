@@ -13,6 +13,7 @@ import {
 import { elementColor, readParams, boxOfPoints } from '../shared';
 import { GRID_SIZE } from '../../types';
 import { TOO_FAST } from '../../../render/dots';
+import { boolToken } from './switch';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Perpendicular offset of the two end plates (TriacElm.java:126-130). */
@@ -167,7 +168,7 @@ export const TRIAC_DEF: ElementDef = {
   parse: (t, e) => {
     readParams(t, e, ['triggerI', 'holdingI', 'cresistance']);
     // The state token is a Java-style boolean string, not a number.
-    if (t[3] !== undefined) e.params.state = t[3] === 'true' ? 1 : 0;
+    if (t[3] !== undefined) e.params.state = boolToken(t[3]);
   },
   dump: (e) => [
     e.params.triggerI ?? 0.01,

@@ -9,7 +9,7 @@ import {
 } from '../../../render/draw';
 import { SWITCH2_CENTER_OFF, SWITCH_LABEL } from '../flags';
 import { CONTACT_STROKE_WIDTH, OPEN_HS, rectOfPoints } from '../shared';
-import { switchTokens, labelFlags, momentaryParam } from './switch';
+import { switchTokens, labelFlags, boolToken } from './switch';
 import type { CircuitElement, ElementDef, Point } from '../../types';
 
 function switch2Posts(e: CircuitElement): Point[] {
@@ -79,7 +79,7 @@ export const SWITCH2_DEF: ElementDef = {
   parse: (t, e) => {
     const p = t[0];
     e.params.position = p === 'true' ? 1 : p === 'false' ? 0 : Number(p) || 0;
-    e.params.momentary = momentaryParam(t[1]);
+    e.params.momentary = boolToken(t[1]);
     // Upstream reads the label in `super(...)` before link and throwCount
     // (Switch2Elm.java:44-50), so a label shifts both of them one token on.
     let i = 2;

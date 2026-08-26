@@ -12,6 +12,7 @@
 
 import { canvasFont, closedPolyline, currentDots, lead, line, voltageColor } from '../../../render/draw';
 import { readParams, boxOfPoints } from '../shared';
+import { boolToken } from './switch';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Column spacing between the three pole pairs (MotorProtectionSwitchElm.java:136). */
@@ -180,7 +181,7 @@ export const MOTOR_PROTECTION_SWITCH_DEF: ElementDef = {
   // token, and the label is one escaped token read defensively upstream.
   parse: (t, e) => {
     readParams(t, e, ['resistance', 'i2t']);
-    e.params.blown = t[2] === 'true' ? 1 : 0;
+    e.params.blown = boolToken(t[2]);
     if (t[3] !== undefined) e.text = t[3];
   },
   dump: (e) => [
