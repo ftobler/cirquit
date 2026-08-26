@@ -24,6 +24,7 @@ import { pushUndockedScopeFrame } from '../../undocked/opener';
 import { useStoreRef } from './useStoreRef';
 import type { Drag } from './useCanvasInteractions';
 import { armedHandle } from './pointerDown';
+import { backingStoreSize } from './backingStoreSize';
 import { overlayLiveState, recordBuildOnSuccess, shouldInjectLiveState } from '../../io/liveState';
 import { drawInfoBox, infoBoxX, infoBoxY } from '../../render/infoBox';
 import { infoBoxLines } from '../infoBoxLines';
@@ -105,23 +106,6 @@ export function scopeDrawPayload(
  */
 export function paintedSelection(drag: Drag, selectedIds: number[]): number[] {
   return drag.mode === 'move' ? drag.ids : selectedIds;
-}
-
-/**
- * The canvas backing-store size for a CSS size at a device pixel ratio,
- * rounded once. The width/height attributes are integers, so comparing them
- * against the raw fractional product never settles at dpr 1.25 or 1.5 with an
- * odd CSS width (or ~1.1 under browser zoom): every frame saw a mismatch,
- * reallocated the bitmap and cleared it. Rounding here mirrors export.ts's
- * export canvas sizing, and makes the second frame's compare agree with what
- * was assigned. Pure, so the settle is testable without a DOM.
- */
-export function backingStoreSize(
-  width: number,
-  height: number,
-  dpr: number,
-): { width: number; height: number } {
-  return { width: Math.round(width * dpr), height: Math.round(height * dpr) };
 }
 
 export function useFrameLoop(

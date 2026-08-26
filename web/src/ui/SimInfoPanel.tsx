@@ -3,6 +3,7 @@ import type { SimEngine } from '../engine/simulator';
 import { makeTheme } from '../render/draw';
 import { drawInfoBox } from '../render/infoBox';
 import { useStore } from '../state/store';
+import { backingStoreSize } from './canvas/backingStoreSize';
 import { useStoreRef } from './canvas/useStoreRef';
 import { infoBoxLines } from './infoBoxLines';
 
@@ -39,9 +40,10 @@ export function SimInfoPanel({ engine }: { engine: SimEngine | null }) {
       const dpr = window.devicePixelRatio || 1;
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
+      const backing = backingStoreSize(w, h, dpr);
+      if (canvas.width !== backing.width || canvas.height !== backing.height) {
+        canvas.width = backing.width;
+        canvas.height = backing.height;
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const state = stateRef.current;

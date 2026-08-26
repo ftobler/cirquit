@@ -28,6 +28,7 @@ import {
 import { clearXYScale, dragPlotYPosition } from '../scope/scale';
 import { clearXYPersistence } from '../scope/xyPersistence';
 import { useStore } from '../state/store';
+import { backingStoreSize } from './canvas/backingStoreSize';
 import { ScopeMenu } from './ScopeMenu';
 import { ScopeProperties } from './ScopeProperties';
 import { SimInfoPanel } from './SimInfoPanel';
@@ -101,9 +102,10 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
       const dpr = window.devicePixelRatio || 1;
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
+      const backing = backingStoreSize(w, h, dpr);
+      if (canvas.width !== backing.width || canvas.height !== backing.height) {
+        canvas.width = backing.width;
+        canvas.height = backing.height;
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       drawScope(
