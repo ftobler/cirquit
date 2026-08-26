@@ -1326,13 +1326,6 @@ function createAppStore() {
 
   requestCenter: () => set((s) => ({ centerRequest: s.centerRequest + 1 })),
 
-  zoomToFit: () => {
-    const s = get();
-    const bounds = circuitBounds(s.elements);
-    if (!bounds) return;
-    set({ view: fitView(bounds, s.viewSize.w, s.viewSize.h, Infinity) });
-  },
-
   deleteSelected: (skipCommit) => {
     const { selectedIds, elementGesture: gesture } = get();
     if (selectedIds.length === 0) return;
