@@ -1017,6 +1017,10 @@ function drawTrigger(
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.font = canvasFont(9);
+    // Upstream sets its own colour before both trigger texts
+    // (ScopeTrigger.java:185 and :211); without it the glyph inherits
+    // whatever fill ran last, here the background, and vanishes.
+    ctx.fillStyle = TRIGGER_COLOR;
     ctx.fillText(scope.trigger.edge === 'rising' ? 'T↑' : 'T↓', w - 25, trigY - 3);
   }
   // The status text keys off the tracker state and its `waiting` flag, never

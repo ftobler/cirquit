@@ -480,6 +480,36 @@ interface DrawOpts {
   simTime?: number;
 }
 
+/** Runs drawScope pairing every filled text with its fill style, so a test
+ *  can assert which colour a given readout was painted in. */
+const drawnTexts = (
+  engine: SimEngine,
+  scope: Scope,
+  opts: DrawOpts = {},
+): { text: string; color: string }[] => {
+  const { ctx } = mkCtx(200, 150);
+  const out: { text: string; color: string }[] = [];
+  const fillText = ctx.fillText;
+  ctx.fillText = vi.fn((text: string) => {
+    out.push({ text, color: ctx.fillStyle as string });
+    (fillText as unknown as (t: string) => void)(text);
+  }) as unknown as CanvasRenderingContext2D['fillText'];
+  drawScope(
+    ctx,
+    engine,
+    scope,
+    200,
+    150,
+    emptyCursor(),
+    opts.simTime ?? 0,
+    5e-6,
+    opts.dark ?? false,
+    3,
+    opts.themeColors,
+  );
+  return out;
+};
+
 /** Runs `drawScope` while recording the stroke style of every `stroke()` and
  *  the fill style of every `fill()`/`fillText()`, so a test can assert the
  *  colour of any overlay. */
@@ -854,6 +884,48 @@ describe('drawScope cursor colours', () => {
   });
 });
 
+/** A triggered scope over a flat zero trace, so the trigger level line lands
+ *  on the canvas centre and the edge glyph paints. The tracker reports the
+ *  fired state, upstream ScopeTrigger.drawIndicator's TRIG. */
+const trigEngine = (): SimEngine =>
+  ({
+    scopeIndexOf: () => 0,
+    scopeData: () => new Float32Array([0, 0, 0, 0]),
+    scopeDiverged: () => false,
+    triggerInfo: () => ({
+      start_index: 0,
+      valid_count: 0,
+      columns: 256,
+      snapshot_start: 0,
+      written: 0,
+      state: 1,
+      triggered: true,
+      waiting: false,
+      time: 0,
+      free: () => {},
+    }),
+  }) as unknown as SimEngine;
+
+const trigScope = () =>
+  scopeOf([plot(1, 'voltage')], {
+    trigger: { mode: 'normal', edge: 'rising', level: 0 },
+  });
+
+describe('drawScope trigger colours', () => {
+  it('fills the T edge glyph with TRIGGER_COLOR instead of a stale fill', () => {
+    // Upstream sets #FF8000 before both of its texts (ScopeTrigger.java:185
+    // and :211); without it the glyph inherited whatever fill ran last, which
+    // here is the background clear, making it invisible on both themes.
+    const glyph = drawnTexts(trigEngine(), trigScope()).find((d) => d.text === 'T↑');
+    expect(glyph?.color).toBe('#ff8000');
+  });
+
+  it('keeps the status readout in TRIGGER_COLOR as well', () => {
+    const status = drawnTexts(trigEngine(), trigScope()).find((d) => d.text === 'TRIG');
+    expect(status?.color).toBe('#ff8000');
+  });
+});
+
 /** The X-Y trail lives on an offscreen canvas `drawXY` builds through
  *  `document.createElement`. The test environment is node with no DOM, so the
  *  canvas is stubbed and its recorder handed to the body: the locus stroke and
@@ -1192,36 +1264,6 @@ describe('drawScope per-trace measurements', () => {
       scopeData: (index: number) => (index === 0 ? sineRing(16) : sineRing(24)),
       scopeDiverged: () => false,
     }) as unknown as SimEngine;
-
-  /** Runs drawScope pairing every filled text with its fill style, so a test
-   *  can assert which trace colour a readout was painted in. */
-  const drawnTexts = (
-    engine: SimEngine,
-    scope: Scope,
-    opts: DrawOpts = {},
-  ): { text: string; color: string }[] => {
-    const { ctx } = mkCtx(200, 150);
-    const out: { text: string; color: string }[] = [];
-    const fillText = ctx.fillText;
-    ctx.fillText = vi.fn((text: string) => {
-      out.push({ text, color: ctx.fillStyle as string });
-      (fillText as unknown as (t: string) => void)(text);
-    }) as unknown as CanvasRenderingContext2D['fillText'];
-    drawScope(
-      ctx,
-      engine,
-      scope,
-      200,
-      150,
-      emptyCursor(),
-      opts.simTime ?? 0,
-      5e-6,
-      opts.dark ?? false,
-      3,
-      opts.themeColors,
-    );
-    return out;
-  };
 
   it('draws the Freq readout for plot A alone when only its mask enables it', () => {
     // The user's ask: Freq on the first stacked signal only, not the second.
