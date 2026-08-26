@@ -1287,4 +1287,23 @@ describe('xml to text conversion', () => {
       );
     }
   });
+
+  it('seeds a momentary DPDT switch with no position as pressed', () => {
+    // Upstream's SwitchElm(xx, yy, mm) constructor pairs momentary with
+    // position 1 (:33-35), so a hand-authored mm without p converts pressed;
+    // an explicit p always wins over that seed.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dpdt x="192 160 304 224" f="0" mm="true"/>
+</cir>
+`;
+    expect(xmlToText(src)).toContain('429 192 160 304 224 0 1 true 2');
+    const explicit = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dpdt x="192 160 304 224" f="0" p="0" mm="true"/>
+</cir>
+`;
+    expect(xmlToText(explicit)).toContain('429 192 160 304 224 0 0 true 2');
+    const parsed = parseCircuit(xmlToText(src));
+    expect(parsed.elements[0].params.position).toBe(1);
+    expect(parsed.elements[0].params.momentary).toBe(1);
+  });
 });

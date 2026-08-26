@@ -372,10 +372,12 @@ const WRITERS: Record<string, Writer> = {
     // the label under its flag bit, then the pole count
     // (DPDTSwitchElm.java:38-45). The keyboard shortcut is session-only in
     // both builds. The base on-resistance has no token on this stream.
-    const tokens: (string | number)[] = [
-      attr(n, 'p', 0),
-      (n.attrs.mm ?? 'false').toLowerCase() === 'true' ? 'true' : 'false',
-    ];
+    const momentary = (n.attrs.mm ?? 'false').toLowerCase() === 'true';
+    // A hand-authored document may carry mm without p; upstream's
+    // SwitchElm(xx, yy, mm) constructor pairs the two, so a momentary switch
+    // is born pressed (:33-35). An explicit p always wins over the seed.
+    const position = n.attrs.p !== undefined ? attr(n, 'p', 0) : momentary ? 1 : 0;
+    const tokens: (string | number)[] = [position, momentary ? 'true' : 'false'];
     if (n.attrs.lab !== undefined) tokens.push(n.attrs.lab);
     tokens.push(attr(n, 'po', 2));
     return tokens;
