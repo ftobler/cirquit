@@ -21,7 +21,7 @@ import {
 } from '../../../render/draw';
 import { SWITCH_IEC, SWITCH_LABEL } from '../flags';
 import { rectOfPoints } from '../shared';
-import { switchTokens, labelFlags } from './switch';
+import { switchTokens, labelFlags, momentaryParam } from './switch';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Perpendicular offset of a throw, upstream's `openhs` (CrossSwitchElm.java:40). */
@@ -204,7 +204,7 @@ export const CROSS_SWITCH_DEF: ElementDef = {
   parse: (t, e) => {
     const p = t[0];
     e.params.position = p === 'true' ? 1 : p === 'false' ? 0 : Number(p) || 0;
-    e.params.momentary = t[1] === 'true' ? 1 : 0;
+    e.params.momentary = momentaryParam(t[1]);
     if ((e.flags & SWITCH_LABEL) !== 0 && t[2] !== undefined) e.text = t[2];
     e.state = e.params.position;
   },

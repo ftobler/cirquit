@@ -14,6 +14,15 @@ export function switchTokens(e: CircuitElement): (string | number)[] {
   return tokens;
 }
 
+/** Upstream reads the momentary token with `new Boolean(String)`, which is
+ *  true for the word in any case (SwitchElm.java:63), unlike the case-sensitive
+ *  position comparison beside it. Every switch-family reader shares this, so a
+ *  file saved elsewhere with "True" or "TRUE" still loads; saves keep writing
+ *  lowercase, leaving the bytes untouched for files we wrote ourselves. */
+export function momentaryParam(token: string | undefined): 0 | 1 {
+  return (token ?? '').toLowerCase() === 'true' ? 1 : 0;
+}
+
 /** Clearing FLAG_LABEL when the label goes empty keeps the token count and the
  *  flag in step, as upstream's editor does (SwitchElm.java:258-265). */
 export function labelFlags(e: CircuitElement): number {
@@ -90,7 +99,7 @@ export const SWITCH_DEF: ElementDef = {
     // The position token is written as `true`/`false` by some versions.
     const p = t[0];
     e.params.position = p === 'true' ? 1 : p === 'false' ? 0 : Number(p) || 0;
-    e.params.momentary = t[1] === 'true' ? 1 : 0;
+    e.params.momentary = momentaryParam(t[1]);
     // The label token only exists under FLAG_LABEL (SwitchElm.java:66-67).
     if ((e.flags & SWITCH_LABEL) !== 0 && t[2] !== undefined) e.text = t[2];
     e.state = e.params.position;

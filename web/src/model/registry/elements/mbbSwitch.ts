@@ -16,7 +16,7 @@
 import { calcLeads, currentDots, endpoints, interp, lead, line, voltageColor } from '../../../render/draw';
 import { SWITCH_LABEL } from '../flags';
 import { CONTACT_STROKE_WIDTH, OPEN_HS, rectOfPoints } from '../shared';
-import { labelFlags, switchTokens } from './switch';
+import { labelFlags, switchTokens, momentaryParam } from './switch';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Every point the symbol needs, recomputed once per draw
@@ -102,7 +102,7 @@ export const MBB_SWITCH_DEF: ElementDef = {
   parse: (t, e) => {
     const p = t[0];
     e.params.position = p === 'true' ? 1 : p === 'false' ? 0 : Number(p) || 0;
-    e.params.momentary = t[1] === 'true' ? 1 : 0;
+    e.params.momentary = momentaryParam(t[1]);
     let i = 2;
     if ((e.flags & SWITCH_LABEL) !== 0 && t[i] !== undefined) e.text = t[i++];
     e.params.link = Number(t[i]) || 0;

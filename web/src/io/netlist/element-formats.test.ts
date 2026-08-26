@@ -834,6 +834,62 @@ describe('switch and SPDT labels', () => {
   });
 });
 
+describe('momentary token case', () => {
+  // Upstream reads the momentary token through `new Boolean(String)`, true for
+  // the word in any case (SwitchElm.java:63), and every switch-family reader
+  // inherits that constructor. A load accepts any case and must land on the
+  // same element its lowercase twin produces, while the save keeps writing
+  // lowercase so files this port wrote stay byte-stable. The position token
+  // beside it is a different story: upstream compares it case-sensitively
+  // (SwitchElm.java:56-62), so only the momentary slot is varied here.
+  const cases: Array<[string, string]> = [
+    ['switch', 's 96 80 160 80 0 1 true'],
+    ['switch2', 'S 96 144 160 64 0 0 true 0 2'],
+    ['crossSwitch', '430 96 80 160 80 0 0 true'],
+    ['dpdtSwitch', '429 96 80 176 80 0 0 true 2'],
+    ['mbbSwitch', '416 96 80 160 80 0 0 true 0'],
+    ['logicInput', 'L 0 0 100 0 0 0 true 5 0'],
+  ];
+
+  /** The file line with the momentary slot (token 7) rewritten. */
+  const retokened = (line: string, word: string): string => {
+    const tokens = line.split(' ');
+    tokens[7] = word;
+    return tokens.join(' ');
+  };
+
+  /** Parse results carry a session-wide id that depends on call order, so
+   *  equality is asserted on everything but it. */
+  const withoutId = (e: CircuitElement): Omit<CircuitElement, 'id'> => {
+    const { id: _id, ...rest } = e;
+    return rest;
+  };
+
+  const savedLine = (text: string): string => {
+    const [e] = parseCircuit(text).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return out.split('\n').find((l) => l.startsWith(`${text.split(' ')[0]} `)) ?? '';
+  };
+
+  it.each(cases)('%s parses True and TRUE like lowercase and saves back lowercase', (kind, line) => {
+    const [lower] = parseCircuit(line).elements;
+    expect(lower.kind).toBe(kind);
+    for (const word of ['True', 'TRUE']) {
+      const [e] = parseCircuit(retokened(line, word)).elements;
+      expect(withoutId(e)).toEqual(withoutId(lower));
+    }
+    expect(savedLine(retokened(line, 'True'))).toBe(line);
+  });
+
+  it.each(cases)('%s keeps a mixed-case false non-momentary', (_kind, line) => {
+    const [off] = parseCircuit(retokened(line, 'false')).elements;
+    const [e] = parseCircuit(retokened(line, 'False')).elements;
+    expect(e.params.momentary).toBe(0);
+    expect(withoutId(e)).toEqual(withoutId(off));
+    expect(savedLine(retokened(line, 'False'))).toBe(retokened(line, 'false'));
+  });
+});
+
 describe('electromechanical batch E file formats', () => {
   /** Parses a single line and re-emits it, returning the element and its line. */
   const elementLine = (text: string, code: string) => {
