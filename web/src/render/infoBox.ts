@@ -263,6 +263,14 @@ export function infoLines(kind: string, e: CircuitElement, values: InfoLinesValu
         `L = ${formatValue(e.params.inductance ?? 0, 'H')}`,
         `P = ${formatValue(power, 'W')}`,
       ];
+    case 'ohmmeter':
+      // OhmMeterElm.java:57-63 prints exactly two rows: the kind, then R as
+      // the raw signed V/I ratio, with infinity when the current is exactly
+      // zero (its `==` test, so negative zero counts as zero too).
+      return [
+        kind,
+        current === 0 ? 'R = ∞' : `R = ${formatValue(voltage / current, 'Ω')}`,
+      ];
   }
   return [
     kind,
@@ -292,7 +300,9 @@ export function getTimeText(v: number): string {
 
 /** The `t =` / `time step =` lines, with the ` (ratex)` suffix once the
  *  effective rate `160*iterCount*timeStep` reaches 0.1, mirroring
- *  UIManager.java:858-863. */
+ *  UIManager.java:858-863. The rate is upstream's speed-bar pacing target
+ *  (SimulationManager.java:1291), which this port displays but never
+ *  chases. */
 export function simStatsLines(time: number, timeStep: number, iterCount: number): string[] {
   const timerate = 160 * iterCount * timeStep;
   const rate = timerate >= 0.1 ? ` (${showFormat(timerate)}x)` : '';

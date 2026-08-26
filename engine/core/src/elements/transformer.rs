@@ -18,15 +18,18 @@
 //! * recover the winding currents post-solve from the node voltages and the
 //!   source values (TransformerElm.java:294-299).
 //!
-//! The DC operating point stamps the same companion, exactly as upstream's
-//! `stamp()` does: upstream has no DC branch here, unlike the inductor, and
-//! the full-rank `M⁻¹` block keeps an open secondary solvable. Floating
+//! The DC operating point stamps each winding as a `1 / DC_SHORT` near-short
+//! with the mutual terms dropped, the same steady-state shape the inductor
+//! takes: coupling carries nothing at steady state, and the single-solve port
+//! cannot integrate upstream's frame of frozen-source steps, so the exact
+//! short finds each loop's steady-state current in one pass. Floating
 //! detection uses the winding pairs as the DC connectivity (upstream's
 //! `getConnection`), so a secondary with no external ground path is pinned
 //! with GMIN exactly as upstream pins unconnected nodes with a 1e8 resistor;
 //! its common mode is otherwise undefined and the matrix would go singular.
 
 use crate::element::{Base, Element, SimCtx};
+use crate::elements::inductor::DC_SHORT;
 use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
 
@@ -413,14 +416,26 @@ impl Element for Transformer {
     }
 
     fn stamp(&mut self, ctx: &SimCtx, s: &mut Stamper) {
+        if ctx.dc_analysis {
+            // Steady state: every winding is a near-short, the inductor's DC
+            // branch (inductor.rs:94-98), and the mutual VCCS terms drop out
+            // because coupling carries nothing at steady state. The branch
+            // sits ahead of the saturating early return, mirroring the
+            // saturating inductor whose own DC branch precedes saturation
+            // (inductor.rs:94 before :99).
+            for i in 0..self.windings.len() {
+                let (na, nb) = self.winding_node_pair(i);
+                s.conductance(na, nb, 1.0 / DC_SHORT);
+            }
+            return;
+        }
         self.compute_coefficients(ctx.dt);
-        if !ctx.dc_analysis && self.saturation_current > 0.0 {
+        if self.saturation_current > 0.0 {
             // Saturating transient: nothing constant to stamp. The matrix is
             // restored to the snapshot every Newton iteration, so do_step
             // re-stamps the current-dependent companion there, the same
             // division of labour as the saturating inductor (inductor.rs:
-            // 99-112). The DC pass still stamps here, with the coefficients
-            // computed from the seeded winding currents.
+            // 99-112).
             return;
         }
         self.stamp_companion(s);
@@ -481,14 +496,18 @@ impl Element for Transformer {
         }
         let mut primary = 0.0;
         for i in 0..n {
-            let mut val = if ctx.dc_analysis {
-                0.0
+            let val = if ctx.dc_analysis {
+                // The winding reads as a DC_SHORT under the operating-point
+                // stamp, so its reported current is v/DC_SHORT, the
+                // inductor's rule (inductor.rs:146-152).
+                vd[i] / DC_SHORT
             } else {
-                self.source_values[i]
+                let mut v = self.source_values[i];
+                for (j, &x) in vd.iter().enumerate() {
+                    v += self.a[i * n + j] * x;
+                }
+                v
             };
-            for (j, &v) in vd.iter().enumerate() {
-                val += self.a[i * n + j] * v;
-            }
             if !ctx.dc_analysis {
                 // The winding current is the state carried across steps, so the
                 // DC pass must not overwrite the file-seeded values: unlike the

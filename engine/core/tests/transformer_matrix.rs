@@ -90,45 +90,81 @@ fn transformer_voltage_ratio_open_secondary() {
 }
 
 #[test]
-fn transformer_dc_pass_pins_ratio() {
-    // The DC operating point stamps the same companion with zero history
-    // sources, so the ratio falls out of the conductance and VCCS stamps
-    // alone: the open secondary forces its winding current to zero, and
-    // `Vs = -(M⁻¹[1][0]/M⁻¹[1][1])·Vp = k·ratio·Vp`. The app builds every
-    // circuit with a `$ 128` header through this path
-    // (`settings.autoDC`), so a sign error that only bit under DC would
-    // corrupt the first transient step's initial conditions while every
-    // transient-only test stayed green.
-    let v2 = open_secondary_v2_opts(
-        "transformer",
-        &[[0, 0], [100, 0], [0, 100], [100, 100]],
-        &[("inductance", 4.0), ("ratio", 1.0), ("couplingCoef", 0.999)],
-        None,
-        (1, 3),
-        0,
-        true,
+fn transformer_dc_pass_stamps_shorts_not_the_ac_ratio() {
+    // Since the transformer family gained its own DC branch, the operating
+    // point stamps every winding as a 1e-6 ohm short with the mutual terms
+    // dropped (inductor.rs:94-98 precedent), so the AC ratio does NOT
+    // appear: a source-driven primary reports its shorted-loop current
+    // v/DC_SHORT, and a grounded secondary sits at zero. Reading the solved
+    // voltages before any transient step still catches a stamp-guard
+    // regression: if nothing were stamped under DC, the secondary would
+    // have no DC path, the solve would go singular, and the quiet failure
+    // path would zero every element voltage (V1 included).
+    let spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(
+                2,
+                "transformer",
+                &[[0, 0], [100, 0], [0, 100], [100, 100]],
+                &[("inductance", 4.0), ("ratio", 1.0), ("couplingCoef", 0.999)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+            elm(4, "ground", &[[100, 100]], &[]),
+        ],
+        options: Some(opts(1e-5, true)),
+        scopes: Vec::new(),
+    };
+    let mut c = Circuit::new();
+    c.set_circuit(&spec).expect("circuit should analyse");
+    assert_eq!(c.error(), None, "the DC operating point did not solve");
+    assert!(
+        c.warnings()
+            .iter()
+            .all(|w| !w.contains("no path to ground")),
+        "the grounded secondary should not need pinning: {:?}",
+        c.warnings()
+    );
+    // The source holds V1 = 10; the secondary is a near-short to ground.
+    let v1 = c.element_voltages()[0];
+    let v2 = 10.0 - c.element_voltages()[1];
+    assert!(
+        close(v1, 10.0, 1e-6),
+        "DC solve read V1 = {v1}, expected the source's 10 V"
     );
     assert!(
-        close(v2, 9.99, 1e-6),
-        "DC operating point read {v2}, expected 9.99"
+        close(v2, 0.0, 1e-9),
+        "DC solve read V2 = {v2}, expected the shorted steady state"
+    );
+    // The primary's reported current is its shorted-loop value.
+    let ip = c.element_currents()[1];
+    assert!(
+        close(ip, 10.0 / 1e-6, ip.abs() * 1e-9),
+        "primary current read {ip}, expected 10/DC_SHORT"
+    );
+    // The transient continues from the DC pass without complaint.
+    let report = c.run(5);
+    assert!(
+        report.converged,
+        "transient after DC failed: {:?}",
+        report.error
     );
 }
 
 #[test]
-fn transformer_saturation_dc_pass_keeps_the_open_secondary_ratio() {
-    // The DC operating point of a saturating transformer pins the
-    // `!ctx.dc_analysis` guard in stamp and the DC early-returns in
-    // start_iteration and do_step. The DC companion is the current-dependent
-    // mutual matrix, not a short like the inductor's, built from the seeded
-    // zero currents, so L_eff = L0 for both windings and the matrix is exactly
-    // the linear one (the unsaturated start). The open secondary carries no
-    // current, so its full coupling is intact and V2 = k*ratio*V1 falls out of
-    // the M⁻¹ companion alone. Reading the solved voltages before any
-    // transient step is what catches a stamp-guard regression: if the
-    // companion were not stamped under DC, the secondary would have no DC path,
-    // the solve would go singular, and the quiet failure path would zero every
-    // element voltage (V1 included), while the transient's do_step re-stamp
-    // would mask it.
+fn transformer_saturation_dc_pass_stamps_shorts_ahead_of_saturation() {
+    // The DC branch sits ahead of the saturating early return, exactly as
+    // the saturating inductor's own DC branch precedes saturation
+    // (inductor.rs:94 before :99): a saturating transformer's operating
+    // point is the plain near-short stamp built from the seeded zero
+    // currents, not a current-dependent companion. The open secondary
+    // carries no current and its grounded far post holds it at zero, so no
+    // AC ratio appears. Reading the solved voltages before any transient
+    // step still catches a stamp-guard regression: if nothing were stamped
+    // under DC, the secondary would have no DC path, the solve would go
+    // singular, and the quiet failure path would zero every element voltage
+    // (V1 included), while the transient's do_step re-stamp would mask it.
     let spec = CircuitSpec {
         preserve_run: false,
         elements: vec![
@@ -170,9 +206,8 @@ fn transformer_saturation_dc_pass_keeps_the_open_secondary_ratio() {
         "DC solve read V1 = {v1}, expected the source's 10 V"
     );
     assert!(
-        close(v2, 0.999 * 2.0 * v1, 1e-6),
-        "DC solve read V2 = {v2}, expected k*ratio*V1 = {}",
-        0.999 * 2.0 * v1
+        close(v2, 0.0, 1e-9),
+        "DC solve read V2 = {v2}, expected the shorted steady state"
     );
     // The transient continues from the DC pass without complaint.
     let report = c.run(5);
@@ -629,7 +664,7 @@ fn rejected_step_commits_no_state_and_no_time() {
     // (t = 5e-6) inside the compliance transition, so the first attempt
     // exhausts its budget of 5 and must halve to 2.5e-6, where the endpoint
     // sits below the transition and settles. Exactly one halving, which makes
-    // the committed trajectory easy to pin: two committed steps at 2.5e-6.
+    // the committed trajectory easy to pin: one committed step at 2.5e-6.
     let phase = 7.5f64 * PI / 180.0;
     let mut c = build(compliance_circuit(phase), adaptive_opts(5e-6, 50e-12, 5));
     let r1 = c.run(1);
@@ -644,19 +679,16 @@ fn rejected_step_commits_no_state_and_no_time() {
     // ever move by committed steps.
     assert!(close(c.time(), 2.5e-6, 1e-15), "clock was {}", c.time());
 
-    c.run(1);
-    assert!(close(c.time(), 5e-6, 1e-15), "clock was {}", c.time());
-
-    // Reference: a non-adaptive circuit stepping the whole way at 2.5e-6. The
-    // adaptive run's rejected first step must leave no trace, so after two
-    // committed steps both circuits sit at the same time with the same node
-    // voltages, down to floating-point noise. The current source's terminal
-    // voltage is the observable: it would differ if the rejected attempt had
-    // corrupted `last_volt_diff`.
+    // Reference: a non-adaptive circuit committing the same single 2.5e-6
+    // step. The adaptive run's rejected attempt must leave no trace, so
+    // after one committed step both circuits sit at the same time with the
+    // same node voltages, down to floating-point noise. The current source's
+    // terminal voltage is the observable: it would differ if the rejected
+    // attempt had corrupted `last_volt_diff`.
     let mut reference = build(compliance_circuit(phase), opts_budget(2.5e-6, false, 5));
-    let rr = reference.run(2);
+    let rr = reference.run(1);
     assert!(rr.converged, "reference did not converge: {:?}", rr.error);
-    assert!(close(reference.time(), 5e-6, 1e-15));
+    assert!(close(reference.time(), 2.5e-6, 1e-15));
     assert!(
         close(
             c.element_voltages()[2],
@@ -666,6 +698,19 @@ fn rejected_step_commits_no_state_and_no_time() {
         "adaptive state {} differs from the reference {}",
         c.element_voltages()[2],
         reference.element_voltages()[2]
+    );
+
+    // The next frame doubles before attempting (upstream's loop-top order,
+    // SimulationManager.java:1312-1318), so its committed step is larger
+    // than 2.5e-6; whichever size commits, the clock may only grow by that
+    // committed step.
+    let r2 = c.run(1);
+    assert!(r2.converged, "second frame failed: {:?}", r2.error);
+    assert!(
+        close(c.time(), 2.5e-6 + r2.time_step, 1e-15),
+        "clock was {}, last committed step {}",
+        c.time(),
+        r2.time_step
     );
 }
 
@@ -1547,14 +1592,15 @@ fn cross_switch_crosses_the_pole_pairs_on_throw() {
 
 #[test]
 fn transformer_matrix_connects_couples_a_loaded_secondary_at_dc() {
-    // The DC operating point is where the transformer's `matrix_connects`
-    // override earns its keep. The companion's current injection is silent
-    // under dc_analysis, so a loaded secondary reads
-    // `V2 = k * ratio * V1 * a11/(a11 + 1/Rload)` purely from the
-    // mutual-inductance VCCS in the matrix; drop the override and the VCCS
-    // cross-terms are lost, leaving the secondary uncoupled at V2 = 0. An
-    // open-secondary sine is no guard here because the RHS current injection
-    // couples that through one step late, reproducing the same peak.
+    // The DC operating point stays well posed with a heavy load on the
+    // secondary: since the family gained its own DC branch every winding is
+    // a 1e-6 ohm short there and the mutual VCCS terms are dropped, so the
+    // 1 ohm load divides against the near-short and reads zero. The solve
+    // must still converge without pinning or singularity, which is what a
+    // broken stamp guard would break. The coupled divider itself is AC
+    // behaviour now, covered by the loaded-secondary transient ratio in
+    // `transformer_current_ratio_loaded_secondary`; `matrix_connects` keeps
+    // every winding in one closure for that transient's per-closure solves.
     let c = &mut build(
         vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
@@ -1575,11 +1621,12 @@ fn transformer_matrix_connects_couples_a_loaded_secondary_at_dc() {
         ],
         opts(1e-5, true),
     );
+    assert_eq!(c.error(), None, "the DC operating point did not solve");
     // The transformer reads V(post0) - V(post1) = V1 - V2, so V2 = 10 - that.
     let v2 = 10.0 - c.element_voltages()[1];
     assert!(
-        close(v2, 0.0588, 2e-4),
-        "loaded secondary operating point was {v2}, expected 0.0588"
+        close(v2, 0.0, 1e-9),
+        "loaded secondary operating point was {v2}, expected the shorted steady state"
     );
 }
 
