@@ -1172,7 +1172,9 @@ impl Parser {
                     "saw" => self.parse_func(Func::Sawtooth),
                     "min" => self.parse_func_multi(Func::Min, 2, 1000),
                     "max" => self.parse_func_multi(Func::Max, 2, 1000),
-                    "pwl" => self.parse_func_multi(Func::Pwl, 2, 1000),
+                    // x, x0, y0 is the floor: the walker reads child 2 for
+                    // its first ordinate, so shorter lists must never reach it.
+                    "pwl" => self.parse_func_multi(Func::Pwl, 3, 1000),
                     "mod" => self.parse_func_multi(Func::Mod, 2, 2),
                     "step" => self.parse_func_multi(Func::Step, 1, 2),
                     "select" => self.parse_func_multi(Func::Select, 3, 3),
