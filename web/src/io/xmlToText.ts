@@ -54,7 +54,11 @@
  * The nine remaining modelled tags convert for real too: `tt`, `sw`, `tl`,
  * `ts`, `dar`, `dpdt`, `pt`, `ain` and `aout` emit their registry dump-code
  * lines, each consuming exactly the attribute set upstream's own writer
- * produces.
+ * produces. A source's `ir` and `riseTime` have no text-format home and
+ * degrade loudly under a value-gated trace; a tag the port models but has no
+ * writer yet (the relay, the custom-logic gate and a tail of upstream's
+ * default-named classes) keeps its preserving comment plus one marker line,
+ * neither taking a slot, so scope ordinals hold.
  */
 
 import { parseXml, type XmlNode } from './xml';
@@ -66,7 +70,8 @@ import type { PlotMeasurements, Scope, ScopeValue } from '../engine/simulator';
 
 import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
 import { DEFAULT_Q_STATE } from '../model/registry/elements/darlington';
-import { defForDumpCode } from '../model/registry';
+import { normalizePoleCount } from '../model/registry/elements/dpdtSwitch';
+import { defFor, defForDumpCode } from '../model/registry';
 import { batteryTypeTables } from '../model/registry/elements/battery';
 import { FRESH_CHILDREN as comparatorChildren } from '../model/registry/elements/comparator';
 import { otaFreshChildren } from '../model/registry/elements/ota';
@@ -535,8 +540,64 @@ const DUMP_CODES: Record<string, string> = {
   aout: '211', ain: '411', dpdt: '429',
 };
 
-/** The port kind each element tag maps to, for scope value decoding. */
+/** The tags upstream writes whose classes this port models but whose writers
+ *  do not exist yet. Each degrades to its preserving comment plus one marker
+ *  line naming the registry code the kind models it as. Data-driven on
+ *  purpose: landing a writer means moving the tag into WRITERS,
+ *  DUMP_CODES and KIND_BY_TAG, and this map shrinks with it instead of going
+ *  stale like a hand list. Gyrator, NortonAmp (`nor`) and the composite chip
+ *  stay plain comments because no port model sits behind them at all;
+ *  marking their silence is out of scope by decision. PushSwitch is absent
+ *  because its inherited dump type is `s`, so upstream's own tag map resolves
+ *  the class-name form onto SwitchElm and it can never reach a document. */
+const UNCONVERTED_TAG_KINDS: Record<string, string> = {
+  rl: 'relay',
+  cl: 'customLogic',
+  T: 'transformer',
+  s: 'switch',
+  S: 'switch2',
+  A: 'antenna',
+  b: 'box',
+  m: 'memristor',
+  Triac: 'triac',
+  Diac: 'diac',
+  SparkGap: 'sparkGap',
+  TunnelDiode: 'tunnelDiode',
+  Schmitt: 'schmitt',
+  Monostable: 'monostable',
+  HalfAdder: 'halfAdder',
+  AM: 'am',
+  FM: 'fm',
+  VarRail: 'varRail',
+  Triode: 'triode',
+  CC2: 'cc2',
+  CCCS: 'cccs',
+  RingCounter: 'ringCounter',
+  SeqGen: 'seqGen',
+  DataRecorder: 'dataRecorder',
+  OhmMeter: 'ohmMeter',
+  TestPoint: 'testPoint',
+  Ammeter: 'ammeter',
+  LEDArray: 'ledArray',
+  Optocoupler: 'optocoupler',
+  StopTrigger: 'stopTrigger',
+  Unijunction: 'unijunction',
+  ExtVoltage: 'extVoltage',
+  Wattmeter: 'wattmeter',
+  DataInput: 'dataInput',
+  TimeDelayRelay: 'timeDelayRelay',
+  DCMotor: 'dcMotor',
+  ThreePhaseMotor: 'threePhaseMotor',
+  CrossSwitch: 'crossSwitch',
+  MotorProtectionSwitch: 'motorProtectionSwitch',
+  MBBSwitch: 'mbbSwitch',
+};
+
+/** The port kind each element tag maps to, for scope value decoding. The
+ *  unconverted tags spread in first so an explicit entry always wins once a
+ *  tag gains a writer. */
 const KIND_BY_TAG: Record<string, string> = {
+  ...UNCONVERTED_TAG_KINDS,
   w: 'wire', g: 'ground', r: 'resistor', c: 'capacitor', pc: 'polarizedCapacitor',
   l: 'inductor', R: 'rail', v: 'voltage', i: 'current', d: 'diode', t: 'transistor',
   f: 'mosfet', I: 'inverter', a: 'opamp', O: 'output',   L: 'logicInput', M: 'logicOutput', p: 'probe',
@@ -644,6 +705,23 @@ const BO_TAGS = new Set([
 function droppedTraces(node: XmlNode): string[] {
   const traces: string[] = [];
   const tag = node.tag;
+  // Sources carry two XML attributes the six-token stream has no home for:
+  // ir is a series resistor upstream builds onto an internal third node when
+  // nonzero (VoltageElm.java:148-157) and riseTime ramps a pulse or square's
+  // edges (:179-180). Gate on value against the defaults, never on presence,
+  // matching the om/dw rule below.
+  if (tag === 'R' || tag === 'v') {
+    if (attr(node, 'ir', 0) !== 0) {
+      traces.push(
+        `# ${tag} ir="${node.attrs.ir}" not modelled: converted as an ideal source without internal resistance`,
+      );
+    }
+    if (attr(node, 'riseTime', 0) !== 0) {
+      traces.push(
+        `# ${tag} riseTime="${node.attrs.riseTime}" not modelled: pulse edges step instantly`,
+      );
+    }
+  }
   if (tag === 'mux') {
     // MultiplexerElm.java:32-37: inputMode 1 (bus in / single out, the bit
     // selector) has no text-format home and no corpus user, so it stays
@@ -665,6 +743,26 @@ function droppedTraces(node: XmlNode): string[] {
     traces.push(
       `# dmux om="${node.attrs.om ?? 0}" dw="${node.attrs.dw ?? 4}" not modelled: converted as individual outputs`,
     );
+  }
+  if (tag === 'ts' && attr(node, 'bw', 1) !== 1) {
+    // TriStateElm.java:79-80 writes busWidth only when it exceeds one, and
+    // this build models single-bit tri-states only.
+    traces.push(`# ts bw="${node.attrs.bw}" not modelled: converted as single-bit`);
+  }
+  if (tag === 'dpdt') {
+    // Fresh DPDT parts are two-pole in both builds; any other count converts
+    // with its pole token but stays visible, normalised the way the port's
+    // own load clamps it.
+    const po = attr(node, 'po', 2);
+    if (po !== 2) {
+      const poles = normalizePoleCount(po);
+      traces.push(`# dpdt po="${node.attrs.po}" not default: converted as a ${poles}-pole switch`);
+    }
+  }
+  if (tag === 'pt' && attr(node, 'li', 0) !== 0) {
+    // PotElm.java:82-83 writes the link only when nonzero; shared sliders
+    // parse but never link in this port.
+    traces.push(`# pt li="${node.attrs.li}" not modelled: converted without its slider link`);
   }
   if (BO_TAGS.has(tag) && attr(node, 'bo', 0) !== 0) {
     if (!BO_HONOURED.has(tag)) {
@@ -1067,6 +1165,16 @@ export function xmlToText(source: string): string {
     if (lines === null) {
       ctx.slots.push(-1);
       passthrough.push(commentLine(node));
+      // A tag the port models but cannot convert yet gains one marker line
+      // directly under its comment. Both ride passthrough, so neither takes
+      // a file slot: scope and slider ordinals hold, and a plot aimed at the
+      // degraded element itself keeps writing -1.
+      const kind = UNCONVERTED_TAG_KINDS[tag];
+      if (kind !== undefined) {
+        passthrough.push(
+          `# ${tag} not converted: this build models it as code ${defFor(kind)?.dumpCode}`,
+        );
+      }
     } else {
       // A trace comment rides directly under the line it describes but must
       // not take a file slot: only real element lines shift the ordinals the
