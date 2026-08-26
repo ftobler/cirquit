@@ -84,6 +84,37 @@ describe('infoLines', () => {
     ).toEqual(['widget', 'I = 500m A', 'Vd = 250m V']);
   });
 
+  it('prints the ohmmeter R as the raw signed V/I ratio', () => {
+    // OhmMeterElm.java:57-63 prints getVoltageDiff()/current through
+    // getUnitText with no magnitude wrapper, so a reversing reading stays
+    // signed.
+    expect(
+      infoLines('ohmmeter', el('ohmmeter', {}), { current: 0.01, voltage: 5 }),
+    ).toEqual(['ohmmeter', `R = ${formatValue(500, 'Ω')}`]);
+    expect(infoLines('ohmmeter', el('ohmmeter', {}), { current: -0.01, voltage: 5 })[1]).toBe(
+      `R = ${formatValue(-500, 'Ω')}`,
+    );
+  });
+
+  it('prints infinity for an exactly zero ohmmeter current', () => {
+    // Upstream's `==` test counts negative zero as zero too.
+    expect(infoLines('ohmmeter', el('ohmmeter', {}), { current: 0, voltage: 5 })).toEqual([
+      'ohmmeter',
+      'R = ∞',
+    ]);
+    expect(infoLines('ohmmeter', el('ohmmeter', {}), { current: -0, voltage: 5 })[1]).toBe('R = ∞');
+  });
+
+  it('keeps the ohmmeter to exactly two rows with no I/Vd/P', () => {
+    const rows = infoLines('ohmmeter', el('ohmmeter', {}), {
+      current: 0.01,
+      voltage: 5,
+      power: 0.05,
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toBe('ohmmeter');
+  });
+
   it('a sine voltage source yields the upstream line order with V(rms) at zero bias', () => {
     // waveform 1 is the A/C (sine) code; the periodic block appends f, Vmax and
     // V(rms) before P, in VoltageElm.java:478-491 order.

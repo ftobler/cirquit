@@ -263,6 +263,14 @@ export function infoLines(kind: string, e: CircuitElement, values: InfoLinesValu
         `L = ${formatValue(e.params.inductance ?? 0, 'H')}`,
         `P = ${formatValue(power, 'W')}`,
       ];
+    case 'ohmmeter':
+      // OhmMeterElm.java:57-63 prints exactly two rows: the kind, then R as
+      // the raw signed V/I ratio, with infinity when the current is exactly
+      // zero (its `==` test, so negative zero counts as zero too).
+      return [
+        kind,
+        current === 0 ? 'R = ∞' : `R = ${formatValue(voltage / current, 'Ω')}`,
+      ];
   }
   return [
     kind,
