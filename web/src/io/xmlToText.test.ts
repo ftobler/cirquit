@@ -1250,6 +1250,27 @@ b" r="
     );
   });
 
+  it('keeps a preserved tag comment on one line despite newlines in its attributes', () => {
+    // The attribute parse accepts literal newlines inside quoted values
+    // (xml.ts), so a preserved tag's raw attribute values would push a
+    // continuation line past the # that reload then reads as an element
+    // line. Every interpolated value is flattened like the body text.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <Gyrator x="304 160
+416 160" f="0" mo="a
+b"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text.split('\n')).toContain(
+      '# Gyrator x="304 160\\n416 160" f="0" mo="a\\nb"/>',
+    );
+    // One header line and one comment line in total: no continuation of the
+    // comment survived to reload as anything else.
+    expect(text.split('\n')).toHaveLength(3);
+    expect(parseCircuit(text).elements).toHaveLength(0);
+  });
+
   it('converts a potentiometer to its 174 line', () => {
     // PotElm writes ma/po/sl (PotElm.java:79-81) onto the port's
     // maxResistance position caption stream.

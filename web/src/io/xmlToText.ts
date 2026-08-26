@@ -862,13 +862,13 @@ function singleLine(s: string): string {
 }
 
 /** Serialises an XML element node as a `#` comment, preserving every attribute
- *  and the body text so a save round-trips it. Newlines in the body are escaped
- *  so the comment stays one line: the text format is line-oriented, and a
- *  multi-line comment's continuation lines would read as garbage element
- *  lines. */
+ *  and the body text so a save round-trips it. Newlines in the body and in
+ *  attribute values are escaped so the comment stays one line: the text format
+ *  is line-oriented, and a multi-line comment's continuation lines would read
+ *  as garbage element lines. */
 function commentLine(node: XmlNode): string {
   const attrs = Object.entries(node.attrs)
-    .map(([k, v]) => `${k}="${v}"`)
+    .map(([k, v]) => `${k}="${singleLine(v)}"`)
     .join(' ');
   const text = singleLine(node.text);
   const body = text !== '' || node.children.length > 0 ? `>${text}</${node.tag}>` : '/>';
