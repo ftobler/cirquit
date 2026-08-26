@@ -374,7 +374,9 @@ const WRITERS: Record<string, Writer> = {
     // DPDTSwitchElm adds po (:54); the port's stream is position, momentary,
     // the label under its flag bit, then the pole count
     // (DPDTSwitchElm.java:38-45). The keyboard shortcut is session-only in
-    // both builds. The base on-resistance has no token on this stream.
+    // both builds. The base on-resistance has no token on this stream; a
+    // non-default r or a carried key degrades loudly under the line
+    // (droppedTraces below).
     const momentary = (n.attrs.mm ?? 'false').toLowerCase() === 'true';
     // A hand-authored document may carry mm without p; upstream's
     // SwitchElm(xx, yy, mm) constructor pairs the two, so a momentary switch
@@ -756,6 +758,39 @@ function droppedTraces(node: XmlNode): string[] {
       const poles = normalizePoleCount(po);
       traces.push(`# dpdt po="${node.attrs.po}" not default: converted as a ${poles}-pole switch`);
     }
+    // The SwitchElm base's on resistance has no token on the 429 stream, so a
+    // converted file would load at the default 0 even though the engine
+    // stamps resistors above it; name the lost value instead. Gate on value
+    // against upstream's undump seed of 0 (SwitchElm.java:91), never on
+    // presence, matching the om/dw rule above. The interpolated value is
+    // flattened first: Number() trims newlines, so even a numeric-gated one
+    // could carry a literal line break out of the attribute parse.
+    if (attr(node, 'r', 0) !== 0) {
+      const value = singleLine(node.attrs.r ?? '');
+      traces.push(
+        `# dpdt r="${value}" not modelled: converted as an ideal switch without on resistance`,
+      );
+    }
+  }
+  // All three converted SwitchElm subclasses inherit the base attribute dump
+  // through super.dumpXml (LogicInputElm.java:55-57, BusLogicInputElm.java:
+  // 36-37), so an <L> or <bli> document holds key and r exactly as a dpdt
+  // does. Neither subclass dialog offers a resistance edit and both stamp
+  // pure voltage sources, so a nonzero r there can only arrive in the file
+  // itself; the base still writes it back once present (SwitchElm.java:81-82),
+  // so it round-trips upstream while this conversion would drop its bytes
+  // unheard, which the defensive trace prevents. Upstream writes key only
+  // once a shortcut exists (:79-80), so presence gates that, and the empty
+  // string toggles nothing and deserves none.
+  const key = node.attrs.key;
+  if ((tag === 'dpdt' || tag === 'L' || tag === 'bli') && key !== undefined && key !== '') {
+    traces.push(
+      `# ${tag} key="${singleLine(key)}" not modelled: converted without its keyboard shortcut`,
+    );
+  }
+  if ((tag === 'L' || tag === 'bli') && attr(node, 'r', 0) !== 0) {
+    const value = singleLine(node.attrs.r ?? '');
+    traces.push(`# ${tag} r="${value}" not modelled: converted without its on resistance`);
   }
   if (tag === 'pt' && attr(node, 'li', 0) !== 0) {
     // PotElm.java:82-83 writes the link only when nonzero; shared sliders
@@ -818,6 +853,14 @@ function basic(node: XmlNode, code: string, tail: string[]): string {
   return [code, coords(node), flagsFor(node), ...tail].join(' ');
 }
 
+/** Flattens document-supplied text so it stays on one line: the attribute
+ *  parse accepts literal newlines inside quoted values (xml.ts), and an
+ *  unescaped one would let a `#` comment's continuation read as an element
+ *  line when the converted file reloads. */
+function singleLine(s: string): string {
+  return s.replace(/\r\n|\r|\n/g, '\\n');
+}
+
 /** Serialises an XML element node as a `#` comment, preserving every attribute
  *  and the body text so a save round-trips it. Newlines in the body are escaped
  *  so the comment stays one line: the text format is line-oriented, and a
@@ -827,7 +870,7 @@ function commentLine(node: XmlNode): string {
   const attrs = Object.entries(node.attrs)
     .map(([k, v]) => `${k}="${v}"`)
     .join(' ');
-  const text = node.text.replace(/\r\n|\r|\n/g, '\\n');
+  const text = singleLine(node.text);
   const body = text !== '' || node.children.length > 0 ? `>${text}</${node.tag}>` : '/>';
   return `# ${node.tag} ${attrs}${body}`;
 }

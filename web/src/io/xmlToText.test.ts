@@ -1132,6 +1132,124 @@ describe('xml to text conversion', () => {
     expect(lines[at + 1]).toBe('# dpdt po="3" not default: converted as a 3-pole switch');
   });
 
+  it('traces a non-default closed resistance on a DPDT switch', () => {
+    // SwitchElm writes r only when nonzero (SwitchElm.java:81-82) and the 429
+    // stream has no slot for it; upstream stamps resistors above zero and
+    // voltage sources at it, so the degradation is electrical and must stay
+    // visible. 0.001 is the value upstream's own validate() writes into files.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dpdt x="192 160 304 224" f="0" r="0.001"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    const lines = text.split('\n');
+    const at = lines.indexOf('429 192 160 304 224 0 0 false 2');
+    expect(at).toBeGreaterThan(0);
+    expect(lines[at + 1]).toBe(
+      '# dpdt r="0.001" not modelled: converted as an ideal switch without on resistance',
+    );
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['dpdtSwitch']);
+  });
+
+  it('keeps an absent or zero closed resistance free of traces', () => {
+    // Gate on value against upstream's undump seed of 0 (SwitchElm.java:91),
+    // never on presence: both shapes must keep converting to today's line.
+    const absent = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dpdt x="192 160 304 224" f="0"/>
+</cir>
+`;
+    const zero = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dpdt x="192 160 304 224" f="0" r="0"/>
+</cir>
+`;
+    for (const src of [absent, zero]) {
+      const text = xmlToText(src);
+      expect(text).toContain('429 192 160 304 224 0 0 false 2');
+      expect(text).not.toContain('# dpdt r=');
+      expect(text).not.toContain('# dpdt key=');
+    }
+    // The two documents differ in nothing but the default attribute, so their
+    // conversions are byte-identical too.
+    expect(xmlToText(absent)).toBe(xmlToText(zero));
+  });
+
+  it('traces a carried keyboard shortcut on a DPDT switch', () => {
+    // Upstream persists key once a shortcut exists (SwitchElm.java:79-80) and
+    // the text stream is session-only about shortcuts in both builds, so the
+    // conversion names what it drops instead of losing it quietly.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dpdt x="192 160 304 224" f="0" key="z"/>
+</cir>
+`;
+    const lines = xmlToText(src).split('\n');
+    const at = lines.indexOf('429 192 160 304 224 0 0 false 2');
+    expect(at).toBeGreaterThan(0);
+    expect(lines[at + 1]).toBe(
+      '# dpdt key="z" not modelled: converted without its keyboard shortcut',
+    );
+  });
+
+  it('traces carried switch attributes on a logic input', () => {
+    // LogicInputElm rides SwitchElm's dumpXml via super (LogicInputElm.java:55-57)
+    // and exposes the shortcut edit (:136-139), so an <L> document holds the
+    // same base attributes a dpdt does. Its stamp ignores resistance, so a
+    // nonzero r can only come from the file; upstream round-trips it unused.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <L x="256 672 224 672" f="0" mm="true" key="x" r="0.001"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('L 256 672 224 672 0 0 true 5 0');
+    const lines = text.split('\n');
+    const at = lines.indexOf('L 256 672 224 672 0 0 true 5 0');
+    expect(lines[at + 1]).toBe('# L key="x" not modelled: converted without its keyboard shortcut');
+    expect(lines[at + 2]).toBe('# L r="0.001" not modelled: converted without its on resistance');
+  });
+
+  it('traces carried switch attributes on a bus logic input', () => {
+    // BusLogicInputElm inherits SwitchElm's dumpXml via super
+    // (BusLogicInputElm.java:36-37) but offers neither the shortcut edit nor
+    // a resistance edit, and its stamp is pure voltage sources, so key and a
+    // nonzero r arrive only inside the file; upstream round-trips them while
+    // this conversion used to drop them silently.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <bli x="752 416 752 496" f="0" bw="4" va="5" key="x" r="0.001"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('435 752 416 752 496 0 4 5 5 0');
+    const lines = text.split('\n');
+    const at = lines.indexOf('435 752 416 752 496 0 4 5 5 0');
+    expect(lines[at + 1]).toBe(
+      '# bli key="x" not modelled: converted without its keyboard shortcut',
+    );
+    expect(lines[at + 2]).toBe('# bli r="0.001" not modelled: converted without its on resistance');
+  });
+
+  it('keeps a traced attribute value from splitting its comment', () => {
+    // The attribute parse accepts literal newlines inside quoted values
+    // (xml.ts), so a crafted key or r would push a continuation line past
+    // the # that reload then reads as an element line. Both trace values are
+    // flattened first; Number() trims newlines, so even the numeric gate on r
+    // cannot keep them out.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dpdt x="192 160 304 224" f="0" key="a
+b" r="
+0.001"/>
+</cir>
+`;
+    const lines = xmlToText(src).split('\n');
+    const at = lines.indexOf('429 192 160 304 224 0 0 false 2');
+    expect(at).toBeGreaterThan(0);
+    expect(lines[at + 1]).toBe(
+      '# dpdt r="\\n0.001" not modelled: converted as an ideal switch without on resistance',
+    );
+    expect(lines[at + 2]).toBe(
+      '# dpdt key="a\\nb" not modelled: converted without its keyboard shortcut',
+    );
+  });
+
   it('converts a potentiometer to its 174 line', () => {
     // PotElm writes ma/po/sl (PotElm.java:79-81) onto the port's
     // maxResistance position caption stream.
