@@ -419,10 +419,41 @@ fetch it).
   Scopes: regenerating an edited scope line preserves plot tokens it cannot
   interpret, mixed-element scopes hide the per-element rows like upstream's
   shared-element rule, deleted embedded X-Y windows free their canvases.
-- 577 Rust tests, of which 475 are the end-to-end circuit checks across
+- Robustness batch 2026-08-25: every Tier-1 finding of the day's review pass
+  (feature/review-20260825-index.md) landed as five worktree features, each
+  independently reviewed. The debug-abort class closed: a wide labeled node
+  overrides current_into_node with a documented zero instead of tripping the
+  trait assert on frame one, and expression shift counts mask to five bits
+  like Java's int cast (Expr.java:89), so `8 >> 32` reads the same in
+  wasm-dev and cargo test as in release. The panic class closed: a composite
+  child with an unparseable expression is a named build error through the
+  ordinary banner path instead of aborting the instance, and the expression
+  parser bounds its recursion at MAX_EXPR_DEPTH = 64 across parentheses,
+  function arguments, ternary else-chains and unary runs. Allocation bombs
+  clamp at build with named errors: LED array grids outside upstream's dialog
+  range 2..=16 reject while zero/negative/NaN keep the 8x8 fallback, custom
+  transformers cap at 32 parsed coils, and the frontend drops an
+  out-of-range coilCount token re-deriving from the description; no bundled
+  circuit sits outside either clamp. Facade bookkeeping turned transactional:
+  indexById, postOffsetById and scopeOrder stage locally and publish only
+  after setCircuit succeeds, elementStateTokens key off element id instead of
+  a positional zip, so a refused build leaves every map describing the
+  previous circuit and live-state injection can no longer land another
+  capacitor's voltDiff on the wrong part. Store failure paths: recoverAutoSave
+  early-returns on a refused payload keeping document, dirty state, recovery
+  row and undo history untouched; the refused-load unsupportedProblem seed is
+  gone so a dismissed banner stays dismissed; stored clipboard text parses
+  behind a guarded parsesToElements probe in both menu memos and
+  importIsLoadable, and pasting garbage is a silent no-op. Logic input
+  parity: legacy boolean position tokens on `L` lines load upstream-inverted
+  ('true' low, 'false' high, SwitchElm.java:56-62), un-inverting startup
+  levels for 75 boolean lines across 35 bundled circuits, numerics unchanged,
+  saves byte-stable.
+- 605 Rust tests, most of them the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
-  files), plus 101 in-module unit tests and one doctest.
-  3232 TypeScript tests (one corpus report test skipped); the owner-bug batch
+  files), plus in-module unit tests and one doctest.
+  3293 TypeScript tests pass (one corpus report test skipped); the robustness
+  batch added 28 of the Rust tests and 61 of the TypeScript ones. The owner-bug batch
   added four of the Rust tests (the new analysis_hygiene.rs) and thirty-eight
   TypeScript ones across the battery, junction, embedded-scope and facade
   suites. The relay pulldown
