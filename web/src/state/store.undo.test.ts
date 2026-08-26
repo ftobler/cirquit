@@ -1178,3 +1178,46 @@ describe('stale transient state', () => {
     expect(useStore.getState().hoveredId).toBeNull();
   });
 });
+
+describe('the revert epoch', () => {
+  it('undo and redo each bump the revert epoch', () => {
+    addResistor();
+    expect(useStore.getState().revertEpoch).toBe(0);
+    useStore.getState().undo();
+    expect(useStore.getState().revertEpoch).toBe(1);
+    // Redo is the same revert to a live gesture: symmetric bump, tested not
+    // special-cased.
+    useStore.getState().redo();
+    expect(useStore.getState().revertEpoch).toBe(2);
+  });
+
+  it('successive undos keep climbing, never rewound by the restored snapshot', () => {
+    addResistor();
+    useStore.getState().commit();
+    addCapacitor();
+    useStore.getState().commit();
+    useStore.getState().undo();
+    const first = useStore.getState().revertEpoch;
+    useStore.getState().undo();
+    expect(useStore.getState().revertEpoch).toBe(first + 1);
+  });
+
+  it('the revert epoch does not ride undo snapshots', () => {
+    addResistor();
+    useStore.getState().commit();
+    useStore.getState().undo();
+    // The counter lives outside Snapshot on purpose: undo's {...prev} spread
+    // must never carry an old value back over the fresh bump.
+    expect('revertEpoch' in useStore.getState().undoStack[0]).toBe(false);
+    expect('revertEpoch' in useStore.getState().redoStack[0]).toBe(false);
+  });
+
+  it('a revertToBaseline collapse guard bumps it through undo', () => {
+    const id = addResistor();
+    useStore.getState().commit();
+    useStore.getState().updateElement(id, { x2: 0, y2: 0 }); // the refused collapse
+    const before = useStore.getState().revertEpoch;
+    useStore.getState().revertToBaseline();
+    expect(useStore.getState().revertEpoch).toBe(before + 1);
+  });
+});

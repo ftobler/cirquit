@@ -31,6 +31,7 @@ export const fresh = () => ({
   scopeGesture: false,
   elementGesture: null,
   toolTurns: 0,
+  revertEpoch: 0,
   revision: 0,
   paramRevision: 0,
   pendingParams: new Map(),

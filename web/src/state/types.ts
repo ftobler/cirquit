@@ -237,6 +237,13 @@ export interface AppState {
    *  never reaches the undo stack or `snapshotKey`, exactly like
    *  `elementGesture` and `scopeGesture`. */
   toolTurns: number;
+  /** Bumped by every undo, redo and revertToBaseline. The canvas interaction
+   *  layer subscribes to it so a revert landing mid-gesture can cancel the
+   *  live drag the way a pointer cancel would, instead of leaving it writing
+   *  past its reverted baseline. Deliberately outside `Snapshot`: undo's
+   *  `{...prev}` spread must never rewind the counter, or a second revert in
+   *  a row would look like no revert at all. */
+  revertEpoch: number;
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
   revision: number;
   /** Bumped by value-only edits, applied to the live engine without a rebuild. */
@@ -711,7 +718,10 @@ export interface AppState {
   markSaved(): void;
   /** Loads the stored auto-save recovery, if any, as one undo entry, and marks
    *  the circuit unsaved (upstream's doRecover, UndoManager.java:83-88). A
-   *  no-op when no recovery exists. */
+   *  no-op when no recovery exists. Refuses with a status line while a
+   *  drill-in session is stacked, by markSaved's rule: the load wipes the
+   *  context stack wholesale, and the payload is the stack root anyway. The
+   *  row stays enabled, so exiting then clicking again recovers. */
   recoverAutoSave(): void;
 
   /** Begins a scope editing gesture: commits the pre-gesture baseline once,

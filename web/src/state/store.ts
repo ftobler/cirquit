@@ -733,6 +733,7 @@ function createAppStore() {
   scopeGesture: false,
   elementGesture: null,
   toolTurns: 0,
+  revertEpoch: 0,
   revision: 0,
   paramRevision: 0,
   pendingParams: new Map(),
@@ -3313,6 +3314,17 @@ function createAppStore() {
   },
 
   recoverAutoSave: () => {
+    // Refuse while a drill-in session is stacked, matching markSaved's guard:
+    // loadNetlist wipes subcircuitStack wholesale, so recovering here would
+    // return to the outer circuit as a plain document with no breadcrumb,
+    // suspended histories or session models, and the payload is the stack
+    // root anyway. The refusal is inert beyond the status line: the row stays
+    // enabled and consumes neither payload nor flag, so exiting then clicking
+    // again recovers.
+    if (get().subcircuitStack.length > 0) {
+      set({ status: 'Exit the subcircuit editor before recovering the auto-save.' });
+      return;
+    }
     // Nothing stored: the row is greyed, and a stale click must not clear the
     // session state.
     const recovery = readRecovery();
@@ -3371,6 +3383,10 @@ function createAppStore() {
       // swallow the next rotate's commit, so both flags drop with the state.
       scopeGesture: false,
       elementGesture: null,
+      // Tell the canvas interaction layer the baseline moved, so it can stand
+      // a live pointer gesture down; outside Snapshot, so {...prev} above
+      // cannot rewind it.
+      revertEpoch: s.revertEpoch + 1,
       ...bumpRevision(s),
     });
     // The `.` lines that came back define library models, so the session half
@@ -3405,6 +3421,7 @@ function createAppStore() {
       // Same gesture teardown as undo.
       scopeGesture: false,
       elementGesture: null,
+      revertEpoch: s.revertEpoch + 1,
       ...bumpRevision(s),
     });
     syncSessionModels(s.passthrough, next.passthrough);

@@ -14,6 +14,7 @@ import {
   abandonForLongPress,
   armedHandle,
   beginPointerGesture,
+  cancelLiveDrag,
   finishPlacement,
   finishPostDrag,
   finishWireDrag,
@@ -943,6 +944,170 @@ describe('a cancelled pointer on an armed gesture', () => {
     expect(s.contextMenu).toBeNull();
     expect(h.r.dragRef.current).toEqual({ mode: 'none' });
     expect(s.elements).toHaveLength(0);
+  });
+});
+
+describe('cancelLiveDrag: a revert landing mid-gesture', () => {
+  // The store bumps revertEpoch on undo/redo; the canvas hook reacts by
+  // running this one helper. The suite pins exactly what the teardown owes,
+  // the way the long-press suite pins openMenuAndAbandonForLongPress.
+
+  it('abandons an armed placement and stands the wire tool down', () => {
+    useStore.getState().setTool('resistor');
+    const placed = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, placed);
+    expect(useStore.getState().elements).toHaveLength(1);
+    useStore.getState().setTool('wire');
+    const wired = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, wired);
+    expect(wired.dragRef.current.mode).toBe('wire');
+
+    cancelLiveDrag(placed, 1, useStore.getState());
+    cancelLiveDrag(wired, 1, useStore.getState());
+
+    const s = useStore.getState();
+    // The tap-placed part keeps standing (the long-press rule); the wire run
+    // was never started, so nothing is inserted.
+    expect(s.elements).toHaveLength(1);
+    expect(s.tool).toBeNull();
+    expect(s.elementGesture).toBeNull();
+    expect(placed.dragRef.current).toEqual({ mode: 'none' });
+    expect(wired.dragRef.current).toEqual({ mode: 'none' });
+    // The cancellation itself spends no undo entry.
+    expect(s.undoStack).toHaveLength(1);
+  });
+
+  it('deletes a placement dragged back to its anchor instead of stranding it', () => {
+    useStore.getState().setTool('resistor');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
+    useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
+
+    cancelLiveDrag(r, 1, useStore.getState());
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(0);
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+  });
+
+  it('a moved wire drag discards its traced run instead of inserting it', () => {
+    // Ctrl+Z mid-run: the drag had already latched its axis, so finishing the
+    // gesture here would drop partial geometry into the reverted document
+    // that a later redo silently erases. The cancel owes a stand-down, not a
+    // drop the user never made.
+    useStore.getState().setTool('wire');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'wire') throw new Error('expected a wire drag');
+    // What the move handler latches once the drag travels: axis plus current.
+    r.dragRef.current = { ...drag, current: { x: 224, y: 96 }, axis: 'h' };
+
+    useStore.getState().undo();
+    cancelLiveDrag(r, 1, useStore.getState());
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(0);
+    expect(s.tool).toBeNull();
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+  });
+
+  it('an element removed by the revert leaves nothing behind', () => {
+    // The actual bug shape: Ctrl+Z mid-placement reverts to the snapshot
+    // before addElement, so the in-flight id no longer exists. The cleanup
+    // must neither resurrect nor strand anything.
+    useStore.getState().setTool('resistor');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    expect(useStore.getState().elements).toHaveLength(1);
+
+    useStore.getState().undo();
+    cancelLiveDrag(r, 1, useStore.getState());
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(0);
+    expect(s.tool).toBeNull();
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+  });
+
+  it('disarms move, dragpost and rowcol without splitting or spending undo', () => {
+    const crossed = useStore
+      .getState()
+      .addElement({ kind: 'wire', x1: 224, y1: 0, x2: 224, y2: 320, flags: 0, params: {} });
+    const moved = addEl('resistor', { y1: 64, y2: 64 });
+    const dragged = addEl('resistor', { y1: 128, y2: 128 });
+
+    // A group move armed on one element.
+    const mover = refs();
+    beginPointerGesture(down({ clientX: 80, clientY: 64 }), { x: 80, y: 64 }, useStore.getState(), hit(moved), false, mover);
+    const move = mover.dragRef.current;
+    if (move.mode !== 'move') throw new Error('expected a move to be armed');
+    stepMoveDrag(move, { x: 96, y: 64 }, useStore.getState());
+
+    // A post drag parked on the far wire's interior: release would split it.
+    const poster = refs();
+    beginPointerGesture(
+      down({ ctrlKey: true }),
+      { x: 160, y: 128 },
+      useStore.getState(),
+      hit(dragged),
+      false,
+      poster,
+    );
+    const post = poster.dragRef.current;
+    if (post.mode !== 'dragpost') throw new Error('expected a post drag');
+    useStore.getState().updateElement(dragged, { x2: 224, y2: 128 });
+
+    // A row sweep with captured endpoints.
+    const sweeper = refs();
+    startRowCol('row', 0, { x: 0, y: 0 }, useStore.getState(), sweeper.dragRef);
+    expect(sweeper.dragRef.current.mode).toBe('rowcol');
+
+    const entries = useStore.getState().undoStack.length;
+    cancelLiveDrag(mover, 1, useStore.getState());
+    cancelLiveDrag(poster, 1, useStore.getState());
+    cancelLiveDrag(sweeper, 1, useStore.getState());
+
+    const s = useStore.getState();
+    expect(mover.dragRef.current).toEqual({ mode: 'none' });
+    expect(poster.dragRef.current).toEqual({ mode: 'none' });
+    expect(sweeper.dragRef.current).toEqual({ mode: 'none' });
+    // No split ran for the parked post: the crossed wire is whole.
+    const wire = s.elements.find((e) => e.id === crossed)!;
+    expect([wire.x1, wire.y1, wire.x2, wire.y2]).toEqual([224, 0, 224, 320]);
+    // The cancellation itself commits nothing.
+    expect(s.undoStack).toHaveLength(entries);
+  });
+
+  it('releases a held momentary so no switch sticks closed', () => {
+    const id = addEl('switch', { params: { position: 1, momentary: 1 }, state: 1 });
+    const r = refs();
+    beginPointerGesture(down(), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
+    expect(hit(id).state).toBe(0); // closed while held
+
+    cancelLiveDrag(r, 1, useStore.getState());
+
+    expect(hit(id).state).toBe(1); // back at rest
+    expect(r.heldMomentaryRef.current).toBeNull();
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+  });
+
+  it('leaves pan and select drags alone', () => {
+    const panner = refs();
+    beginPointerGesture(down({ altKey: true }), { x: 100, y: 100 }, useStore.getState(), null, false, panner);
+    expect(panner.dragRef.current.mode).toBe('pan');
+    const selecter = refs();
+    beginPointerGesture(down(), { x: 4, y: 4 }, useStore.getState(), null, false, selecter);
+    expect(selecter.dragRef.current).toMatchObject({ mode: 'select' });
+
+    cancelLiveDrag(panner, 1, useStore.getState());
+    cancelLiveDrag(selecter, 1, useStore.getState());
+
+    // Their writes carry no undo entries, so both ride out the revert.
+    expect(panner.dragRef.current?.mode).toBe('pan');
+    expect(selecter.dragRef.current).toMatchObject({ mode: 'select' });
   });
 });
 
