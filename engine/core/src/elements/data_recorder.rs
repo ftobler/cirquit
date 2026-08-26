@@ -15,6 +15,11 @@ pub struct DataRecorder {
     data: Vec<f64>,
     data_ptr: usize,
     data_full: bool,
+    /// The sampling bucket this recorder last wrote in, upstream's
+    /// `lastTimeStepCount` (DataRecorderElm.java:71). While adaptation has
+    /// halved the working step, several committed steps share one
+    /// nominal-step bucket and only the bucket's last step may write.
+    last_bucket: u64,
 }
 
 impl DataRecorder {
@@ -26,6 +31,7 @@ impl DataRecorder {
             data: vec![0.0; data_count],
             data_ptr: 0,
             data_full: false,
+            last_bucket: 0,
         }
     }
 }
@@ -60,6 +66,7 @@ impl Element for DataRecorder {
                 self.data = vec![0.0; self.data_count];
                 self.data_ptr = 0;
                 self.data_full = false;
+                self.last_bucket = 0;
             }
             _ => return false,
         }
@@ -71,6 +78,14 @@ impl Element for DataRecorder {
         if ctx.dc_analysis {
             return;
         }
+        // One row per nominal step, not per committed step, upstream's gate
+        // on sim.timeStepCount (DataRecorderElm.java:68-70): with the working
+        // step halved by adaptation, writing per commit would sample the
+        // waveform faster than the export's time grid says it was sampled.
+        if ctx.sample_bucket == self.last_bucket {
+            return;
+        }
+        self.last_bucket = ctx.sample_bucket;
         self.data[self.data_ptr] = self.base.volts[0];
         self.data_ptr += 1;
         if self.data_ptr >= self.data_count {
@@ -99,5 +114,6 @@ impl Element for DataRecorder {
         self.base.reset();
         self.data_ptr = 0;
         self.data_full = false;
+        self.last_bucket = 0;
     }
 }

@@ -20,6 +20,18 @@ pub struct SimCtx {
     pub dc_analysis: bool,
     /// Newton iteration counter within the current timestep.
     pub subiter: usize,
+    /// Committed time accumulated since the last sampling bucket opened,
+    /// upstream's `timeStepAccum` (SimulationManager.java:57). The step loop
+    /// adds each committed dt here and opens a new bucket whenever the total
+    /// reaches the nominal step, so meter-family elements can sample once per
+    /// nominal step even while adaptation has halved the working one.
+    pub step_accum: f64,
+    /// How many sampling buckets have opened, upstream's `timeStepCount`
+    /// (SimulationManager.java:61), incremented only when [`SimCtx::step_accum`]
+    /// crosses `nominal_dt` (SimulationManager.java:1414-1419). The meters
+    /// gate their `step_finished` work on this counter having moved since
+    /// their last visit.
+    pub sample_bucket: u64,
 }
 
 impl Default for SimCtx {
@@ -30,6 +42,8 @@ impl Default for SimCtx {
             nominal_dt: 5e-6,
             dc_analysis: false,
             subiter: 0,
+            step_accum: 0.0,
+            sample_bucket: 0,
         }
     }
 }
