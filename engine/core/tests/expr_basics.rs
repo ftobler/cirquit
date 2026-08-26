@@ -120,7 +120,11 @@ fn too_short_pwl_list_is_a_parse_error_not_a_panic() {
     // form: no complete segment means the output holds at y0.
     let err = parse("pwl(a, 5)").expect_err("a two-argument pwl must be rejected");
     assert!(err.contains("bad number of function args"), "got: {err}");
-    assert!(parse("pwl(x, 5)").is_err());
+    // A second two-argument spelling on another slot letter, held to the
+    // same named arity error rather than any rejection at all.
+    assert!(parse("pwl(b, 6)")
+        .unwrap_err()
+        .contains("bad number of function args"));
     assert_eq!(ev("pwl(9, 0, 7)"), 7.0);
 }
 
