@@ -282,6 +282,7 @@ export function Menubar({ engine }: Props) {
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const setStatus = useStore((s) => s.setStatus);
+  const setNotice = useStore((s) => s.setNotice);
   const setDark = useStore((s) => s.setDark);
   const updateSettings = useStore((s) => s.updateSettings);
   const openDialog = useStore((s) => s.openDialog);
@@ -509,12 +510,17 @@ export function Menubar({ engine }: Props) {
     {
       label: 'Open File…',
       onClick: fire(() =>
-        openCircuit((text, name) => {
-          // A refused load has already put its banner up; the status keeps
-          // describing whatever is actually on screen.
-          if (loadNetlist(text) !== null) return;
-          setStatus(name);
-        }),
+        openCircuit(
+          (text, name) => {
+            // A refused load has already put its banner up; the status keeps
+            // describing whatever is actually on screen.
+            if (loadNetlist(text) !== null) return;
+            setStatus(name);
+          },
+          // A read failure leaves the old circuit intact and nothing needs
+          // dismissing, so it is a notice rather than a problem banner.
+          (message) => setNotice(message),
+        ),
       ),
     },
     { label: 'Import From Text…', onClick: fire(() => openDialog('importText')) },

@@ -97,13 +97,18 @@ export default function App() {
     // pipeline stays DOM-free and headlessly testable.
     const host: AppKeyHost = {
       openFile: () =>
-        openCircuit((text, name) => {
-          const st = useStore.getState();
-          // A refused load has already put its banner up; the status keeps
-          // describing whatever is actually on screen.
-          if (st.loadNetlist(text) !== null) return;
-          st.setStatus(name);
-        }),
+        openCircuit(
+          (text, name) => {
+            const st = useStore.getState();
+            // A refused load has already put its banner up; the status keeps
+            // describing whatever is actually on screen.
+            if (st.loadNetlist(text) !== null) return;
+            st.setStatus(name);
+          },
+          // A read failure leaves the old circuit intact and nothing needs
+          // dismissing, so it is a notice rather than a problem banner.
+          (message) => useStore.getState().setNotice(message),
+        ),
       print: () => {
         const st = useStore.getState();
         printCircuit(st.elements, st.settings, false, engineRef.current);
