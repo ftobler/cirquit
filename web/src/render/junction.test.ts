@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { CircuitElement } from '../model/types';
-import { badConnectionPoints, postDotPoints, shouldDrawDot } from './junction';
+import { makeTheme } from './draw';
+import { SvgRecorder } from './svg';
+import { badConnectionPoints, drawJunctionDots, postDotPoints, shouldDrawDot } from './junction';
 
 const el = (kind: string, x1: number, y1: number, x2: number, y2: number): CircuitElement => ({
   id: 1,
@@ -64,6 +66,54 @@ describe('junction dots', () => {
     const counts = postDotPoints(wires);
     expect(counts.get('80,0')).toBe(4);
     expect(shouldDrawDot(counts.get('80,0')!)).toBe(true);
+  });
+});
+
+describe('drawJunctionDots', () => {
+  // The painter behind the live frame loop and every export, so the colour,
+  // radius and count rule cannot drift between them. SvgRecorder keeps the
+  // assertions headless.
+  const theme = makeTheme();
+
+  it('strokes the conductor-coloured dots at every count != 2 coordinate', () => {
+    const parts = [
+      { ...el('wire', 0, 0, 64, 0), id: 1 },
+      { ...el('wire', 64, 0, 128, 0), id: 2 },
+      { ...el('wire', 64, 0, 64, 64), id: 3 },
+      { ...el('wire', 192, 0, 256, 0), id: 4 },
+    ];
+    const rec = new SvgRecorder();
+    const counts = drawJunctionDots(rec, parts, theme);
+    const svg = rec.toString(400, 200);
+    // Six coordinates qualify: the true T junction at (64,0), where three
+    // posts meet, and five bare ends. Each 7 px dot is a full circle of two
+    // radius-3.5 arc segments.
+    expect(svg.match(/A3\.5 3\.5 0 1 1 /g)).toHaveLength(12);
+    expect(svg).toContain(`fill="${theme.wire}"`);
+    expect(counts).toBeInstanceOf(Map);
+    expect(counts.get('64,0')).toBe(3);
+  });
+
+  it('paints nothing on a closed triangle and hands back its counts', () => {
+    // Every vertex counts exactly two posts, shouldDrawDot's quiet case; the
+    // returned map still describes the circuit for callers that reuse it
+    // (the frame loop feeds it to the bad-connection scan).
+    const triangle = [
+      { ...el('wire', 0, 0, 128, 0), id: 1 },
+      { ...el('wire', 128, 0, 64, 64), id: 2 },
+      { ...el('wire', 64, 64, 0, 0), id: 3 },
+    ];
+    const rec = new SvgRecorder();
+    const counts = drawJunctionDots(rec, triangle, theme);
+    expect(rec.toString(400, 200)).not.toContain('A3.5 3.5');
+    expect(counts.get('0,0')).toBe(2);
+    expect(counts.get('128,0')).toBe(2);
+  });
+
+  it('iterates nothing for an empty circuit', () => {
+    const rec = new SvgRecorder();
+    expect(drawJunctionDots(rec, [], theme).size).toBe(0);
+    expect(rec.toString(10, 10)).not.toContain('<path');
   });
 });
 

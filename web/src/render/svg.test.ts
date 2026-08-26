@@ -551,13 +551,14 @@ describe('renderCircuitToSvg', () => {
 
   it('exports junction circles like the PNG path', () => {
     // The SVG export funnels through drawAllElements like every other format,
-    // so its postDrawList pass carries over: one T-junction dot plus the five
-    // bare wire ends, six radius-3.5 circles in total. Pinned by count, not
-    // by coordinates.
+    // so its postDrawList pass carries over: one true T-junction dot (three
+    // posts meet at (64,0)) plus the five bare wire ends, six radius-3.5
+    // circles in total. Pinned by count, not by coordinates.
     const elements: CircuitElement[] = [
-      { id: 1, kind: 'wire', x1: 0, y1: 0, x2: 128, y2: 0, flags: 0, params: {} },
-      { id: 2, kind: 'wire', x1: 64, y1: 0, x2: 64, y2: 64, flags: 0, params: {} },
-      { id: 3, kind: 'wire', x1: 192, y1: 0, x2: 256, y2: 0, flags: 0, params: {} },
+      { id: 1, kind: 'wire', x1: 0, y1: 0, x2: 64, y2: 0, flags: 0, params: {} },
+      { id: 2, kind: 'wire', x1: 64, y1: 0, x2: 128, y2: 0, flags: 0, params: {} },
+      { id: 3, kind: 'wire', x1: 64, y1: 0, x2: 64, y2: 64, flags: 0, params: {} },
+      { id: 4, kind: 'wire', x1: 192, y1: 0, x2: 256, y2: 0, flags: 0, params: {} },
     ];
     const svg = renderCircuitToSvg(elements, DEFAULT_SETTINGS, false, null);
     expect(svg.match(/A3\.5 3\.5 0 1 1 /g)).toHaveLength(12);

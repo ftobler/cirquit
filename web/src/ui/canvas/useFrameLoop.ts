@@ -11,7 +11,7 @@ import { neutralDrawContext } from '../../render/drawContext';
 import { handlePoints, HIT_TOLERANCE_PX } from '../../render/geometry';
 import { drawGrid } from '../../render/grid';
 import { drawHitboxes } from '../../render/hitboxes';
-import { cachedBadConnectionPoints, postDotPoints, shouldDrawDot } from '../../render/junction';
+import { cachedBadConnectionPoints, drawJunctionDots } from '../../render/junction';
 import { cachedDragHints, dragHintsActive } from '../../render/junctionHints';
 import { scopeWidth } from '../../scope/geometry';
 import { traceScopes } from '../../scope/embedded';
@@ -618,18 +618,11 @@ export function useFrameLoop(
           // exactly 2, so a plain two-element pass-through connection hides while
           // dead ends and real junctions keep theirs, matching makePostDrawList
           // (SimulationManager.java:1056-1108). Drawn after all elements, like the
-          // upstream postDrawList pass. The radius is upstream's drawPost
-          // fillOval(pt.x-3, pt.y-3, 7, 7), a 7 px filled circle (CircuitElm.java:
-          // 851-854), so a junction reads at the same weight as the thicker bodies.
-          const postCounts = postDotPoints(elements);
-          ctx.fillStyle = theme.wire;
-          for (const [key, count] of postCounts) {
-            if (!shouldDrawDot(count)) continue;
-            const [x, y] = key.split(',').map(Number);
-            ctx.beginPath();
-            ctx.arc(x, y, 3.5, 0, Math.PI * 2);
-            ctx.fill();
-          }
+          // upstream postDrawList pass, through the same painter the exports
+          // use. The radius is upstream's drawPost fillOval(pt.x-3, pt.y-3, 7,
+          // 7), a 7 px filled circle (CircuitElm.java:851-854), so a junction
+          // reads at the same weight as the thicker bodies.
+          const postCounts = drawJunctionDots(ctx, elements, theme);
 
           // Bad connections: a post that only touches another element, never
           // joins it. Moving a wire onto another one deliberately does not

@@ -36,11 +36,13 @@ describe('drawAllElements junction dots', () => {
     // Upstream's exporter strokes postDrawList after the element loop
     // (ImageExporter.java:220-223), each dot a 7 px filled circle
     // (CircuitElm.java:851-854). The T junction at (64,0) counts three posts
-    // and the five bare wire ends one each, so six dots follow the traces.
+    // (the horizontal is two wires meeting there) and the five bare wire
+    // ends one each, so six dots follow the traces.
     const elements = [
-      wire(1, 0, 0, 128, 0),
-      wire(2, 64, 0, 64, 64),
-      wire(3, 192, 0, 256, 0),
+      wire(1, 0, 0, 64, 0),
+      wire(2, 64, 0, 128, 0),
+      wire(3, 64, 0, 64, 64),
+      wire(4, 192, 0, 256, 0),
     ];
     const rec = new SvgRecorder();
     drawAllElements(rec, theme, elements, DEFAULT_SETTINGS, null, 1);

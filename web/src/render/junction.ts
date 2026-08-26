@@ -5,7 +5,7 @@
  *  merely touch another element red (makePostDrawList, SimulationManager.java:
  *  1056-1108). */
 
-import type { CircuitElement, Point } from '../model/types';
+import type { CircuitElement, Context2D, Point, Theme } from '../model/types';
 import { postsOf } from '../model/registry';
 import { chipPinsOf } from '../model/registry/chips';
 import { cachedBusMismatches } from '../model/busWidths';
@@ -65,6 +65,33 @@ export function postDotPoints(elements: readonly CircuitElement[]): Map<string, 
  *  end (1) or a junction (3+), never a pass-through. */
 export function shouldDrawDot(count: number): boolean {
   return count !== 2;
+}
+
+/**
+ * The one junction-dot painter, shared by the live frame loop and every image
+ * export (upstream strokes postDrawList after the element loop in both places,
+ * ImageExporter.java:220-223), so their colour, radius and count rule cannot
+ * drift. Each dot is upstream's drawPost fillOval(pt.x-3, pt.y-3, 7, 7), a
+ * 7 px filled circle (CircuitElm.java:851-854) in the conductor colour; red
+ * bad-connection dots stay a separate pass. Returns the post count map so a
+ * caller that continues to the red-dot scan can reuse it instead of counting
+ * twice.
+ */
+export function drawJunctionDots(
+  ctx: Context2D,
+  elements: readonly CircuitElement[],
+  theme: Theme,
+): Map<string, number> {
+  const counts = postDotPoints(elements);
+  ctx.fillStyle = theme.wire;
+  for (const [key, count] of counts) {
+    if (!shouldDrawDot(count)) continue;
+    const [x, y] = key.split(',').map(Number);
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return counts;
 }
 
 /**
