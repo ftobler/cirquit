@@ -237,6 +237,13 @@ export interface AppState {
    *  never reaches the undo stack or `snapshotKey`, exactly like
    *  `elementGesture` and `scopeGesture`. */
   toolTurns: number;
+  /** Bumped by every undo, redo and revertToBaseline. The canvas interaction
+   *  layer subscribes to it so a revert landing mid-gesture can cancel the
+   *  live drag the way a pointer cancel would, instead of leaving it writing
+   *  past its reverted baseline. Deliberately outside `Snapshot`: undo's
+   *  `{...prev}` spread must never rewind the counter, or a second revert in
+   *  a row would look like no revert at all. */
+  revertEpoch: number;
   /** Bumped whenever the netlist changes, so the engine knows to reload. */
   revision: number;
   /** Bumped by value-only edits, applied to the live engine without a rebuild. */

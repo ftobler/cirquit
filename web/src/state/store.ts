@@ -733,6 +733,7 @@ function createAppStore() {
   scopeGesture: false,
   elementGesture: null,
   toolTurns: 0,
+  revertEpoch: 0,
   revision: 0,
   paramRevision: 0,
   pendingParams: new Map(),
@@ -3371,6 +3372,10 @@ function createAppStore() {
       // swallow the next rotate's commit, so both flags drop with the state.
       scopeGesture: false,
       elementGesture: null,
+      // Tell the canvas interaction layer the baseline moved, so it can stand
+      // a live pointer gesture down; outside Snapshot, so {...prev} above
+      // cannot rewind it.
+      revertEpoch: s.revertEpoch + 1,
       ...bumpRevision(s),
     });
     // The `.` lines that came back define library models, so the session half
@@ -3405,6 +3410,7 @@ function createAppStore() {
       // Same gesture teardown as undo.
       scopeGesture: false,
       elementGesture: null,
+      revertEpoch: s.revertEpoch + 1,
       ...bumpRevision(s),
     });
     syncSessionModels(s.passthrough, next.passthrough);
