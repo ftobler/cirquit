@@ -8,7 +8,8 @@ use crate::stamp::Stamper;
 /// point, standing in for a short. The single-solve port cannot integrate
 /// upstream's frame of steps, so the exact short finds the steady-state
 /// current in one pass and `step_finished` carries it into the transient.
-const DC_SHORT: f64 = 1e-6;
+/// The transformer family shares it for its own per-winding DC stamps.
+pub(crate) const DC_SHORT: f64 = 1e-6;
 
 /// Companion model for an inductor: `i = (dt/2L)·v + [i_prev + (dt/2L)·v_prev]`.
 ///
