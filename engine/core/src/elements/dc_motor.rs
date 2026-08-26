@@ -68,10 +68,32 @@ pub struct DcMotor {
 }
 
 impl DcMotor {
-    pub fn new(spec: &ElementSpec) -> Self {
+    /// Rejects a non-positive armature inductance or rotor inertia: both are
+    /// embedded inductor companions, so a non-positive value would stamp an
+    /// active negative resistance (the failure class [`Inductor::new`]
+    /// refuses). The checks run here rather than letting the embedded
+    /// constructor's error through, so the message names the motor element.
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let inductance = spec.param("inductance", DEF_INDUCTANCE);
+        if !inductance.is_finite() || inductance <= 0.0 {
+            return Err(format!(
+                "dcMotor (id {}) inductance must be positive, got {}",
+                spec.id, inductance
+            ));
+        }
         let j = spec.param("J", DEF_J);
-        Self {
+        if !j.is_finite() || j <= 0.0 {
+            return Err(format!(
+                "dcMotor (id {}) J must be positive, got {}",
+                spec.id, j
+            ));
+        }
+        // Both values were validated above, so the embedded constructors
+        // cannot refuse them.
+        let coil = Inductor::new(&motor_inductor_spec(inductance))
+            .expect("armature inductance was validated");
+        let inertia = Inductor::new(&motor_inductor_spec(j)).expect("rotor inertia was validated");
+        Ok(Self {
             base: Base::with_posts(2),
             inductance,
             resistance: spec.param("resistance", DEF_RESISTANCE),
@@ -79,14 +101,14 @@ impl DcMotor {
             kb: spec.param("Kb", DEF_K),
             j,
             b: spec.param("b", DEF_B),
-            coil: Inductor::new(&motor_inductor_spec(inductance)),
-            inertia: Inductor::new(&motor_inductor_spec(j)),
+            coil,
+            inertia,
             coil_current: 0.0,
             inertia_current: 0.0,
             // A fresh motor's spokes start rotated like upstream
             // (DCMotorElm.java:29,37 seed `angle = pi/2`).
             angle: PI / 2.0,
-        }
+        })
     }
 
     /// Points the embedded armature inductor at the motor's coil terminals.

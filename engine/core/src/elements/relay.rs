@@ -82,10 +82,26 @@ pub struct Relay {
 }
 
 impl Relay {
-    pub fn new(spec: &ElementSpec) -> Self {
+    /// The spec constructor rejects a non-positive coil inductance: the
+    /// embedded coil inductor would stamp a negative companion conductance,
+    /// an active negative resistance that grows every step (the same failure
+    /// class [`Inductor::new`] refuses). The check runs here rather than
+    /// letting the embedded constructor's error through, so the message names
+    /// the relay element the file line carries, not an anonymous id 0.
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let pole_count = (spec.param("poleCount", 1.0) as usize).clamp(1, 8);
         let inductance = spec.param("inductance", DEF_INDUCTANCE);
+        if !inductance.is_finite() || inductance <= 0.0 {
+            return Err(format!(
+                "relay (id {}) inductance must be positive, got {}",
+                spec.id, inductance
+            ));
+        }
         let coil_current = spec.param("coilCurrent", 0.0);
+        // The inductance was validated above, so the embedded constructor
+        // cannot refuse it.
+        let ind = Inductor::new(&coil_inductor_spec(inductance, coil_current))
+            .expect("coil inductance was validated");
         let mut relay = Self {
             base: Base::with_posts(2 + 3 * pole_count),
             pole_count,
@@ -96,7 +112,7 @@ impl Relay {
             off_current: spec.param("offCurrent", DEF_OFF_CURRENT),
             coil_r: spec.param("coilR", DEF_COIL_R),
             switching_time: spec.param("switchingTime", DEF_SWITCHING_TIME),
-            ind: Inductor::new(&coil_inductor_spec(inductance, coil_current)),
+            ind,
             coil_current,
             switch_current: vec![0.0; pole_count],
             d_position: 0.0,
@@ -117,7 +133,7 @@ impl Relay {
             }
             _ => {}
         }
-        relay
+        Ok(relay)
     }
 
     fn n_coil1(&self) -> usize {
@@ -405,9 +421,22 @@ pub struct RelayCoil {
 }
 
 impl RelayCoil {
-    pub fn new(spec: &ElementSpec) -> Self {
+    /// Rejects a non-positive coil inductance for the same reason the
+    /// combined relay does: the embedded coil would stamp a negative
+    /// companion conductance, and the message must name this element.
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let inductance = spec.param("inductance", DEF_INDUCTANCE);
+        if !inductance.is_finite() || inductance <= 0.0 {
+            return Err(format!(
+                "relayCoil (id {}) inductance must be positive, got {}",
+                spec.id, inductance
+            ));
+        }
         let coil_current = spec.param("coilCurrent", 0.0);
+        // The inductance was validated above, so the embedded constructor
+        // cannot refuse it.
+        let ind = Inductor::new(&coil_inductor_spec(inductance, coil_current))
+            .expect("coil inductance was validated");
         let mut coil = Self {
             base: Base::with_posts(2),
             label: spec.label.clone(),
@@ -423,13 +452,13 @@ impl RelayCoil {
             switching_time_on: 0.0,
             switching_time_off: 0.0,
             avg_current: 0.0,
-            ind: Inductor::new(&coil_inductor_spec(inductance, coil_current)),
+            ind,
             coil_current,
             contacts: Vec::new(),
             pending: Vec::new(),
         };
         coil.setup_times();
-        coil
+        Ok(coil)
     }
 
     /// Delay types get their switching time on one edge and none on the other

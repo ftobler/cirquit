@@ -271,18 +271,21 @@ pub const KINDS: &[&str] = &[
 /// Builds the model for a spec. Errors name the element and the offending
 /// parameter when a spec value would silently vanish at stamp time (a
 /// resistance of zero stamps no conductance, so upstream's loud 1/0 must be
-/// answered by an equally loud build rejection here), or would attempt an
-/// unbounded allocation before the global size guards ever run (an LED array
-/// grid outside the dialog range, a custom transformer above the coil cap),
-/// or `unknown element type` for a kind this engine does not implement.
+/// answered by an equally loud build rejection here), or would stamp an
+/// active negative resistance instead (a negative capacitor, inductor or
+/// transformer winding companion grows the solution every step), or would
+/// attempt an unbounded allocation before the global size guards ever run
+/// (an LED array grid outside the dialog range, a custom transformer above
+/// the coil cap), or `unknown element type` for a kind this engine does not
+/// implement.
 pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
     let e: Box<dyn Element> = match spec.kind.as_str() {
         "wire" => Box::new(wire::Wire::new(spec)),
         "ground" => Box::new(ground::Ground::new(spec)),
         "resistor" => Box::new(resistor::Resistor::new(spec)?),
-        "capacitor" => Box::new(capacitor::Capacitor::new(spec)),
-        "polarizedCapacitor" => Box::new(capacitor::Capacitor::new_polarized(spec)),
-        "inductor" => Box::new(inductor::Inductor::new(spec)),
+        "capacitor" => Box::new(capacitor::Capacitor::new(spec)?),
+        "polarizedCapacitor" => Box::new(capacitor::Capacitor::new_polarized(spec)?),
+        "inductor" => Box::new(inductor::Inductor::new(spec)?),
         "fuse" => Box::new(fuse::Fuse::new(spec)?),
         "lamp" => Box::new(lamp::Lamp::new(spec)?),
         "thermistor" => Box::new(thermistor::Thermistor::new(spec)),
@@ -292,7 +295,7 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
         "motorProtectionSwitch" => {
             Box::new(motor_protection_switch::MotorProtectionSwitch::new(spec))
         }
-        "dcMotor" => Box::new(dc_motor::DcMotor::new(spec)),
+        "dcMotor" => Box::new(dc_motor::DcMotor::new(spec)?),
         "timeDelayRelay" => Box::new(time_delay_relay::TimeDelayRelay::new(spec)),
         "mbbSwitch" => Box::new(mbb_switch::MbbSwitch::new(spec)),
         "dpdtSwitch" => Box::new(dpdt_switch::DpdtSwitch::new(spec)),
@@ -332,12 +335,12 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
         "crossSwitch" => Box::new(cross_switch::CrossSwitch::new(spec)),
         "analogSwitch2" => Box::new(analog_switch2::AnalogSwitch2::new(spec)),
         "analogMux" => Box::new(analog_mux::AnalogMux::new(spec)),
-        "transformer" => Box::new(transformer::Transformer::new_basic(spec)),
-        "tappedTransformer" => Box::new(transformer::Transformer::new_tapped(spec)),
+        "transformer" => Box::new(transformer::Transformer::new_basic(spec)?),
+        "tappedTransformer" => Box::new(transformer::Transformer::new_tapped(spec)?),
         "customTransformer" => Box::new(transformer::Transformer::new_custom(spec)?),
         "transmissionLine" => Box::new(transmission_line::TransmissionLine::new(spec)),
-        "relay" => Box::new(relay::Relay::new(spec)),
-        "relayCoil" => Box::new(relay::RelayCoil::new(spec)),
+        "relay" => Box::new(relay::Relay::new(spec)?),
+        "relayCoil" => Box::new(relay::RelayCoil::new(spec)?),
         "relayContact" => Box::new(relay::RelayContact::new(spec)),
         "opamp" => Box::new(opamp::OpAmp::new(spec)),
         "ota" => {

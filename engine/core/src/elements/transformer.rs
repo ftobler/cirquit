@@ -137,44 +137,72 @@ pub struct Transformer {
 }
 
 impl Transformer {
-    pub fn new_basic(spec: &ElementSpec) -> Self {
+    /// The shared spec-value guard: every winding's self-inductance is
+    /// `n_i^2 * L`, so a non-positive base inductance stamps each winding as
+    /// an active negative resistance or nothing at all, exactly the failure
+    /// class the plain capacitor and inductor reject. The kind comes from
+    /// `spec.kind` so the message names the element the file line carried.
+    fn check_inductance(spec: &ElementSpec) -> Result<(), String> {
+        let inductance = spec.param("inductance", 4.0);
+        if !inductance.is_finite() || inductance <= 0.0 {
+            return Err(format!(
+                "{} (id {}) inductance must be positive, got {}",
+                spec.kind, spec.id, inductance
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn new_basic(spec: &ElementSpec) -> Result<Self, String> {
         // Node wiring per TransformerElm.setPoints: the primary spans posts
         // 0-2, the secondary posts 1-3. The secondary has `ratio` turns, so
         // its self-inductance is `ratio²·L` (TransformerElm.java:241-243).
+        let ratio = spec.param("ratio", 1.0);
+        if !ratio.is_finite() {
+            return Err(format!(
+                "transformer (id {}) ratio must be finite, got {}",
+                spec.id, ratio
+            ));
+        }
+        Self::check_inductance(spec)?;
         let n = 2;
-        Self {
+        Ok(Self {
             base: Base::with_posts(4),
             kind: "transformer",
             inductance: spec.param("inductance", 4.0),
             coupling: spec.param("couplingCoef", 0.999),
             saturation_current: spec.param("saturationCurrent", 0.0),
             windings: vec![(0, 2), (1, 3)],
-            turns: vec![1.0, spec.param("ratio", 1.0)],
+            turns: vec![1.0, ratio],
             a: vec![0.0; n * n],
             currents: vec![spec.param("current0", 0.0), spec.param("current1", 0.0)],
             source_values: vec![0.0; n],
             backward_euler: spec.flag(FLAG_BACK_EULER),
-        }
+        })
     }
 
-    pub fn new_tapped(spec: &ElementSpec) -> Self {
+    pub fn new_tapped(spec: &ElementSpec) -> Result<Self, String> {
         // Node wiring per TappedTransformerElm.setPoints: the primary spans
         // posts 0-1, the secondary runs posts 2-3-4 with the tap at post 3.
         // Each secondary half has half the turns, so its self-inductance is
         // `(ratio/2)²·L` (TappedTransformerElm.java:192-195).
+        let ratio = spec.param("ratio", 1.0);
+        if !ratio.is_finite() {
+            return Err(format!(
+                "tappedTransformer (id {}) ratio must be finite, got {}",
+                spec.id, ratio
+            ));
+        }
+        Self::check_inductance(spec)?;
         let n = 3;
-        Self {
+        Ok(Self {
             base: Base::with_posts(5),
             kind: "tappedTransformer",
             inductance: spec.param("inductance", 4.0),
             coupling: spec.param("couplingCoef", 0.99),
             saturation_current: spec.param("saturationCurrent", 0.0),
             windings: vec![(0, 1), (2, 3), (3, 4)],
-            turns: vec![
-                1.0,
-                spec.param("ratio", 1.0) / 2.0,
-                spec.param("ratio", 1.0) / 2.0,
-            ],
+            turns: vec![1.0, ratio / 2.0, ratio / 2.0],
             a: vec![0.0; n * n],
             currents: vec![
                 spec.param("current0", 0.0),
@@ -183,7 +211,7 @@ impl Transformer {
             ],
             source_values: vec![0.0; n],
             backward_euler: spec.flag(FLAG_BACK_EULER),
-        }
+        })
     }
 
     /// Rejects a well-formed description with more than [`MAX_CUSTOM_COILS`]
@@ -194,6 +222,7 @@ impl Transformer {
     /// bypass it. A malformed description keeps the `"1,1:1"` fallback, which
     /// keeps this side in step with whatever post count the frontend derives.
     pub fn new_custom(spec: &ElementSpec) -> Result<Self, String> {
+        Self::check_inductance(spec)?;
         let mut t = Self {
             base: Base::with_posts(0),
             kind: "customTransformer",
@@ -249,7 +278,11 @@ impl Transformer {
                 Ok(v) => v,
                 Err(_) => return false,
             };
-            if n == 0.0 {
+            // Zero is not the only poisoned turn count: Rust's float parser
+            // accepts "NaN" and "Infinity", and either would put non-finite
+            // terms into the mutual matrix. Both count as a malformed
+            // description, taking the same fallback route.
+            if !n.is_finite() || n == 0.0 {
                 return false;
             }
             coils.push((node_num, n));
@@ -587,7 +620,7 @@ mod tests {
             model: None,
             flags: 0,
         };
-        let mut t = Transformer::new_basic(&spec);
+        let mut t = Transformer::new_basic(&spec).expect("valid basic transformer");
         t.currents = currents.to_vec();
         t
     }
@@ -702,6 +735,20 @@ mod tests {
         let t = Transformer::new_custom(&custom("1,x:,1")).expect("fallback must build");
         assert_eq!(t.windings.len(), 3);
         assert_eq!(t.base.nodes.len(), 6);
+    }
+
+    #[test]
+    fn new_custom_falls_back_on_non_finite_turns() {
+        // Rust's float parser accepts "inf" and "NaN", which would otherwise
+        // put non-finite terms into the mutual matrix; such a turn counts as a
+        // malformed description and takes the same "1,1:1" fallback route as
+        // "1,x:,1" (transformer.rs:284), keeping the post count in step with
+        // whatever the frontend derives for the same text.
+        for bad in ["inf,1:1", "NaN,1:1", "1,inf:1"] {
+            let t = Transformer::new_custom(&custom(bad)).expect("fallback must build");
+            assert_eq!(t.windings.len(), 3, "fallback for {bad} lost a winding");
+            assert_eq!(t.base.nodes.len(), 6, "fallback for {bad} lost a node");
+        }
     }
 
     #[test]
