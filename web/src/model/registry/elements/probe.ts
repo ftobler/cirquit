@@ -2,14 +2,13 @@ import {
   calcLeads,
   canvasFont,
   circle,
-  formatValueShort,
   interp,
   label,
   lead,
   voltageColor,
 } from '../../../render/draw';
 import { PROBE_CIRCLE, PROBE_SHOW_VOLTAGE } from '../flags';
-import { readParams, twoPosts, writeParams, bodyBox } from '../shared';
+import { meterCaption, readParams, twoPosts, writeParams, bodyBox } from '../shared';
 import type { ElementDef } from '../../types';
 
 export const PROBE_DEF: ElementDef = {
@@ -66,8 +65,13 @@ export const PROBE_DEF: ElementDef = {
     g.ctx.textAlign = 'center';
     g.ctx.textBaseline = 'middle';
     g.ctx.fillText('V', mid.x, mid.y);
-    // The label shows the selected meter reading, not the instant differential:
-    // for TP_VOL the engine's value is that differential anyway.
-  label(g, e, formatValueShort(g.value, 'V', g.valueDigits), 18);
+    // The label shows the selected meter reading with its per-mode unit, the
+    // draw switch upstream shares with the test point (ProbeElm.java:183-218);
+    // for TP_VOL the engine's value is that differential anyway. The editor
+    // offers the seven meterChoices() modes (ProbeElm.java:444-446). The Scale
+    // choice (ProbeElm.java:428-441) is parsed and dumped but the caption renders
+    // it auto-scaled, so a saved non-auto scale still shows the auto reading.
+    const meter = e.params.meter ?? 0;
+    label(g, e, meterCaption(meter, g.value, g.valueDigits), 18);
   },
 };

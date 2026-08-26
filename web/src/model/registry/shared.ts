@@ -1,7 +1,8 @@
 /**
  * Helpers shared by several element definitions: the common posts functions,
- * the numeric-token read/write pair, the switch lever tip, the ground symbol
- * bars, the escaped-text writer flag and the source-symbol drawing primitives.
+ * the numeric-token read/write pair, the per-meter-mode value caption, the
+ * switch lever tip, the ground symbol bars, the escaped-text writer flag and
+ * the source-symbol drawing primitives.
  */
 
 import {
@@ -12,6 +13,7 @@ import {
   dotPhaseAfter,
   drawLeads,
   endpoints,
+  formatValueShort,
   interp,
   interp2,
   powerColor,
@@ -182,6 +184,48 @@ export const writeParams =
 /** Text and labeled nodes always save the new-style single escaped token. */
 export function escapeFlags(e: CircuitElement): number {
   return e.flags | FLAG_ESCAPE;  // TextElm.java:83, LabeledNodeElm.java:52
+}
+
+/**
+ * The value caption per meter mode, formatted from the engine's `value()` (the
+ * reading selected by `meter`). The probe/voltmeter and the test point run the
+ * same switch over the same constants at draw time (ProbeElm.java:183-218,
+ * TestPointElm.java:179-213) and differ only in which modes their editors
+ * offer, both the seven of meterChoices() (ProbeElm.java:444-446,
+ * TestPointElm.java:448-450); a file can carry the rest, so every case stays
+ * reachable. The binary and duty modes carry no unit. The caption ignores the
+ * Scale choice field (ProbeElm.java:428-441) and renders the reading auto-scaled,
+ * unlike the ammeter and output which honour it; corpus impact is nil and the
+ * round-trip is unchanged.
+ */
+export function meterCaption(meter: number, value: number, digits: number): string {
+  switch (meter) {
+    case 0:
+      return formatValueShort(value, 'V', digits);
+    case 1:
+      return formatValueShort(value, 'V(rms)', digits);
+    case 10:
+      return formatValueShort(value, 'V(avg)', digits);
+    case 2:
+      return formatValueShort(value, 'Vpk', digits);
+    case 3:
+      return formatValueShort(value, 'Vmin', digits);
+    case 4:
+      return formatValueShort(value, 'Vp2p', digits);
+    case 5:
+      return formatValueShort(value, '', digits);
+    case 6:
+      return formatValueShort(value, 'Hz', digits);
+    // TP_PER (7) leaves the value string unset upstream (TestPointElm.java:
+    // 204-206, ProbeElm.java:209-211), so it stays on the fallback and renders
+    // the raw value in V.
+    case 8:
+      return formatValueShort(value, 's', digits);
+    case 9:
+      return formatValueShort(value, '', digits);
+    default:
+      return formatValueShort(value, 'V', digits);
+  }
 }
 
 /**

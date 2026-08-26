@@ -1821,6 +1821,47 @@ describe('batch I instrument draws', () => {
     expect(texts(per)).toContain('2mV');
   });
 
+  it('voltmeter captions carry the per-mode unit table', () => {
+    // ProbeElm.java:183-218 switches the caption suffix per selected mode,
+    // the same table the test point draws; VOL keeps the bare V.
+    const cases: [number, number, string][] = [
+      [0, 2.5, '2.5V'],
+      [1, 2.5, '2.5V(rms)'],
+      [10, 2.5, '2.5V(avg)'],
+      [2, 2.5, '2.5Vpk'],
+      [3, 2.5, '2.5Vmin'],
+      [4, 2.5, '2.5Vp2p'],
+      [5, 1, '1'],  // binary digits are a bare 0/1, no unit
+    ];
+    for (const [meter, value, text] of cases) {
+      const ctx = draw(
+        'probe',
+        { showValues: true, value },
+        element('probe', 0, 0, 64, 0, 0, { meter }),
+      );
+      expect(texts(ctx), `meter ${meter}`).toContain(text);
+    }
+  });
+
+  it('a voltmeter loaded with a file-only meter draws its upstream unit', () => {
+    // The editor offers the seven meterChoices() modes (ProbeElm.java:444-446)
+    // but upstream's draw switch runs over every TP_ constant
+    // (ProbeElm.java:206-217), so a hand-edited file shows Hz or seconds just
+    // like the test point does.
+    const frq = draw(
+      'probe',
+      { showValues: true, value: 1000 },
+      element('probe', 0, 0, 64, 0, 0, { meter: 6 }),
+    );
+    expect(texts(frq)).toContain('1kHz');
+    const pwi = draw(
+      'probe',
+      { showValues: true, value: 0.002 },
+      element('probe', 0, 0, 64, 0, 0, { meter: 8 }),
+    );
+    expect(texts(pwi)).toContain('2ms');
+  });
+
   it('wattmeter draws its rectangle body and the power text', () => {
     const ctx = draw('wattmeter', { value: 0.5 });
     expect(texts(ctx)).toContain('500mW');
