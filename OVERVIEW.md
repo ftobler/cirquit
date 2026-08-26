@@ -420,6 +420,26 @@ fetch it).
   Scopes: regenerating an edited scope line preserves plot tokens it cannot
   interpret, mixed-element scopes hide the per-element rows like upstream's
   shared-element rule, deleted embedded X-Y windows free their canvases.
+- Review batch 2026-08-25b: six more lanes of the day's review pass landed as
+  five worktree features plus one engine pair. Scopes lay out against their
+  own viewport through one pure layoutHeader (embedded windows stop painting
+  headers over neighbours), plot picking scores each trace on its own
+  samples, the trigger glyph carries upstream's #FF8000, exports stroke
+  junction dots through a painter shared with the live frame, and three
+  sibling canvases reuse the extracted backing-store helper so fractional
+  DPR stops reallocating them every frame. Undo and redo now cancel any live
+  canvas gesture via a revertEpoch counter (a revert mid wire drag discards
+  the traced run instead of inserting it), and Recover Auto-Save refuses
+  while a subcircuit session is stacked. The scope capture reset keys on the
+  nominal timestep like upstream, so adaptive halving and doubling preserve
+  captures, and the MOSFET re-anchors its body diode across rejected steps
+  like the JFET. Mirroring works for all 38 chip-family kinds byte-exactly
+  like ChipElm.flipX including the group anchor shift, fresh text and
+  labeled nodes seed "hello"/"label", stacked dialogs layer Escape through
+  claim tokens, focus traps reach anchors, file-read failures surface in the
+  notice channel, and nine more XML tags convert to real lines while
+  unmodelled source attributes degrade with loud value-gated traces instead
+  of silence.
 - Robustness batch 2026-08-25: every Tier-1 finding of the day's review pass
   (feature/review-20260825-index.md) landed as five worktree features, each
   independently reviewed. The debug-abort class closed: a wide labeled node
@@ -453,8 +473,9 @@ fetch it).
 - 609 Rust tests, most of them the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus in-module unit tests and one doctest.
-  3293 TypeScript tests pass (one corpus report test skipped); the robustness
-  batch added 28 of the Rust tests and 61 of the TypeScript ones. The owner-bug batch
+  3465 TypeScript tests pass (one corpus report test skipped); the robustness
+  batch added 28 of the Rust tests and 61 of the TypeScript ones, and review
+  batch 2026-08-25b added four more Rust and 172 more TypeScript. The owner-bug batch
   added four of the Rust tests (the new analysis_hygiene.rs) and thirty-eight
   TypeScript ones across the battery, junction, embedded-scope and facade
   suites. The relay pulldown
