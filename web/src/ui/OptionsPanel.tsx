@@ -2,16 +2,15 @@
  *  element properties dialog (both render the same rows through
  *  `ElementFields`). The global settings live in the Other Options dialog;
  *  this panel holds only the element half. The live readout ticks per frame
- *  through useLiveSimReadout, which re-reads the engine arrays while this
- *  panel is mounted with one element selected. */
+ *  inside its own `LiveReadout` leaf, so this panel does not re-render at
+ *  frame rate while a simulation runs. */
 
 import type { SimEngine } from '../engine/simulator';
 import { defFor } from '../model/registry';
-import { formatValue } from '../render/draw';
 import { sliderFromSteps, stepsFromSlider } from '../state/helpers';
 import { useStore } from '../state/store';
 import { ElementFields } from './ElementFields';
-import { useLiveSimReadout } from './useLiveSimReadout';
+import { LiveReadout } from './LiveReadout';
 
 interface Props {
   engine: SimEngine | null;
@@ -30,28 +29,13 @@ export function OptionsPanel({ engine }: Props) {
   // Only a single selection reads the engine per frame; with nothing or
   // several selected the readout stays hidden, matching the empty state below.
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : undefined;
-  const { current, voltage, power } = useLiveSimReadout(engine, selectedId);
 
   return (
     <div className="options" tabIndex={-1}>
       {selected && def ? (
         <section>
           <h3>{def.label}</h3>
-          {voltage !== undefined && (
-            <dl className="readout">
-              <dt>Voltage</dt>
-              <dd>{formatValue(voltage, 'V', settings.decimalDigits)}</dd>
-              <dt>Current</dt>
-              <dd>{formatValue(current ?? 0, 'A', settings.decimalDigits)}</dd>
-              <dt>Power</dt>
-              {/* The readout uses the engine's scope-convention power, not
-                  voltage * current: for a voltage or current source the display
-                  voltage is the positive EMF while the scope's Power trace uses
-                  V(post0) - V(post1), so multiplying here would show the wrong
-                  sign for a source. */}
-              <dd>{formatValue(power ?? 0, 'W', settings.decimalDigits)}</dd>
-            </dl>
-          )}
+          <LiveReadout engine={engine} selectedId={selectedId} digits={settings.decimalDigits} />
           <ElementFields element={selected} engine={engine} />
           <div className="row">
             <button type="button" onClick={() => addScope(selected.id, 'voltage')}>

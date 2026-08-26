@@ -858,8 +858,13 @@ function createAppStore() {
 
   select: (ids) => set({ selectedIds: ids }),
 
-  setHovered: (id) => set({ hoveredId: id }),
-  setHighlightedNode: (node) => set({ highlightedNode: node }),
+  // Same-value writes bail instead of building a fresh state container: the
+  // pointermove path re-reports the same hit (or null) many times a second,
+  // and an unguarded set would wake every subscriber each time, mirroring
+  // setMenubarOpen above.
+  setHovered: (id) => set((s) => (s.hoveredId === id ? s : { hoveredId: id })),
+  setHighlightedNode: (node) =>
+    set((s) => (s.highlightedNode === node ? s : { highlightedNode: node })),
 
   requestEdit: (id) =>
     set((s) => ({
