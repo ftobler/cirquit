@@ -147,7 +147,7 @@ function childDumpToken(node: XmlNode): string | null {
 }
 
 /** Escapes one field of a `_`-joined dump token (`_`, space and backslash), so
- *  the join's separators stay unambiguous (subcircuits.ts:806-815). */
+ *  the join's separators stay unambiguous (subcircuitBuild.ts:333-343). */
 function escapeChildField(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/_/g, '\\u').replace(/ /g, '\\s');
 }

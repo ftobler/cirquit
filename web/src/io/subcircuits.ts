@@ -293,7 +293,7 @@ export function sameCompositeModel(a: CompositeModel, b: CompositeModel): boolea
  * `apply_dump` expect. The `.` line's elmDump children are space-separated
  * escaped dumps; the engine wants `flags_field1_field2`, so each is split and
  * re-joined (CompositeElm.loadComposite's token walk over the escaped dump).
- * `childDumpToken` already escaped `_` and space inside field values, so the
+ * `childDumpToken` in ./subcircuitBuild already escaped `_` and space inside field values, so the
  * space split here separates fields, never a value.
  */
 export function modelToEngineSpec(model: CompositeModel): CompositeEngineSpec {
