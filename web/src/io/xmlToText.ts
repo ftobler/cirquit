@@ -759,21 +759,27 @@ function droppedTraces(node: XmlNode): string[] {
     // converted file would load at the default 0 even though the engine
     // stamps resistors above it; name the lost value instead. Gate on value
     // against upstream's undump seed of 0 (SwitchElm.java:91), never on
-    // presence, matching the om/dw rule above.
+    // presence, matching the om/dw rule above. The interpolated value is
+    // flattened first: Number() trims newlines, so even a numeric-gated one
+    // could carry a literal line break out of the attribute parse.
     if (attr(node, 'r', 0) !== 0) {
+      const value = singleLine(node.attrs.r ?? '');
       traces.push(
-        `# dpdt r="${node.attrs.r}" not modelled: converted as an ideal switch without on resistance`,
+        `# dpdt r="${value}" not modelled: converted as an ideal switch without on resistance`,
       );
     }
-    // The base keyboard shortcut is session-only on the text stream in both
-    // builds, so a file-carried one would vanish unheard. Upstream writes key
-    // only once a shortcut exists (SwitchElm.java:79-80), so presence gates
-    // it; the empty string toggles nothing and deserves no note.
-    if (node.attrs.key !== undefined && node.attrs.key !== '') {
-      traces.push(
-        `# dpdt key="${node.attrs.key}" not modelled: converted without its keyboard shortcut`,
-      );
-    }
+  }
+  // Both converted SwitchElm subclasses can carry the base keyboard shortcut:
+  // LogicInputElm reuses super.dumpXml (LogicInputElm.java:55-57) and offers
+  // the edit (:136-139), so an <L> document holds key exactly as a dpdt does
+  // (SwitchElm.java:79-80). The shortcut is session-only on the text stream
+  // in both builds; upstream writes it only once it exists, so presence
+  // gates the trace, and the empty string toggles nothing and deserves none.
+  const key = node.attrs.key;
+  if ((tag === 'dpdt' || tag === 'L') && key !== undefined && key !== '') {
+    traces.push(
+      `# ${tag} key="${singleLine(key)}" not modelled: converted without its keyboard shortcut`,
+    );
   }
   if (tag === 'pt' && attr(node, 'li', 0) !== 0) {
     // PotElm.java:82-83 writes the link only when nonzero; shared sliders
@@ -836,6 +842,14 @@ function basic(node: XmlNode, code: string, tail: string[]): string {
   return [code, coords(node), flagsFor(node), ...tail].join(' ');
 }
 
+/** Flattens document-supplied text so it stays on one line: the attribute
+ *  parse accepts literal newlines inside quoted values (xml.ts), and an
+ *  unescaped one would let a `#` comment's continuation read as an element
+ *  line when the converted file reloads. */
+function singleLine(s: string): string {
+  return s.replace(/\r\n|\r|\n/g, '\\n');
+}
+
 /** Serialises an XML element node as a `#` comment, preserving every attribute
  *  and the body text so a save round-trips it. Newlines in the body are escaped
  *  so the comment stays one line: the text format is line-oriented, and a
@@ -845,7 +859,7 @@ function commentLine(node: XmlNode): string {
   const attrs = Object.entries(node.attrs)
     .map(([k, v]) => `${k}="${v}"`)
     .join(' ');
-  const text = node.text.replace(/\r\n|\r|\n/g, '\\n');
+  const text = singleLine(node.text);
   const body = text !== '' || node.children.length > 0 ? `>${text}</${node.tag}>` : '/>';
   return `# ${node.tag} ${attrs}${body}`;
 }

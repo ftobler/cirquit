@@ -1190,6 +1190,44 @@ describe('xml to text conversion', () => {
     );
   });
 
+  it('traces a carried keyboard shortcut on a logic input', () => {
+    // LogicInputElm rides SwitchElm's dumpXml via super (LogicInputElm.java:55-57)
+    // and exposes the shortcut edit (:136-139), so an <L> document holds the
+    // same base attribute a dpdt does, dropped just as silently before.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <L x="256 672 224 672" f="0" mm="true" key="x"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('L 256 672 224 672 0 0 true 5 0');
+    const lines = text.split('\n');
+    const at = lines.indexOf('L 256 672 224 672 0 0 true 5 0');
+    expect(lines[at + 1]).toBe('# L key="x" not modelled: converted without its keyboard shortcut');
+  });
+
+  it('keeps a traced attribute value from splitting its comment', () => {
+    // The attribute parse accepts literal newlines inside quoted values
+    // (xml.ts), so a crafted key or r would push a continuation line past
+    // the # that reload then reads as an element line. Both trace values are
+    // flattened first; Number() trims newlines, so even the numeric gate on r
+    // cannot keep them out.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dpdt x="192 160 304 224" f="0" key="a
+b" r="
+0.001"/>
+</cir>
+`;
+    const lines = xmlToText(src).split('\n');
+    const at = lines.indexOf('429 192 160 304 224 0 0 false 2');
+    expect(at).toBeGreaterThan(0);
+    expect(lines[at + 1]).toBe(
+      '# dpdt r="\\n0.001" not modelled: converted as an ideal switch without on resistance',
+    );
+    expect(lines[at + 2]).toBe(
+      '# dpdt key="a\\nb" not modelled: converted without its keyboard shortcut',
+    );
+  });
+
   it('converts a potentiometer to its 174 line', () => {
     // PotElm writes ma/po/sl (PotElm.java:79-81) onto the port's
     // maxResistance position caption stream.
