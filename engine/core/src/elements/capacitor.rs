@@ -54,25 +54,43 @@ impl Capacitor {
     /// Upstream file flag selecting backward Euler.
     const FLAG_BACK_EULER: i64 = 2;
 
-    pub fn new(spec: &ElementSpec) -> Self {
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         Self::build(spec, false)
     }
 
     /// The polarised variant: same electrical model, plus a reverse-voltage
     /// rating (PolarCapacitorElm.java).
-    pub fn new_polarized(spec: &ElementSpec) -> Self {
+    pub fn new_polarized(spec: &ElementSpec) -> Result<Self, String> {
         Self::build(spec, true)
     }
 
-    fn build(spec: &ElementSpec, polarized: bool) -> Self {
+    /// The spec constructor rejects a non-positive capacitance instead of
+    /// storing it: a negative companion conductance stamps as an active
+    /// negative resistance whose trapezoidal step is positive feedback, and
+    /// an exact zero is skipped by the stamper, turning the part into an
+    /// unlabelled open. `set_param` keeps the same positivity rule, so both
+    /// entry points agree.
+    fn build(spec: &ElementSpec, polarized: bool) -> Result<Self, String> {
+        let capacitance = spec.param("capacitance", 1e-5);
+        if capacitance <= 0.0 || capacitance.is_nan() {
+            let kind = if polarized {
+                "polarizedCapacitor"
+            } else {
+                "capacitor"
+            };
+            return Err(format!(
+                "{kind} (id {}) capacitance must be positive, got {}",
+                spec.id, capacitance
+            ));
+        }
         // 1e-3, not 0: upstream deliberately puts a small charge on every
         // capacitor so a fresh LC tank self-starts (CapacitorElm.java:38, and
         // the same value is the load-time fallback at :46).
         let iv = spec.param("initialVoltage", 1e-3);
         let series_resistance = spec.param("seriesResistance", 0.0);
-        Self {
+        Ok(Self {
             base: Base::with_posts(2),
-            capacitance: spec.param("capacitance", 1e-5),
+            capacitance,
             initial_voltage: iv,
             series_resistance,
             cap_node: if series_resistance > 0.0 { 2 } else { 1 },
@@ -88,7 +106,7 @@ impl Capacitor {
             // the initial voltage stands in, as upstream's `reset()` does.
             v_prev: spec.param("voltDiff", iv),
             i_prev: 0.0,
-        }
+        })
     }
 
     fn conductance(&self, ctx: &SimCtx) -> f64 {

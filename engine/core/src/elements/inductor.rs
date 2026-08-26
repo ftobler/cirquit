@@ -37,11 +37,25 @@ pub struct Inductor {
 impl Inductor {
     const FLAG_BACK_EULER: i64 = 2;
 
-    pub fn new(spec: &ElementSpec) -> Self {
+    /// The spec constructor rejects a non-positive inductance instead of
+    /// storing it: `dt / L` would stamp a negative companion conductance,
+    /// an active negative resistance that grows every step, and an exact
+    /// zero is skipped by the stamper, leaving an unlabelled open.
+    /// `set_param` keeps the same positivity rule, so both entry points
+    /// agree. The relay coil and the dc motor's two embedded windings share
+    /// this constructor and validate their own values before calling it.
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
+        let inductance = spec.param("inductance", 1e-3);
+        if inductance <= 0.0 || inductance.is_nan() {
+            return Err(format!(
+                "inductor (id {}) inductance must be positive, got {}",
+                spec.id, inductance
+            ));
+        }
         let ic = spec.param("initialCurrent", 0.0);
-        Self {
+        Ok(Self {
             base: Base::with_posts(2),
-            inductance: spec.param("inductance", 1e-3),
+            inductance,
             saturation_current: spec.param("saturationCurrent", 0.0),
             initial_current: ic,
             backward_euler: spec.flag(Self::FLAG_BACK_EULER),
@@ -54,7 +68,7 @@ impl Inductor {
             // from zero. Without the token the initial current stands in, as
             // upstream's `reset()` does (InductorElm.java:95-99).
             i_prev: spec.param("current", ic),
-        }
+        })
     }
 
     /// The current-dependent inductance used by the saturating model
