@@ -2993,6 +2993,11 @@ function createAppStore() {
       // longer has a home, so the context stack is reset wholesale, exactly as
       // upstream's resetEditingContext clears it (CirSim.java:508-511).
       subcircuitStack: [],
+      // A load is a new document: an open device-model editor holds an element
+      // id or model name captured from the old file, so its OK could rebind or
+      // delete against elements this replace deleted. Same stale-pointer rule
+      // as scopeProperties above.
+      deviceModelEditor: null,
       ...bumpRevision(s),
       // A load is a new document: the frame loop's rebuild gate must refuse to
       // inject the previous circuit's live charges into it.
@@ -3000,9 +3005,13 @@ function createAppStore() {
       // The same rule for the canvas layer, here rather than in each caller:
       // a live gesture was mutating against elements this replace deleted, so
       // every route through loadNetlist (file open, Escape out of a drill-in,
-      // recovery) must stand it down the way an undo does. Refused loads
-      // return above without reaching this, so nothing is bumped for a
+      // recovery) must stand it down the way an undo does: the epoch bump
+      // cancels the canvas drag, and the flags drop here so the action is
+      // self-contained even when no keyed panel unmounts to do it. Refused
+      // loads return above without reaching this, so nothing moves for a
       // document that never changed.
+      scopeGesture: false,
+      elementGesture: null,
       revertEpoch: s.revertEpoch + 1,
     }));
     // A load is a new document on screen too: centre it the way upstream's
@@ -3307,6 +3316,9 @@ function createAppStore() {
       // New drops every scope, so an open Scope Properties dialog would be
       // stranded on a vanished id, holding modalSurface() shut.
       scopeProperties: null,
+      // Same for a device-model editor anchored to an element New just
+      // dropped: its OK could only reach a stale id.
+      deviceModelEditor: null,
       // New drops the drill-in session too: the outer document is gone.
       subcircuitStack: [],
       ...bumpRevision(s),
@@ -3314,7 +3326,10 @@ function createAppStore() {
       document: s.document + 1,
       // New does not route through loadNetlist, so it owes the same gesture
       // teardown on its own: the drag in flight was armed against elements
-      // this replace just emptied out.
+      // this replace just emptied out. The flags drop with the epoch bump,
+      // the way an undo pairs them.
+      scopeGesture: false,
+      elementGesture: null,
       revertEpoch: s.revertEpoch + 1,
     }));
     // An empty fresh circuit is clean.
@@ -3396,6 +3411,11 @@ function createAppStore() {
       scopeProperties: prev.scopes.some((x) => x.id === s.scopeProperties)
         ? s.scopeProperties
         : null,
+      // The device-model editor gets no survival check, unlike scopeProperties:
+      // a create rebinds by element id the restored list may not hold, and an
+      // edit deletes a model name the restored document may reference again.
+      // Closing is the only safe outcome.
+      deviceModelEditor: null,
       // An in-flight gesture cannot survive a state revert: a scope drag would
       // keep mutating past its reverted baseline and an element gesture would
       // swallow the next rotate's commit, so both flags drop with the state.
@@ -3436,6 +3456,9 @@ function createAppStore() {
       scopeProperties: next.scopes.some((x) => x.id === s.scopeProperties)
         ? s.scopeProperties
         : null,
+      // Same stale-anchor rule as undo: the editor cannot ride the redone
+      // document either.
+      deviceModelEditor: null,
       // Same gesture teardown as undo.
       scopeGesture: false,
       elementGesture: null,
