@@ -1,7 +1,6 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseCircuit, serializeCircuit } from './index';
 import { makeElement, makeToolElement } from '../../state/store';
 import { postsOf } from '../../model/registry';
@@ -10,8 +9,7 @@ import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE, OUTPUT_FIXED, OUTPUT_SHOW_VOLTAGE
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
 import type { CustomLogicModel } from './types';
 import { clearSessionModels, parseCompositeModelLine, registerSessionModel } from '../subcircuits';
-
-const CIRCUITS_DIR = fileURLToPath(new URL('../../../public/circuits', import.meta.url));
+import { CIRCUITS_DIR } from './fixtures';
 
 describe('ground file format', () => {
   /** Parses a single `g` line and re-emits it, returning that line. */
@@ -856,6 +854,36 @@ describe('electromechanical batch E file formats', () => {
     expect(e.params.gearRatio).toBe(1);
     expect(e.params.tau).toBe(0);
     expect(line).toBe('415 0 0 96 0 0 0.5 1 0.15 0.15 0.02 0.05 1 0');
+  });
+
+  it('round-trips the three-phase motor seven tokens', () => {
+    // ThreePhaseMotorElm.java:43-51: Rs Rr Ls Lr lm b J. The values are
+    // 3motor.txt's line gridded; upstream's class never overrides dump(), so
+    // this port's writer is what keeps all seven on a save.
+    const { e, line } = elementLine(
+      '427 160 320 480 320 0 0.067 0.032 0.0294 0.0297 0.0287 0.05 0.067',
+      '427',
+    );
+    expect(e.params.Rs).toBe(0.067);
+    expect(e.params.Rr).toBe(0.032);
+    expect(e.params.Ls).toBe(0.0294);
+    expect(e.params.Lr).toBe(0.0297);
+    expect(e.params.lm).toBe(0.0287);
+    expect(e.params.b).toBe(0.05);
+    expect(e.params.J).toBe(0.067);
+    expect(line).toBe('427 160 320 480 320 0 0.067 0.032 0.0294 0.0297 0.0287 0.05 0.067');
+  });
+
+  it('round-trips the motor protection switch four tokens', () => {
+    // MotorProtectionSwitchElm.java:48-64: resistance i2t blown label, blown
+    // a literal true/false and the label one escaped token, empty as \0.
+    // motorprotect.txt's values, gridded with an empty label.
+    const { e, line } = elementLine('428 160 320 224 320 0 0.0613 6.73 false \\0', '428');
+    expect(e.params.resistance).toBe(0.0613);
+    expect(e.params.i2t).toBe(6.73);
+    expect(e.params.blown).toBe(0);
+    expect(e.text ?? '').toBe('');
+    expect(line).toBe('428 160 320 224 320 0 0.0613 6.73 false \\0');
   });
 
   it('the time delay relay round-trips its four tokens', () => {
@@ -3016,6 +3044,18 @@ describe('chip family file formats', () => {
     expect(elementLine).toBe('195 160 320 320 320 0');
     const { elementLine: custom } = chipLine('195 160 320 320 320 8192 6', '195');
     expect(custom).toBe('195 160 320 320 320 8192 6');
+  });
+
+  it('161 phase comparator line round-trips, the standard chip stream', () => {
+    // Two inputs, one output, no saved state pins, so the optional high
+    // voltage is the whole stream here too (PhaseCompElm.java:30-38).
+    // phasecomp.txt's line shape, gridded.
+    const { e, elementLine } = chipLine('161 160 320 224 320 0', '161');
+    expect(e.kind).toBe('phaseComp');
+    expect(e.params.highVoltage).toBe(5);
+    expect(elementLine).toBe('161 160 320 224 320 0');
+    const { elementLine: custom } = chipLine('161 160 320 224 320 8192 6', '161');
+    expect(custom).toBe('161 160 320 224 320 8192 6');
   });
 
   it('196 full adder line round-trips its bits and high voltage', () => {
