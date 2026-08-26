@@ -371,7 +371,9 @@ const WRITERS: Record<string, Writer> = {
     // DPDTSwitchElm adds po (:54); the port's stream is position, momentary,
     // the label under its flag bit, then the pole count
     // (DPDTSwitchElm.java:38-45). The keyboard shortcut is session-only in
-    // both builds. The base on-resistance has no token on this stream.
+    // both builds. The base on-resistance has no token on this stream; a
+    // non-default r or a carried key degrades loudly under the line
+    // (droppedTraces below).
     const momentary = (n.attrs.mm ?? 'false').toLowerCase() === 'true';
     // A hand-authored document may carry mm without p; upstream's
     // SwitchElm(xx, yy, mm) constructor pairs the two, so a momentary switch
@@ -752,6 +754,25 @@ function droppedTraces(node: XmlNode): string[] {
     if (po !== 2) {
       const poles = normalizePoleCount(po);
       traces.push(`# dpdt po="${node.attrs.po}" not default: converted as a ${poles}-pole switch`);
+    }
+    // The SwitchElm base's on resistance has no token on the 429 stream, so a
+    // converted file would load at the default 0 even though the engine
+    // stamps resistors above it; name the lost value instead. Gate on value
+    // against upstream's undump seed of 0 (SwitchElm.java:91), never on
+    // presence, matching the om/dw rule above.
+    if (attr(node, 'r', 0) !== 0) {
+      traces.push(
+        `# dpdt r="${node.attrs.r}" not modelled: converted as an ideal switch without on resistance`,
+      );
+    }
+    // The base keyboard shortcut is session-only on the text stream in both
+    // builds, so a file-carried one would vanish unheard. Upstream writes key
+    // only once a shortcut exists (SwitchElm.java:79-80), so presence gates
+    // it; the empty string toggles nothing and deserves no note.
+    if (node.attrs.key !== undefined && node.attrs.key !== '') {
+      traces.push(
+        `# dpdt key="${node.attrs.key}" not modelled: converted without its keyboard shortcut`,
+      );
     }
   }
   if (tag === 'pt' && attr(node, 'li', 0) !== 0) {
