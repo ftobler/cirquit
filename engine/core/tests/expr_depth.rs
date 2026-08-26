@@ -1,7 +1,7 @@
 //! Expression evaluation depth safety: a flat operator chain nests its tree
 //! one level per term, far past the parser's grammar bound, so evaluation
-//! must not recurse the native stack; mixed-precedence results must match a
-//! straightforward recursive reference evaluator.
+//! must not recurse the native stack; mixed-precedence and function results
+//! must match a straightforward recursive reference evaluator.
 
 use circuit_core::expr::{parse, ExprState};
 
@@ -72,9 +72,9 @@ fn pwl_walk_reaches_later_segments_and_holds_past_the_end() {
 
 #[test]
 fn random_expressions_match_a_recursive_reference() {
-    // Generated expressions covering every operator exercise the iterative
-    // scheduling order against an independent recursive evaluator written
-    // straight from the precedence table.
+    // Generated expressions covering every operator and every function form
+    // exercise the iterative scheduling order against an independent
+    // recursive evaluator written straight from the precedence table.
     let mut rng = Rng::new(0xDEED_BEEF_1234_5678);
     for _ in 0..4000 {
         let text = gen_top(&mut rng, 4);
@@ -93,8 +93,8 @@ fn same(a: f64, b: f64) -> bool {
     a == b || (a.is_nan() && b.is_nan())
 }
 
-/// Tiny xorshift64*, enough for deterministic expression generation without
-/// pulling in a rand crate.
+/// Plain xorshift64 drawing the high 32 bits, enough for deterministic
+/// expression generation without pulling in a rand crate.
 struct Rng(u64);
 
 impl Rng {
@@ -258,9 +258,50 @@ fn gen_pow(rng: &mut Rng, d: u32) -> String {
 
 fn gen_term(rng: &mut Rng, d: u32) -> String {
     if d > 0 && rng.chance(25) {
-        format!("({})", gen_top(rng, d - 1))
-    } else {
-        atom(rng)
+        return format!("({})", gen_top(rng, d - 1));
+    }
+    // Function calls sit at term level in the engine grammar, one tier below
+    // unary minus and power.
+    if d > 0 && rng.chance(20) {
+        return gen_call(rng, d);
+    }
+    atom(rng)
+}
+
+/// One of the engine's function forms over fresh subexpressions: the
+/// variadic min/max fold, select's lazy branch pick, a pwl walk over fixed
+/// points, step in both arities, clamp, and the periodic tri/saw pair.
+/// Every case has a matching arm in [`apply_func`].
+fn gen_call(rng: &mut Rng, d: u32) -> String {
+    match rng.below(8) {
+        0 => format!(
+            "min({}, {}, {})",
+            gen_top(rng, d - 1),
+            gen_top(rng, d - 1),
+            gen_top(rng, d - 1)
+        ),
+        1 => format!(
+            "max({}, {}, {})",
+            gen_top(rng, d - 1),
+            gen_top(rng, d - 1),
+            gen_top(rng, d - 1)
+        ),
+        2 => format!(
+            "select({}, {}, {})",
+            gen_top(rng, d - 1),
+            gen_top(rng, d - 1),
+            gen_top(rng, d - 1)
+        ),
+        3 => format!("pwl({}, 0, 0, 1, 10)", gen_top(rng, d - 1)),
+        4 => format!("step({})", gen_top(rng, d - 1)),
+        5 => format!("step({}, {})", gen_top(rng, d - 1), gen_top(rng, d - 1)),
+        6 => format!(
+            "clamp({}, {}, {})",
+            gen_top(rng, d - 1),
+            gen_top(rng, d - 1),
+            gen_top(rng, d - 1)
+        ),
+        _ => format!("{}({})", rng.pick(&["tri", "saw"]), gen_top(rng, d - 1)),
     }
 }
 
@@ -325,6 +366,102 @@ fn ref_lex(input: &str) -> Vec<String> {
 
 fn as_int(v: f64) -> i32 {
     (v.trunc() as i64) as i32
+}
+
+/// Function forms the generator emits, one entry per [`apply_func`] case.
+const REF_FUNCS: [&str; 8] = ["min", "max", "select", "pwl", "step", "clamp", "tri", "saw"];
+
+/// Modulo that never returns negative for a positive modulus, upstream's
+/// `posmod` (Expr.java:177-180).
+fn posmod(x: f64, m: f64) -> f64 {
+    let r = x % m;
+    if r >= 0.0 {
+        r
+    } else {
+        r + m
+    }
+}
+
+/// Reference bodies for the generated calls, following the engine's switch:
+/// min/max fold left to right, select picks on strictly positive, step
+/// returns 0 both above its threshold and below zero.
+fn apply_func(name: &str, a: &[f64]) -> f64 {
+    match name {
+        "min" => a
+            .iter()
+            .copied()
+            .reduce(|x, y| x.min(y))
+            .expect("two or more"),
+        "max" => a
+            .iter()
+            .copied()
+            .reduce(|x, y| x.max(y))
+            .expect("two or more"),
+        "select" => {
+            if a[0] > 0.0 {
+                a[2]
+            } else {
+                a[1]
+            }
+        }
+        "pwl" => ref_pwl(a),
+        "step" => {
+            if a.len() == 1 {
+                if a[0] < 0.0 {
+                    0.0
+                } else {
+                    1.0
+                }
+            } else if a[0] > a[1] || a[0] < 0.0 {
+                0.0
+            } else {
+                1.0
+            }
+        }
+        "clamp" => a[0].max(a[1]).min(a[2]),
+        "tri" => {
+            let x = posmod(a[0], std::f64::consts::TAU) / std::f64::consts::PI;
+            if x < 1.0 {
+                -1.0 + 2.0 * x
+            } else {
+                3.0 - 2.0 * x
+            }
+        }
+        "saw" => posmod(a[0], std::f64::consts::TAU) / std::f64::consts::PI - 1.0,
+        _ => unreachable!("generator emits known functions only"),
+    }
+}
+
+/// Mirrors upstream's segment walk over the evaluated points, holding y0
+/// before the first abscissa and y1 after the last
+/// (Expr.pwl, Expr.java:154-175).
+fn ref_pwl(a: &[f64]) -> f64 {
+    let x = a[0];
+    let mut x0 = a[1];
+    let mut y0 = a[2];
+    if x < x0 {
+        return y0;
+    }
+    if a.len() < 5 {
+        return y0;
+    }
+    let mut x1 = a[3];
+    let mut y1 = a[4];
+    let mut i = 5;
+    loop {
+        if x < x1 {
+            return y0 + (x - x0) * (y1 - y0) / (x1 - x0);
+        }
+        if i + 1 >= a.len() {
+            break;
+        }
+        x0 = x1;
+        y0 = y1;
+        x1 = a[i];
+        y1 = a[i + 1];
+        i += 2;
+    }
+    y1
 }
 
 impl<'a> RefEval<'a> {
@@ -477,15 +614,25 @@ impl<'a> RefEval<'a> {
             assert!(self.eat(")"));
             return e;
         }
-        match self.toks.get(self.pos) {
-            Some(t) => {
-                self.pos += 1;
-                match t.parse::<f64>() {
-                    Ok(v) => v,
-                    Err(_) => self.var(t),
-                }
-            }
+        let tok = match self.toks.get(self.pos) {
+            Some(t) => t.clone(),
             None => panic!("reference evaluator ran off the end"),
+        };
+        self.pos += 1;
+        // Calls sit at term level, mirroring both the generator and the
+        // engine's parse_term.
+        if REF_FUNCS.contains(&tok.as_str()) {
+            assert!(self.eat("("));
+            let mut args = vec![self.top()];
+            while self.eat(",") {
+                args.push(self.top());
+            }
+            assert!(self.eat(")"));
+            return apply_func(&tok, &args);
+        }
+        match tok.parse::<f64>() {
+            Ok(v) => v,
+            Err(_) => self.var(&tok),
         }
     }
 }
