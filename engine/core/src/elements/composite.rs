@@ -316,9 +316,11 @@ impl Composite {
 
     /// Builds a composite from a model string, the external node ids that
     /// become its posts, and the optional per-child dump tokens. Fails named
-    /// when a child dump carries an expression that cannot parse; unknown
-    /// child kinds and short node lists still skip silently like upstream's
-    /// "failed to create" path.
+    /// when a child dump carries an expression that cannot parse, or when a
+    /// child fails to build (a non-positive reactive value, a malformed
+    /// custom transformer, and so on), so the offending model line is named
+    /// rather than dropped; unknown child kinds and short node lists still
+    /// skip silently like upstream's "failed to create" path.
     pub fn from_model(
         model: &str,
         external: &[usize],
@@ -404,8 +406,20 @@ impl Composite {
                 model: None,
                 flags,
             };
-            let Ok(child) = build_element(&spec) else {
-                continue;
+            // A failed child build is no longer swallowed: a non-positive
+            // reactive value or any other spec refusal from a child would
+            // otherwise drop the child silently and shift every later child's
+            // index onto the wrong values, a quieter failure than the load
+            // refusing outright. The error names the child so the banner
+            // points at the offending model line, matching the unparseable
+            // expression path just above.
+            let child = match build_element(&spec) {
+                Ok(c) => c,
+                Err(e) => {
+                    return Err(format!(
+                        "composite child {i} ({child_kind}) failed to build: {e}"
+                    ))
+                }
             };
             // A model line must name every post of its child; a short line is
             // a malformed model, skipped like a failed build.
