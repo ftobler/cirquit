@@ -936,9 +936,10 @@ describe('chip mirrors', () => {
   });
 
   it('a singly mirrored d flip flop reflects in place', () => {
-    // No shared centre means no anchor shift (upstream's count == 1 quirk):
-    // the fields swap and normalise back to the same rightward segment while
-    // the flag alone exchanges the two banks.
+    // No shared centre means no anchor shift, and upstream toggles only
+    // FLAG_FLIP_X there (ChipElm.java:620-628): reflecting about the own
+    // midpoint then swapping restores the stored fields exactly, so the flag
+    // alone exchanges the two banks, byte-exact with upstream.
     const e = element('dFlipFlop', 100, 200, 196, 200, DFF_SET);
     const m = mirrorElement(e);
     expect([m.x1, m.y1, m.x2, m.y2]).toEqual([100, 200, 196, 200]);
