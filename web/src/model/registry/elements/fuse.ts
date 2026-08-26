@@ -9,6 +9,7 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { bodyBox, twoPosts, readParams } from '../shared';
+import { boolToken } from './switch';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Body length upstream's `setPoints` uses for the default (non-IEC) symbol
@@ -61,7 +62,7 @@ export const FUSE_DEF: ElementDef = {
   // as blown and reloads blown.
   parse: (t, e) => {
     readParams(t, e, ['resistance', 'i2t', 'heat']);
-    e.params.blown = t[3] === 'true' ? 1 : 0;
+    e.params.blown = boolToken(t[3]);
     e.state = e.params.blown;
   },
   dump: (e) => [

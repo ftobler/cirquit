@@ -16,6 +16,7 @@ import {
   type ChipPinDef,
 } from './dFlipFlop';
 import { readParams } from '../shared';
+import { boolToken } from './switch';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 export const COUNTER_UP_DOWN = 4;
@@ -77,7 +78,7 @@ export const COUNTER_DEF: ElementDef = {
     // The counter's own trailing tokens: the reset polarity as a Boolean, then
     // the count modulus, both read defensively (CounterElm.java:39-46).
     const inv = t[i + names.length];
-    if (inv !== undefined) e.params.invertreset = inv === 'true' ? 1 : 0;
+    if (inv !== undefined) e.params.invertreset = boolToken(inv);
     const mod = Number(t[i + names.length + 1]);
     if (t[i + names.length + 1] !== undefined && Number.isFinite(mod)) {
       e.params.modulus = mod;

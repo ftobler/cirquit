@@ -9,7 +9,7 @@ import {
 } from '../../../render/draw';
 import { LOGIC_INPUT_TERNARY, SWITCH_LABEL } from '../flags';
 import { onePost, readParams } from '../shared';
-import { labelFlags, switchTokens } from './switch';
+import { labelFlags, switchTokens, boolToken } from './switch';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** LogicInputElm.java:26-27. Bit 1 turns the third (mid) position on, bit 2
@@ -70,7 +70,7 @@ export const LOGIC_INPUT_DEF: ElementDef = {
     // shares.
     const p = t[0];
     e.params.position = p === 'true' ? 0 : p === 'false' ? 1 : Number(p) || 0;
-    e.params.momentary = t[1] === 'true' ? 1 : 0;
+    e.params.momentary = boolToken(t[1]);
     // The label token only exists under FLAG_LABEL and shifts hiV/loV one
     // token along: SwitchElm reads it before LogicInputElm appends its two
     // values (SwitchElm.java:66-67, LogicInputElm.java:38-40).

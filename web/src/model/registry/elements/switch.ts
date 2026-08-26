@@ -14,6 +14,18 @@ export function switchTokens(e: CircuitElement): (string | number)[] {
   return tokens;
 }
 
+/** Upstream reads every literal `true`/`false` file token through either
+ *  `new Boolean(String)` or `Boolean.parseBoolean`, both true for the word in
+ *  any case: the switch family's momentary flag (SwitchElm.java:63), the
+ *  monostable's retriggerable (MonostableElm.java:41), the blown flags of the
+ *  motor protection switch and fuse (MotorProtectionSwitchElm.java:53,
+ *  FuseElm.java:46), the triac latch state (TriacElm.java:55) and the
+ *  counter's reset polarity (CounterElm.java:42). Saves keep writing
+ *  lowercase, so this only widens what a load accepts. */
+export function boolToken(token: string | undefined): 0 | 1 {
+  return (token ?? '').toLowerCase() === 'true' ? 1 : 0;
+}
+
 /** Clearing FLAG_LABEL when the label goes empty keeps the token count and the
  *  flag in step, as upstream's editor does (SwitchElm.java:258-265). */
 export function labelFlags(e: CircuitElement): number {
@@ -90,7 +102,7 @@ export const SWITCH_DEF: ElementDef = {
     // The position token is written as `true`/`false` by some versions.
     const p = t[0];
     e.params.position = p === 'true' ? 1 : p === 'false' ? 0 : Number(p) || 0;
-    e.params.momentary = t[1] === 'true' ? 1 : 0;
+    e.params.momentary = boolToken(t[1]);
     // The label token only exists under FLAG_LABEL (SwitchElm.java:66-67).
     if ((e.flags & SWITCH_LABEL) !== 0 && t[2] !== undefined) e.text = t[2];
     e.state = e.params.position;

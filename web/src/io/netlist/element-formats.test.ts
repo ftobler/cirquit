@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseCircuit, serializeCircuit } from './index';
 import { makeElement, makeToolElement } from '../../state/store';
-import { postsOf } from '../../model/registry';
+import { postsOf, defFor } from '../../model/registry';
 import { SimEngine } from '../../engine/simulator';
 import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE, OUTPUT_FIXED, OUTPUT_SHOW_VOLTAGE, OPAMP_SWAP, VOLTAGE_SHOW_VOLTAGE } from '../../model/registry/flags';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
@@ -831,6 +831,123 @@ describe('switch and SPDT labels', () => {
     expect(e.params.position).toBe(2);
     expect(e.params.throwCount).toBe(2);
     expect(elementLine).toBe('S 144 144 144 64 1 2 false 0 2');
+  });
+});
+
+/** Parse results carry a session-wide id that depends on call order, so
+ *  equality is asserted on everything but it. Shared by both boolean-token
+ *  suites below. */
+const withoutId = (e: CircuitElement): Omit<CircuitElement, 'id'> => {
+  const { id: _id, ...rest } = e;
+  return rest;
+};
+
+describe('momentary token case', () => {
+  // Upstream reads the momentary token through `new Boolean(String)`, true for
+  // the word in any case (SwitchElm.java:63), and every switch-family reader
+  // inherits that constructor. A load accepts any case and must land on the
+  // same element its lowercase twin produces, while the save keeps writing
+  // lowercase so files this port wrote stay byte-stable. The position token
+  // beside it is a different story: upstream compares it case-sensitively
+  // (SwitchElm.java:56-62), so only the momentary slot is varied here.
+  const cases: Array<[string, string]> = [
+    ['switch', 's 96 80 160 80 0 1 true'],
+    ['switch2', 'S 96 144 160 64 0 0 true 0 2'],
+    ['crossSwitch', '430 96 80 160 80 0 0 true'],
+    ['dpdtSwitch', '429 96 80 176 80 0 0 true 2'],
+    ['mbbSwitch', '416 96 80 160 80 0 0 true 0'],
+    ['logicInput', 'L 0 0 100 0 0 0 true 5 0'],
+  ];
+
+  /** The file line with the momentary slot (token 7) rewritten. */
+  const retokened = (line: string, word: string): string => {
+    const tokens = line.split(' ');
+    tokens[7] = word;
+    return tokens.join(' ');
+  };
+
+  const savedLine = (text: string): string => {
+    const [e] = parseCircuit(text).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    return out.split('\n').find((l) => l.startsWith(`${text.split(' ')[0]} `)) ?? '';
+  };
+
+  it.each(cases)('%s parses True and TRUE like lowercase and saves back lowercase', (kind, line) => {
+    const [lower] = parseCircuit(line).elements;
+    expect(lower.kind).toBe(kind);
+    for (const word of ['True', 'TRUE']) {
+      const [e] = parseCircuit(retokened(line, word)).elements;
+      expect(withoutId(e)).toEqual(withoutId(lower));
+    }
+    expect(savedLine(retokened(line, 'True'))).toBe(line);
+  });
+
+  it.each(cases)('%s keeps a mixed-case false non-momentary', (_kind, line) => {
+    const [off] = parseCircuit(retokened(line, 'false')).elements;
+    const [e] = parseCircuit(retokened(line, 'False')).elements;
+    expect(e.params.momentary).toBe(0);
+    expect(withoutId(e)).toEqual(withoutId(off));
+    expect(savedLine(retokened(line, 'False'))).toBe(retokened(line, 'false'));
+  });
+});
+
+describe('boolean token case', () => {
+  // Outside the switch family several defs carry the same kind of literal
+  // `true`/`false` token, read upstream through `new Boolean(String)`
+  // (MonostableElm.java:41 retriggerable, MotorProtectionSwitchElm.java:53 and
+  // FuseElm.java:46 blown) or `Boolean.parseBoolean` (TriacElm.java:55 latch
+  // state, CounterElm.java:42 reset polarity), both true for the word ignoring
+  // case. Each reader shares boolToken now, so loads accept any case while
+  // saves keep writing lowercase.
+  const cases: Array<[string, Record<string, number>, Record<string, number>]> = [
+    ['monostable', { retriggerable: 1 }, {}],
+    ['motorProtectionSwitch', { blown: 1 }, {}],
+    ['triac', { state: 1 }, {}],
+    ['counter', { invertreset: 1 }, { invertreset: 0 }],
+    ['fuse', { blown: 1 }, {}],
+  ];
+
+  /** A fresh element with params layered over the kind defaults. The third
+   *  column exists because the counter's fresh default is invertreset on. */
+  const built = (kind: string, params: Record<string, number>): CircuitElement => {
+    const el = makeElement(kind, 96, 80, 160, 80);
+    return { ...el, id: 1, params: { ...el.params, ...params } };
+  };
+
+  /** Serializes one element and returns its own line from the file. */
+  const elementLineOf = (e: CircuitElement): string => {
+    const out = serializeCircuit([{ ...e }], { ...DEFAULT_SETTINGS }).trim();
+    return out.split('\n').find((l) => l.startsWith(`${defFor(e.kind)?.dumpCode} `)) ?? '';
+  };
+
+  /** The line with its boolean word rewritten. It is the only literal
+   *  true/false token these kinds write. */
+  const retokened = (line: string, word: string): string => {
+    const tokens = line.split(' ');
+    tokens[tokens.findIndex((t) => t === 'true' || t === 'false')] = word;
+    return tokens.join(' ');
+  };
+
+  it.each(cases)('%s parses True and TRUE like lowercase and saves back lowercase', (kind, onParams) => {
+    const base = elementLineOf(built(kind, onParams));
+    expect(base).toContain(' true');
+    const [lower] = parseCircuit(base).elements;
+    for (const word of ['True', 'TRUE']) {
+      const [e] = parseCircuit(retokened(base, word)).elements;
+      expect(withoutId(e)).toEqual(withoutId(lower));
+    }
+    expect(elementLineOf(parseCircuit(retokened(base, 'True')).elements[0])).toBe(base);
+  });
+
+  it.each(cases)('%s keeps a mixed-case false non-set', (kind, _onParams, offParams) => {
+    const base = elementLineOf(built(kind, offParams));
+    expect(base).toContain(' false');
+    const [off] = parseCircuit(base).elements;
+    for (const word of ['False', 'FALSE']) {
+      const [e] = parseCircuit(retokened(base, word)).elements;
+      expect(withoutId(e)).toEqual(withoutId(off));
+    }
+    expect(elementLineOf(parseCircuit(retokened(base, 'False')).elements[0])).toBe(base);
   });
 });
 

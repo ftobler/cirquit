@@ -72,6 +72,7 @@ import type { PlotMeasurements, Scope, ScopeValue } from '../engine/scopeModel';
 import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
 import { DEFAULT_Q_STATE } from '../model/registry/elements/darlington';
 import { normalizePoleCount } from '../model/registry/elements/dpdtSwitch';
+import { boolToken } from '../model/registry/elements/switch';
 import { defFor, defForDumpCode } from '../model/registry';
 import { batteryTypeTables } from '../model/registry/elements/battery';
 import { FRESH_CHILDREN as comparatorChildren } from '../model/registry/elements/comparator';
@@ -148,7 +149,9 @@ const WRITERS: Record<string, Writer> = {
   L: (n) => {
     const tokens: (string | number)[] = [
       attr(n, 'p', 0),
-      n.attrs.mm === 'true' ? 'true' : 'false',
+      // The mm attribute rides the same Boolean reader as the text format's
+      // token (SwitchElm.java:63), so any case of the word means on.
+      boolToken(n.attrs.mm) ? 'true' : 'false',
     ];
     if (n.attrs.lab !== undefined) tokens.push(n.attrs.lab);
     tokens.push(attr(n, 'hi', 5), attr(n, 'lo', 0));

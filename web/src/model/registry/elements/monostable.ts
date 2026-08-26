@@ -15,6 +15,7 @@ import {
   drawChip,
   type ChipPinDef,
 } from './dFlipFlop';
+import { boolToken } from './switch';
 import type { CircuitElement, DrawContext, ElementDef } from '../../types';
 
 /** The pin table, from `setupPins` (MonostableElm.java:46-57). */
@@ -46,7 +47,7 @@ export const MONOSTABLE_DEF: ElementDef = {
   parse: (t, e) => {
     const i = chipCommonTokens(t, e, false);
     const rt = t[i];
-    if (rt !== undefined) e.params.retriggerable = rt === 'true' ? 1 : 0;
+    if (rt !== undefined) e.params.retriggerable = boolToken(rt);
     const dl = Number(t[i + 1]);
     if (t[i + 1] !== undefined && Number.isFinite(dl)) e.params.delay = dl;
   },
