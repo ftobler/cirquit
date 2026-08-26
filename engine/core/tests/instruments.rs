@@ -389,6 +389,70 @@ fn data_recorder_live_size_change_reallocates_and_clears() {
 }
 
 #[test]
+fn data_recorder_samples_every_committed_step_at_nominal_dt() {
+    // Control for the bucket gating: with dt == nominal every commit closes
+    // its own sampling bucket (SimulationManager.java:1413-1419), so even
+    // with adaptation switched on the recorder gains exactly one row per
+    // committed step, today's ungated cadence.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "resistor",
+                &[[0, 0], [100, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm(3, "dataRecorder", &[[0, 0]], &[("dataCount", 64.0)]),
+            elm(4, "ground", &[[0, 100]], &[]),
+            elm(5, "ground", &[[100, 0]], &[]),
+        ],
+        adaptive_opts(1e-5, 50e-12, 100),
+    );
+    let r = c.run(25);
+    assert!(r.converged, "the control run must converge: {:?}", r.error);
+    assert_eq!(r.rejected_steps, 0, "a linear circuit must never reject");
+    let samples = c.data_recorder_data(3);
+    assert_eq!(samples.len(), 25, "one row per committed step");
+    assert!(samples.iter().all(|&s| close(s, 5.0, 1e-12)));
+}
+
+#[test]
+fn data_recorder_gains_one_row_per_nominal_step_while_adapting() {
+    // Upstream gates the recorder on its nominal-step bucket counter
+    // (DataRecorderElm.java:68-71): while adaptation halves the working step,
+    // several committed steps share one bucket and only the last writes. The
+    // compliance island forces real halvings (see common::compliance_circuit),
+    // so 60 committed steps cover well under 300 us of simulated time and the
+    // row count must track elapsed time, not the commit count.
+    const NOMINAL: f64 = 5e-6;
+    let mut els = compliance_circuit(0.0);
+    els.push(elm(6, "dataRecorder", &[[0, 0]], &[("dataCount", 1024.0)]));
+    let c = &mut build(els, adaptive_opts(NOMINAL, 50e-12, 4));
+    let mut rejected = 0u32;
+    for _ in 0..60 {
+        let r = c.run(1);
+        assert!(r.converged, "halving must rescue every step: {:?}", r.error);
+        rejected += r.rejected_steps;
+    }
+    assert!(
+        rejected >= 2,
+        "adaptation never engaged, so this test proves nothing"
+    );
+    let rows = c.data_recorder_data(6).len() as i64;
+    let expected = (c.time() / NOMINAL) as i64;
+    assert!(
+        (rows - expected).abs() <= 1,
+        "{rows} rows after {} s: expected about {expected}, one per nominal step",
+        c.time()
+    );
+    assert!(
+        rows < 60,
+        "with halved steps in the mix the recorder must fall behind the commit count"
+    );
+}
+
+#[test]
 fn stop_trigger_fires_after_the_delay_and_latches_stopped() {
     // A DC source steps from 0 V to 2 V, crossing the 1 V trigger (type 0,
     // >=). The edge arms the trigger at the crossing step's end-of-step time;

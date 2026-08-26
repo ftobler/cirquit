@@ -481,6 +481,20 @@ impl Circuit {
             nominal_dt: self.options.time_step,
             dc_analysis: false,
             subiter: 0,
+            // Upstream's bucket state belongs to the run, not to the circuit:
+            // analyzeCircuit never touches it, only resetTime does
+            // (SimulationManager.java:83-86), so a preserving edit carries it
+            // across and a fresh document starts from an empty accumulator.
+            step_accum: if spec.preserve_run {
+                self.ctx.step_accum
+            } else {
+                0.0
+            },
+            sample_bucket: if spec.preserve_run {
+                self.ctx.sample_bucket
+            } else {
+                0
+            },
         };
 
         // Built into locals and committed to `self` only once every element
@@ -1451,6 +1465,23 @@ impl Circuit {
             return Err(StepError::NotConverged(max_sub, last_failing));
         };
 
+        // ─── Nominal-step sampling buckets ───
+        // Between committing a step and calling stepFinished, upstream drops
+        // the committed dt into its bucket accumulator and opens a new bucket
+        // whenever it reaches maxTimeStep, the NOMINAL step
+        // (SimulationManager.java:1413-1418). The comparison is `>=` on raw
+        // f64s exactly as upstream writes it; at dt == nominal every commit
+        // crosses (accum returns to exactly 0.0), so the ungated cadence of a
+        // fixed-step run is preserved bit for bit. The operating-point solve
+        // commits no time, so it must not feed the accumulator either.
+        if !self.ctx.dc_analysis {
+            self.ctx.step_accum += dt;
+            if self.ctx.step_accum >= self.ctx.nominal_dt {
+                self.ctx.step_accum -= self.ctx.nominal_dt;
+                self.ctx.sample_bucket += 1;
+            }
+        }
+
         let ctx = self.ctx;
         for elm in self.elements.iter_mut() {
             elm.calculate_current(&ctx);
@@ -1983,6 +2014,10 @@ impl Circuit {
         self.ctx.time = 0.0;
         self.ctx.dt = self.options.time_step;
         self.ctx.subiter = 0;
+        // Upstream's resetTime zeroes the bucket state with the clock
+        // (SimulationManager.java:83-86).
+        self.ctx.step_accum = 0.0;
+        self.ctx.sample_bucket = 0;
         self.error = None;
         self.current_time_step = self.options.time_step;
         // The captures below were just emptied at the nominal step; recording
@@ -2749,11 +2784,16 @@ mod tests {
             let s = c.scopes()[0].snapshot();
             (s[s.len() - 2] + s[s.len() - 1]) / 2.0
         };
-        // A three-slot ring keeps the far end flat through three committed
-        // steps and delivers the full value on the fourth, slot counting
-        // being per committed step regardless of their length. Twelve slots,
-        // the carried-step capture, would still read zero here.
-        let filling = c.run(3);
+        // A three-slot ring sized from the NOMINAL step delivers on the
+        // fourth sampling bucket; twelve slots, the carried-step capture,
+        // would still read zero many buckets later. The ring advance rides
+        // the bucket counter now, so the first commit's wave (captured
+        // before any solve, hence zero) holds slot 0 for one bucket longer
+        // than the old per-commit counting: the edge shows up on the fifth
+        // committed step, not the fourth. The frame-top doubling has already
+        // walked the working step back to the nominal by then, so the bucket
+        // cadence is effectively per commit after the first partial one.
+        let filling = c.run(4);
         assert!(filling.converged, "{:?}", filling.error);
         assert!(
             last_sample(&c).abs() < 1e-9,

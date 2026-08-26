@@ -45,8 +45,13 @@ pub struct TransmissionLine {
     too_long: bool,
     /// Ring-buffer length in steps; 0 while unallocated.
     len_steps: usize,
-    /// Write index into the ring, advanced once per committed step.
+    /// Write index into the ring, advanced once per sampling bucket.
     ptr: usize,
+    /// The sampling bucket the ring last advanced in, upstream's
+    /// `lastStepCount` (TransLineElm.java:219). While adaptation has halved
+    /// the working step, several committed steps share one nominal-step
+    /// bucket and only the bucket's last step may advance the ring.
+    last_bucket: u64,
     voltage_l: Vec<f64>,
     voltage_r: Vec<f64>,
 }
@@ -66,6 +71,7 @@ impl TransmissionLine {
             too_long: false,
             len_steps: 0,
             ptr: 0,
+            last_bucket: 0,
             voltage_l: Vec::new(),
             voltage_r: Vec::new(),
         }
@@ -212,9 +218,16 @@ impl Element for TransmissionLine {
         if ctx.dc_analysis || self.len_steps == 0 {
             return;
         }
-        // One ring slot per committed step: `step_finished` runs exactly once
-        // per accepted timestep here, so upstream's `lastStepCount` guard
-        // (TransLineElm.java:216-221) has nothing to defend against.
+        // One ring slot per NOMINAL step, not per committed step: upstream
+        // guards the advance on its bucket counter exactly like the meters
+        // (TransLineElm.java:216-221), because the ring is sized as
+        // delay / nominal_dt. Advancing per commit under a halved working
+        // step would walk the delay ring once per substep and contract the
+        // line's delivered delay by the subdivision factor.
+        if ctx.sample_bucket == self.last_bucket {
+            return;
+        }
+        self.last_bucket = ctx.sample_bucket;
         self.ptr = (self.ptr + 1) % self.len_steps;
     }
 
@@ -291,6 +304,7 @@ impl Element for TransmissionLine {
         self.voltage_l.iter_mut().for_each(|v| *v = 0.0);
         self.voltage_r.iter_mut().for_each(|v| *v = 0.0);
         self.ptr = 0;
+        self.last_bucket = 0;
     }
 }
 

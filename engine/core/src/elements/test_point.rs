@@ -48,6 +48,11 @@ pub struct TestPoint {
     decreasing_v: bool,
     started: bool,
     zerocount: i32,
+    /// The sampling bucket this test point last sampled in, upstream's
+    /// `lastStepCount` (TestPointElm.java:228). While adaptation has halved
+    /// the working step, several committed steps share one nominal-step
+    /// bucket and only the bucket's last step may sample.
+    last_bucket: u64,
 }
 
 impl TestPoint {
@@ -76,6 +81,7 @@ impl TestPoint {
             decreasing_v: true,
             started: false,
             zerocount: 0,
+            last_bucket: 0,
         }
     }
 
@@ -129,6 +135,15 @@ impl Element for TestPoint {
         if ctx.dc_analysis {
             return;
         }
+        // One sample per nominal step, not per committed step, upstream's
+        // gate on sim.timeStepCount (TestPointElm.java:226-228): with the
+        // working step halved by adaptation, sampling per commit would
+        // over-count the RMS window and skew the cycle timing by the
+        // subdivision factor.
+        if ctx.sample_bucket == self.last_bucket {
+            return;
+        }
+        self.last_bucket = ctx.sample_bucket;
         self.count += 1.0;
         let v = self.base.volts[0];
         self.total += v * v;
@@ -251,5 +266,6 @@ impl Element for TestPoint {
         self.increasing_v = true;
         self.decreasing_v = true;
         self.started = false;
+        self.last_bucket = 0;
     }
 }

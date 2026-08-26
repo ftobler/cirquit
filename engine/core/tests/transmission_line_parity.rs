@@ -171,3 +171,77 @@ fn preserve_run_sizes_the_ring_from_the_nominal_step_not_a_carried_one() {
         "a nominal-sized ring delivers the edge on the fourth step, like a fresh build"
     );
 }
+
+/// The compliance island of common::compliance_circuit, shifted far enough
+/// away that no coordinate touches the line's island and with ids bumped past
+/// the line's: an electrically separate Newton-forcing stage in the same
+/// circuit, so the shared working step halves while the line's own closure
+/// stays linear.
+fn forcing_island() -> Vec<ElementSpec> {
+    compliance_circuit(0.0)
+        .into_iter()
+        .map(|mut e| {
+            e.id += 10;
+            for p in e.posts.iter_mut() {
+                p[0] += 2000;
+                p[1] += 2000;
+            }
+            e
+        })
+        .collect()
+}
+
+#[test]
+fn delivered_delay_stays_at_delay_across_halved_steps() {
+    // The ring advance is gated on upstream's bucket counter exactly like the
+    // meters (TransLineElm.java:216-221), because the ring is sized as
+    // delay / nominal_dt: advancing per committed step under a halved working
+    // step would walk the ring once per substep and contract the line's
+    // delivered delay by the subdivision factor. An 8-slot line driven
+    // through two halvings' worth of adaptation must therefore deliver its
+    // edge at delay plus at most one nominal step; the ungated code would
+    // land it one halved step (2.5 us) early for every rejection taken.
+    let dt = 5e-6;
+    let delay = 8.0 * dt;
+    let mut els = open_line_elements(delay);
+    els.extend(forcing_island());
+    let spec = CircuitSpec {
+        preserve_run: false,
+        elements: els,
+        options: Some(adaptive_opts(dt, 50e-12, 4)),
+        scopes: vec![tr_scope(1, ScopeValue::NodeVoltage, 3)],
+    };
+    let c = &mut Circuit::new();
+    c.set_circuit(&spec)
+        .expect("the split circuit should build");
+
+    let mut rejected = 0u32;
+    let mut arrival = None;
+    for _ in 0..60 {
+        let r = c.run(1);
+        assert!(r.converged, "halving must rescue every step: {:?}", r.error);
+        rejected += r.rejected_steps;
+        if last_sample(c, 0) > 5.0 {
+            arrival = Some(r.time);
+            break;
+        }
+    }
+    let t_arrival = arrival.expect("the edge never arrived");
+    assert!(
+        rejected >= 2,
+        "adaptation never engaged before delivery, so this test proves nothing"
+    );
+    // Gated: the edge shows up on the first commit whose cumulative time
+    // passes the delay, so within one nominal step above it and never below.
+    assert!(
+        t_arrival > delay - 1e-12,
+        "edge arrived at {} s, the delivered delay contracted below {} s",
+        t_arrival,
+        delay
+    );
+    assert!(
+        t_arrival <= delay + dt + 1e-12,
+        "edge arrived at {} s, more than a nominal step late",
+        t_arrival
+    );
+}
