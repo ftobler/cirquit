@@ -4,7 +4,7 @@
  * and indexes its per-scope scale[] with.
  */
 
-import type { ScopeValue } from '../engine/simulator';
+import type { ScopeValue } from '../engine/scopeModel';
 
 export const UNIT: Record<ScopeValue, string> = {
   voltage: 'V',

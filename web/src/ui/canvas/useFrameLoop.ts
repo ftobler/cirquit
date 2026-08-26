@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
-import { scopeParamsFingerprint } from '../../engine/simulator';
+import { scopeParamsFingerprint } from '../../engine/scopeModel';
 import { defFor, toolDef } from '../../model/registry';
 import { cachedBusWidths, postsForRender } from '../../model/busWidths';
 import { storedBusWidth } from '../../model/registry/elements/wire';

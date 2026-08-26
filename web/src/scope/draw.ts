@@ -13,8 +13,8 @@ import type {
   ScopePlot,
   ScopeValue,
   TriggerInfoLike,
-} from '../engine/simulator';
-import { effectiveMeasurements } from '../engine/simulator';
+} from '../engine/scopeModel';
+import { effectiveMeasurements } from '../engine/scopeModel';
 import { canvasFont, formatValue, makeTheme, parseRgb } from '../render/draw';
 import type { Theme, ThemeColors } from '../model/types';
 import { MIN_SETTINGS_WHEEL_SIZE, scopeSpeed, timeToX } from './geometry';

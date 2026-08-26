@@ -16,18 +16,20 @@ import type { CircuitElement, SimSettings } from '../../model/types';
 import type { DiodeModel, NetlistLine, ScopeConfig, ScopePlotConfig, SliderConfig, TransistorModel } from './types';
 import { escapeToken } from './tokens';
 import {
-  FLAG_DIVISIONS,
-  FLAG_PERPLOTFLAGS,
-  FLAG_PERPLOT_MAN_SCALE,
-  FLAG_PLOTS,
   dumpCodeOfLine,
-  importDecOrHex,
   isElementLine,
   kindOfDumpCode,
   parseDiodeModelLine,
   parseTransistorModelLine,
-  unitsOf,
 } from './parse';
+import {
+  FLAG_DIVISIONS,
+  FLAG_PERPLOTFLAGS,
+  FLAG_PERPLOT_MAN_SCALE,
+  FLAG_PLOTS,
+  importDecOrHex,
+  unitsOf,
+} from './valueTokens';
 
 /**
  * Rebuilds the `$` line rather than echoing the parsed one, so edits to the

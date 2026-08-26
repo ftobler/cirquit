@@ -3,7 +3,7 @@ import {
   anyPlotOverrides,
   effectiveMeasurements,
   plotOverridesScope,
-} from '../engine/simulator';
+} from '../engine/scopeModel';
 import { useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 import { SCOPE_DEFAULTS_STORAGE_KEY } from './scopeDefaults';

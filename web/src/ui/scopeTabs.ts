@@ -9,7 +9,7 @@
  *  Pure so the tab list is testable without a DOM (AGENTS.md).
  */
 
-import type { Scope } from '../engine/simulator';
+import type { Scope } from '../engine/scopeModel';
 
 export interface ScopeTab {
   id: number;

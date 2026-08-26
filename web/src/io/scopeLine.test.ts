@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PlotMeasurements, Scope, ScopePlot } from '../engine/simulator';
+import type { PlotMeasurements, Scope, ScopePlot } from '../engine/scopeModel';
 import {
   decodeScopeLine,
   encodeScopeLine,

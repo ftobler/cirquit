@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { denyGlobalStorage } from '../../test/denyGlobalStorage';
-import type { Scope } from '../engine/simulator';
+import type { Scope } from '../engine/scopeModel';
 import { SCOPE_DEFAULTS_STORAGE_KEY, loadScopeDefaults, saveScopeDefaults } from './scopeDefaults';
 import type { StorageLike } from './appPrefs';
 

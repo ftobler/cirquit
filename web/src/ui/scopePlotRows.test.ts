@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ScopePlot } from '../engine/simulator';
+import type { ScopePlot } from '../engine/scopeModel';
 import { canRemovePlot, isVceIcRow, plotAxisLabel, plotValueRows } from './scopePlotRows';
 
 /** A row's plot value, skipping the compound Vce-vs-Ic action row. */

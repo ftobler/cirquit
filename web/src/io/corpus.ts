@@ -15,7 +15,8 @@ import { join } from 'node:path';
 import { isElementLine, parseCircuit, type ParsedCircuit } from './netlist';
 import { registerSessionModel, clearSessionModels } from './subcircuits';
 import { DEFAULT_SETTINGS } from '../model/types';
-import type { FrameStats, SimEngine } from '../engine/simulator';
+import type { SimEngine } from '../engine/simulator';
+import type { FrameStats } from '../engine/scopeModel';
 
 export interface CorpusEntry {
   file: string;

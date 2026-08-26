@@ -4,8 +4,8 @@ import type {
   Scope,
   ScopePlot,
   ScopeValue,
-  SimEngine,
-} from '../engine/simulator';
+} from '../engine/scopeModel';
+import type { SimEngine } from '../engine/simulator';
 import type { ThemeColors } from '../model/types';
 import { makeTheme } from '../render/draw';
 import { nextModScale, pruneScaleStates, scaleStateFor } from './scale';

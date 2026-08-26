@@ -12,8 +12,8 @@
  * unedited file still saves byte-for-byte.
  */
 
-import type { ScopeValue } from '../engine/simulator';
-import type { ScopePlot } from '../engine/simulator';
+import type { ScopeValue } from '../engine/scopeModel';
+import type { ScopePlot } from '../engine/scopeModel';
 import { decodeScopeLine, type DecodedScopeLine } from './scopeLine';
 import {
   FLAG_DIVISIONS,
@@ -23,7 +23,7 @@ import {
   importDecOrHex,
   scopeValueFromToken,
   unitsOf,
-} from './netlist/parse';
+} from './netlist/valueTokens';
 
 /** One resolved trace of an embedded scope's config, before the element-id
  *  resolution pass: `elementIndex` is a file position, not an id. */

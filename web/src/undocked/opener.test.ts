@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
-import type { ElementReadoutSource, Scope, ScopeDrawSource } from '../engine/simulator';
+import type { ElementReadoutSource, Scope, ScopeDrawSource } from '../engine/scopeModel';
 import {
   UNDOCKED_FRAME_TYPE,
   UNDOCKED_HELLO_TYPE,

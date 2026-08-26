@@ -18,8 +18,8 @@ import type {
   Scope,
   ScopePlot,
   ScopeValue,
-} from '../engine/simulator';
-import { PLOT_MEASUREMENT_KEYS } from '../engine/simulator';
+} from '../engine/scopeModel';
+import { PLOT_MEASUREMENT_KEYS } from '../engine/scopeModel';
 import { unescapeToken, escapeToken } from './netlist/tokens';
 import {
   FLAG_DIVISIONS,
@@ -29,7 +29,7 @@ import {
   importDecOrHex,
   unitsOf,
   valueTokenOf,
-} from './netlist/parse';
+} from './netlist/valueTokens';
 
 /** Per-plot fields a scope line carries, indexed like the plot list. */
 export interface DecodedPlotFields {

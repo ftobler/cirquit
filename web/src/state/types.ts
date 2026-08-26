@@ -5,7 +5,7 @@ import type {
   Scope,
   ScopeTrigger,
   ScopeValue,
-} from '../engine/simulator';
+} from '../engine/scopeModel';
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';

@@ -7,8 +7,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { PlotMeasurementKey, ScopeValue } from '../engine/simulator';
-import { anyPlotOverrides, effectiveMeasurements, plotOverridesScope, sharedPlotElement } from '../engine/simulator';
+import type { PlotMeasurementKey, ScopeValue } from '../engine/scopeModel';
+import { anyPlotOverrides, effectiveMeasurements, plotOverridesScope, sharedPlotElement } from '../engine/scopeModel';
 import { seedManScale, barToSpeed, speedToBar, gridStepX, scaleStateFor, nextHighestScale, nextLowestScale } from '../scope/scale';
 import { formatValue, makeTheme } from '../render/draw';
 import { MAN_DIVISIONS, trailSliderToSteps, trailStepsToSlider, UNIT, plotColors, visiblePlotsOf } from '../scope/draw';

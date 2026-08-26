@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Scope, ScopePlot, ScopeTrigger, ScopeValue } from '../engine/simulator';
-import { measurementsFromScope } from '../engine/simulator';
+import type { Scope, ScopePlot, ScopeTrigger, ScopeValue } from '../engine/scopeModel';
+import { measurementsFromScope } from '../engine/scopeModel';
 import { scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 import { positionToOffset } from '../scope/scale';
 import {

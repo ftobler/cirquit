@@ -13,7 +13,7 @@ import type {
   Scope,
   ScopeDrawSource,
   TriggerInfoLike,
-} from '../engine/simulator';
+} from '../engine/scopeModel';
 import { DEFAULT_SCOPE_WIDTH, scopeWidth } from '../scope/geometry';
 import {
   UNDOCKED_FRAME_TYPE,
