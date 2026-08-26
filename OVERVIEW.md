@@ -420,6 +420,22 @@ fetch it).
   Scopes: regenerating an edited scope line preserves plot tokens it cannot
   interpret, mixed-element scopes hide the per-element rows like upstream's
   shared-element rule, deleted embedded X-Y windows free their canvases.
+- Review batch 2026-08-25c: the review pass's Tier-3 lanes drained. Every
+  em dash and en dash is gone from tracked sources and this document, the
+  stale not-wired-up slider comments now state what sliders really do, and
+  the private chip-flag collisions carry a naming note where they live.
+  Transformer windings stamp as DC shorts during the operating point like
+  every other reactive element, adaptive doubling seeds its counter per
+  frame and checks at the top of the step like SimulationManager, the
+  ohmmeter's hover box prints upstream's two-row R = V/I table, and the
+  steps-per-frame pacing divergence is documented instead of silent. The
+  427/428/161 rows gained format tests, ROM serialization gained its twins,
+  the scope context menu became a tested pure table, dead zoomToFit is
+  gone, and the transmission line's nominal-step ring sizing has an
+  injection-proven regression pin. Two extractions landed: the scope domain
+  model left the wasm facade for a wasm-free leaf and value-token helpers
+  left the netlist parser, killing three of the four runtime import cycles
+  and shrinking the undocked popup's chunk to 2.17 kB without the engine.
 - Review batch 2026-08-25b: six more lanes of the day's review pass landed as
   five worktree features plus one engine pair. Scopes lay out against their
   own viewport through one pure layoutHeader (embedded windows stop painting
@@ -470,12 +486,13 @@ fetch it).
   ('true' low, 'false' high, SwitchElm.java:56-62), un-inverting startup
   levels for 75 boolean lines across 35 bundled circuits, numerics unchanged,
   saves byte-stable.
-- 609 Rust tests, most of them the end-to-end circuit checks across
+- 615 Rust tests, most of them the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus in-module unit tests and one doctest.
-  3465 TypeScript tests pass (one corpus report test skipped); the robustness
-  batch added 28 of the Rust tests and 61 of the TypeScript ones, and review
-  batch 2026-08-25b added four more Rust and 172 more TypeScript. The owner-bug batch
+  3484 TypeScript tests pass (one corpus report test skipped); the robustness
+  batch added 28 of the Rust tests and 61 of the TypeScript ones, review
+  batch 2026-08-25b added four more Rust and 172 more TypeScript, and review
+  batch 2026-08-25c added six more Rust and 19 more TypeScript. The owner-bug batch
   added four of the Rust tests (the new analysis_hygiene.rs) and thirty-eight
   TypeScript ones across the battery, junction, embedded-scope and facade
   suites. The relay pulldown
