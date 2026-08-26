@@ -290,6 +290,14 @@ export const TAPPED_TRANSFORMER_DEF: ElementDef = {
 
 // ─── Custom transformer (406) ─────────────────────────────────────────────────
 
+/** Port policy ceiling on a custom transformer's coil count, shared by
+ *  convention with the engine's MAX_CUSTOM_COILS
+ *  (engine/core/src/elements/transformer.rs), which rejects a well-formed
+ *  description above the cap at build time. Below the cap the two sides must
+ *  agree on the post layout; above it, this side renders nothing so no
+ *  unbounded geometry is ever laid out. */
+export const MAX_CUSTOM_COILS = 32;
+
 export interface CustomCoil {
   /** Node number of the coil's first post; the second is `start + 1`. */
   start: number;
@@ -390,6 +398,10 @@ function customGeometry(e: CircuitElement): CustomGeometry | null {
     // left untouched and round-trips byte-for-byte.
     parseCustomDescription('1,1:1');
   if (parsed === null) return null;
+  // A past-cap description gets the malformed treatment: geometry null,
+  // posts [], draw a no-op, so nothing hangs laying out thousands of coils
+  // before the engine's build rejection names the count.
+  if (parsed.coils.length > MAX_CUSTOM_COILS) return null;
   const { coils, nodeCount, primaryCoils } = parsed;
   const dn = Math.abs(axis.x - p1.x);
   if (dn < 1) return null;
@@ -498,16 +510,31 @@ export const CUSTOM_TRANSFORMER_DEF: ElementDef = {
     readParams(t, e, ['inductance', 'couplingCoef']);
     if (t[2] !== undefined) e.text = t[2];
     else e.text = '1,1:1';
-    const coilCount = Number(t[3]);
-    if (Number.isFinite(coilCount) && coilCount >= 0) e.params.coilCount = coilCount;
-    const n = e.params.coilCount ?? customCoilCount(e.text);
-    for (let i = 0; i < n; i++) {
-      if (t[4 + i] !== undefined) e.params[`coilCurrent${i}`] = Number(t[4 + i]);
-      else e.params[`coilCurrent${i}`] = 0;
+    // Only a legitimate count is kept: a token above the cap belongs to a
+    // document the engine refuses, so it is dropped and any stale slots with
+    // it, bounding both this read loop and any later dump without ever
+    // looping over an unbounded claim. Legitimate files keep their exact
+    // token and every current value.
+    const claimed = Number(t[3]);
+    if (Number.isFinite(claimed) && claimed >= 0 && claimed <= MAX_CUSTOM_COILS) {
+      e.params.coilCount = claimed;
+      for (let i = 0; i < claimed; i++) {
+        e.params[`coilCurrent${i}`] = t[4 + i] !== undefined ? Number(t[4 + i]) : 0;
+      }
+    } else {
+      delete e.params.coilCount;
+      // The description is the authority on coil structure and linear to
+      // scan, so even a refused document keeps every current it carried.
+      const n = customCoilCount(e.text);
+      for (let i = 0; i < n; i++) {
+        e.params[`coilCurrent${i}`] = t[4 + i] !== undefined ? Number(t[4 + i]) : 0;
+      }
     }
   },
   dump: (e) => {
     const desc = customDesc(e);
+    // Bounded by construction: a stored count token is cap-checked at parse,
+    // and the description-derived fallback is linear in the line itself.
     const n = e.params.coilCount ?? customCoilCount(desc);
     const out: (string | number)[] = [
       e.params.inductance ?? 4,

@@ -1472,6 +1472,18 @@ describe('transformer file formats', () => {
     const [bad] = parseCircuit(lines[1]).elements;
     expect(bad.text).toBe('garbage');
   });
+
+  it('a past-cap description round-trips byte-for-byte with no posts', () => {
+    // Just above MAX_CUSTOM_COILS: the engine rejects the line at build, and
+    // until then nothing lays out one node pair per coil. The text and every
+    // current token still survive a save untouched.
+    const desc = Array.from({ length: 33 }, () => '1').join(',');
+    const line = `406 160 128 240 128 0 4 0.999 ${desc} 33 ${Array.from({ length: 33 }, () => '0').join(' ')}`;
+    const { e, elementLine } = transformerLine(line, '406');
+    expect(e.text).toBe(desc);
+    expect(postsOf(e)).toHaveLength(0);
+    expect(elementLine).toBe(line);
+  });
 });
 
 describe('logic gate file formats', () => {
@@ -3624,6 +3636,16 @@ describe('led array file format', () => {
     expect(e.params.sizeY).toBe(2);
     expect(postsOf(e)).toHaveLength(6);
     expect(elementLine).toBe('405 720 336 784 336 0 4 2');
+  });
+
+  it('a grid above the dialog bound round-trips its raw tokens with bounded posts', () => {
+    // The engine refuses the line by name; until then the layout must stay
+    // bounded and a save must not silently rewrite the user's numbers.
+    const { e, elementLine } = ledArrayLine('405 720 336 784 336 0 17 8');
+    expect(e.params.sizeX).toBe(17);
+    expect(e.params.sizeY).toBe(8);
+    expect(postsOf(e)).toHaveLength(24);  // clamped 16 + 8
+    expect(elementLine).toBe('405 720 336 784 336 0 17 8');
   });
 });
 

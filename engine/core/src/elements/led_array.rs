@@ -28,6 +28,15 @@ const LED_VSCALE: f64 = 3.73 * VT;
 /// or exactly zero at V = 0, a lit one milliamps.
 const LIT_CURRENT: f64 = 1e-9;
 
+/// The grid bounds upstream's edit dialog enforces, `setChipEditValue`'s
+/// "must be between 2 and 16" per dimension (LEDArrayElm.java:194-216). The
+/// token constructor and XML undump never check them, so a hand-edited file
+/// is the one path that can smuggle an unbounded grid past the dialog; the
+/// TypeScript twin of this rule clamps its derived geometry
+/// (web/src/model/registry/elements/ledArray.ts).
+const GRID_MIN: f64 = 2.0;
+const GRID_MAX: f64 = 16.0;
+
 /// One grid cell's per-step Newton state. The junction parameters are shared
 /// module constants, so only the state that varies is stored per cell.
 struct LedCell {
@@ -72,23 +81,42 @@ pub struct LedArray {
 }
 
 impl LedArray {
-    pub fn new(spec: &ElementSpec) -> Self {
-        // A missing or zero size falls back to 8x8, the guard in `setupPins`
-        // that also catches a token constructor whose parse threw
-        // (LEDArrayElm.java:60-64).
-        let mut size_x = spec.param("sizeX", 0.0).round() as usize;
-        let mut size_y = spec.param("sizeY", 0.0).round() as usize;
-        if size_x == 0 || size_y == 0 {
-            size_x = 8;
-            size_y = 8;
+    /// Rejects an out-of-range grid instead of clamping it: the dialog
+    /// declares such grids invalid, and a silent clamp here would desync the
+    /// frontend's derived post count from this model, surfacing as a
+    /// post-mismatch build error anyway. The named rejection follows the
+    /// zero-resistance resistor precedent.
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
+        // Validate the rounded sizes as f64s, before the usize cast that
+        // would saturate a huge token into an unbounded allocation.
+        let mut size_x = spec.param("sizeX", 0.0).round();
+        let mut size_y = spec.param("sizeY", 0.0).round();
+        // A missing or non-positive size falls back to 8x8, the guard in
+        // `setupPins` that also catches a token constructor whose parse threw
+        // (LEDArrayElm.java:60-64); non-finite tokens fail the finiteness
+        // test and land in the fallback rather than in the range check
+        // below.
+        if !size_x.is_finite() || !size_y.is_finite() || size_x <= 0.0 || size_y <= 0.0 {
+            size_x = 8.0;
+            size_y = 8.0;
         }
-        Self {
-            base: Base::with_posts(size_x + size_y),
-            size_x,
-            size_y,
+        for (dim, v) in [("width", size_x), ("height", size_y)] {
+            if !(GRID_MIN..=GRID_MAX).contains(&v) {
+                return Err(format!(
+                    "led array (id {}) grid {dim} must be between 2 and 16, got {v}",
+                    spec.id
+                ));
+            }
+        }
+        Ok(Self {
+            base: Base::with_posts(size_x as usize + size_y as usize),
+            size_x: size_x as usize,
+            size_y: size_y as usize,
             vcrit: critical_voltage(LED_VSCALE, LED_LEAKAGE),
-            cells: (0..size_x * size_y).map(|_| LedCell::new()).collect(),
-        }
+            cells: (0..(size_x * size_y) as usize)
+                .map(|_| LedCell::new())
+                .collect(),
+        })
     }
 }
 
@@ -220,5 +248,98 @@ impl Element for LedArray {
             }
         }
         pattern as f64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn spec(size_x: Option<f64>, size_y: Option<f64>) -> ElementSpec {
+        let mut params = HashMap::new();
+        if let Some(x) = size_x {
+            params.insert("sizeX".into(), x);
+        }
+        if let Some(y) = size_y {
+            params.insert("sizeY".into(), y);
+        }
+        ElementSpec {
+            id: 7,
+            kind: "ledArray".into(),
+            posts: Vec::new(),
+            params,
+            label: None,
+            model: None,
+            flags: 0,
+        }
+    }
+
+    /// `LedArray` carries no `Debug`, so `unwrap_err` is out; pull the error
+    /// out by value instead.
+    fn err_of(r: Result<LedArray, String>) -> String {
+        r.err().expect("expected a rejection")
+    }
+
+    #[test]
+    fn out_of_range_grids_are_rejected_naming_the_dimension() {
+        // The dialog's own wording, setChipEditValue (LEDArrayElm.java:214):
+        // the error must name kind, id, dimension and value so the banner
+        // points at the offending token.
+        let err = err_of(LedArray::new(&spec(Some(17.0), Some(8.0))));
+        assert_eq!(
+            err,
+            "led array (id 7) grid width must be between 2 and 16, got 17"
+        );
+        let err = err_of(LedArray::new(&spec(Some(2.0), Some(33.0))));
+        assert_eq!(
+            err,
+            "led array (id 7) grid height must be between 2 and 16, got 33"
+        );
+        let err = err_of(LedArray::new(&spec(Some(1.0), Some(2.0))));
+        assert_eq!(
+            err,
+            "led array (id 7) grid width must be between 2 and 16, got 1"
+        );
+    }
+
+    #[test]
+    fn fractional_sizes_round_before_validating() {
+        // The dialog edits integers only, so a fractional hand-token means
+        // its nearest grid: 1.6 rounds to 2, inside, 1.4 to 1, outside.
+        assert!(LedArray::new(&spec(Some(1.6), Some(8.0))).is_ok());
+        assert!(LedArray::new(&spec(Some(16.4), Some(8.0))).is_ok());
+        assert!(LedArray::new(&spec(Some(16.6), Some(8.0))).is_err());
+        let led = LedArray::new(&spec(Some(1.6), Some(8.0))).expect("1.6 rounds to 2");
+        assert_eq!(led.base.nodes.len(), 10);
+    }
+
+    #[test]
+    fn zero_negative_and_non_finite_sizes_keep_the_eight_fallback() {
+        // The documented fallback (LEDArrayElm.java:60-64): missing, zero,
+        // negative, NaN and round-to-zero sizes all land on the default
+        // 8x8, whose 16 posts the frontend derives the same way.
+        let cases = [
+            spec(None, None),
+            spec(Some(0.0), Some(0.0)),
+            spec(Some(-4.0), Some(8.0)),
+            spec(Some(f64::NAN), Some(f64::NAN)),
+            spec(Some(0.4), Some(8.0)),
+        ];
+        for s in &cases {
+            let led = LedArray::new(s).expect("the fallback must always build");
+            assert_eq!(led.size_x, 8);
+            assert_eq!(led.size_y, 8);
+            assert_eq!(led.cells.len(), 64);
+        }
+    }
+
+    #[test]
+    fn huge_sizes_reject_instead_of_allocating() {
+        // One `405 ... 0 100000 100000` line used to attempt 1e10 cells
+        // right here; it now dies in the same named check as any other
+        // oversized grid, promptly.
+        let err = err_of(LedArray::new(&spec(Some(100000.0), Some(100000.0))));
+        assert!(err.contains("got 100000"), "{err}");
     }
 }

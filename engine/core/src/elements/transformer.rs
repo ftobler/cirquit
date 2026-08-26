@@ -32,6 +32,16 @@ use crate::stamp::Stamper;
 
 const FLAG_BACK_EULER: i64 = 2; // Inductor.java:23, same bit as the inductor
 
+/// Port policy ceiling on a custom transformer's coil count; upstream defines
+/// no numeric limit anywhere (its dialog checks only the coupling
+/// coefficient), so the value is this port's own. Real designs top out near
+/// 4-6 windings and no bundled circuit uses more than one pair, while the
+/// cost at the cap stays trivial: the n x n mutual matrix and its O(n^3)
+/// inversion run once per build inside the synchronous set_circuit call.
+/// The TypeScript twin for its own derived geometry lives in
+/// web/src/model/registry/elements/transformer.ts.
+const MAX_CUSTOM_COILS: usize = 32;
+
 /// Dense Gauss-Jordan inverse of the row-major `n×n` matrix `a`.
 fn invert(a: &[f64], n: usize) -> Vec<f64> {
     let mut m = a.to_vec();
@@ -173,7 +183,14 @@ impl Transformer {
         }
     }
 
-    pub fn new_custom(spec: &ElementSpec) -> Self {
+    /// Rejects a well-formed description with more than [`MAX_CUSTOM_COILS`]
+    /// coils: the n x n allocation and the O(n^3) inversion of the first
+    /// stamp both sit inside the synchronous build, so an unbounded coil
+    /// count is an unbounded synchronous cost. The check runs on the parsed
+    /// coil count, not the file's `coilCount` token, so a lying token cannot
+    /// bypass it. A malformed description keeps the `"1,1:1"` fallback, which
+    /// keeps this side in step with whatever post count the frontend derives.
+    pub fn new_custom(spec: &ElementSpec) -> Result<Self, String> {
         let mut t = Self {
             base: Base::with_posts(0),
             kind: "customTransformer",
@@ -194,13 +211,20 @@ impl Transformer {
         if !t.parse_description(&desc) {
             t.parse_description("1,1:1");
         }
+        if t.windings.len() > MAX_CUSTOM_COILS {
+            return Err(format!(
+                "custom transformer (id {}) has {} coils, above the limit of {MAX_CUSTOM_COILS}",
+                spec.id,
+                t.windings.len()
+            ));
+        }
         let n = t.windings.len();
         t.currents = (0..n)
             .map(|i| spec.param(&format!("coilCurrent{i}"), 0.0))
             .collect();
         t.source_values = vec![0.0; n];
         t.a = vec![0.0; n * n];
-        t
+        Ok(t)
     }
 
     /// Parses a custom description into winding node pairs and signed turns,
@@ -606,5 +630,67 @@ mod tests {
             saturated.a[0],
             unsaturated.a[0]
         );
+    }
+
+    /// A custom-transformer spec whose description arrives as the label, the
+    /// string carrier the frontend escapes into the `406` line.
+    fn custom(desc: &str) -> ElementSpec {
+        ElementSpec {
+            id: 9,
+            kind: "customTransformer".into(),
+            posts: Vec::new(),
+            params: HashMap::new(),
+            label: Some(desc.into()),
+            model: None,
+            flags: 0,
+        }
+    }
+
+    /// `Transformer` carries no `Debug`, so `unwrap_err` is out; pull the
+    /// error out by value instead.
+    fn err_of(r: Result<Transformer, String>) -> String {
+        r.err().expect("expected a rejection")
+    }
+
+    #[test]
+    fn new_custom_over_the_coil_cap_is_rejected_by_name() {
+        // 33 coils sits just above MAX_CUSTOM_COILS; the error must name
+        // kind, id, count and cap so the banner points at the description.
+        let desc = vec!["1"; 33].join(",");
+        let err = err_of(Transformer::new_custom(&custom(&desc)));
+        assert_eq!(
+            err,
+            "custom transformer (id 9) has 33 coils, above the limit of 32"
+        );
+    }
+
+    #[test]
+    fn new_custom_at_the_coil_cap_builds() {
+        // Exactly 32 coils is legal and yields two posts per coil.
+        let desc = vec!["1"; 32].join(",");
+        let t = Transformer::new_custom(&custom(&desc)).expect("32 coils must build");
+        assert_eq!(t.windings.len(), 32);
+        assert_eq!(t.base.nodes.len(), 64);
+        assert_eq!(t.a.len(), 32 * 32);
+    }
+
+    #[test]
+    fn new_custom_keeps_the_malformed_fallback_below_the_cap() {
+        // Only well-formed-but-oversized descriptions reject: a malformed one
+        // still falls back to the constructor default "1,1:1" (two joined
+        // primary coils, one secondary), keeping whatever the frontend
+        // derives for the same text in step.
+        let t = Transformer::new_custom(&custom("1,x:,1")).expect("fallback must build");
+        assert_eq!(t.windings.len(), 3);
+        assert_eq!(t.base.nodes.len(), 6);
+    }
+
+    #[test]
+    fn new_custom_counts_plus_joined_coils_toward_the_cap() {
+        // Every number in the description is a coil even when a `+` shares
+        // the previous coil's far node, so tapped-style joins cannot dodge
+        // the count.
+        let desc = vec!["1"; 40].join("+");
+        assert!(Transformer::new_custom(&custom(&desc)).is_err());
     }
 }
