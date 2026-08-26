@@ -992,6 +992,28 @@ describe('cancelLiveDrag: a revert landing mid-gesture', () => {
     expect(r.dragRef.current).toEqual({ mode: 'none' });
   });
 
+  it('a moved wire drag discards its traced run instead of inserting it', () => {
+    // Ctrl+Z mid-run: the drag had already latched its axis, so finishing the
+    // gesture here would drop partial geometry into the reverted document
+    // that a later redo silently erases. The cancel owes a stand-down, not a
+    // drop the user never made.
+    useStore.getState().setTool('wire');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'wire') throw new Error('expected a wire drag');
+    // What the move handler latches once the drag travels: axis plus current.
+    r.dragRef.current = { ...drag, current: { x: 224, y: 96 }, axis: 'h' };
+
+    useStore.getState().undo();
+    cancelLiveDrag(r, 1, useStore.getState());
+
+    const s = useStore.getState();
+    expect(s.elements).toHaveLength(0);
+    expect(s.tool).toBeNull();
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+  });
+
   it('an element removed by the revert leaves nothing behind', () => {
     // The actual bug shape: Ctrl+Z mid-placement reverts to the snapshot
     // before addElement, so the in-flight id no longer exists. The cleanup

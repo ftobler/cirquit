@@ -267,14 +267,16 @@ export function abandonForLongPress(dragRef: { current: Drag }, state: AppState)
 /** What a revert landing mid-gesture owes: the drag dies with the baseline it
  *  was mutating against, exactly as if the pointer had been cancelled. A
  *  placement in flight still owes its up-time cleanup (an abandoned collapsed
- *  element would serialize into saves) and a wire tool stands down or stays
- *  silently armed; a held momentary returns to rest so no switch sticks closed
- *  under a gesture that is gone. Move, dragpost and rowcol need only the
- *  disarm: splits and collapse guards are release-time work belonging to a
- *  drop the user made, not one the revert performed. Pan and box-select carry
- *  no document writes and no entries, so a cancelled revert leaves them
- *  running past it. Called by the hook's revertEpoch reaction; sits beside the
- *  finish* cleanups it composes so the rule stays testable without a canvas. */
+ *  element would serialize into saves); a wire drag discards its traced run
+ *  rather than dropping it, since finishing would insert partial geometry
+ *  into the reverted document that a later redo silently erases, and only
+ *  stands the tool down. A held momentary returns to rest so no switch sticks
+ *  closed under a gesture that is gone. Move, dragpost and rowcol need only
+ *  the disarm: splits and collapse guards are release-time work belonging to
+ *  a drop the user made, not one the revert performed. Pan and box-select
+ *  carry no document writes and no entries, so a cancelled revert leaves them
+ *  running past it. Called by the hook's revertEpoch reaction; sits beside
+ *  the finish* cleanups so the rule stays testable without a canvas. */
 export function cancelLiveDrag(
   refs: PointerDownRefs,
   pointerId: number | null,
@@ -288,7 +290,7 @@ export function cancelLiveDrag(
     return;
   }
   if (drag.mode === 'place') finishPlacement(drag, state);
-  if (drag.mode === 'wire') finishWireDrag(drag, state);
+  if (drag.mode === 'wire') state.setTool(null);
   if (pointerId !== null) releaseHeldMomentary(pointerId, refs);
   refs.dragRef.current = { mode: 'none' };
   state.endElementGesture();
