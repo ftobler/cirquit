@@ -2,7 +2,6 @@ import {
   canvasFont,
   elementLength,
   endpoints,
-  formatValueShort,
   interp,
   isHighlighted,
   lead,
@@ -10,40 +9,8 @@ import {
   voltageColor,
 } from '../../../render/draw';
 import { TESTPOINT_LABEL } from '../flags';
-import { onePost, readParams, endpointBox } from '../shared';
+import { meterCaption, onePost, readParams, endpointBox } from '../shared';
 import type { DrawContext, ElementDef } from '../../types';
-
-/** The value caption per meter mode, formatted from the engine's `value()`
- *  (the selected value, TestPointElm.java:319-353) with upstream's units
- *  (TestPointElm.java:180-213): the binary mode is a bare 0/1. */
-export function testPointText(meter: number, value: number, digits: number): string {
-  switch (meter) {
-    case 0:
-      return formatValueShort(value, 'V', digits);
-    case 1:
-      return formatValueShort(value, 'V(rms)', digits);
-    case 10:
-      return formatValueShort(value, 'V(avg)', digits);
-    case 2:
-      return formatValueShort(value, 'Vpk', digits);
-    case 3:
-      return formatValueShort(value, 'Vmin', digits);
-    case 4:
-      return formatValueShort(value, 'Vp2p', digits);
-    case 5:
-      return formatValueShort(value, '', digits);
-    case 6:
-      return formatValueShort(value, 'Hz', digits);
-    // TP_PER (7) leaves the value string unset upstream (TestPointElm.java:
-    // 204-206), so it stays on the fallback and renders the raw value in V.
-    case 8:
-      return formatValueShort(value, 's', digits);
-    case 9:
-      return formatValueShort(value, '', digits);
-    default:
-      return formatValueShort(value, 'V', digits);
-  }
-}
 
 /** The label and value, one above the other, upstream's drawText
  *  (TestPointElm.java:139-163): the pair is centred on the free-end point for a
@@ -143,7 +110,7 @@ export const TEST_POINT_DEF: ElementDef = {
     const wTP = g.ctx.measureText('TP').width;
     const lead1 = dn === 0 ? p1 : interp(p1, p2, 1 - (wTP / 2 + 8) / dn);
     const meter = e.params.meter ?? 0;
-    const value = testPointText(meter, g.value, g.valueDigits);
+    const value = meterCaption(meter, g.value, g.valueDigits);
     drawTestPointText(g, label, value, p1, lead1);
     // The stem is voltage-coloured, overridden by the selection colour when
     // highlighted (TestPointElm.java:216-219).
