@@ -50,6 +50,11 @@
  * pv/nv and splicing live transistor junction state out of the element's child
  * elements; a DAC bit order this build does not lay out stays behind a trace
  * comment like every other chip's.
+ *
+ * The nine remaining modelled tags convert for real too: `tt`, `sw`, `tl`,
+ * `ts`, `dar`, `dpdt`, `pt`, `ain` and `aout` emit their registry dump-code
+ * lines, each consuming exactly the attribute set upstream's own writer
+ * produces.
  */
 
 import { parseXml, type XmlNode } from './xml';
@@ -60,6 +65,8 @@ import { FLAG_ESCAPE, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import type { PlotMeasurements, Scope, ScopeValue } from '../engine/simulator';
 
 import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
+import { DEFAULT_Q_STATE } from '../model/registry/elements/darlington';
+import { defForDumpCode } from '../model/registry';
 import { batteryTypeTables } from '../model/registry/elements/battery';
 import { FRESH_CHILDREN as comparatorChildren } from '../model/registry/elements/comparator';
 import { otaFreshChildren } from '../model/registry/elements/ota';
@@ -326,6 +333,81 @@ const WRITERS: Record<string, Writer> = {
   ],
   as: analogSwitchTokens,
   as2: analogSwitchTokens,
+  tt: (n) =>
+    // TappedTransformerElm writes in/ra/co (TappedTransformerElm.java:74-76)
+    // plus the coil currents as c0/c1/c2 state (:80-82); the text stream is
+    // inductance ratio current0 current1 current2 couplingCoef (:67-70), so
+    // every attribute has a home and the currents ride it too.
+    [
+      attr(n, 'in', 4),
+      attr(n, 'ra', 1),
+      attr(n, 'c0', 0),
+      attr(n, 'c1', 0),
+      attr(n, 'c2', 0),
+      attr(n, 'co', 0.99),
+    ],
+  sw: (n) =>
+    // SweepElm writes mi/ma/mv/sw (SweepElm.java:53-56), the minF maxF maxV
+    // sweepTime order the registry's parse reads (sweep.ts:23-27).
+    [attr(n, 'mi', 20), attr(n, 'ma', 4000), attr(n, 'mv', 5), attr(n, 'sw', 0.1)],
+  tl: (n) =>
+    // TransLineElm writes de/im/wi (TransLineElm.java:60-62). The trailing 0
+    // is the series-resistance slot its own text dump always appends
+    // (:54-56), unimplemented in both builds, so the converted line is
+    // self-describing like the registry's own output.
+    [attr(n, 'de', 0.005), attr(n, 'im', 75), attr(n, 'wi', 32), 0],
+  ts: (n) =>
+    // TriStateElm writes ron/roff/rog/hi (TriStateElm.java:75-78), the port's
+    // r_on r_off r_off_ground highVoltage order. Missing attributes seed at
+    // the registry's documented fresh defaults; rog deliberately seeds at the
+    // file-first 0, not fresh placement's 1e8 pulldown (triState.ts).
+    [attr(n, 'ron', 0.1), attr(n, 'roff', 1e10), attr(n, 'rog', 0), attr(n, 'hi', 5)],
+  dar: (n) => {
+    // DarlingtonElm carries only pnp in its XML (DarlingtonElm.java:54); the
+    // two composite transistor state tokens stay fresh, which is exactly what
+    // the registry's own dump writes for a part of either polarity, then the
+    // sign token that drives the post layout (:46-48).
+    const pnp = attr(n, 'pnp', 1);
+    return [DEFAULT_Q_STATE, DEFAULT_Q_STATE, pnp < 0 ? -1 : 1];
+  },
+  dpdt: (n) => {
+    // The SwitchElm base writes p/mm/lab/key/r (SwitchElm.java:71-83) and
+    // DPDTSwitchElm adds po (:54); the port's stream is position, momentary,
+    // the label under its flag bit, then the pole count
+    // (DPDTSwitchElm.java:38-45). The keyboard shortcut is session-only in
+    // both builds. The base on-resistance has no token on this stream.
+    const tokens: (string | number)[] = [
+      attr(n, 'p', 0),
+      (n.attrs.mm ?? 'false').toLowerCase() === 'true' ? 'true' : 'false',
+    ];
+    if (n.attrs.lab !== undefined) tokens.push(n.attrs.lab);
+    tokens.push(attr(n, 'po', 2));
+    return tokens;
+  },
+  pt: (n) => {
+    // PotElm writes ma/po/sl (PotElm.java:79-81) onto the port's
+    // maxResistance position caption stream. The caption splits on whitespace
+    // exactly as the registry's own dump does, because upstream joins the
+    // remaining tokens back with single spaces (PotElm.java:58-62); an absent
+    // or empty caption takes the constructor default (:50).
+    const caption = (n.attrs.sl ?? '').trim();
+    return [
+      attr(n, 'ma', 1000),
+      attr(n, 'po', 0.5),
+      ...(caption !== '' ? caption.split(/\s+/) : ['Resistance']),
+    ];
+  },
+  ain: (n) =>
+    // AudioInputElm writes ma/st/fi (AudioInputElm.java:98-101): the port's
+    // short three-token form (audioInput.ts:56-66). The rail's six source
+    // tokens stay implicit; the parse pins the waveform to AC regardless.
+    [attr(n, 'ma', 5), attr(n, 'st', 0), attr(n, 'fi', 0)],
+  aout: (n) =>
+    // AudioOutputElm writes du/sa/la (AudioOutputElm.java:53-55), the same
+    // duration samplingRate labelNum order its token constructor reads
+    // (:39-46). sa seeds at the session-start sample rate, 8000
+    // (AudioOutputElm.java:27).
+    [attr(n, 'du', 1), attr(n, 'sa', 8000), attr(n, 'la', 0)],
 };
 
 /** r_on r_off threshold, the triple both analog switch classes carry in text
@@ -449,6 +531,8 @@ const DUMP_CODES: Record<string, string> = {
   dmux: '185', ctr: '164', TFlipFlop: '193', JKFlipFlop: '156', Latch: '168',
   Timer: '165', Comparator: '401', OTA: '402', OpAmpReal: '409', DAC: '166',
   AnalogMux: '432', DelayBuffer: '422', as: '159', as2: '160',
+  tt: '169', sw: '170', tl: '171', pt: '174', ts: '180', dar: '400',
+  aout: '211', ain: '411', dpdt: '429',
 };
 
 /** The port kind each element tag maps to, for scope value decoding. */
@@ -470,6 +554,9 @@ const KIND_BY_TAG: Record<string, string> = {
   Timer: 'timer', Comparator: 'comparator', OTA: 'ota', OpAmpReal: 'opampReal',
   DAC: 'dac', AnalogMux: 'analogMux', DelayBuffer: 'delayBuffer',
   as: 'analogSwitch', as2: 'analogSwitch2',
+  tt: 'tappedTransformer', sw: 'sweep', tl: 'transmissionLine', pt: 'potentiometer',
+  ts: 'triState', dar: 'darlington', dpdt: 'dpdtSwitch', ain: 'audioInput',
+  aout: 'audioOutput',
 };
 
 /** The flags an element line carries: the XML `f` plus the bits the port's own
@@ -486,6 +573,10 @@ function flagsFor(node: XmlNode): number {
   if (tag === 'LED') f |= node.attrs.mo !== undefined ? FLAG_MODEL : FLAG_FWDROP;
   if (tag === 'x' || tag === 'ln') f |= FLAG_ESCAPE;
   if (tag === 'L' && node.attrs.lab !== undefined) f |= SWITCH_LABEL;
+  // The DPDT's label rides the same SwitchElm flag bit as the SPST's
+  // (SwitchElm.java:77-78 dump, :89 read); without it the parse would read
+  // the label token as the pole count.
+  if (tag === 'dpdt' && node.attrs.lab !== undefined) f |= SWITCH_LABEL;
   if (tag === 'FullAdder') f |= FULL_ADDER_BITS;
   const hv = node.attrs.hv;
   if (
@@ -620,7 +711,11 @@ function elementLines(node: XmlNode, ctx: ConvertContext): string[] | null {
   if (writer === undefined) return null;
   const tail = writer(node, ctx);
   if (tail === null) return null;
-  return [basic(node, DUMP_CODES[tag], tail.map(token))];
+  // Raw-token kinds read their tails verbatim (parse.ts hands rawTokens defs
+  // the un-unescaped tokens), so their strings must not be escaped here or a
+  // reload would corrupt exactly what the registry's own dump writes back.
+  const raw = defForDumpCode(DUMP_CODES[tag])?.rawTokens ?? false;
+  return [basic(node, DUMP_CODES[tag], tail.map(raw ? String : token))];
 }
 
 function basic(node: XmlNode, code: string, tail: string[]): string {

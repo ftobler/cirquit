@@ -936,4 +936,207 @@ describe('xml to text conversion', () => {
     expect(text).toContain('# Latch bo="2" not modelled: converted as non-bus pin rows');
     expect(text).not.toContain(String(CHIP_BIT_ORDER_BUS));
   });
+
+  it('converts a tapped transformer to its 169 line with ratio and coupling', () => {
+    // TappedTransformerElm writes in/ra/co (dumpXml :74-76) and the port's
+    // text stream is inductance ratio current0 current1 current2 couplingCoef
+    // (TappedTransformerElm.dump :67-70).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <tt x="192 160 304 160" f="0" in="4" ra="2" co="0.98"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('169 192 160 304 160 0 4 2 0 0 0 0.98');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['tappedTransformer']);
+    expect(parsed.elements[0].params.ratio).toBe(2);
+    expect(parsed.elements[0].params.couplingCoef).toBe(0.98);
+    expect(postsOf(parsed.elements[0])).toHaveLength(5);
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('169 192 160 304 160 0 4 2 0 0 0 0.98');
+  });
+
+  it('carries tapped transformer coil currents from the state attributes', () => {
+    // The coil currents ride c0/c1/c2 state attributes
+    // (TappedTransformerElm.java:80-82) into the text stream's current slots.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <tt x="192 160 304 160" f="0" in="4" ra="2" co="0.99" c0="0.5" c1="-1" c2="1"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('169 192 160 304 160 0 4 2 0.5 -1 1 0.99');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements[0].params.current0).toBe(0.5);
+    expect(parsed.elements[0].params.current1).toBe(-1);
+    expect(parsed.elements[0].params.current2).toBe(1);
+  });
+
+  it('converts a sweep generator to its 170 line', () => {
+    // SweepElm writes mi/ma/mv/sw (SweepElm.java:53-56), the port's own
+    // minF maxF maxV sweepTime order (:23-27).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <sw x="192 160 304 160" f="2" mi="10" ma="5000" mv="3" sw="0.2"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('170 192 160 304 160 2 10 5000 3 0.2');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['sweep']);
+    expect(parsed.elements[0].params.minF).toBe(10);
+    expect(parsed.elements[0].params.maxF).toBe(5000);
+    expect(parsed.elements[0].params.maxV).toBe(3);
+    expect(parsed.elements[0].params.sweepTime).toBe(0.2);
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('170 192 160 304 160 2 10 5000 3 0.2');
+  });
+
+  it('converts a transmission line to its 171 line with delay impedance width', () => {
+    // TransLineElm writes de/im/wi (TransLineElm.java:60-62); the text stream
+    // ends with the unimplemented series-resistance slot its own dump always
+    // writes (:54-56), so the converted line is self-describing like the
+    // registry's own output.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <tl x="192 160 416 160" f="0" de="0.002" im="50" wi="24"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('171 192 160 416 160 0 0.002 50 24 0');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['transmissionLine']);
+    expect(parsed.elements[0].params.delay).toBe(0.002);
+    expect(parsed.elements[0].params.imped).toBe(50);
+    expect(parsed.elements[0].params.width).toBe(24);
+    expect(postsOf(parsed.elements[0])).toHaveLength(4);
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('171 192 160 416 160 0 0.002 50 24 0');
+  });
+
+  it('converts a tri-state buffer to its 180 line', () => {
+    // TriStateElm writes ron/roff/rog/hi (TriStateElm.java:75-78), the port's
+    // r_on r_off r_off_ground highVoltage token order (:69-72).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ts x="192 160 304 160" f="0" ron="10" roff="1e9" rog="100" hi="3"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('180 192 160 304 160 0 10 1000000000 100 3');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['triState']);
+    expect(parsed.elements[0].params.r_on).toBe(10);
+    expect(parsed.elements[0].params.r_off).toBe(1e9);
+    expect(parsed.elements[0].params.r_off_ground).toBe(100);
+    expect(parsed.elements[0].params.highVoltage).toBe(3);
+    expect(postsOf(parsed.elements[0])).toHaveLength(3);
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('180 192 160 304 160 0 10 1000000000 100 3');
+  });
+
+  it('converts a darlington to its 400 line honouring pnp', () => {
+    // DarlingtonElm writes pnp (DarlingtonElm.java:54); the composite's two
+    // transistor state tokens stay fresh, exactly what the port's own dump
+    // writes for a part of either polarity (:46-48 carries only pnp).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dar x="192 160 304 160" f="0" pnp="-1"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('400 192 160 304 160 0 0_1_0_0_100 0_1_0_0_100 -1');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['darlington']);
+    expect(parsed.elements[0].params.pnp).toBe(-1);
+    expect(postsOf(parsed.elements[0])).toHaveLength(3);
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('400 192 160 304 160 0 0_1_0_0_100 0_1_0_0_100 -1');
+  });
+
+  it('converts a DPDT switch to its 429 line with its pole count', () => {
+    // DPDTSwitchElm writes po over the SwitchElm base (:54); the port's token
+    // layout is position momentary then the pole count (:48-51).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <dpdt x="192 160 304 224" f="0" po="3"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('429 192 160 304 224 0 0 false 3');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['dpdtSwitch']);
+    expect(parsed.elements[0].params.poleCount).toBe(3);
+    expect(postsOf(parsed.elements[0])).toHaveLength(9);
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('429 192 160 304 224 0 0 false 3');
+  });
+
+  it('converts a potentiometer to its 174 line', () => {
+    // PotElm writes ma/po/sl (PotElm.java:79-81) onto the port's
+    // maxResistance position caption stream.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <pt x="192 160 304 160" f="1" ma="2000" po="0.25" sl="Volume"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('174 192 160 304 160 1 2000 0.25 Volume');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['potentiometer']);
+    expect(parsed.elements[0].params.maxResistance).toBe(2000);
+    expect(parsed.elements[0].params.position).toBe(0.25);
+    expect(parsed.elements[0].text).toBe('Volume');
+    expect(postsOf(parsed.elements[0])).toHaveLength(3);
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('174 192 160 304 160 1 2000 0.25 Volume');
+  });
+
+  it('round-trips a potentiometer caption containing spaces', () => {
+    // The port writes pot captions raw and multi-token (PotElm.java:58-62),
+    // so sl splits on whitespace the way the registry's own dump does; the
+    // parse rejoins the words with single spaces.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <pt x="192 160 304 160" f="0" ma="1000" po="0.5" sl="Max Resistance"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('174 192 160 304 160 0 1000 0.5 Max Resistance');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements[0].text).toBe('Max Resistance');
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('174 192 160 304 160 0 1000 0.5 Max Resistance');
+  });
+
+  it('converts an audio input to its 411 line with its three own tokens', () => {
+    // AudioInputElm writes ma/st/fi (AudioInputElm.java:98-101); the port's
+    // short three-token form reads exactly those (:56-66 of audioInput.ts).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <ain x="192 160 304 160" f="1" ma="2" st="0.5" fi="7"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('411 192 160 304 160 1 2 0.5 7');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['audioInput']);
+    expect(parsed.elements[0].params.maxVoltage).toBe(2);
+    expect(parsed.elements[0].params.startPosition).toBe(0.5);
+    expect(parsed.elements[0].params.fileNum).toBe(7);
+    // The save writes the registry's own full nine-token form (the six rail
+    // tokens with the waveform pinned AC, then the element's three), so it is
+    // longer than the converted line it came from.
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('411 192 160 304 160 1 1 60 2 0 0 0.5 2 0.5 7');
+  });
+
+  it('converts an audio output to its 211 line', () => {
+    // AudioOutputElm writes du/sa/la (AudioOutputElm.java:53-55), the same
+    // duration samplingRate labelNum order its text dump uses (:47-49).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <aout x="192 160 304 160" f="0" du="2" sa="44100" la="1"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('211 192 160 304 160 0 2 44100 1');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['audioOutput']);
+    expect(parsed.elements[0].params.duration).toBe(2);
+    expect(parsed.elements[0].params.samplingRate).toBe(44100);
+    expect(parsed.elements[0].params.labelNum).toBe(1);
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    expect(saved.split('\n')).toContain('211 192 160 304 160 0 2 44100 1');
+  });
 });
