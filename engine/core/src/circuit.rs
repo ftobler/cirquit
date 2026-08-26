@@ -1077,6 +1077,14 @@ impl Circuit {
             // Stampers keep treating these sources as collapsed.
             let (dropped, culprit) = s.take_dropped();
             self.collapsed_vs = s.take_collapsed_sources();
+            // A stop raised from stamp() is the same halt-the-run request the
+            // step loop consumes after do_step; taking it here keeps a stop
+            // raised during the constant pass from vanishing. It outranks a
+            // refused stamp, matching the step loop's check order.
+            if let Some(msg) = s.take_stop() {
+                self.clear_closure_state();
+                return Err(msg);
+            }
             if dropped > 0 {
                 // The constant pass refused a stamp, so the snapshot below
                 // would enshrine a half-built matrix. Settle into the same
@@ -2399,6 +2407,7 @@ fn resolve_stuck_wires(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::element::Base;
     use crate::spec::{ScopeSpec, TriggerSpec};
 
     /// The scope harness spec: a source across a 1 k resistor to ground, with
@@ -2883,5 +2892,73 @@ mod tests {
         // GMIN never produces this (the pin is always 1/GMIN >= 1e8), but the
         // fallback must stay well-formed if the constant ever changed.
         assert_eq!(format_ohms(0.5), "0.5 \u{2126}");
+    }
+
+    /// A test-only device whose stamp raises the engine halt channel.
+    /// Production elements only stop from `do_step` today (the transmission
+    /// line), so this probe is the way to observe a stop raised at stamp
+    /// time, the spot `restamp` used to swallow.
+    struct StampStopProbe {
+        base: Base,
+        msg: &'static str,
+    }
+
+    impl StampStopProbe {
+        fn new(msg: &'static str) -> Self {
+            Self {
+                base: Base::with_posts(0),
+                msg,
+            }
+        }
+    }
+
+    impl Element for StampStopProbe {
+        fn kind(&self) -> &'static str {
+            "stampStopProbe"
+        }
+        fn base(&self) -> &Base {
+            &self.base
+        }
+        fn base_mut(&mut self) -> &mut Base {
+            &mut self.base
+        }
+        fn post_count(&self) -> usize {
+            0
+        }
+        fn stamp(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
+            s.request_stop(self.msg);
+        }
+    }
+
+    #[test]
+    fn a_stamp_time_stop_fails_the_restamp_instead_of_vanishing() {
+        // The constant pass used to read only take_dropped, so a future
+        // element raising request_stop from stamp() would have been ignored
+        // and the run would have proceeded on stamps the element asked to
+        // halt on.
+        let mut c = scoped_circuit();
+        c.elements
+            .push(Box::new(StampStopProbe::new("probe asked to stop")));
+        let err = c
+            .restamp()
+            .expect_err("a stamp-time stop must fail the restamp");
+        assert_eq!(err, "probe asked to stop");
+        // The same closure-less settle as the dropped-stamp branch, so a
+        // later run() takes its empty-closures no-op path instead of stepping
+        // a half-built matrix.
+        assert!(c.closures.is_empty());
+        assert!(c.node_voltages.is_empty());
+    }
+
+    #[test]
+    fn a_stamp_time_stop_surfaces_through_the_error_side_channel() {
+        // The public runtime edit path returns a plain bool and routes the
+        // restamp failure onto the side channel the frontend polls; the stop
+        // message must arrive there verbatim.
+        let mut c = scoped_circuit();
+        c.elements
+            .push(Box::new(StampStopProbe::new("probe asked to stop")));
+        assert!(!c.set_param(2, "resistance", 500.0));
+        assert_eq!(c.error(), Some("probe asked to stop"));
     }
 }
