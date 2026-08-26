@@ -23,6 +23,7 @@ import {
   PLOT_COLORS,
   plotColors,
   sameUnits,
+  selectPlotAt,
   trailFadeAlpha,
   trailSliderToSteps,
   trailStepsToSlider,
@@ -1430,5 +1431,66 @@ describe('sameUnits', () => {
     expect(sameUnits([plot(1, 'voltage'), plot(2, 'current')])).toBe(false);
     expect(sameUnits([plot(1, 'power'), plot(2, 'charge')])).toBe(false);
     expect(sameUnits([plot(1, 'ib'), plot(2, 'vce')])).toBe(false);
+  });
+});
+
+describe('selectPlotAt', () => {
+  const w = 200;
+  const h = 150;
+  const flatRing = (v: number): Float32Array => {
+    const data = new Float32Array(w * 2);
+    for (let i = 0; i < w; i++) {
+      data[i * 2] = v;
+      data[i * 2 + 1] = v;
+    }
+    return data;
+  };
+  // Two manually-scaled traces whose rings disagree at the clicked column:
+  // the voltage trace rides at 10 V there, the current one sits at zero.
+  // manScale 5 puts 10 V at y = 74 - (74/20.25)*10 ~ 37; manScale 0.1 keeps
+  // zero amps on the centre line, where the click lands.
+  const splitEngine = (): SimEngine =>
+    ({
+      scopeIndexOf: (id: number) => id - 1,
+      scopeData: (index: number) => flatRing(index === 0 ? 10 : 0),
+      scopeDiverged: () => false,
+    }) as unknown as SimEngine;
+  const splitScope = () => {
+    const pa = plot(1, 'voltage');
+    pa.manScale = 5;
+    const pb = plot(2, 'current');
+    pb.manScale = 0.1;
+    return scopeOf([pa, pb], { manualScale: true });
+  };
+
+  it('scores each plot against its own samples, not the first trace’s', () => {
+    // Upstream reads each plot's own column when scoring (Scope.java:959);
+    // scoring both candidates off plots[0]'s ring resolved the wrong trace
+    // wherever two differing traces crossed near the pointer.
+    const picked = selectPlotAt(splitEngine(), splitScope(), 100, 74, w, h);
+    expect(picked).toBe(1);
+  });
+
+  it('still resolves the lone trace of a single-plot scope', () => {
+    const p = plot(1, 'voltage');
+    p.manScale = 5;
+    const picked = selectPlotAt(
+      {
+        scopeIndexOf: () => 0,
+        scopeData: () => flatRing(10),
+        scopeDiverged: () => false,
+      } as unknown as SimEngine,
+      scopeOf([p], { manualScale: true }),
+      100,
+      74 - (74 / ((8 / 2 + 0.05) * 5)) * 10,
+      w,
+      h,
+    );
+    expect(picked).toBe(0);
+  });
+
+  it('returns -1 when no visible plot is drawable or registered', () => {
+    const noTrace = { scopeIndexOf: () => undefined } as unknown as SimEngine;
+    expect(selectPlotAt(noTrace, scopeOf([plot(1, null)]), 100, 74, w, h)).toBe(-1);
   });
 });

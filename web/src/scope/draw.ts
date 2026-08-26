@@ -1326,14 +1326,18 @@ export function selectPlotAt(
     .map((plot) => ({ plot, index: engine.scopeIndexOf(plot.id) }))
     .filter((p): p is { plot: DrawablePlot; index: number } => p.index !== undefined);
   if (plots.length === 0) return -1;
-  const data = engine.scopeData(plots[0].index);
-  const win = plainWindow(data, w);
-  const k = Math.round(x) - win.xOffset;
   let best = -1;
   let bestDist = Infinity;
   const allSameUnits = sameUnits(plots.map((p) => p.plot));
   for (let i = 0; i < plots.length; i++) {
-    const { plot } = plots[i];
+    const { plot, index } = plots[i];
+    // Each candidate scores against its own ring: lengths differ per plot,
+    // so the window and the clicked column are per-plot too (upstream reads
+    // plot.maxValues[ip] per candidate, Scope.java:959). Scoring every trace
+    // against plots[0]'s samples resolved the wrong plot on mixed scopes.
+    const data = engine.scopeData(index);
+    const win = plainWindow(data, w);
+    const k = Math.round(x) - win.xOffset;
     const state = scaleStateFor(scope.id, plot.value);
     const t = transformFor(scope, plot, state, 0, 0, h, allSameUnits);
     const pos = win.posOf(k);
