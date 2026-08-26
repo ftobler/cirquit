@@ -329,6 +329,78 @@ describe('drill-in resets', () => {
   });
 });
 
+describe('recoverAutoSave while stacked', () => {
+  const RECOVERY = '$ 1 0.000005 10.2 50 5 43 5e-11\nr 0 0 16 0 0 100\n';
+
+  /** Recovery bytes in storage, the outer document loaded, drilled in, and
+   *  the recovery row armed as a previous session would have left it. */
+  const stackedWithRecovery = () => {
+    const storage = installLocalStorage();
+    storage.set(RECOVERY_STORAGE_KEY, RECOVERY);
+    useStore.getState().loadNetlist(outer());
+    useStore.getState().enterSubcircuit('myCirc');
+    useStore.setState({ hasRecovery: true });
+    return storage;
+  };
+
+  afterEach(() => {
+    delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
+  });
+
+  it('refuses to recover while a drill-in session is open and keeps the stack', () => {
+    stackedWithRecovery();
+    const before = useStore.getState();
+
+    useStore.getState().recoverAutoSave();
+    const s = useStore.getState();
+
+    expect(s.subcircuitStack).toHaveLength(1);
+    // The inner sheet is still on screen, not the recovered circuit.
+    expect(s.elements.filter((e) => e.kind === 'resistor')).toHaveLength(2);
+    expect(s.status).toBe('Exit the subcircuit editor before recovering the auto-save.');
+    // Nothing moved for the autosave watcher either.
+    expect(s.revision).toBe(before.revision);
+    expect(s.paramRevision).toBe(before.paramRevision);
+    expect(s.undoStack).toHaveLength(before.undoStack.length);
+  });
+
+  it('a refusal leaves the suspended histories and recovery row untouched', () => {
+    const storage = stackedWithRecovery();
+    const entry = useStore.getState().subcircuitStack[0];
+    const lastSaved = useStore.getState().lastSaved;
+
+    useStore.getState().recoverAutoSave();
+
+    const s = useStore.getState();
+    // The row stays enabled and the payload stays stored: the refusal is
+    // inert beyond the status line, so exiting then clicking recovers.
+    expect(s.hasRecovery).toBe(true);
+    expect(storage.get(RECOVERY_STORAGE_KEY)).toBe(RECOVERY);
+    expect(s.lastSaved).toBe(lastSaved);
+    // The enclosing level's suspended stacks ride the entry unharmed.
+    expect(s.subcircuitStack[0].undo).toEqual(entry.undo);
+    expect(s.subcircuitStack[0].redo).toEqual(entry.redo);
+  });
+
+  it('recovers normally once the session has exited', () => {
+    stackedWithRecovery();
+    useStore.getState().exitSubcircuit();
+    const entries = useStore.getState().undoStack.length;
+
+    useStore.getState().recoverAutoSave();
+    const s = useStore.getState();
+
+    expect(s.subcircuitStack).toHaveLength(0);
+    expect(s.elements).toHaveLength(1);
+    expect(s.elements[0].params.resistance).toBe(100);
+    expect(s.hasRecovery).toBe(false);
+    // One undo entry lands over the exited document, upstream's doRecover.
+    expect(s.undoStack).toHaveLength(entries + 1);
+    s.undo();
+    expect(useStore.getState().toNetlist()).toContain('410 ');
+  });
+});
+
 describe('drill-in session integrity', () => {
   it('the suspended undo history survives a look-and-return', () => {
     // The loose resistor gives the outer document something deletable that is

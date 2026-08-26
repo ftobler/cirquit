@@ -3314,6 +3314,17 @@ function createAppStore() {
   },
 
   recoverAutoSave: () => {
+    // Refuse while a drill-in session is stacked, matching markSaved's guard:
+    // loadNetlist wipes subcircuitStack wholesale, so recovering here would
+    // return to the outer circuit as a plain document with no breadcrumb,
+    // suspended histories or session models, and the payload is the stack
+    // root anyway. The refusal is inert beyond the status line: the row stays
+    // enabled and consumes neither payload nor flag, so exiting then clicking
+    // again recovers.
+    if (get().subcircuitStack.length > 0) {
+      set({ status: 'Exit the subcircuit editor before recovering the auto-save.' });
+      return;
+    }
     // Nothing stored: the row is greyed, and a stale click must not clear the
     // session state.
     const recovery = readRecovery();

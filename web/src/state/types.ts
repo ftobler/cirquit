@@ -718,7 +718,10 @@ export interface AppState {
   markSaved(): void;
   /** Loads the stored auto-save recovery, if any, as one undo entry, and marks
    *  the circuit unsaved (upstream's doRecover, UndoManager.java:83-88). A
-   *  no-op when no recovery exists. */
+   *  no-op when no recovery exists. Refuses with a status line while a
+   *  drill-in session is stacked, by markSaved's rule: the load wipes the
+   *  context stack wholesale, and the payload is the stack root anyway. The
+   *  row stays enabled, so exiting then clicking again recovers. */
   recoverAutoSave(): void;
 
   /** Begins a scope editing gesture: commits the pre-gesture baseline once,
