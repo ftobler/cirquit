@@ -436,6 +436,30 @@ fetch it).
   model left the wasm facade for a wasm-free leaf and value-token helpers
   left the netlist parser, killing three of the four runtime import cycles
   and shrinking the undocked popup's chunk to 2.17 kB without the engine.
+- Batch 15 (2026-08-26): the parked follow-ups of batches 10 through 14
+  drained as six parallel worktree lanes, each independently reviewed. The
+  expression evaluator walks an explicit work stack instead of recursing, so a
+  hundred-thousand-term flat operator chain parses, evaluates and drops
+  without touching the wasm stack (the parser depth cap never saw those
+  trees), with a differential test comparing 4000 seeded random expressions
+  against an independent recursive reference. Every wholesale document
+  replacement bumps the revert epoch now: the bump lives in loadNetlist as
+  the choke point plus one in New, so Escape-mid-drag subcircuit exits tear
+  down armed gestures instead of letting them survive the swap; refused loads
+  still bump nothing. Upstream reads every boolean file token through
+  Boolean(String) or parseBoolean, both case-insensitive, so momentary,
+  retriggerable, blown, triac state and counter invert-reset accept any case
+  through one shared boolToken helper while position compares stay
+  case-sensitive like upstream's compareTo. The XML converter traces carried
+  switch attributes it cannot honour instead of dropping them silently: a
+  nondefault closed resistance on dpdt, and keyboard shortcuts or on
+  resistances riding dpdt, L or bli documents, value-gated so default files
+  convert byte-identically and newline-normalized so one trace stays one
+  line. Create Test Harness mirrors TestCreator's width rule: wide input pins
+  get one bus logic input seeded with the pin's width, wide output pins one
+  show-bus-value wire, narrow pins unchanged. And the format table gained its
+  four missing rows: 415 DC motor, 427 three-phase motor, 428 motor
+  protection switch and 161 phase comparator.
 - Review batch 2026-08-25b: six more lanes of the day's review pass landed as
   five worktree features plus one engine pair. Scopes lay out against their
   own viewport through one pure layoutHeader (embedded windows stop painting
@@ -486,10 +510,10 @@ fetch it).
   ('true' low, 'false' high, SwitchElm.java:56-62), un-inverting startup
   levels for 75 boolean lines across 35 bundled circuits, numerics unchanged,
   saves byte-stable.
-- 615 Rust tests, most of them the end-to-end circuit checks across
+- 620 Rust tests, most of them the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus in-module unit tests and one doctest.
-  3484 TypeScript tests pass (one corpus report test skipped); the robustness
+  3521 TypeScript tests pass (one corpus report test skipped); the robustness
   batch added 28 of the Rust tests and 61 of the TypeScript ones, review
   batch 2026-08-25b added four more Rust and 172 more TypeScript, and review
   batch 2026-08-25c added six more Rust and 19 more TypeScript. The owner-bug batch
