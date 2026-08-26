@@ -116,10 +116,10 @@ export const LDR_DEF: ElementDef = {
     e.text?.trim() ? e.text : 'Light Brightness', // LDRElm.java's constructor default
   ],
   // getEditInfo's one field (LDRElm.java's `getEditInfo`); `position` isn't
-  // one of them upstream — it's only reachable through the slider widget —
-  // but sliders aren't wired up here yet (see OVERVIEW.md), so it's exposed
-  // directly, the same simplification `thermistor` and `potentiometer`
-  // already make for their own sliders/wipers.
+  // one of them upstream, where it is reachable only through the slider
+  // widget. That slider is wired up here too: model/sliders.ts maps this
+  // caption to `position`; the direct field sits beside it, like
+  // `thermistor`'s and `potentiometer`'s.
   fields: [
     { name: 'position', label: 'Slider position (light level)', min: 0, max: 1 },
     { name: 'text', label: 'Slider Text', type: 'text', target: 'text' },

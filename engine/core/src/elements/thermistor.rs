@@ -10,10 +10,11 @@ use crate::stamp::Stamper;
 /// there is no self-heating: `temperature` is derived purely from a slider
 /// `position` in `[0, 1]` interpolated between two edited endpoints
 /// (`minTempr`, `maxTempr`), the same way `PotElm.java`'s wiper `position`
-/// sets its two resistances — this port has no slider widget yet (see
-/// OVERVIEW.md's "Sliders (`38` lines)" gap), so `position` is exposed as a
-/// directly-editable field instead, exactly as this port's `Potentiometer`
-/// already does for its own wiper.
+/// sets its two resistances. Upstream reaches `position` only through its
+/// slider widget (it is not a `getEditInfo` row); this port keeps that
+/// slider bound (the frontend's slider table maps the caption to it) and
+/// also exposes `position` as a directly-editable field, exactly as this
+/// port's `Potentiometer` already does for its own wiper.
 ///
 /// `stamp()` (ThermistorNTCElm.java:185-189) recomputes `temperature` from
 /// `position` and `resistance` from `temperature` on every call: nothing

@@ -130,10 +130,10 @@ export const THERMISTOR_DEF: ElementDef = {
     e.text?.trim() ? e.text : 'Temperature',  // ThermistorNTCElm.java:52
   ],
   // getEditInfo's five fields (ThermistorNTCElm.java:199-215); `position`
-  // isn't one of them upstream — it's only reachable through the slider
-  // widget — but sliders aren't wired up here yet (see OVERVIEW.md), so
-  // it's exposed directly, the same simplification `potentiometer` already
-  // makes for its own wiper.
+  // isn't one of them upstream, where it is reachable only through the
+  // slider widget. That slider is wired up here too: model/sliders.ts maps
+  // this caption to `position`; the direct field sits beside it, like
+  // `potentiometer`'s wiper.
   fields: [
     { name: 'r25', label: 'R at 25°C', unit: 'Ω', min: 0 },
     { name: 'r50', label: 'R at 50°C', unit: 'Ω', min: 0 },
