@@ -434,9 +434,6 @@ export interface AppState {
    *  own change resizes the canvas (a load that adds or removes scopes). See
    *  `centerRequest`. */
   requestCenter(): void;
-  /** Fits the whole circuit with no scale cap, the context menu's "Zoom to
-   *  fit" seam (context-menu.md). */
-  zoomToFit(): void;
   /** Moves a single stored endpoint by dx/dy. post 0 is (x1,y1), 1 is (x2,y2),
    *  the port of upstream's row/column capture which reads only stored
    *  endpoints, never derived posts (MouseManager.java:1161-1187). */

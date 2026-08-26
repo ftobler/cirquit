@@ -10,6 +10,12 @@ const NETLIST = [
   '',
 ].join('\n');
 
+const ROM_NETLIST = [
+  '$ 1 0.000005 10 50 5 50 5e-11',
+  '436 0 0 64 0 0 2 2 1 2 -1 -2',
+  '',
+].join('\n');
+
 const sramId = () => useStore.getState().elements[0].id;
 
 /** The saved 413 line of the current document. */
@@ -19,6 +25,16 @@ const sramLine = () =>
     .toNetlist()
     .split('\n')
     .find((l) => l.startsWith('413 ')) ?? '';
+
+const romId = () => useStore.getState().elements[0].id;
+
+/** The saved 436 line of the current document. */
+const romLine = () =>
+  useStore
+    .getState()
+    .toNetlist()
+    .split('\n')
+    .find((l) => l.startsWith('436 ')) ?? '';
 
 describe('setMemoryContents', () => {
   it('swaps the pairs in one undo entry and restores exactly on undo', () => {
@@ -107,5 +123,24 @@ describe('setMemoryContents', () => {
       [4, 9],
     ]);
     expect(sramLine()).toBe('413 0 0 64 0 0 4 4 0 1 2 -1 4 9 -1 -2');
+  });
+
+  it('a rom edit saves the grouped token stream too', () => {
+    // The ROM shares the SRAM's dump path; pinning both is what keeps a
+    // width-specific shortcut out of it. Addresses 0 and 2 are not
+    // consecutive, so each closes its own run before the final -2. The
+    // values stay within the 2 data bits the fixture line declares.
+    useStore.getState().loadNetlist(ROM_NETLIST);
+    useStore.getState().setMemoryContents(romId(), [
+      [0, 3],
+      [2, 1],
+    ]);
+    expect(romLine()).toBe('436 0 0 64 0 0 2 2 0 3 -1 2 1 -1 -2');
+  });
+
+  it('an empty rom pair list saves a tokenless line', () => {
+    useStore.getState().loadNetlist(ROM_NETLIST);
+    useStore.getState().setMemoryContents(romId(), []);
+    expect(romLine()).toBe('436 0 0 64 0 0 2 2');
   });
 });

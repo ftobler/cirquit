@@ -1,6 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { SimEngine } from '../engine/simulator';
@@ -18,6 +17,8 @@ import {
 const CIRCUITS_DIR = fileURLToPath(new URL('../../public/circuits', import.meta.url));
 const FIXTURES_DIR = fileURLToPath(new URL('./__fixtures__', import.meta.url));
 const GOLDEN_PATH = fileURLToPath(new URL('./corpus-report.json', import.meta.url));
+// Throwaway directories belong under the project's tmp/, never the OS one.
+const PROJECT_TMP = fileURLToPath(new URL('../../../tmp', import.meta.url));
 
 function loadGolden(): CorpusEntry[] {
   return JSON.parse(readFileSync(GOLDEN_PATH, 'utf8')) as CorpusEntry[];
@@ -123,7 +124,8 @@ describe('corpus fixtures', () => {
   });
 
   it('records an unreadable file as load error instead of crashing the scan', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'corpus-load-'));
+    mkdirSync(PROJECT_TMP, { recursive: true });
+    const dir = mkdtempSync(join(PROJECT_TMP, 'corpus-load-'));
     try {
       // A directory named like a circuit file makes readFileSync throw.
       mkdirSync(join(dir, 'broken.txt'));

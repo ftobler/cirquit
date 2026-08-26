@@ -10,18 +10,12 @@ import type { DrawablePlot } from '../scope/draw';
 import { exportScopeCsv } from '../scope/draw';
 import { scopeWidth } from '../scope/geometry';
 import { clearScaleStates } from '../scope/scale';
-import { canRemovePlot } from './scopePlotRows';
+import { scopeMenuRows, type ScopeMenuRow } from './scopeMenuRows';
 import { useStore } from '../state/store';
 
 interface Props {
   engine: SimEngine | null;
   nameOf: (plot: DrawablePlot) => string;
-}
-
-interface MenuItem {
-  label: string;
-  disabled?: boolean;
-  action: () => void;
 }
 
 /** Downloads text as a file, the same Blob pattern as the clipboard write. */
@@ -86,7 +80,7 @@ export function ScopeMenu({ engine, nameOf }: Props) {
   const scopeIndex = scopes.findIndex((x) => x.id === scope.id);
   const previous = scopeIndex > 0 ? scopes[scopeIndex - 1] : undefined;
 
-  const item = (m: MenuItem) => (
+  const item = (m: ScopeMenuRow) => (
     <button
       key={m.label}
       type="button"
@@ -99,73 +93,39 @@ export function ScopeMenu({ engine, nameOf }: Props) {
     </button>
   );
 
-  const items: MenuItem[] = [
-    {
-      label: 'Remove Scope',
-      action: () => useStore.getState().removeScope(scope.id),
+  const st = useStore.getState();
+  // The row table is pure and node-tested; this is the only place the store
+  // actions, the CSV build and the download meet it.
+  const items: ScopeMenuRow[] = scopeMenuRows({
+    scope,
+    previous,
+    plotId: scopeMenu.plotId,
+    exportCsv: () => {
+      if (!engine) return;
+      const width = scopeWidth(scope.id) ?? 500;
+      const csv = exportScopeCsv(
+        engine,
+        scope,
+        nameOf,
+        width,
+        scope.speed,
+        settings.timeStep,
+        engine.time,
+      );
+      downloadTextFile(csv, 'scope-data.csv');
     },
-    {
-      label: 'Max Scale',
-      action: () => useStore.getState().setScopeFlags(scope.id, { maxScale: !scope.maxScale }),
+    commands: {
+      removeScope: st.removeScope,
+      setScopeFlags: st.setScopeFlags,
+      stackScope: st.stackScope,
+      unstackScope: st.unstackScope,
+      combineScopes: st.combineScopes,
+      removePlot: st.removePlot,
+      clearScaleStates,
+      resetScope: st.resetScope,
+      openScopeProperties: st.openScopeProperties,
     },
-    {
-      label: 'Stack',
-      disabled: !previous,
-      action: () => useStore.getState().stackScope(scope.id),
-    },
-    {
-      label: 'Unstack',
-      disabled: !previous,
-      action: () => useStore.getState().unstackScope(scope.id),
-    },
-    {
-      label: 'Combine',
-      disabled: !previous,
-      action: () => {
-        if (previous) useStore.getState().combineScopes(previous.id, scope.id);
-      },
-    },
-    {
-      label: 'Remove Plot',
-      // The plot id ScopePanel resolved under the cursor, not a value: two
-      // same-value plots in one panel must remove independently. Disabled
-      // rather than a silent no-op when the target is stale, raw-only, or
-      // the panel's last plot.
-      disabled: !canRemovePlot(scope.plots, scopeMenu.plotId),
-      action: () => useStore.getState().removePlot(scope.id, scopeMenu.plotId),
-    },
-    {
-      label: 'Reset',
-      action: () => {
-        // The sticky scales are per (scope, units family): wiping the scope's
-        // whole entry covers every trace at once, like upstream resetting
-        // scale[] in initialize().
-        clearScaleStates([scope.id]);
-        useStore.getState().resetScope(scope.id);
-      },
-    },
-    {
-      label: 'Export CSV',
-      action: () => {
-        if (!engine) return;
-        const width = scopeWidth(scope.id) ?? 500;
-        const csv = exportScopeCsv(
-          engine,
-          scope,
-          nameOf,
-          width,
-          scope.speed,
-          settings.timeStep,
-          engine.time,
-        );
-        downloadTextFile(csv, 'scope-data.csv');
-      },
-    },
-    {
-      label: 'Properties',
-      action: () => useStore.getState().openScopeProperties(scope.id),
-    },
-  ];
+  });
 
   return (
     <div
