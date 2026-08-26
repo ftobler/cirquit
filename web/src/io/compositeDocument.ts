@@ -33,7 +33,7 @@ import {
   buildModelFromSelection,
   describeBuildFailure,
   unescapeChildField,
-} from './subcircuits';
+} from './subcircuitBuild';
 
 /** The grid spacing the reconstruction lays coordinates out on. Coordinates
  *  only have to be distinct per net and integral, but staying on the grid

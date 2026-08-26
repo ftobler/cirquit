@@ -6,10 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { denyGlobalStorage } from '../../test/denyGlobalStorage';
 import {
   buildModelFromSelection,
-  clearSessionModels,
-  compositeModelLine,
   describeBuildFailure,
   escapeChildField,
+  unescapeChildField,
+} from './subcircuitBuild';
+import {
+  clearSessionModels,
+  compositeModelLine,
   getModel,
   listModels,
   modelToEngineSpec,
@@ -20,7 +23,6 @@ import {
   renameCompositeModelLine,
   renameModel,
   saveModel,
-  unescapeChildField,
   type SubcircuitStorage,
 } from './subcircuits';
 import { parseCircuit, serializeCircuit } from './netlist';
