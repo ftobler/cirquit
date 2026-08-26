@@ -1,4 +1,4 @@
-import type { ScopeValue } from '../../engine/simulator';
+import type { ScopeValue } from '../../engine/scopeModel';
 import type { CircuitElement, SimSettings } from '../../model/types';
 
 /** One trace on a scope `o` line, exactly as the file wrote it. */

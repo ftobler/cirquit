@@ -1,7 +1,7 @@
 import { defForDumpCode } from '../../model/registry';
 import { modelFamilyFor, resolveModelParams } from '../../model/deviceModels';
 import type { CircuitElement, SimSettings } from '../../model/types';
-import type { ScopeValue } from '../../engine/simulator';
+import type { ScopeValue } from '../../engine/scopeModel';
 import type {
   CompositeModel,
   CustomLogicModel,

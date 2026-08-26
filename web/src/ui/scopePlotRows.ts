@@ -5,7 +5,7 @@
  * labelled (populatePlotListBox, ScopePropertiesDialog.java:731-741).
  */
 
-import type { ScopePlot, ScopeValue } from '../engine/simulator';
+import type { ScopePlot, ScopeValue } from '../engine/scopeModel';
 import { UNIT } from '../scope/draw';
 import { defFor } from '../model/registry';
 

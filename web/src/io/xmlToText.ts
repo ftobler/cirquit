@@ -67,7 +67,7 @@ import { encodeScopeLine, scopeFieldsFromFlags } from './scopeLine';
 import { importDecOrHex, scopeValueFromToken, unitsOf } from './netlist/parse';
 import { attr, compositeModel, diodeModel, transistorModel } from './xmlModelLines';
 import { FLAG_ESCAPE, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
-import type { PlotMeasurements, Scope, ScopeValue } from '../engine/simulator';
+import type { PlotMeasurements, Scope, ScopeValue } from '../engine/scopeModel';
 
 import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
 import { DEFAULT_Q_STATE } from '../model/registry/elements/darlington';

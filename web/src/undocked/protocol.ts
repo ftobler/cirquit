@@ -11,7 +11,7 @@
  * flat-array copy per trace.
  */
 
-import type { Scope, TriggerInfoLike } from '../engine/simulator';
+import type { Scope, TriggerInfoLike } from '../engine/scopeModel';
 import type { ThemeColors } from '../model/types';
 
 /** Child to opener, sent once when the scope page finishes loading. Pushing

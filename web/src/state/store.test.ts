@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, GRID_SIZE, type SimSettings } from '../model/types';
 import { LOGIC_INPUT_TERNARY } from '../model/registry/flags';
 import { postsOf } from '../model/registry';
 import { hitTestElement } from '../render/geometry';
-import { scopePlotsToSpecs } from '../engine/simulator';
+import { scopePlotsToSpecs } from '../engine/scopeModel';
 import { scaleStateFor, setScaleState } from '../scope/scale';
 import { parseCircuit, serializeCircuit } from '../io/netlist';
 import { SAMPLE } from '../io/netlist/fixtures';

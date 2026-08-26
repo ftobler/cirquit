@@ -12,8 +12,8 @@
  * unedited file still saves byte-for-byte.
  */
 
-import type { ScopeValue } from '../engine/simulator';
-import type { ScopePlot } from '../engine/simulator';
+import type { ScopeValue } from '../engine/scopeModel';
+import type { ScopePlot } from '../engine/scopeModel';
 import { decodeScopeLine, type DecodedScopeLine } from './scopeLine';
 import {
   FLAG_DIVISIONS,

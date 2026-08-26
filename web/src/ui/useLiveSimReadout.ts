@@ -5,7 +5,7 @@
  *  last re-rendered, frozen while the sim runs. */
 
 import { useEffect, useState } from 'react';
-import type { ElementReadoutSource } from '../engine/simulator';
+import type { ElementReadoutSource } from '../engine/scopeModel';
 import type { CircuitElement } from '../model/types';
 
 export interface ElementReadout {

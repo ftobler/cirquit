@@ -5,7 +5,7 @@
  * same code path as the dock with no engine of its own.
  */
 
-import type { ScopeDrawSource, TriggerInfoLike } from '../engine/simulator';
+import type { ScopeDrawSource, TriggerInfoLike } from '../engine/scopeModel';
 import { isUndockedFrameMessage, type UndockedFrameMessage } from './protocol';
 
 const EMPTY = new Float32Array(0);

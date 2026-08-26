@@ -9,7 +9,7 @@
  */
 
 import type { CircuitElement } from '../model/types';
-import type { Scope, ScopePlot } from '../engine/simulator';
+import type { Scope, ScopePlot } from '../engine/scopeModel';
 import { scopeSpeed } from './geometry';
 
 /** The Scope a 403 element's decoded state synthesizes, or null when nothing

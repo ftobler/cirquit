@@ -18,8 +18,8 @@ import type {
   Scope,
   ScopePlot,
   ScopeValue,
-} from '../engine/simulator';
-import { PLOT_MEASUREMENT_KEYS } from '../engine/simulator';
+} from '../engine/scopeModel';
+import { PLOT_MEASUREMENT_KEYS } from '../engine/scopeModel';
 import { unescapeToken, escapeToken } from './netlist/tokens';
 import {
   FLAG_DIVISIONS,

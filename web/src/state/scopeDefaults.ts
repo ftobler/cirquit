@@ -7,7 +7,7 @@
  * quiet fallback on any storage failure.
  */
 
-import type { Scope } from '../engine/simulator';
+import type { Scope } from '../engine/scopeModel';
 import { scopeDisplayFlags, scopeFieldsFromFlags } from '../io/scopeLine';
 import { scopeSpeed } from '../scope/geometry';
 import type { StorageLike } from './appPrefs';

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
-import type { ElementReadoutSource } from '../engine/simulator';
+import type { ElementReadoutSource } from '../engine/scopeModel';
 import { resetIds } from '../io/netlist';
 import { addResistor, fresh } from './store.test-helpers';
 import { useStore } from './store';

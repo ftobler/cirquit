@@ -3,7 +3,7 @@
  *  frequency grid, the log/linear body, the cursor readout and the phase
  *  overlay. */
 
-import type { Scope, ScopeValue } from '../engine/simulator';
+import type { Scope, ScopeValue } from '../engine/scopeModel';
 import type { Theme } from '../model/types';
 import type { ScopeCursor } from './draw';
 import { canvasFont, formatValue } from '../render/draw';

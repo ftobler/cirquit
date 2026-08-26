@@ -8,7 +8,8 @@
  */
 
 import { useCallback, useEffect, useRef } from 'react';
-import type { Scope, SimEngine } from '../engine/simulator';
+import { SimEngine } from '../engine/simulator';
+import type { Scope } from '../engine/scopeModel';
 import { defFor } from '../model/registry';
 import {
   registerScopeWidth,

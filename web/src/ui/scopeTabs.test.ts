@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Scope } from '../engine/simulator';
+import type { Scope } from '../engine/scopeModel';
 import { stackTabs } from './scopeTabs';
 
 /** Only the fields stackTabs reads; the rest of a Scope is irrelevant here. */

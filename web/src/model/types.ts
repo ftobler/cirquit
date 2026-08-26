@@ -3,7 +3,7 @@
 
 import type { CompositeEngineSpec, CustomLogicModel } from '../io/netlist/types';
 import type { EmbeddedScopeState } from '../io/embeddedScope';
-import type { ScopeDrawSource } from '../engine/simulator';
+import type { ScopeDrawSource } from '../engine/scopeModel';
 
 export interface Point {
   x: number;
