@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { frameStatsOf, scopePlotsToSpecs, sharedPlotElement, SimEngine } from './simulator';
-import type { ScopePlot } from './simulator';
+import type { Scope, ScopePlot } from './simulator';
 import { traceScopes, embeddedScopeOf } from '../scope/embedded';
 import { decodeEmbeddedScope } from '../io/embeddedScope';
 import { SvgRecorder } from '../render/svg';
@@ -129,6 +129,254 @@ describe('SimEngine live state read-back', () => {
     engine.run(10);
     const live = engine.elementStateTokens();
     expect(live[1]).toEqual({});
+  });
+});
+
+describe('setCircuit refusal keeps the previous bookkeeping', () => {
+  // Two capacitors charging through different resistors off one source: after
+  // 1000 steps at the default 5e-6 s, C1 (1 ms time constant) sits near 9.9 V
+  // while C2 (10 ms) is still under 4 V, so a swapped pairing cannot hide.
+  const TWO_CAPS: CircuitElement[] = [
+    { id: 1, kind: 'voltage', x1: 0, y1: 200, x2: 0, y2: 100, flags: 0, params: { maxVoltage: 10 } },
+    {
+      id: 2,
+      kind: 'resistor',
+      x1: 0,
+      y1: 100,
+      x2: 100,
+      y2: 100,
+      flags: 0,
+      params: { resistance: 1000 },
+    },
+    {
+      id: 3,
+      kind: 'capacitor',
+      x1: 100,
+      y1: 100,
+      x2: 100,
+      y2: 200,
+      flags: 0,
+      params: { capacitance: 1e-6, voltDiff: 0 },
+    },
+    {
+      id: 4,
+      kind: 'resistor',
+      x1: 100,
+      y1: 100,
+      x2: 200,
+      y2: 100,
+      flags: 0,
+      params: { resistance: 10000 },
+    },
+    {
+      id: 5,
+      kind: 'capacitor',
+      x1: 200,
+      y1: 100,
+      x2: 200,
+      y2: 200,
+      flags: 0,
+      params: { capacitance: 1e-6, voltDiff: 0 },
+    },
+    { id: 6, kind: 'wire', x1: 100, y1: 200, x2: 0, y2: 200, flags: 0, params: {} },
+    { id: 7, kind: 'wire', x1: 200, y1: 200, x2: 100, y2: 200, flags: 0, params: {} },
+    { id: 8, kind: 'ground', x1: 0, y1: 200, x2: 0, y2: 232, flags: 0, params: {} },
+  ];
+
+  // The engine's build_element rejection, a zero-resistance resistor,
+  // inserted ahead of an existing element so every later engine index shifts.
+  const REFUSED: CircuitElement[] = [
+    TWO_CAPS[0],
+    {
+      id: 9,
+      kind: 'resistor',
+      x1: -100,
+      y1: 100,
+      x2: 0,
+      y2: 100,
+      flags: 0,
+      params: { resistance: 0 },
+    },
+    ...TWO_CAPS.slice(1),
+  ];
+
+  // A docked panel tracing C1, so scope registration can be snapshotted too.
+  const SCOPES: Scope[] = [
+    {
+      id: 900,
+      raw: null,
+      plots: [
+        {
+          id: 500,
+          elementId: 3,
+          value: 'voltage',
+          manScale: null,
+          manVPosition: 0,
+          acCoupled: false,
+          measurements: null,
+          origValueToken: null,
+          origElementIndex: null,
+        },
+      ],
+      speed: 64,
+      position: 0,
+      manualScale: false,
+      maxScale: false,
+      label: '',
+      manDivisions: 8,
+      showScale: false,
+      showMax: true,
+      showMin: false,
+      showP2P: false,
+      showFreq: false,
+      showRMS: false,
+      showAverage: false,
+      showDutyCycle: false,
+      fftPlot: false,
+      logSpectrum: false,
+      plotXY: false,
+      plotX: 0,
+      plotY: 1,
+      plotBrightness: -1,
+      plotColorR: -1,
+      plotColorG: -1,
+      plotColorB: -1,
+      showPhaseAngle: false,
+      trailPersistence: 0,
+      showElmInfo: false,
+      showI: true,
+      showV: true,
+      scaleV: 20,
+      scaleA: 0.05,
+      trigger: { mode: 'freeRun', edge: 'rising', level: 0 },
+    },
+  ];
+
+  it('a rejected build leaves the index maps and scope traces on the previous circuit', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(TWO_CAPS, DEFAULT_SETTINGS, SCOPES)).toBeNull();
+    const before = {
+      c1: engine.indexOf(3),
+      c2: engine.indexOf(5),
+      c2offset: engine.postOffset(5),
+      trace: engine.scopeIndexOf(500),
+    };
+    expect(before.c1).toBeDefined();
+    expect(before.c2).toBeDefined();
+
+    // The refusal comes back as a message, and every snapshot survives it:
+    // the engine kept its previous circuit, so the facade must keep
+    // describing exactly that circuit. The refused id must not resolve.
+    expect(engine.setCircuit(REFUSED, DEFAULT_SETTINGS, SCOPES)).toContain(
+      'resistance must be positive',
+    );
+    expect(engine.indexOf(3)).toBe(before.c1);
+    expect(engine.indexOf(5)).toBe(before.c2);
+    expect(engine.postOffset(5)).toBe(before.c2offset);
+    expect(engine.scopeIndexOf(500)).toBe(before.trace);
+    expect(engine.indexOf(9)).toBeUndefined();
+  });
+
+  it('the previous circuit still solves while the refusal banner is up', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(TWO_CAPS, DEFAULT_SETTINGS, [])).toBeNull();
+    engine.run(1000);
+
+    expect(engine.setCircuit(REFUSED, DEFAULT_SETTINGS, [])).toContain(
+      'resistance must be positive',
+    );
+    // The frame loop keeps stepping behind the banner, so the run must stay
+    // healthy and the charges on the nodes must still be the old ones.
+    const stats = engine.run(100);
+    expect(stats.error).toBeUndefined();
+    expect(stats.converged).toBe(true);
+    expect(stats.steps).toBe(100);
+    expect(engine.time).toBeGreaterThan(0);
+    const volts = Array.from(engine.nodeVoltages());
+    expect(volts.every(Number.isFinite)).toBe(true);
+    expect(Math.max(...volts)).toBeGreaterThan(8);
+  });
+
+  it('live tokens stay keyed to their own capacitors across a refused update', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(TWO_CAPS, DEFAULT_SETTINGS, [])).toBeNull();
+    engine.run(1000);
+    const charged = engine.elementStateTokens();
+    expect(charged[3].voltDiff).toBeGreaterThan(8);
+    expect(charged[5].voltDiff).toBeGreaterThan(2);
+    expect(charged[5].voltDiff).toBeLessThan(6);
+
+    // The refusal shifts every engine-side index, so pairing payload entries
+    // positionally against the refused order would hand C1's charge to the
+    // refused id 9 and C2's to C1. Keyed by the payload's own ids, the
+    // read-back equals the capture entry for entry.
+    expect(engine.setCircuit(REFUSED, DEFAULT_SETTINGS, [])).toContain(
+      'resistance must be positive',
+    );
+    expect(engine.elementStateTokens()).toEqual(charged);
+
+    // And the keep-charge semantic still holds across the refusal: a
+    // successful overlay rebuild lands each charge back on its own capacitor.
+    const after = engine.elementStateTokens();
+    expect(engine.setCircuit(overlayLiveState(TWO_CAPS, after), DEFAULT_SETTINGS, [])).toBeNull();
+    engine.run(1);
+    const v1 = engine.elementVoltages()[engine.indexOf(3)!];
+    const v2 = engine.elementVoltages()[engine.indexOf(5)!];
+    expect(v1).toBeGreaterThan(8);
+    expect(v2).toBeGreaterThan(2);
+    expect(v2).toBeLessThan(6);
+  });
+
+  it('consecutive refusals do not disturb the maps and a good build republishes', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(TWO_CAPS, DEFAULT_SETTINGS, [])).toBeNull();
+    const c1 = engine.indexOf(3);
+    const c2offset = engine.postOffset(5);
+
+    // First refusal: the zero-resistance guard.
+    expect(engine.setCircuit(REFUSED, DEFAULT_SETTINGS, [])).toContain(
+      'resistance must be positive',
+    );
+    // Second refusal, a different guard: a duplicated id, again ahead of an
+    // existing element so the index shift alone would corrupt the maps.
+    const DUPLICATE: CircuitElement[] = [TWO_CAPS[0], { ...TWO_CAPS[1] }, ...TWO_CAPS.slice(1)];
+    expect(engine.setCircuit(DUPLICATE, DEFAULT_SETTINGS, [])).toContain('duplicate element id');
+
+    expect(engine.indexOf(3)).toBe(c1);
+    expect(engine.postOffset(5)).toBe(c2offset);
+    expect(engine.indexOf(9)).toBeUndefined();
+
+    // A good build republishes: the same id, given a valid resistance in
+    // parallel with R1, resolves like any newcomer.
+    const GOOD: CircuitElement[] = [
+      ...TWO_CAPS,
+      {
+        id: 9,
+        kind: 'resistor',
+        x1: 0,
+        y1: 100,
+        x2: 100,
+        y2: 100,
+        flags: 0,
+        params: { resistance: 1000 },
+      },
+    ];
+    expect(engine.setCircuit(GOOD, DEFAULT_SETTINGS, [])).toBeNull();
+    expect(engine.indexOf(9)).toBeDefined();
+    expect(engine.postOffset(9)).toBeDefined();
+  });
+
+  it('no exception escapes a refused setCircuit', async () => {
+    // The frame loop calls setCircuit inside its own bookkeeping; a throw out
+    // of it would surface as an unhandled rejection instead of the one
+    // problem banner the build-report channel owns.
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(TWO_CAPS, DEFAULT_SETTINGS, [])).toBeNull();
+    let reported: string | null = null;
+    expect(() => {
+      reported = engine.setCircuit(REFUSED, DEFAULT_SETTINGS, []);
+    }).not.toThrow();
+    expect(reported).toContain('resistance must be positive');
   });
 });
 

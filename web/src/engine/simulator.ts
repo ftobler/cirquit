@@ -473,8 +473,6 @@ function engineModelOf(e: CircuitElement): string | null {
 export class SimEngine {
   private sim: WasmSimulator;
   private kinds: Set<string>;
-  /** Element ids in the order the engine received them. */
-  private order: number[] = [];
   private indexById = new Map<number, number>();
   /** Offset of each element's first terminal within the flattened node list. */
   private postOffsetById = new Map<number, number>();
@@ -522,20 +520,25 @@ export class SimEngine {
     // list is laid out. A bus wire then hands the engine one terminal per bit
     // at each endpoint, and a wide label one terminal per bit at its anchor.
     const busWidths = resolveBusWidths(usable).widths;
-    this.order = usable.map((e) => e.id);
-    this.indexById = new Map(this.order.map((id, i) => [id, i]));
-    this.postOffsetById = new Map();
+    // Staged locally and published only once the engine accepts the build.
+    // The engine commits nothing on rejection and keeps solving its previous
+    // circuit, so the facade must keep describing that previous circuit:
+    // publishing the refused order would leave render slices, the scope fast
+    // path and the live-token ids indexing geometry the engine does not hold.
+    const order = usable.map((e) => e.id);
+    const indexById = new Map(order.map((id, i) => [id, i]));
+    const postOffsetById = new Map<number, number>();
     let offset = 0;
     for (const e of usable) {
-      this.postOffsetById.set(e.id, offset);
+      postOffsetById.set(e.id, offset);
       offset += postsForRender(e, busWidths).length;
     }
 
     // One spec per plot, in store order, so a two-plot line fills two engine
     // traces in the same order the file listed them.
-    const traceSpecs = (this.scopeOrder = scopePlotsToSpecs(scopes, settings, widthOf).filter((s) =>
-      this.indexById.has(s.elementId),
-    ));
+    const traceSpecs = scopePlotsToSpecs(scopes, settings, widthOf).filter((s) =>
+      indexById.has(s.elementId),
+    );
     const spec = {
       elements: usable.map((e) => {
         const params = { ...e.params };
@@ -600,10 +603,15 @@ export class SimEngine {
 
     try {
       this.sim.setCircuit(JSON.stringify(spec));
-      return null;
     } catch (err) {
+      // Publish nothing: the engine's own build is transactional, so the
+      // staged maps above die with the refused spec.
       return err instanceof Error ? err.message : String(err);
     }
+    this.indexById = indexById;
+    this.postOffsetById = postOffsetById;
+    this.scopeOrder = traceSpecs;
+    return null;
   }
 
   run(steps: number): FrameStats {
@@ -695,8 +703,10 @@ export class SimEngine {
    * Live operating-point tokens per element, keyed by element id: the file
    * tokens each element would write if it dumped its live state (a capacitor's
    * `voltDiff`, an inductor's `current`, ...). Read at save and rebuild time
-   * only, never per frame; the ids zip with `this.order`, the ids the engine
-   * received in setCircuit order.
+   * only, never per frame. Each payload entry carries the id of the element
+   * its tokens belong to, zipped together inside the engine from one held
+   * circuit, so the keying here can never drift with the order elements were
+   * handed in.
    */
   elementStateTokens(): LiveState {
     const raw = this.sim.elementStateTokens();
@@ -710,10 +720,8 @@ export class SimEngine {
       return {};
     }
     const out: LiveState = {};
-    for (let i = 0; i < parsed.length; i++) {
-      const id = this.order[i];
-      if (id === undefined) break;
-      out[id] = parsed[i].tokens ?? {};
+    for (const entry of parsed) {
+      out[entry.id] = entry.tokens ?? {};
     }
     return out;
   }
