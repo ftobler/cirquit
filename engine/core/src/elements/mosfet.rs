@@ -132,21 +132,28 @@ impl Mosfet {
         (source == 2 && p == 1.0) || (source == 1 && p == -1.0)
     }
 
-    /// Stamps the body diode between its anode and cathode posts, using the
-    /// mosfet's own node assignments and the current node voltages. The
-    /// embedded `Diode` carries its own `Base` that the circuit never sees, so
-    /// every call has to point it at the channel terminals.
-    fn stamp_body_diode(&mut self, ctx: &SimCtx, s: &mut Stamper) {
+    /// Points the embedded body `Diode` at its posts and the current terminal
+    /// voltages, so its own `do_step`, `calculate_current` and
+    /// `restore_iteration` read the right nodes. The diode's `Base` is
+    /// invisible to the circuit, so it must be re-pointed on every call,
+    /// exactly like the JFET's gate diode. No joint mosfet/jfet helper fits:
+    /// the JFET picks its orientation through polarity logic
+    /// (jfet.rs `gate_diode_posts`), while this body diode is fixed at posts
+    /// (1, 2) for both channel types.
+    fn wire_body_diode(&mut self) {
         // Anode at post 1, cathode at post 2, identical for both channel
         // types (MosfetElm.java:504-515).
-        let (n1, n2) = (self.base.nodes[1], self.base.nodes[2]);
-        {
-            let d = self.diode.base_mut();
-            d.nodes[0] = n1;
-            d.nodes[1] = n2;
-            d.volts[0] = self.base.volts[1];
-            d.volts[1] = self.base.volts[2];
-        }
+        let d = self.diode.base_mut();
+        d.nodes[0] = self.base.nodes[1];
+        d.nodes[1] = self.base.nodes[2];
+        d.volts[0] = self.base.volts[1];
+        d.volts[1] = self.base.volts[2];
+    }
+
+    /// Stamps the body diode between its anode and cathode posts, using the
+    /// mosfet's own node assignments and the current node voltages.
+    fn stamp_body_diode(&mut self, ctx: &SimCtx, s: &mut Stamper) {
+        self.wire_body_diode();
         self.diode.do_step(ctx, s);
     }
 }
@@ -247,11 +254,7 @@ impl Element for Mosfet {
 
         // The body diode's own current at the solved voltages, for the
         // per-node report.
-        {
-            let d = self.diode.base_mut();
-            d.volts[0] = self.base.volts[1];
-            d.volts[1] = self.base.volts[2];
-        }
+        self.wire_body_diode();
         self.diode.calculate_current(ctx);
         self.diode_current = self.diode.base().current;
     }
@@ -310,12 +313,139 @@ impl Element for Mosfet {
         self.diode.reset();
     }
 
-    /// Re-anchors the clamped source/drain move from the restored node
-    /// voltages, so a rejected step cannot leave `last_v1`/`last_v2` stuck
-    /// mid-iteration on the retry.
+    /// Re-anchors the clamped source/drain move and the body diode from the
+    /// restored node voltages, so a rejected step cannot leave the per-step
+    /// state stuck mid-iteration on the retry. Mirrors the JFET's identical
+    /// treatment of its gate diode (jfet.rs `restore_iteration`): without it
+    /// the retry's first stamp compares against the failed attempt's final
+    /// junction iterate, one spurious `not_converged` past the 10 mV bar plus
+    /// one mislimiting step.
     fn restore_iteration(&mut self) {
         self.last_v0 = self.base.volts[0];
         self.last_v1 = self.base.volts[1];
         self.last_v2 = self.base.volts[2];
+        self.wire_body_diode();
+        self.diode.restore_iteration();
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::closure::Closure;
+    use crate::matrix::Solver;
+    use crate::spec::SolverType;
+
+    fn spec() -> ElementSpec {
+        ElementSpec {
+            id: 1,
+            kind: "mosfet".into(),
+            posts: Vec::new(),
+            params: HashMap::from([("pnp".to_string(), 1.0)]),
+            label: None,
+            model: None,
+            flags: 0,
+        }
+    }
+
+    /// A minimal one-closure rig, the shape stamp.rs's own tests use: nodes 1
+    /// and 2 carry the channel terminals, node 0 is ground.
+    struct Rig {
+        closures: Vec<Closure>,
+        node_closure: Vec<usize>,
+        node_row: Vec<usize>,
+        vs_closure: Vec<usize>,
+        vs_row: Vec<usize>,
+        element_closure: Vec<usize>,
+    }
+
+    impl Rig {
+        fn new() -> Self {
+            let mut sys = Solver::new();
+            sys.resize(2, SolverType::Dense)
+                .expect("two rows fit the dense cap");
+            Self {
+                closures: vec![Closure {
+                    node_rows: vec![1, 2],
+                    vs_rows: Vec::new(),
+                    sys,
+                    nonlinear: true,
+                    simplified: None,
+                }],
+                node_closure: vec![0, 0, 0],
+                node_row: vec![0, 0, 1],
+                vs_closure: Vec::new(),
+                vs_row: Vec::new(),
+                element_closure: vec![0],
+            }
+        }
+
+        fn stamper(&mut self) -> Stamper<'_> {
+            let Rig {
+                closures,
+                node_closure,
+                node_row,
+                vs_closure,
+                vs_row,
+                element_closure,
+            } = self;
+            Stamper::new(
+                closures,
+                node_closure,
+                node_row,
+                vs_closure,
+                vs_row,
+                element_closure,
+            )
+        }
+    }
+
+    #[test]
+    fn restore_iteration_reanchors_the_body_diode() {
+        // After a rejected step, restore_committed rewinds base.volts but the
+        // embedded body diode keeps whatever junction voltage the FAILED
+        // attempt's last iteration wrote into its anchor (Diode.java:142-145).
+        // The JFET re-derives its identical gate diode on restore; the MOSFET
+        // must do the same for its body diode, or the retry burns a spurious
+        // not_converged plus a mislimiting step before catching up.
+        let mut q = Mosfet::new(&spec());
+        q.base.nodes = vec![0, 1, 2];
+        let ctx = SimCtx::default();
+
+        // A failed attempt leaves distant terminal volts and an anchor to
+        // match: do_step at 5 V across posts (1, 2) writes its limited
+        // iterate into the diode's anchor.
+        q.base.volts = vec![0.0, 5.0, 0.0];
+        let mut rig = Rig::new();
+        {
+            let mut s = rig.stamper();
+            s.set_current(0);
+            q.do_step(&ctx, &mut s);
+        }
+        assert!(
+            q.diode.junction_anchor().abs() > 1e-3,
+            "do_step must have moved the anchor, got {}",
+            q.diode.junction_anchor()
+        );
+
+        // restore_committed rewinds the solution vector and write_back fills
+        // base.volts with the committed values, all zero here.
+        q.base.volts = vec![0.0, 0.0, 0.0];
+        q.restore_iteration();
+        assert_eq!(
+            q.diode.junction_anchor(),
+            q.base.volts[1] - q.base.volts[2],
+            "the diode anchor must be re-derived from the restored volts"
+        );
+
+        // Behaviourally: at unchanged volts the next do_step reports settled.
+        // With a stale anchor it would trip the 10 mV convergence bar and
+        // cost the retry an extra iteration plus a mislimited stamp.
+        let mut s = rig.stamper();
+        s.set_current(0);
+        q.do_step(&ctx, &mut s);
+        assert!(
+            s.converged,
+            "a re-anchored body diode must not flag not_converged at unchanged volts"
+        );
     }
 }
