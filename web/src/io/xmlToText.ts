@@ -536,12 +536,14 @@ const DUMP_CODES: Record<string, string> = {
  *  line naming the registry code the kind models it as. Data-driven on
  *  purpose: landing a writer means moving the tag into WRITERS,
  *  DUMP_CODES and KIND_BY_TAG, and this map shrinks with it instead of going
- *  stale like a hand list. Gyrator, NortonAmp (`nor`) and the composite chip
- *  stay plain comments because no port model sits behind them at all;
- *  marking their silence is out of scope by decision. PushSwitch is absent
- *  because its inherited dump type is `s`, so upstream's own tag map resolves
- *  the class-name form onto SwitchElm and it can never reach a document. */
-const UNCONVERTED_TAG_KINDS: Record<string, string> = {
+ *  stale like a hand list. Exported so the test suite can sweep every kind
+ *  through the registry and catch a typo before a document does.
+ *  Gyrator, NortonAmp (`nor`) and the composite chip stay plain comments
+ *  because no port model sits behind them at all; marking their silence is
+ *  out of scope by decision. PushSwitch is absent because its inherited dump
+ *  type is `s`, so upstream's own tag map resolves the class-name form onto
+ *  SwitchElm and it can never reach a document. */
+export const UNCONVERTED_TAG_KINDS: Record<string, string> = {
   rl: 'relay',
   cl: 'customLogic',
   T: 'transformer',
@@ -566,7 +568,7 @@ const UNCONVERTED_TAG_KINDS: Record<string, string> = {
   RingCounter: 'ringCounter',
   SeqGen: 'seqGen',
   DataRecorder: 'dataRecorder',
-  OhmMeter: 'ohmMeter',
+  OhmMeter: 'ohmmeter',
   TestPoint: 'testPoint',
   Ammeter: 'ammeter',
   LEDArray: 'ledArray',

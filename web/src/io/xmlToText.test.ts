@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { parseXml, isXml } from './xml';
 import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
 import { batteryTypeTables } from '../model/registry/elements/battery';
-import { postsOf } from '../model/registry';
-import { xmlToText } from './xmlToText';
+import { defFor, postsOf } from '../model/registry';
+import { UNCONVERTED_TAG_KINDS, xmlToText } from './xmlToText';
 import { parseCircuit, serializeCircuit } from './netlist';
 import { DEFAULT_SETTINGS } from '../model/types';
 
@@ -1267,5 +1267,24 @@ describe('xml to text conversion', () => {
     expect(text).toContain('# Triac not converted: this build models it as code 206');
     expect(text).toContain('# cl not converted: this build models it as code 208');
     expect(parseCircuit(text).elements).toHaveLength(0);
+  });
+
+  it('resolves every unconverted tag kind to a real registry definition', () => {
+    // The marker names a registry dump code, so one typo'd kind string in the
+    // map would emit "code undefined"; sweep the whole map through defFor and
+    // the converter itself so a slip fails here instead of in a document.
+    const entries = Object.entries(UNCONVERTED_TAG_KINDS);
+    expect(entries.length).toBeGreaterThan(30);
+    for (const [tag, kind] of entries) {
+      const def = defFor(kind);
+      expect(def, `${tag} names unknown kind ${kind}`).toBeDefined();
+      const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <${tag} x="192 160 304 224" f="0"/>
+</cir>
+`;
+      expect(xmlToText(src)).toContain(
+        `# ${tag} not converted: this build models it as code ${def!.dumpCode}`,
+      );
+    }
   });
 });
