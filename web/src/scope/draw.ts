@@ -587,6 +587,25 @@ function textMeasurer(ctx: CanvasRenderingContext2D): (s: string) => number {
   };
 }
 
+/** Runs `body` clipped to the scope viewport rect. Every branch that paints
+ *  overlay strings goes through this: an embedded window shares the schematic
+ *  canvas and its transform, so only its own clip keeps long labels inside
+ *  the frame under extreme zoom, where the docked panels' dpr scaling never
+ *  reaches. */
+function clippedToViewport(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  body: () => void,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.clip();
+  body();
+  ctx.restore();
+}
+
 /** One plot's measurement readout strings, computed from its own min/max
  *  window: `stack` are the rows laid out under the header, `bottom` the Min
  *  readout that pins to the bottom edge like upstream's always has
@@ -1197,8 +1216,12 @@ export function drawScope(
   const traceColors = plotColors(scope, theme);
 
   if (scope.plotXY) {
-    drawXY(ctx, engine, scope, w, h, simTime, timeStep, theme);
-    drawScopeLabel(ctx, scope, h, theme);
+    clippedToViewport(ctx, w, h, () => {
+      drawXY(ctx, engine, scope, w, h, simTime, timeStep, theme);
+      drawScopeLabel(ctx, scope, h, theme);
+    });
+    // The settings wheel stays outside the clip, interactive chrome like the
+    // main path's.
     if (options?.settingsWheel !== false) drawSettingsWheel(ctx, cursor, w, h, theme);
     return;
   }
@@ -1239,7 +1262,7 @@ export function drawScope(
         elmInfo ? elmInfo(infoPlot.elementId) : null,
         textMeasurer(ctx),
       );
-      paintHeader(ctx, header, scope, h, theme, traceColors);
+      clippedToViewport(ctx, w, h, () => paintHeader(ctx, header, scope, h, theme, traceColors));
     }
     return;
   }
@@ -1368,27 +1391,24 @@ export function drawScope(
     elmInfo ? elmInfo(first.plot.elementId) : null,
     textMeasurer(ctx),
   );
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, w, h);
-  ctx.clip();
-  if (!(cursor.hover && cursor.cursorTime >= 0)) {
-    paintHeader(ctx, header, scope, h, theme, traceColors);
-  }
-  drawMeasurements(
-    ctx,
-    scope,
-    states,
-    h,
-    w,
-    speed,
-    timeStep,
-    theme,
-    decimalDigits,
-    traceColors,
-    header.endY,
-  );
-  ctx.restore();
+  clippedToViewport(ctx, w, h, () => {
+    if (!(cursor.hover && cursor.cursorTime >= 0)) {
+      paintHeader(ctx, header, scope, h, theme, traceColors);
+    }
+    drawMeasurements(
+      ctx,
+      scope,
+      states,
+      h,
+      w,
+      speed,
+      timeStep,
+      theme,
+      decimalDigits,
+      traceColors,
+      header.endY,
+    );
+  });
   drawCursor(
     ctx,
     cursor,

@@ -1578,6 +1578,60 @@ describe('drawScope measurement stacking', () => {
     expect(ctx.save).toHaveBeenCalledTimes(1);
     expect(ctx.restore).toHaveBeenCalledTimes(1);
   });
+
+  it('clips the X-Y branch overlays too', () => {
+    // drawXY bounds itself to the panel, but the label is a plain
+    // left-aligned string that can run past an embedded window's frame under
+    // extreme zoom unless the whole branch clips.
+    const xyEngine = {
+      scopeIndexOf: () => 0,
+      recentSamples: () => new Float32Array(0),
+      scopeDiverged: () => false,
+    } as unknown as SimEngine;
+    const { ctx } = mkCtx();
+    drawScope(
+      ctx,
+      xyEngine,
+      scopeOf([plot(1, 'voltage')], { plotXY: true, label: 'locus' }),
+      200,
+      150,
+      emptyCursor(),
+      0,
+      5e-6,
+      false,
+      3,
+    );
+    expect(ctx.rect).toHaveBeenCalledWith(0, 0, 200, 150);
+    expect(ctx.clip).toHaveBeenCalledTimes(1);
+    expect(ctx.save).toHaveBeenCalledTimes(1);
+    expect(ctx.restore).toHaveBeenCalledTimes(1);
+  });
+
+  it('clips the empty-plots info block too', () => {
+    // The Show Extended Info block drawn when no trace is registered takes
+    // the same clip: its lines stack from the top margin and overflow the
+    // frame on exactly the surfaces the clip exists for.
+    const noTrace = { scopeIndexOf: () => undefined } as unknown as SimEngine;
+    const { ctx } = mkCtx();
+    drawScope(
+      ctx,
+      noTrace,
+      scopeOf([plot(1, 'voltage')], { showElmInfo: true, label: 'Q1' }),
+      200,
+      150,
+      emptyCursor(),
+      0,
+      5e-6,
+      false,
+      3,
+      undefined,
+      () => ['r1'],
+    );
+    expect(ctx.rect).toHaveBeenCalledWith(0, 0, 200, 150);
+    expect(ctx.clip).toHaveBeenCalledTimes(1);
+    expect(ctx.save).toHaveBeenCalledTimes(1);
+    expect(ctx.restore).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('selectPlotAt', () => {
