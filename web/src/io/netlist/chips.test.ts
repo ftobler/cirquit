@@ -632,7 +632,7 @@ describe('chip family file formats', () => {
   it('155 D flip-flop line round-trips its saved Q level and default high voltage', () => {
     // One state pin, upstream pins[1], the Q output (DFlipFlopElm.java:48-49),
     // and no bits token, so the stream after the flags is just the saved level
-    // (ChipElm.java:61-68 writes one token per state pin).
+    // (ChipElm.java:367-371 writes one token per state pin).
     const line = '155 160 320 320 320 0 5';
     const { e, elementLine } = chipLine(line, '155');
     expect(e.kind).toBe('dFlipFlop');
