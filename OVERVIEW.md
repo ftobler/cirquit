@@ -669,6 +669,19 @@ fetch it).
   sibling resolution never happens: a slider pointing at another renders and
   drags independently where upstream mirrors its value onto the shared one
   (Adjustable.java sharedSlider).
+- **Pacing is steps-per-frame, not wall-clock.** A frame advances exactly
+  `stepsPerFrame` committed steps (default 160, `model/types.ts:606`), with no
+  wall-clock target and no frame-time cap, where upstream derives iterCount
+  from its speed bar (CirSim.java:320-325), paces by wall clock toward
+  `160 * iterCount` steps per second (SimulationManager.java:1291, gate at
+  :1300-1301) and caps frame time (:1439-1440). The saved header's iterCount
+  still round-trips (parse stores it when finite positive,
+  `io/netlist/serialize.ts` writes it back) and the `(Nx)` suffix beside the
+  clock is computed from that inert token in `simStatsLines`
+  (`render/infoBox.ts`), which reproduces what upstream displays for the same
+  file since its bar reads the token back on load; the engine never chases
+  the number. Fixed steps-per-frame follows from the one batch per frame
+  architecture (section 1).
 
 ---
 
@@ -760,8 +773,10 @@ Line-oriented, whitespace-separated. Element lines are:
 ```
 
 The header is `$ flags timeStep iterCount currentSpeed voltageRange powerRange
-minTimeStep`. `timeStep`, `iterCount`, `currentSpeed`, `voltageRange`,
-`powerRange` and `minTimeStep` are all modelled, as are flag bits 1 (show
+minTimeStep`. `timeStep`, `voltageRange`, `powerRange` and `minTimeStep` are
+modelled; `iterCount` and `currentSpeed` round-trip verbatim and are
+display-only, feeding the stats `(Nx)` suffix but never the pacing (see the
+deliberate gap below), as are flag bits 1 (show
 current), 4 (volts off, i.e. voltage colouring), 8 (power colouring), 16 (show
 values), 64 (adaptive timestep) and 128 (DC operating point on reset); the
 colour mode bits are mutually exclusive, with power winning when both arrive,

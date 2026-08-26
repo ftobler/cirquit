@@ -300,7 +300,9 @@ export function getTimeText(v: number): string {
 
 /** The `t =` / `time step =` lines, with the ` (ratex)` suffix once the
  *  effective rate `160*iterCount*timeStep` reaches 0.1, mirroring
- *  UIManager.java:858-863. */
+ *  UIManager.java:858-863. The rate is upstream's speed-bar pacing target
+ *  (SimulationManager.java:1291), which this port displays but never
+ *  chases. */
 export function simStatsLines(time: number, timeStep: number, iterCount: number): string[] {
   const timerate = 160 * iterCount * timeStep;
   const rate = timerate >= 0.1 ? ` (${showFormat(timerate)}x)` : '';
