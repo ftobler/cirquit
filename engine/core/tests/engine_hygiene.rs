@@ -574,15 +574,12 @@ fn a_hostile_composite_model_is_refused_once_past_the_row_limit() {
         .set_circuit(&sized_composite_spec(200_000))
         .expect_err("a model past the row limit must be refused");
     assert!(
-        err.contains("element 'composite' (id 1)") && err.contains("exceeds its node budget"),
+        err.contains("element 'composite' (id 1)")
+            && err.contains("exceeds its terminal-slots budget"),
         "rejection should name the element and the budget, got: {err}"
     );
     assert!(
-        err.contains("above the limit of 100000"),
-        "rejection should carry the limit, got: {err}"
-    );
-    assert!(
-        err.contains("100002"),
+        err.contains("its terminal slots total 100002"),
         "rejection should report the first crossing, not the full tally, got: {err}"
     );
 }

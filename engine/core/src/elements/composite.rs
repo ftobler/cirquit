@@ -299,10 +299,14 @@ struct CompositeModel {
 /// The rejection a model earns once its terminal slots pass
 /// [`MAX_MATRIX_ROWS`]. The sentence starts mid-way because `from_spec`
 /// prefixes the owning element, the same named-error form every other
-/// composite build failure carries.
+/// composite build failure carries. The slots are posts plus each child's
+/// model-line mentions and internal nodes: an upper bound on the eventual
+/// composite-local node count (ground tokens and duplicated mentions are
+/// counted here but collapse in the mapping pass), so it reads as a total
+/// rather than a node count.
 fn exceeds_budget(needed: usize) -> String {
     format!(
-        "exceeds its node budget: at least {needed} composite-local nodes, above the limit of {MAX_MATRIX_ROWS}"
+        "exceeds its terminal-slots budget: its terminal slots total {needed}, above the limit of {MAX_MATRIX_ROWS}"
     )
 }
 
@@ -356,8 +360,8 @@ impl Composite {
         // the global row gate only sees it after every child has been built,
         // and a hostile `.` line would buy unbounded construction work first.
         // The tally upper-bounds the composite-local node count the mapping
-        // pass produces (distinct nodes cannot exceed mentions), so anything
-        // this accepts is something `assign_nodes` would accept too.
+        // pass produces (distinct nodes cannot exceed terminal slots), so
+        // anything this accepts is something `assign_nodes` would accept too.
         let mut budget = num_posts;
 
         for (i, line) in model.split('\r').enumerate() {

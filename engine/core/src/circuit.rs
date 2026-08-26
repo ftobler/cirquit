@@ -977,8 +977,9 @@ impl Circuit {
         self.current_time_step = dt;
         self.ctx.dt = dt;
         // A step-size change never touches topology, so `restamp` cannot
-        // newly fail here; the side channel matches every other runtime
-        // caller that cannot return `Result` through a `pub` bool/void API.
+        // newly fail on topology; an element halt or a dropped stamp still
+        // can, so the side channel matches every other runtime caller that
+        // cannot return `Result` through a `pub` bool/void API.
         if let Err(e) = self.restamp() {
             self.error = Some(e);
         }
@@ -2066,8 +2067,9 @@ impl Circuit {
             return false;
         }
         // A parameter edit never changes topology, so `restamp` cannot newly
-        // fail here; handled anyway since `set_param`'s `bool` signature
-        // cannot carry a `Result`.
+        // fail on topology; an element halt or a dropped stamp still can, so
+        // it is handled anyway since `set_param`'s `bool` signature cannot
+        // carry a `Result`.
         if let Err(e) = self.restamp() {
             self.error = Some(e);
             return false;
