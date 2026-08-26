@@ -10,6 +10,9 @@ export const LABELED_NODE_DEF: ElementDef = {
   shortcut: 'b',  // LabeledNodeElm.java
   postCount: 1,
   posts: onePost,
+  // The placement constructor seeds "label" (LabeledNodeElm.java:36), which
+  // also makes two freshly dropped labels share one net, as upstream.
+  defaultText: 'label',
   fields: [{ name: 'text', label: 'Text', type: 'text', target: 'text' }],
   parse: (t, e) => {
     // Both upstream readers end up with the same string: the new-style one
