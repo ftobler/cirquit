@@ -428,9 +428,11 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
 }
 
 /// Names a model-driven composite that failed to build from its `spec.model`
-/// blob. These builders return `None` only when the model definition is
-/// missing or malformed; the error keeps the element's kind and id in the
-/// message so a hand-edited netlist points at the offending line.
+/// blob. Builders return `None` when that definition is missing or
+/// malformed, or when a const-string wrapper folds a child-expression
+/// failure into its Option contract; either way the error names the
+/// element's kind and id so a hand-edited netlist points at the offending
+/// line.
 fn model_composite<E: Element + 'static>(
     spec: &ElementSpec,
     built: Option<E>,

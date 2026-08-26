@@ -510,12 +510,18 @@ pub fn parse(input: &str) -> Result<Expr, String> {
 /// Recursion budget for the parser, counted in grammar levels. Every paren
 /// nesting level costs about 13 frames through the precedence chain, and both
 /// the ternary's right-recursion and unary operator chains descend without
-/// consuming input, so nothing bounds the recursion naturally: thousands of
-/// nested parens used to overflow the wasm stack and trap the instance.
-/// Legitimate files sit far below this, the deepest bundled expression being
-/// single digits deep (`pwl` argument lists are flat, sequential calls do not
-/// accumulate depth), so 64 leaves more than 10x headroom while capping
-/// worst-case recursion near 850 frames, comfortably inside the wasm stack.
+/// consuming input, so nothing bounds the parsing recursion naturally:
+/// thousands of nested parens used to overflow the wasm stack and trap the
+/// instance. Legitimate files sit far below this, the deepest bundled
+/// expression being single digits deep (`pwl` argument lists are flat,
+/// sequential calls do not accumulate depth), so 64 leaves more than 10x
+/// headroom while capping worst-case parser recursion near 850 frames,
+/// comfortably inside the wasm stack.
+///
+/// This bound covers parsing only. Evaluation walks the finished tree with
+/// its own recursion, and a flat operator chain such as `1+1+1+...` parses
+/// with no nesting at all into a left-leaning tree deeper than any grammar
+/// level, so eval depth is not bounded by this constant.
 const MAX_EXPR_DEPTH: usize = 64;
 
 #[derive(Debug, Clone)]
