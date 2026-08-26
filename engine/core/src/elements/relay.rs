@@ -91,7 +91,7 @@ impl Relay {
     pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let pole_count = (spec.param("poleCount", 1.0) as usize).clamp(1, 8);
         let inductance = spec.param("inductance", DEF_INDUCTANCE);
-        if inductance <= 0.0 || inductance.is_nan() {
+        if !inductance.is_finite() || inductance <= 0.0 {
             return Err(format!(
                 "relay (id {}) inductance must be positive, got {}",
                 spec.id, inductance
@@ -426,7 +426,7 @@ impl RelayCoil {
     /// companion conductance, and the message must name this element.
     pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let inductance = spec.param("inductance", DEF_INDUCTANCE);
-        if inductance <= 0.0 || inductance.is_nan() {
+        if !inductance.is_finite() || inductance <= 0.0 {
             return Err(format!(
                 "relayCoil (id {}) inductance must be positive, got {}",
                 spec.id, inductance

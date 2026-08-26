@@ -69,7 +69,7 @@ fn a_zero_negative_or_nan_capacitance_line_is_rejected_at_build() {
     // element. Zero is silent too: the stamper skips g == 0, so the part
     // became an invisible open. Both must be refused like upstream's loud
     // failure would be.
-    for c_value in [0.0, -1e-6, f64::NAN] {
+    for c_value in [0.0, -1e-6, f64::NAN, f64::INFINITY] {
         let mut c = Circuit::new();
         let err = c
             .set_circuit(&rc_like(
@@ -104,7 +104,7 @@ fn a_polarized_capacitor_line_names_its_own_kind_when_rejected() {
 fn a_zero_negative_or_nan_inductance_line_is_rejected_at_build() {
     // dt/L through a negative L stamps the same active negative resistance;
     // the plan's value: `l ... -0.5`.
-    for l_value in [0.0, -0.5, f64::NAN] {
+    for l_value in [0.0, -0.5, f64::NAN, f64::INFINITY] {
         let mut c = Circuit::new();
         let err = c
             .set_circuit(&rc_like("inductor", &[("inductance", l_value)]))
@@ -180,14 +180,61 @@ fn a_transformer_with_a_non_finite_ratio_is_rejected_at_build() {
 }
 
 #[test]
+fn a_tapped_transformer_refuses_its_own_non_positive_or_infinite_values() {
+    // The 169 row shares new_tapped, so its inductance and ratio guards must
+    // fire on their own branches, not only the basic transformer's.
+    let tapped = |inductance: f64, ratio: f64| CircuitSpec {
+        preserve_run: false,
+        elements: vec![elm(
+            3,
+            "tappedTransformer",
+            &[[100, 0], [200, 0], [100, 100], [150, 100], [200, 100]],
+            &[
+                ("inductance", inductance),
+                ("ratio", ratio),
+                ("couplingCoef", 0.99),
+            ],
+        )],
+        options: Some(opts(1e-6, false)),
+        scopes: Vec::new(),
+    };
+    // Non-positive base inductance: every secondary half is (ratio/2)^2 * L.
+    for l_value in [0.0, -4.0, f64::INFINITY] {
+        let mut c = Circuit::new();
+        let err = c
+            .set_circuit(&tapped(l_value, 2.0))
+            .expect_err("a non-positive tapped inductance must be rejected");
+        assert!(
+            err.contains("tappedTransformer") && err.contains("inductance") && err.contains("id 3"),
+            "rejection of L = {l_value} should name the element and parameter, got: {err}"
+        );
+    }
+    // A non-finite turns ratio would poison the mutual matrix.
+    for ratio in [f64::NAN, f64::INFINITY] {
+        let mut c = Circuit::new();
+        let err = c
+            .set_circuit(&tapped(4.0, ratio))
+            .expect_err("a non-finite tapped ratio must be rejected");
+        assert!(
+            err.contains("ratio") && err.contains("id 3"),
+            "rejection of ratio = {ratio} should name the parameter and id, got: {err}"
+        );
+    }
+}
+
+#[test]
 fn embedded_coil_lines_refuse_non_positive_windings_by_name() {
     // The relay coil and the dc motor's two windings are embedded inductors
     // sharing Inductor::new, so a hostile line must be refused naming the
     // carrying element, not an anonymous internal id.
     for (kind, param, value, label) in [
         ("relay", "inductance", 0.0, "relay"),
+        ("relay", "inductance", f64::INFINITY, "relay"),
         ("relayCoil", "inductance", -0.2, "relayCoil"),
+        ("dcMotor", "inductance", -1.0, "dcMotor"),
+        ("dcMotor", "inductance", f64::NAN, "dcMotor"),
         ("dcMotor", "J", 0.0, "dcMotor"),
+        ("dcMotor", "J", f64::INFINITY, "dcMotor"),
     ] {
         let mut e = elm(
             7,

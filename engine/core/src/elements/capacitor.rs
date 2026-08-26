@@ -72,15 +72,10 @@ impl Capacitor {
     /// entry points agree.
     fn build(spec: &ElementSpec, polarized: bool) -> Result<Self, String> {
         let capacitance = spec.param("capacitance", 1e-5);
-        if capacitance <= 0.0 || capacitance.is_nan() {
-            let kind = if polarized {
-                "polarizedCapacitor"
-            } else {
-                "capacitor"
-            };
+        if !capacitance.is_finite() || capacitance <= 0.0 {
             return Err(format!(
-                "{kind} (id {}) capacitance must be positive, got {}",
-                spec.id, capacitance
+                "{} (id {}) capacitance must be positive, got {}",
+                spec.kind, spec.id, capacitance
             ));
         }
         // 1e-3, not 0: upstream deliberately puts a small charge on every

@@ -75,14 +75,14 @@ impl DcMotor {
     /// constructor's error through, so the message names the motor element.
     pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let inductance = spec.param("inductance", DEF_INDUCTANCE);
-        if inductance <= 0.0 || inductance.is_nan() {
+        if !inductance.is_finite() || inductance <= 0.0 {
             return Err(format!(
                 "dcMotor (id {}) inductance must be positive, got {}",
                 spec.id, inductance
             ));
         }
         let j = spec.param("J", DEF_J);
-        if j <= 0.0 || j.is_nan() {
+        if !j.is_finite() || j <= 0.0 {
             return Err(format!(
                 "dcMotor (id {}) J must be positive, got {}",
                 spec.id, j

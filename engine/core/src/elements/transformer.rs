@@ -140,13 +140,14 @@ impl Transformer {
     /// The shared spec-value guard: every winding's self-inductance is
     /// `n_i^2 * L`, so a non-positive base inductance stamps each winding as
     /// an active negative resistance or nothing at all, exactly the failure
-    /// class the plain capacitor and inductor reject.
-    fn check_inductance(spec: &ElementSpec, kind: &str) -> Result<(), String> {
+    /// class the plain capacitor and inductor reject. The kind comes from
+    /// `spec.kind` so the message names the element the file line carried.
+    fn check_inductance(spec: &ElementSpec) -> Result<(), String> {
         let inductance = spec.param("inductance", 4.0);
-        if inductance <= 0.0 || inductance.is_nan() {
+        if !inductance.is_finite() || inductance <= 0.0 {
             return Err(format!(
-                "{kind} (id {}) inductance must be positive, got {}",
-                spec.id, inductance
+                "{} (id {}) inductance must be positive, got {}",
+                spec.kind, spec.id, inductance
             ));
         }
         Ok(())
@@ -163,7 +164,7 @@ impl Transformer {
                 spec.id, ratio
             ));
         }
-        Self::check_inductance(spec, "transformer")?;
+        Self::check_inductance(spec)?;
         let n = 2;
         Ok(Self {
             base: Base::with_posts(4),
@@ -192,7 +193,7 @@ impl Transformer {
                 spec.id, ratio
             ));
         }
-        Self::check_inductance(spec, "tappedTransformer")?;
+        Self::check_inductance(spec)?;
         let n = 3;
         Ok(Self {
             base: Base::with_posts(5),
@@ -221,7 +222,7 @@ impl Transformer {
     /// bypass it. A malformed description keeps the `"1,1:1"` fallback, which
     /// keeps this side in step with whatever post count the frontend derives.
     pub fn new_custom(spec: &ElementSpec) -> Result<Self, String> {
-        Self::check_inductance(spec, "customTransformer")?;
+        Self::check_inductance(spec)?;
         let mut t = Self {
             base: Base::with_posts(0),
             kind: "customTransformer",
@@ -734,6 +735,20 @@ mod tests {
         let t = Transformer::new_custom(&custom("1,x:,1")).expect("fallback must build");
         assert_eq!(t.windings.len(), 3);
         assert_eq!(t.base.nodes.len(), 6);
+    }
+
+    #[test]
+    fn new_custom_falls_back_on_non_finite_turns() {
+        // Rust's float parser accepts "inf" and "NaN", which would otherwise
+        // put non-finite terms into the mutual matrix; such a turn counts as a
+        // malformed description and takes the same "1,1:1" fallback route as
+        // "1,x:,1" (transformer.rs:284), keeping the post count in step with
+        // whatever the frontend derives for the same text.
+        for bad in ["inf,1:1", "NaN,1:1", "1,inf:1"] {
+            let t = Transformer::new_custom(&custom(bad)).expect("fallback must build");
+            assert_eq!(t.windings.len(), 3, "fallback for {bad} lost a winding");
+            assert_eq!(t.base.nodes.len(), 6, "fallback for {bad} lost a node");
+        }
     }
 
     #[test]

@@ -46,7 +46,7 @@ impl Inductor {
     /// this constructor and validate their own values before calling it.
     pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let inductance = spec.param("inductance", 1e-3);
-        if inductance <= 0.0 || inductance.is_nan() {
+        if !inductance.is_finite() || inductance <= 0.0 {
             return Err(format!(
                 "inductor (id {}) inductance must be positive, got {}",
                 spec.id, inductance
