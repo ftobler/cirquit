@@ -64,7 +64,8 @@
 import { parseXml, type XmlNode } from './xml';
 import { escapeToken } from './netlist/tokens';
 import { encodeScopeLine, scopeFieldsFromFlags } from './scopeLine';
-import { importDecOrHex, scopeValueFromToken } from './netlist/parse';
+import { importDecOrHex, scopeValueFromToken, unitsOf } from './netlist/parse';
+import { attr, compositeModel, diodeModel, transistorModel } from './xmlModelLines';
 import { FLAG_ESCAPE, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import type { PlotMeasurements, Scope, ScopeValue } from '../engine/simulator';
 
@@ -83,16 +84,6 @@ const CHIP_CUSTOM_VOLTAGE = 1 << 13;  // ChipElm.java:34
 const FULL_ADDER_BITS = 2;    // FullAdderElm.java:25
 const SRAM_HEX_DISPLAY = 4;   // SRAMElm.java:30
 const SWITCH_LABEL = 4;       // SwitchElm.java:33
-
-/** Reads an attribute as a number, falling back on absence and throwing on
- *  garbage so a broken file fails loudly instead of producing a wrong line. */
-function attr(node: XmlNode, name: string, fallback: number): number {
-  const v = node.attrs[name];
-  if (v === undefined) return fallback;
-  const n = Number(v);
-  if (!Number.isFinite(n)) throw new Error(`xml: ${node.tag} attribute ${name} is not a number: ${v}`);
-  return n;
-}
 
 /** The `x` attribute: always `x1 y1 x2 y2`, the two endpoints every element's
  *  `setPoints` derives its other posts from (`setPositionFromXml` reads only
@@ -866,7 +857,7 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
     const value = scopeValueFromToken(v, kind);
     const plotFlags = p.attrs.f !== undefined ? parseInt(p.attrs.f, 16) : 0;
     const sc = p.attrs.sc !== undefined ? attr(p, 'sc', -1) : -1;
-    const units = unitsOfToken(v, kind);
+    const units = unitsOf(v, kind);
     if (sc >= 0) {
       if (units <= 0 && !sawScaleV) {
         scaleV = sc;
@@ -903,27 +894,6 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
   return ['o', slotOf(en) ?? -1, ...raw].join(' ');
 }
 
-/** The units index a plot's value token plots in, mirroring `unitsOf`
- *  (parse.ts:156-168). */
-function unitsOfToken(tok: number, kind: string | null): number {
-  if (
-    (kind === 'lamp' || kind === 'memristor' || kind === 'ohmmeter') &&
-    tok === 2
-  ) {
-    return 3;  // resistance: Ω
-  }
-  if ((kind === 'capacitor' || kind === 'polarizedCapacitor') && tok === 8) return 4;
-  if (kind === 'transistor') {
-    if (tok === 1 || tok === 2 || tok === 3) return 1;
-    if (tok === 7) return 2;
-    return 0;
-  }
-  if (tok === 1) return 2;
-  if (tok === 3) return 1;
-  if (tok === 7) return 2;
-  return 0;
-}
-
 /** The `<adj>` slider to a `38` line, the port's own new-slider form
  *  (serialize.ts:159-176): `e F<flags> editItem min max [shared] text step`. */
 function sliderLine(node: XmlNode, ctx: ConvertContext): string {
@@ -954,136 +924,6 @@ function mosfetModel(node: XmlNode, ctx: ConvertContext): void {
       beta: attr(node, 'be', 0.02),
     });
   }
-}
-
-/** The `dm` diode model to a `34` line (DiodeModel.dump, DiodeModel.java:277-286). */
-function diodeModel(node: XmlNode): string {
-  return [
-    '34',
-    escapeToken(node.attrs.nm ?? ''),
-    attr(node, 'f', 0),
-    attr(node, 'is', 1e-14),
-    attr(node, 'rs', 0),
-    attr(node, 'n', 1),
-    attr(node, 'bv', 0),
-    attr(node, 'fi', 0),
-  ].join(' ');
-}
-
-/** The `tm` transistor model to a `32` line (TransistorModel.dump,
- *  TransistorModel.java:205-234). */
-function transistorModel(node: XmlNode): string {
-  const tail: (string | number)[] = [
-    '32',
-    escapeToken(node.attrs.nm ?? ''),
-    attr(node, 'f', 0),
-    attr(node, 'is', 5e-13),
-    attr(node, 'ikf', 0),
-    attr(node, 'ise', 0),
-    attr(node, 'ne', 1.5),
-    attr(node, 'ikr', 0),
-    attr(node, 'isc', 0),
-    attr(node, 'nc', 2),
-    attr(node, 'nf', 1),
-    attr(node, 'nr', 1),
-    attr(node, 'vaf', 0),
-    attr(node, 'var', 0),
-    attr(node, 'br', 3),
-  ];
-  for (const a of ['cje', 'vje', 'mje', 'cjc', 'vjc', 'mjc', 'tf', 'tr']) {
-    if (node.attrs[a] !== undefined) tail.push(attr(node, a, 0));
-  }
-  return tail.join(' ');
-}
-
-/** One `ccm` custom-composite model to a `.` line: the size, the external
- *  pins (bus entries expanded under `bcs`), and the escaped child model lines
- *  and dump tokens (CustomCompositeModel.buildXmlElement). The engine builds
- *  only the child kinds it has composite models for; the rest ride the line
- *  and round-trip. */
-function compositeModel(node: XmlNode): string {
-  const bcs = attr(node, 'bcs', 0) !== 0;
-  const ext: (string | number)[] = [];
-  let count = 0;
-  const lines: string[] = [];
-  const dumps: string[] = [];
-  for (const child of node.children) {
-    if (child.tag === 'ext') {
-      const bw = attr(child, 'bw', 1);
-      const name = child.attrs.nm ?? '';
-      const nd = attr(child, 'nd', 0);
-      const ps = attr(child, 'ps', 0);
-      const sd = attr(child, 'sd', 0);
-      if (bcs && bw > 1) {
-        for (let j = 0; j < bw; j++) {
-          ext.push(escapeToken(name), nd + j, ps, sd);
-          count += 1;
-        }
-      } else {
-        ext.push(escapeToken(name), nd, ps, sd);
-        count += 1;
-      }
-      continue;
-    }
-    const className = CHILD_CLASS[child.tag];
-    if (className !== undefined && child.attrs.nn !== undefined) {
-      const nodes = child.attrs.nn.split(' ').map((v) => Number(v));
-      lines.push(`${className} ${nodes.join(' ')}`);
-      // The engine indexes the dump tokens by model-line position
-      // (composite.rs, `dumps.get(i)`), so the two lists have to stay in step:
-      // a child that contributes no line contributes no dump either, and one
-      // whose tag carries no fields still contributes its flags.
-      dumps.push(escapeChildField(childDumpToken(child) ?? String(attr(child, 'f', 0))));
-    }
-  }
-  return [
-    '.',
-    escapeToken(node.attrs.nm ?? ''),
-    attr(node, 'f', 0),
-    attr(node, 'sx', 1),
-    attr(node, 'sy', 1),
-    count,
-    ext.join(' '),
-    escapeToken(lines.join('\r')),
-    escapeToken(dumps.join(' ')),
-  ].join(' ');
-}
-
-/** The upstream class name a ccm child's model line starts with. */
-const CHILD_CLASS: Record<string, string> = {
-  And: 'AndGateElm',
-  Or: 'OrGateElm',
-  Nand: 'NandGateElm',
-  Nor: 'NorGateElm',
-  Xor: 'XorGateElm',
-  I: 'InverterElm',
-  d: 'DiodeElm',
-  w: 'WireElm',
-  rw: 'RoutedWireElm',
-  ln: 'LabeledNodeElm',
-  cc: 'CustomCompositeElm',
-};
-
-/** One ccm child's `_`-joined dump token: its flags then its fields, the shape
- *  `composite.rs`'s `apply_dump` splits. Gates carry inputCount/output/high
- *  voltage; wires and labeled nodes carry nothing. */
-function childDumpToken(node: XmlNode): string | null {
-  const tag = node.tag;
-  const f = attr(node, 'f', 0);
-  if (tag === 'And' || tag === 'Or' || tag === 'Nand' || tag === 'Nor' || tag === 'Xor') {
-    return [f, attr(node, 'in', 2), attr(node, 'o', 0), attr(node, 'hi', 5)].join('_');
-  }
-  if (tag === 'I') return [f, attr(node, 'sl', 0.5), attr(node, 'hi', 5)].join('_');
-  if (tag === 'd') return [f, node.attrs.mo ?? 'default'].join('_');
-  if (tag === 'cc') return [f, node.attrs.mo ?? ''].join('_');
-  if (tag === 'w' || tag === 'rw' || tag === 'ln') return String(f);
-  return null;
-}
-
-/** Escapes one field of a `_`-joined dump token (`_`, space and backslash), so
- *  the join's separators stay unambiguous (subcircuits.ts:806-815). */
-function escapeChildField(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/_/g, '\\u').replace(/ /g, '\\s');
 }
 
 /** The tags that are model definitions or directives, never element lines. */
