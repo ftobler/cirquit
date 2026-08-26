@@ -1078,6 +1078,69 @@ describe('chip mirrors', () => {
       { x: 404, y: 200 },
     ]);
   });
+
+  it('a hand-edited segment wider than the body swaps its reflected fields', () => {
+    // Length 128 against a span of 96: the plain reflection reverses the
+    // field order past the shift, so the swap normalises it rightward again.
+    // The banks themselves sit at anchor and anchor+span regardless of the
+    // segment length and still land on the reflected columns.
+    const e = element('dFlipFlop', 100, 200, 228, 200, DFF_SET);
+    const m = mirrorElement(e, 300);
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([372, 200, 404, 200]);
+    expect(m.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
+    expect(postsOf(m)).toEqual([
+      { x: 468, y: 200 },  // D
+      { x: 372, y: 200 },  // Q
+      { x: 372, y: 232 },  // /Q
+      { x: 468, y: 232 },  // CLK
+      { x: 372, y: 264 },  // R
+      { x: 468, y: 264 },  // S
+    ]);
+  });
+
+  it('a bus-bank chip swaps its collapsed coordinate with per-bit tags intact', () => {
+    // Under CHIP_BIT_ORDER_BUS every bus pin shares one coordinate; a single
+    // mirror exchanges the two bank columns and touches nothing else.
+    const CHIP_BIT_ORDER_BUS = 1 << 14;
+    const e = element('busSplitter', 100, 200, 196, 200, CHIP_BIT_ORDER_BUS, { bits: 4 });
+    expect(postsOf(e)).toHaveLength(8);
+    const before = postsOf(e);
+    const m = mirrorElement(e);
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([100, 200, 196, 200]);
+    expect(m.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
+    // The true in-place mirror of the posts about the own midpoint axis.
+    expect(postsOf(m)).toEqual(before.map((p) => ({ x: 296 - p.x, y: p.y })));
+  });
+
+  it('an odd-pin-count chip mirrors onto the upstream pin coordinates', () => {
+    // Seven posts on a sizeX 4 body. The W bank swaps columns exactly; the
+    // three south pins (e, f, g, kept on the south for old files) mirror
+    // within the body width instead: that is what upstream's Pin.setPoint
+    // produces under FLAG_FLIP_X (col' = anchor + fsx*cspc2 - pos*cspc2), and
+    // the port reproduces it from the same anchor and flags.
+    const e = element('sevenSeg', 100, 200, 164, 200, 0);
+    expect(postsOf(e)).toEqual([
+      { x: 100, y: 200 },  // a..d on the west, rows 0..3
+      { x: 100, y: 232 },
+      { x: 100, y: 264 },
+      { x: 100, y: 296 },
+      { x: 164, y: 328 },  // e/f/g on the south row, positions 1..3
+      { x: 196, y: 328 },
+      { x: 228, y: 328 },
+    ]);
+    const m = mirrorElement(e);
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([100, 200, 164, 200]);
+    expect(m.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
+    expect(postsOf(m)).toEqual([
+      { x: 260, y: 200 },  // west bank to anchor + span - 0
+      { x: 260, y: 232 },
+      { x: 260, y: 264 },
+      { x: 260, y: 296 },
+      { x: 196, y: 328 },  // south row mirrored within the body
+      { x: 164, y: 328 },
+      { x: 132, y: 328 },
+    ]);
+  });
 });
 
 describe('chip mirror file round trips', () => {
