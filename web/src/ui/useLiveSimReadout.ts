@@ -71,6 +71,25 @@ export function tickReadout(
   return () => cancelAnimationFrame(raf);
 }
 
+function fieldSame(a: number | undefined, b: number | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return Object.is(a, b);
+}
+
+/** True when two readouts carry the same triple, absent fields included.
+ *  Object.is per field, so negative zero counts as its own value: the engine
+ *  can flip a near-zero reading's sign between frames and the readout should
+ *  show it rather than collapse both to zero. The pump feeds each frame's
+ *  result through this so a paused simulation stops producing new objects
+ *  and whatever renders the readout re-renders nothing. */
+export function readoutEquals(a: ElementReadout, b: ElementReadout): boolean {
+  return (
+    fieldSame(a.current, b.current) &&
+    fieldSame(a.voltage, b.voltage) &&
+    fieldSame(a.power, b.power)
+  );
+}
+
 /** Runs `tickReadout` while the panel is mounted with something to read. Only
  *  reads when the engine is present and a single element is selected; the
  *  plain state updates never touch the store, so the loop cannot fight the
@@ -87,7 +106,11 @@ export function useLiveSimReadout(
     // selection changes away from a single element, where the loop is not run.
     setReadout(readElementReadout(engine, selectedId));
     if (!engine || selectedId === undefined) return;
-    return tickReadout(() => readElementReadout(engine, selectedId), setReadout);
+    return tickReadout(() => readElementReadout(engine, selectedId), (next) =>
+      // Keeping the previous object on an unchanged triple lets React bail out
+      // of the re-render entirely instead of reconciling at frame rate.
+      setReadout((prev) => (readoutEquals(prev, next) ? prev : next)),
+    );
   }, [engine, selectedId]);
   return readout;
 }

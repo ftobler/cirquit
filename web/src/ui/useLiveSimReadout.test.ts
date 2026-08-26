@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SimEngine } from '../engine/simulator';
-import { readElementReadout, tickReadout, type ElementReadout } from './useLiveSimReadout';
+import {
+  readElementReadout,
+  readoutEquals,
+  tickReadout,
+  type ElementReadout,
+} from './useLiveSimReadout';
 
 /** A stub engine standing in for the wasm-backed SimEngine under the node test
  *  environment. The operating-point arrays are returned live so a test can
@@ -56,6 +61,27 @@ describe('readElementReadout', () => {
     expect(readElementReadout(null, 7)).toEqual({});
     expect(readElementReadout(null, undefined)).toEqual({});
     expect(readElementReadout(engine, undefined)).toEqual({});
+  });
+});
+
+describe('readoutEquals', () => {
+  it('treats absent and present fields as different', () => {
+    expect(readoutEquals({}, {})).toBe(true);
+    expect(readoutEquals({ current: 1, voltage: 2, power: 3 }, { current: 1, voltage: 2, power: 3 })).toBe(
+      true,
+    );
+    expect(readoutEquals({ current: 1 }, {})).toBe(false);
+    expect(readoutEquals({}, { current: 1 })).toBe(false);
+    expect(readoutEquals({ power: 1 }, { power: 1 })).toBe(true);
+    expect(readoutEquals({ power: 1 }, { power: 2 })).toBe(false);
+  });
+
+  it('distinguishes negative zero', () => {
+    // The engine can flip the sign of a near-zero reading between frames;
+    // Object.is keeps that visible instead of collapsing both to zero.
+    expect(readoutEquals({ current: 0 }, { current: -0 })).toBe(false);
+    expect(readoutEquals({ current: -0 }, { current: 0 })).toBe(false);
+    expect(readoutEquals({ current: -0 }, { current: -0 })).toBe(true);
   });
 });
 
