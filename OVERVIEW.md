@@ -843,6 +843,9 @@ Dump codes implemented so far, with their trailing field order:
 | `178` | relay          | poleCount, inductance, coilCurrent, r_on, r_off, onCurrent, coilR, [offCurrent, switchingTime, position] |
 | `425` | relay coil     | label, inductance, coilCurrent, onCurrent, coilR, offCurrent, switchingTime, type, state, switchPosition |
 | `426` | relay contact  | label, r_on, r_off, [i_position]                           |
+| `415` | dc motor       | inductance, resistance, K, Kb, J, b, gearRatio, tau        |
+| `427` | three-phase motor | Rs, Rr, Ls, Lr, lm, b, J                                   |
+| `428` | motor protection switch | resistance, i2t, blown (true/false), label (escaped)       |
 | `a`   | op-amp         | maxOut, minOut, gbw, volts0, volts1, gain                  |
 | `402` | OTA            | one raw `_`-joined child-dump token per composite child (2 rails + 16 transistors); the two rail tokens re-derived from posVolt/negVolt on save, the sixteen transistor tokens carried verbatim |
 | `409` | realistic op-amp | slewRate, capValue, currentLimit, modelType              |
@@ -869,10 +872,25 @@ Dump codes implemented so far, with their trailing field order:
 | `182` | Schmitt trigger (non-inverting) | slewRate, lowerTrigger, upperTrigger, logicOnLevel, logicOffLevel |
 | `183` | Schmitt trigger (inverting) | same as `182`                                    |
 | `208` | custom logic   | modelName (escaped), then one outputVoltage per output pin |
+| `161` | phase comparator | [highVoltage] (the standard chip stream; no bits, no state pins) |
 | `435` | bus logic input| busWidth, value, hiV, loV                                  |
 | `437` | bus transceiver| bits, [highVoltage] (the standard chip stream)             |
 | `434` | instruction display | busWidth, threshold, lookup table (one escaped token) |
 | `438` | battery        | r0, r1, c1, capacityAh, initialSocPercent, batteryType, SOC table (one escaped token) |
+
+For the `415` and `427` rows neither upstream class overrides dump(), so an
+upstream text save would carry none of these tokens; this port writes them
+all, the thermistor/LDR fix, so a save never loses the model. The three-phase
+motor's trailing `J` is optional upstream (absent reads as 1) and is written
+unconditionally here.
+
+For the `428` row `blown` is a literal true/false token and the label one
+escaped token, empty as `\0`; upstream reads the label defensively, so a line
+that stops after `blown` keeps the empty label.
+
+For the `161` row the stream is only the optional `[highVoltage]`: the chip
+needs no bits token and saves no state pins, and the voltage is written only
+when it differs from 5 V under CHIP_CUSTOM_VOLTAGE = 8192.
 
 For the gate rows the `inputCount` token is the post count minus one (1 to 8
 inputs); `lastOutputVoltage` restores the gate's output state on load
