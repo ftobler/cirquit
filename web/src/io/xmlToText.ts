@@ -50,16 +50,29 @@
  * pv/nv and splicing live transistor junction state out of the element's child
  * elements; a DAC bit order this build does not lay out stays behind a trace
  * comment like every other chip's.
+ *
+ * The nine remaining modelled tags convert for real too: `tt`, `sw`, `tl`,
+ * `ts`, `dar`, `dpdt`, `pt`, `ain` and `aout` emit their registry dump-code
+ * lines, each consuming exactly the attribute set upstream's own writer
+ * produces. A source's `ir` and `riseTime` have no text-format home and
+ * degrade loudly under a value-gated trace; a tag the port models but has no
+ * writer yet (the relay, the custom-logic gate and a tail of upstream's
+ * default-named classes) keeps its preserving comment plus one marker line,
+ * neither taking a slot, so scope ordinals hold.
  */
 
 import { parseXml, type XmlNode } from './xml';
 import { escapeToken } from './netlist/tokens';
 import { encodeScopeLine, scopeFieldsFromFlags } from './scopeLine';
-import { importDecOrHex, scopeValueFromToken } from './netlist/parse';
+import { importDecOrHex, scopeValueFromToken, unitsOf } from './netlist/parse';
+import { attr, compositeModel, diodeModel, transistorModel } from './xmlModelLines';
 import { FLAG_ESCAPE, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
 import type { PlotMeasurements, Scope, ScopeValue } from '../engine/simulator';
 
 import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
+import { DEFAULT_Q_STATE } from '../model/registry/elements/darlington';
+import { normalizePoleCount } from '../model/registry/elements/dpdtSwitch';
+import { defFor, defForDumpCode } from '../model/registry';
 import { batteryTypeTables } from '../model/registry/elements/battery';
 import { FRESH_CHILDREN as comparatorChildren } from '../model/registry/elements/comparator';
 import { otaFreshChildren } from '../model/registry/elements/ota';
@@ -71,16 +84,6 @@ const CHIP_CUSTOM_VOLTAGE = 1 << 13;  // ChipElm.java:34
 const FULL_ADDER_BITS = 2;    // FullAdderElm.java:25
 const SRAM_HEX_DISPLAY = 4;   // SRAMElm.java:30
 const SWITCH_LABEL = 4;       // SwitchElm.java:33
-
-/** Reads an attribute as a number, falling back on absence and throwing on
- *  garbage so a broken file fails loudly instead of producing a wrong line. */
-function attr(node: XmlNode, name: string, fallback: number): number {
-  const v = node.attrs[name];
-  if (v === undefined) return fallback;
-  const n = Number(v);
-  if (!Number.isFinite(n)) throw new Error(`xml: ${node.tag} attribute ${name} is not a number: ${v}`);
-  return n;
-}
 
 /** The `x` attribute: always `x1 y1 x2 y2`, the two endpoints every element's
  *  `setPoints` derives its other posts from (`setPositionFromXml` reads only
@@ -326,6 +329,83 @@ const WRITERS: Record<string, Writer> = {
   ],
   as: analogSwitchTokens,
   as2: analogSwitchTokens,
+  tt: (n) =>
+    // TappedTransformerElm writes in/ra/co (TappedTransformerElm.java:74-76)
+    // plus the coil currents as c0/c1/c2 state (:80-82); the text stream is
+    // inductance ratio current0 current1 current2 couplingCoef (:67-70), so
+    // every attribute has a home and the currents ride it too.
+    [
+      attr(n, 'in', 4),
+      attr(n, 'ra', 1),
+      attr(n, 'c0', 0),
+      attr(n, 'c1', 0),
+      attr(n, 'c2', 0),
+      attr(n, 'co', 0.99),
+    ],
+  sw: (n) =>
+    // SweepElm writes mi/ma/mv/sw (SweepElm.java:53-56), the minF maxF maxV
+    // sweepTime order the registry's parse reads (sweep.ts:23-27).
+    [attr(n, 'mi', 20), attr(n, 'ma', 4000), attr(n, 'mv', 5), attr(n, 'sw', 0.1)],
+  tl: (n) =>
+    // TransLineElm writes de/im/wi (TransLineElm.java:60-62). The trailing 0
+    // is the series-resistance slot its own text dump always appends
+    // (:54-56), unimplemented in both builds, so the converted line is
+    // self-describing like the registry's own output.
+    [attr(n, 'de', 0.005), attr(n, 'im', 75), attr(n, 'wi', 32), 0],
+  ts: (n) =>
+    // TriStateElm writes ron/roff/rog/hi (TriStateElm.java:75-78), the port's
+    // r_on r_off r_off_ground highVoltage order. Missing attributes seed at
+    // the registry's documented fresh defaults; rog deliberately seeds at the
+    // file-first 0, not fresh placement's 1e8 pulldown (triState.ts).
+    [attr(n, 'ron', 0.1), attr(n, 'roff', 1e10), attr(n, 'rog', 0), attr(n, 'hi', 5)],
+  dar: (n) => {
+    // DarlingtonElm carries only pnp in its XML (DarlingtonElm.java:54); the
+    // two composite transistor state tokens stay fresh, which is exactly what
+    // the registry's own dump writes for a part of either polarity, then the
+    // sign token that drives the post layout (:46-48).
+    const pnp = attr(n, 'pnp', 1);
+    return [DEFAULT_Q_STATE, DEFAULT_Q_STATE, pnp < 0 ? -1 : 1];
+  },
+  dpdt: (n) => {
+    // The SwitchElm base writes p/mm/lab/key/r (SwitchElm.java:71-83) and
+    // DPDTSwitchElm adds po (:54); the port's stream is position, momentary,
+    // the label under its flag bit, then the pole count
+    // (DPDTSwitchElm.java:38-45). The keyboard shortcut is session-only in
+    // both builds. The base on-resistance has no token on this stream.
+    const momentary = (n.attrs.mm ?? 'false').toLowerCase() === 'true';
+    // A hand-authored document may carry mm without p; upstream's
+    // SwitchElm(xx, yy, mm) constructor pairs the two, so a momentary switch
+    // is born pressed (:33-35). An explicit p always wins over the seed.
+    const position = n.attrs.p !== undefined ? attr(n, 'p', 0) : momentary ? 1 : 0;
+    const tokens: (string | number)[] = [position, momentary ? 'true' : 'false'];
+    if (n.attrs.lab !== undefined) tokens.push(n.attrs.lab);
+    tokens.push(attr(n, 'po', 2));
+    return tokens;
+  },
+  pt: (n) => {
+    // PotElm writes ma/po/sl (PotElm.java:79-81) onto the port's
+    // maxResistance position caption stream. The caption splits on whitespace
+    // exactly as the registry's own dump does, because upstream joins the
+    // remaining tokens back with single spaces (PotElm.java:58-62); an absent
+    // or empty caption takes the constructor default (:50).
+    const caption = (n.attrs.sl ?? '').trim();
+    return [
+      attr(n, 'ma', 1000),
+      attr(n, 'po', 0.5),
+      ...(caption !== '' ? caption.split(/\s+/) : ['Resistance']),
+    ];
+  },
+  ain: (n) =>
+    // AudioInputElm writes ma/st/fi (AudioInputElm.java:98-101): the port's
+    // short three-token form (audioInput.ts:56-66). The rail's six source
+    // tokens stay implicit; the parse pins the waveform to AC regardless.
+    [attr(n, 'ma', 5), attr(n, 'st', 0), attr(n, 'fi', 0)],
+  aout: (n) =>
+    // AudioOutputElm writes du/sa/la (AudioOutputElm.java:53-55), the same
+    // duration samplingRate labelNum order its token constructor reads
+    // (:39-46). sa seeds at the session-start sample rate, 8000
+    // (AudioOutputElm.java:27).
+    [attr(n, 'du', 1), attr(n, 'sa', 8000), attr(n, 'la', 0)],
 };
 
 /** r_on r_off threshold, the triple both analog switch classes carry in text
@@ -449,10 +529,70 @@ const DUMP_CODES: Record<string, string> = {
   dmux: '185', ctr: '164', TFlipFlop: '193', JKFlipFlop: '156', Latch: '168',
   Timer: '165', Comparator: '401', OTA: '402', OpAmpReal: '409', DAC: '166',
   AnalogMux: '432', DelayBuffer: '422', as: '159', as2: '160',
+  tt: '169', sw: '170', tl: '171', pt: '174', ts: '180', dar: '400',
+  aout: '211', ain: '411', dpdt: '429',
 };
 
-/** The port kind each element tag maps to, for scope value decoding. */
+/** The tags upstream writes whose classes this port models but whose writers
+ *  do not exist yet. Each degrades to its preserving comment plus one marker
+ *  line naming the registry code the kind models it as. Data-driven on
+ *  purpose: landing a writer means moving the tag into WRITERS,
+ *  DUMP_CODES and KIND_BY_TAG, and this map shrinks with it instead of going
+ *  stale like a hand list. Exported so the test suite can sweep every kind
+ *  through the registry and catch a typo before a document does.
+ *  Gyrator, NortonAmp (`nor`) and the composite chip stay plain comments
+ *  because no port model sits behind them at all; marking their silence is
+ *  out of scope by decision. PushSwitch is absent because its inherited dump
+ *  type is `s`, so upstream's own tag map resolves the class-name form onto
+ *  SwitchElm and it can never reach a document. */
+export const UNCONVERTED_TAG_KINDS: Record<string, string> = {
+  rl: 'relay',
+  cl: 'customLogic',
+  T: 'transformer',
+  s: 'switch',
+  S: 'switch2',
+  A: 'antenna',
+  b: 'box',
+  m: 'memristor',
+  Triac: 'triac',
+  Diac: 'diac',
+  SparkGap: 'sparkGap',
+  TunnelDiode: 'tunnelDiode',
+  Schmitt: 'schmitt',
+  Monostable: 'monostable',
+  HalfAdder: 'halfAdder',
+  AM: 'am',
+  FM: 'fm',
+  VarRail: 'varRail',
+  Triode: 'triode',
+  CC2: 'cc2',
+  CCCS: 'cccs',
+  RingCounter: 'ringCounter',
+  SeqGen: 'seqGen',
+  DataRecorder: 'dataRecorder',
+  OhmMeter: 'ohmmeter',
+  TestPoint: 'testPoint',
+  Ammeter: 'ammeter',
+  LEDArray: 'ledArray',
+  Optocoupler: 'optocoupler',
+  StopTrigger: 'stopTrigger',
+  Unijunction: 'unijunction',
+  ExtVoltage: 'extVoltage',
+  Wattmeter: 'wattmeter',
+  DataInput: 'dataInput',
+  TimeDelayRelay: 'timeDelayRelay',
+  DCMotor: 'dcMotor',
+  ThreePhaseMotor: 'threePhaseMotor',
+  CrossSwitch: 'crossSwitch',
+  MotorProtectionSwitch: 'motorProtectionSwitch',
+  MBBSwitch: 'mbbSwitch',
+};
+
+/** The port kind each element tag maps to, for scope value decoding. The
+ *  unconverted tags spread in first so an explicit entry always wins once a
+ *  tag gains a writer. */
 const KIND_BY_TAG: Record<string, string> = {
+  ...UNCONVERTED_TAG_KINDS,
   w: 'wire', g: 'ground', r: 'resistor', c: 'capacitor', pc: 'polarizedCapacitor',
   l: 'inductor', R: 'rail', v: 'voltage', i: 'current', d: 'diode', t: 'transistor',
   f: 'mosfet', I: 'inverter', a: 'opamp', O: 'output',   L: 'logicInput', M: 'logicOutput', p: 'probe',
@@ -470,6 +610,9 @@ const KIND_BY_TAG: Record<string, string> = {
   Timer: 'timer', Comparator: 'comparator', OTA: 'ota', OpAmpReal: 'opampReal',
   DAC: 'dac', AnalogMux: 'analogMux', DelayBuffer: 'delayBuffer',
   as: 'analogSwitch', as2: 'analogSwitch2',
+  tt: 'tappedTransformer', sw: 'sweep', tl: 'transmissionLine', pt: 'potentiometer',
+  ts: 'triState', dar: 'darlington', dpdt: 'dpdtSwitch', ain: 'audioInput',
+  aout: 'audioOutput',
 };
 
 /** The flags an element line carries: the XML `f` plus the bits the port's own
@@ -486,6 +629,10 @@ function flagsFor(node: XmlNode): number {
   if (tag === 'LED') f |= node.attrs.mo !== undefined ? FLAG_MODEL : FLAG_FWDROP;
   if (tag === 'x' || tag === 'ln') f |= FLAG_ESCAPE;
   if (tag === 'L' && node.attrs.lab !== undefined) f |= SWITCH_LABEL;
+  // The DPDT's label rides the same SwitchElm flag bit as the SPST's
+  // (SwitchElm.java:77-78 dump, :89 read); without it the parse would read
+  // the label token as the pole count.
+  if (tag === 'dpdt' && node.attrs.lab !== undefined) f |= SWITCH_LABEL;
   if (tag === 'FullAdder') f |= FULL_ADDER_BITS;
   const hv = node.attrs.hv;
   if (
@@ -553,6 +700,23 @@ const BO_TAGS = new Set([
 function droppedTraces(node: XmlNode): string[] {
   const traces: string[] = [];
   const tag = node.tag;
+  // Sources carry two XML attributes the six-token stream has no home for:
+  // ir is a series resistor upstream builds onto an internal third node when
+  // nonzero (VoltageElm.java:148-157) and riseTime ramps a pulse or square's
+  // edges (:179-180). Gate on value against the defaults, never on presence,
+  // matching the om/dw rule below.
+  if (tag === 'R' || tag === 'v') {
+    if (attr(node, 'ir', 0) !== 0) {
+      traces.push(
+        `# ${tag} ir="${node.attrs.ir}" not modelled: converted as an ideal source without internal resistance`,
+      );
+    }
+    if (attr(node, 'riseTime', 0) !== 0) {
+      traces.push(
+        `# ${tag} riseTime="${node.attrs.riseTime}" not modelled: pulse edges step instantly`,
+      );
+    }
+  }
   if (tag === 'mux') {
     // MultiplexerElm.java:32-37: inputMode 1 (bus in / single out, the bit
     // selector) has no text-format home and no corpus user, so it stays
@@ -574,6 +738,26 @@ function droppedTraces(node: XmlNode): string[] {
     traces.push(
       `# dmux om="${node.attrs.om ?? 0}" dw="${node.attrs.dw ?? 4}" not modelled: converted as individual outputs`,
     );
+  }
+  if (tag === 'ts' && attr(node, 'bw', 1) !== 1) {
+    // TriStateElm.java:79-80 writes busWidth only when it exceeds one, and
+    // this build models single-bit tri-states only.
+    traces.push(`# ts bw="${node.attrs.bw}" not modelled: converted as single-bit`);
+  }
+  if (tag === 'dpdt') {
+    // Fresh DPDT parts are two-pole in both builds; any other count converts
+    // with its pole token but stays visible, normalised the way the port's
+    // own load clamps it.
+    const po = attr(node, 'po', 2);
+    if (po !== 2) {
+      const poles = normalizePoleCount(po);
+      traces.push(`# dpdt po="${node.attrs.po}" not default: converted as a ${poles}-pole switch`);
+    }
+  }
+  if (tag === 'pt' && attr(node, 'li', 0) !== 0) {
+    // PotElm.java:82-83 writes the link only when nonzero; shared sliders
+    // parse but never link in this port.
+    traces.push(`# pt li="${node.attrs.li}" not modelled: converted without its slider link`);
   }
   if (BO_TAGS.has(tag) && attr(node, 'bo', 0) !== 0) {
     if (!BO_HONOURED.has(tag)) {
@@ -620,7 +804,11 @@ function elementLines(node: XmlNode, ctx: ConvertContext): string[] | null {
   if (writer === undefined) return null;
   const tail = writer(node, ctx);
   if (tail === null) return null;
-  return [basic(node, DUMP_CODES[tag], tail.map(token))];
+  // Raw-token kinds read their tails verbatim (parse.ts hands rawTokens defs
+  // the un-unescaped tokens), so their strings must not be escaped here or a
+  // reload would corrupt exactly what the registry's own dump writes back.
+  const raw = defForDumpCode(DUMP_CODES[tag])?.rawTokens ?? false;
+  return [basic(node, DUMP_CODES[tag], tail.map(raw ? String : token))];
 }
 
 function basic(node: XmlNode, code: string, tail: string[]): string {
@@ -673,7 +861,7 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
     const value = scopeValueFromToken(v, kind);
     const plotFlags = p.attrs.f !== undefined ? parseInt(p.attrs.f, 16) : 0;
     const sc = p.attrs.sc !== undefined ? attr(p, 'sc', -1) : -1;
-    const units = unitsOfToken(v, kind);
+    const units = unitsOf(v, kind);
     if (sc >= 0) {
       if (units <= 0 && !sawScaleV) {
         scaleV = sc;
@@ -710,27 +898,6 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
   return ['o', slotOf(en) ?? -1, ...raw].join(' ');
 }
 
-/** The units index a plot's value token plots in, mirroring `unitsOf`
- *  (parse.ts:156-168). */
-function unitsOfToken(tok: number, kind: string | null): number {
-  if (
-    (kind === 'lamp' || kind === 'memristor' || kind === 'ohmmeter') &&
-    tok === 2
-  ) {
-    return 3;  // resistance: Ω
-  }
-  if ((kind === 'capacitor' || kind === 'polarizedCapacitor') && tok === 8) return 4;
-  if (kind === 'transistor') {
-    if (tok === 1 || tok === 2 || tok === 3) return 1;
-    if (tok === 7) return 2;
-    return 0;
-  }
-  if (tok === 1) return 2;
-  if (tok === 3) return 1;
-  if (tok === 7) return 2;
-  return 0;
-}
-
 /** The `<adj>` slider to a `38` line, the port's own new-slider form
  *  (serialize.ts:159-176): `e F<flags> editItem min max [shared] text step`. */
 function sliderLine(node: XmlNode, ctx: ConvertContext): string {
@@ -761,136 +928,6 @@ function mosfetModel(node: XmlNode, ctx: ConvertContext): void {
       beta: attr(node, 'be', 0.02),
     });
   }
-}
-
-/** The `dm` diode model to a `34` line (DiodeModel.dump, DiodeModel.java:277-286). */
-function diodeModel(node: XmlNode): string {
-  return [
-    '34',
-    escapeToken(node.attrs.nm ?? ''),
-    attr(node, 'f', 0),
-    attr(node, 'is', 1e-14),
-    attr(node, 'rs', 0),
-    attr(node, 'n', 1),
-    attr(node, 'bv', 0),
-    attr(node, 'fi', 0),
-  ].join(' ');
-}
-
-/** The `tm` transistor model to a `32` line (TransistorModel.dump,
- *  TransistorModel.java:205-234). */
-function transistorModel(node: XmlNode): string {
-  const tail: (string | number)[] = [
-    '32',
-    escapeToken(node.attrs.nm ?? ''),
-    attr(node, 'f', 0),
-    attr(node, 'is', 5e-13),
-    attr(node, 'ikf', 0),
-    attr(node, 'ise', 0),
-    attr(node, 'ne', 1.5),
-    attr(node, 'ikr', 0),
-    attr(node, 'isc', 0),
-    attr(node, 'nc', 2),
-    attr(node, 'nf', 1),
-    attr(node, 'nr', 1),
-    attr(node, 'vaf', 0),
-    attr(node, 'var', 0),
-    attr(node, 'br', 3),
-  ];
-  for (const a of ['cje', 'vje', 'mje', 'cjc', 'vjc', 'mjc', 'tf', 'tr']) {
-    if (node.attrs[a] !== undefined) tail.push(attr(node, a, 0));
-  }
-  return tail.join(' ');
-}
-
-/** One `ccm` custom-composite model to a `.` line: the size, the external
- *  pins (bus entries expanded under `bcs`), and the escaped child model lines
- *  and dump tokens (CustomCompositeModel.buildXmlElement). The engine builds
- *  only the child kinds it has composite models for; the rest ride the line
- *  and round-trip. */
-function compositeModel(node: XmlNode): string {
-  const bcs = attr(node, 'bcs', 0) !== 0;
-  const ext: (string | number)[] = [];
-  let count = 0;
-  const lines: string[] = [];
-  const dumps: string[] = [];
-  for (const child of node.children) {
-    if (child.tag === 'ext') {
-      const bw = attr(child, 'bw', 1);
-      const name = child.attrs.nm ?? '';
-      const nd = attr(child, 'nd', 0);
-      const ps = attr(child, 'ps', 0);
-      const sd = attr(child, 'sd', 0);
-      if (bcs && bw > 1) {
-        for (let j = 0; j < bw; j++) {
-          ext.push(escapeToken(name), nd + j, ps, sd);
-          count += 1;
-        }
-      } else {
-        ext.push(escapeToken(name), nd, ps, sd);
-        count += 1;
-      }
-      continue;
-    }
-    const className = CHILD_CLASS[child.tag];
-    if (className !== undefined && child.attrs.nn !== undefined) {
-      const nodes = child.attrs.nn.split(' ').map((v) => Number(v));
-      lines.push(`${className} ${nodes.join(' ')}`);
-      // The engine indexes the dump tokens by model-line position
-      // (composite.rs, `dumps.get(i)`), so the two lists have to stay in step:
-      // a child that contributes no line contributes no dump either, and one
-      // whose tag carries no fields still contributes its flags.
-      dumps.push(escapeChildField(childDumpToken(child) ?? String(attr(child, 'f', 0))));
-    }
-  }
-  return [
-    '.',
-    escapeToken(node.attrs.nm ?? ''),
-    attr(node, 'f', 0),
-    attr(node, 'sx', 1),
-    attr(node, 'sy', 1),
-    count,
-    ext.join(' '),
-    escapeToken(lines.join('\r')),
-    escapeToken(dumps.join(' ')),
-  ].join(' ');
-}
-
-/** The upstream class name a ccm child's model line starts with. */
-const CHILD_CLASS: Record<string, string> = {
-  And: 'AndGateElm',
-  Or: 'OrGateElm',
-  Nand: 'NandGateElm',
-  Nor: 'NorGateElm',
-  Xor: 'XorGateElm',
-  I: 'InverterElm',
-  d: 'DiodeElm',
-  w: 'WireElm',
-  rw: 'RoutedWireElm',
-  ln: 'LabeledNodeElm',
-  cc: 'CustomCompositeElm',
-};
-
-/** One ccm child's `_`-joined dump token: its flags then its fields, the shape
- *  `composite.rs`'s `apply_dump` splits. Gates carry inputCount/output/high
- *  voltage; wires and labeled nodes carry nothing. */
-function childDumpToken(node: XmlNode): string | null {
-  const tag = node.tag;
-  const f = attr(node, 'f', 0);
-  if (tag === 'And' || tag === 'Or' || tag === 'Nand' || tag === 'Nor' || tag === 'Xor') {
-    return [f, attr(node, 'in', 2), attr(node, 'o', 0), attr(node, 'hi', 5)].join('_');
-  }
-  if (tag === 'I') return [f, attr(node, 'sl', 0.5), attr(node, 'hi', 5)].join('_');
-  if (tag === 'd') return [f, node.attrs.mo ?? 'default'].join('_');
-  if (tag === 'cc') return [f, node.attrs.mo ?? ''].join('_');
-  if (tag === 'w' || tag === 'rw' || tag === 'ln') return String(f);
-  return null;
-}
-
-/** Escapes one field of a `_`-joined dump token (`_`, space and backslash), so
- *  the join's separators stay unambiguous (subcircuits.ts:806-815). */
-function escapeChildField(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/_/g, '\\u').replace(/ /g, '\\s');
 }
 
 /** The tags that are model definitions or directives, never element lines. */
@@ -972,6 +1009,16 @@ export function xmlToText(source: string): string {
     if (lines === null) {
       ctx.slots.push(-1);
       passthrough.push(commentLine(node));
+      // A tag the port models but cannot convert yet gains one marker line
+      // directly under its comment. Both ride passthrough, so neither takes
+      // a file slot: scope and slider ordinals hold, and a plot aimed at the
+      // degraded element itself keeps writing -1.
+      const kind = UNCONVERTED_TAG_KINDS[tag];
+      if (kind !== undefined) {
+        passthrough.push(
+          `# ${tag} not converted: this build models it as code ${defFor(kind)?.dumpCode}`,
+        );
+      }
     } else {
       // A trace comment rides directly under the line it describes but must
       // not take a file slot: only real element lines shift the ordinals the

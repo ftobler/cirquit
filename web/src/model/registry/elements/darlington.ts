@@ -25,8 +25,9 @@ import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types
  *  lastVbe, lastVbc, beta, the `_`-joined shape the corpus `400` lines carry.
  *  The tokens are convergence seeds for upstream's internal transistors and
  *  are never read by this engine; they exist so a load/save round-trip stays
- *  byte-for-byte. */
-const DEFAULT_Q_STATE = '0_1_0_0_100';
+ *  byte-for-byte. Exported because the XML converter emits it for tags whose
+ *  composite state upstream never writes. */
+export const DEFAULT_Q_STATE = '0_1_0_0_100';
 
 /** Terminal posts, mirroring DarlingtonElm.setPoints (DarlingtonElm.java:
  *  128-134, :155-157): the base at `point1`, the collector and emitter at
