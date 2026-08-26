@@ -370,9 +370,10 @@ fetch it).
   switch throws, momentary releases, fuse unblow, settings edits) truncate the
   stale redo future via one shared action, and an undo under a scope plot drag
   cancels the drag so one gesture stays one entry. The engine clears every
-  scope capture when the effective timestep changes (upstream's resetGraphs on
-  maxTimeStep change) and preserves samples across a columns-only resize like
-  upstream's index-mapped copy.
+  scope capture when the nominal timestep changes (upstream's comparison of
+  `scopeTimeStep` against `maxTimeStep`, Scope.java:598-600), leaves samples
+  intact across adaptive halving and doubling, and preserves them across a
+  columns-only resize like upstream's index-mapped copy.
 - Review-pass batch 2026-08-24e: seven fixes from the parallel session's
   review lanes, each worktree-implemented and independently reviewed. Keyboard:
   denied-storage no longer crashes app boot (every defaultStorage lookup is
@@ -449,7 +450,7 @@ fetch it).
   ('true' low, 'false' high, SwitchElm.java:56-62), un-inverting startup
   levels for 75 boolean lines across 35 bundled circuits, numerics unchanged,
   saves byte-stable.
-- 605 Rust tests, most of them the end-to-end circuit checks across
+- 609 Rust tests, most of them the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus in-module unit tests and one doctest.
   3293 TypeScript tests pass (one corpus report test skipped); the robustness
