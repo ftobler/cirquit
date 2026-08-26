@@ -1,4 +1,8 @@
 import { describe, expect, it, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseCircuit, serializeCircuit } from '../io/netlist';
 import { postsOf } from './registry';
 import {
   canMirror,
@@ -12,6 +16,7 @@ import {
   turnPointAbout,
 } from './transform';
 import { SWITCH2_CENTER_OFF } from './registry/flags';
+import { CHIP_FLIP_X, CHIP_FLIP_XY, CHIP_SMALL } from './registry/elements/dFlipFlop';
 import {
   clearSessionModels,
   getModel,
@@ -20,6 +25,7 @@ import {
   registerSessionModel,
 } from '../io/subcircuits';
 import type { CircuitElement, Point } from './types';
+import { DEFAULT_SETTINGS } from './types';
 
 const element = (
   kind: string,
@@ -910,9 +916,6 @@ describe('chip mirrors', () => {
   // x2' = centre2-x2 (ChipElm.java:620-628), and setPoints lays the pins out
   // from the anchor plus the flags.
   const DFF_SET = 4;
-  const CHIP_FLIP_X = 1 << 10;
-  const CHIP_FLIP_XY = 1 << 12;
-  const CHIP_SMALL = 1;
 
   it('a d flip flop mirrored in a group lands its pin banks on the reflected columns', () => {
     // Group mirror about cx=300: shift (2+1)*32 = 96 gives
@@ -1074,5 +1077,59 @@ describe('chip mirrors', () => {
       { x: 500, y: 200 },
       { x: 404, y: 200 },
     ]);
+  });
+});
+
+describe('chip mirror file round trips', () => {
+  // divideby2.txt carries a plain `155` flip-flop line, the shape every
+  // bundled chip shares: the segment length need not match the body span, so
+  // these guards also cover a part whose stored length (48) differs from it.
+  const CIRCUITS_DIR = fileURLToPath(new URL('../../public/circuits', import.meta.url));
+  const DIVIDEBY2 = readFileSync(join(CIRCUITS_DIR, 'divideby2.txt'), 'utf-8');
+
+  /** The circuit's flip-flop and its pre-mirror posts. */
+  const loadDff = () => {
+    const { elements } = parseCircuit(DIVIDEBY2);
+    const dff = elements.find((e) => e.kind === 'dFlipFlop')!;
+    return { elements, dff };
+  };
+
+  it('mirrors a bundled counter chip onto the reflected columns', () => {
+    // Stored (272,96)-(320,96), group mirror about 300: shift 96 gives
+    // x1' = 600-272-96 = 232, x2' = 600-320 = 280. Banks 272 and 368 reflect
+    // to 328 and 232.
+    const { dff } = loadDff();
+    expect(postsOf(dff)).toEqual([
+      { x: 272, y: 96 },
+      { x: 368, y: 96 },
+      { x: 368, y: 160 },
+      { x: 272, y: 128 },
+    ]);
+    const m = mirrorElement(dff, 300);
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([232, 96, 280, 96]);
+    expect(m.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
+    expect(postsOf(m)).toEqual([
+      { x: 328, y: 96 },
+      { x: 232, y: 96 },
+      { x: 232, y: 160 },
+      { x: 328, y: 128 },
+    ]);
+  });
+
+  it('mirroring twice restores the serialized bytes', () => {
+    const { elements, dff } = loadDff();
+    const before = serializeCircuit(elements, { ...DEFAULT_SETTINGS });
+    const mirrored = elements.map((e) => (e.id === dff.id ? mirrorElement(e, 300) : e));
+    const restored = mirrored.map((e) => (e.id === dff.id ? mirrorElement(e, 300) : e));
+    expect(serializeCircuit(restored, { ...DEFAULT_SETTINGS })).toBe(before);
+  });
+
+  it('a once-mirrored saved chip re-parses to identical posts', () => {
+    const { elements, dff } = loadDff();
+    const mirrored = elements.map((e) => (e.id === dff.id ? mirrorElement(e, 300) : e));
+    const text = serializeCircuit(mirrored, { ...DEFAULT_SETTINGS });
+    const reparsed = parseCircuit(text).elements.find((e) => e.kind === 'dFlipFlop')!;
+    expect(reparsed).toMatchObject({ x1: 232, y1: 96, x2: 280, y2: 96 });
+    expect(postsOf(reparsed)).toEqual(postsOf(mirrored.find((e) => e.id === dff.id)!));
   });
 });
