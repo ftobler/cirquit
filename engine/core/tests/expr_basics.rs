@@ -112,6 +112,19 @@ fn rejects_bad_input() {
 }
 
 #[test]
+fn too_short_pwl_list_is_a_parse_error_not_a_panic() {
+    // Two arguments leave the walker nothing for its first ordinate, and it
+    // reads child 2 unconditionally, so a two-argument list used to panic
+    // mid-evaluation once parsed. The function table must reject it at
+    // parse time like min(1) does. Three arguments are the smallest legal
+    // form: no complete segment means the output holds at y0.
+    let err = parse("pwl(a, 5)").expect_err("a two-argument pwl must be rejected");
+    assert!(err.contains("bad number of function args"), "got: {err}");
+    assert!(parse("pwl(x, 5)").is_err());
+    assert_eq!(ev("pwl(9, 0, 7)"), 7.0);
+}
+
+#[test]
 fn deeply_nested_parentheses_error_instead_of_abort() {
     // Thousands of nested parens used to recurse the parser straight off
     // the wasm stack; the depth bound must turn that into a clean parse
