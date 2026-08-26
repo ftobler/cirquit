@@ -239,7 +239,9 @@ export interface AppState {
   toolTurns: number;
   /** Bumped by every undo, redo and revertToBaseline, and by every wholesale
    *  document replacement (`loadNetlist`, and `newCircuit` which does not
-   *  route through it). The canvas interaction layer subscribes to it so a
+   *  route through it). One bump per load, so an edited drill-in exit bumps
+   *  twice through its two restore loads; the cancel only cares that the
+   *  counter moved. The canvas interaction layer subscribes to it so a
    *  revert or a document swap landing mid-gesture can cancel the live drag
    *  the way a pointer cancel would, instead of leaving it writing past a
    *  baseline whose elements are gone. Ordinary commits and parameter edits
