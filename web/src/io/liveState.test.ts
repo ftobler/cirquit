@@ -58,10 +58,10 @@ describe('overlayLiveState', () => {
   });
 
   it('serializeCircuit writes the overlaid live token, not the stale params', () => {
-    // The element-formats pattern: a loaded capacitor holds voltDiff 5, the
-    // live overlay reports 8.16 and a 0.1 ohm ESR, so the saved line must
-    // carry the live values (the damped member's ESR included), while the
-    // element's own params stay untouched.
+    // The passives.test.ts capacitor pattern: a loaded capacitor holds
+    // voltDiff 5, the live overlay reports 8.16 and a 0.1 ohm ESR, so the
+    // saved line must carry the live values (the damped member's ESR
+    // included), while the element's own params stay untouched.
     const [e] = parseCircuit('c 0 0 32 0 4 0.00001 5 0 0\n').elements;
     const live = { [e.id]: { voltDiff: 8.16, seriesResistance: 0.1 } };
     const out = serializeCircuit(overlayLiveState([e], live), { ...DEFAULT_SETTINGS }).trim();
