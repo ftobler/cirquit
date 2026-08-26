@@ -361,6 +361,105 @@ fn a_refused_stamp_during_the_dc_solve_is_an_error_not_a_degraded_start() {
     );
 }
 
+// ─── B1: a rejecting adaptive schedule converges without wasted iterations ───
+
+/// A 10 V square through 200 ohm into the mosfet's body diode: source post
+/// driven, drain and gate grounded. The diode is the stiff element here: on
+/// every rising edge Newton must climb its exponential knee to the clamp
+/// level, which a two-pass budget cannot settle, so each edge rejects
+/// deterministically (`try_step` floors a nonlinear circuit's budget at two
+/// passes so the confirming subiteration exists, circuit.rs's `budget.max(2)`
+/// guard) and halves.
+#[test]
+fn mosfet_rejecting_schedule_converges_without_wasted_iterations() {
+    // restore_committed rewinds the solution vector and every element's
+    // Newton anchors. The MOSFET's embedded body diode owns its own anchor,
+    // invisible to that walk: left stale, the retry's first stamp compares
+    // against the failed attempt's final junction iterate (measured at
+    // hundreds of mV away from the committed state on this schedule), one
+    // spurious `not_converged` past the 10 mV bar plus one mislimiting step
+    // per retry. The JFET already re-anchors its identical gate diode; this
+    // pins the MOSFET to the same discipline without moving any converged
+    // result.
+    //
+    // A plain common-source stage also rejects under this budget, but there
+    // the body diode idles near zero volts and its stale anchor never trips
+    // the bar, masking the defect; the diode must be the element doing the
+    // work for the wasted passes to show up in the count.
+    let mut c = build(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[0, 100], [0, 0]],
+                &[
+                    ("waveform", 2.0),
+                    ("frequency", 1000.0),
+                    ("maxVoltage", 10.0),
+                ],
+            ),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 200.0)]),
+            elm(
+                3,
+                "mosfet",
+                &[[200, 0], [100, 0], [100, 100]],
+                &[("pnp", 1.0), ("threshold", 1.5)],
+            ),
+            elm(4, "ground", &[[100, 100]], &[]),
+            elm(5, "ground", &[[200, 0]], &[]),
+            elm(6, "ground", &[[0, 100]], &[]),
+        ],
+        adaptive_opts(5e-6, 1.25e-6, 1),
+    );
+    let report = c.run(120);
+    assert!(
+        report.converged,
+        "the rejecting schedule must still converge: {:?}",
+        report.error
+    );
+    assert!(
+        report.rejected_steps >= 1,
+        "the schedule must actually reject steps to exercise the rewind"
+    );
+    // Recorded from the fixed build: 120 steps cost 262 Newton passes. With
+    // the stale anchor each of the four edges' retries burns extra passes;
+    // the unfixed build costs 264, above this bound.
+    assert!(
+        report.iterations <= 262,
+        "120 steps burned {} Newton passes, above the fixed-build bound",
+        report.iterations
+    );
+
+    // Analytic companion at DC: with the drive held high the diode clamps
+    // the node where the resistor current and the Shockley law agree. For
+    // the default model (Is = 1/(exp(fwdrop/vscale)-1), vscale = 2*vt) that
+    // is the hand-solved root of (10 - v)/200 = Is*(exp(v/vscale)-1):
+    // v ~= 0.6475 V at I ~= 46.8 mA.
+    let dc = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            elm(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 200.0)]),
+            elm(
+                3,
+                "mosfet",
+                &[[200, 0], [100, 0], [100, 100]],
+                &[("pnp", 1.0), ("threshold", 1.5)],
+            ),
+            elm(4, "ground", &[[100, 100]], &[]),
+            elm(5, "ground", &[[200, 0]], &[]),
+            elm(6, "ground", &[[0, 100]], &[]),
+        ],
+        opts(5e-6, true),
+    );
+    dc.run(20);
+    // The resistor reads supply minus clamp level.
+    let clamp_level = 10.0 - dc.element_voltages()[1];
+    assert!(
+        close(clamp_level, 0.6475, 2e-3),
+        "the body diode must clamp the node on its Shockley knee, got {clamp_level}"
+    );
+}
+
 // ─── Composite child expressions are load-checked, never aborts ───
 
 /// A one-child composite whose vccs child carries `expr` as its dump-token

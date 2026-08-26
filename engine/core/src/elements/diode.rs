@@ -211,6 +211,14 @@ impl Diode {
         }
         (i, g + gmin)
     }
+
+    /// The junction voltage the next `do_step` compares and limits against
+    /// (`lastvoltdiff`, Diode.java:142-145). Inspection hook for embedded
+    /// diodes whose `Base` no circuit ever sees.
+    #[cfg(test)]
+    pub(crate) fn junction_anchor(&self) -> f64 {
+        self.last_v
+    }
 }
 
 impl Element for Diode {
