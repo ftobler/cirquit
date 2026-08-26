@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ScopePlot } from '../engine/simulator';
+import type { ScopePlot } from '../engine/scopeModel';
 import { scopeMenuRows } from './scopeMenuRows';
 
 /** A minimal plot shape standing in for a loaded or created one. */

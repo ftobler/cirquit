@@ -5,7 +5,7 @@
  * listeners and rendering; this module owns what the rows mean.
  */
 
-import type { ScopePlot } from '../engine/simulator';
+import type { ScopePlot } from '../engine/scopeModel';
 import { canRemovePlot } from './scopePlotRows';
 
 /** One row of the scope menu: display plus the closure that runs it, the same
