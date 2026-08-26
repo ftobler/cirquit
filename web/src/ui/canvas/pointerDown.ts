@@ -264,6 +264,36 @@ export function abandonForLongPress(dragRef: { current: Drag }, state: AppState)
   state.endElementGesture();
 }
 
+/** What a revert landing mid-gesture owes: the drag dies with the baseline it
+ *  was mutating against, exactly as if the pointer had been cancelled. A
+ *  placement in flight still owes its up-time cleanup (an abandoned collapsed
+ *  element would serialize into saves) and a wire tool stands down or stays
+ *  silently armed; a held momentary returns to rest so no switch sticks closed
+ *  under a gesture that is gone. Move, dragpost and rowcol need only the
+ *  disarm: splits and collapse guards are release-time work belonging to a
+ *  drop the user made, not one the revert performed. Pan and box-select carry
+ *  no document writes and no entries, so a cancelled revert leaves them
+ *  running past it. Called by the hook's revertEpoch reaction; sits beside the
+ *  finish* cleanups it composes so the rule stays testable without a canvas. */
+export function cancelLiveDrag(
+  refs: PointerDownRefs,
+  pointerId: number,
+  state: AppState,
+): void {
+  const drag = refs.dragRef.current;
+  if (drag.mode === 'pan' || drag.mode === 'select') return;
+  // Nothing armed and nothing held: leave the store untouched rather than
+  // notify every subscriber for an empty teardown.
+  if (drag.mode === 'none' && drag.button === undefined && refs.heldMomentaryRef.current === null) {
+    return;
+  }
+  if (drag.mode === 'place') finishPlacement(drag, state);
+  if (drag.mode === 'wire') finishWireDrag(drag, state);
+  releaseHeldMomentary(pointerId, refs);
+  refs.dragRef.current = { mode: 'none' };
+  state.endElementGesture();
+}
+
 /** Where the interrupted finger landed, in both coordinate spaces opening the
  *  menu needs: viewport pixels position it, the circuit point is where Split
  *  Wire Manually would act. The projection is the caller's because it needs
