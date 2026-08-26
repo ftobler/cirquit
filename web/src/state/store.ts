@@ -14,11 +14,10 @@ import {
 } from '../io/netlist';
 import { overlayLiveState } from '../io/liveState';
 import { decodeScopeLine, encodeScopeLine, scopeLineMatches } from '../io/scopeLine';
+import { buildModelFromSelection, describeBuildFailure } from '../io/subcircuitBuild';
 import {
-  buildModelFromSelection,
   clearSessionModels,
   compositeModelLine,
-  describeBuildFailure,
   getModel,
   modelToEngineSpec,
   parseCompositeModelLine,
