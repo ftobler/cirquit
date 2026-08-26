@@ -11,6 +11,7 @@ import { storedBusWidth } from '../model/registry/elements/wire';
 import { defFor } from '../model/registry';
 import type { CircuitElement, Context2D, DrawContext, SimSettings, Theme } from '../model/types';
 import { CENTER_MARGIN_H, CENTER_MARGIN_W, circuitBounds, type Rect } from '../state/view';
+import { postDotPoints, shouldDrawDot } from './junction';
 import { makeTheme } from './draw';
 
 export interface ExportGeometry {
@@ -122,6 +123,23 @@ export function drawAllElements(
       valueFontSize: settings.valueFontSize,
     };
     def.draw(g, e);
+  }
+
+  // Junction dots, appended after the element loop like upstream's exporter
+  // strokes postDrawList there (ImageExporter.java:220-223), which is how PNG,
+  // clipboard, print and SVG all gain them at once. Same rule as the live
+  // frame loop: a dot only where the post count is not exactly 2. The colour
+  // follows our live-canvas convention (theme.wire) rather than upstream's
+  // literal whiteColor, and red bad-connection dots stay out, as upstream's
+  // export omits them too.
+  const postCounts = postDotPoints(elements);
+  ctx.fillStyle = theme.wire;
+  for (const [key, count] of postCounts) {
+    if (!shouldDrawDot(count)) continue;
+    const [x, y] = key.split(',').map(Number);
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
