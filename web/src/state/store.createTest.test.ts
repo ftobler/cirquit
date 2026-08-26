@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { GRID_SIZE, type CircuitElement } from '../model/types';
 import { postsOf } from '../model/registry';
+import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
+import { FULL_ADDER_BITS } from '../model/registry/elements/fullAdder';
+import { WIRE_SHOW_BUS_VALUE } from '../model/registry/flags';
 import { useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 
@@ -65,6 +68,44 @@ describe('createTest', () => {
     const placed = useStore.getState().elements.slice(before);
     expect(placed.filter((e) => e.kind === 'logicInput')).toHaveLength(9);
     expect(placed.filter((e) => e.kind === 'logicOutput')).toHaveLength(5);
+  });
+
+  it('seeds a bus input with the pin width and flags the wide-output wire', () => {
+    // A 4-bit adder in bus mode collapses each bank onto one wide pin, so
+    // upstream's rule (TestCreator.java:60-93) gives two BusLogicInputElms
+    // for A and B, one show-bus-value wire for S and plain pins for Cin/C.
+    const chip = useStore.getState().addElement({
+      kind: 'fullAdder',
+      x1: 0,
+      y1: 0,
+      x2: 6 * GRID_SIZE,
+      y2: 0,
+      flags: CHIP_BIT_ORDER_BUS | FULL_ADDER_BITS,
+      params: { bits: 4 },
+    });
+    useStore.getState().select([chip]);
+    const before = useStore.getState().elements.length;
+
+    expect(useStore.getState().createTest()).toBe(true);
+
+    const placed = useStore.getState().elements.slice(before);
+    expect(placed.filter((e) => e.kind === 'busLogicInput')).toHaveLength(2);
+    expect(placed.filter((e) => e.kind === 'logicInput')).toHaveLength(1);
+    expect(placed.filter((e) => e.kind === 'logicOutput')).toHaveLength(1);
+    // Upstream seeds only the width from the pin (TestCreator.java:81);
+    // value and hiV/loV ride the element defaults
+    // (BusLogicInputElm.java:26-28), which the registry entry carries.
+    for (const bli of placed.filter((e) => e.kind === 'busLogicInput')) {
+      expect(bli.params.busWidth).toBe(4);
+      expect(bli.params.hiV).toBe(5);
+      expect(bli.params.loV).toBe(0);
+    }
+    // The wide output's wire shows the bus value; no width param is set, a
+    // wire derives it from the topology like any other.
+    const wires = placed.filter((e) => e.kind === 'wire');
+    expect(wires).toHaveLength(1);
+    expect(wires[0].flags & WIRE_SHOW_BUS_VALUE).not.toBe(0);
+    expect(wires[0].params.busWidth).toBeUndefined();
   });
 
   it('refuses an analog source that draws a chip body but is not a harness target', () => {

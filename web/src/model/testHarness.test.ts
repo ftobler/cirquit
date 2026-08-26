@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { CHIP_FLIP_X, CHIP_FLIP_XY, CHIP_FLIP_Y } from './registry/elements/dFlipFlop';
+import {
+  CHIP_BIT_ORDER_BUS,
+  CHIP_FLIP_X,
+  CHIP_FLIP_XY,
+  CHIP_FLIP_Y,
+} from './registry/elements/dFlipFlop';
+import { FULL_ADDER_BITS } from './registry/elements/fullAdder';
+import { WIRE_SHOW_BUS_VALUE } from './registry/flags';
+import { chipPinsOf } from './registry/chips';
+import { postsOf } from './registry';
 import { createTestHarness, selectHarnessChip, type HarnessPin } from './testHarness';
 import type { CircuitElement } from './types';
 
@@ -90,6 +99,97 @@ describe('createTestHarness placement', () => {
       GRID,
     );
     expect(placed).toHaveLength(1);
+  });
+
+  it('puts a bus logic input on a wide input pin and a bus wire on a wide output pin', () => {
+    // The four-way branch of TestCreator.java:60-93: width > 1 turns an input
+    // into one BusLogicInputElm (79-86) and an output into one wire carrying
+    // the show-bus-value flag (62-69); the geometry stays post plus OUT.
+    const placed = createTestHarness(
+      [
+        { side: 'W', output: false, post: { x: 32, y: 16 }, busWidth: 8, busZ: 0 },
+        { side: 'E', output: true, post: { x: 128, y: 16 }, busWidth: 2, busZ: 0 },
+      ],
+      GRID,
+    );
+    expect(placed).toEqual([
+      {
+        kind: 'busLogicInput',
+        x1: 32,
+        y1: 16,
+        x2: 32 - OUT,
+        y2: 16,
+        busWidth: 8,
+      },
+      {
+        kind: 'wire',
+        x1: 128,
+        y1: 16,
+        x2: 128 + OUT,
+        y2: 16,
+        flags: WIRE_SHOW_BUS_VALUE,
+      },
+    ]);
+  });
+
+  it('leaves width-one pins as plain logic inputs and outputs', () => {
+    const placed = createTestHarness(
+      [
+        { side: 'W', output: false, post: { x: 32, y: 16 }, busWidth: 1 },
+        { side: 'E', output: true, post: { x: 128, y: 16 } },
+      ],
+      GRID,
+    );
+    expect(placed).toEqual([
+      { kind: 'logicInput', x1: 32, y1: 16, x2: 32 - OUT, y2: 16 },
+      { kind: 'logicOutput', x1: 128, y1: 16, x2: 128 + OUT, y2: 16 },
+    ]);
+  });
+
+  it('harnesses a 4-bit bus-mode full adder with two bus inputs and one bus wire', () => {
+    // Realistic metadata: fullAdderPins collapses each bank onto its anchor
+    // row in bus mode, every bit carrying busWidth 4 and its own busZ
+    // (fullAdder.ts bank()), exactly what a loaded td4-style circuit holds.
+    const adder: CircuitElement = {
+      id: 1,
+      kind: 'fullAdder',
+      x1: 0,
+      y1: 0,
+      x2: 96,
+      y2: 0,
+      flags: CHIP_BIT_ORDER_BUS | FULL_ADDER_BITS,
+      params: { bits: 4 },
+    };
+    const pins = chipPinsOf(adder)!;
+    const posts = postsOf(adder);
+    expect(pins.filter((p) => (p.busWidth ?? 1) > 1)).toHaveLength(12);
+    const placed = createTestHarness(
+      pins.map((p, i) => ({
+        side: p.side,
+        output: p.output ?? false,
+        post: posts[i],
+        busWidth: p.busWidth,
+        busZ: p.busZ,
+      })),
+      GRID,
+    );
+    // One element per collapsed bank, not one per bit: A and B become bus
+    // inputs, S a bus-value wire; the narrow Cin and C stay plain. Five
+    // placements from fourteen pins, nine of them busZ duplicates.
+    expect(placed).toEqual([
+      { kind: 'busLogicInput', x1: 0, y1: 0, x2: -OUT, y2: 0, busWidth: 4 },
+      { kind: 'busLogicInput', x1: 0, y1: 32, x2: -OUT, y2: 32, busWidth: 4 },
+      {
+        kind: 'wire',
+        x1: 96,
+        y1: 64,
+        x2: 96 + OUT,
+        y2: 64,
+        flags: WIRE_SHOW_BUS_VALUE,
+      },
+      { kind: 'logicInput', x1: 0, y1: 64, x2: -OUT, y2: 64 },
+      { kind: 'logicOutput', x1: 96, y1: 0, x2: 96 + OUT, y2: 0 },
+    ]);
   });
 });
 

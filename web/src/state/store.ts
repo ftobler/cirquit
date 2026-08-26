@@ -1513,10 +1513,20 @@ function createAppStore() {
     // exactly as upstream pushes once before TestCreator.createTest
     // (CommandManager.java:146-149).
     get().commit();
-    const added = placements.map((p) => ({
-      ...makeElement(p.kind, p.x1, p.y1, p.x2, p.y2),
-      id: allocateId(),
-    }));
+    const added = placements.map((p) => {
+      const e = {
+        ...makeElement(p.kind, p.x1, p.y1, p.x2, p.y2),
+        id: allocateId(),
+      };
+      // Upstream sets only the bus input's width (TestCreator.java:81); value
+      // and hiV/loV stay at the BusLogicInputElm field defaults
+      // (BusLogicInputElm.java:26-28), which are exactly the registry entry's
+      // defaults ({ busWidth: 4, hiV: 5, loV: 0 }), so makeElement already
+      // carries them and just the width is overridden here.
+      if (p.busWidth !== undefined) e.params.busWidth = p.busWidth;
+      if (p.flags !== undefined) e.flags |= p.flags;
+      return e;
+    });
     set((st) => ({
       elements: [...st.elements, ...added],
       ...bumpRevision(st),
