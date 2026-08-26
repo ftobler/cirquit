@@ -2,8 +2,9 @@
  *  centred panel, and Escape / backdrop / Cancel dismissal. Dialog state lives
  *  in the store so the menubar, App's host and the Ctrl+S path share one home. */
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useFocusTrap } from './useFocusTrap';
+import { claimEscape, ownsEscape, releaseEscape } from './dialogEscape';
 
 interface DialogProps {
   title: string;
@@ -23,7 +24,9 @@ interface DialogProps {
    *  that child, which leaves Escape dead once focus moves to the editor's own
    *  buttons or the panel. Routing the single listener through the override
    *  also means exactly one thing happens per press, whenever React gets round
-   *  to re-subscribing after the state change. */
+   *  to re-subscribing after the state change. The press only reaches a
+   *  dialog holding the newest Escape claim (`dialogEscape.ts`), so stacked
+   *  dialogs close top-first instead of all at once. */
   onEscape?: () => void;
 }
 
@@ -34,14 +37,25 @@ export function Dialog({ title, onClose, children, actions, className, onEscape 
   // Tab wrap, which could not pull focus back in once it had escaped.
   const panelRef = useFocusTrap<HTMLDivElement>({ returnFocus: true });
 
+  // Escape ownership is claimed once per mount, not per handler change:
+  // re-claiming on a re-render would lift a stacked-under dialog's claim back
+  // above dialogs mounted after it. The freshest handler rides a ref instead,
+  // so inline onClose callbacks and SubcircuitManager's toggling rename
+  // override stay live without touching the stack.
+  const escapeHandler = useRef(onEscape ?? onClose);
+  escapeHandler.current = onEscape ?? onClose;
+
   useEffect(() => {
-    const handleEscape = onEscape ?? onClose;
+    const claim = claimEscape(() => escapeHandler.current());
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') handleEscape();
+      if (ev.key === 'Escape' && ownsEscape(claim)) claim.close();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, onEscape]);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      releaseEscape(claim);
+    };
+  }, []);
 
   return (
     <div className="dialog-backdrop" onPointerDown={onClose}>
