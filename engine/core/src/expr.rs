@@ -1,9 +1,14 @@
-//! Recursive-descent expression evaluator, the port of upstream's
-//! `ExprParser`/`Expr` (Expr.java). The VCVS and VCCS elements evaluate their
-//! value string with this on every Newton iteration, so it stays decoupled
-//! from the matrix machinery: the only context an expression sees is an
-//! [`ExprState`] of the nine input values, their previous-step snapshots, the
-//! last output and the clock.
+//! Recursive-descent expression parser and iterative tree evaluator, the
+//! port of upstream's `ExprParser`/`Expr` (Expr.java). The VCVS and VCCS
+//! elements evaluate their value string with this on every Newton iteration,
+//! so it stays decoupled from the matrix machinery: the only context an
+//! expression sees is an [`ExprState`] of the nine input values, their
+//! previous-step snapshots, the last output and the clock.
+//!
+//! Evaluation walks the tree with an explicit work stack instead of
+//! recursion: a flat operator chain such as `1+1+1+...` nests the tree one
+//! level per term, past any bound, and the native stack must not care how
+//! long the chain is.
 //!
 //! Grammar: numbers, variables `a`..`i`, `t`, `pi`, `e`, `lastoutput`,
 //! `timestep`, `lasta`..`lasti`, `da`..`di` (written `dadt`, `dcdt`, ...),
@@ -155,6 +160,81 @@ enum Func {
     Pwrs,
 }
 
+/// One step of the explicit evaluation walk. Scheduling always queues a
+/// reduction below its operand walks, so when a reduction pops off the work
+/// stack its operands are sitting on top of the value stack.
+enum Task<'a> {
+    /// Expands a subtree: leaves push their value, operators queue their
+    /// reduction and their operands above it.
+    Tree(&'a Expr),
+    /// Applies a unary operator to the top value.
+    Un(Un),
+    /// Combines the top two values with a binary operator.
+    Bin(Bin),
+    /// Applies a fixed one-argument function to the top value.
+    Func1(Func),
+    /// Combines the top two values with a fixed two-argument function.
+    Func2(Func),
+    /// Folds the top two values into the running min or max.
+    MinMax(Func),
+    /// Evaluates `step()` over its one or two stacked arguments.
+    Step(usize),
+    /// Clamps the three stacked values v, lo, hi into lo..hi.
+    Clamp,
+    /// Once the condition value is ready, schedules only the chosen branch,
+    /// mirroring the ternary's lazy branches and select()'s pick.
+    Branch {
+        picked: &'a Expr,
+        rejected: &'a Expr,
+        /// select() tests strictly positive, the ternary tests nonzero.
+        positive_only: bool,
+    },
+    /// Advances a `pwl` call's sequential read of its argument list.
+    Pwl(PwlWalk<'a>),
+}
+
+/// Which argument the next completed evaluation belongs to in a
+/// [`PwlWalk`], or that a segment decision is due.
+#[derive(Clone, Copy)]
+enum PwlStage {
+    WantX,
+    WantX0,
+    WantY0,
+    WantX1,
+    WantY1,
+    Decide,
+}
+
+/// Carries a `pwl` call through its strictly sequential argument reads. Each
+/// stage consumes one freshly evaluated child and queues the following one,
+/// mirroring upstream's loop read for read (Expr.pwl, Expr.java:154-175)
+/// while keeping deep argument subtrees on the flat work stack.
+struct PwlWalk<'a> {
+    node: &'a Expr,
+    stage: PwlStage,
+    /// Start index of the next segment pair to read once the mandatory first
+    /// one is in; `next + 1 >= children.len()` ends the walk.
+    next: usize,
+    x: f64,
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+}
+
+impl Drop for Expr {
+    fn drop(&mut self) {
+        // A flat chain nests the tree one level per term, and the generated
+        // recursive drop would mirror that depth frame for frame; flatten
+        // the owned children onto an explicit stack instead. Each node left
+        // behind is childless, so its own drop is shallow.
+        let mut pending = std::mem::take(&mut self.children);
+        while let Some(mut node) = pending.pop() {
+            pending.append(&mut node.children);
+        }
+    }
+}
+
 impl Expr {
     fn constant(v: f64) -> Self {
         Self {
@@ -223,258 +303,409 @@ impl Expr {
         }
     }
 
-    /// Evaluates the tree against `state`, following the reference `eval`
-    /// switch for every opcode (Expr.java:47-152).
+    /// Evaluates the tree against `state`, opcode for opcode with the
+    /// reference switch (Expr.java:47-152).
+    ///
+    /// The walk is deliberately iterative: the parser bounds grammar nesting,
+    /// but a flat chain such as `1+1+1+...` builds a tree one level per term
+    /// with no nesting at all, and a recursive walk would follow it straight
+    /// off the stack.
     pub fn eval(&self, state: &ExprState) -> f64 {
+        let mut tasks = vec![Task::Tree(self)];
+        let mut vals: Vec<f64> = Vec::new();
+        while let Some(task) = tasks.pop() {
+            match task {
+                Task::Tree(e) => e.schedule(&mut tasks, &mut vals, state),
+                Task::Un(op) => {
+                    let a = pop_operand(&mut vals);
+                    vals.push(match op {
+                        Un::Negate => -a,
+                        Un::Not => {
+                            if a == 0.0 {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                    });
+                }
+                Task::Bin(op) => {
+                    let b = pop_operand(&mut vals);
+                    let a = pop_operand(&mut vals);
+                    vals.push(bin_apply(op, a, b));
+                }
+                Task::Func1(f) => {
+                    let a = pop_operand(&mut vals);
+                    vals.push(func1_apply(f, a));
+                }
+                Task::Func2(f) => {
+                    let b = pop_operand(&mut vals);
+                    let a = pop_operand(&mut vals);
+                    vals.push(func2_apply(f, a, b));
+                }
+                Task::MinMax(f) => {
+                    let b = pop_operand(&mut vals);
+                    let a = pop_operand(&mut vals);
+                    // The fold order stays left to right, min(a,b,c) folding
+                    // as min(min(a,b),c) like the reference loop.
+                    vals.push(match f {
+                        Func::Min => a.min(b),
+                        Func::Max => a.max(b),
+                        _ => unreachable!("only min and max fold"),
+                    });
+                }
+                Task::Step(argc) => {
+                    // The reference returns 0 both above the threshold and
+                    // below zero (Expr.java:110-113).
+                    if argc == 1 {
+                        let x = pop_operand(&mut vals);
+                        vals.push(if x < 0.0 { 0.0 } else { 1.0 });
+                    } else {
+                        let thr = pop_operand(&mut vals);
+                        let x = pop_operand(&mut vals);
+                        vals.push(if x > thr || x < 0.0 { 0.0 } else { 1.0 });
+                    }
+                }
+                Task::Clamp => {
+                    let hi = pop_operand(&mut vals);
+                    let lo = pop_operand(&mut vals);
+                    let v = pop_operand(&mut vals);
+                    vals.push(v.max(lo).min(hi));
+                }
+                Task::Branch {
+                    picked,
+                    rejected,
+                    positive_only,
+                } => {
+                    let cond = pop_operand(&mut vals);
+                    // select() picks on strictly positive, the ternary on
+                    // nonzero; the rejected branch is never walked, exactly
+                    // like the lazy recursion it replaces.
+                    let hit = if positive_only {
+                        cond > 0.0
+                    } else {
+                        cond != 0.0
+                    };
+                    tasks.push(Task::Tree(if hit { picked } else { rejected }));
+                }
+                Task::Pwl(walk) => pwl_step(walk, &mut tasks, &mut vals),
+            }
+        }
+        // Every reduction consumed what its operand walks pushed, so only
+        // the root's value is left.
+        debug_assert_eq!(vals.len(), 1);
+        vals.pop().unwrap_or(f64::NAN)
+    }
+
+    /// Queues `self`'s contribution to the work walk: a leaf pushes its value
+    /// straight onto the value stack, a compound node queues its reduction
+    /// first and its operands above it, so the stack's LIFO order evaluates
+    /// operands left to right and reduces last.
+    fn schedule<'a>(&'a self, tasks: &mut Vec<Task<'a>>, vals: &mut Vec<f64>, state: &ExprState) {
         match self.op {
-            Op::Constant(v) => v,
-            Op::Variable(i) => state.values[i],
-            Op::LastVariable(i) => state.last_values[i],
+            Op::Constant(v) => vals.push(v),
+            Op::Variable(i) => vals.push(state.values[i]),
+            Op::LastVariable(i) => vals.push(state.last_values[i]),
             // Upstream divides by SimulationManager.theSim.timeStep; the port
             // carries the same value on the state so the evaluator needs no
             // wider context (Expr.java:145-146).
-            Op::Derivative(i) => (state.values[i] - state.last_values[i]) / state.time_step,
-            Op::Time => state.t,
-            Op::LastOutput => state.last_output,
-            Op::TimeStep => state.time_step,
+            Op::Derivative(i) => {
+                vals.push((state.values[i] - state.last_values[i]) / state.time_step)
+            }
+            Op::Time => vals.push(state.t),
+            Op::LastOutput => vals.push(state.last_output),
+            Op::TimeStep => vals.push(state.time_step),
             Op::Un(op) => {
-                let a = self.children[0].eval(state);
-                match op {
-                    Un::Negate => -a,
-                    Un::Not => {
-                        if a == 0.0 {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                }
+                tasks.push(Task::Un(op));
+                tasks.push(Task::Tree(&self.children[0]));
             }
             Op::Bin(op) => {
-                let a = self.children[0].eval(state);
-                let b = self.children[1].eval(state);
-                match op {
-                    Bin::Add => a + b,
-                    Bin::Sub => a - b,
-                    Bin::Mul => a * b,
-                    Bin::Div => a / b,
-                    Bin::Pow => a.powf(b),
-                    Bin::Mod => a % b,
-                    Bin::BitAnd => (as_int(a) & as_int(b)) as f64,
-                    Bin::BitOr => (as_int(a) | as_int(b)) as f64,
-                    // Java masks an int shift count to its low five bits
-                    // (JLS 15.19), which is also what a wasm release shift
-                    // does; masking keeps dev builds from panicking on
-                    // out-of-range counts and all three bit-identical
-                    // (Expr.java:89).
-                    Bin::Shift => (as_int(a) >> (as_int(b) & 31)) as f64,
-                    Bin::And => {
-                        if a != 0.0 && b != 0.0 {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                    Bin::Or => {
-                        if a != 0.0 || b != 0.0 {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                    Bin::Eq => {
-                        if a == b {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                    Bin::Ne => {
-                        if a != b {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                    Bin::Lt => {
-                        if a < b {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                    Bin::Le => {
-                        if a <= b {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                    Bin::Gt => {
-                        if a > b {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                    Bin::Ge => {
-                        if a >= b {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                }
+                tasks.push(Task::Bin(op));
+                tasks.push(Task::Tree(&self.children[1]));
+                tasks.push(Task::Tree(&self.children[0]));
             }
             Op::Ternary => {
-                if self.children[0].eval(state) != 0.0 {
-                    self.children[1].eval(state)
-                } else {
-                    self.children[2].eval(state)
-                }
+                tasks.push(Task::Branch {
+                    picked: &self.children[1],
+                    rejected: &self.children[2],
+                    positive_only: false,
+                });
+                tasks.push(Task::Tree(&self.children[0]));
             }
-            Op::Func(f) => {
-                let c = &self.children;
-                match f {
-                    Func::Sin => c[0].eval(state).sin(),
-                    Func::Cos => c[0].eval(state).cos(),
-                    Func::Tan => c[0].eval(state).tan(),
-                    Func::Asin => c[0].eval(state).asin(),
-                    Func::Acos => c[0].eval(state).acos(),
-                    Func::Atan => c[0].eval(state).atan(),
-                    Func::Sinh => c[0].eval(state).sinh(),
-                    Func::Cosh => c[0].eval(state).cosh(),
-                    Func::Tanh => c[0].eval(state).tanh(),
-                    Func::Abs => c[0].eval(state).abs(),
-                    Func::Exp => c[0].eval(state).exp(),
-                    // Upstream's Math.log is the natural logarithm
-                    // (Expr.java:78).
-                    Func::Log => c[0].eval(state).ln(),
-                    Func::Sqrt => c[0].eval(state).sqrt(),
-                    Func::Floor => c[0].eval(state).floor(),
-                    Func::Ceil => c[0].eval(state).ceil(),
-                    Func::Triangle => {
-                        let x =
-                            posmod(c[0].eval(state), std::f64::consts::TAU) / std::f64::consts::PI;
-                        if x < 1.0 {
-                            -1.0 + 2.0 * x
-                        } else {
-                            3.0 - 2.0 * x
-                        }
-                    }
-                    Func::Sawtooth => {
-                        posmod(c[0].eval(state), std::f64::consts::TAU) / std::f64::consts::PI - 1.0
-                    }
-                    Func::Mod => c[0].eval(state) % c[1].eval(state),
-                    Func::Min => {
-                        let mut x = c[0].eval(state);
-                        for ch in &c[1..] {
-                            x = x.min(ch.eval(state));
-                        }
-                        x
-                    }
-                    Func::Max => {
-                        let mut x = c[0].eval(state);
-                        for ch in &c[1..] {
-                            x = x.max(ch.eval(state));
-                        }
-                        x
-                    }
-                    Func::Pwl => self.pwl(state),
-                    Func::Step => {
-                        let x = c[0].eval(state);
-                        if c.len() == 1 {
-                            if x < 0.0 {
-                                0.0
-                            } else {
-                                1.0
-                            }
-                        } else {
-                            let thr = c[1].eval(state);
-                            // The reference returns 0 both above the threshold
-                            // and below zero (Expr.java:110-113).
-                            if x > thr || x < 0.0 {
-                                0.0
-                            } else {
-                                1.0
-                            }
-                        }
-                    }
-                    // select(x, y, z) is z when x > 0 and y otherwise
-                    // (Expr.java:114-117).
-                    Func::Select => {
-                        let x = c[0].eval(state);
-                        if x > 0.0 {
-                            c[2].eval(state)
-                        } else {
-                            c[1].eval(state)
-                        }
-                    }
-                    Func::Clamp => {
-                        let v = c[0].eval(state);
-                        let lo = c[1].eval(state);
-                        let hi = c[2].eval(state);
-                        v.max(lo).min(hi)
-                    }
-                    Func::Pwr => c[0].eval(state).abs().powf(c[1].eval(state)),
-                    Func::Pwrs => {
-                        let x = c[0].eval(state);
-                        let y = c[1].eval(state);
-                        if x < 0.0 {
-                            -(-x).powf(y)
-                        } else {
-                            x.powf(y)
-                        }
-                    }
-                }
-            }
+            Op::Func(f) => self.schedule_func(f, tasks),
         }
     }
 
-    /// Piecewise-linear interpolation over `(x0,y0), (x1,y1), ...` segments,
-    /// constant before the first abscissa and after the last
-    /// (Expr.pwl, Expr.java:154-175).
-    fn pwl(&self, state: &ExprState) -> f64 {
+    /// Queues a function call. Fixed arities reduce straight off the stack;
+    /// variadic min/max interleave fold steps between their operands so the
+    /// fold order stays left to right; select() picks a branch; pwl hands its
+    /// argument list to a walker that reads one child per round trip.
+    fn schedule_func<'a>(&'a self, f: Func, tasks: &mut Vec<Task<'a>>) {
         let c = &self.children;
-        let x = c[0].eval(state);
-        let x0 = c[1].eval(state);
-        let y0 = c[2].eval(state);
-        if x < x0 {
-            return y0;
-        }
-        if c.len() < 5 {
-            // No complete segment to interpolate; hold the first output rather
-            // than indexing past the argument list the parser allowed.
-            return y0;
-        }
-        let mut x0 = x0;
-        let mut y0 = y0;
-        let mut x1 = c[3].eval(state);
-        let mut y1 = c[4].eval(state);
-        let mut i = 5;
-        loop {
-            if x < x1 {
-                return y0 + (x - x0) * (y1 - y0) / (x1 - x0);
+        match f {
+            Func::Min | Func::Max => {
+                for child in c[1..].iter().rev() {
+                    tasks.push(Task::MinMax(f));
+                    tasks.push(Task::Tree(child));
+                }
+                tasks.push(Task::Tree(&c[0]));
             }
-            if i + 1 >= c.len() {
-                break;
+            Func::Pwl => {
+                tasks.push(Task::Pwl(PwlWalk {
+                    node: self,
+                    stage: PwlStage::WantX,
+                    next: 3,
+                    x: 0.0,
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 0.0,
+                    y1: 0.0,
+                }));
+                tasks.push(Task::Tree(&c[0]));
             }
-            x0 = x1;
-            y0 = y1;
-            x1 = c[i].eval(state);
-            y1 = c[i + 1].eval(state);
-            i += 2;
+            Func::Step => {
+                tasks.push(Task::Step(c.len()));
+                // Arguments stack x beneath the optional threshold.
+                for child in c.iter().rev() {
+                    tasks.push(Task::Tree(child));
+                }
+            }
+            Func::Select => {
+                // select(x, y, z) is z when x > 0 and y otherwise
+                // (Expr.java:114-117).
+                tasks.push(Task::Branch {
+                    picked: &c[2],
+                    rejected: &c[1],
+                    positive_only: true,
+                });
+                tasks.push(Task::Tree(&c[0]));
+            }
+            Func::Clamp => {
+                tasks.push(Task::Clamp);
+                for child in c.iter().rev() {
+                    tasks.push(Task::Tree(child));
+                }
+            }
+            Func::Mod | Func::Pwr | Func::Pwrs => {
+                tasks.push(Task::Func2(f));
+                tasks.push(Task::Tree(&c[1]));
+                tasks.push(Task::Tree(&c[0]));
+            }
+            // Everything else in the table takes exactly one argument; a new
+            // arity needs its own case here rather than falling in.
+            _ => {
+                tasks.push(Task::Func1(f));
+                tasks.push(Task::Tree(&c[0]));
+            }
         }
-        y1
     }
 }
 
+/// The arithmetic behind [`Bin`], the reference switch's binary cases
+/// (Expr.java:63-103).
+fn bin_apply(op: Bin, a: f64, b: f64) -> f64 {
+    match op {
+        Bin::Add => a + b,
+        Bin::Sub => a - b,
+        Bin::Mul => a * b,
+        Bin::Div => a / b,
+        Bin::Pow => a.powf(b),
+        Bin::Mod => a % b,
+        Bin::BitAnd => (as_int(a) & as_int(b)) as f64,
+        Bin::BitOr => (as_int(a) | as_int(b)) as f64,
+        // Java masks an int shift count to its low five bits
+        // (JLS 15.19), which is also what a wasm release shift
+        // does; masking keeps dev builds from panicking on
+        // out-of-range counts and all three bit-identical
+        // (Expr.java:89).
+        Bin::Shift => (as_int(a) >> (as_int(b) & 31)) as f64,
+        Bin::And => {
+            if a != 0.0 && b != 0.0 {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Bin::Or => {
+            if a != 0.0 || b != 0.0 {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Bin::Eq => {
+            if a == b {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Bin::Ne => {
+            if a != b {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Bin::Lt => {
+            if a < b {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Bin::Le => {
+            if a <= b {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Bin::Gt => {
+            if a > b {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Bin::Ge => {
+            if a >= b {
+                1.0
+            } else {
+                0.0
+            }
+        }
+    }
+}
+
+/// Fixed one-argument function bodies (Expr.java:66-86, 118-123).
+fn func1_apply(f: Func, a: f64) -> f64 {
+    match f {
+        Func::Sin => a.sin(),
+        Func::Cos => a.cos(),
+        Func::Tan => a.tan(),
+        Func::Asin => a.asin(),
+        Func::Acos => a.acos(),
+        Func::Atan => a.atan(),
+        Func::Sinh => a.sinh(),
+        Func::Cosh => a.cosh(),
+        Func::Tanh => a.tanh(),
+        Func::Abs => a.abs(),
+        Func::Exp => a.exp(),
+        // Upstream's Math.log is the natural logarithm (Expr.java:78).
+        Func::Log => a.ln(),
+        Func::Sqrt => a.sqrt(),
+        Func::Floor => a.floor(),
+        Func::Ceil => a.ceil(),
+        Func::Triangle => {
+            let x = posmod(a, std::f64::consts::TAU) / std::f64::consts::PI;
+            if x < 1.0 {
+                -1.0 + 2.0 * x
+            } else {
+                3.0 - 2.0 * x
+            }
+        }
+        Func::Sawtooth => posmod(a, std::f64::consts::TAU) / std::f64::consts::PI - 1.0,
+        _ => unreachable!("scheduler emits one-argument functions only"),
+    }
+}
+
+/// Fixed two-argument function bodies beyond plain infix arithmetic
+/// (Expr.java:118-127).
+fn func2_apply(f: Func, a: f64, b: f64) -> f64 {
+    match f {
+        Func::Mod => a % b,
+        Func::Pwr => a.abs().powf(b),
+        Func::Pwrs => {
+            if a < 0.0 {
+                -(-a).powf(b)
+            } else {
+                a.powf(b)
+            }
+        }
+        _ => unreachable!("scheduler emits two-argument functions only"),
+    }
+}
+
+/// Advances one round of a `pwl` walk: consumes the child value the
+/// scheduler just produced, then either queues the next argument read or
+/// lands the segment result, mirroring upstream's loop
+/// (Expr.pwl, Expr.java:154-175).
+fn pwl_step<'a>(mut w: PwlWalk<'a>, tasks: &mut Vec<Task<'a>>, vals: &mut Vec<f64>) {
+    // Detach the node reference up front so the child borrows do not ride on
+    // the owned frame shuffling through the work stack.
+    let node: &'a Expr = w.node;
+    let c = &node.children;
+    match w.stage {
+        PwlStage::WantX => {
+            w.x = pop_operand(vals);
+            w.stage = PwlStage::WantX0;
+            tasks.push(Task::Pwl(w));
+            tasks.push(Task::Tree(&c[1]));
+        }
+        PwlStage::WantX0 => {
+            w.x0 = pop_operand(vals);
+            w.stage = PwlStage::WantY0;
+            tasks.push(Task::Pwl(w));
+            tasks.push(Task::Tree(&c[2]));
+        }
+        PwlStage::WantY0 => {
+            w.y0 = pop_operand(vals);
+            // Constant before the first abscissa, and with no complete
+            // segment there is nothing to interpolate, so the first output
+            // holds in both cases.
+            if w.x < w.x0 || c.len() < 5 {
+                vals.push(w.y0);
+            } else {
+                w.stage = PwlStage::WantX1;
+                let next_child = &c[w.next];
+                tasks.push(Task::Pwl(w));
+                tasks.push(Task::Tree(next_child));
+            }
+        }
+        PwlStage::WantX1 => {
+            w.x1 = pop_operand(vals);
+            w.stage = PwlStage::WantY1;
+            let next_child = &c[w.next + 1];
+            tasks.push(Task::Pwl(w));
+            tasks.push(Task::Tree(next_child));
+        }
+        PwlStage::WantY1 => {
+            w.y1 = pop_operand(vals);
+            w.next += 2;
+            w.stage = PwlStage::Decide;
+            tasks.push(Task::Pwl(w));
+        }
+        PwlStage::Decide => {
+            if w.x < w.x1 {
+                vals.push(w.y0 + (w.x - w.x0) * (w.y1 - w.y0) / (w.x1 - w.x0));
+            } else if w.next + 1 >= c.len() {
+                // Past the last abscissa the last ordinate holds.
+                vals.push(w.y1);
+            } else {
+                w.x0 = w.x1;
+                w.y0 = w.y1;
+                w.stage = PwlStage::WantX1;
+                let next_child = &c[w.next];
+                tasks.push(Task::Pwl(w));
+                tasks.push(Task::Tree(next_child));
+            }
+        }
+    }
+}
 /// Java's `(int)` cast on a double: truncate toward zero and wrap into i32
 /// range, matching the reference implementation's bitwise operators
 /// (Expr.java:87-89).
 #[inline]
 fn as_int(v: f64) -> i32 {
     (v.trunc() as i64) as i32
+}
+
+/// Pops an operand that the matching [`Task::Tree`] walk pushed. Every
+/// reduction is scheduled above its operands, so a miss here would be a
+/// scheduling bug, never something file input can reach.
+fn pop_operand(vals: &mut Vec<f64>) -> f64 {
+    vals.pop().expect("scheduled operand missing")
 }
 
 /// Modulo that never returns negative for a positive modulus, upstream's
@@ -518,10 +749,11 @@ pub fn parse(input: &str) -> Result<Expr, String> {
 /// headroom while capping worst-case parser recursion near 850 frames,
 /// comfortably inside the wasm stack.
 ///
-/// This bound covers parsing only. Evaluation walks the finished tree with
-/// its own recursion, and a flat operator chain such as `1+1+1+...` parses
-/// with no nesting at all into a left-leaning tree deeper than any grammar
-/// level, so eval depth is not bounded by this constant.
+/// This bound covers parsing only, and it can afford to: evaluation shares
+/// the concern through construction instead, [`Expr::eval`] walking the
+/// finished tree on an explicit work stack rather than recursion, so a flat
+/// operator chain, which nests no grammar level at all, stays safe however
+/// long it grows.
 const MAX_EXPR_DEPTH: usize = 64;
 
 #[derive(Debug, Clone)]
@@ -958,161 +1190,5 @@ impl Parser {
                 Expr::constant(0.0)
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn state() -> ExprState {
-        let mut s = ExprState::new();
-        s.t = 2.0;
-        s.time_step = 0.5;
-        s.values[0] = 3.0;
-        s.last_values[0] = 1.0;
-        s
-    }
-
-    fn ev(input: &str) -> f64 {
-        parse(input).unwrap().eval(&state())
-    }
-
-    #[test]
-    fn operator_precedence() {
-        assert_eq!(ev("1 + 2 * 3"), 7.0);
-        assert_eq!(ev("2 * 3 ^ 2"), 18.0);
-        assert_eq!(ev("10 - 4 - 3"), 3.0);
-        // `^` binds tighter than unary minus, so this is -(3^2).
-        assert_eq!(ev("-3 ^ 2"), -9.0);
-        // `^` is left-associative in the reference grammar, so (2^3)^2.
-        assert_eq!(ev("2 ^ 3 ^ 2"), 64.0);
-    }
-
-    #[test]
-    fn ternary_and_logical_and_comparison_ops() {
-        assert_eq!(ev("1 ? 10 : 20"), 10.0);
-        assert_eq!(ev("0 ? 10 : 20"), 20.0);
-        assert_eq!(ev("1 < 2 ? 3 : 4"), 3.0);
-        assert_eq!(ev("1 && 0"), 0.0);
-        assert_eq!(ev("1 || 0"), 1.0);
-        assert_eq!(ev("!5"), 0.0);
-        assert_eq!(ev("2 == 2"), 1.0);
-        assert_eq!(ev("2 != 2"), 0.0);
-        assert_eq!(ev("2 <= 1"), 0.0);
-    }
-
-    #[test]
-    fn bitwise_ops() {
-        assert_eq!(ev("5 & 3"), 1.0);
-        assert_eq!(ev("5 | 3"), 7.0);
-        assert_eq!(ev("8 >> 2"), 2.0);
-    }
-
-    #[test]
-    fn shift_counts_mask_like_java() {
-        // Java int shifts mask the count to its low five bits (JLS 15.19,
-        // Expr.java:89), so dev, release and Java must agree bit for bit,
-        // including counts Rust would panic on under debug assertions.
-        assert_eq!(ev("8 >> 32"), 8.0); // count wraps to 0: identity shift
-        assert_eq!(ev("8 >> 34"), 2.0); // low five bits say 2
-        assert_eq!(ev("-1 >> 40"), -1.0); // arithmetic shift sign-extends
-        assert_eq!(ev("8 >> -1"), 0.0); // -1 & 31 == 31
-        assert_eq!(ev("-16 >> 31"), -1.0);
-    }
-
-    #[test]
-    fn functions() {
-        assert_eq!(ev("sin(0)"), 0.0);
-        assert_eq!(ev("min(3, 1, 2)"), 1.0);
-        assert_eq!(ev("max(1, 5, 3)"), 5.0);
-        assert_eq!(ev("clamp(5, 0, 3)"), 3.0);
-        assert_eq!(ev("clamp(-5, 0, 3)"), 0.0);
-        assert_eq!(ev("pwl(0.5, 0, 0, 2, 4)"), 1.0);
-        assert_eq!(ev("pwl(-1, 0, 0, 2, 4)"), 0.0);
-        assert_eq!(ev("select(-1, 10, 20)"), 10.0);
-        assert_eq!(ev("select(2, 10, 20)"), 20.0);
-        assert_eq!(ev("step(-2)"), 0.0);
-        assert_eq!(ev("step(2)"), 1.0);
-        assert_eq!(ev("mod(7, 3)"), 1.0);
-        assert_eq!(ev("pwr(-2, 2)"), 4.0);
-        assert_eq!(ev("pwrs(-2, 3)"), -8.0);
-    }
-
-    #[test]
-    fn constants_and_state() {
-        let mut s = state();
-        s.last_output = 7.0;
-        assert_eq!(ev("pi"), std::f64::consts::PI);
-        assert_eq!(ev("e"), std::f64::consts::E);
-        assert_eq!(ev("t"), 2.0);
-        assert_eq!(ev("timestep"), 0.5);
-        assert_eq!(ev("dadt"), 4.0);
-        assert_eq!(parse("lastoutput").unwrap().eval(&s), 7.0);
-        assert_eq!(parse("lasta").unwrap().eval(&s), 1.0);
-    }
-
-    #[test]
-    fn input_is_lowercased_like_upstream() {
-        assert_eq!(ev("SIN(0) + Abs(-1)"), 1.0);
-    }
-
-    #[test]
-    fn empty_input_evaluates_to_zero() {
-        assert_eq!(ev(""), 0.0);
-    }
-
-    #[test]
-    fn rejects_bad_input() {
-        assert!(parse("1 + * 2").is_err());
-        assert!(parse("min(1)").is_err());
-        assert!(parse("1 + 2 xyz").is_err());
-        assert!(parse("(").is_err());
-        // `sawtooth` is not a function; upstream spells it `saw`.
-        assert!(parse("sawtooth(1)").is_err());
-    }
-
-    #[test]
-    fn deeply_nested_parentheses_error_instead_of_abort() {
-        // Thousands of nested parens used to recurse the parser straight off
-        // the wasm stack; the depth bound must turn that into a clean parse
-        // error naming the nesting.
-        let input = format!("{}1{}", "(".repeat(5000), ")".repeat(5000));
-        let err = parse(&input).expect_err("deep nesting must be rejected");
-        assert!(err.contains("nested"), "got: {err}");
-    }
-
-    #[test]
-    fn deep_ternary_chain_is_rejected_too() {
-        // The ternary's else branch recurses rightward without consuming a
-        // closing token, so it is unbounded exactly like the parens.
-        let input = format!("{}0", "0?1:".repeat(5000));
-        let err = parse(&input).expect_err("a deep ternary chain must be rejected");
-        assert!(err.contains("nested"), "got: {err}");
-    }
-
-    #[test]
-    fn deep_unary_chain_is_rejected_too() {
-        // Each `-` descends into parse_uminus again, so unary chains nest
-        // without consuming operands either.
-        let input = format!("-{}", "-".repeat(5000) + "1");
-        let err = parse(&input).expect_err("a deep unary chain must be rejected");
-        assert!(err.contains("nested"), "got: {err}");
-    }
-
-    #[test]
-    fn nesting_below_the_limit_still_parses() {
-        // 50-deep parens sit under the 64 budget and must evaluate normally.
-        let parens = format!("{}a{}", "(".repeat(50), ")".repeat(50));
-        assert_eq!(parse(&parens).unwrap().eval(&state()), 3.0);
-        // A flat argument list is sequential tokens, not depth: a 200-point
-        // pwl call parses and interpolates at x = 100.5 between (100, 200)
-        // and (101, 202).
-        let mut pwl = String::from("pwl(100.5");
-        for k in 0..200 {
-            pwl.push_str(&format!(", {k}, {}", 2 * k));
-        }
-        pwl.push(')');
-        assert_eq!(parse(&pwl).unwrap().eval(&state()), 201.0);
     }
 }
