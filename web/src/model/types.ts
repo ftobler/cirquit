@@ -388,6 +388,7 @@ export interface Context2D {
     counterclockwise?: boolean,
   ): void;
   rect(x: number, y: number, w: number, h: number): void;
+  clip(): void;
   stroke(): void;
   fill(): void;
   fillRect(x: number, y: number, w: number, h: number): void;

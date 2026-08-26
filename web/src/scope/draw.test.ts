@@ -20,6 +20,7 @@ import {
   drawScope,
   emptyCursor,
   isDrawable,
+  layoutHeader,
   PLOT_COLORS,
   plotColors,
   sameUnits,
@@ -249,6 +250,10 @@ const mkCtx = (w = 200, h = 150): { ctx: CanvasRenderingContext2D; texts: string
     arc: vi.fn(),
     setLineDash: vi.fn(),
     drawImage: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
     fillText: vi.fn((text: string) => {
       texts.push(text);
     }),
@@ -1431,6 +1436,147 @@ describe('sameUnits', () => {
     expect(sameUnits([plot(1, 'voltage'), plot(2, 'current')])).toBe(false);
     expect(sameUnits([plot(1, 'power'), plot(2, 'charge')])).toBe(false);
     expect(sameUnits([plot(1, 'ib'), plot(2, 'vce')])).toBe(false);
+  });
+});
+
+describe('layoutHeader', () => {
+  const measure6 = (s: string): number => s.length * 6;
+  const t: PlotTransform = {
+    gridMid: 0,
+    gridMult: 74 / 5,
+    gridMax: 5,
+    showNegative: true,
+    positionOffset: 0,
+    stepY: 2,
+  };
+
+  it('wraps /div labels at the viewport width, not the backing store', () => {
+    // The wrap bound is the injected w alone: layoutHeader never sees a
+    // canvas, which is exactly what kept hidpi docked panels from wrapping
+    // until dpr times too late (upstream wraps on scope.rect.width,
+    // ScopeOverlays.java:40). 160 px fits H= plus one bullet row, not two.
+    const pa = plot(1, 'voltage');
+    const pb = plot(2, 'current');
+    const scope = scopeOf([pa, pb], { manualScale: true, showScale: true });
+    const layout = layoutHeader(
+      scope,
+      t,
+      scope.plots[0] as DrawablePlot,
+      64,
+      5e-6,
+      160,
+      150,
+      3,
+      null,
+      measure6,
+    );
+    const labels = layout.lines.filter((l) => l.text.startsWith('=') && l.text.endsWith('/div'));
+    expect(labels).toHaveLength(2);
+    expect(labels[1].y).toBe(labels[0].y + 15);
+    // The wrapped row restarts at the left margin, like upstream's x = 0.
+    expect(labels[1].x!).toBeLessThan(labels[0].x!);
+    // One bullet rode along per label, centred on its own row.
+    expect(layout.bullets.map((b) => b.cy)).toEqual([labels[0].y + 5, labels[1].y + 5]);
+  });
+
+  it('reports endY past tall extended-info headers', () => {
+    // Label at 4, eleven info rows from 19 on: endY lands at 184, so the
+    // measurement rows start below the whole title block instead of over it.
+    const info = Array.from({ length: 11 }, (_, i) => `line ${i}`);
+    const scope = scopeOf([plot(1, 'voltage')], { label: 'Q1', showElmInfo: true });
+    const layout = layoutHeader(
+      scope,
+      t,
+      scope.plots[0] as DrawablePlot,
+      64,
+      5e-6,
+      200,
+      150,
+      3,
+      info,
+      measure6,
+    );
+    expect(layout.endY).toBe(184);
+  });
+
+  it('an empty header ends where it starts', () => {
+    const scope = scopeOf([plot(1, 'voltage')]);
+    const layout = layoutHeader(
+      scope,
+      t,
+      scope.plots[0] as DrawablePlot,
+      64,
+      5e-6,
+      200,
+      150,
+      3,
+      null,
+      measure6,
+    );
+    expect(layout.lines).toEqual([]);
+    expect(layout.bullets).toEqual([]);
+    expect(layout.endY).toBe(4);
+  });
+});
+
+describe('drawScope measurement stacking', () => {
+  const engine = captionEngine(false);
+  // A labelled scope with Show Extended Info: header rows 4, 19, 34, 49, so
+  // the measurement stack begins at 64 instead of the old fixed 35.
+  const labelledScope = () =>
+    scopeOf([plot(1, 'voltage')], {
+      label: 'Q1',
+      showElmInfo: true,
+      showMax: true,
+      showMin: true,
+    });
+  const info = (id: number) => (id === 1 ? ['r1', 'r2', 'r3'] : null);
+
+  it('stacks the first Max= row one pitch under the header end', () => {
+    const { ctx, entries } = mkCtxTextsY();
+    drawScope(ctx, engine, labelledScope(), 200, 150, emptyCursor(), 0, 5e-6, false, 3, undefined, info);
+    const maxes = entries.filter((e) => e.text.startsWith('Max='));
+    expect(maxes.length).toBeGreaterThan(0);
+    expect(maxes[0].y).toBe(4 + 15 * 4 + 15);
+    // Min keeps its bottom-edge pin whatever the header did.
+    const mins = entries.filter((e) => e.text.startsWith('Min='));
+    expect(mins.length).toBeGreaterThan(0);
+    expect(mins[0].y).toBe(150 - 18);
+  });
+
+  it('keeps rows in place while a hover skips the header paint', () => {
+    // Layout runs even when the cursor suppresses painting the header, so the
+    // readouts sit at the same height in both states.
+    const cursor: ScopeCursor = { ...emptyCursor(), hover: true, cursorTime: 0.032 };
+    const { ctx, entries } = mkCtxTextsY();
+    drawScope(ctx, engine, labelledScope(), 200, 150, cursor, 0.064, 5e-6, false, 3, undefined, info);
+    expect(entries.filter((e) => e.text === 'Q1')).toEqual([]);
+    const maxes = entries.filter((e) => e.text.startsWith('Max='));
+    expect(maxes[0]?.y).toBe(4 + 15 * 4 + 15);
+  });
+
+  it('drops a second block past the viewport width, not the canvas width', () => {
+    // The old bound compared against ctx.canvas.width, dpr times too wide on
+    // hidpi docks; the draw width alone decides now, even when the backing
+    // store claims far more room.
+    const two = twoTraceEngine([1, 1, 2, 2], [2, 2, 3, 3]);
+    const scope = scopeOf([plot(1, 'voltage'), plot(2, 'voltage')]);
+    const { ctx, entries } = mkCtxTextsY();
+    (ctx.canvas as unknown as { width: number }).width = 1000;
+    drawScope(ctx, two, scope, 80, 150, emptyCursor(), 0, 5e-6, false, 3);
+    expect(entries.filter((e) => e.text.startsWith('Max='))).toHaveLength(1);
+  });
+
+  it('clips the overlay pass to the viewport rect', () => {
+    // An embedded window shares the schematic transform, so the overlays need
+    // their own clip to stay inside the frame: save, rect(0,0,w,h), clip,
+    // restore around header and measurements.
+    const { ctx } = mkCtx();
+    drawScope(ctx, engine, scopeOf([plot(1, 'voltage')]), 200, 150, emptyCursor(), 0, 5e-6, false, 3);
+    expect(ctx.rect).toHaveBeenCalledWith(0, 0, 200, 150);
+    expect(ctx.clip).toHaveBeenCalledTimes(1);
+    expect(ctx.save).toHaveBeenCalledTimes(1);
+    expect(ctx.restore).toHaveBeenCalledTimes(1);
   });
 });
 
