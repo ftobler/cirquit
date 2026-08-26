@@ -190,10 +190,13 @@ export function escapeFlags(e: CircuitElement): number {
  * The value caption per meter mode, formatted from the engine's `value()` (the
  * reading selected by `meter`). The probe/voltmeter and the test point run the
  * same switch over the same constants at draw time (ProbeElm.java:183-218,
- * TestPointElm.java:180-213) and differ only in which modes their editors
+ * TestPointElm.java:179-213) and differ only in which modes their editors
  * offer, both the seven of meterChoices() (ProbeElm.java:444-446,
  * TestPointElm.java:448-450); a file can carry the rest, so every case stays
- * reachable. The binary and duty modes carry no unit.
+ * reachable. The binary and duty modes carry no unit. The caption ignores the
+ * Scale choice field (ProbeElm.java:428-441) and renders the reading auto-scaled,
+ * unlike the ammeter and output which honour it; corpus impact is nil and the
+ * round-trip is unchanged.
  */
 export function meterCaption(meter: number, value: number, digits: number): string {
   switch (meter) {
