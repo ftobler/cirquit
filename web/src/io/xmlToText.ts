@@ -97,7 +97,11 @@ function coords(node: XmlNode): string {
       throw new Error(`xml: ${node.tag} x attribute is not four integers: ${node.attrs.x}`);
     }
   }
-  return xs.join(' ');
+  // Re-emit the validated numbers canonically instead of their raw text:
+  // Number() trims whitespace, so a quoted coordinate padded with a literal
+  // newline passes the finite gate still carrying bytes whose continuation
+  // would reload as a forged element line. Padding normalizes away too.
+  return xs.map((v) => String(Number(v))).join(' ');
 }
 
 interface ConvertContext {
@@ -713,12 +717,12 @@ function droppedTraces(node: XmlNode): string[] {
   if (tag === 'R' || tag === 'v') {
     if (attr(node, 'ir', 0) !== 0) {
       traces.push(
-        `# ${tag} ir="${node.attrs.ir}" not modelled: converted as an ideal source without internal resistance`,
+        `# ${tag} ir="${singleLine(node.attrs.ir)}" not modelled: converted as an ideal source without internal resistance`,
       );
     }
     if (attr(node, 'riseTime', 0) !== 0) {
       traces.push(
-        `# ${tag} riseTime="${node.attrs.riseTime}" not modelled: pulse edges step instantly`,
+        `# ${tag} riseTime="${singleLine(node.attrs.riseTime)}" not modelled: pulse edges step instantly`,
       );
     }
   }
@@ -741,13 +745,13 @@ function droppedTraces(node: XmlNode): string[] {
     // the port models only for the multiplexer. The line keeps the
     // individual-output shape under a visible trace.
     traces.push(
-      `# dmux om="${node.attrs.om ?? 0}" dw="${node.attrs.dw ?? 4}" not modelled: converted as individual outputs`,
+      `# dmux om="${singleLine(node.attrs.om ?? '0')}" dw="${singleLine(node.attrs.dw ?? '4')}" not modelled: converted as individual outputs`,
     );
   }
   if (tag === 'ts' && attr(node, 'bw', 1) !== 1) {
     // TriStateElm.java:79-80 writes busWidth only when it exceeds one, and
     // this build models single-bit tri-states only.
-    traces.push(`# ts bw="${node.attrs.bw}" not modelled: converted as single-bit`);
+    traces.push(`# ts bw="${singleLine(node.attrs.bw)}" not modelled: converted as single-bit`);
   }
   if (tag === 'dpdt') {
     // Fresh DPDT parts are two-pole in both builds; any other count converts
@@ -756,7 +760,9 @@ function droppedTraces(node: XmlNode): string[] {
     const po = attr(node, 'po', 2);
     if (po !== 2) {
       const poles = normalizePoleCount(po);
-      traces.push(`# dpdt po="${node.attrs.po}" not default: converted as a ${poles}-pole switch`);
+      traces.push(
+        `# dpdt po="${singleLine(node.attrs.po)}" not default: converted as a ${poles}-pole switch`,
+      );
     }
     // The SwitchElm base's on resistance has no token on the 429 stream, so a
     // converted file would load at the default 0 even though the engine
@@ -795,15 +801,19 @@ function droppedTraces(node: XmlNode): string[] {
   if (tag === 'pt' && attr(node, 'li', 0) !== 0) {
     // PotElm.java:82-83 writes the link only when nonzero; shared sliders
     // parse but never link in this port.
-    traces.push(`# pt li="${node.attrs.li}" not modelled: converted without its slider link`);
+    traces.push(`# pt li="${singleLine(node.attrs.li)}" not modelled: converted without its slider link`);
   }
   if (BO_TAGS.has(tag) && attr(node, 'bo', 0) !== 0) {
     if (!BO_HONOURED.has(tag)) {
-      traces.push(`# ${tag} bo="${node.attrs.bo}" not modelled: converted as non-bus pin rows`);
+      traces.push(
+        `# ${tag} bo="${singleLine(node.attrs.bo)}" not modelled: converted as non-bus pin rows`,
+      );
     } else if (attr(node, 'bo', 0) !== 2) {
       // Only BIT_ORDER_BUS is carried; LSB first would flip row order within
       // every pin group, which the registry defs do not lay out.
-      traces.push(`# ${tag} bo="${node.attrs.bo}" not modelled: bit order stays MSB first`);
+      traces.push(
+        `# ${tag} bo="${singleLine(node.attrs.bo)}" not modelled: bit order stays MSB first`,
+      );
     }
   }
   return traces;
@@ -828,7 +838,10 @@ function elementLines(node: XmlNode, ctx: ConvertContext): string[] | null {
     const points = node.text
       .split(';')
       .map((p) => p.split(','))
-      .filter((p) => p.length === 2 && p.every((v) => Number.isFinite(Number(v))));
+      .filter((p) => p.length === 2 && p.every((v) => Number.isFinite(Number(v))))
+      // The same canonical re-emission coords() does: a point component padded
+      // with newlines passes the finite gate and would split the emitted `w`.
+      .map((p) => p.map((v) => String(Number(v))));
     if (points.length < 2) return null;
     const bw = attr(node, 'bw', 1);
     const lines: string[] = [];
@@ -862,13 +875,13 @@ function singleLine(s: string): string {
 }
 
 /** Serialises an XML element node as a `#` comment, preserving every attribute
- *  and the body text so a save round-trips it. Newlines in the body are escaped
- *  so the comment stays one line: the text format is line-oriented, and a
- *  multi-line comment's continuation lines would read as garbage element
- *  lines. */
+ *  and the body text so a save round-trips it. Newlines in the body and in
+ *  attribute values are escaped so the comment stays one line: the text format
+ *  is line-oriented, and a multi-line comment's continuation lines would read
+ *  as garbage element lines. */
 function commentLine(node: XmlNode): string {
   const attrs = Object.entries(node.attrs)
-    .map(([k, v]) => `${k}="${v}"`)
+    .map(([k, v]) => `${k}="${singleLine(v)}"`)
     .join(' ');
   const text = singleLine(node.text);
   const body = text !== '' || node.children.length > 0 ? `>${text}</${node.tag}>` : '/>';

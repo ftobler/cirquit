@@ -1250,6 +1250,59 @@ b" r="
     );
   });
 
+  it('keeps a preserved tag comment on one line despite newlines in its attributes', () => {
+    // The attribute parse accepts literal newlines inside quoted values
+    // (xml.ts), so a preserved tag's raw attribute values would push a
+    // continuation line past the # that reload then reads as an element
+    // line. Every interpolated value is flattened like the body text.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <Gyrator x="304 160
+416 160" f="0" mo="a
+b"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text.split('\n')).toContain(
+      '# Gyrator x="304 160\\n416 160" f="0" mo="a\\nb"/>',
+    );
+    // One header line and one comment line in total: no continuation of the
+    // comment survived to reload as anything else.
+    expect(text.split('\n')).toHaveLength(3);
+    expect(parseCircuit(text).elements).toHaveLength(0);
+  });
+
+  it('keeps an element line whole when its x attribute carries a newline', () => {
+    // Number() trims newlines, so a coordinate padded with one passes the
+    // four-integer finite gate still carrying raw bytes; re-emitting the
+    // validated numbers canonically keeps the emitted line from splitting
+    // into a forged element line on reload.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <r x="192 160 304 224
+" f="0" r="1000"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text.split('\n')).toContain('r 192 160 304 224 0 1000');
+    expect(text.split('\n')).toHaveLength(3);
+    expect(parseCircuit(text).elements.map((e) => e.kind)).toEqual(['resistor']);
+  });
+
+  it('keeps routed wire segments whole when a point carries a newline', () => {
+    // The point components share the x attribute's whitespace-trimming gate,
+    // so they get the same canonical re-emission.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <rw x="304 160 560 160" f="0">304,160;304,
+128;560,
+128</rw>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text.split('\n')).toContain('w 304 160 304 128 0');
+    expect(text.split('\n')).toContain('w 304 128 560 128 0');
+    expect(text.split('\n')).toHaveLength(4);
+    expect(parseCircuit(text).elements.map((e) => e.kind)).toEqual(['wire', 'wire']);
+  });
+
   it('converts a potentiometer to its 174 line', () => {
     // PotElm writes ma/po/sl (PotElm.java:79-81) onto the port's
     // maxResistance position caption stream.
