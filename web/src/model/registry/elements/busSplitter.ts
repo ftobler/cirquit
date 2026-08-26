@@ -58,6 +58,8 @@ export const BUS_SPLITTER_DEF: ElementDef = {
   dumpCode: '433',
   postCount: 8,  // 2*bits(4) at the default
   posts: (e) => chipPosts(e, 2, busSplitterSizeY(e), busSplitterPins(e)),
+  chipExtents: (e) => ({ sx: 2, sy: busSplitterSizeY(e) }),
+  canMirror: true,  // ChipElm.flipX, BusSplitterElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, busSplitterSizeY(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32

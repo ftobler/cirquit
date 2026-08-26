@@ -46,6 +46,9 @@ export const DECORATION_DEF: ElementDef = {
   postCount: 0,
   posts: () => [],
   defaults: { size: 24 },  // TextElm.java:44
+  // Upstream's placement constructor seeds "hello" (TextElm.java:41), so a
+  // dropped part says something instead of saving an empty \0 token.
+  defaultText: 'hello',
   fields: [
     { name: 'text', label: 'Text', type: 'text', target: 'text' },
     { name: 'size', label: 'Size', unit: 'px' },

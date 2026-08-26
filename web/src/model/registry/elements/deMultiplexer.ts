@@ -81,6 +81,8 @@ export const DEMULTIPLEXER_DEF: ElementDef = {
   dumpCode: '185',
   postCount: 7, // 2 select bits and 4 outputs at the default
   posts: (e) => chipPosts(e, 1 + demuxSelectBits(e), 1 + demuxOutputCount(e), demuxPins(e)),
+  chipExtents: (e) => ({ sx: 1 + demuxSelectBits(e), sy: 1 + demuxOutputCount(e) }),
+  canMirror: true,  // ChipElm.flipX, DemuxElm inherits it
   bodyRect: (e) => chipBodyRect(e, 1 + demuxSelectBits(e), 1 + demuxOutputCount(e)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 8, // the default chip spans (sizeX + 1) * 32 with sizeX 3

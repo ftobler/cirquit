@@ -74,6 +74,8 @@ export const RING_COUNTER_DEF: ElementDef = {
   dumpCode: '163',
   postCount: 13,  // bits(10) + clock + reset + clock-inhibit at the default
   posts: (e) => chipPosts(e, ringSizeX(e), 2, ringPins(e)),
+  chipExtents: (e) => ({ sx: ringSizeX(e), sy: 2 }),
+  canMirror: true,  // ChipElm.flipX, RingCounterElm inherits it
   bodyRect: (e) => chipBodyRect(e, ringSizeX(e), 2),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32

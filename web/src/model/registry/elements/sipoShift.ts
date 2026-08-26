@@ -62,6 +62,8 @@ export const SIPO_SHIFT_DEF: ElementDef = {
   dumpCode: '189',
   postCount: 10,  // bits(8) + D + clock at the default
   posts: (e) => chipPosts(e, sipoSizeX(e), 3, sipoPins(e)),
+  chipExtents: (e) => ({ sx: sipoSizeX(e), sy: 3 }),
+  canMirror: true,  // ChipElm.flipX, SipoShiftElm inherits it
   bodyRect: (e) => chipBodyRect(e, sipoSizeX(e), 3),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 10,  // the chip spans (sizeX + 1) * 32

@@ -290,6 +290,11 @@ export const SEVEN_SEG_DEF: ElementDef = {
     const { sizeX, sizeY } = sevenSegSize(e);
     return chipPosts(e, sizeX, sizeY, sevenSegPins(e));
   },
+  chipExtents: (e) => {
+    const { sizeX, sizeY } = sevenSegSize(e);
+    return { sx: sizeX, sy: sizeY };
+  },
+  canMirror: true,  // ChipElm.flipX, SevenSegElm inherits it
   bodyRect: (e) => {
     const { sizeX, sizeY } = sevenSegSize(e);
     return chipBodyRect(e, sizeX, sizeY);

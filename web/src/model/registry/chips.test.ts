@@ -1,9 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { CHIP_PINS, chipPinsOf } from './chips';
-import { postCountOf, postsOf } from '../registry';
+import { chipExtentsOf, postCountOf, postsOf } from '../registry';
+import { canMirror } from '../transform';
+import { chipPosts } from './elements/dFlipFlop';
+import { csPins } from './elements/vcvs';
+import { ccsPairPins } from './elements/ccvs';
+import { customCompositePins } from './elements/customComposite';
 import { makeToolElement } from '../../state/helpers';
 import { createTestHarness, selectHarnessChip } from '../testHarness';
-import { GRID_SIZE, type CircuitElement } from '../types';
+import {
+  clearSessionModels,
+  getModel,
+  modelToEngineSpec,
+  parseCompositeModelLine,
+  registerSessionModel,
+} from '../../io/subcircuits';
+import { GRID_SIZE, type CircuitElement, type Point } from '../types';
 
 // A freshly placed part of the kind, with the id the placement flow assigns.
 const toolElement = (kind: string): CircuitElement => ({
@@ -54,6 +66,76 @@ const CHIP_KINDS = [
 describe('CHIP_PINS kind set', () => {
   it('carries exactly the upstream ChipElm kinds', () => {
     expect([...CHIP_PINS.keys()].sort()).toEqual(CHIP_KINDS);
+  });
+});
+
+describe('chip extents', () => {
+  beforeEach(() => clearSessionModels());
+
+  // The mirror shift's span source must cover every kind whose upstream class
+  // overrides flipX with the body-width shift: the ChipElm family, plus the
+  // optocoupler (fixed 2x2), the custom composite (model extents) and the four
+  // controlled sources (VCCSElm extends ChipElm).
+  const EXTENTS_KINDS = [...CHIP_PINS.keys(), 'optocoupler', 'customComposite', 'vcvs', 'vccs', 'ccvs', 'cccs'];
+
+  /** Recomputes the posts from `chipExtentsOf` the way each family's def
+   *  routes its own geometry through chipPosts, so any drift between the
+   *  extents and the positional sizes shows up as a coordinate diff. */
+  const postsFromExtents = (e: CircuitElement): Point[] | undefined => {
+    const ext = chipExtentsOf(e)!;
+    const pins = CHIP_PINS.get(e.kind);
+    if (pins !== undefined) return chipPosts(e, ext.sx, ext.sy, pins(e));
+    if (e.kind === 'vcvs' || e.kind === 'vccs') return chipPosts(e, ext.sx, ext.sy, csPins(e, ['V+', 'V-'], true));
+    if (e.kind === 'ccvs') return chipPosts(e, ext.sx, ext.sy, ccsPairPins(e, ['V+', 'V-'], true));
+    if (e.kind === 'cccs') return chipPosts(e, ext.sx, ext.sy, ccsPairPins(e, ['O+', 'O-'], false));
+    if (e.kind === 'customComposite') return chipPosts(e, ext.sx, ext.sy, customCompositePins(e));
+    return undefined;  // optocoupler: geometry is its own, checked below
+  };
+
+  for (const kind of EXTENTS_KINDS) {
+    it(`reproduces ${kind}'s own post coordinates from the extents`, () => {
+      const e = toolElement(kind);
+      const ext = chipExtentsOf(e);
+      expect(ext, `${kind} declares extents`).toBeDefined();
+      const expected = postsFromExtents(e);
+      if (expected !== undefined) expect(expected).toEqual(postsOf(e));
+    });
+
+    it(`offers Mirror for a horizontal ${kind}`, () => {
+      expect(canMirror(toolElement(kind))).toBe(true);
+    });
+  }
+
+  it("reports the optocoupler's fixed 2x2 body at full spacing", () => {
+    expect(chipExtentsOf(toolElement('optocoupler'))).toEqual({ sx: 2, sy: 2, cspc2: 32 });
+  });
+
+  it("reads a resolved composite's extents off its model and the stub off the fallback", () => {
+    registerSessionModel(
+      parseCompositeModelLine(
+        '. mir 0 2 1 2 in 1 0 2 out 3 0 3 ' +
+          'ResistorElm\\s1\\s2\\rResistorElm\\s2\\s3 ' +
+          '0\\\\s1000\\s0\\\\s1000',
+      )!,
+    );
+    const resolved = {
+      ...toolElement('customComposite'),
+      text: 'mir',
+      model: modelToEngineSpec(getModel('mir')!),
+    };
+    expect(chipExtentsOf(resolved)).toEqual({ sx: 2, sy: 1, cspc2: 32 });
+    // Unresolvable name: the fallback stub upstream always resolves.
+    expect(chipExtentsOf(toolElement('customComposite'))).toEqual({ sx: 1, sy: 1, cspc2: 32 });
+  });
+
+  it('still refuses the genuinely unmirrorable bodies', () => {
+    // Upstream forbids flip outright for these four (OTAElm.java:191-192,
+    // WattmeterElm.java:282-283, ThreePhaseMotorElm, MotorProtectionSwitchElm)
+    // and a two-post part has Swap instead.
+    for (const kind of ['ota', 'wattmeter', 'threePhaseMotor', 'motorProtectionSwitch']) {
+      expect(canMirror(toolElement(kind)), kind).toBe(false);
+    }
+    expect(canMirror(toolElement('resistor'))).toBe(false);
   });
 });
 

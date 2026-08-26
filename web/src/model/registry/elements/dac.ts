@@ -63,6 +63,8 @@ export const DAC_DEF: ElementDef = {
   dumpCode: '166',
   postCount: 6,
   posts: (e) => chipPosts(e, 2, Math.max(dacBits(e), 2), dacPins(e)),
+  chipExtents: (e) => ({ sx: 2, sy: Math.max(dacBits(e), 2) }),
+  canMirror: true,  // ChipElm.flipX, DACElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, Math.max(dacBits(e), 2)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32

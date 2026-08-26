@@ -137,6 +137,8 @@ export const DECIMAL_DISPLAY_DEF: ElementDef = {
   dumpCode: '419',
   postCount: 4,
   posts: (e) => chipPosts(e, 3, decimalBits(e), decimalPins(e)),
+  chipExtents: (e) => ({ sx: 3, sy: decimalBits(e) }),
+  canMirror: true,  // ChipElm.flipX, DecimalDisplayElm inherits it
   bodyRect: (e) => chipBodyRect(e, 3, decimalBits(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 8,  // the chip spans (sizeX + 1) * 32

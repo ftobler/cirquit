@@ -37,6 +37,8 @@ export const HALF_ADDER_DEF: ElementDef = {
   dumpCode: '195',
   postCount: 4,
   posts: (e) => chipPosts(e, 2, 2, halfAdderPins()),
+  chipExtents: () => ({ sx: 2, sy: 2 }),
+  canMirror: true,  // ChipElm.flipX, HalfAdderElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, 2),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32

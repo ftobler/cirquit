@@ -76,6 +76,8 @@ export const CCVS_DEF: ElementDef = {
   dumpCode: '214',
   postCount: 4, // one input pair + V+/V- at the default input count
   posts: (e) => chipPosts(e, 2, ccsSizeY(e), ccsPairPins(e, ['V+', 'V-'], true)),
+  chipExtents: (e) => ({ sx: 2, sy: ccsSizeY(e) }),
+  canMirror: true,  // ChipElm.flipX via VCCSElm
   bodyRect: (e) => chipBodyRect(e, 2, ccsSizeY(e)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32

@@ -92,6 +92,8 @@ export const FULL_ADDER_DEF: ElementDef = {
   dumpCode: '196',
   postCount: 14,  // the default 4-bit layout: 3*4 + the carry pair
   posts: (e) => chipPosts(e, 2, fullAdderSizeY(e), fullAdderPins(e)),
+  chipExtents: (e) => ({ sx: 2, sy: fullAdderSizeY(e) }),
+  canMirror: true,  // ChipElm.flipX, FullAdderElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, fullAdderSizeY(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32

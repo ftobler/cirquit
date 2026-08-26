@@ -116,6 +116,11 @@ export const LED_ARRAY_DEF: ElementDef = {
     const { sizeX, sizeY } = ledArraySize(e);
     return chipPosts(e, sizeX, sizeY, ledArrayPins(e));
   },
+  chipExtents: (e) => {
+    const { sizeX, sizeY } = ledArraySize(e);
+    return { sx: sizeX, sy: sizeY };
+  },
+  canMirror: true,  // ChipElm.flipX, LedArrayElm inherits it
   bodyRect: (e) => {
     const { sizeX, sizeY } = ledArraySize(e);
     return chipBodyRect(e, sizeX, sizeY);

@@ -91,8 +91,9 @@ export function customCompositePins(e: CircuitElement): ChipPinDef[] {
  *  geometry reads. The composite's own FLAG_SMALL is bit 1 (see above), while
  *  `chipCspc`, the flip handling and the body all read ChipElm's bit 0
  *  (dFlipFlop.ts:27, :59-61), so the two are bridged here and the original
- *  flag word is left untouched for the file. */
-function chipElement(e: CircuitElement): CircuitElement {
+ *  flag word is left untouched for the file. Exported because the mirror's
+ *  span source must read the bridged word too when it picks the spacing. */
+export function chipElement(e: CircuitElement): CircuitElement {
   const small = (e.flags & COMPOSITE_SMALL) !== 0;
   return { ...e, flags: small ? e.flags | CHIP_SMALL : e.flags & ~CHIP_SMALL };
 }
@@ -110,6 +111,11 @@ export const CUSTOM_COMPOSITE_DEF: ElementDef = {
   postCount: FALLBACK_PINS.length, // the fallback stub count
   postCountOf: (e) => customCompositePins(e).length, // the resolved model's pin count
   posts: (e) => chipPosts(chipElement(e), ...compositeSize(e), customCompositePins(e)),
+  chipExtents: (e) => {
+    const [sx, sy] = compositeSize(e);
+    return { sx, sy };
+  },
+  canMirror: true,  // CustomCompositeElm.flipX with the model extents
   bodyRect: (e) => chipBodyRect(chipElement(e), ...compositeSize(e)),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32

@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { defFor } from '../model/registry';
+import { makeToolElement } from '../state/helpers';
 import { clearUserModels, putUserModel } from '../model/deviceModels';
 import { SRAM_HEX_DISPLAY } from '../model/registry/elements/sram';
 import { VOLTAGE_TIME_SPEC } from '../model/registry/flags';
@@ -341,6 +342,23 @@ describe('controlled-source defaults', () => {
     expect(defFor('vcvs')?.defaultText).toBe('.1*(a-b)');
     expect(defFor('ccvs')?.defaultText).toBe('2*a');
     expect(defFor('cccs')?.defaultText).toBe('2*a');
+  });
+});
+
+describe('caption seeds', () => {
+  // Upstream's placement constructors seed "hello" at size 24 and the label
+  // text "label" (TextElm.java:41,44, LabeledNodeElm.java:36), so a fresh
+  // annotation says something on drop and two fresh labeled nodes named alike
+  // join one net.
+  it('a placed text part seeds hello at size 24', () => {
+    const e = makeToolElement('decoration', 100, 100, 100, 100);
+    expect(e.text).toBe('hello');
+    expect(e.params.size).toBe(24);
+  });
+
+  it('a placed labeled node seeds label', () => {
+    const e = makeToolElement('labeledNode', 100, 100, 100, 100);
+    expect(e.text).toBe('label');
   });
 });
 

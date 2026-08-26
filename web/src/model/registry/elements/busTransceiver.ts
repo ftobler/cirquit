@@ -72,6 +72,8 @@ export const BUS_TRANSCEIVER_DEF: ElementDef = {
   postCount: 10,  // 2 + 2*dataBits(4) at the default
   postCountOf: (e) => 2 + 2 * dataBits(e),
   posts: (e) => chipPosts(e, 2, sizeY(e), busTransceiverPins(e)),
+  chipExtents: (e) => ({ sx: 2, sy: sizeY(e) }),
+  canMirror: true,  // ChipElm.flipX, BusTransceiverElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, sizeY(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32

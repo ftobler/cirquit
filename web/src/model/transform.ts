@@ -11,7 +11,8 @@
  * rotated or mirrored part's terminal coordinates match the original exactly.
  */
 
-import { FLAG_SWAP, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP, postCountOf } from './registry';
+import { FLAG_SWAP, chipExtentsOf, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP, postCountOf } from './registry';
+import { CHIP_FLIP_X, CHIP_FLIP_XY } from './registry/elements/dFlipFlop';
 import { COMPARATOR_SWAP, SWITCH2_CENTER_OFF } from './registry/flags';
 import { GRID_SIZE, type CircuitElement, type Point } from './types';
 
@@ -26,11 +27,17 @@ export function canRotate(e: CircuitElement): boolean {
   return (def?.draggablePosts ?? postCountOf(e)) >= 2;
 }
 
-/** Whether Mirror is offered. Only the asymmetric three-post bodies declare it;
- *  a two-post part mirrored about its own centre is just a terminal swap,
- *  which has its own command. */
+/** Whether Mirror is offered. Only the asymmetric three-post bodies and the
+ *  chip families declare it; a two-post part mirrored about its own centre is
+ *  just a terminal swap, which has its own command. A chip stored on a
+ *  strictly vertical segment is the port's own rotated representation:
+ *  upstream carries portrait chips as flags on a horizontal segment and has
+ *  no vertical-segment form, so there is no upstream answer to reproduce and
+ *  the command declines through the usual gates. */
 export function canMirror(e: CircuitElement): boolean {
-  return defFor(e.kind)?.canMirror ?? false;
+  if (defFor(e.kind)?.canMirror !== true) return false;
+  if (chipExtentsOf(e) !== undefined && e.x1 === e.x2 && e.y1 !== e.y2) return false;
+  return true;
 }
 
 /** Whether the element can swap posts 0 and 1. Meaningful only on two-terminal
@@ -311,6 +318,35 @@ function rotateFlags(e: CircuitElement): number {
   if (e.x1 === e.x2) flags ^= FLAG_SWAP;
   return flags;
 }
+/** One chip-family mirror, upstream's `flipX` (ChipElm.java:620-628,
+ *  OptocouplerElm.java:165-172, CustomCompositeElm.java:123-131): toggle
+ *  FLAG_FLIP_X and reflect the stored endpoints, shifting the anchor left by
+ *  one body width when a whole selection shares one centre. The shift is what
+ *  makes the two pin banks land on the reflected columns: with anchor A they
+ *  sit at A and A+(fsx+1)*cspc2 and the bit swaps those columns exactly.
+ *
+ *  Without a shared centre (a single-element command, upstream's count == 1)
+ *  no shift happens, and upstream toggles only FLAG_FLIP_X there
+ *  (ChipElm.java:620-628): the stored fields do not move. Reflecting about the
+ *  own midpoint then swapping is exactly identity on those fields, so this
+ *  branch is byte-exact with upstream too; the reflect-plus-swap shape exists
+ *  so the port's stored state always comes out of the one ordered-fields path
+ *  rather than assuming the caller handed back the same numbers.
+ *
+ *  Nothing else moves: a chip flip reorders no pins and reverses no switch
+ *  state, so unlike SPDT/DPDT nothing needs compensating. */
+function mirrorChip(e: CircuitElement, cx: number, sharedCentre: boolean): CircuitElement {
+  const ext = chipExtentsOf(e)!;
+  const fsx = (e.flags & CHIP_FLIP_XY) !== 0 ? ext.sy : ext.sx;
+  let x1 = 2 * cx - e.x1;
+  if (sharedCentre) x1 -= (fsx + 1) * ext.cspc2;
+  let x2 = 2 * cx - e.x2;
+  // The port's chip frame anchors at the leftmost endpoint, so keep the
+  // fields ordered; posts stay a pure function of the stored segment.
+  if (x1 > x2) [x1, x2] = [x2, x1];
+  return { ...withoutRoute(e), x1, y1: e.y1, x2, y2: e.y2, flags: e.flags ^ CHIP_FLIP_X };
+}
+
 /**
  * Reflect across the vertical axis through the element's midpoint, or through
  * `centre` when a selection hands in the shared bounding box centre. A mirror
@@ -325,6 +361,9 @@ function rotateFlags(e: CircuitElement): number {
  */
 export function mirrorElement(e: CircuitElement, centre?: number): CircuitElement {
   if (!canMirror(e)) return e;
+  if (chipExtentsOf(e) !== undefined) {
+    return mirrorChip(e, centre ?? (e.x1 + e.x2) / 2, centre !== undefined);
+  }
   const cx = centre ?? (e.x1 + e.x2) / 2;
   const vertical = e.x1 === e.x2;
   // The tri-state's control offset is absolute (a fixed sign, TriStateElm.java:

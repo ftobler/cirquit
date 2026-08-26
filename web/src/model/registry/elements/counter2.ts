@@ -102,6 +102,8 @@ export const COUNTER2_DEF: ElementDef = {
   dumpCode: '421',
   postCount: 14,  // 2*bits(4) + the six control pins at the default
   posts: (e) => chipPosts(e, 2, counter2SizeY(e), counter2Pins(e)),
+  chipExtents: (e) => ({ sx: 2, sy: counter2SizeY(e) }),
+  canMirror: true,  // ChipElm.flipX, CounterElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, counter2SizeY(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32

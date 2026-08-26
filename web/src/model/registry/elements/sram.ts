@@ -203,6 +203,8 @@ export const SRAM_DEF: ElementDef = {
   dumpCode: '413',
   postCount: 10,  // WE + OE + 2*4 bits at the default
   posts: (e) => chipPosts(e, 2, memorySizeY(e), memoryPins(e, true)),
+  chipExtents: (e) => ({ sx: 2, sy: memorySizeY(e) }),
+  canMirror: true,  // ChipElm.flipX via SRAMElm
   bodyRect: (e) => chipBodyRect(e, 2, memorySizeY(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32

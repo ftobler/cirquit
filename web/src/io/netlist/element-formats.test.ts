@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseCircuit, serializeCircuit } from './index';
 import { makeElement, makeToolElement } from '../../state/store';
 import { postsOf } from '../../model/registry';
+import { SimEngine } from '../../engine/simulator';
 import { WIRE_SHOW_CURRENT, WIRE_SHOW_VOLTAGE, OUTPUT_FIXED, OUTPUT_SHOW_VOLTAGE, OPAMP_SWAP, VOLTAGE_SHOW_VOLTAGE } from '../../model/registry/flags';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
 import type { CustomLogicModel } from './types';
@@ -1256,6 +1257,51 @@ describe('FLAG_ESCAPE on text and labeled nodes', () => {
   it('sets FLAG_ESCAPE on a labeled node written by this build', () => {
     const e = { ...makeElement('labeledNode', 0, 0, 0, 0), id: 1, text: 'bus A' };
     expect(lineFor(e, '207 ')).toBe('207 0 0 0 0 4 bus\\sA');
+  });
+
+  it('a fresh text saves as an escaped hello line', () => {
+    // The placement seed rides def.defaultText (TextElm.java:41,44), so a
+    // dropped-and-saved part writes a real caption, not an empty token.
+    const e = { ...makeElement('decoration', 0, 0, 0, 0), id: 1 };
+    expect(e.text).toBe('hello');
+    expect(lineFor(e, 'x ')).toBe('x 0 0 0 0 4 24 hello');
+  });
+
+  it('a fresh labeled node saves as a 207 label line', () => {
+    const e = { ...makeElement('labeledNode', 0, 0, 0, 0), id: 1 };
+    expect(lineFor(e, '207 ')).toBe('207 0 0 0 0 4 label');
+  });
+
+  it('two freshly placed labeled nodes share one net through their default name', async () => {
+    // The behavioural half of the seed: upstream joins same-named labels, so
+    // two parts both seeded "label" must land on one node without any edit.
+    const engine = await SimEngine.create();
+    const nextId = (() => {
+      let n = 1;
+      return () => n++;
+    })();
+    const mk = (kind: string, x1: number, y1: number, x2: number, y2: number) => ({
+      ...makeElement(kind, x1, y1, x2, y2),
+      id: nextId(),
+    });
+    // 5 V DC onto the near label, the far label feeding a load: the only
+    // connection between the halves is the shared default text. The source
+    // points up so its plus terminal lands on the wire row.
+    const source = mk('voltage', 0, 64, 0, 0);
+    const sourceGround = mk('ground', 0, 64, 0, 80);
+    const wire = mk('wire', 0, 0, 128, 0);
+    const near = mk('labeledNode', 128, 0, 128, 0);
+    const far = mk('labeledNode', 256, 0, 256, 0);
+    const load = mk('resistor', 256, 0, 320, 0);
+    const loadGround = mk('ground', 320, 0, 320, 16);
+    const elements = [source, sourceGround, wire, near, far, load, loadGround];
+    for (const e of elements) if (e.kind === 'labeledNode') expect(e.text).toBe('label');
+    expect(engine.setCircuit(elements, { ...DEFAULT_SETTINGS }, [])).toBeNull();
+    engine.run(3);
+    const offset = engine.postOffset(load.id)!;
+    const nodes = engine.elementNodes();
+    const v = engine.nodeVoltages()[nodes[offset]] ?? 0;
+    expect(v).toBeCloseTo(5, 6);
   });
 });
 
