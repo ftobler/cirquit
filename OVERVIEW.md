@@ -34,7 +34,7 @@ land.
 
 ### Why the split is where it is
 
-The entire simulation — element models, matrix assembly, Newton iteration —
+The entire simulation (element models, matrix assembly, Newton iteration)
 lives in Rust. Only rendering, editing and file handling are in TypeScript.
 
 That matters for performance. A frame advances 160 timesteps by default, and
@@ -76,7 +76,7 @@ owns row `k-1`; voltage-source unknown `j` owns row `nodeCount-1+j`.
 elements = currents injected by sources*. `voltage_source(n1, n2, k, v)`
 constrains `V(n2) − V(n1) = v`, and its current unknown is positive flowing
 `n1 → n2` inside the source. For two-terminal elements, positive current enters
-post 0 and leaves post 1 — the same convention throughout.
+post 0 and leaves post 1, the same convention throughout.
 
 **Ground.** Ground symbols are resolved during analysis by remapping their
 component onto node 0, rather than by stamping a 0 V source per symbol. This
@@ -119,15 +119,15 @@ positions.
 
 The repeatable unit of work. Roughly:
 
-1. **Model** — add a struct in `engine/core/src/elements/` implementing
+1. **Model**: add a struct in `engine/core/src/elements/` implementing
    `Element`. Two-terminal linear parts are ~40 lines; nonlinear parts need
    `nonlinear() -> true`, junction limiting and a convergence check.
-2. **Register** — add the `kind` to `KINDS` and `build_element` in
+2. **Register**: add the `kind` to `KINDS` and `build_element` in
    `engine/core/src/elements/mod.rs`.
-3. **Test** — add a case to one of the topic files in
+3. **Test**: add a case to one of the topic files in
    `engine/core/tests/` asserting against a known analytic result. This is the
    part that catches sign errors; do not skip it.
-4. **Draw** — add an `ElementDef` to `web/src/model/registry.ts`: `dumpCode`
+4. **Draw**: add an `ElementDef` to `web/src/model/registry.ts`: `dumpCode`
    (from the table in section 6), `posts()`, `draw()`, `fields`, and
    `parse`/`dump` matching the file format's field order.
 
@@ -672,7 +672,7 @@ fetch it).
 
 ## 5. Roadmap
 
-### Milestone A — solver depth
+### Milestone A: solver depth
 
 - [x] Adaptive timestep with step rejection
 - [x] Matrix simplification / constant-row elimination
@@ -680,7 +680,7 @@ fetch it).
 - [x] Convergence diagnostics surfaced in the UI (which element failed)
 - [x] Benchmark harness with representative circuits, wired into CI
 
-### Milestone B — editing parity
+### Milestone B: editing parity
 
 - [x] Rotate/flip, and the element-specific flags that control orientation
 - [x] Copy/paste and duplicate
@@ -690,7 +690,7 @@ fetch it).
 - [x] Subcircuits (`CustomComposite`): `.` model lines, Create Subcircuit, the
   subcircuit manager, and the 410 element
 
-### Milestone C — element coverage
+### Milestone C: element coverage
 
 Grouped by upstream type. Each needs a Rust model, a TypeScript definition and
 a test. Done so far: **129 kinds implemented** (the `KINDS` list in
@@ -698,7 +698,7 @@ a test. Done so far: **129 kinds implemented** (the `KINDS` list in
 the permanently-deferred XML-only classes (Gyrator, NortonAmp,
 CustomCompositeChip).
 
-**Passive / basics** — done: wire, ground, resistor, capacitor, polarised
+**Passive / basics** (done): wire, ground, resistor, capacitor, polarised
 capacitor, inductor, transformer, tapped transformer, custom transformer, fuse,
 lamp, thermistor, potentiometer, switch, SPDT switch, make-before-break switch,
 DPDT switch, LDR, varactor, memristor, transmission line, spark gap, antenna,
@@ -706,23 +706,23 @@ relay (coil/contact), crossover switch, motor-protection switch, crystal.
 
 - [x] Crystal
 
-**Sources** — done: voltage source (all waveforms), rail, current source.
+**Sources** (done): voltage source (all waveforms), rail, current source.
 
 - [x] Variable rail, sweep, AM, FM, VCO, noise, audio input, external voltage
 - [x] Controlled sources: VCVS, VCCS, CCVS, CCCS, CC2
 
-**Semiconductors** — done: diode, Zener, BJT, MOSFET, JFET, Darlington, tunnel
+**Semiconductors** (done): diode, Zener, BJT, MOSFET, JFET, Darlington, tunnel
 diode, LED, LED array, SCR, triac, diac, unijunction, triode, optocoupler.
 
 - [x] Optocoupler
 
-**Analog** — done: op-amp (saturating VCVS), OTA, analog switch, analog mux,
+**Analog** (done): op-amp (saturating VCVS), OTA, analog switch, analog mux,
 timer (555), phase comparator, ADC, DAC, realistic op-amp with gain-bandwidth,
 comparator.
 
 - [x] Realistic op-amp with gain-bandwidth, comparator
 
-**Logic** — done: inverter, AND, NAND, OR, NOR, XOR, XNOR, tri-state buffer,
+**Logic** (done): inverter, AND, NAND, OR, NOR, XOR, XNOR, tri-state buffer,
 Schmitt trigger (inverting and non-inverting), all behind the `euroGates` IEC
 symbol toggle, which is on by default.
 
@@ -734,13 +734,13 @@ symbol toggle, which is on by default.
 - [x] Bus splitter real fan-out, bus logic input (435), bus transceiver (437)
 - [x] Custom logic (the `!` model line and the `208` element)
 
-**Instruments and annotation** — done: labeled node, output,
+**Instruments and annotation** (done): labeled node, output,
 voltmeter, text, ammeter, box, line, scope-as-element, ohmmeter, test point,
 wattmeter, data recorder, stop trigger, instruction display.
 
-**Electromechanical** — done: three-phase motor, DC motor, time-delay relay.
+**Electromechanical** (done): three-phase motor, DC motor, time-delay relay.
 
-### Milestone D — polish
+### Milestone D: polish
 
 - [x] Mobile / touch layout
 - [x] Keyboard shortcut parity
@@ -1054,8 +1054,8 @@ custom's coils own consecutive node pairs in description order.
 
 The `176` row is a `VaractorElm`, which extends `DiodeElm`: the same leading
 tokens as the `d` row, driven by the same flags. `VaractorElm`'s own token
-constructor then unconditionally reads two more tokens after those —
-`capvoltdiff` (the persisted junction voltage) and `baseCapacitance` — but
+constructor then unconditionally reads two more tokens after those,
+`capvoltdiff` (the persisted junction voltage) and `baseCapacitance`, but
 its own `dump()` is inherited straight from `DiodeElm` and never writes
 either one, a real quirk like the thermistor's and LDR's: a save-then-reload
 in the original loses both. The bundled corpus (`varactor.txt`,
@@ -1110,7 +1110,7 @@ For the `350` row the slider caption is, unlike the potentiometer's, a single
 escaped token (`ThermistorNTCElm.java`'s token constructor unconditionally
 unescapes it, with no raw-token fallback). Upstream's own class never
 overrides `dump()` either, so its base-class implementation writes only the
-common x/y/flags fields for this type — a real upstream quirk that would
+common x/y/flags fields for this type: a real upstream quirk that would
 silently drop `r25`, `r50`, the temperature range, `position` and the caption
 from a legacy text save. This port writes all six anyway, matching every
 other type here, so a save from this app never loses that state.
@@ -1122,7 +1122,7 @@ overrides `dump()`, so upstream's own text save would drop `position` and the
 caption too. This port writes both tokens anyway, for the same reason. `LDR`'s
 `minLux`/`maxLux` are hardcoded constants in both of upstream's constructors
 (0.1 and 10000), never read from a file or exposed via `getEditInfo`, so they
-carry no tokens at all — only `position` and the slider caption round-trip.
+carry no tokens at all: only `position` and the slider caption round-trip.
 
 Text tokens that may contain spaces are escaped with upstream's full set: space
 `\s`, newline `\n`, carriage return `\r`, backslash `\\`, `+` `\p`, `=` `\q`,

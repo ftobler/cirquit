@@ -4,19 +4,20 @@ use crate::element::{two_terminal_current, Base, Element, SimCtx};
 use crate::spec::ElementSpec;
 use crate::stamp::Stamper;
 
-/// An NTC thermistor. Upstream's file is `ThermistorNTCElm.java` — the class
+/// An NTC thermistor. Upstream's file is `ThermistorNTCElm.java`: the class
 /// name inside the file, despite this port's own `thermistor` kind and the
 /// task that asked for it both saying "ThermistorElm". Unlike Fuse/Lamp,
 /// there is no self-heating: `temperature` is derived purely from a slider
 /// `position` in `[0, 1]` interpolated between two edited endpoints
 /// (`minTempr`, `maxTempr`), the same way `PotElm.java`'s wiper `position`
-/// sets its two resistances — this port has no slider widget yet (see
-/// OVERVIEW.md's "Sliders (`38` lines)" gap), so `position` is exposed as a
-/// directly-editable field instead, exactly as this port's `Potentiometer`
-/// already does for its own wiper.
+/// sets its two resistances. Upstream reaches `position` only through its
+/// slider widget (it is not a `getEditInfo` row); this port keeps that
+/// slider bound (the frontend's slider table maps the caption to it) and
+/// also exposes `position` as a directly-editable field, exactly as this
+/// port's `Potentiometer` already does for its own wiper.
 ///
 /// `stamp()` (ThermistorNTCElm.java:185-189) recomputes `temperature` from
-/// `position` and `resistance` from `temperature` on every call — nothing
+/// `position` and `resistance` from `temperature` on every call: nothing
 /// here depends on current or dissipated power, and nothing evolves between
 /// timesteps. That is the same shape as `PotElm.java`'s `stamp()`
 /// recomputing its two resistances from `position` every call, so this is a

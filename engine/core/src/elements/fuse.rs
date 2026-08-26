@@ -81,7 +81,7 @@ impl Element for Fuse {
 
     /// Blowing swaps the resistor stamped into the matrix from one timestep
     /// to the next, which needs a full refactor rather than an RHS-only
-    /// update — the same reason a diode junction is nonlinear — even though
+    /// update (the same reason a diode junction is nonlinear), even though
     /// nothing changes across a single timestep's own Newton iterations
     /// (FuseElm.java:149).
     fn nonlinear(&self) -> bool {

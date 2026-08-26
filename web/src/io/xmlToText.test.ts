@@ -586,13 +586,13 @@ describe('xml to text conversion', () => {
   it('converts a T flip-flop to its 193 line, carrying a custom high voltage', () => {
     // TFlipFlopElm adds nothing beyond the ChipElm base but its saved Q level
     // v1 (pin 1 is the only state pin), so hv != 5 must raise
-    // FLAG_CUSTOM_VOLTAGE exactly as the port's own writer would.
+    // CHIP_CUSTOM_VOLTAGE exactly as the port's own writer would.
     const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
   <TFlipFlop x="224 144 288 144" f="2" hv="3" v1="5"/>
 </cir>
 `;
     const text = xmlToText(src);
-    // The reset-pin flag from f rides beside FLAG_CUSTOM_VOLTAGE.
+    // The reset-pin flag from f rides beside CHIP_CUSTOM_VOLTAGE.
     expect(text).toContain(`193 224 144 288 144 ${(1 << 13) | 2} 3 5`);
     const parsed = parseCircuit(text);
     expect(parsed.elements.map((e) => e.kind)).toEqual(['tFlipFlop']);

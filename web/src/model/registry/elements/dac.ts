@@ -76,7 +76,7 @@ export const DAC_DEF: ElementDef = {
     { name: 'bits', label: '# of Bits', min: 2, max: 30, integer: true },
     // Upstream's DAC dialog skips the high logic voltage (isDigitalChip is
     // false), but the threshold it sets lives in the file format under
-    // FLAG_CUSTOM_VOLTAGE, so it is exposed here like every other chip.
+    // CHIP_CUSTOM_VOLTAGE, so it is exposed here like every other chip.
     { name: 'highVoltage', label: 'High logic voltage', unit: 'V' },
   ],
   draw: drawDac,

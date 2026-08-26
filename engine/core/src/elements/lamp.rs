@@ -12,7 +12,7 @@ use crate::stamp::Stamper;
 /// timestep (the resistance for the step is fixed before Newton begins), but
 /// the value can change from one timestep to the next, which needs a full
 /// refactor rather than an RHS-only update. `nonlinear()` returns `true` for
-/// that reason, exactly as Fuse's doc comment explains, and — like Fuse —
+/// that reason, exactly as Fuse's doc comment explains, and, like Fuse,
 /// there is no `stamp()` override: upstream's `stamp()` only calls
 /// `sim.stampNonLinear(...)`, which feeds the matrix-simplification pass
 /// this port does not implement (see OVERVIEW.md's deliberate gaps), so
@@ -121,7 +121,7 @@ impl Element for Lamp {
     /// compute this step's resistance from `temp` as it stood at the end of
     /// the previous step, *then* advance `temp` using the power dissipated
     /// over that previous step (`base.voltage_diff() * base.current`, both
-    /// still holding the last converged solve — `getPower()` is
+    /// still holding the last converged solve; `getPower()` is
     /// `CircuitElm.java:1269`). The order matters: swapping it would make
     /// the stamped resistance react to power a step early.
     fn start_iteration(&mut self, ctx: &SimCtx) {

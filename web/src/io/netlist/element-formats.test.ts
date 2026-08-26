@@ -2277,7 +2277,7 @@ describe('batch-3 source and chip file formats', () => {
   });
 
   it('a timer with custom high voltage writes the token and its flag', () => {
-    // FLAG_CUSTOM_VOLTAGE (8192) makes the high-voltage token optional; a
+    // CHIP_CUSTOM_VOLTAGE (8192) makes the high-voltage token optional; a
     // non-5 value saves the token and the flag together (ChipElm.java:51-56).
     const line = '165 240 128 256 128 8192 3.3 0';
     const { e, elementLine: out } = elementLine(line, '165');
@@ -3859,7 +3859,7 @@ describe('7-segment display file format', () => {
   });
 
   it('a custom-voltage colon display carries the hv token before its three', () => {
-    // FLAG_CUSTOM_VOLTAGE puts the high voltage first in the chip stream,
+    // CHIP_CUSTOM_VOLTAGE puts the high voltage first in the chip stream,
     // exactly where the parser looks for it (ChipElm.java:356-366).
     const line = '157 880 232 1000 232 8192 6 14 2 1';
     const { e, elementLine } = sevenSegLine(line);

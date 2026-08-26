@@ -21,7 +21,7 @@ const THERMISTOR_HS = 6;
 /** `calcB25100`/`temprFromSliderPos`/`calcResistance`
  *  (ThermistorNTCElm.java:247-262), ported so the drawn label matches the
  *  same formula the engine stamps with rather than a hand-rounded guess. No
- *  engine state round-trips for this — unlike Fuse's heat or Lamp's
+ *  engine state round-trips for this; unlike Fuse's heat or Lamp's
  *  temperature, there is none: resistance here is a pure function of the
  *  editable fields, so recomputing it in TypeScript for the label is exact,
  *  not an approximation. */
@@ -110,7 +110,7 @@ export const THERMISTOR_DEF: ElementDef = {
   defaults: { r25: 10000, r50: 3605, minTempr: -40, maxTempr: 150, position: 0.34 },
   // The token constructor reads r25, r50, minTempr, maxTempr, position,
   // then sliderText as one escaped token (ThermistorNTCElm.java:60-70).
-  // Upstream itself never overrides `dump()` — CircuitElm's base
+  // Upstream itself never overrides `dump()`: CircuitElm's base
   // implementation writes only the common x/y/flags fields, so a
   // text-format save from current upstream would actually drop these six
   // tokens entirely (its own save path is XML; see undumpXml at :86-99 for
@@ -130,10 +130,10 @@ export const THERMISTOR_DEF: ElementDef = {
     e.text?.trim() ? e.text : 'Temperature',  // ThermistorNTCElm.java:52
   ],
   // getEditInfo's five fields (ThermistorNTCElm.java:199-215); `position`
-  // isn't one of them upstream — it's only reachable through the slider
-  // widget — but sliders aren't wired up here yet (see OVERVIEW.md), so
-  // it's exposed directly, the same simplification `potentiometer` already
-  // makes for its own wiper.
+  // isn't one of them upstream, where it is reachable only through the
+  // slider widget. That slider is wired up here too: model/sliders.ts maps
+  // this caption to `position`; the direct field sits beside it, like
+  // `potentiometer`'s wiper.
   fields: [
     { name: 'r25', label: 'R at 25°C', unit: 'Ω', min: 0 },
     { name: 'r50', label: 'R at 50°C', unit: 'Ω', min: 0 },

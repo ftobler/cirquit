@@ -978,8 +978,8 @@ export function Menubar({ engine }: Props) {
           type="button"
           className="menubar-btn icon-btn"
           onClick={() => {
-            // engine.reset() rewinds runtime state in place — fuse heat/blown,
-            // capacitor charge, inductor current, lamp temperature — matching
+            // engine.reset() rewinds runtime state in place: fuse heat/blown,
+            // capacitor charge, inductor current, lamp temperature, matching
             // upstream's reset (CircuitElm.reset, FuseElm.reset). The old
             // netlist self-reload re-injected a popped fuse's `blown true`
             // token, which is why a fuse survived Reset; unblowFuses drops the

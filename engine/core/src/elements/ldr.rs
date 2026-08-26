@@ -11,8 +11,8 @@ use crate::stamp::Stamper;
 /// constructors and never read from a file or exposed via `getEditInfo`, so
 /// this port keeps them as constants rather than params) to a lux level, and
 /// lux maps to resistance. `stamp()` (`LDRElm.java`:164-168) recomputes both
-/// `lux` and `resistance` from `position` on every call — nothing depends on
-/// current, voltage or a prior timestep — so like `Thermistor` this is a
+/// `lux` and `resistance` from `position` on every call: nothing depends on
+/// current, voltage or a prior timestep, so like `Thermistor` this is a
 /// plain resistor whose value only changes on edit: no `nonlinear()`
 /// override, no `do_step`/`start_iteration`.
 pub struct Ldr {

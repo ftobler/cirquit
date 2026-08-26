@@ -50,7 +50,7 @@ struct VaractorCap {
     base_capacitance: f64,
     /// Present capacitance, recomputed once per timestep in
     /// `start_iteration` from `v_prev`, the diode voltage at the end of the
-    /// previous timestep — never mid-timestep, matching upstream's
+    /// previous timestep, never mid-timestep, matching upstream's
     /// `startIteration` running once before Newton begins
     /// (VaractorElm.java:102-114).
     capacitance: f64,

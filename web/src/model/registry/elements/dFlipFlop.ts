@@ -385,7 +385,7 @@ export function normalizeChipBits(value: number, floor: number, ceiling?: number
 
 /** Reads the common chip tokens that precede the state-pin voltages: the bit
  *  count for the variable-width chips and the high voltage when
- *  FLAG_CUSTOM_VOLTAGE says a token follows (ChipElm.java:51-56). Returns the
+ *  CHIP_CUSTOM_VOLTAGE says a token follows (ChipElm.java:51-56). Returns the
  *  index of the first state-voltage token. `normalizeBits` mirrors the owning
  *  element's engine cast on the bits token; the round fallback keeps any
  *  future caller that skips it on the old behaviour. `label` names the chip in
@@ -449,7 +449,7 @@ export function chipDump(
   return out;
 }
 
-/** Keeps FLAG_CUSTOM_VOLTAGE in step with the high voltage, the bit upstream
+/** Keeps CHIP_CUSTOM_VOLTAGE in step with the high voltage, the bit upstream
  *  computes in `dump` (ChipElm.java:357-360). */
 export function chipDumpFlags(e: CircuitElement): number {
   const hv = e.params.highVoltage;

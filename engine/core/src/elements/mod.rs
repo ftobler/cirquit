@@ -6,6 +6,13 @@
 //!
 //! One module per element type. `junction.rs` is the exception: it holds the
 //! Newton machinery shared by the diode and transistor families.
+//!
+//! Flag naming: per-element `FLAG_*` constants are private to their
+//! module and may repeat a name at a different bit value per element
+//! (`FLAG_PULLDOWN` alone is 2 in the analog switch family and mux,
+//! 4 in logic_output, 16 in relay). Read them per module; hoisting one
+//! into a shared constant needs a per-element rename, like the
+//! TypeScript side's `CHIP_*`/`RELAY_*` prefixes.
 
 pub mod adc;
 pub mod am;

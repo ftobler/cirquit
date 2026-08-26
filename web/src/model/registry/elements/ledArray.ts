@@ -9,7 +9,7 @@
  *
  * Token layout after the common fields differs from the other chips only in
  * what follows the optional high-voltage token: the ChipElm base writes that
- * token (only under FLAG_CUSTOM_VOLTAGE) before this element's own `sizeX
+ * token (only under CHIP_CUSTOM_VOLTAGE) before this element's own `sizeX
  * sizeY` (ChipElm.java:356-366, LEDArrayElm.java:32-35). No pin is a `state`
  * pin, so there are no saved-voltage tokens.
  */
@@ -130,7 +130,7 @@ export const LED_ARRAY_DEF: ElementDef = {
   defaults: { sizeX: 8, sizeY: 8, highVoltage: 5 },
   parse: (t, e) => {
     // The ChipElm base writes an optional high-voltage token (only under
-    // FLAG_CUSTOM_VOLTAGE) before this element's own `sizeX sizeY`
+    // CHIP_CUSTOM_VOLTAGE) before this element's own `sizeX sizeY`
     // (ChipElm.java:356-366, LEDArrayElm.java:32-35).
     const i = chipCommonTokens(t, e, false);
     const sizeX = Math.round(Number(t[i]));
