@@ -277,7 +277,7 @@ export function abandonForLongPress(dragRef: { current: Drag }, state: AppState)
  *  finish* cleanups it composes so the rule stays testable without a canvas. */
 export function cancelLiveDrag(
   refs: PointerDownRefs,
-  pointerId: number,
+  pointerId: number | null,
   state: AppState,
 ): void {
   const drag = refs.dragRef.current;
@@ -289,7 +289,7 @@ export function cancelLiveDrag(
   }
   if (drag.mode === 'place') finishPlacement(drag, state);
   if (drag.mode === 'wire') finishWireDrag(drag, state);
-  releaseHeldMomentary(pointerId, refs);
+  if (pointerId !== null) releaseHeldMomentary(pointerId, refs);
   refs.dragRef.current = { mode: 'none' };
   state.endElementGesture();
 }

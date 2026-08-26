@@ -28,6 +28,7 @@ import { DRAG_DELAY_MS, LONG_PRESS_MS, TouchGesture, type GestureAction } from '
 import {
   abandonForLongPress,
   beginPointerGesture,
+  cancelLiveDrag,
   collapsedToPoint,
   finishPlacement,
   finishPostDrag,
@@ -58,6 +59,13 @@ export function useCanvasInteractions(
   // Which pointer id pressed that switch, so a second finger's lift during a
   // pinch cannot release a momentary the first finger is still holding.
   const heldMomentaryPointerRef = useRef<number | null>(null);
+  // The pointer id that armed the live gesture or took the momentary hold, so
+  // a revert-driven cancel can release its capture without re-deriving it.
+  const pressedPointerIdRef = useRef<number | null>(null);
+  // The last revert epoch this layer tore down against. Undo, redo and
+  // revertToBaseline bump the counter in the store; this ref tells the two
+  // reactions below which epochs have already been handled.
+  const seenRevertRef = useRef(useStore.getState().revertEpoch);
   // When the last zoom happened; the wheel stays zoom-only for a second
   // after, so a sweep from empty canvas onto an element cannot accidentally
   // edit a value (MouseManager.java:1302-1304).
@@ -105,6 +113,48 @@ export function useCanvasInteractions(
       dragDelayTimerRef.current = null;
     }
   };
+
+  /** The shared revert reaction: a keyboard undo or redo landing mid-gesture
+   *  reverts the baseline under the hand, and a live drag must die with it
+   *  like a cancelled pointer would. Zustand listeners run synchronously
+   *  inside undo's set, but React effects do not, so the pointer-move guard
+   *  below covers the gap; both paths funnel through here so the teardown
+   *  cannot drift apart. */
+  const cancelForRevert = useCallback(() => {
+    const state = useStore.getState();
+    const drag = dragRef.current;
+    // Pan and box-select write no document state and no entries, so they ride
+    // out a revert; an idle layer has nothing to tear down. The idle check
+    // also keeps a stale stored pointer id from releasing a capture that no
+    // live gesture owns.
+    const riding =
+      drag.mode === 'pan' ||
+      drag.mode === 'select' ||
+      (drag.mode === 'none' && heldMomentaryRef.current === null && drag.button === undefined);
+    if (riding) return;
+    const pid = pressedPointerIdRef.current;
+    pressedPointerIdRef.current = null;
+    cancelLiveDrag({ dragRef, heldMomentaryRef, heldMomentaryPointerRef }, pid, state);
+    // The button may still be physically down: releasing the capture degrades
+    // its later moves to hover instead of stale gesture writes.
+    if (pid !== null) canvasRef.current?.releasePointerCapture(pid);
+    clearTouchTimers();
+    touchArmedRef.current = false;
+    pinchPrevMidRef.current = null;
+    forceRender((n) => n + 1);
+    // Everything read here is refs or props stable for the hook's life.
+  }, [canvasRef, dragRef, forceRender, heldMomentaryPointerRef, heldMomentaryRef]);
+
+  // The store-side half of the same reaction: undo and redo drop their own
+  // gesture flags, but nothing else told the canvas, so the next move would
+  // keep writing past the reverted state (the fixed U2 class). Subscribing to
+  // the epoch counter closes that hole for every revert source at once.
+  const revertEpoch = useStore((s) => s.revertEpoch);
+  useEffect(() => {
+    if (seenRevertRef.current === revertEpoch) return;
+    seenRevertRef.current = revertEpoch;
+    cancelForRevert();
+  }, [revertEpoch, cancelForRevert]);
 
   /** Both timers, validated by the recognizer when they fire: a timer that
    *  fires after the finger lifted or a second finger landed is a no-op. */
@@ -222,6 +272,9 @@ export function useCanvasInteractions(
     const isTouch = ev.pointerType === 'touch';
     const canvas = canvasRef.current;
     canvas?.setPointerCapture(ev.pointerId);
+    // Remembered for the revert reaction above: it releases this capture when
+    // an undo stands the gesture down while the button is still held.
+    pressedPointerIdRef.current = ev.pointerId;
     const state = useStore.getState();
     const p = toCircuit(ev.clientX, ev.clientY);
     pointerRef.current = toClient(ev.clientX, ev.clientY);
@@ -279,6 +332,14 @@ export function useCanvasInteractions(
     const isTouch = ev.pointerType === 'touch';
     const drag = dragRef.current;
     const state = useStore.getState();
+    // Belt and braces for the revert reaction above: a move arriving between
+    // undo's set and the effect finds the drag still armed, and must not
+    // write past its reverted baseline with it (the ScopePanel guard).
+    if (state.revertEpoch !== seenRevertRef.current) {
+      seenRevertRef.current = state.revertEpoch;
+      cancelForRevert();
+      return;
+    }
     const p = toCircuit(ev.clientX, ev.clientY);
     pointerRef.current = toClient(ev.clientX, ev.clientY);
     if (!isTouch) hoverRef.current = pointerRef.current;
