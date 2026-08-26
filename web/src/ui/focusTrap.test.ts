@@ -14,6 +14,16 @@ describe('FOCUSABLE_SELECTOR', () => {
     // stray focus back, leaving them keyboard-dead inside the dialog.
     expect(FOCUSABLE_SELECTOR).toContain('a[href]');
   });
+
+  it('excludes an anchor carrying tabindex minus one, like any other row', () => {
+    // The HTML sequential-focus rule takes an element out of the tab order
+    // once it carries an explicit tabindex="-1", so the anchor clause needs
+    // its own guard exactly like the bare [tabindex] clause beside it.
+    const anchorClause = FOCUSABLE_SELECTOR.split(',').map((c) => c.trim()).find((c) =>
+      c.startsWith('a[href'),
+    );
+    expect(anchorClause).toBe('a[href]:not([tabindex="-1"])');
+  });
 });
 
 describe('nextFocusIndex', () => {
