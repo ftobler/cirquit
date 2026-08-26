@@ -97,6 +97,8 @@ export const LATCH_DEF: ElementDef = {
   dumpCode: '168',
   postCount: 9,
   posts: (e) => chipPosts(e, 2, latchSizeY(e), latchPins(e)),
+  chipExtents: (e) => ({ sx: 2, sy: latchSizeY(e) }),
+  canMirror: true,  // ChipElm.flipX, LatchElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, latchSizeY(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32

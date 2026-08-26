@@ -68,6 +68,8 @@ export const TIMER_DEF: ElementDef = {
   dumpCode: '165',
   postCount: 8,
   posts: (e) => chipPosts(e, 3, 5, timerPins(e)),
+  chipExtents: () => ({ sx: 3, sy: 5 }),
+  canMirror: true,  // ChipElm.flipX, TimerElm inherits it
   bodyRect: (e) => chipBodyRect(e, 3, 5),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 8,  // the chip spans (sizeX + 1) * 32

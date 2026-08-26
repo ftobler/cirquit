@@ -51,6 +51,8 @@ export const TFLIPFLOP_DEF: ElementDef = {
   dumpCode: '193',
   postCount: 4,
   posts: (e) => chipPosts(e, 2, 3, tffPins(e)),
+  chipExtents: () => ({ sx: 2, sy: 3 }),
+  canMirror: true,  // ChipElm.flipX, TFlipFlopElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, 3),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32

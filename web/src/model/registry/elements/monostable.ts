@@ -37,6 +37,8 @@ export const MONOSTABLE_DEF: ElementDef = {
   dumpCode: '194',
   postCount: 3,
   posts: (e) => chipPosts(e, 2, 2, monostablePins()),
+  chipExtents: () => ({ sx: 2, sy: 2 }),
+  canMirror: true,  // ChipElm.flipX, MonostableElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, 2),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32

@@ -171,6 +171,58 @@ describe('rotate, mirror and swap terminals', () => {
     expect((d.x1 + d.x2) / 2).toBe(80);
   });
 
+  it('mirrors two selected chips as one body across the shared centre', () => {
+    // The store hands the mirror the bounding-box centre, so a chip pair
+    // reflects rigidly and each stored segment collapses to the anchor point
+    // upstream writes (ChipElm.java:623-626), with FLAG_FLIP_X carrying the
+    // bank swap.
+    const a = useStore.getState().addElement({
+      kind: 'dFlipFlop',
+      x1: 100,
+      y1: 200,
+      x2: 196,
+      y2: 200,
+      flags: 0,
+      params: { highVoltage: 5 },
+    });
+    const b = useStore.getState().addElement({
+      kind: 'dFlipFlop',
+      x1: 300,
+      y1: 200,
+      x2: 396,
+      y2: 200,
+      flags: 0,
+      params: { highVoltage: 5 },
+    });
+    useStore.getState().select([a, b]);
+
+    useStore.getState().mirrorSelection();
+
+    // bbox centre cx = (100+396)/2 = 248. Chip A: x1' = 496-100-96 = 300,
+    // x2' = 496-196 = 300, collapsed. Chip B lands at 496-300-96 = 100.
+    const [ma, mb] = useStore.getState().elements;
+    expect(ma.id).toBe(a);
+    expect([ma.x1, ma.y1, ma.x2, ma.y2]).toEqual([300, 200, 300, 200]);
+    expect(ma.flags & (1 << 10)).toBe(1 << 10);
+    expect([mb.x1, mb.y1, mb.x2, mb.y2]).toEqual([100, 200, 100, 200]);
+    // Each chip's two banks sit exactly on the reflected columns of its old
+    // ones: A ran 100..196 and now runs 300..396; B ran 300..396 and now
+    // 100..196. The default flip-flop's four posts read D/CLK on the flipped
+    // west column and Q//Q on the flipped east one.
+    expect(postsOf(ma).map((p) => [p.x, p.y])).toEqual([
+      [396, 200],
+      [300, 200],
+      [300, 264],
+      [396, 232],
+    ]);
+    expect(postsOf(mb).map((p) => [p.x, p.y])).toEqual([
+      [196, 200],
+      [100, 200],
+      [100, 264],
+      [196, 232],
+    ]);
+  });
+
   it.each([
     [
       'rotateSelection',

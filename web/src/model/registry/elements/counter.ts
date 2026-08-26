@@ -64,6 +64,8 @@ export const COUNTER_DEF: ElementDef = {
   dumpCode: '164',
   postCount: 6,
   posts: (e) => chipPosts(e, 2, counterBits(e), counterPins(e)),
+  chipExtents: (e) => ({ sx: 2, sy: counterBits(e) }),
+  canMirror: true,  // ChipElm.flipX, CounterElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, counterBits(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32

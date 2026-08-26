@@ -76,6 +76,8 @@ export const PISO_SHIFT_DEF: ElementDef = {
   dumpCode: '186',
   postCount: 12,  // bits(8) + LD + clock + Q + SER at the default
   posts: (e) => chipPosts(e, pisoSizeX(e), 3, pisoPins(e)),
+  chipExtents: (e) => ({ sx: pisoSizeX(e), sy: 3 }),
+  canMirror: true,  // ChipElm.flipX, PisoShiftElm inherits it
   bodyRect: (e) => chipBodyRect(e, pisoSizeX(e), 3),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 11,  // the chip spans (sizeX + 1) * 32

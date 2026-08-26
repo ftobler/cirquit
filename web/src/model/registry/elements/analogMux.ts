@@ -74,6 +74,8 @@ export const ANALOG_MUX_DEF: ElementDef = {
   dumpCode: '432',
   postCount: 7,  // 4 inputs + 2 selects + Z at the default
   posts: (e) => chipPosts(e, analogMuxSizeX(e), analogMuxSizeY(e), analogMuxPins(e)),
+  chipExtents: (e) => ({ sx: analogMuxSizeX(e), sy: analogMuxSizeY(e) }),
+  canMirror: true,  // ChipElm.flipX, AnalogMuxElm inherits it
   bodyRect: (e) => chipBodyRect(e, analogMuxSizeX(e), analogMuxSizeY(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 4,  // the chip spans (sizeX + 1) * 32 with sizeX 3

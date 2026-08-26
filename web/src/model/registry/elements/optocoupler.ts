@@ -140,6 +140,10 @@ export const OPTOCOUPLER_DEF: ElementDef = {
   dumpCode: '407',
   postCount: 4,
   posts: optoPosts,
+  // The fixed 2x2 body at full spacing that flipX shifts by (the hardcoded
+  // 3*cspc2 of OptocouplerElm.java:167).
+  chipExtents: () => ({ sx: 2, sy: 2 }),
+  canMirror: true,  // OptocouplerElm.java:165-180
   noDiagonal: true,  // OptocouplerElm.java:23, 32
   // The child dump tokens are raw on both sides (the OTA's shape); the
   // trailing `ctr` token is the only interpreted field. A line without one

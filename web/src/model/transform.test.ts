@@ -14,6 +14,7 @@ import {
 import { SWITCH2_CENTER_OFF } from './registry/flags';
 import {
   clearSessionModels,
+  getModel,
   modelToEngineSpec,
   parseCompositeModelLine,
   registerSessionModel,
@@ -896,5 +897,182 @@ describe('selection group pivot', () => {
     expect([mv.x1, mv.y1, mv.x2, mv.y2]).toEqual([96, -48, 96, 48]);
     expect(mv.state).toBe(0);
     expect(mv.params.position).toBe(0);
+  });
+});
+
+describe('chip mirrors', () => {
+  beforeEach(() => clearSessionModels());
+
+  // The plan's worked example: a set-variant D flip-flop (D W0, Q E0, /Q E1,
+  // CLK W1, R E2, S W2), sizeX 2, sizeY 3, cspc2 32, stored on its full
+  // 3-cell span. Every coordinate below is derived by hand from the upstream
+  // formulas: ChipElm.flipX writes x' = centre2-x-(flippedSizeX+1)*cspc2,
+  // x2' = centre2-x2 (ChipElm.java:620-628), and setPoints lays the pins out
+  // from the anchor plus the flags.
+  const DFF_SET = 4;
+  const CHIP_FLIP_X = 1 << 10;
+  const CHIP_FLIP_XY = 1 << 12;
+  const CHIP_SMALL = 1;
+
+  it('a d flip flop mirrored in a group lands its pin banks on the reflected columns', () => {
+    // Group mirror about cx=300: shift (2+1)*32 = 96 gives
+    // x1' = 600-100-96 = 404 and x2' = 600-196 = 404, collapsed exactly as
+    // upstream writes it. The banks reflect onto cols 500 and 404.
+    const e = element('dFlipFlop', 100, 200, 196, 200, DFF_SET);
+    const m = mirrorElement(e, 300);
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([404, 200, 404, 200]);
+    expect(m.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
+    expect(postsOf(m)).toEqual([
+      { x: 500, y: 200 },  // D, west bank to the reflected far column
+      { x: 404, y: 200 },  // Q
+      { x: 404, y: 232 },  // /Q
+      { x: 500, y: 232 },  // CLK
+      { x: 404, y: 264 },  // R
+      { x: 500, y: 264 },  // S
+    ]);
+  });
+
+  it('a singly mirrored d flip flop reflects in place', () => {
+    // No shared centre means no anchor shift (upstream's count == 1 quirk):
+    // the fields swap and normalise back to the same rightward segment while
+    // the flag alone exchanges the two banks.
+    const e = element('dFlipFlop', 100, 200, 196, 200, DFF_SET);
+    const m = mirrorElement(e);
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([100, 200, 196, 200]);
+    expect(m.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
+    expect(postsOf(m)).toEqual([
+      { x: 196, y: 200 },
+      { x: 100, y: 200 },
+      { x: 100, y: 232 },
+      { x: 196, y: 232 },
+      { x: 100, y: 264 },
+      { x: 196, y: 264 },
+    ]);
+  });
+
+  it('double group mirror restores the stored element byte for byte', () => {
+    const e = element('dFlipFlop', 100, 200, 196, 200, DFF_SET);
+    expect(mirrorElement(mirrorElement(e, 300), 300)).toStrictEqual(e);
+  });
+
+  it('a small grid chip shifts by half spacing', () => {
+    // CHIP_SMALL halves cspc2 to 16, so both the stored span (48) and the
+    // shift ((fsx+1)*16 = 48) shrink; rows step 16 instead of 32.
+    const e = element('dFlipFlop', 100, 200, 148, 200, DFF_SET | CHIP_SMALL);
+    const m = mirrorElement(e, 300);
+    expect([m.x1, m.x2]).toEqual([452, 452]);
+    expect(postsOf(m)).toEqual([
+      { x: 500, y: 200 },
+      { x: 452, y: 200 },
+      { x: 452, y: 216 },
+      { x: 500, y: 216 },
+      { x: 452, y: 232 },
+      { x: 500, y: 232 },
+    ]);
+  });
+
+  it('an xy flipped chip mirrors using the transposed span', () => {
+    // FLAG_FLIP_XY transposes flippedSizeX to sizeY, so the shift is
+    // (3+1)*32 = 128 and x1' collapses with x2' at 372. Under the transposed
+    // sides the W/E-born pins run along the top and bottom rows; reflecting
+    // every hand-derived pre-mirror post about 300 must land exactly on the
+    // post-mirror layout.
+    const e = element('dFlipFlop', 100, 200, 228, 200, DFF_SET | CHIP_FLIP_XY);
+    const before = postsOf(e);
+    expect(before).toEqual([
+      { x: 132, y: 168 },  // D, north row pos 0
+      { x: 132, y: 264 },  // Q, south row pos 0
+      { x: 164, y: 264 },  // /Q
+      { x: 164, y: 168 },  // CLK
+      { x: 196, y: 264 },  // R
+      { x: 196, y: 168 },  // S
+    ]);
+    const m = mirrorElement(e, 300);
+    expect([m.x1, m.x2]).toEqual([372, 372]);
+    expect(m.flags & (CHIP_FLIP_X | CHIP_FLIP_XY)).toBe(CHIP_FLIP_X | CHIP_FLIP_XY);
+    expect(postsOf(m)).toEqual([
+      { x: 468, y: 168 },
+      { x: 468, y: 264 },
+      { x: 436, y: 264 },
+      { x: 436, y: 168 },
+      { x: 404, y: 264 },
+      { x: 404, y: 168 },
+    ]);
+  });
+
+  it('a vertical chip refuses the mirror', () => {
+    // A strictly vertical segment is the port's rotated representation;
+    // upstream has no such elements, so there is no upstream answer to
+    // reproduce and the command declines through the usual gate.
+    const v = element('dFlipFlop', 100, 200, 100, 296, DFF_SET);
+    expect(canMirror(v)).toBe(false);
+    expect(mirrorElement(v)).toBe(v);
+    // A collapsed segment (what a group mirror leaves behind) is not vertical
+    // and stays mirrorable, which is what makes a second group mirror work.
+    const collapsed = element('dFlipFlop', 404, 200, 404, 200, DFF_SET | CHIP_FLIP_X);
+    expect(canMirror(collapsed)).toBe(true);
+  });
+
+  it('an optocoupler group mirror lands at the upstream 204', () => {
+    // OptocouplerElm.flipX shifts by its fixed 3*cspc2 = 96
+    // (OptocouplerElm.java:165-172): x' = 400-100-96 = 204. The body anchors
+    // at raw x1 and ignores the segment, so the four corner posts land on the
+    // reflected columns 300 and 204.
+    const e = element('optocoupler', 100, 200, 164, 200);
+    expect(postsOf(e)).toEqual([
+      { x: 100, y: 200 },
+      { x: 100, y: 232 },
+      { x: 196, y: 200 },
+      { x: 196, y: 232 },
+    ]);
+    const m = mirrorElement(e, 200);
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([204, 200, 236, 200]);
+    expect(m.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
+    expect(postsOf(m)).toEqual([
+      { x: 300, y: 200 },
+      { x: 300, y: 232 },
+      { x: 204, y: 200 },
+      { x: 204, y: 232 },
+    ]);
+  });
+
+  it('a controlled source group mirror moves the body and toggles the bit', () => {
+    // VCCSElm extends ChipElm, so the four controlled sources inherit the
+    // same flip: sx 2, parametric sy from the input count.
+    const e = element('vcvs', 100, 200, 196, 200);
+    const m = mirrorElement(e, 300);
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([404, 200, 404, 200]);
+    expect(m.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
+    expect(postsOf(m)).toEqual([
+      { x: 500, y: 200 },  // A
+      { x: 500, y: 232 },  // B
+      { x: 404, y: 200 },  // V+
+      { x: 404, y: 232 },  // V-
+    ]);
+  });
+
+  it('a custom composite mirror uses the model extents', () => {
+    // A resolved sizeX 2 model spans (2+1)*cspc2 like any sizeX 2 chip; the
+    // extents come off the model, not off a fixed table entry.
+    registerSessionModel(
+      parseCompositeModelLine(
+        '. mir 0 2 1 2 in 1 0 2 out 3 0 3 ' +
+          'ResistorElm\\s1\\s2\\rResistorElm\\s2\\s3 ' +
+          '0\\\\s1000\\s0\\\\s1000',
+      )!,
+    );
+    const spec = modelToEngineSpec(getModel('mir')!);
+    const e = { ...element('customComposite', 100, 200, 196, 200, 1), text: 'mir', model: spec };
+    expect(postsOf(e)).toEqual([
+      { x: 100, y: 200 },
+      { x: 196, y: 200 },
+    ]);
+    const m = mirrorElement(e, 300);
+    expect([m.x1, m.y1, m.x2, m.y2]).toEqual([404, 200, 404, 200]);
+    expect(m.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
+    expect(postsOf(m)).toEqual([
+      { x: 500, y: 200 },
+      { x: 404, y: 200 },
+    ]);
   });
 });

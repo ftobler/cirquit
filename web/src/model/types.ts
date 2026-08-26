@@ -291,6 +291,13 @@ export interface ElementDef {
    *  its own command. Rotation needs no flag, being defined for every element
    *  with two or more posts. */
   canMirror?: boolean;
+  /** The chip body's cell counts, `sizeX`/`sizeY` exactly as this def passes
+   *  them to `chipPosts`. Present precisely on the kinds whose upstream class
+   *  overrides flipX with the body-width anchor shift (ChipElm.java:620-628):
+   *  the ChipElm family, the optocoupler, the custom composite and the four
+   *  controlled sources. It is the single span source the mirror command
+   *  reads; absent means the kind has no chip body to shift. */
+  chipExtents?(e: CircuitElement): { sx: number; sy: number };
   /** A body rectangle for hit-testing, the port of upstream's `boundingBox`
    *  gate (MouseManager.java:813): a point inside selects and drags the
    *  element even when the axis and every post are far away. The chips hand

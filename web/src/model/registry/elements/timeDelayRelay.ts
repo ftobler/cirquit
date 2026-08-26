@@ -35,6 +35,8 @@ export const TIME_DELAY_RELAY_DEF: ElementDef = {
   dumpCode: '414',
   postCount: 4,
   posts: (e) => chipPosts(e, 2, 2, timeDelayRelayPins()),
+  chipExtents: () => ({ sx: 2, sy: 2 }),
+  canMirror: true,  // ChipElm.flipX, TimeDelayRelayElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, 2),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 6, // the chip spans (sizeX + 1) * 32

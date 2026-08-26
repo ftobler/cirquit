@@ -71,6 +71,8 @@ export const SEVEN_SEG_DECODER_DEF: ElementDef = {
   dumpCode: '197',
   postCount: 11,  // the default 7-segment layout: 7 + 4 inputs
   posts: (e) => chipPosts(e, 3, sevenSegSizeY(e), sevenSegDecoderPins(e)),
+  chipExtents: (e) => ({ sx: 3, sy: sevenSegSizeY(e) }),
+  canMirror: true,  // ChipElm.flipX, SevenSegDecoderElm inherits it
   bodyRect: (e) => chipBodyRect(e, 3, sevenSegSizeY(e)),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 8,  // the chip spans (sizeX + 1) * 32 with sizeX 3

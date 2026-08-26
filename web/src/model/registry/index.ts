@@ -11,6 +11,8 @@
  */
 
 import { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, OPAMP_SWAP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP } from './flags';
+import { CHIP_SMALL } from './elements/dFlipFlop';
+import { chipElement as compositeChipElement } from './elements/customComposite';
 import { switchLever, switchLeverTip, switchIecPoints, groundBars } from './shared';
 import { WIRE_DEF } from './elements/wire';
 import { ADC_DEF } from './elements/adc';
@@ -301,6 +303,32 @@ export function postsOf(e: CircuitElement): Point[] {
  *  stub. */
 export function postCountOf(e: CircuitElement): number {
   return defFor(e.kind)?.postCountOf?.(e) ?? defFor(e.kind)?.postCount ?? 0;
+}
+
+/** A chip body's span, the unit upstream's flipX shift counts in
+ *  (ChipElm.java:620-628): the transposed cell counts plus the grid pair the
+ *  body is laid out on. */
+export interface ChipExtents {
+  sx: number;
+  sy: number;
+  cspc2: number;
+}
+
+/** The body span a mirror shifts by, or undefined when the kind has no chip
+ *  body. The cell counts come from each def's `chipExtents`, the same numbers
+ *  its posts and body rect are built from, so this stays the single span
+ *  source for the flip geometry; the spacing belongs to the shared ChipElm
+ *  flag word with one exception: the custom composite parks its small-grid bit
+ *  on bit 1 (CompositeElm's FLAG_ESCAPE owns bit 0), so its bridged word
+ *  decides. Lives here beside `postsOf` because it aggregates def metadata,
+ *  and a home inside `chips.ts` would make that module pull the registry index
+ *  or the composite def statically, reordering their load-time cycle into one
+ *  that crashes on who imported what first. */
+export function chipExtentsOf(e: CircuitElement): ChipExtents | undefined {
+  const sizes = defFor(e.kind)?.chipExtents?.(e);
+  if (sizes === undefined) return undefined;
+  const flags = e.kind === 'customComposite' ? compositeChipElement(e).flags : e.flags;
+  return { ...sizes, cspc2: (flags & CHIP_SMALL) !== 0 ? 16 : 32 };
 }
 
 /** True when an element must always sit on its dominant axis: it either

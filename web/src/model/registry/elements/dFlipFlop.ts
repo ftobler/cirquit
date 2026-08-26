@@ -89,7 +89,14 @@ function chipFrame(e: CircuitElement): { a: Point; u: Point; r: Point } {
   const a = d >= 0 ? p1 : p2;
   const b = d >= 0 ? p2 : p1;
   const dn = Math.max(1, elementLength(e));
-  const u = { x: (b.x - a.x) / dn, y: (b.y - a.y) / dn };
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  // A collapsed segment (both endpoints equal, exactly what upstream writes
+  // for a group-mirrored chip, ChipElm.java:623-626) carries no direction.
+  // Upstream's setPoints reads only the anchor and lays the pins out along
+  // absolute +x, so the frame falls back to that rightward axis instead of
+  // collapsing every post onto the anchor.
+  const u = dx === 0 && dy === 0 ? { x: 1, y: 0 } : { x: dx / dn, y: dy / dn };
   const r = { x: -u.y, y: u.x };
   return { a, u, r };
 }
@@ -485,6 +492,8 @@ export const DFLIPFLOP_DEF: ElementDef = {
   dumpCode: '155',
   postCount: 4,
   posts: (e) => chipPosts(e, 2, 3, dffPins(e)),
+  chipExtents: () => ({ sx: 2, sy: 3 }),  // ChipElm.flipX's span, same args
+  canMirror: true,  // ChipElm.java:620-628
   bodyRect: (e) => chipBodyRect(e, 2, 3),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32

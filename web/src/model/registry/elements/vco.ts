@@ -47,6 +47,8 @@ export const VCO_DEF: ElementDef = {
   dumpCode: '158',
   postCount: 6,
   posts: (e) => chipPosts(e, 2, 4, vcoPins()),
+  chipExtents: () => ({ sx: 2, sy: 4 }),
+  canMirror: true,  // ChipElm.flipX, VCOElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, 4),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 6,  // the chip spans (sizeX + 1) * 32

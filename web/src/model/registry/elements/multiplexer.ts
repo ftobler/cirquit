@@ -181,6 +181,8 @@ export const MULTIPLEXER_DEF: ElementDef = {
   postCount: 7, // the default 2-select-bit, 4-input layout: 4 + 2 + 1
   postCountOf: muxPostCount,
   posts: (e) => chipPosts(e, muxBits(e) + 1, muxGroupCount(e) + 1, muxPins(e)),
+  chipExtents: (e) => ({ sx: muxBits(e) + 1, sy: muxGroupCount(e) + 1 }),
+  canMirror: true,  // ChipElm.flipX, MuxElm inherits it
   bodyRect: (e) => chipBodyRect(e, muxBits(e) + 1, muxGroupCount(e) + 1),
   noDiagonal: true, // ChipElm.java:44
   defaultLength: 8, // the default 2-select-bit chip spans (sizeX + 1) * 32

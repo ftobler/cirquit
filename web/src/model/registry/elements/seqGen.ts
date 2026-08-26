@@ -55,6 +55,8 @@ export const SEQ_GEN_DEF: ElementDef = {
   dumpCode: '188',
   postCount: 3,
   posts: (e) => chipPosts(e, 2, 2, seqGenPins(e)),
+  chipExtents: () => ({ sx: 2, sy: 2 }),
+  canMirror: true,  // ChipElm.flipX, SeqGenElm inherits it
   bodyRect: (e) => chipBodyRect(e, 2, 2),
   noDiagonal: true,  // ChipElm.java:44
   defaultLength: 3,  // the chip spans (sizeX + 1) * 32
