@@ -101,7 +101,7 @@ export const LDR_DEF: ElementDef = {
   defaults: { position: 0.34 },
   // The token constructor reads position, then sliderText as one escaped
   // token (LDRElm.java's file constructor). Upstream itself never
-  // overrides `dump()` here either — CircuitElm's base implementation
+  // overrides `dump()` here either: CircuitElm's base implementation
   // writes only the common x/y/flags fields, the same real quirk the
   // thermistor's `350` row documents (its own save path is XML; see
   // `dumpXml`/`undumpXml` for the fields that matter there instead). This

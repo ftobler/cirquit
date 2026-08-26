@@ -206,8 +206,8 @@ fn fuse_set_state_confirms_an_unpop_once_the_heat_has_decayed() {
     // The frontend pushes a reset fuse's live `e.state` back through
     // set_state so the store copy and the model never diverge. Releasing
     // `blown` alone cannot show an intact fuse while the heat is still past
-    // i2t, so let the open fuse cool below its rating first — the blown clamp
-    // holds the report at exactly 1 — then confirm the un-pop and check the
+    // i2t, so let the open fuse cool below its rating first (the blown clamp
+    // holds the report at exactly 1), then confirm the un-pop and check the
     // fraction falls through.
     let dt = 1e-3;
     let c = &mut build(
@@ -437,7 +437,7 @@ fn lamp_reads_its_cold_resistance_on_the_first_step() {
     // A default lamp (100 W @ 120 V) starts at room temperature, and
     // startIteration computes each step's resistance from `temp` *before*
     // advancing it, so the very first step must stamp exactly the
-    // room-temperature point on the curve — about 7.2 ohms, roughly 1/20th
+    // room-temperature point on the curve: about 7.2 ohms, roughly 1/20th
     // of the 144 ohm resistor a plain 100W/120V load would be. In series
     // with a 1k resistor, the divider current is V/(R1+R_cold).
     let dt = 1e-3;
@@ -477,8 +477,8 @@ fn lamp_reads_its_cold_resistance_on_the_first_step() {
 #[test]
 fn lamp_settles_toward_its_warm_resistance_under_sustained_voltage() {
     // Drive a default lamp (100 W @ 120 V, 0.4 s warm-up and cool-down) at
-    // its own rated voltage for 5 simulated seconds — more than ten times
-    // the thermal time constant — and its resistance should have settled
+    // its own rated voltage for 5 simulated seconds (more than ten times
+    // the thermal time constant), and its resistance should have settled
     // close to its steady state (numerically, the discrete update above
     // converges to ~144.09 ohms, a hair above the 144 ohm a plain resistor
     // at the same rated power/voltage would be).
