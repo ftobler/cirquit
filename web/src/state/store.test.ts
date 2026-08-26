@@ -577,6 +577,50 @@ describe('hover and net-highlight store state', () => {
     expect(useStore.getState().highlightedNode).toBeNull();
   });
 
+  it('a repeated setHovered value keeps the store reference stable', () => {
+    // Every pointermove over the canvas calls setHovered with whatever the
+    // hit test found, mostly the same id or null again and again. A write
+    // that builds a fresh state container each time notifies every store
+    // subscriber at pointermove rate for no information.
+    const id = addResistor();
+    useStore.getState().setHovered(id);
+    const before = useStore.getState();
+    let notified = 0;
+    const unsubscribe = useStore.subscribe(() => {
+      notified += 1;
+    });
+    try {
+      useStore.getState().setHovered(id);
+      expect(notified).toBe(0);
+      expect(useStore.getState()).toBe(before);
+      // A genuinely different value must still land and still notify.
+      useStore.getState().setHovered(null);
+      expect(notified).toBe(1);
+      expect(useStore.getState().hoveredId).toBeNull();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('a repeated setHighlightedNode value keeps the store reference stable', () => {
+    useStore.getState().setHighlightedNode(3);
+    const before = useStore.getState();
+    let notified = 0;
+    const unsubscribe = useStore.subscribe(() => {
+      notified += 1;
+    });
+    try {
+      useStore.getState().setHighlightedNode(3);
+      expect(notified).toBe(0);
+      expect(useStore.getState()).toBe(before);
+      useStore.getState().setHighlightedNode(null);
+      expect(notified).toBe(1);
+      expect(useStore.getState().highlightedNode).toBeNull();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('loadNetlist clears hover and the highlighted net', () => {
     useStore.getState().setHovered(1);
     useStore.getState().setHighlightedNode(3);
