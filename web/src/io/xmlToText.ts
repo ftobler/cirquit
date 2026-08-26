@@ -769,17 +769,25 @@ function droppedTraces(node: XmlNode): string[] {
       );
     }
   }
-  // Both converted SwitchElm subclasses can carry the base keyboard shortcut:
-  // LogicInputElm reuses super.dumpXml (LogicInputElm.java:55-57) and offers
-  // the edit (:136-139), so an <L> document holds key exactly as a dpdt does
-  // (SwitchElm.java:79-80). The shortcut is session-only on the text stream
-  // in both builds; upstream writes it only once it exists, so presence
-  // gates the trace, and the empty string toggles nothing and deserves none.
+  // All three converted SwitchElm subclasses inherit the base attribute dump
+  // through super.dumpXml (LogicInputElm.java:55-57, BusLogicInputElm.java:
+  // 36-37), so an <L> or <bli> document holds key and r exactly as a dpdt
+  // does. Neither subclass dialog offers a resistance edit and both stamp
+  // pure voltage sources, so a nonzero r there can only arrive in the file
+  // itself; the base still writes it back once present (SwitchElm.java:81-82),
+  // so it round-trips upstream while this conversion would drop its bytes
+  // unheard, which the defensive trace prevents. Upstream writes key only
+  // once a shortcut exists (:79-80), so presence gates that, and the empty
+  // string toggles nothing and deserves none.
   const key = node.attrs.key;
-  if ((tag === 'dpdt' || tag === 'L') && key !== undefined && key !== '') {
+  if ((tag === 'dpdt' || tag === 'L' || tag === 'bli') && key !== undefined && key !== '') {
     traces.push(
       `# ${tag} key="${singleLine(key)}" not modelled: converted without its keyboard shortcut`,
     );
+  }
+  if ((tag === 'L' || tag === 'bli') && attr(node, 'r', 0) !== 0) {
+    const value = singleLine(node.attrs.r ?? '');
+    traces.push(`# ${tag} r="${value}" not modelled: converted without its on resistance`);
   }
   if (tag === 'pt' && attr(node, 'li', 0) !== 0) {
     // PotElm.java:82-83 writes the link only when nonzero; shared sliders

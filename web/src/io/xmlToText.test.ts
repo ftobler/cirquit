@@ -1190,12 +1190,13 @@ describe('xml to text conversion', () => {
     );
   });
 
-  it('traces a carried keyboard shortcut on a logic input', () => {
+  it('traces carried switch attributes on a logic input', () => {
     // LogicInputElm rides SwitchElm's dumpXml via super (LogicInputElm.java:55-57)
     // and exposes the shortcut edit (:136-139), so an <L> document holds the
-    // same base attribute a dpdt does, dropped just as silently before.
+    // same base attributes a dpdt does. Its stamp ignores resistance, so a
+    // nonzero r can only come from the file; upstream round-trips it unused.
     const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
-  <L x="256 672 224 672" f="0" mm="true" key="x"/>
+  <L x="256 672 224 672" f="0" mm="true" key="x" r="0.001"/>
 </cir>
 `;
     const text = xmlToText(src);
@@ -1203,6 +1204,27 @@ describe('xml to text conversion', () => {
     const lines = text.split('\n');
     const at = lines.indexOf('L 256 672 224 672 0 0 true 5 0');
     expect(lines[at + 1]).toBe('# L key="x" not modelled: converted without its keyboard shortcut');
+    expect(lines[at + 2]).toBe('# L r="0.001" not modelled: converted without its on resistance');
+  });
+
+  it('traces carried switch attributes on a bus logic input', () => {
+    // BusLogicInputElm inherits SwitchElm's dumpXml via super
+    // (BusLogicInputElm.java:36-37) but offers neither the shortcut edit nor
+    // a resistance edit, and its stamp is pure voltage sources, so key and a
+    // nonzero r arrive only inside the file; upstream round-trips them while
+    // this conversion used to drop them silently.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <bli x="752 416 752 496" f="0" bw="4" va="5" key="x" r="0.001"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('435 752 416 752 496 0 4 5 5 0');
+    const lines = text.split('\n');
+    const at = lines.indexOf('435 752 416 752 496 0 4 5 5 0');
+    expect(lines[at + 1]).toBe(
+      '# bli key="x" not modelled: converted without its keyboard shortcut',
+    );
+    expect(lines[at + 2]).toBe('# bli r="0.001" not modelled: converted without its on resistance');
   });
 
   it('keeps a traced attribute value from splitting its comment', () => {
