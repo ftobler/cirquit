@@ -27,6 +27,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::element::{Base, Element, SimCtx};
 use crate::elements::build_element;
+use crate::matrix::MAX_MATRIX_ROWS;
 use crate::spec::ElementSpec;
 use crate::stamp::{Stamper, GROUND};
 
@@ -295,11 +296,23 @@ struct CompositeModel {
     dumps: Vec<String>,
 }
 
+/// The rejection a model earns once its terminal slots pass
+/// [`MAX_MATRIX_ROWS`]. The sentence starts mid-way because `from_spec`
+/// prefixes the owning element, the same named-error form every other
+/// composite build failure carries.
+fn exceeds_budget(needed: usize) -> String {
+    format!(
+        "exceeds its node budget: at least {needed} composite-local nodes, above the limit of {MAX_MATRIX_ROWS}"
+    )
+}
+
 impl Composite {
     /// Builds a composite from the JSON model carried in `spec.model`, the
     /// generic kind the `.` line uses. The model blob is user-editable file
     /// content, so a missing or malformed definition is a named build error
-    /// rather than a silent `None`, and child errors propagate verbatim.
+    /// rather than a silent `None`, and child errors are prefixed with the
+    /// element's kind and id: a file can carry many composites, so a bare
+    /// child-level message would not say which element refused.
     pub fn from_spec(spec: &ElementSpec) -> Result<Self, String> {
         let m: CompositeModel = spec
             .model
@@ -312,13 +325,15 @@ impl Composite {
                 )
             })?;
         Self::from_model(&m.model, &m.external, Some(&m.dumps), "composite")
+            .map_err(|e| format!("element '{}' (id {}) {e}", spec.kind, spec.id))
     }
 
     /// Builds a composite from a model string, the external node ids that
     /// become its posts, and the optional per-child dump tokens. Fails named
-    /// when a child dump carries an expression that cannot parse; unknown
-    /// child kinds and short node lists still skip silently like upstream's
-    /// "failed to create" path.
+    /// when a child dump carries an expression that cannot parse, or when the
+    /// children would occupy more terminal slots than [`MAX_MATRIX_ROWS`]
+    /// (see the budget tally in the body); unknown child kinds and short node
+    /// lists still skip silently like upstream's "failed to create" path.
     pub fn from_model(
         model: &str,
         external: &[usize],
@@ -326,8 +341,24 @@ impl Composite {
         kind: &'static str,
     ) -> Result<Self, String> {
         let num_posts = external.len();
+        // The posts alone already count against the budget: the external list
+        // is file content too, and a huge nodeList needs no model lines to
+        // cost allocation.
+        if num_posts > MAX_MATRIX_ROWS {
+            return Err(exceeds_budget(num_posts));
+        }
         let mut children: Vec<Box<dyn Element>> = Vec::new();
         let mut node_lines: Vec<Vec<usize>> = Vec::new();
+        // Running total of the terminal slots the accepted children will
+        // occupy: each child contributes its model-line mentions plus its
+        // internal nodes. This must be checked here, before the children
+        // exist: the composite enters `set_circuit` as ONE spec element, so
+        // the global row gate only sees it after every child has been built,
+        // and a hostile `.` line would buy unbounded construction work first.
+        // The tally upper-bounds the composite-local node count the mapping
+        // pass produces (distinct nodes cannot exceed mentions), so anything
+        // this accepts is something `assign_nodes` would accept too.
+        let mut budget = num_posts;
 
         for (i, line) in model.split('\r').enumerate() {
             let Some((ty, nodes)) = parse_model_line(line) else {
@@ -411,6 +442,10 @@ impl Composite {
             // a malformed model, skipped like a failed build.
             if nodes.len() < child.post_count() {
                 continue;
+            }
+            budget += nodes.len() + child.internal_node_count();
+            if budget > MAX_MATRIX_ROWS {
+                return Err(exceeds_budget(budget));
             }
             children.push(child);
             node_lines.push(nodes);

@@ -5,6 +5,7 @@
 
 mod common;
 
+use circuit_core::matrix::MAX_MATRIX_ROWS;
 use circuit_core::{Circuit, CircuitSpec};
 use common::*;
 
@@ -514,6 +515,75 @@ fn a_refused_composite_leaves_the_engine_working() {
         close(c.element_voltages()[2], 5.0, 1e-9),
         "the fresh divider should divide 10 V into 5 V, got {}",
         c.element_voltages()[2]
+    );
+}
+
+// ─── Composite child counts are bounded ahead of the global row gate ───
+
+/// A single generic composite whose model string holds `children` two-post
+/// resistor lines sharing one pair of model nodes. Every accepted child adds
+/// exactly 2 terminal slots to `from_model`'s budget, so the count that
+/// crosses [`MAX_MATRIX_ROWS`] is exact and predictable.
+fn sized_composite_spec(children: usize) -> CircuitSpec {
+    let mut model = String::new();
+    for _ in 0..children {
+        model.push_str("ResistorElm 3 4\r");
+    }
+    let m = serde_json::json!({
+        "model": model,
+        "external": [1, 2],
+        "dumps": [],
+    });
+    CircuitSpec {
+        preserve_run: false,
+        elements: vec![{
+            let mut e = elm(1, "composite", &[[0, 0], [100, 0]], &[]);
+            e.model = Some(m.to_string());
+            e
+        }],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    }
+}
+
+#[test]
+fn a_composite_model_exactly_at_the_row_limit_still_builds() {
+    // 2 posts + 2 slots per child: 49,999 children land on MAX_MATRIX_ROWS
+    // exactly, so a boundary-legal composite must go through, build and step.
+    // Sharing one node pair keeps the eventual matrix tiny while the child
+    // count rides the boundary, which is precisely the shape the budget has
+    // to admit.
+    let children = (MAX_MATRIX_ROWS - 2) / 2;
+    assert_eq!(2 + 2 * children, MAX_MATRIX_ROWS);
+    let mut c = Circuit::new();
+    c.set_circuit(&sized_composite_spec(children))
+        .expect("a composite exactly at the row limit must build");
+    c.run(1);
+}
+
+#[test]
+fn a_hostile_composite_model_is_refused_once_past_the_row_limit() {
+    // One `.` line used to buy unbounded child construction: the composite
+    // enters set_circuit as ONE spec element, so the global row gate only saw
+    // it after every child existed. The tally must stop the build at the
+    // first crossing, naming the element, and the reported need must be the
+    // first over-limit value (100,002), not the full 400k the model names,
+    // proving construction halted early instead of running to completion.
+    let mut c = Circuit::new();
+    let err = c
+        .set_circuit(&sized_composite_spec(200_000))
+        .expect_err("a model past the row limit must be refused");
+    assert!(
+        err.contains("element 'composite' (id 1)") && err.contains("exceeds its node budget"),
+        "rejection should name the element and the budget, got: {err}"
+    );
+    assert!(
+        err.contains("above the limit of 100000"),
+        "rejection should carry the limit, got: {err}"
+    );
+    assert!(
+        err.contains("100002"),
+        "rejection should report the first crossing, not the full tally, got: {err}"
     );
 }
 
