@@ -23,7 +23,7 @@ import {
   importDecOrHex,
   scopeValueFromToken,
   unitsOf,
-} from './netlist/parse';
+} from './netlist/valueTokens';
 
 /** One resolved trace of an embedded scope's config, before the element-id
  *  resolution pass: `elementIndex` is a file position, not an id. */

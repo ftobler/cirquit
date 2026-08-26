@@ -29,7 +29,7 @@ import {
   importDecOrHex,
   unitsOf,
   valueTokenOf,
-} from './netlist/parse';
+} from './netlist/valueTokens';
 
 /** Per-plot fields a scope line carries, indexed like the plot list. */
 export interface DecodedPlotFields {
