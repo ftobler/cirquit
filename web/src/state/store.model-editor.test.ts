@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { parseCircuit } from '../io/netlist';
 import { clearUserModels, userModel } from '../model/deviceModels';
+import { resolveAttachment } from '../ui/DeviceModelEditorDialog';
 import { useStore } from './store';
 import { fresh } from './store.test-helpers';
 
@@ -193,5 +194,104 @@ describe('device model editor', () => {
     expect(userModel('diode', 'fwdrop=0.8')).toBeDefined();
     // An untouched reload still saves the line byte for byte.
     expect(useStore.getState().toNetlist()).toBe(saved);
+  });
+});
+
+describe('the editor closes on wholesale document replacement', () => {
+  /** Opens a create-from-element dialog on a fresh diode, mirroring the
+   *  context-menu path that arms the stale-payload hazard. */
+  const openOnDiode = () => {
+    const [loaded] = parseCircuit('d 176 80 384 80 0 0.805904783').elements;
+    const id = useStore.getState().addElement(loaded);
+    useStore.getState().openDeviceModelEditor('diode', id, 'create-simple');
+    expect(useStore.getState().deviceModelEditor).not.toBeNull();
+    return id;
+  };
+
+  it('loadNetlist closes it', () => {
+    openOnDiode();
+
+    useStore.getState().loadNetlist('$ 1 0.000005 10 50 5\nr 0 0 160 0 0 1000\n');
+
+    expect(useStore.getState().deviceModelEditor).toBeNull();
+  });
+
+  it('newCircuit closes it', () => {
+    openOnDiode();
+
+    useStore.getState().newCircuit();
+
+    expect(useStore.getState().deviceModelEditor).toBeNull();
+  });
+
+  it('undo closes it', () => {
+    openOnDiode();
+
+    // The addElement commit is the undo target; the reverted element list no
+    // longer holds the dialog's anchor.
+    useStore.getState().undo();
+
+    expect(useStore.getState().elements).toHaveLength(0);
+    expect(useStore.getState().deviceModelEditor).toBeNull();
+  });
+
+  it('redo closes it too', () => {
+    const id = openOnDiode();
+    useStore.getState().undo();
+    // Re-raise an editor so redo's own close is what is under test, not
+    // undo's already-applied one (the same style as the gesture flag tests).
+    useStore.setState({
+      deviceModelEditor: { family: 'diode', initial: diodeEntry('stale'), attachedElementId: id },
+    });
+
+    useStore.getState().redo();
+
+    expect(useStore.getState().deviceModelEditor).toBeNull();
+  });
+});
+
+describe('OK with a dead anchor', () => {
+  it('a dead attachedElementId resolves to nothing and writes no model line', () => {
+    const [loaded] = parseCircuit('d 176 80 384 80 0 0.805904783').elements;
+    const id = useStore.getState().addElement(loaded);
+    useStore.getState().openDeviceModelEditor('diode', id, 'create-simple');
+    const stale = useStore.getState().deviceModelEditor;
+    expect(stale?.attachedElementId).toBe(id);
+
+    // A load replaces the document under the dialog (and closes it); a body
+    // that somehow survived with its captured props must still be harmless,
+    // so OK re-resolves the anchor against the live element list first.
+    useStore.getState().loadNetlist('$ 1 0.000005 10 50 5\nr 0 0 160 0 0 1000\n');
+    expect(resolveAttachment(stale?.attachedElementId)).toBeUndefined();
+
+    const revision = useStore.getState().revision;
+    useStore
+      .getState()
+      .applyDeviceModelEdit(
+        stale!.family,
+        diodeEntry('mydiode'),
+        resolveAttachment(stale?.attachedElementId),
+        stale?.prevName,
+      );
+
+    // Nothing references the registered model, so the save writes no line,
+    // and the loaded resistor was never touched by a rebind.
+    const saved = useStore.getState().toNetlist();
+    expect(saved).not.toContain('34 ');
+    expect(useStore.getState().elements[0].modelName).toBeUndefined();
+    expect(useStore.getState().elements[0].params.resistance).toBe(1000);
+    expect(useStore.getState().revision).toBe(revision);
+    // The configured model itself is not lost: it stays in the picker, which
+    // is the register-only downgrade a dead anchor gets instead of a rebind.
+    expect(userModel('diode', 'mydiode')).toBeDefined();
+  });
+
+  it('a live attachedElementId still resolves and would take the create path', () => {
+    const [loaded] = parseCircuit('d 176 80 384 80 0 0.805904783').elements;
+    const id = useStore.getState().addElement(loaded);
+
+    expect(resolveAttachment(id)).toBe(id);
+    // An edit-mode editor has no anchor at all; the guard passes it through.
+    expect(resolveAttachment(undefined)).toBeUndefined();
   });
 });

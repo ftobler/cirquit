@@ -51,6 +51,20 @@ function s(v: number | undefined, fallback: number): string {
   return v === undefined ? String(fallback) : String(v);
 }
 
+/** The create anchor is re-checked at OK time: a load, New or an undo that ran
+ *  while the dialog was up replaces the element list wholesale, so the id
+ *  captured at open time can name an element the document no longer holds. A
+ *  dead id downgrades to undefined, which registers the configured model
+ *  without rebinding anything (nothing references it yet, so no model line is
+ *  written); only an id that still resolves reaches the create path. */
+export const resolveAttachment = (
+  attachedElementId: number | undefined,
+): number | undefined =>
+  attachedElementId !== undefined &&
+  useStore.getState().elements.some((e) => e.id === attachedElementId)
+    ? attachedElementId
+    : undefined;
+
 export function DeviceModelEditorDialog() {
   const editor = useStore((s) => s.deviceModelEditor);
   const closeDeviceModelEditor = useStore((s) => s.closeDeviceModelEditor);
@@ -200,7 +214,9 @@ function EditorDialogBody({
       useStore.getState().setNotice(`Model name "${name}" is taken; saved as "${finalName}"`);
     }
     entry.name = finalName;
-    onApply(family, entry, attachedElementId, prevName);
+    // The anchor is live-checked here rather than trusted from open time: the
+    // element list may have been replaced wholesale while the dialog sat up.
+    onApply(family, entry, resolveAttachment(attachedElementId), prevName);
     onClose();
   };
 

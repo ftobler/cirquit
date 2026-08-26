@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { StorageLike } from './appPrefs';
+import { RECOVERY_STORAGE_KEY } from './recovery';
 import { useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 
@@ -165,5 +167,69 @@ describe('scope setter gesture-level undo', () => {
     useStore.getState().redo();
     expect(useStore.getState().scopeGesture).toBe(false);
     expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(60);
+  });
+});
+
+describe('wholesale document replacement lowers gestures by policy', () => {
+  /** Raises both flags with nothing mounted: beginScopeGesture is exactly what
+   *  a panel pointer-down fires and beginElementGesture what a canvas drag
+   *  arms, so no React teardown exists here to lower them for the action. */
+  const armGestures = () => {
+    scoped();
+    useStore.getState().beginScopeGesture();
+    useStore.getState().beginElementGesture('move');
+    expect(useStore.getState().scopeGesture).toBe(true);
+    expect(useStore.getState().elementGesture).toEqual({ kind: 'move', placeTurns: 0 });
+  };
+
+  it('loadNetlist lowers both flags beside its epoch bump, like an undo does', () => {
+    armGestures();
+    const epoch = useStore.getState().revertEpoch;
+
+    useStore.getState().loadNetlist('$ 1 0.000005 10 50 5\nr 0 0 160 0 0 100\n');
+
+    // The flags drop as part of the action itself, not via an unmount cleanup
+    // this headless run could never deliver.
+    expect(useStore.getState().scopeGesture).toBe(false);
+    expect(useStore.getState().elementGesture).toBeNull();
+    expect(useStore.getState().revertEpoch).toBe(epoch + 1);
+  });
+
+  it('newCircuit lowers both flags on its own replacement', () => {
+    armGestures();
+    const epoch = useStore.getState().revertEpoch;
+
+    useStore.getState().newCircuit();
+
+    expect(useStore.getState().scopeGesture).toBe(false);
+    expect(useStore.getState().elementGesture).toBeNull();
+    expect(useStore.getState().revertEpoch).toBe(epoch + 1);
+  });
+
+  it('recoverAutoSave lowers both flags through its load', () => {
+    // Recovery bytes in storage, the row armed; recoverAutoSave routes through
+    // loadNetlist, so the lowering must survive that indirection.
+    const map = new Map<string, string>([
+      [RECOVERY_STORAGE_KEY, '$ 1 0.000005 10.2 50 5 43 5e-11\nr 0 0 16 0 0 100\n'],
+    ]);
+    (globalThis as { localStorage?: StorageLike }).localStorage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    };
+    armGestures();
+    const epoch = useStore.getState().revertEpoch;
+
+    try {
+      useStore.setState({ hasRecovery: true });
+      useStore.getState().recoverAutoSave();
+    } finally {
+      delete (globalThis as { localStorage?: StorageLike }).localStorage;
+    }
+
+    expect(useStore.getState().elements).toHaveLength(1);
+    expect(useStore.getState().hasRecovery).toBe(false);
+    expect(useStore.getState().scopeGesture).toBe(false);
+    expect(useStore.getState().elementGesture).toBeNull();
+    expect(useStore.getState().revertEpoch).toBe(epoch + 1);
   });
 });
