@@ -843,9 +843,9 @@ Dump codes implemented so far, with their trailing field order:
 | `178` | relay          | poleCount, inductance, coilCurrent, r_on, r_off, onCurrent, coilR, [offCurrent, switchingTime, position] |
 | `425` | relay coil     | label, inductance, coilCurrent, onCurrent, coilR, offCurrent, switchingTime, type, state, switchPosition |
 | `426` | relay contact  | label, r_on, r_off, [i_position]                           |
-| `415` | dc motor       | inductance, resistance, K, Kb, J, b, gearRatio, tau        |
-| `427` | three-phase motor | Rs, Rr, Ls, Lr, lm, b, J                                   |
-| `428` | motor protection switch | resistance, i2t, blown (true/false), label (escaped)       |
+| `415` | DC motor       | inductance, resistance, K, Kb, J, b, gearRatio, tau        |
+| `427` | three-phase motor | Rs, Rr, Ls, Lr, lm, b, J                                |
+| `428` | motor protection switch | resistance, i2t, blown (true/false), label (escaped) |
 | `a`   | op-amp         | maxOut, minOut, gbw, volts0, volts1, gain                  |
 | `402` | OTA            | one raw `_`-joined child-dump token per composite child (2 rails + 16 transistors); the two rail tokens re-derived from posVolt/negVolt on save, the sixteen transistor tokens carried verbatim |
 | `409` | realistic op-amp | slewRate, capValue, currentLimit, modelType              |
@@ -872,7 +872,7 @@ Dump codes implemented so far, with their trailing field order:
 | `182` | Schmitt trigger (non-inverting) | slewRate, lowerTrigger, upperTrigger, logicOnLevel, logicOffLevel |
 | `183` | Schmitt trigger (inverting) | same as `182`                                    |
 | `208` | custom logic   | modelName (escaped), then one outputVoltage per output pin |
-| `161` | phase comparator | [highVoltage] (the standard chip stream; no bits, no state pins) |
+| `161` | phase comparator | [highVoltage] (the chip stream; no bits, no state pins)  |
 | `435` | bus logic input| busWidth, value, hiV, loV                                  |
 | `437` | bus transceiver| bits, [highVoltage] (the standard chip stream)             |
 | `434` | instruction display | busWidth, threshold, lookup table (one escaped token) |
