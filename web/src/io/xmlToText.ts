@@ -464,7 +464,7 @@ function gateTokens(n: XmlNode): (string | number)[] {
 }
 
 /** The common chip tail: a bits token when the type carries one, an optional
- *  high-voltage token (only under FLAG_CUSTOM_VOLTAGE, whose bit `flagsFor`
+ *  high-voltage token (only under CHIP_CUSTOM_VOLTAGE, whose bit `flagsFor`
  *  sets), then the type's own tokens (ChipElm.java:48-56). */
 function chipTail(node: XmlNode, hasBits: boolean, own: (string | number)[]): (string | number)[] {
   const hv = node.attrs.hv;

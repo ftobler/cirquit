@@ -304,7 +304,7 @@ export const SEVEN_SEG_DEF: ElementDef = {
   defaults: { baseSegments: 7, extraSegment: 0, diodeDirection: 0, highVoltage: 5 },
   parse: (t, e) => {
     // The ChipElm base writes an optional high-voltage token (only under
-    // FLAG_CUSTOM_VOLTAGE) before this element's own three tokens
+    // CHIP_CUSTOM_VOLTAGE) before this element's own three tokens
     // (ChipElm.java:356-366, SevenSegElm.java:65).
     const i = chipCommonTokens(t, e, false);
     readParams(t.slice(i), e, ['baseSegments', 'extraSegment', 'diodeDirection']);

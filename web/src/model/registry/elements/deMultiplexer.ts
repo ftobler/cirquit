@@ -89,7 +89,7 @@ export const DEMULTIPLEXER_DEF: ElementDef = {
   defaults: { selectBits: 2, highVoltage: 5 },
   parse: (t, e) => {
     // The ChipElm base writes an optional high-voltage token (only under
-    // FLAG_CUSTOM_VOLTAGE) before this element's own select-bit count
+    // CHIP_CUSTOM_VOLTAGE) before this element's own select-bit count
     // (ChipElm.java:356-366, DeMultiplexerElm.java:61).
     const i = chipCommonTokens(t, e, false);
     const bits = Number(t[i]);

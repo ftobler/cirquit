@@ -5,7 +5,7 @@
  * step and drives the D0..D(bits-1) outputs; this file owns the geometry.
  *
  * Token layout after the common fields is the standard chip stream: `bits`
- * then the optional `highVoltage` under FLAG_CUSTOM_VOLTAGE (ChipElm.java:
+ * then the optional `highVoltage` under CHIP_CUSTOM_VOLTAGE (ChipElm.java:
  * 51-56). The output bits are never saved, so no state tokens follow.
  */
 

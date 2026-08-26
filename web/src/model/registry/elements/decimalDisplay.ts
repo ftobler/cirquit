@@ -6,7 +6,7 @@
  *
  * Token layout after the common fields differs from the other chips: the
  * ChipElm base writes an optional high-voltage token (only under
- * FLAG_CUSTOM_VOLTAGE) before this element's own `bitCount displayMode`
+ * CHIP_CUSTOM_VOLTAGE) before this element's own `bitCount displayMode`
  * (ChipElm.java:356-366, DecimalDisplayElm.java:78). The display-mode token is
  * absent from older files, so it is read defensively.
  */
