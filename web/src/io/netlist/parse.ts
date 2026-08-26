@@ -613,14 +613,20 @@ export function parseCircuit(text: string): ParsedCircuit {
 
     // The five leading numeric tokens decide readability, mirroring upstream,
     // which reads coordinates and flags with Integer.parseInt inside the
-    // per-line try (CircuitLoader.java:186-190): an absent or non-finite token
-    // throws there and the catch skips the whole line (:207-211). Loading such
-    // a line at (0,0) here would weld posts that never touched, so it degrades
-    // like any other unmodelled element line instead. Fractions stay accepted
-    // and rounded below, a deliberate accommodation for dragged geometry.
+    // per-line try (CircuitLoader.java:186-190): an absent, junk or
+    // out-of-range token throws there and the catch skips the whole line
+    // (:207-211). Loading such a line at (0,0) here would weld posts that
+    // never touched, so it degrades like any other unmodelled element line
+    // instead. Fractions stay accepted and rounded below, a deliberate
+    // accommodation for dragged geometry.
     const coord = (i: number): number | null => {
       const v = Number(tokens[i]);
-      return tokens[i] !== undefined && Number.isFinite(v) ? v : null;
+      // The i32 bound keeps an oversized coordinate out of the engine's
+      // `[i32; 2]` posts: past it serde refuses the whole build rather than
+      // the one line upstream's parseInt throw skips.
+      return tokens[i] !== undefined && Number.isFinite(v) && Math.abs(v) <= 2147483647
+        ? v
+        : null;
     };
     const cx1 = coord(1);
     const cy1 = coord(2);

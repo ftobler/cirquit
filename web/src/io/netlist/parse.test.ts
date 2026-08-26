@@ -326,6 +326,32 @@ describe('strict element-line coordinates', () => {
     );
     expect(out).toBe(text);
   });
+
+  it('a coordinate past the i32 range makes its line unreadable, not the whole file', () => {
+    // Upstream reads coordinates with Integer.parseInt inside the per-line try,
+    // and an out-of-range integer throws exactly like a junk token
+    // (CircuitLoader.java:186-190), so only that line skips. Letting it through
+    // here instead dies in serde on the engine's `[i32; 2]` posts, failing the
+    // build for every other element in the file.
+    const text = `${HEADER}r 0 0 16 0 0 220\nr 3e9 0 3000000100 0 0 1000\n`;
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['resistor']);
+    expect(parsed.passthrough).toEqual(['r 3e9 0 3000000100 0 0 1000']);
+    expect(parsed.warnings).toEqual([
+      'Resistor line with unreadable coordinates or flags was kept as an unrecognised line',
+    ]);
+    // The skipped line rides passthrough in place: a save is byte-for-byte.
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    expect(out).toBe(text);
+    // The boundary itself stays loadable.
+    expect(parseCircuit(`${HEADER}r -2147483647 0 2147483647 0 0 220\n`).elements).toHaveLength(1);
+  });
 });
 
 describe('device-model file lines and the save writer', () => {
