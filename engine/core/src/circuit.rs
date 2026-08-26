@@ -170,16 +170,14 @@ pub struct Circuit {
     /// Timestep the next step will attempt; starts at `options.time_step` and
     /// moves between it and `min_time_step` under adaptation.
     current_time_step: f64,
-    /// Timestep the scope captures were sampled at, mirroring upstream's
-    /// `Scope.scopeTimeStep` (Scope.java:73). A frame whose effective
-    /// timestep differs from this clears every capture before sampling, so a
-    /// buffer can never mix columns aggregated under two different dt values.
+    /// Nominal timestep the scope captures were sampled at, mirroring
+    /// upstream's `Scope.scopeTimeStep` (Scope.java:73). A frame whose
+    /// *nominal* timestep differs from this clears every capture before
+    /// sampling, so a buffer can never mix columns aggregated under two
+    /// different dt values; the working step's halving and doubling
+    /// deliberately leave it alone, exactly as upstream's comparison against
+    /// `maxTimeStep` rides through adaptation untouched.
     scope_time_step: f64,
-    /// Set when `set_time_step` fired since the captures were last synced.
-    /// Needed alongside the value above because a mid-frame halve that
-    /// recovers by doubling lands back on the exact starting float, which a
-    /// bare equality check would read as no change.
-    dt_dirty: bool,
     /// Consecutive easy steps, drives doubling once it reaches 3.
     good_iterations: u32,
     /// Solved closure vectors of the last committed step, one per closure, so
@@ -240,7 +238,6 @@ impl Circuit {
             ctx: SimCtx::default(),
             current_time_step: SimOptions::default().time_step,
             scope_time_step: SimOptions::default().time_step,
-            dt_dirty: false,
             good_iterations: 0,
             last_x: Vec::new(),
             collapsed_vs: HashSet::new(),
@@ -474,10 +471,6 @@ impl Circuit {
             self.current_time_step = self.options.time_step;
             self.good_iterations = 0;
         }
-        // The rebuild decides the working step outright; nothing sampled the
-        // captures under an in-flight change, so no pending dirty flag from
-        // before the rebuild may survive into the next frame.
-        self.dt_dirty = false;
         self.ctx = SimCtx {
             time: if spec.preserve_run {
                 self.ctx.time
@@ -982,9 +975,6 @@ impl Circuit {
     /// own here.
     fn set_time_step(&mut self, dt: f64) {
         self.current_time_step = dt;
-        // The scope sync in `run` compares values, which cannot see a step
-        // that moved and moved back inside one frame; the flag can.
-        self.dt_dirty = true;
         self.ctx.dt = dt;
         // A step-size change never touches topology, so `restamp` cannot
         // newly fail here; the side channel matches every other runtime
@@ -1206,6 +1196,7 @@ impl Circuit {
         } else {
             Vec::new()
         };
+        let mut reused_any = false;
         self.scopes = spec
             .scopes
             .iter()
@@ -1217,6 +1208,7 @@ impl Circuit {
                     .and_then(Option::take);
                 match reused {
                     Some(mut trace) => {
+                        reused_any = true;
                         trace.element_index = index;
                         trace
                     }
@@ -1224,6 +1216,14 @@ impl Circuit {
                 }
             })
             .collect();
+        // Fresh rings hold no samples, so recording the nominal step here
+        // keeps the next run() from clearing empties; a rebuild that kept
+        // any ring leaves the field alone, so a nominal change still wipes
+        // the preserved captures exactly once at that boundary
+        // (Scope.java:598).
+        if !reused_any {
+            self.scope_time_step = self.options.time_step;
+        }
     }
 
     /// Solves the circuit with reactive elements held at steady state, giving
@@ -1865,20 +1865,24 @@ impl Circuit {
 
     /// Advances `steps` timesteps, sampling every scope on each one.
     pub fn run(&mut self, steps: u32) -> StepReport {
-        // Upstream resets every scope graph when the effective timestep has
-        // changed (Scope.java:597-601), checked each frame before drawing:
-        // columns aggregate a fixed count of steps, so after an adaptive
-        // halve or double the surviving columns would stretch against the
-        // time grid and a frequency readout over them would lie. The check
-        // sits at the frame boundary here too; the stale columns written
-        // earlier in the changing frame stay visible until this next run,
-        // one animation frame wider than upstream's same-draw reset. The
-        // dirty flag closes the round-trip hole: a halve-and-retry that
-        // recovers inside one frame lands back on the starting value, which
-        // a bare comparison would keep.
-        if self.dt_dirty || self.scope_time_step != self.current_time_step {
-            self.dt_dirty = false;
-            self.scope_time_step = self.current_time_step;
+        // Upstream resets every scope whose `scopeTimeStep` differs from
+        // `sim.maxTimeStep`, checked each frame before drawing
+        // (Scope.java:598-600). maxTimeStep is the NOMINAL step
+        // (SimulationManager.java:54), moved only by EditOptions.java:125, a
+        // file load (CircuitLoader.java:258) and the audio-output family;
+        // the adaptive halve (SimulationManager.java:1394) and double (:1316)
+        // touch only the working step, so ordinary adaptation never blanks
+        // the traces. Columns aggregate a fixed count of steps, so after a
+        // genuine nominal change the surviving columns would stretch against
+        // the time grid and a frequency readout over them would lie. The
+        // check sits at the frame boundary here too; the stale columns
+        // written earlier in the changing frame stay visible until this next
+        // run, one animation frame wider than upstream's same-draw reset.
+        // The comparison cannot miss a change because `options.time_step`
+        // has exactly one writer, `set_circuit`, behind its positive-finite
+        // guards: nothing else ever moves the nominal.
+        if self.scope_time_step != self.options.time_step {
+            self.scope_time_step = self.options.time_step;
             for s in self.scopes.iter_mut() {
                 s.clear();
             }
@@ -1977,7 +1981,6 @@ impl Circuit {
         // The captures below were just emptied at the nominal step; recording
         // it here keeps the next frame from clearing them a second time.
         self.scope_time_step = self.current_time_step;
-        self.dt_dirty = false;
         self.good_iterations = 0;
         self.open_pinned.clear();
         for elm in self.elements.iter_mut() {
@@ -2391,11 +2394,11 @@ mod tests {
     use super::*;
     use crate::spec::{ScopeSpec, TriggerSpec};
 
-    /// A 5 V source behind 1 k into ground, with one voltage scope on the
-    /// resistor: four steps aggregate into each column of a 16-column ring.
-    fn scoped_circuit() -> Circuit {
-        let mut c = Circuit::new();
-        let spec = CircuitSpec {
+    /// The scope harness spec: a source across a 1 k resistor to ground, with
+    /// one voltage scope on the resistor aggregating four steps per column
+    /// into a 16-column ring.
+    fn scoped_spec(time_step: f64) -> CircuitSpec {
+        CircuitSpec {
             preserve_run: false,
             elements: vec![
                 ElementSpec {
@@ -2425,9 +2428,21 @@ mod tests {
                     model: None,
                     flags: 0,
                 },
+                // Grounds the source's cold post too: without it the whole
+                // loop floats, no current flows and the resistor reads ~0 V
+                // instead of the divided 5 V the analytic assertions want.
+                ElementSpec {
+                    id: 4,
+                    kind: "ground".into(),
+                    posts: vec![[0, 100]],
+                    params: HashMap::new(),
+                    label: None,
+                    model: None,
+                    flags: 0,
+                },
             ],
             options: Some(SimOptions {
-                time_step: 5e-6,
+                time_step,
                 ..SimOptions::default()
             }),
             scopes: vec![ScopeSpec {
@@ -2440,39 +2455,159 @@ mod tests {
                 trigger: TriggerSpec::default(),
                 display_width: 0,
             }],
-        };
-        c.set_circuit(&spec).expect("circuit should analyse");
+        }
+    }
+
+    /// The scope harness at its nominal 5 us step: a 5 V source behind 1 k.
+    fn scoped_circuit() -> Circuit {
+        let mut c = Circuit::new();
+        c.set_circuit(&scoped_spec(5e-6))
+            .expect("circuit should analyse");
         c
     }
 
-    #[test]
-    fn a_timestep_change_clears_the_scope_captures_at_the_next_frame() {
-        // Scope.java:597-601: when sim.maxTimeStep changes, every graph is
-        // reset before the next draw, so a capture buffer never mixes
-        // columns aggregated under two different timesteps. Without this an
-        // adaptive halve leaves the surviving columns stretched against the
-        // time grid and the frequency readout lies. The port checks at the
-        // same point, the frame boundary inside run().
-        let mut c = scoped_circuit();
-        c.run(40);
-        assert_eq!(c.scopes()[0].columns_written, 10);
-        assert_eq!(c.scopes()[0].snapshot().len(), 20);
+    /// The scope harness driven by a 10 V 20 kHz sine instead of DC, so a
+    /// sample's value depends on when its step landed and a wrong dt schedule
+    /// shows up as wrong numbers. The nominal step passed here is meant to
+    /// sit at the BOTTOM of the tested working-step range: the engine's own
+    /// easy-step doubler pulls a below-nominal working step back up
+    /// mid-frame, which would make a hand-written schedule lie.
+    fn sine_scoped_spec(nominal_step: f64) -> CircuitSpec {
+        let mut spec = scoped_spec(nominal_step);
+        spec.elements[0].params = HashMap::from([
+            ("waveform".to_string(), 1.0),
+            ("frequency".to_string(), 20_000.0),
+            ("maxVoltage".to_string(), 10.0),
+        ]);
+        spec
+    }
 
-        // What the adaptive halve would reach mid-frame.
-        c.set_time_step(1.25e-6);
-        // The next frame clears first, then samples eight steps at the new
-        // dt: two fresh columns, nothing carried over.
-        c.run(8);
-        assert_eq!(c.scopes()[0].columns_written, 2);
-        assert_eq!(c.scopes()[0].snapshot().len(), 4);
+    /// The source voltage at the end of step `k` (1-based): the node is the
+    /// source terminal itself against the 1 k load, so the scope reads it
+    /// exactly. A fresh build keeps `freq_time_zero` at zero, making the
+    /// phase plain `frequency * t` (voltage_source.rs).
+    fn sine_sample(t: f64) -> f64 {
+        10.0 * (std::f64::consts::TAU * 20_000.0 * t).sin()
+    }
+
+    /// Column min/max pairs the sine harness must produce for a frame
+    /// schedule of `(steps, dt)` pairs sampled at end-of-step times. Columns
+    /// aggregate every four steps globally regardless of the dt in force, so
+    /// group membership follows the running sample count alone.
+    fn expected_sine_columns(schedule: &[(usize, f64)]) -> Vec<(f64, f64)> {
+        let mut cols: Vec<(f64, f64)> = Vec::new();
+        let mut t = 0.0;
+        let mut k = 0usize;
+        for &(steps, dt) in schedule {
+            for _ in 0..steps {
+                t += dt;
+                k += 1;
+                let v = sine_sample(t);
+                match cols.last_mut() {
+                    _ if (k - 1).is_multiple_of(4) => cols.push((v, v)),
+                    Some(col) => {
+                        col.0 = col.0.min(v);
+                        col.1 = col.1.max(v);
+                    }
+                    None => unreachable!("a non-first sample must have a column"),
+                }
+            }
+        }
+        cols
+    }
+
+    /// Asserts a whole capture against the analytic column list. The ring
+    /// stores f32, which bounds precision near full scale to about 1e-6
+    /// relative; 1e-4 V absolute leaves cross-dt mixing errors (a stale or
+    /// wiped column differs by whole sample amplitudes) orders of magnitude
+    /// clear while staying far tighter than any solver slop on this linear
+    /// circuit.
+    fn assert_matches_columns(c: &Circuit, expected: &[(f64, f64)]) {
+        // The ring keeps only its newest `capacity` columns, so a schedule
+        // longer than the ring compares against its own tail.
+        let cap = c.scopes()[0].capacity();
+        let skip = expected.len().saturating_sub(cap);
+        let expected = &expected[skip..];
+        let snap = c.scopes()[0].snapshot();
+        assert_eq!(snap.len(), expected.len() * 2);
+        for (j, &(lo, hi)) in expected.iter().enumerate() {
+            let (got_lo, got_hi) = (snap[2 * j] as f64, snap[2 * j + 1] as f64);
+            assert!(
+                (got_lo - lo).abs() < 1e-4 && (got_hi - hi).abs() < 1e-4,
+                "column {j} read [{got_lo}, {got_hi}], expected [{lo}, {hi}]"
+            );
+        }
     }
 
     #[test]
-    fn a_timestep_that_moves_and_moves_back_still_clears_the_captures() {
-        // A halve-and-retry that recovers by doubling inside one frame lands
-        // back on the exact starting value, so a bare comparison of timesteps
-        // sees no change and would leave columns aggregated under two
-        // different steps sitting side by side in one buffer.
+    fn a_nominal_timestep_change_clears_scope_captures_once() {
+        // Upstream resets a scope whose `scopeTimeStep` differs from
+        // `sim.maxTimeStep` (Scope.java:598-600). maxTimeStep is the nominal
+        // step, moved by EditOptions (EditOptions.java:125) and file loads
+        // (CircuitLoader.java:258), never by the adaptive halve or double,
+        // so a genuine nominal change wipes the captures exactly once at the
+        // next frame boundary, then the trace refills analytically at the
+        // new dt.
+        let mut c = scoped_circuit();
+        c.run(40);
+        assert_eq!(c.scopes()[0].columns_written, 10);
+
+        // An options edit is a preserving rebuild: identical ScopeSpec, ring
+        // reused, nominal halved to what upstream's dialog would set.
+        let mut spec = scoped_spec(2.5e-6);
+        spec.preserve_run = true;
+        c.set_circuit(&spec)
+            .expect("the rebuilt circuit should analyse");
+        c.run(8);
+        // The clear happened at the frame boundary ahead of these eight
+        // steps, all sampled at the new nominal: two fresh columns of the
+        // DC divider's flat 5 V.
+        assert_eq!(c.scopes()[0].columns_written, 2);
+        assert_eq!(c.scopes()[0].snapshot().len(), 4);
+        for v in c.scopes()[0].snapshot() {
+            assert_eq!(v, 5.0);
+        }
+        // Exactly once: the next frame boundary must not clear again.
+        c.run(8);
+        assert_eq!(c.scopes()[0].columns_written, 4);
+    }
+
+    #[test]
+    fn working_step_changes_never_clear_the_scope_captures() {
+        // The adaptive machinery moves only the working step: the rejection
+        // halve (SimulationManager.java:1394) and recovery double (:1316)
+        // leave maxTimeStep alone, so upstream's comparison cannot fire and
+        // its traces ride through adaptation untouched. The capture must
+        // survive a working-step change and keep filling with samples that
+        // match the known dt schedule, which proves survival without
+        // cross-dt mixing in either direction.
+        let mut c = Circuit::new();
+        c.set_circuit(&sine_scoped_spec(2.5e-6))
+            .expect("the sine harness should analyse");
+        // The nominal is 2.5 us; the working step starts ABOVE it, as a
+        // circuit carries out of a rejecting stretch, then lands on the
+        // nominal for forty more steps. At or above the nominal the engine's
+        // easy-step doubler stays idle, so this schedule is the exact
+        // committed timeline.
+        c.set_time_step(5e-6);
+        c.run(40);
+        c.set_time_step(2.5e-6);
+        c.run(40);
+        assert_eq!(
+            c.scopes()[0].columns_written,
+            20,
+            "80 captured steps must aggregate to 20 uncleared columns"
+        );
+        let schedule = [(40usize, 5e-6), (40, 2.5e-6)];
+        assert_matches_columns(&c, &expected_sine_columns(&schedule));
+    }
+
+    #[test]
+    fn a_working_step_that_moves_and_moves_back_preserves_the_captures() {
+        // A halve-and-retry that recovers by doubling lands back on the
+        // exact starting float. With the reset keyed on the nominal step,
+        // which never moved, that round trip is invisible to the scope: the
+        // ten captured columns survive and the next frame appends two more.
         let mut c = scoped_circuit();
         c.run(40);
         assert_eq!(c.scopes()[0].columns_written, 10);
@@ -2480,8 +2615,49 @@ mod tests {
         c.set_time_step(2.5e-6);
         c.set_time_step(5e-6);
         c.run(8);
-        assert_eq!(c.scopes()[0].columns_written, 2);
-        assert_eq!(c.scopes()[0].snapshot().len(), 4);
+        assert_eq!(c.scopes()[0].columns_written, 12);
+        assert_eq!(c.scopes()[0].snapshot().len(), 24);
+        for v in c.scopes()[0].snapshot() {
+            assert_eq!(v, 5.0);
+        }
+    }
+
+    #[test]
+    fn halving_to_the_floor_then_doubling_home_keeps_captures() {
+        // Walks the working step down the halve chain until it lands on the
+        // nominal step, the floor below which the engine's own doubler would
+        // pull it back up, then climbs back out, sampling between every
+        // move. columns_written must grow strictly monotonically across
+        // every frame boundary, and every column must match the analytic
+        // waveform at its own step length: no clear, no gap, no mixed
+        // aggregation anywhere on the schedule. The nominal is parked at
+        // that floor so the working step never sits below it and the
+        // schedule stays the exact committed timeline.
+        let mut c = Circuit::new();
+        c.set_circuit(&sine_scoped_spec(6.25e-7))
+            .expect("the sine harness should analyse");
+        let schedule: Vec<(usize, f64)> = vec![
+            (8, 5e-6),
+            (8, 2.5e-6),
+            (8, 1.25e-6),
+            // Floor: this dt IS the nominal now.
+            (8, 6.25e-7),
+            (8, 1.25e-6),
+            (8, 2.5e-6),
+            (8, 5e-6),
+        ];
+        for &(steps, dt) in &schedule {
+            c.set_time_step(dt);
+            let before = c.scopes()[0].columns_written;
+            c.run(steps as u32);
+            let after = c.scopes()[0].columns_written;
+            assert!(
+                after > before,
+                "a working-step move wiped {before} captured columns"
+            );
+        }
+        assert_eq!(c.scopes()[0].columns_written, 14);
+        assert_matches_columns(&c, &expected_sine_columns(&schedule));
     }
 
     /// An open-ended transmission line fed by a 10 V source behind its
