@@ -812,6 +812,29 @@ describe('scope o-line fidelity', () => {
     expect(out).toContain('o 9 64 0 4099 20 0.05 0 1');
   });
 
+  it('parses many plots over many elements without an element scan per plot', () => {
+    // Behavioural proxy for the kind map: resolving a plot's kind used to
+    // find() over the whole element array, making every parse quadratic in
+    // scopes times elements, paid again by the paste memos and the Import
+    // dialog's per-keystroke summary. This many lines cannot afford that; the
+    // by-id lookup keeps the parse well inside the default timeout.
+    const count = 20000;
+    const text =
+      HEADER +
+      Array.from(
+        { length: count },
+        (_, i) => `r ${i * 16} 0 ${(i + 1) * 16} 0 0 ${100 + i}\no ${i} 64 0 4099 20 0.05 0 1\n`,
+      ).join('');
+    const parsed = parseCircuit(text);
+    expect(parsed.elements).toHaveLength(count);
+    expect(parsed.scopes).toHaveLength(count);
+    expect(parsed.scopes[count - 1].plots[0]).toMatchObject({
+      elementIndex: count - 1,
+      elementId: parsed.elements[count - 1].id,
+      value: 'voltage',
+    });
+  });
+
   it('an old-style line keeps raw handling and a plot 0 value', () => {
     // tlmatch2.txt:38, old-style (no FLAG_PLOTS): the trailing text is scope
     // text and the value token 1 is legacy power.

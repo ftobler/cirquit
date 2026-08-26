@@ -680,11 +680,15 @@ export function parseCircuit(text: string): ParsedCircuit {
   // Resolved after the whole file is read, so an `o` line placed above the
   // elements still finds its targets, and the plot walk knows each plot's
   // element kind, which decides whether a scale token follows its value.
+  // The kind map keeps each resolution a lookup: a find over the element
+  // array per plot made every parse quadratic in scopes times elements,
+  // paid again by the paste memos and the Import dialog's summary.
   // The kind resolver is shared with the embedded-scope decode below, whose
   // config token indexes into the same element list.
+  const kindById = new Map(elements.map((e) => [e.id, e.kind]));
   const kindOfFileIndex = (index: number): string | null => {
     const elementId = idByFileIndex.get(index);
-    if (elementId !== undefined) return elements.find((e) => e.id === elementId)?.kind ?? null;
+    if (elementId !== undefined) return kindById.get(elementId) ?? null;
     const code = dumpCodeByFileIndex.get(index);
     return code === undefined ? null : kindOfDumpCode(code);
   };
