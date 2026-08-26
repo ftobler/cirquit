@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseCircuit, serializeCircuit } from './index';
 import { makeElement } from '../../state/store';
+import { postsOf } from '../../model/registry';
 import { SimEngine } from '../../engine/simulator';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../../model/types';
 
@@ -161,5 +162,21 @@ describe('FLAG_ESCAPE on text and labeled nodes', () => {
     const nodes = engine.elementNodes();
     const v = engine.nodeVoltages()[nodes[offset]] ?? 0;
     expect(v).toBeCloseTo(5, 6);
+  });
+});
+
+describe('annotation line format (423)', () => {
+  it('a bare annotation line survives parse and save untouched', () => {
+    // unishiftreg.txt:200's shape. LineElm reads nothing past the flags
+    // (LineElm.java:31-37): the endpoints are drawing geometry, there are no
+    // terminals and no tokens, so the line is its own round trip.
+    const line = '423 21 260 20 369 0';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('line');
+    expect([e.x1, e.y1, e.x2, e.y2]).toEqual([21, 260, 20, 369]);
+    expect(e.flags).toBe(0);
+    expect(postsOf(e)).toHaveLength(0);
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    expect(out.split('\n').find((l) => l.startsWith('423 '))).toBe(line);
   });
 });

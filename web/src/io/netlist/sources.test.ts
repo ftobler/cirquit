@@ -441,6 +441,75 @@ describe('batch-3 source and chip file formats', () => {
     expect(e.params.highVoltage).toBe(3.3);
     expect(out).toBe(line);
   });
+
+  it('a VCO line round-trips byte-for-byte with an empty pin stream', () => {
+    // pll.txt:2's shape. Six posts but none is a state pin, so nothing follows
+    // the flags unless CHIP_CUSTOM_VOLTAGE introduces a high voltage
+    // (ChipElm.java:367-371 writes only state pins; VCOElm.java:29-42).
+    const line = '158 432 224 464 224 0';
+    const { e, elementLine: out } = elementLine(line, '158');
+    expect(e.kind).toBe('vco');
+    expect(postsOf(e)).toHaveLength(6);
+    expect(out).toBe(line);
+  });
+
+  it('a VCO with custom high voltage carries the token ahead of the pins', () => {
+    const line = '158 432 224 464 224 8192 6';
+    const { e, elementLine: out } = elementLine(line, '158');
+    expect(e.params.highVoltage).toBe(6);
+    expect(postsOf(e)).toHaveLength(6);
+    expect(out).toBe(line);
+  });
+});
+
+describe('noise file format', () => {
+  /** Parses a single `n` line and re-emits it, returning the `n` line. */
+  const noiseLine = (line: string) => {
+    const [e] = parseCircuit(line).elements;
+    const out = serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim();
+    const elementLine = out.split('\n').find((l) => l.startsWith('n ')) ?? '';
+    return { e, elementLine };
+  };
+
+  it('round-trips the six source tokens byte-for-byte', () => {
+    // waveform frequency maxVoltage bias phaseShift dutyCycle, the voltage
+    // source stream every rail carries (VoltageElm.java:69-75).
+    const line = 'n 480 272 432 272 0 6 40 5 0 0 0.5';
+    const { e, elementLine } = noiseLine(line);
+    expect(e.kind).toBe('noise');
+    expect(e.params.waveform).toBe(6);  // WF_NOISE
+    expect(e.params.frequency).toBe(40);
+    expect(e.params.maxVoltage).toBe(5);
+    expect(e.params.bias).toBe(0);
+    expect(e.params.phaseShift).toBe(0);
+    expect(e.params.dutyCycle).toBe(0.5);
+    expect(postsOf(e)).toHaveLength(1);
+    expect(elementLine).toBe(line);
+  });
+
+  it('pins any waveform token back to noise on load', () => {
+    // bandnoise.txt:12 verbatim carries waveform 1, which the token
+    // constructor reads and NoiseElm then overwrites with WF_NOISE whatever
+    // it said (NoiseElm.java:24-28), so the canonical save writes 6.
+    const { e, elementLine } = noiseLine('n 480 272 432 272 0 1 40 5 0 0 0.5');
+    expect(e.params.waveform).toBe(6);
+    expect(e.params.frequency).toBe(40);
+    expect(elementLine).toBe('n 480 272 432 272 0 6 40 5 0 0 0.5');
+  });
+
+  it('a bare n line keeps the file-constructor seeds on every field', () => {
+    // Upstream seeds frequency 40, maxVoltage 5 and dutyCycle .5 before
+    // reading (VoltageElm.java:65-68), and this port's writer emits the whole
+    // stream unconditionally, so a truncated line grows its missing tokens.
+    const { e, elementLine } = noiseLine('n 144 144 144 112 16');
+    expect(e.params.waveform).toBe(6);
+    expect(e.params.frequency).toBe(40);
+    expect(e.params.maxVoltage).toBe(5);
+    expect(e.params.bias).toBe(0);
+    expect(e.params.phaseShift).toBe(0);
+    expect(e.params.dutyCycle).toBe(0.5);
+    expect(elementLine).toBe('n 144 144 144 112 16 6 40 5 0 0 0.5');
+  });
 });
 
 describe('antenna file format', () => {

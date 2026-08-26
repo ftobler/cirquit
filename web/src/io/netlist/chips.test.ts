@@ -629,6 +629,59 @@ describe('chip family file formats', () => {
     expect(elementLine).toBe(line);
   });
 
+  it('155 D flip-flop line round-trips its saved Q level and default high voltage', () => {
+    // One state pin, upstream pins[1], the Q output (DFlipFlopElm.java:48-49),
+    // and no bits token, so the stream after the flags is just the saved level
+    // (ChipElm.java:61-68 writes one token per state pin).
+    const line = '155 160 320 320 320 0 5';
+    const { e, elementLine } = chipLine(line, '155');
+    expect(e.kind).toBe('dFlipFlop');
+    expect(e.params.highVoltage).toBe(5);  // ChipElm.java:56, the no-flag default
+    expect(e.params.voltage1).toBe(5);
+    expect(postsOf(e)).toHaveLength(4);
+    expect(elementLine).toBe(line);
+  });
+
+  it('156 JK flip-flop line round-trips its saved Q level on pin 3', () => {
+    // The state pin is upstream pins[3] (JKFlipFlopElm.java:46-47), so the
+    // saved level lands in the voltage3 param even though it is the only
+    // state token on the line.
+    const line = '156 160 320 320 320 0 0';
+    const { e, elementLine } = chipLine(line, '156');
+    expect(e.kind).toBe('jkFlipFlop');
+    expect(e.params.highVoltage).toBe(5);
+    expect(e.params.voltage3).toBe(0);
+    expect(postsOf(e)).toHaveLength(5);
+    expect(elementLine).toBe(line);
+  });
+
+  it('193 T flip-flop line round-trips its saved Q level and default high voltage', () => {
+    // Same shape as the D flip-flop: one state pin, upstream pins[1]
+    // (TFlipFlopElm.java:39-40).
+    const line = '193 160 320 320 320 0 3.3';
+    const { e, elementLine } = chipLine(line, '193');
+    expect(e.kind).toBe('tFlipFlop');
+    expect(e.params.highVoltage).toBe(5);
+    expect(e.params.voltage1).toBe(3.3);
+    expect(postsOf(e)).toHaveLength(4);
+    expect(elementLine).toBe(line);
+  });
+
+  it.each([
+    ['155', 'voltage1'],
+    ['156', 'voltage3'],
+    ['193', 'voltage1'],
+  ])('%s carries the high-voltage token under CHIP_CUSTOM_VOLTAGE', (code, state) => {
+    // All three flops have needsBits() false, so the optional token the flag
+    // introduces is the high voltage, read ahead of the saved level
+    // (ChipElm.java:51-56).
+    const { e, elementLine } = chipLine(`${code} 160 320 320 320 8192 3.3 5`, code);
+    expect(e.flags).toBe(8192);
+    expect(e.params.highVoltage).toBe(3.3);
+    expect(e.params[state]).toBe(5);
+    expect(elementLine).toBe(`${code} 160 320 320 320 8192 3.3 5`);
+  });
+
   it('194 monostable line round-trips the retriggerable flag and delay', () => {
     // The two own tokens follow the optional high voltage; upstream's own
     // dump() drops them, so this port's writer puts them back
