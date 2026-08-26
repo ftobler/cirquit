@@ -303,6 +303,51 @@ describe('built-in composite file formats (batch C)', () => {
   });
 });
 
+describe('darlington file format', () => {
+  const lineFor = (e: CircuitElement) =>
+    serializeCircuit([e], { ...DEFAULT_SETTINGS }).trim().split('\n').find((l) => l.startsWith('400 ')) ?? '';
+
+  it('a 400 line round-trips its two child tokens and the pnp sign', () => {
+    // ota-ringmod.txt:3 verbatim: two `_`-joined transistor state tokens,
+    // carried raw, then the pnp sign (DarlingtonElm.java:31-33, :46-48). The
+    // port parks the child dumps in text and modelName, spare string slots.
+    const line =
+      '400 592 496 656 496 0 0_1_-9.186007259168688_0.47278136193663833_100 ' +
+      '0_1_-9.658788621105327_0.5881593748591852_100 1';
+    const [e] = parseCircuit(line).elements;
+    expect(e.kind).toBe('darlington');
+    expect(e.text).toBe('0_1_-9.186007259168688_0.47278136193663833_100');  // Q1's carried dump
+    expect(e.modelName).toBe('0_1_-9.658788621105327_0.5881593748591852_100');  // Q2's
+    expect(e.params.pnp).toBe(1);
+    // Base at point1, collector and emitter hanging 16 units off the far end,
+    // NPN toward negative y (DarlingtonElm.java:128-134, :155-157).
+    expect(postsOf(e)).toEqual([
+      { x: 592, y: 496 },
+      { x: 656, y: 480 },
+      { x: 656, y: 512 },
+    ]);
+    expect(lineFor(e)).toBe(line);
+  });
+
+  it('a PNP darlington keeps its -1 token and mirrors the hanging posts', () => {
+    const line = '400 80 64 208 64 0 0_1_0_0_100 0_1_0_0_100 -1';
+    const [e] = parseCircuit(line).elements;
+    expect(e.params.pnp).toBe(-1);
+    expect(postsOf(e)).toEqual([
+      { x: 80, y: 64 },
+      { x: 208, y: 80 },
+      { x: 208, y: 48 },
+    ]);
+    expect(lineFor(e)).toBe(line);
+  });
+
+  it('a fresh darlington dumps the two default child tokens plus pnp', () => {
+    const e = makeElement('darlington', 0, 0, 128, 0);
+    expect(e.params.pnp).toBe(1);
+    expect(lineFor({ ...e, id: 1 })).toBe('400 0 0 128 0 0 0_1_0_0_100 0_1_0_0_100 1');
+  });
+});
+
 describe('every composite dumps the child tokens upstream demands', () => {
   // The regression guard for the whole family. `CompositeElm.loadComposite`
   // calls `stIn.nextToken()` once per modelString child
