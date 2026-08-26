@@ -460,6 +460,22 @@ fetch it).
   show-bus-value wire, narrow pins unchanged. And the format table gained its
   four missing rows: 415 DC motor, 427 three-phase motor, 428 motor
   protection switch and 161 phase comparator.
+- Batch 16 (2026-08-26): the remaining parked refactors and two robustness
+  fixes, five parallel worktree lanes with independent reviews. A too-short
+  pwl argument list is a named parse error instead of a panic (the function
+  table's floor rises to three, matching what the walker always needed and
+  nothing legal uses). The XML converter flattens document-supplied text
+  everywhere it lands in an emitted line: preserved-tag comments keep one
+  line through newlines in attribute values, converted coordinates re-emit
+  canonically so a newline inside an x attribute can no longer forge element
+  lines, and every value-gated trace interpolates flattened text. The last
+  runtime import cycle died by splitting the subcircuit builder out of the
+  library into io/subcircuitBuild.ts, leaving io/subcircuits.ts a
+  registry-free leaf; zero SCCs remain across web/src. And two verbatim test
+  splits landed under the same byte-purity discipline as the batch 14
+  extractions: element-formats.test.ts became ten family files totalling the
+  identical 364 declared suites' worth of tests, and the LED-array block left
+  displays_converters.rs for its own led_array.rs topic file.
 - Review batch 2026-08-25b: six more lanes of the day's review pass landed as
   five worktree features plus one engine pair. Scopes lay out against their
   own viewport through one pure layoutHeader (embedded windows stop painting
@@ -510,10 +526,10 @@ fetch it).
   ('true' low, 'false' high, SwitchElm.java:56-62), un-inverting startup
   levels for 75 boolean lines across 35 bundled circuits, numerics unchanged,
   saves byte-stable.
-- 620 Rust tests, most of them the end-to-end circuit checks across
+- 621 Rust tests, most of them the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus in-module unit tests and one doctest.
-  3521 TypeScript tests pass (one corpus report test skipped); the robustness
+  3525 TypeScript tests pass (one corpus report test skipped); the robustness
   batch added 28 of the Rust tests and 61 of the TypeScript ones, review
   batch 2026-08-25b added four more Rust and 172 more TypeScript, and review
   batch 2026-08-25c added six more Rust and 19 more TypeScript. The owner-bug batch
