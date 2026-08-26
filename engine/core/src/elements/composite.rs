@@ -297,28 +297,34 @@ struct CompositeModel {
 
 impl Composite {
     /// Builds a composite from the JSON model carried in `spec.model`, the
-    /// generic kind the `.` line will use once it lands.
-    pub fn from_spec(spec: &ElementSpec) -> Option<Self> {
+    /// generic kind the `.` line uses. The model blob is user-editable file
+    /// content, so a missing or malformed definition is a named build error
+    /// rather than a silent `None`, and child errors propagate verbatim.
+    pub fn from_spec(spec: &ElementSpec) -> Result<Self, String> {
         let m: CompositeModel = spec
             .model
             .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok())?;
-        Some(Self::from_model(
-            &m.model,
-            &m.external,
-            Some(&m.dumps),
-            "composite",
-        ))
+            .and_then(|s| serde_json::from_str(s).ok())
+            .ok_or_else(|| {
+                format!(
+                    "element '{}' (id {}) has a missing or malformed model definition",
+                    spec.kind, spec.id
+                )
+            })?;
+        Self::from_model(&m.model, &m.external, Some(&m.dumps), "composite")
     }
 
     /// Builds a composite from a model string, the external node ids that
-    /// become its posts, and the optional per-child dump tokens.
+    /// become its posts, and the optional per-child dump tokens. Fails named
+    /// when a child dump carries an expression that cannot parse; unknown
+    /// child kinds and short node lists still skip silently like upstream's
+    /// "failed to create" path.
     pub fn from_model(
         model: &str,
         external: &[usize],
         dumps: Option<&[String]>,
         kind: &'static str,
-    ) -> Self {
+    ) -> Result<Self, String> {
         let num_posts = external.len();
         let mut children: Vec<Box<dyn Element>> = Vec::new();
         let mut node_lines: Vec<Vec<usize>> = Vec::new();
@@ -353,16 +359,16 @@ impl Composite {
                 }
             }
             // A controlled-source child's expression is not numeric, so
-            // `apply_dump` cannot carry it; it rides the label instead. A
-            // token whose expression fails to parse means the composite's own
-            // plumbing broke, not a user typo, and a silently-degraded child
-            // would stamp the wrong value, so fail loud with the child index
-            // named rather than letting `ExprSource::new` fall back to a stub.
+            // `apply_dump` cannot carry it; it rides the label instead. The
+            // token is file content a hand-edited model can corrupt, so an
+            // unparseable expression refuses the whole load with the child
+            // named: a silently-degraded child would stamp the wrong value,
+            // and aborting the instance helps nobody.
             if let Some(ref expr) = label {
                 if crate::expr::parse(expr).is_err() {
-                    panic!(
+                    return Err(format!(
                         "composite child {i} ({child_kind}) carries an unparseable expression: {expr:?}"
-                    );
+                    ));
                 }
             }
             // The channel type of a jfet/mosfet child is not a dump token; it
@@ -496,7 +502,7 @@ impl Composite {
             }
         }
 
-        Self {
+        Ok(Self {
             base: Base::with_posts(num_posts),
             kind,
             children,
@@ -507,7 +513,7 @@ impl Composite {
             num_posts,
             num_nodes,
             power_accum: 0.0,
-        }
+        })
     }
 
     /// Sets a live parameter on one child. The OTA uses it to push its

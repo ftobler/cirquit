@@ -335,10 +335,10 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
             let c = model_composite(spec, ota::from_spec(spec))?;
             Box::new(c)
         }
-        "composite" => {
-            let c = model_composite(spec, composite::Composite::from_spec(spec))?;
-            Box::new(c)
-        }
+        // The generic composite's model blob is file content, so its builder
+        // reports failures itself and they surface verbatim; the built-in
+        // kinds keep the Option contract via `model_composite`.
+        "composite" => Box::new(composite::Composite::from_spec(spec)?),
         "comparator" => {
             let c = model_composite(spec, comparator::from_spec(spec))?;
             Box::new(c)
@@ -428,9 +428,11 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
 }
 
 /// Names a model-driven composite that failed to build from its `spec.model`
-/// blob. These builders return `None` only when the model definition is
-/// missing or malformed; the error keeps the element's kind and id in the
-/// message so a hand-edited netlist points at the offending line.
+/// blob. Builders return `None` when that definition is missing or
+/// malformed, or when a const-string wrapper folds a child-expression
+/// failure into its Option contract; either way the error names the
+/// element's kind and id so a hand-edited netlist points at the offending
+/// line.
 fn model_composite<E: Element + 'static>(
     spec: &ElementSpec,
     built: Option<E>,

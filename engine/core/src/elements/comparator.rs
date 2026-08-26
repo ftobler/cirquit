@@ -24,10 +24,9 @@ pub fn from_spec(spec: &ElementSpec) -> Option<Composite> {
         .model
         .as_deref()
         .and_then(|m| serde_json::from_str(m).ok());
-    Some(Composite::from_model(
-        MODEL,
-        EXTERNAL,
-        dumps.as_deref(),
-        "comparator",
-    ))
+    // Folding a child-expression failure into the Option contract is
+    // deliberate: this model is a const string and its children carry no
+    // expressions, so `from_model` cannot fail here; if it ever did, the
+    // built-in composite tests would fail loudly.
+    Composite::from_model(MODEL, EXTERNAL, dumps.as_deref(), "comparator").ok()
 }

@@ -34,7 +34,11 @@ pub fn from_spec(spec: &ElementSpec) -> Option<Composite> {
         .model
         .as_deref()
         .and_then(|m| serde_json::from_str(m).ok());
-    let mut ota = Composite::from_model(MODEL, EXTERNAL, dumps.as_deref(), "ota");
+    // Folding a child-expression failure into the Option contract is
+    // deliberate: the const model's children are rails and transistors, which
+    // carry no expressions, so `from_model` cannot fail here; if it ever did,
+    // the built-in composite tests would fail loudly.
+    let mut ota = Composite::from_model(MODEL, EXTERNAL, dumps.as_deref(), "ota").ok()?;
     let pos = spec.param("posVolt", 9.0);
     let neg = spec.param("negVolt", -9.0);
     ota.set_child_param(0, "maxVoltage", neg);
