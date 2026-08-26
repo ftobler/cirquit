@@ -1220,4 +1220,35 @@ describe('the revert epoch', () => {
     useStore.getState().revertToBaseline();
     expect(useStore.getState().revertEpoch).toBe(before + 1);
   });
+
+  it('a loadNetlist document replacement bumps it', () => {
+    const before = useStore.getState().revertEpoch;
+    useStore.getState().loadNetlist('$ 1 0.000005 10 50 5\nr 0 0 160 0 0 1000\n');
+    expect(useStore.getState().revertEpoch).toBe(before + 1);
+  });
+
+  it('New bumps it like any other wholesale replacement', () => {
+    addResistor();
+    const before = useStore.getState().revertEpoch;
+    useStore.getState().newCircuit();
+    expect(useStore.getState().revertEpoch).toBe(before + 1);
+  });
+
+  it('a refused load leaves it alone: nothing was replaced', () => {
+    useStore.getState().loadNetlist('$ 1 0.000005 10 50 5\nr 0 0 160 0 0 1000\n');
+    const before = useStore.getState().revertEpoch;
+    // The truncated-XML shape the loaderror suite uses: parseCircuit throws
+    // on it, so the early return fires before any state moves.
+    expect(useStore.getState().loadNetlist('<cir name="broken">\n<r x="1"/>\n')).not.toBeNull();
+    expect(useStore.getState().revertEpoch).toBe(before);
+  });
+
+  it('an ordinary parameter edit never bumps it', () => {
+    const id = addResistor();
+    useStore.getState().commit();
+    const before = useStore.getState().revertEpoch;
+    useStore.getState().updateElement(id, { params: { resistance: 470 } });
+    useStore.getState().commit();
+    expect(useStore.getState().revertEpoch).toBe(before);
+  });
 });

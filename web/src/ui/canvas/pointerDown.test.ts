@@ -1111,6 +1111,82 @@ describe('cancelLiveDrag: a revert landing mid-gesture', () => {
   });
 });
 
+describe('escape out of a drill-in cancels the live gesture', () => {
+  // Escape inside a subcircuit editor runs exitSubcircuit, which restores
+  // the outer document wholesale through loadNetlist while pushing no undo
+  // entry: no revert ever fired, so an armed drag survived into a document
+  // that no longer holds its elements and its release wrote there. The bump
+  // now rides inside loadNetlist itself; these pin the teardown the canvas
+  // hook owes in response.
+
+  /** The drill-in suite's outer document: one 410 naming the model, the
+   *  model's own `.` line and a resistor to recognise on return. */
+  const OUTER =
+    '$ 1 0.000005 10 50 5 50 5e-11\n' +
+    '410 0 0 64 64 1 myCirc\n' +
+    '. myCirc 0 2 2 2 in 1 0 0 out 3 0 1 ' +
+    'ResistorElm\\s1\\s2\\rResistorElm\\s2\\s3 ' +
+    '0\\\\s1000\\s0\\\\s1000\n' +
+    'r 0 0 160 0 0 1000\n';
+
+  const drillIn = () => {
+    expect(useStore.getState().loadNetlist(OUTER)).toBeNull();
+    expect(useStore.getState().enterSubcircuit('myCirc')).toBe(true);
+  };
+
+  it('a wire drag dies with the exit and inserts nothing', () => {
+    drillIn();
+    useStore.getState().setTool('wire');
+    const r = refs();
+    beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    const drag = r.dragRef.current;
+    if (drag.mode !== 'wire') throw new Error('expected a wire drag');
+    // What the move handler latches once the drag travels: the run waits for
+    // pointer-up, so this is exactly what would leak into the outer circuit
+    // when the release lands after the exit.
+    r.dragRef.current = { ...drag, current: { x: 224, y: 96 }, axis: 'h' };
+    const before = useStore.getState().revertEpoch;
+
+    useStore.getState().exitSubcircuit();
+    // The hook's reaction to the bump the exit just caused.
+    cancelLiveDrag(r, 1, useStore.getState());
+
+    const s = useStore.getState();
+    // The untouched look-and-return takes the single-load restore path, so
+    // the exit owes exactly one bump.
+    expect(s.revertEpoch).toBe(before + 1);
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+    expect(s.tool).toBeNull();
+    expect(s.subcircuitStack).toHaveLength(0);
+    // The restored outer circuit holds exactly its own two parts: the traced
+    // run never reached it.
+    expect(s.elements.map((e) => e.kind)).toEqual(['customComposite', 'resistor']);
+  });
+
+  it('an armed placement stands down with its gesture flag', () => {
+    drillIn();
+    const before = useStore.getState().revertEpoch;
+    useStore.getState().setTool('resistor');
+    const r = refs();
+    beginPointerGesture(down({ clientX: 100, clientY: 100 }), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    expect(useStore.getState().elementGesture).not.toBeNull();
+
+    useStore.getState().exitSubcircuit();
+    cancelLiveDrag(r, 1, useStore.getState());
+
+    const s = useStore.getState();
+    // loadNetlist itself clears neither flag; the hook's teardown owes both,
+    // whatever route the exit took through its loads.
+    expect(s.elementGesture).toBeNull();
+    expect(s.tool).toBeNull();
+    expect(r.dragRef.current).toEqual({ mode: 'none' });
+    expect(s.subcircuitStack).toHaveLength(0);
+    // The placement changed the inner sheet, so this exit takes the edited
+    // path and its two restore loads each bump once.
+    expect(s.revertEpoch).toBe(before + 2);
+  });
+});
+
 describe('finishPlacement cancelling a collapsed drop', () => {
   // A drag that returns to its own anchor still collapses the part to a point,
   // which is the case this cancel exists for.

@@ -2988,6 +2988,13 @@ function createAppStore() {
       // A load is a new document: the frame loop's rebuild gate must refuse to
       // inject the previous circuit's live charges into it.
       document: s.document + 1,
+      // The same rule for the canvas layer, here rather than in each caller:
+      // a live gesture was mutating against elements this replace deleted, so
+      // every route through loadNetlist (file open, Escape out of a drill-in,
+      // recovery) must stand it down the way an undo does. Refused loads
+      // return above without reaching this, so nothing is bumped for a
+      // document that never changed.
+      revertEpoch: s.revertEpoch + 1,
     }));
     // A load is a new document on screen too: centre it the way upstream's
     // finishReadCircuit always does unless RC_NO_CENTER is passed
@@ -3296,6 +3303,10 @@ function createAppStore() {
       ...bumpRevision(s),
       // New is a fresh document, like a load: no live charges carry over.
       document: s.document + 1,
+      // New does not route through loadNetlist, so it owes the same gesture
+      // teardown on its own: the drag in flight was armed against elements
+      // this replace just emptied out.
+      revertEpoch: s.revertEpoch + 1,
     }));
     // An empty fresh circuit is clean.
     set({ lastSaved: get().toNetlist() });
