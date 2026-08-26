@@ -647,7 +647,7 @@ fetch it).
   at its bias (VoltageElm.java:168-169), and the solve commits its reactive
   state: the capacitor's and inductor's `step_finished` run for the operating
   point too, so the transient starts pre-charged to the solved steady state,
-    exactly as upstream's unguarded `stepFinished` leaves it after its own DC
+   exactly as upstream's unguarded `stepFinished` leaves it after its own DC
    analysis. The inductor is stamped as a 1e-6 ohm short while solving, and
    every transformer winding is stamped as the same short with the mutual
    terms dropped, since coupling carries nothing at steady state: this
