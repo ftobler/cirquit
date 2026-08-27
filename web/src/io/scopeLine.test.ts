@@ -42,12 +42,6 @@ const loadedScope = (decoded: DecodedScopeLine, plots: ScopePlot[]): Scope => {
     id: 1,
     raw: null,
     trailPersistence: 0,
-    plotX: 0,
-    plotY: 1,
-    plotBrightness: -1,
-    plotColorR: -1,
-    plotColorG: -1,
-    plotColorB: -1,
     plots: plots.map((p, i) => ({
       ...p,
       acCoupled: perPlot[i].acCoupled,

@@ -980,6 +980,16 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
     label: node.attrs.x ?? '',
     scaleV,
     scaleA,
+    // The X-Y axis selection rides the XML `<o>` node as upstream's
+    // xy2x/xy2y/xy2br/xy2r/xy2g/xy2b attributes; the port's text `o` line
+    // has no native home for them, so they flow here and encodeScopeLine
+    // appends the axis block when the selection is non-default.
+    plotX: node.attrs.xy2x !== undefined ? attr(node, 'xy2x', 0) : 0,
+    plotY: node.attrs.xy2y !== undefined ? attr(node, 'xy2y', 1) : 1,
+    plotBrightness: node.attrs.xy2br !== undefined ? attr(node, 'xy2br', -1) : -1,
+    plotColorR: node.attrs.xy2r !== undefined ? attr(node, 'xy2r', -1) : -1,
+    plotColorG: node.attrs.xy2g !== undefined ? attr(node, 'xy2g', -1) : -1,
+    plotColorB: node.attrs.xy2b !== undefined ? attr(node, 'xy2b', -1) : -1,
     plots,
   } as unknown as Scope;
   const raw = encodeScopeLine(scope, (id) => slotOf(id), kinds);

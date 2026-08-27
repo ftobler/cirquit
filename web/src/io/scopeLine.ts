@@ -64,6 +64,20 @@ export interface DecodedScopeLine {
   fftPlot: boolean;
   logSpectrum: boolean;
   plotXY: boolean;
+  /** The X-Y plot's horizontal axis index into `plots`, upstream's
+   *  plot2d.plotX (ScopePlot2d.java:22). Defaults to 0. */
+  plotX: number;
+  /** The X-Y plot's vertical axis index into `plots`, upstream's
+   *  plot2d.plotY (ScopePlot2d.java:23). Defaults to 1. */
+  plotY: number;
+  /** The brightness modulator plot index into `plots`, -1 for none
+   *  (ScopePlot2d.java:24). */
+  plotBrightness: number;
+  /** The R/G/B colour modulator plot indexes into `plots`, -1 for none
+   *  (ScopePlot2d.java:25-26). */
+  plotColorR: number;
+  plotColorG: number;
+  plotColorB: number;
   showPhaseAngle: boolean;
   manualScale: boolean;
   maxScale: boolean;
@@ -281,6 +295,21 @@ export function decodeScopeLine(
   // only the optional yElm/IVALUE pair before the label.
   let cursor = 5;
   let manDivisions = 8;
+  // The X-Y axis selection block, the port's own extension: upstream's text
+  // `o` line never carried plot2d.plotX/plotY or the modulator indexes
+  // (only its XML format did, as xy2x/xy2y/xy2br/xy2r/xy2g/xy2b), so an X-Y
+  // scope came back from a text round trip with the axes dropped to defaults.
+  // The encoder appends these six ints after the plot list and before the
+  // label exactly when the selection is non-default, so reading them back is
+  // gated on their presence: a line that had no block (every upstream X-Y
+  // file) leaves these at the makeScope defaults, and a non-X-Y line never
+  // sees them because the flag is clear.
+  let plotX = 0;
+  let plotY = 1;
+  let plotBrightness = -1;
+  let plotColorR = -1;
+  let plotColorG = -1;
+  let plotColorB = -1;
   if ((flags & FLAG_PLOTS) !== 0) {
     const next = (): number => Number(raw[cursor++]);
     const position = next();
@@ -323,6 +352,22 @@ export function decodeScopeLine(
           }
         }
       }
+      // The X-Y axis block rides only a plotXY line (FLAG_PLOT2D is the
+      // port's plotXY bit), and only when the encoder actually wrote it: a
+      // non-default selection appends six ints, so at least that many tokens
+      // must remain after the plot list. Fewer means an upstream line with no
+      // block, which keeps the defaults. The label is always the trailing
+      // run, so consuming the block here leaves it intact for the slice
+      // below (a 6+ word upstream label without a block is the only case this
+      // count cannot tell apart, and no X-Y corpus file has one).
+      if ((flags & FLAG_PLOT2D) !== 0 && raw.length - cursor >= 6) {
+        plotX = Number(raw[cursor++]);
+        plotY = Number(raw[cursor++]);
+        plotBrightness = Number(raw[cursor++]);
+        plotColorR = Number(raw[cursor++]);
+        plotColorG = Number(raw[cursor++]);
+        plotColorB = Number(raw[cursor++]);
+      }
     }
   } else {
     // Old-style dumps carry no plot list: after the position token only an
@@ -338,6 +383,12 @@ export function decodeScopeLine(
     position: positionFromToken(Number(raw[5]), positionFallback),
     ...scopeFieldsFromFlags(flags),
     manDivisions,
+    plotX,
+    plotY,
+    plotBrightness,
+    plotColorR,
+    plotColorG,
+    plotColorB,
     showElmInfo: (flags & FLAG_SHOW_ELM_INFO) !== 0,
     label: labelTokens.length > 0 ? unescapeToken(labelTokens.join(' ')) : '',
     // A truncated line can end before these tokens; fall back to the makeScope
@@ -418,6 +469,31 @@ export function encodeScopeLine(
       tokens.push(String(p.manScale ?? 1), String(p.manVPosition));
     }
   }
+  // The X-Y axis selection block. Upstream's text `o` line never carried
+  // plot2d.plotX/plotY or the modulator indexes, so a converted X-Y scope
+  // lost them; the port writes the six ints after the plot list and before
+  // the label, but only when the selection differs from the makeScope
+  // defaults. A default X-Y scope (axes 0/1, no modulators) emits nothing,
+  // so an untouched upstream X-Y line still round-trips byte-for-byte, and
+  // only a real axis or modulator choice forces the extra tokens.
+  if (
+    scope.plotXY &&
+    (scope.plotX !== 0 ||
+      scope.plotY !== 1 ||
+      scope.plotBrightness !== -1 ||
+      scope.plotColorR !== -1 ||
+      scope.plotColorG !== -1 ||
+      scope.plotColorB !== -1)
+  ) {
+    tokens.push(
+      String(scope.plotX),
+      String(scope.plotY),
+      String(scope.plotBrightness),
+      String(scope.plotColorR),
+      String(scope.plotColorG),
+      String(scope.plotColorB),
+    );
+  }
   if (scope.label !== '') tokens.push(escapeToken(scope.label));
   return tokens;
 }
@@ -450,6 +526,15 @@ export function scopeLineMatches(
     decoded.fftPlot === scope.fftPlot &&
     decoded.logSpectrum === scope.logSpectrum &&
     decoded.plotXY === scope.plotXY &&
+    // The X-Y axis block only exists on a non-default plotXY line, so this
+    // comparison only ever bites when the encoder would have written the
+    // block; a default X-Y scope has both sides at the makeScope defaults.
+    (decoded.plotXY ? decoded.plotX === scope.plotX : true) &&
+    (decoded.plotXY ? decoded.plotY === scope.plotY : true) &&
+    (decoded.plotXY ? decoded.plotBrightness === scope.plotBrightness : true) &&
+    (decoded.plotXY ? decoded.plotColorR === scope.plotColorR : true) &&
+    (decoded.plotXY ? decoded.plotColorG === scope.plotColorG : true) &&
+    (decoded.plotXY ? decoded.plotColorB === scope.plotColorB : true) &&
     decoded.showPhaseAngle === scope.showPhaseAngle &&
     decoded.manualScale === scope.manualScale &&
     decoded.maxScale === scope.maxScale &&

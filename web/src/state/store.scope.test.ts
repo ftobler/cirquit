@@ -441,7 +441,60 @@ describe('per-element value plots on the o line', () => {
     const scope = useStore.getState().scopes[0];
     expect(scope.plotX).toBe(1);
     expect(scope.plotY).toBe(0);
-    expect(useStore.getState().toNetlist()).toBe(TRANSISTOR);
+    // Upstream's text format carried no plotX/plotY, so the axis choice used
+    // to be dropped on save. The port now writes the non-default selection as
+    // an X-Y block on the `o` line, so the line changes and the choice
+    // survives a serialize/parse round trip.
+    const saved = useStore.getState().toNetlist();
+    expect(saved).not.toBe(TRANSISTOR);
+    // The block is the six ints after the plot list: plotX plotY brightness
+    // R G B. A non-default X is 1 and a non-default Y is 0, with no modulators.
+    expect(saved).toContain('1 0 -1 -1 -1 -1');
+    useStore.getState().loadNetlist(saved);
+    const reloaded = useStore.getState().scopes[0];
+    expect(reloaded.plotX).toBe(1);
+    expect(reloaded.plotY).toBe(0);
+  });
+
+  it('the X-Y axis selection survives a full serialize/parse round trip', () => {
+    // A scope whose X and Y axes point at non-default plots keeps both
+    // selections through a save and reload, as do its modulator choices.
+    useStore.getState().loadNetlist(TRANSISTOR);
+    const id = useStore.getState().scopes[0].id;
+    useStore.getState().setScopeFlags(id, {
+      plotX: 1,
+      plotY: 0,
+      plotColorR: 1,
+      plotColorB: 0,
+    });
+    const saved = useStore.getState().toNetlist();
+    // The axis block is the six ints after the plot list: plotX plotY
+    // brightness R G B.
+    expect(saved).toContain('1 0 -1 1 -1 0');
+    useStore.getState().loadNetlist(saved);
+    const reloaded = useStore.getState().scopes[0];
+    expect(reloaded.plotX).toBe(1);
+    expect(reloaded.plotY).toBe(0);
+    expect(reloaded.plotColorR).toBe(1);
+    expect(reloaded.plotColorB).toBe(0);
+    // Resetting to the defaults drops the block again: only a real axis or
+    // modulator choice forces the extra tokens, so a default X-Y scope emits
+    // nothing and reloads back to the defaults.
+    const id2 = useStore.getState().scopes[0].id;
+    useStore.getState().setScopeFlags(id2, {
+      plotX: 0,
+      plotY: 1,
+      plotColorR: -1,
+      plotColorB: -1,
+    });
+    const defaulted = useStore.getState().toNetlist();
+    expect(defaulted).not.toContain('1 0 -1 1 -1 0');
+    useStore.getState().loadNetlist(defaulted);
+    const reset = useStore.getState().scopes[0];
+    expect(reset.plotX).toBe(0);
+    expect(reset.plotY).toBe(1);
+    expect(reset.plotColorR).toBe(-1);
+    expect(reset.plotColorB).toBe(-1);
   });
 
   it('a lamp resistance plot round-trips through its VAL_R token', () => {
