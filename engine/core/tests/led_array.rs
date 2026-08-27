@@ -158,6 +158,21 @@ fn led_array_reports_real_currents_at_each_post() {
         -(row0 + row1)
     );
     assert!(close(col1, 0.0, 1e-9), "dark column 1 reported {col1}");
+    // The sign convention must mirror the engine's own two-terminal diode rule
+    // (element.rs:263-271): the anode (row) post drains current from its node,
+    // so its `current_into_node` reads negative, and the cathode (column) post
+    // receives current, so its `current_into_node` reads positive. Column 0 is
+    // the only lit one here, so it must be positive while both anode rows stay
+    // negative; a flip here would reverse the wire-current arrows and break
+    // ground-current recovery.
+    assert!(
+        col0 > 0.0,
+        "lit cathode column must receive current, got {col0}"
+    );
+    assert!(
+        row0 < 0.0 && row1 < 0.0,
+        "anode rows must drain current, got {row0}/{row1}"
+    );
     // KCL across the grid: the four post currents sum to zero.
     assert!(
         close(col0 + col1 + row0 + row1, 0.0, 1e-7),
