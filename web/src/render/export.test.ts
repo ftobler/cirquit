@@ -1,8 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { exportGeometry, drawAllElements } from './export';
+import { exportGeometry, drawAllElements, renderCircuitToCanvas } from './export';
 import { SvgRecorder } from './svg';
 import { makeTheme } from './draw';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
+
+/** A 2D-context recorder that no-ops every drawing call and captures only the
+ *  fills that followed an arc, so the junction-dot pass (which sets
+ *  `fillStyle = theme.wire` then arcs and fills) can be told apart from the
+ *  background fill. This is the PNG/canvas path `renderCircuitToCanvas`
+  takes, which the SVG recorder cannot exercise (J4). */
+const recordingCtx = (): { ctx: unknown; dotFills: string[] } => {
+  const dotFills: string[] = [];
+  const target: { fillStyle: string; arc: boolean } = { fillStyle: '', arc: false };
+  const ctx = new Proxy(target, {
+    get(t, prop) {
+      if (prop === 'fillStyle') return t.fillStyle;
+      if (prop === 'beginPath') return () => {
+        t.arc = false;
+      };
+      if (prop === 'arc') return () => {
+        t.arc = true;
+      };
+      if (prop === 'fill') return () => {
+        if (t.arc) dotFills.push(t.fillStyle);
+      };
+      return () => {};
+    },
+    set(t, prop, value) {
+      (t as Record<PropertyKey, unknown>)[prop] = value;
+      return true;
+    },
+  });
+  return { ctx, dotFills };
+};
 
 const wire = (
   id: number,
@@ -71,5 +101,21 @@ describe('drawAllElements junction dots', () => {
     const rec = new SvgRecorder();
     drawAllElements(rec, theme, [], DEFAULT_SETTINGS, null, 1);
     expect(rec.toString(10, 10)).not.toContain('A3.5 3.5');
+  });
+
+  it('the PNG path draws the grey junction dots through the shared painter', () => {
+    // J4: renderCircuitToCanvas must gain the junction dots too, like the SVG
+    // path above and the live frame loop, all via the one drawJunctionDots
+    // painter. The T junction at (64,0) plus the three dead ends count four
+    // coordinates, so four conductor-coloured fills reach the canvas.
+    const elements = [
+      wire(1, 0, 0, 64, 0),
+      wire(2, 64, 0, 128, 0),
+      wire(3, 64, 0, 64, 64),
+    ];
+    const { ctx, dotFills } = recordingCtx();
+    const canvas = { width: 0, height: 0, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    renderCircuitToCanvas(canvas, elements, DEFAULT_SETTINGS, false, null);
+    expect(dotFills.filter((c) => c === theme.wire)).toHaveLength(4);
   });
 });

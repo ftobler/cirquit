@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { backingStoreSize } from '../ui/canvas/backingStoreSize';
 import { clearXYPersistence, pruneXYPersistence, xyPersistenceFor } from './xyPersistence';
 
 /** The tests run in a node env, so the offscreen canvas allocation gets a
@@ -97,5 +98,18 @@ describe('X-Y persistence canvases', () => {
     const b = xyPersistenceFor(6, 200, 100);
     expect(b).not.toBe(a);
     expect(created[1].width).toBe(600);
+  });
+
+  it('pins the backing store to backingStoreSize at a fractional dpr', () => {
+    // J6: the persistence canvas must match the scope's dpr-sized backing
+    // store exactly, rounding like every other canvas (backingStoreSize), or
+    // a 1.5 dpr with an odd CSS width reallocates and clears the trail each
+    // frame. Asserting against the helper pins the formula, not just one case.
+    const created = stubDocumentWithCtx();
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1.5 };
+    const a = xyPersistenceFor(8, 201, 99);
+    expect(a.dpr).toBe(1.5);
+    expect(created[0].width).toBe(backingStoreSize(201, 99, 1.5).width);
+    expect(created[0].height).toBe(backingStoreSize(201, 99, 1.5).height);
   });
 });
