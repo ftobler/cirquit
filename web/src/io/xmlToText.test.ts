@@ -98,6 +98,30 @@ describe('xml to text conversion', () => {
     expect(parsed.scopes[0].plots.map((p) => p.value)).toEqual(['vce', 'ib']);
   });
 
+  it('carries an X-Y scope axis selection out of the XML attributes', () => {
+    // Upstream's XML `<o>` spells the X-Y axis and modulator choice as
+    // xy2x/xy2y/xy2br/xy2r/xy2g/xy2b. The text `o` line has no native home
+    // for them, so the converter reads them and the encoder appends the axis
+    // block when the selection is non-default (here X=1, Y=0, R modulator=0,
+    // B modulator=1).
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <t x="192 160 304 160" f="0"/>
+  <o en="0" sp="64" f="4162" p="0" xy2x="1" xy2y="0" xy2br="-1" xy2r="0" xy2g="-1" xy2b="1">
+    <p v="6"/>
+    <p v="1"/>
+  </o>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toContain('1 0 -1 0 -1 1');
+    // The converter emits the axis block from the XML attributes; the store
+    // layer's text round trip (store.scope.test.ts) confirms the same block
+    // re-decodes to the axis choices, since parseCircuit hands back only the
+    // raw tokens and the full Scope is built there.
+    const parsed = parseCircuit(text);
+    expect(parsed.scopes).toHaveLength(1);
+  });
+
   it('round-trips through parseCircuit and serialises byte-for-byte', () => {
     const text = xmlToText(SIMPLE);
     const parsed = parseCircuit(text);
