@@ -1547,6 +1547,10 @@ impl Circuit {
             // step: report it as not-converged so the run halts instead of
             // treating the now-cleared closures as a converged empty circuit.
             if let Err(e) = self.set_time_step(doubled) {
+                // Halt like the halving branch and the original code: the
+                // restamp error is the side channel the frontend polls via
+                // `c.error()`, so it must be recorded on the circuit too.
+                self.error = Some(e.clone());
                 return StepReport {
                     converged: false,
                     error: Some(e),
@@ -3007,6 +3011,56 @@ mod tests {
         }
     }
 
+    /// A test-only device that forces the halving arm of `step_once`. Its
+    /// `do_step` flags `not_converged` on every Newton iteration so the loop
+    /// always burns its full budget and returns `NotConverged`, and its
+    /// `stamp` raises `request_stop` so the halve's re-stamp fails exactly
+    /// where the production code would surface it. `do_step` and `stamp` are
+    /// the two distinct passes: the Newton loop calls `do_step`, the halve's
+    /// `set_time_step` calls `stamp` through `restamp`. A `stamp` counter lets
+    /// the probe be pushed after `set_circuit` and then survive one restamp
+    /// (the setup `set_time_step` that rebuilds the closures to include it)
+    /// before halting on the halve's restamp.
+    struct HalvingRestampProbe {
+        base: Base,
+        stamps: usize,
+    }
+
+    impl HalvingRestampProbe {
+        fn new() -> Self {
+            Self {
+                base: Base::with_posts(0),
+                stamps: 0,
+            }
+        }
+    }
+
+    impl Element for HalvingRestampProbe {
+        fn kind(&self) -> &'static str {
+            "halvingRestampProbe"
+        }
+        fn base(&self) -> &Base {
+            &self.base
+        }
+        fn base_mut(&mut self) -> &mut Base {
+            &mut self.base
+        }
+        fn post_count(&self) -> usize {
+            0
+        }
+        fn do_step(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
+            s.not_converged();
+        }
+        fn stamp(&mut self, _ctx: &SimCtx, s: &mut Stamper) {
+            self.stamps += 1;
+            // The first restamp (setup) must succeed so the closures include
+            // this probe; the halve's restamp is the one that must fail.
+            if self.stamps >= 2 {
+                s.request_stop("halving restamp died");
+            }
+        }
+    }
+
     #[test]
     fn a_stamp_time_stop_fails_the_restamp_instead_of_vanishing() {
         // The constant pass used to read only take_dropped, so a future
@@ -3085,6 +3139,54 @@ mod tests {
         assert!(
             report.error.is_some(),
             "the failure must surface on the report"
+        );
+        // The failure is the side channel the frontend polls via `c.error()`,
+        // so it must be recorded on the circuit too: this is the doubling arm
+        // of step_once, the path that used to drop the channel.
+        assert!(
+            c.error().is_some(),
+            "the doubling-arm restamp failure must reach the error side channel"
+        );
+    }
+
+    #[test]
+    fn restamp_failure_in_halving_branch_sets_error() {
+        // Mirror of restamp_failure_is_reported_not_converged but through the
+        // halving arm: a step that cannot converge burns its Newton budget and
+        // the adaptive loop halves, and the halve's re-stamp must also surface
+        // on the error side channel rather than freezing as a converged no-op.
+        let mut spec = scoped_spec(5e-6);
+        spec.options = Some(SimOptions {
+            // Keep the loop short so the probe's trip counter is small and the
+            // test stays fast; adaptive and a floor well below the halved step
+            // keep the halve arm reachable.
+            max_subiterations: 8,
+            min_time_step: 1e-9,
+            adaptive: true,
+            ..SimOptions::default()
+        });
+        let mut c = Circuit::new();
+        c.set_circuit(&spec).expect("circuit should analyse");
+        // A fresh circuit has good_iterations == 0, so the doubling arm is
+        // skipped and the first step goes straight into the Newton loop.
+        c.elements.push(Box::new(HalvingRestampProbe::new()));
+        // Re-stamp so the closures are rebuilt to include the probe; this
+        // first restamp must succeed (the probe only halts from the second
+        // stamp call onward, the halve's).
+        c.set_time_step(5e-6)
+            .expect("the setup restamp must succeed");
+        let report = c.step_once();
+        assert!(
+            !report.converged,
+            "a halving restamp failure must not report converged=true"
+        );
+        assert!(
+            report.error.is_some(),
+            "the failure must surface on the report"
+        );
+        assert!(
+            c.error().is_some(),
+            "the halving-arm restamp failure must reach the error side channel"
         );
     }
 }
