@@ -1062,7 +1062,9 @@ function drawXY(
   }
   pctx.stroke();
   if (alpha < 1) pctx.globalAlpha = 1;
-  ctx.drawImage(entry.canvas, 0, 0);
+  // The persistence canvas is dpr-scaled, so blit the whole backing store to
+  // the CSS-pixel rect; the caller's dpr transform maps it 1:1 to the device.
+  ctx.drawImage(entry.canvas, 0, 0, w, h);
   // Centre cross (ScopePlot2d.java:226-230), horizontal line first, matching
   // upstream's order so the vertical wins the overlap at the centre pixel.
   const cross = xyCrossColors(scope.plotXY, theme);
