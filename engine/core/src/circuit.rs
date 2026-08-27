@@ -992,18 +992,13 @@ impl Circuit {
         self.ctx.dt = dt;
         // A step-size change never touches topology, so `restamp` cannot
         // newly fail on topology; an element halt or a dropped stamp still
-        // can. The caller (the halve/double arms of `step_once`) cannot ignore
-        // that the way the bare side channel would, because a swallowed
-        // failure leaves the closures empty and the next `try_step` reports a
-        // silent converged no-op: surface it so the adaptive loop can halt the
-        // run like every other stamp error does.
-        match self.restamp() {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                self.error = Some(e.clone());
-                Err(e)
-            }
-        }
+        // can. The caller (the halve/double arms of `step_once`) owns the error
+        // side channel: each catches this `Err` and writes `self.error`
+        // itself, so a swallowed failure cannot leave the closures empty and
+        // the next `try_step` reporting a silent converged no-op. Returning the
+        // error lets the adaptive loop halt the run like every other stamp
+        // error does; the channel is the caller's to set, never this helper's.
+        self.restamp()
     }
 
     /// Leaves the circuit in the state a rejected build settles into: no
@@ -3116,21 +3111,33 @@ mod tests {
 
     #[test]
     fn restamp_failure_is_reported_not_converged() {
-        // Regression for A4. A restamp failure (the halve/double step re-stamps
-        // the reactive companions) used to be swallowed into the error side
-        // channel while step_once kept its initial converged=true, so a
-        // rejected Newton step that could not re-stamp froze as a converged
-        // no-op. set_time_step now returns the error and step_once reports
-        // not-converged, halting the run through the same channel a refused
-        // stamp uses.
+        // Regression for A4. A restamp failure (the double step re-stamps the
+        // reactive companions) used to be swallowed into the error side channel
+        // while step_once kept its initial converged=true, so a rejected Newton
+        // step that could not re-stamp froze as a converged no-op. The doubling
+        // arm of step_once must write the channel itself; this test isolates
+        // that arm so it is the only thing that can seed `c.error()`.
         let mut c = scoped_circuit();
-        c.run(4);
-        // A stamp-time stop fails the re-stamp the halve/double perform; the
-        // closures are then cleared to the same empty set a genuine empty
-        // circuit yields.
+        // Below the nominal working step so the easy-step doubler has somewhere
+        // to climb; a normal re-stamp with no probe present succeeds.
+        c.set_time_step(2.5e-6)
+            .expect("the setup restamp must succeed");
+        // Three clean steps build good_iterations >= 3 without ever touching
+        // the probe, so the doubling arm does not fire until the probe exists.
+        for _ in 0..3 {
+            let r = c.step_once();
+            assert!(r.converged, "warm-up steps must converge");
+        }
+        assert_eq!(
+            c.error(),
+            None,
+            "the channel must be empty before the doubling re-stamp"
+        );
+        // Now the doubling re-stamp inside step_once is what trips: the probe's
+        // stamp() halts the rebuild, and step_once alone must record it on the
+        // channel. No external set_time_step call pre-seeds it.
         c.elements
             .push(Box::new(StampStopProbe::new("restamp died")));
-        assert!(c.set_time_step(2.5e-6).is_err());
         let report = c.step_once();
         assert!(
             !report.converged,
@@ -3141,8 +3148,8 @@ mod tests {
             "the failure must surface on the report"
         );
         // The failure is the side channel the frontend polls via `c.error()`,
-        // so it must be recorded on the circuit too: this is the doubling arm
-        // of step_once, the path that used to drop the channel.
+        // seeded here by the doubling arm of step_once, not by any external
+        // call: this is the path that used to drop the channel.
         assert!(
             c.error().is_some(),
             "the doubling-arm restamp failure must reach the error side channel"
