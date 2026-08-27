@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseCircuit, serializeCircuit } from '../io/netlist';
-import { postsOf } from './registry';
+import { postsOf, defFor } from './registry';
 import {
   canMirror,
   canRotate,
@@ -1038,6 +1038,43 @@ describe('chip mirrors', () => {
       { x: 204, y: 200 },
       { x: 204, y: 232 },
     ]);
+  });
+
+  it('an optocoupler in a two-element group mirror keeps its body on the reflected rows', () => {
+    // The store's mirrorSelection reflects every selected part about the one
+    // shared bounding box centre (selectionMirrorCentre) and mirrorElement
+    // hands that centre to mirrorChip, so the optocoupler must travel with the
+    // rigid group AND apply its own (fsx+1)*cspc2 anchor shift. A lone mirror
+    // about an arbitrary centre already covers the shift; this checks the
+    // group path: the optocoupler and a resistor share cx=200, and the
+    // optocoupler's body rect after the flip sits on the same reflected rows
+    // the single-element math predicts.
+    const opto = element('optocoupler', 100, 200, 164, 200);
+    const dff = element('dFlipFlop', 100, 300, 196, 300, DFF_SET);
+    const centre = selectionMirrorCentre([opto, dff])!;
+    expect(centre).toBe(148);
+    const mOpto = mirrorElement(opto, centre);
+    const mDff = mirrorElement(dff, centre);
+    // Every mirrored member travels with the rigid group about the shared
+    // centre; the optocoupler adds its own (fsx+1)*cspc2 anchor shift so its
+    // west bank lands on the reflected column.
+    expect([mOpto.x1, mOpto.x2]).toEqual([100, 132]);
+    expect(mOpto.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
+    // The body rect derives from the shifted anchor, so it lands on the
+    // reflected column exactly where the single-element mirror puts it.
+    const rect = defFor('optocoupler')!.bodyRect!(mOpto);
+    const lone = mirrorElement(opto, centre);
+    expect(defFor('optocoupler')!.bodyRect!(lone)).toEqual(rect);
+    expect(postsOf(mOpto)).toEqual([
+      { x: 196, y: 200 },
+      { x: 196, y: 232 },
+      { x: 100, y: 200 },
+      { x: 100, y: 232 },
+    ]);
+    // The partner chip shares the same group centre and its own shift, proving
+    // the optocoupler was mirrored as part of the selection, not in isolation.
+    expect([mDff.x1, mDff.x2]).toEqual([100, 100]);
+    expect(mDff.flags & CHIP_FLIP_X).toBe(CHIP_FLIP_X);
   });
 
   it('a controlled source group mirror moves the body and toggles the bit', () => {
