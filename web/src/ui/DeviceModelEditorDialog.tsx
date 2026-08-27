@@ -177,7 +177,10 @@ function EditorDialogBody({
         entry = {
           name,
           builtIn: false,
-          flags: 0,
+          // Keep the file's original flags byte; the advanced editor does not
+          // model it, so resetting to 0 would drop an unmodeled flags token
+          // (e.g. a non-simple marker) on save.
+          flags: (initial as UserDiodeEntry).flags ?? 0,
           saturationCurrent: is,
           seriesResistance: num(seriesResistance) ?? 0,
           emissionCoefficient: n,
