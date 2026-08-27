@@ -2,6 +2,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseCircuit, serializeCircuit, type NetlistLine } from './index';
+import type { CircuitElement } from '../../model/types';
+import { defFor } from '../../model/registry';
 import { CIRCUITS_DIR, SAMPLE } from './fixtures';
 import { xmlToText } from '../xmlToText';
 import { useStore } from '../../state/store';
@@ -98,6 +100,70 @@ describe('bundled circuit round trips', () => {
     return anomalies;
   };
 
+  /**
+   * Decodes both netlists and compares the meaningful payload of every element
+   * line: kind, terminal coordinates, the flags word, the model name, the free
+   * text, and each decoded param. The dump re-renders numbers, applies each
+   * kind's `dumpFlags` normalisation (e.g. a capacitor always gains
+   * CAP_RESISTANCE, a valueless diode always gains the forward-voltage bit) and
+   * emits default-valued tail tokens (`writeParams` writes `?? 0`) or re-reads
+   * model-derived params from a sibling `32`/`34` line, so the re-parsed flags
+   * and a few params differ on a faithful round trip. What must hold is that no
+   * field the parser read is lost or changed: a `def.dump` that drops or
+   * mis-encodes a token would change a re-parsed param or the coordinates, which
+   * the line-count check could never see.
+   */
+  const elementPayloadAnomalies = (
+    file: string,
+    before: CircuitElement[],
+    after: CircuitElement[],
+  ): string[] => {
+    const anomalies: string[] = [];
+    if (before.length !== after.length) {
+      return [`${file}: ${before.length} elements in, ${after.length} out`];
+    }
+    const num = (x: number, y: number) => Number(x) === Number(y);
+    before.forEach((a, i) => {
+      const b = after[i];
+      const where = `${file}:element#${i + 1} (${a.kind})`;
+      const def = defFor(a.kind);
+      if (a.kind !== b.kind) {
+        anomalies.push(`${where}: kind ${a.kind} -> ${b.kind}`);
+        return;
+      }
+      // Coordinates and the model name travel verbatim; any change is a real loss.
+      if (!num(a.x1, b.x1)) anomalies.push(`${where}: x1 ${a.x1} -> ${b.x1}`);
+      if (!num(a.y1, b.y1)) anomalies.push(`${where}: y1 ${a.y1} -> ${b.y1}`);
+      if (!num(a.x2, b.x2)) anomalies.push(`${where}: x2 ${a.x2} -> ${b.x2}`);
+      if (!num(a.y2, b.y2)) anomalies.push(`${where}: y2 ${a.y2} -> ${b.y2}`);
+      if (a.text !== b.text) anomalies.push(`${where}: text ${JSON.stringify(a.text)} -> ${JSON.stringify(b.text)}`);
+      if (a.modelName !== b.modelName) {
+        anomalies.push(`${where}: modelName ${JSON.stringify(a.modelName)} -> ${JSON.stringify(b.modelName)}`);
+      }
+      // The flags word is rewritten through `dumpFlags`; the re-dumped value
+      // must equal that canonical form, not the original (which omits bits the
+      // dump always sets). A deviation here is a real flag corruption.
+      const canonFlags = def?.dumpFlags ? def.dumpFlags(a) : a.flags;
+      if (!num(canonFlags, b.flags)) anomalies.push(`${where}: flags ${a.flags} -> ${b.flags} (canonical ${canonFlags})`);
+      // Params: every field the parser read must survive. A field the re-parse
+      // gains but the load never had (a `writeParams` default or a model-derived
+      // param re-read from its `32`/`34` line) is benign, not a loss.
+      const keys = new Set([...Object.keys(a.params), ...Object.keys(b.params)]);
+      for (const k of keys) {
+        const av = a.params[k];
+        const bv = b.params[k];
+        if (av === undefined) {
+          if (bv !== undefined) continue; // benign default/model-derived addition
+        } else if (bv === undefined) {
+          anomalies.push(`${where}: param ${k} ${av} dropped`);
+        } else if (!num(av, bv)) {
+          anomalies.push(`${where}: param ${k} ${av} -> ${bv}`);
+        }
+      }
+    });
+    return anomalies;
+  };
+
   it('reproduces the line arrangement of every file, verbatim for the lines it cannot read', () => {
     const anomalies: string[] = [];
     let headers = 0;
@@ -117,6 +183,7 @@ describe('bundled circuit round trips', () => {
       );
       headers += parsed.order.filter((l) => l.kind === 'header').length;
       anomalies.push(...compare(file, input, out, parsed.order));
+      anomalies.push(...elementPayloadAnomalies(file, parsed.elements, parseCircuit(out).elements));
     }
     expect(anomalies).toEqual([]);
     // Every file, blank.txt included, has exactly one `$` line now that the
@@ -135,6 +202,8 @@ describe('bundled circuit round trips', () => {
       useStore.getState().loadNetlist(text);
       const s = useStore.getState();
       anomalies.push(...compare(file, input, s.toNetlist(), s.order));
+      const loaded = parseCircuit(input);
+      anomalies.push(...elementPayloadAnomalies(file, loaded.elements, parseCircuit(s.toNetlist()).elements));
     }
     expect(anomalies).toEqual([]);
   });
