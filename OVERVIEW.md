@@ -789,8 +789,10 @@ fetch it).
 - [x] Matrix simplification / constant-row elimination
 - [x] Sparse matrix path for large circuits
 - [x] Convergence diagnostics surfaced in the UI (which element failed)
-- [x] Benchmark harness with representative circuits (`just bench`, kept
-      outside `ci`)
+- [x] Benchmark harness with representative circuits: the printed flop table is
+      opt-in via `just bench`, a separate recipe that is not part of the
+      `just ci` gate (its deterministic assertions are ordinary tests and
+      still run under `just ci`)
 
 ### Milestone B: editing parity
 
