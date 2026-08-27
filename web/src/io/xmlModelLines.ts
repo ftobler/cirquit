@@ -99,7 +99,7 @@ export function compositeModel(node: XmlNode): string {
       // (composite.rs, `dumps.get(i)`), so the two lists have to stay in step:
       // a child that contributes no line contributes no dump either, and one
       // whose tag carries no fields still contributes its flags.
-      dumps.push(escapeChildField(childDumpToken(child) ?? String(attr(child, 'f', 0))));
+      dumps.push(childDumpToken(child)?.replaceAll('_', ' ') ?? String(attr(child, 'f', 0)));
     }
   }
   return [
@@ -144,10 +144,4 @@ function childDumpToken(node: XmlNode): string | null {
   if (tag === 'cc') return [f, node.attrs.mo ?? ''].join('_');
   if (tag === 'w' || tag === 'rw' || tag === 'ln') return String(f);
   return null;
-}
-
-/** Escapes one field of a `_`-joined dump token (`_`, space and backslash), so
- *  the join's separators stay unambiguous (subcircuitBuild.ts:333-343). */
-function escapeChildField(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/_/g, '\\u').replace(/ /g, '\\s');
 }
