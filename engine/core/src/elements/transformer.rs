@@ -35,6 +35,17 @@ use crate::stamp::Stamper;
 
 const FLAG_BACK_EULER: i64 = 2; // Inductor.java:23, same bit as the inductor
 
+/// Ceiling on the coupling coefficient used inside the mutual-inductance
+/// matrix math. At `k = 1` every winding's self term is `n_i²·L` and each
+/// off-diagonal is `k·L·n_i·n_j`, so row `j = (n_j/n_i)·row i`: the matrix
+/// is singular and its dense inverse divides by a zero pivot, scattering NaN
+/// through the companion. Clamp the value used in the matrix strictly below 1
+/// by `1e-6` so the `1 - k²` term stays positive and the inverse is finite.
+/// Upstream only caps the coefficient at 0.999 in the dialog; the port uses a
+/// tighter, physically indistinguishable guard that a loaded netlist cannot
+/// exceed.
+const MAX_COUPLING: f64 = 1.0 - 1e-6;
+
 /// Port policy ceiling on a custom transformer's coil count; upstream defines
 /// no numeric limit anywhere (its dialog checks only the coupling
 /// coefficient), so the value is this port's own. Real designs top out near
@@ -342,6 +353,10 @@ impl Transformer {
 
     fn compute_coefficients(&mut self, dt: f64) {
         let n = self.windings.len();
+        // The clamp keeps the mutual matrix strictly non-singular even when the
+        // spec requests k = 1, which would otherwise make invert divide by a
+        // zero pivot and scatter NaN (MAX_COUPLING).
+        let k = self.coupling.min(MAX_COUPLING);
         let mut m = vec![0.0; n * n];
         if self.saturation_current <= 0.0 {
             // Linear core: the constant mutual-inductance matrix.
@@ -350,7 +365,7 @@ impl Transformer {
                     m[i * n + j] = if i == j {
                         self.turns[i] * self.turns[i] * self.inductance
                     } else {
-                        self.coupling * self.inductance * self.turns[i] * self.turns[j]
+                        k * self.inductance * self.turns[i] * self.turns[j]
                     };
                 }
             }
@@ -372,9 +387,7 @@ impl Transformer {
                     m[i * n + j] = if i == j {
                         l_eff[i]
                     } else {
-                        self.coupling
-                            * (self.turns[i] * self.turns[j]).signum()
-                            * (l_eff[i] * l_eff[j]).sqrt()
+                        k * (self.turns[i] * self.turns[j]).signum() * (l_eff[i] * l_eff[j]).sqrt()
                     };
                 }
             }
@@ -636,6 +649,49 @@ mod tests {
         assert_eq!(Transformer::effective_inductance(4.0, -0.01, 0.01), 2.0);
         assert_eq!(Transformer::effective_inductance(4.0, 0.03, 0.01), 0.4);
         assert_eq!(Transformer::effective_inductance(4.0, -0.03, 0.01), 0.4);
+    }
+
+    /// A basic transformer whose coupling coefficient is exactly 1, the
+    /// singular-matrix case the review flagged: upstream's mutual build makes
+    /// row j = (n_j/n_i)·row i, so the dense inverse hits a zero pivot.
+    fn basic_k1() -> Transformer {
+        let mut t = basic(0.0, [0.0, 0.0]);
+        t.coupling = 1.0;
+        t
+    }
+
+    #[test]
+    fn coupling_coef_of_one_is_not_singular() {
+        // k = 1 must not scatter NaN through the companion. The coefficients
+        // stay finite and the matrix stays invertible, so a circuit with
+        // couplingCoef = 1 solves instead of surfacing a BadStamp.
+        let mut t = basic_k1();
+        t.compute_coefficients(2.0);
+        assert!(
+            t.a.iter().all(|v| v.is_finite()),
+            "a contained NaN/Inf: {:?}",
+            t.a
+        );
+        // Sanity: a = M^-1 * ts is the inverse of a legal (clamped) matrix, so
+        // M * a = ts * I. Rebuild the clamped M and check M·a ≈ ts·I.
+        let k = 1.0 - 1e-6;
+        let n = 2;
+        let mut m = [0.0; 4];
+        m[0] = 4.0;
+        m[1] = k * 4.0 * 2.0;
+        m[2] = k * 4.0 * 2.0;
+        m[3] = 4.0 * 2.0 * 2.0;
+        let ts = 1.0; // trapezoidal, dt = 2 -> ts = 1
+        for i in 0..n {
+            for col in 0..n {
+                let got: f64 = (0..n).map(|r| m[i * n + r] * t.a[r * n + col]).sum();
+                let want = if i == col { ts } else { 0.0 };
+                assert!(
+                    (got - want).abs() < 1e-6,
+                    "M·a[{i},{col}] = {got}, expected {want}"
+                );
+            }
+        }
     }
 
     #[test]
