@@ -28,6 +28,7 @@ import { backingStoreSize } from './backingStoreSize';
 import { overlayLiveState, recordBuildOnSuccess, shouldInjectLiveState } from '../../io/liveState';
 import { drawInfoBox, infoBoxX, infoBoxY } from '../../render/infoBox';
 import { infoBoxLines } from '../infoBoxLines';
+import { beginReadoutFrame, frameReadoutArrays } from '../useLiveSimReadout';
 
 /** Runs one animation frame's work without letting a throw kill the loop.
  *  `report` receives the error message. The loop re-schedules before this
@@ -172,8 +173,13 @@ export function useFrameLoop(
     // face is replaced as soon as Roboto lands; no document.fonts.ready
     // invalidation is needed. If this ever becomes a draw-on-demand renderer,
     // the redraw has to be triggered from document.fonts.ready.
-    const frame = () => {
+    const frame = (stamp: number) => {
       raf = requestAnimationFrame(frame);
+      // Open the readout frame before any operating-point readout this frame
+      // (the info box, the scope panels, the undocked mirror). All callbacks in
+      // a frame carry the same stamp, so the several rAF loops that read stay
+      // on one shared fetch of the three engine arrays for the whole frame.
+      beginReadoutFrame(stamp);
       // The loop re-schedules before the body, so a throw in it would spin
       // the loop with nothing drawn. The simulator wrapper converts wasm
       // throws into error flags, but a render bug would still escape: catch
@@ -378,7 +384,10 @@ export function useFrameLoop(
                   );
               }
             }
-            currents = engine.elementCurrents();
+            // The readout triple is fetched once per frame through the shared
+            // cache; the canvas only draws with the currents, so the other two
+            // cross the wasm boundary here and nowhere else this frame.
+            currents = frameReadoutArrays(engine).currents;
             postCurrents = engine.elementPostCurrents();
             nodeVoltages = engine.nodeVoltages();
             elementNodes = engine.elementNodes();
