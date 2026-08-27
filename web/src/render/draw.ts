@@ -722,8 +722,7 @@ export function currentDotsFrom(
   let offset;
   if (phase === TOO_FAST) {
     // Too fast to follow, so underline the path with a bright translucent
-    // stream; the random phase keeps the dots shimmering instead of crawling
-    // along the line (CircuitElm.java:489-500).
+    // stream; the dot phase is a deterministic function of the start point, so render is reproducible (CircuitElm.java:489-500).
     g.ctx.save();
     g.ctx.globalAlpha = 0.5;
     g.ctx.strokeStyle = dotColor(g);
@@ -733,7 +732,9 @@ export function currentDotsFrom(
     g.ctx.lineTo(b.x, b.y);
     g.ctx.stroke();
     g.ctx.restore();
-    offset = Math.random() * DOT_SPACING;
+    // Deterministic shimmer: a stable per-segment phase from the start point so
+    // the pattern is identical every frame (no Math.random reseed on each draw).
+    offset = (((a.x * 73856093) ^ (a.y * 19349663)) % DOT_SPACING + DOT_SPACING) % DOT_SPACING;
   } else {
     // Wrap the phase into one dot interval so the pattern is continuous.
     offset = phase % DOT_SPACING;
