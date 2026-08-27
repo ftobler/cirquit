@@ -61,6 +61,17 @@ describe('text element', () => {
     expect(again.text).toBe('µ 5 Ω hér');
   });
 
+  it('treats a non-breaking space as part of the token, not a separator', () => {
+    // The file format splits tokens on space and tab only; a \u00A0 inside a
+    // value must survive a save then load byte for byte, not be torn into two
+    // tokens that rejoin on a regular space.
+    const NBSP = ' ';
+    const { e, again, elementLine } = roundTrip(`x 100 200 0 0 0 12 a${NBSP}b`);
+    expect(e.text).toBe(`a${NBSP}b`);
+    expect(elementLine).toContain(`a${NBSP}b`);
+    expect(again.text).toBe(`a${NBSP}b`);
+  });
+
   it('defaults a missing size token to 24, the upstream constructor size', () => {
     const { e } = roundTrip('x 100 200 0 0 0');
     expect(e.params.size).toBe(24);
