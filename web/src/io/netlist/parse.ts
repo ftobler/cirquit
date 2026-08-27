@@ -45,7 +45,7 @@ const MODEL_KINDS = new Set(['diode', 'zener', 'varactor', 'led']);
  * writable entry before deciding whether to regenerate it.
  */
 export function parseDiodeModelLine(line: string): { name: string; model: DiodeModel } | null {
-  const tokens = line.trim().split(/\s+/);
+  const tokens = line.trim().split(/[ \t]+/);
   if (tokens[0] !== '34') return null;
   const name = tokens[1] === undefined ? '' : unescapeToken(tokens[1]);
   const num = (i: number): number | undefined => {
@@ -88,7 +88,7 @@ export function parseDiodeModelLine(line: string): { name: string; model: DiodeM
  * resolvable model. Shared with the save path like `parseDiodeModelLine`.
  */
 export function parseTransistorModelLine(line: string): { name: string; model: TransistorModel } | null {
-  const tokens = line.trim().split(/\s+/);
+  const tokens = line.trim().split(/[ \t]+/);
   if (tokens[0] !== '32') return null;
   const name = tokens[1] === undefined ? '' : unescapeToken(tokens[1]);
   const num = (i: number): number | undefined => {
@@ -375,7 +375,12 @@ export function parseCircuit(text: string): ParsedCircuit {
       order.push({ kind: 'other', line: rawLine });
       continue;
     }
-    const tokens = lineText.split(/\s+/);
+    // Split only on the ASCII space and tab, the separators the file format
+    // uses. `\s` would also match a non-breaking space (\u00A0), so a token
+    // value carrying one (a label, a text element, a model name) would be torn
+    // into two tokens on load and corrupt the round trip. NBSP is part of the
+    // token here and rides through to the value verbatim.
+    const tokens = lineText.split(/[ \t]+/);
     const head = tokens[0];
 
     if (head === '$') {
@@ -623,8 +628,12 @@ export function parseCircuit(text: string): ParsedCircuit {
       const v = Number(tokens[i]);
       // The i32 bound keeps an oversized coordinate out of the engine's
       // `[i32; 2]` posts: past it serde refuses the whole build rather than
-      // the one line upstream's parseInt throw skips.
-      return tokens[i] !== undefined && Number.isFinite(v) && Math.abs(v) <= 2147483647
+      // the one line upstream's parseInt throw skips. `Math.abs` cannot gate
+      // the lower bound: `Math.abs(-2147483648)` overflows back to itself in
+      // JS, so an exact i32::MIN coordinate would wrongly fail `<= 2147483647`.
+      // The explicit range below accepts the full i32 span, including the
+      // previously-rejected extreme.
+      return tokens[i] !== undefined && Number.isFinite(v) && v >= -2147483648 && v <= 2147483647
         ? v
         : null;
     };

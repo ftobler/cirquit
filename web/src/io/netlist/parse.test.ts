@@ -352,6 +352,18 @@ describe('strict element-line coordinates', () => {
     // The boundary itself stays loadable.
     expect(parseCircuit(`${HEADER}r -2147483647 0 2147483647 0 0 220\n`).elements).toHaveLength(1);
   });
+
+  it('accepts a coordinate equal to i32::MIN (-2147483648) instead of rejecting it', () => {
+    // `Math.abs(-2147483648)` overflows to itself in JS, so the old
+    // `Math.abs(v) <= 2147483647` guard wrongly refused this valid extreme.
+    const text = `${HEADER}r -2147483648 0 2147483647 0 0 220\n`;
+    const parsed = parseCircuit(text);
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['resistor']);
+    expect(parsed.warnings).toEqual([]);
+    expect(parsed.passthrough).toEqual([]);
+    const r = parsed.elements[0];
+    expect([r.x1, r.y1, r.x2, r.y2]).toEqual([-2147483648, 0, 2147483647, 0]);
+  });
 });
 
 describe('device-model file lines and the save writer', () => {
