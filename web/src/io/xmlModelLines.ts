@@ -145,9 +145,3 @@ function childDumpToken(node: XmlNode): string | null {
   if (tag === 'w' || tag === 'rw' || tag === 'ln') return String(f);
   return null;
 }
-
-/** Escapes one field of a `_`-joined dump token (`_`, space and backslash), so
- *  the join's separators stay unambiguous (subcircuitBuild.ts:333-343). */
-function escapeChildField(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/_/g, '\\u').replace(/ /g, '\\s');
-}
