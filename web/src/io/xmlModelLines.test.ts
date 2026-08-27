@@ -95,7 +95,7 @@ describe('xmlModelLines compositeModel', () => {
       ],
     );
     expect(compositeModel(n)).toBe(
-      '. op 0 2 2 2 A 1 0 2 B 2 1 2 AndGateElm\\s1\\s2\\s3 0\\\\u2\\\\u0\\\\u5',
+      '. op 0 2 2 2 A 1 0 2 B 2 1 2 AndGateElm\\s1\\s2\\s3 0\\s2\\s0\\s5',
     );
   });
 

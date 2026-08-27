@@ -99,7 +99,7 @@ export function compositeModel(node: XmlNode): string {
       // (composite.rs, `dumps.get(i)`), so the two lists have to stay in step:
       // a child that contributes no line contributes no dump either, and one
       // whose tag carries no fields still contributes its flags.
-      dumps.push(escapeChildField(childDumpToken(child) ?? String(attr(child, 'f', 0))));
+      dumps.push(childDumpToken(child)?.replaceAll('_', ' ') ?? String(attr(child, 'f', 0)));
     }
   }
   return [
