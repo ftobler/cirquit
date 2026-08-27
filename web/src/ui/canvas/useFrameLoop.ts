@@ -108,6 +108,16 @@ export function paintedSelection(drag: Drag, selectedIds: number[]): number[] {
   return drag.mode === 'move' ? drag.ids : selectedIds;
 }
 
+/**
+ * The set of element ids a frame paints as selected, as a Set so each
+ * element's membership test in the draw loop is O(1) rather than an O(N)
+ * scan through the painted list. Built once per frame from paintedSelection.
+ * Pure, so the membership is testable without a canvas.
+ */
+export function paintedSet(drag: Drag, selectedIds: number[]): Set<number> {
+  return new Set(paintedSelection(drag, selectedIds));
+}
+
 export function useFrameLoop(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   engine: SimEngine | null,
@@ -117,6 +127,12 @@ export function useFrameLoop(
 ): void {
   const dotPhaseRef = useRef(new Map<number, number>());
   const postPhaseRef = useRef(new Map<number, number[]>());
+  // Per-element voltage and post-current buffers, reused across frames so a
+  // 200-element schematic does not allocate 400 arrays every frame. Sized
+  // against each element's current post count, the same length check the dot
+  // phases use (postPhaseRef).
+  const voltRef = useRef(new Map<number, number[]>());
+  const postCRef = useRef(new Map<number, number[]>());
   const lastFrameRef = useRef(performance.now());
   const loadedRevision = useRef(-1);
   const appliedParamRevision = useRef(-1);
@@ -214,6 +230,8 @@ export function useFrameLoop(
             // clearing the maps stops them growing across circuit loads.
             dotPhaseRef.current.clear();
             postPhaseRef.current.clear();
+            voltRef.current.clear();
+            postCRef.current.clear();
             // A mid-run rebuild keeps the live charges only when the engine still
             // holds this document; the rebuild right after a load injects nothing,
             // because the new file's tokens are already in the params.
@@ -288,6 +306,8 @@ export function useFrameLoop(
               // does not snap every reactive element back to its file charge.
               dotPhaseRef.current.clear();
               postPhaseRef.current.clear();
+              voltRef.current.clear();
+              postCRef.current.clear();
               // This rebuild renumbers nodes like any other, so a
               // shift-highlighted net index from before would light the wrong
               // net; the store's revision-bump clear cannot reach this branch,
@@ -465,6 +485,7 @@ export function useFrameLoop(
           // One selection list paints the whole frame: the frozen group while
           // a move drag is armed (paintedSelection), else the live selection.
           const painted = paintedSelection(dragRef.current, selectedIds);
+          const paintedIdSet = paintedSet(dragRef.current, selectedIds);
 
           for (const e of elements) {
             const def = defFor(e.kind);
@@ -479,15 +500,34 @@ export function useFrameLoop(
               e.kind === 'wire' || e.kind === 'labeledNode'
                 ? postsForRender(e, busWidths)
                 : def.posts(e);
-            const voltages = posts.map((_, i) => {
-              if (!nodeVoltages || !elementNodes || offset === undefined) return 0;
+            // Reused across frames: the buffer lives in voltRef keyed by id and
+            // is reallocated only when the element's post count changes, so a
+            // wide label or bus wire resizing its terminal list gets a fresh
+            // array while a steady schematic pays one allocation per element,
+            // ever. The fill below runs each frame regardless, because the
+            // engine arrays carry this frame's solve.
+            let voltages = voltRef.current.get(e.id);
+            if (!voltages || voltages.length !== posts.length) {
+              voltages = new Array(posts.length).fill(0);
+              voltRef.current.set(e.id, voltages);
+            }
+            for (let i = 0; i < posts.length; i++) {
+              if (!nodeVoltages || !elementNodes || offset === undefined) {
+                voltages[i] = 0;
+                continue;
+              }
               const node = elementNodes[offset + i];
-              return node === undefined ? 0 : (nodeVoltages[node] ?? 0);
-            });
+              voltages[i] = node === undefined ? 0 : (nodeVoltages[node] ?? 0);
+            }
             const current = idx !== undefined && currents ? (currents[idx] ?? 0) : 0;
-            const postCs = posts.map((_, i) =>
-              offset !== undefined && postCurrents ? (postCurrents[offset + i] ?? 0) : 0,
-            );
+            let postCs = postCRef.current.get(e.id);
+            if (!postCs || postCs.length !== posts.length) {
+              postCs = new Array(posts.length).fill(0);
+              postCRef.current.set(e.id, postCs);
+            }
+            for (let i = 0; i < posts.length; i++) {
+              postCs[i] = offset !== undefined && postCurrents ? (postCurrents[offset + i] ?? 0) : 0;
+            }
             // A bus wire's terminals run N at the near end then N at the far
             // end, so bit 0's end-to-end difference sits at indices 0 and
             // width; every other element diffs its first two posts.
@@ -602,7 +642,7 @@ export function useFrameLoop(
               conventional: settings.conventional,
               euroResistors: settings.euroResistors,
               euroGates: settings.euroGates,
-              selected: painted.includes(e.id),
+              selected: paintedIdSet.has(e.id),
               hovered: hoveredId === e.id,
               onHighlightedNet,
               voltageRange: settings.voltageRange,

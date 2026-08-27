@@ -7,6 +7,7 @@ import {
   buildReport,
   frameSafely,
   paintedSelection,
+  paintedSet,
   scopeDrawPayload,
 } from './useFrameLoop';
 
@@ -162,10 +163,27 @@ describe('paintedSelection', () => {
     expect(paintedSelection({ mode: 'none' }, [3])).toEqual([3]);
     expect(
       paintedSelection(
-        { mode: 'select', start: at(0, 0), current: at(8, 8), shift: false },
+        { mode: 'rowcol', axis: 'col', captured: [], last: at(0, 0) },
         [3],
       ),
     ).toEqual([3]);
-    expect(paintedSelection({ mode: 'rowcol', axis: 'col', captured: [], last: at(0, 0) }, [3])).toEqual([3]);
+  });
+});
+
+describe('paintedSet', () => {
+  // The draw loop tests selection through a Set so each element's membership
+  // is O(1); the Set must agree with paintedSelection exactly, or the
+  // highlight and move handles would split from the painted list.
+  it('a move drag paints its frozen ids as a set', () => {
+    const drag: Drag = { mode: 'move', ids: [1, 2], last: { x: 0, y: 0 }, moved: true };
+    expect(paintedSet(drag, [3])).toEqual(new Set([1, 2]));
+    expect(paintedSet(drag, [3]).has(1)).toBe(true);
+    expect(paintedSet(drag, [3]).has(3)).toBe(false);
+  });
+
+  it('with no move armed the set holds the live selection', () => {
+    expect(paintedSet({ mode: 'none' }, [3, 7])).toEqual(new Set([3, 7]));
+    expect(paintedSet({ mode: 'none' }, [3, 7]).has(7)).toBe(true);
+    expect(paintedSet({ mode: 'none' }, [3, 7]).size).toBe(2);
   });
 });
