@@ -6,10 +6,23 @@
  * refuse a bundled composite circuit that loaded under the old, lenient rule.
  *
  * This smoke-loads every circuit in the bundled library that contains a
- * composite element (op-amp, OTA, comparator, custom subcircuit) and asserts the
- * stricter rule's refusal never reaches `setCircuit`. The build path is the same
- * one the store uses, so a child-build refusal here is exactly the regression a
- * real load would hit.
+ * composite-built element and asserts the stricter rule's refusal never reaches
+ * `setCircuit`. The build path is the same one the store uses, so a child-build
+ * refusal here is exactly the regression a real load would hit.
+ *
+ * The covered kinds are the ones the engine actually routes through
+ * `Composite::from_model`: `ota`, `comparator`, `customComposite`, `opampReal`,
+ * `crystal` and `optocoupler`. The plain op-amp (`opamp`) is NOT composite-built,
+ * so it can never trigger the regression and must stay out of the set.
+ *
+ * A refused bundle surfaces through one of two strings, depending on which
+ * builder aborts. The custom subcircuit builder (`Composite::from_spec`) returns
+ * the specific `composite child N (...) failed to build` message; the built-in
+ * composite builders (`ota`/`comparator`/`opampReal`/`optocoupler`/`crystal`)
+ * fold the child failure into their `Option` contract and surface the generic
+ * `element '...' has a missing or malformed model definition` message. The
+ * matcher catches both, so a refusal via either path lands on a failing
+ * assertion.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -23,16 +36,35 @@ import { clearSessionModels, registerSessionModel } from './subcircuits';
 
 const CIRCUITS_DIR = fileURLToPath(new URL('../../public/circuits', import.meta.url));
 
-// The element kinds the engine builds as composites
-// (engine/core/src/elements/composite.rs). Each routes through `from_model`, so
-// each is in scope for the stricter child-build refusal.
-const COMPOSITE_KINDS = new Set(['opamp', 'ota', 'comparator', 'customComposite']);
+// The element kinds the engine actually builds as composites
+// (engine/core/src/elements/mod.rs: the `ota`/`comparator`/`opampReal`/`optocoupler`/
+// `crystal` arms route through `Composite::from_model`; `composite` is the custom
+// subcircuit). Each routes through `from_model`, so each is in scope for the
+// stricter child-build refusal. `opamp` is deliberately absent: it is a
+// standalone element that never goes through `from_model` and therefore cannot
+// trigger the regression.
+const COMPOSITE_KINDS = new Set([
+  'ota',
+  'comparator',
+  'customComposite',
+  'opampReal',
+  'crystal',
+  'optocoupler',
+]);
 
-// The exact text `Composite::from_model` returns for a rejected child
-// (engine/core/src/elements/composite.rs:456). A bundled file whose load ends
-// with this string is the regression under test: a previously-loading circuit
-// the stricter rule now refuses.
-const CHILD_BUILD_ERROR = /composite child \d+ \([^)]*\) failed to build/;
+// The only composite-built kind the bundled corpus actually contains. These
+// bundles get the strongest guard: they must load with no error at all, so a
+// future refusal is an immediate failing assertion.
+const STRONG_KINDS = new Set(['ota']);
+
+// Either string the engine emits when a composite child build is refused. The
+// custom subcircuit builder returns the specific text (engine/core/src/elements/
+// composite.rs:456); the built-in composite builders swallow the detailed error
+// behind `.ok()` and surface the generic text via `model_composite`
+// (engine/core/src/elements/mod.rs:454). Catching both closes the false-pass the
+// narrow match left open for the built-in kinds.
+const CHILD_BUILD_ERROR =
+  /(composite child|failed to build|missing or malformed model definition)/;
 
 /** Every bundled circuit whose element list contains a composite kind. */
 function compositeFiles(): string[] {
@@ -60,7 +92,7 @@ describe('bundled composite circuits survive the stricter child-build rule', () 
     engine = await SimEngine.create();
   }, 30_000);
 
-  it('covers the bundled op-amp and OTA circuits', () => {
+  it('covers the bundled OTA circuits', () => {
     expect(files.length).toBeGreaterThan(0);
     expect(files).toContain('ota-gain.txt');
   });
@@ -80,10 +112,17 @@ describe('bundled composite circuits survive the stricter child-build rule', () 
         { ...DEFAULT_SETTINGS, ...parsed.settings },
         [],
       );
-      if (err) {
-        // The only load refusal this guard forbids. Any other error (a
-        // convergence refusal, a singular matrix) is an unrelated, pre-existing
-        // condition, not the stricter child-build regression.
+      if (parsed.elements.some((e) => STRONG_KINDS.has(e.kind))) {
+        // Strongest guard: an OTA bundle (the one composite-built kind the
+        // corpus actually ships) must load with no error at all. A future
+        // child-build refusal therefore fails immediately instead of being
+        // excused as an "unrelated" error.
+        expect(err, `${file}: ${err}`).toBe(null);
+      } else if (err) {
+        // For the other composite-built kinds, the only load refusal this guard
+        // forbids is the child-build one, surfaced by either builder. Any other
+        // error (a convergence refusal, a singular matrix) is an unrelated,
+        // pre-existing condition, not the stricter child-build regression.
         expect(err, `${file}: ${err}`).not.toMatch(CHILD_BUILD_ERROR);
       }
     });
