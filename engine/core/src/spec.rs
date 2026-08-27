@@ -45,6 +45,32 @@ impl ElementSpec {
     pub fn flag(&self, bit: i64) -> bool {
         self.flags & bit != 0
     }
+
+    /// Read a positive integer count parameter, rejecting a non-finite or
+    /// out-of-range token with a named error rather than trusting it into
+    /// `Vec::with_capacity`, where a huge value aborts the wasm instance with
+    /// `capacity overflow`. Upstream fixes no cap on these counts (DataRecorder
+    /// `dataCount`, SeqGen `bitCount`, SevenSeg `baseSegments`), so the bounds
+    /// are this port's own; the error names the element and parameter so the
+    /// build banner stays actionable, mirroring the LED array and custom
+    /// transformer precedent.
+    pub fn param_count(
+        &self,
+        name: &str,
+        default: f64,
+        min: f64,
+        max: f64,
+        kind: &str,
+    ) -> Result<usize, String> {
+        let v = self.param(name, default);
+        if !v.is_finite() || v < min || v > max {
+            return Err(format!(
+                "{kind} (id {}) {name} must be between {min} and {max}, got {v}",
+                self.id
+            ));
+        }
+        Ok(v.round() as usize)
+    }
 }
 
 /// Which linear-solver backend a closure uses. Upstream's `solverType`

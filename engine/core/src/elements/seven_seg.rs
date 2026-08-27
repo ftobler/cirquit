@@ -19,6 +19,12 @@ use crate::spec::ElementSpec;
 /// value, decimal point or colon, adds one segment pin.
 const ES_NONE: i64 = 0;
 
+/// Ceiling on the base segment count; upstream's dialog only offers 7, 14 and
+/// 16 (SevenSegElm.java:339-367) and never bounds the token, so this is the
+/// port's own. 1<<8 plus the optional extra segment and common post bounds the
+/// pin allocation comfortably below the `usize` ceiling the old code overflowed.
+const MAX_SEVEN_SEG_BASE_SEGMENTS: usize = 1 << 8;
+
 pub struct SevenSeg {
     chip: Chip,
     /// Segment pins, the decimal point or colon included (SevenSegElm.java:30).
@@ -29,10 +35,17 @@ pub struct SevenSeg {
 }
 
 impl SevenSeg {
-    pub fn new(spec: &ElementSpec) -> Self {
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         // The edit dialog offers 7, 14 and 16 segments (getChipEditInfo); a
-        // file carrying another count still rounds the way the frontend does.
-        let base_segment_count = (spec.param("baseSegments", 7.0).round() as i64).max(1) as usize;
+        // file carrying another count still rounds the way the frontend does,
+        // but a huge token is rejected before it can size `pins`.
+        let base_segment_count = spec.param_count(
+            "baseSegments",
+            7.0,
+            1.0,
+            MAX_SEVEN_SEG_BASE_SEGMENTS as f64,
+            "sevenSeg",
+        )?;
         let extra_segment = spec.param("extraSegment", 0.0).round() as i64;
         // 0 no diodes, 1 common cathode, -1 common anode. The sign is only
         // the LED direction upstream; either non-zero adds a common post.
@@ -47,11 +60,11 @@ impl SevenSeg {
         for _ in 0..pin_count {
             pins.push(ChipPin::input());
         }
-        Self {
+        Ok(Self {
             chip: Chip::new(spec, pins),
             segment_count,
             pin_count,
-        }
+        })
     }
 }
 

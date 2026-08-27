@@ -3,6 +3,13 @@
 use crate::element::{Base, Element, SimCtx};
 use crate::spec::ElementSpec;
 
+/// Ceiling on the sample ring a data recorder may hold; upstream fixes no cap
+/// (DataRecorderElm.java:19, :78-83) and the dialog only requires a positive
+/// count, so this is the port's own. 1<<20 f64 samples is 8 MiB, already a
+/// generous export log, and the next step would overflow wasm32's `usize`
+/// allocation ceiling, aborting the instance.
+const MAX_DATA_RECORDER_SAMPLES: usize = 1 << 20;
+
 /// One-post sensing element (DataRecorderElm.java:34-35): it draws no current
 /// and records its single terminal's voltage every step into a ring buffer,
 /// wrapping when full (DataRecorderElm.java:67-76). The samples are exported
@@ -23,16 +30,22 @@ pub struct DataRecorder {
 }
 
 impl DataRecorder {
-    pub fn new(spec: &ElementSpec) -> Self {
-        let data_count = spec.param("dataCount", 10240.0).max(1.0) as usize;
-        Self {
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
+        let data_count = spec.param_count(
+            "dataCount",
+            10240.0,
+            1.0,
+            MAX_DATA_RECORDER_SAMPLES as f64,
+            "dataRecorder",
+        )?;
+        Ok(Self {
             base: Base::with_posts(1),
             data_count,
             data: vec![0.0; data_count],
             data_ptr: 0,
             data_full: false,
             last_bucket: 0,
-        }
+        })
     }
 }
 
@@ -61,8 +74,11 @@ impl Element for DataRecorder {
         match name {
             "dataCount" => {
                 // A size change reallocates and clears, matching setDataCount
-                // (DataRecorderElm.java:78-83).
-                self.data_count = value.max(1.0) as usize;
+                // (DataRecorderElm.java:78-83). Soft-clamp to the same ceiling
+                // as `new`: set_param has no error channel, so a huge value is
+                // silently capped rather than trusted into `vec!` and aborting
+                // the instance.
+                self.data_count = (value.max(1.0).min(MAX_DATA_RECORDER_SAMPLES as f64)) as usize;
                 self.data = vec![0.0; self.data_count];
                 self.data_ptr = 0;
                 self.data_full = false;
