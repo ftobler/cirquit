@@ -476,6 +476,26 @@ fetch it).
   extractions: element-formats.test.ts became ten family files totalling the
   identical 364 declared suites' worth of tests, and the LED-array block left
   displays_converters.rs for its own led_array.rs topic file.
+- Batch 17 (2026-08-26): a clean backlog forced a fresh review pass, three
+  read-only scouts whose findings became seven no-owner-needed features, each in
+  its own worktree, independently reviewed and merged. The four sample-gated
+  elements (probe, test point, data recorder, transmission line) now sample once
+  per nominal step like upstream's timeStepCount bucket, so the transmission
+  line's delay stops shrinking under the adaptive timestep; non-positive or
+  non-finite capacitance, inductance and transformer windings are rejected at
+  engine build and name the element, closing the runaway-negative-resistance
+  gap the zero-resistance precedent set; restamp honours a stamp-time
+  request_stop and a hostile composite model is refused at the first node
+  over its budget; coordinates past the i32 range and empty routed-wire points
+  degrade per line with a trace instead of poisoning the whole file or forging
+  a zero leg; the scope kind lookup is a one-shot map; a wholesale document
+  replacement now also clears the device-model editor and lowers gesture flags;
+  the voltmeter caption carries its per-mode unit table; and the seven
+  corpus-incidental format rows (flip-flops, VCO, noise, darlington, line)
+  gained directed pinning tests. The scouts' owner-decision items (DC motor
+  spin direction, reset persistence, scope trace cap, comment quote escaping,
+  three-phase current readout, stop-trigger during the DC point, negative-ratio
+  saturation) stay parked.
 - Review batch 2026-08-25b: six more lanes of the day's review pass landed as
   five worktree features plus one engine pair. Scopes lay out against their
   own viewport through one pure layoutHeader (embedded windows stop painting
@@ -526,10 +546,10 @@ fetch it).
   ('true' low, 'false' high, SwitchElm.java:56-62), un-inverting startup
   levels for 75 boolean lines across 35 bundled circuits, numerics unchanged,
   saves byte-stable.
-- 621 Rust tests, most of them the end-to-end circuit checks across
+- 624 Rust tests, most of them the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus in-module unit tests and one doctest.
-  3525 TypeScript tests pass (one corpus report test skipped); the robustness
+  3554 TypeScript tests pass (one corpus report test skipped); the robustness
   batch added 28 of the Rust tests and 61 of the TypeScript ones, review
   batch 2026-08-25b added four more Rust and 172 more TypeScript, and review
   batch 2026-08-25c added six more Rust and 19 more TypeScript. The owner-bug batch
@@ -739,6 +759,25 @@ fetch it).
   file since its bar reads the token back on load; the engine never chases
   the number. Fixed steps-per-frame follows from the one batch per frame
   architecture (section 1).
+- **Parity owner calls parked for a human ruling.** A 2026-08-26 review pass
+  surfaced seven findings that need a judgement, not a code change, so they stay
+  open: the DC motor negates both coupling sources, giving the conventional
+  positive-speed rotation while upstream (DCMotorElm.java:151-155) stamps the
+  opposite sign and hides it behind `Math.abs` in its RPM readout, so faithful
+  parity would flip the visible spin and rewrite the enshrined angle tests; the
+  port clears ammeter/wattmeter accumulators and zeroes rotor angles on Reset
+  where upstream inherits them, tidier but not upstream; the scope trace cap is a
+  number pick (128 vs 512 changes no real circuit) left unset after the
+  O(scopes x elements) kind lookup was fixed; a decoded `&quot;` re-emits
+  unescaped into preserved-tag and trace comments and stays inert against the
+  loader, but whether comments stay opaque passthrough forever is a format call;
+  the three-phase motor's info-box current uses stator phase U rather than
+  upstream's arbitrary last-solved source; the stop trigger is skipped during the
+  DC operating point as a deliberate, documented skip; and a negative transformer
+  ratio loses secondary saturation upstream while the port scales by `|n|` and
+  saturates, which is the saner behaviour to keep. The engine probe returns
+  `voltage_diff()` for the unselectable meter modes, where upstream draws zero, a
+  cross-layer quirk recorded in the knowledge base.
 
 ---
 
