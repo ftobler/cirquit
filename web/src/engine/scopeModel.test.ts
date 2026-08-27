@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { Scope, ScopePlot, ScopeTrigger, ScopeValue } from './scopeModel';
 import {
   PLOT_MEASUREMENT_KEYS,
-  Scope,
-  ScopePlot,
-  ScopeTrigger,
-  ScopeValue,
   anyPlotOverrides,
   defaultWidth,
   effectiveMeasurements,
