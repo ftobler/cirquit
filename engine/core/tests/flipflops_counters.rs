@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use circuit_core::elements::build_element;
-use circuit_core::{Circuit, ElementSpec, SimCtx};
+use circuit_core::{Circuit, CircuitSpec, ElementSpec, SimCtx};
 
 mod common;
 use common::*;
@@ -978,6 +978,24 @@ fn seq_gen_holding_clock_high_through_reset_does_not_reemit() {
         Some(vec![true, false]),
         "holding the clock high through Reset re-emitted the bit"
     );
+}
+
+#[test]
+fn oversized_seq_gen_bit_count_cannot_hang_the_build() {
+    // A single hostile line used to compute `words = bitCount/32` and call
+    // `Vec::with_capacity(words)` with `bitCount 1e12`, overflowing wasm32's
+    // `usize` ceiling. The clamp rejects the over-range count by name before
+    // the allocation, like the LED array and custom transformer.
+    let spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![elm(1, "seqGen", &[[0, 0], [96, 0]], &[("bitCount", 1e12)])],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let err = Circuit::new()
+        .set_circuit(&spec)
+        .expect_err("the bomb line must be rejected");
+    assert!(err.contains("seqGen") && err.contains("bitCount"), "{err}");
 }
 
 #[test]

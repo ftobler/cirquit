@@ -1,7 +1,7 @@
 //! Decimal display, DAC, noise source, seven-segment reader, ADC, multiplexer, demultiplexer and VCO.
 
 use circuit_core::elements::instruction_display::InstructionDisplay;
-use circuit_core::{Circuit, ScopeSpec, ScopeValue};
+use circuit_core::{Circuit, CircuitSpec, ScopeSpec, ScopeValue};
 
 mod common;
 use common::*;
@@ -750,6 +750,36 @@ fn vco_output_oscillates_at_the_control_frequency() {
     assert!(
         (40.0..=44.0).contains(&mean_gap),
         "mean output half-period was {mean_gap} steps, expected ~40 at 1250 Hz"
+    );
+}
+
+#[test]
+fn oversized_seven_seg_base_segments_cannot_hang_the_build() {
+    // A single hostile line used to size `pins` from `baseSegments 1e12` inside
+    // SevenSeg::new, overflowing wasm32's `usize` ceiling. The clamp rejects the
+    // over-range count by name before the allocation, like the LED array and
+    // custom transformer.
+    let spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![elm(
+            1,
+            "sevenSeg",
+            &[[0, 0]],
+            &[
+                ("baseSegments", 1e12),
+                ("extraSegment", 0.0),
+                ("diodeDirection", 0.0),
+            ],
+        )],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let err = Circuit::new()
+        .set_circuit(&spec)
+        .expect_err("the bomb line must be rejected");
+    assert!(
+        err.contains("sevenSeg") && err.contains("baseSegments"),
+        "{err}"
     );
 }
 

@@ -1,6 +1,6 @@
 //! The ohmmeter, test point, wattmeter, data recorder and stop trigger.
 
-use circuit_core::Circuit;
+use circuit_core::{Circuit, CircuitSpec};
 
 mod common;
 use common::*;
@@ -450,6 +450,51 @@ fn data_recorder_gains_one_row_per_nominal_step_while_adapting() {
         rows < 60,
         "with halved steps in the mix the recorder must fall behind the commit count"
     );
+}
+
+#[test]
+fn oversized_data_recorder_count_cannot_hang_the_build() {
+    // A single hostile line used to allocate `vec![0.0; 1e12]` inside
+    // DataRecorder::new, overflowing wasm32's `usize` ceiling and aborting the
+    // instance. The clamp rejects the over-range count by name before any
+    // allocation, the same precedent the LED array and custom transformer set.
+    let spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![elm(1, "dataRecorder", &[[0, 0]], &[("dataCount", 1e12)])],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let err = Circuit::new()
+        .set_circuit(&spec)
+        .expect_err("the bomb line must be rejected");
+    assert!(
+        err.contains("dataRecorder") && err.contains("dataCount"),
+        "{err}"
+    );
+}
+
+#[test]
+fn data_recorder_live_size_change_soft_clamps_a_huge_value() {
+    // set_param has no error channel, so a huge `dataCount` is silently capped
+    // rather than trusted into `vec!` (DataRecorderElm.java:78-83). The recorder
+    // must keep working instead of panicking the instance.
+    let c = &mut build(
+        vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(3, "dataRecorder", &[[0, 0]], &[("dataCount", 10.0)]),
+            elm(4, "ground", &[[0, 100]], &[]),
+        ],
+        opts(1e-5, false),
+    );
+    assert!(c.set_param(3, "dataCount", 1e12));
+    c.run(4);
+    let samples = c.data_recorder_data(3);
+    assert_eq!(
+        samples.len(),
+        4,
+        "the ring kept recording under a soft-clamped size"
+    );
+    assert!(samples.iter().all(|&s| close(s, 5.0, 1e-12)));
 }
 
 #[test]

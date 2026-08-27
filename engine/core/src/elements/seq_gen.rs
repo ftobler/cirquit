@@ -13,6 +13,12 @@ use crate::stamp::Stamper;
 const FLAG_PLAY_ONCE: i64 = 4;
 const FLAG_HAS_RESET: i64 = 8;
 
+/// Ceiling on the stored bit count; upstream fixes no cap (SeqGenElm.java:65-66
+/// sizes `data` straight from the token), so this is the port's own. 1<<16 bits
+/// packs into 2048 i64 words, a generous sequence, and stays well under the
+/// `usize` ceiling where the old code overflowed `Vec::with_capacity`.
+const MAX_SEQ_GEN_BITS: usize = 1 << 16;
+
 pub struct SeqGen {
     chip: Chip,
     /// The sequence as packed 32-bit words, LSB of `data[0]` first
@@ -26,9 +32,10 @@ pub struct SeqGen {
 }
 
 impl SeqGen {
-    pub fn new(spec: &ElementSpec) -> Self {
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
         let has_reset = spec.flag(FLAG_HAS_RESET);
-        let bit_count = spec.param("bitCount", 8.0) as usize;
+        let bit_count =
+            spec.param_count("bitCount", 8.0, 1.0, MAX_SEQ_GEN_BITS as f64, "seqGen")?;
         let words = bit_count.div_ceil(32);
         let mut data = Vec::with_capacity(words);
         for w in 0..words {
@@ -44,14 +51,14 @@ impl SeqGen {
         if has_reset {
             pins.push(ChipPin::input()); // 2 R
         }
-        Self {
+        Ok(Self {
             chip: Chip::new(spec, pins).with_sticky_clock(),
             data,
             bit_count,
             bit_position: 0,
             has_play_once: spec.flag(FLAG_PLAY_ONCE),
             has_reset,
-        }
+        })
     }
 
     /// Emits the bit at the current position and advances, wrapping to the
