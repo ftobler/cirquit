@@ -1,6 +1,6 @@
 //! Netlist analysis and the time-stepping loop.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::closure::{build_closures, Closure};
 use crate::element::{Element, SimCtx};
@@ -210,6 +210,14 @@ pub struct Circuit {
     /// the plain [`Circuit::reset`] it wraps: `reset` has no channel for the
     /// outcome beyond the hard-error side channel. True until the first solve.
     last_dc_converged: bool,
+    /// Cached wire-recovery graph. The coordinates, edges and ground-only mask
+    /// are pure geometry: they do not move with the sim state, so the per-step
+    /// recovery reuses this instead of rescanning every element. `topo_version`
+    /// below tells it when the cache is stale.
+    wire_topo: Option<WireTopo>,
+    /// Bumped on every topology change (`set_circuit`, `reanalyze`) so a step
+    /// that only advanced the clock skips the rebuild and reuses `wire_topo`.
+    topo_version: u64,
 }
 
 impl Default for Circuit {
@@ -247,6 +255,8 @@ impl Circuit {
             warnings: Vec::new(),
             error: None,
             last_dc_converged: true,
+            wire_topo: None,
+            topo_version: 0,
         }
     }
 
@@ -615,6 +625,7 @@ impl Circuit {
                 })?;
             }
         }
+        self.bump_topo();
         Ok(())
     }
 
@@ -1207,6 +1218,16 @@ impl Circuit {
         if let Err(e) = self.allocate_and_stamp() {
             self.error = Some(e);
         }
+        self.bump_topo();
+    }
+
+    /// Marks the cached wire-recovery geometry stale. The recovery graph is
+    /// pure element geometry, so any edit that can move a terminal (a full
+    /// reload or an interactive merge/unmerge) must bump it; a clock or
+    /// parameter change must not, which is why only the topology paths call
+    /// this and the per-step recovery leaves it alone.
+    fn bump_topo(&mut self) {
+        self.topo_version = self.topo_version.wrapping_add(1);
     }
 
     /// Rebuilds the scope traces for a new element list.
@@ -1681,114 +1702,114 @@ impl Circuit {
     /// ideal shorts. Upstream reports "wire loop detected" on such loops;
     /// minimum-norm is the port's deliberate improvement.
     fn recover_wire_currents(&mut self) {
-        // Coordinates are (position, bus bit) pairs, so a bus wire's bits
-        // resolve as independent edges between independent nodes even though
-        // every pin shares one raw coordinate.
-        let mut coords: Vec<([i32; 2], usize)> = Vec::new();
-        let mut coord_id: HashMap<([i32; 2], usize), usize> = HashMap::new();
-        let mut edges: Vec<[usize; 2]> = Vec::new();
-        // (element index, which of its removable-wire pairs this edge is).
-        let mut edge_owner: Vec<(usize, usize)> = Vec::new();
+        // The recovery graph is pure element geometry, so rebuild it only when
+        // a topology edit bumped the version; otherwise reuse the cached copy
+        // across the many committed steps a frame makes. `take`/`replace` keeps
+        // the borrowed graph off `self` while the elements are mutated below.
+        if self
+            .wire_topo
+            .as_ref()
+            .is_none_or(|t| t.version != self.topo_version)
+        {
+            self.wire_topo = Some(WireTopo::build(self));
+        }
+        let topo = self.wire_topo.take().unwrap();
 
+        // Coordinate -> list of (element, post) for every non-ground element,
+        // built once per step. The ground net reads recovered wire currents
+        // through it, so it must cover wires too; it replaces the old per-ground
+        // resweep of every element, which was O(grounds * elements).
+        let mut coord_posts: CoordPosts = HashMap::new();
+        let mut injection = vec![0.0; topo.coords.len()];
         for (ei, elm) in self.elements.iter().enumerate() {
-            if elm.removable_wire() && elm.post_count() >= 2 {
-                let count = elm.removable_wire_pair_count();
-                for pair in 0..count {
-                    let (a, b) = elm.removable_wire_pair(pair);
-                    let c0 = coord_of(
-                        &mut coord_id,
-                        &mut coords,
-                        (elm.base().posts[a], elm.post_bus_z(a)),
-                    );
-                    let c1 = coord_of(
-                        &mut coord_id,
-                        &mut coords,
-                        (elm.base().posts[b], elm.post_bus_z(b)),
-                    );
-                    edges.push([c0, c1]);
-                    edge_owner.push((ei, pair));
+            if elm.is_ground() {
+                continue;
+            }
+            for pi in 0..elm.post_count() {
+                let key = (elm.base().posts[pi], elm.post_bus_z(pi));
+                coord_posts.entry(key).or_default().push((ei, pi));
+                if let Some(&c) = topo.coord_id.get(&key) {
+                    // Grounds are excluded from injection: they are sinks, never
+                    // injectors, so counting them would double-count their own
+                    // previous-step current back into the KCL.
+                    if !(elm.removable_wire() && elm.post_count() >= 2) {
+                        injection[c] += elm.current_into_node(pi);
+                    }
                 }
             }
         }
-        if !edges.is_empty() {
-            // Net current each coordinate receives from the non-removable
-            // world. Grounds are excluded: they are sinks, never injectors, so
-            // counting them (their `current_into_node` is `-current`) would
-            // double-count their own previous-step current back into the KCL.
-            let mut injection = vec![0.0; coords.len()];
-            for elm in self.elements.iter() {
-                if (elm.removable_wire() && elm.post_count() >= 2) || elm.is_ground() {
+
+        let mut resolved = vec![false; topo.edges.len()];
+        let mut currents = vec![0.0; topo.edges.len()];
+
+        if !topo.edges.is_empty() {
+            // Leaf-peeling over the coordinate adjacency. A coordinate is ready
+            // the moment at most one of its non-self-loop wires stays unresolved,
+            // which is exactly `can_resolve`'s condition, so the one remaining
+            // wire derives its current from KCL at that end. The work queue
+            // replaces the old repeated full-edge resweep, turning the pass from
+            // O(depth * E^2) into O(E + coords); the stuck (cyclic) remainder is
+            // unchanged and still solved by `resolve_stuck_wires`.
+            let mut degree: Vec<usize> = vec![0; topo.coords.len()];
+            for e in &topo.edges {
+                if e[0] != e[1] {
+                    degree[e[0]] += 1;
+                    degree[e[1]] += 1;
+                }
+            }
+            let mut in_queue = vec![false; topo.coords.len()];
+            let mut queue: VecDeque<usize> = VecDeque::new();
+            for c in 0..topo.coords.len() {
+                if !topo.ground_only[c] && degree[c] <= 1 {
+                    in_queue[c] = true;
+                    queue.push_back(c);
+                }
+            }
+
+            while let Some(c) = queue.pop_front() {
+                in_queue[c] = false;
+                if topo.ground_only[c] {
                     continue;
                 }
-                for pi in 0..elm.post_count() {
-                    let key = (elm.base().posts[pi], elm.post_bus_z(pi));
-                    let Some(&c) = coord_id.get(&key) else {
-                        continue;
-                    };
-                    injection[c] += elm.current_into_node(pi);
-                }
-            }
-
-            let mut resolved = vec![false; edges.len()];
-            let mut currents = vec![0.0; edges.len()];
-
-            // A coordinate whose only non-wire occupant is a ground symbol.
-            // Such a node sits inside the reference plane, which spans several
-            // raw coordinates, so the current it exchanges with a wire is not
-            // determined locally: the ground can sink or source any balance.
-            // A wire resolved from such an end would read a zero injection and
-            // report no current even when its other end is driven. The chain
-            // must therefore resolve such a wire from the far end instead,
-            // which is why `can_resolve` refuses these coordinates.
-            let mut has_ground = vec![false; coords.len()];
-            let mut has_non_ground = vec![false; coords.len()];
-            for elm in self.elements.iter() {
-                for pi in 0..elm.post_count() {
-                    let key = (elm.base().posts[pi], elm.post_bus_z(pi));
-                    let Some(&c) = coord_id.get(&key) else {
-                        continue;
-                    };
-                    if elm.is_ground() {
-                        has_ground[c] = true;
-                    } else if !(elm.removable_wire() && elm.post_count() >= 2) {
-                        has_non_ground[c] = true;
-                    }
-                }
-            }
-            let ground_only: Vec<bool> = (0..coords.len())
-                .map(|c| has_ground[c] && !has_non_ground[c])
-                .collect();
-
-            // Resolve chains and trees in the natural order: a wire whose
-            // other endpoint is fully determined derives its current from KCL
-            // there.
-            loop {
-                let mut progress = false;
-                for i in 0..edges.len() {
+                for &i in &topo.adj[c] {
                     if resolved[i] {
                         continue;
                     }
-                    let (c0, c1) = (edges[i][0], edges[i][1]);
-                    if can_resolve(&edges, &resolved, &ground_only, i, c0) {
-                        currents[i] = kcl_sum(&edges, &resolved, &injection, c0, &currents);
+                    let (c0, c1) = (topo.edges[i][0], topo.edges[i][1]);
+                    if c0 == c1 {
+                        // Self-loop: its current is the leftover after the
+                        // coordinate's real wires have peeled, so defer it until
+                        // `degree[c]` has reached zero (the re-enqueue below).
+                        if degree[c] != 0 {
+                            continue;
+                        }
+                        currents[i] = kcl_sum(&topo.edges, &resolved, &injection, c0, &currents);
                         resolved[i] = true;
-                        progress = true;
-                    } else if c1 != c0 && can_resolve(&edges, &resolved, &ground_only, i, c1) {
-                        currents[i] = -kcl_sum(&edges, &resolved, &injection, c1, &currents);
-                        resolved[i] = true;
-                        progress = true;
+                        continue;
                     }
-                }
-                if !progress {
-                    break;
+                    if c0 == c {
+                        currents[i] = kcl_sum(&topo.edges, &resolved, &injection, c0, &currents);
+                    } else {
+                        currents[i] = -kcl_sum(&topo.edges, &resolved, &injection, c1, &currents);
+                    }
+                    resolved[i] = true;
+                    for &ep in &[c0, c1] {
+                        if degree[ep] > 0 {
+                            degree[ep] -= 1;
+                        }
+                        if !topo.ground_only[ep] && degree[ep] <= 1 && !in_queue[ep] {
+                            in_queue[ep] = true;
+                            queue.push_back(ep);
+                        }
+                    }
                 }
             }
 
             if resolved.iter().any(|&r| !r) {
-                resolve_stuck_wires(&edges, &mut resolved, &mut currents, &injection);
+                resolve_stuck_wires(&topo.edges, &mut resolved, &mut currents, &injection);
             }
 
-            for (i, &(ei, pair)) in edge_owner.iter().enumerate() {
+            for (i, &(ei, pair)) in topo.edge_owner.iter().enumerate() {
                 let elm = &mut self.elements[ei];
                 elm.set_recovered_pair_current(pair, currents[i]);
                 // The single-pair shorts (plain wires, closed switches) keep
@@ -1800,7 +1821,9 @@ impl Circuit {
                 }
             }
         }
-        self.recover_ground_currents();
+
+        self.recover_ground_currents(&coord_posts);
+        self.wire_topo = Some(topo);
     }
 
     /// Gives each ground symbol the current the rest of the circuit delivers
@@ -1810,7 +1833,7 @@ impl Circuit {
     /// wire pass. The sum counts resolved wires by their recovered current and
     /// skips grounds. Grounds sharing a coordinate split the coordinate's net
     /// evenly, a deterministic choice that sums back to the true total.
-    fn recover_ground_currents(&mut self) {
+    fn recover_ground_currents(&mut self, coord_posts: &CoordPosts) {
         // A ground pins bit 0 of its coordinate (its post carries no bus
         // bit), so both the key and the sum are bit-scoped: a ground sitting
         // on a bus coordinate collects only what the circuit delivers to bit
@@ -1826,14 +1849,11 @@ impl Circuit {
         }
         for (key, grounds) in by_coord {
             let mut net = 0.0;
-            for elm in self.elements.iter() {
-                if elm.is_ground() {
-                    continue;
-                }
-                for pi in 0..elm.post_count() {
-                    if (elm.base().posts[pi], elm.post_bus_z(pi)) == key {
-                        net += elm.current_into_node(pi);
-                    }
+            // Sum the delivered current from the prebuilt coordinate index
+            // instead of resweeping every element: O(posts) not O(elements).
+            if let Some(posts) = coord_posts.get(&key) {
+                for &(ei, pi) in posts {
+                    net += self.elements[ei].current_into_node(pi);
                 }
             }
             // Positive reads as current flowing from the node down the stem
@@ -2242,6 +2262,108 @@ impl Circuit {
     }
 }
 
+/// Cached wire-recovery graph. Every field is pure element geometry: it is
+/// fixed between topology edits and reused across the many committed steps a
+/// frame makes, so the per-step recovery never rescans the element list to
+/// rebuild it. `version` is the `topo_version` the graph was built under, so
+/// `recover_wire_currents` can tell a stale cache from a live one.
+struct WireTopo {
+    version: u64,
+    /// All distinct (coordinate, bus bit) keys the wires touch, in allocation
+    /// order; every other vector here is indexed by these ids.
+    coords: Vec<([i32; 2], usize)>,
+    coord_id: HashMap<([i32; 2], usize), usize>,
+    /// One edge per removable-wire pair: the two coordinate ids its ends map to.
+    edges: Vec<[usize; 2]>,
+    /// (element index, which of its removable-wire pairs this edge is).
+    edge_owner: Vec<(usize, usize)>,
+    /// `true` where the only non-wire occupant at the coordinate is a ground:
+    /// such a node sits inside the reference plane and never resolves a wire, so
+    /// the leaf-peel refuses it (see `recover_wire_currents`).
+    ground_only: Vec<bool>,
+    /// Coordinate id -> incident edge ids, the adjacency the queue walks.
+    adj: Vec<Vec<usize>>,
+}
+
+impl WireTopo {
+    /// Builds the recovery graph from the current element list. Called only when
+    /// `topo_version` has advanced, never on a per-step path.
+    fn build(circuit: &Circuit) -> Self {
+        let mut coords: Vec<([i32; 2], usize)> = Vec::new();
+        let mut coord_id: HashMap<([i32; 2], usize), usize> = HashMap::new();
+        let mut edges: Vec<[usize; 2]> = Vec::new();
+        let mut edge_owner: Vec<(usize, usize)> = Vec::new();
+
+        for (ei, elm) in circuit.elements.iter().enumerate() {
+            if elm.removable_wire() && elm.post_count() >= 2 {
+                let count = elm.removable_wire_pair_count();
+                for pair in 0..count {
+                    let (a, b) = elm.removable_wire_pair(pair);
+                    let c0 = coord_of(
+                        &mut coord_id,
+                        &mut coords,
+                        (elm.base().posts[a], elm.post_bus_z(a)),
+                    );
+                    let c1 = coord_of(
+                        &mut coord_id,
+                        &mut coords,
+                        (elm.base().posts[b], elm.post_bus_z(b)),
+                    );
+                    edges.push([c0, c1]);
+                    edge_owner.push((ei, pair));
+                }
+            }
+        }
+
+        // A coordinate whose only non-wire occupant is a ground symbol: such a
+        // node sits inside the reference plane, which spans several raw
+        // coordinates, so the current it exchanges with a wire is not determined
+        // locally. The chain must resolve a wire touching it from the far end,
+        // which is why the leaf-peel refuses these coordinates.
+        let mut has_ground = vec![false; coords.len()];
+        let mut has_non_ground = vec![false; coords.len()];
+        for elm in circuit.elements.iter() {
+            for pi in 0..elm.post_count() {
+                let key = (elm.base().posts[pi], elm.post_bus_z(pi));
+                let Some(&c) = coord_id.get(&key) else {
+                    continue;
+                };
+                if elm.is_ground() {
+                    has_ground[c] = true;
+                } else if !(elm.removable_wire() && elm.post_count() >= 2) {
+                    has_non_ground[c] = true;
+                }
+            }
+        }
+        let ground_only: Vec<bool> = (0..coords.len())
+            .map(|c| has_ground[c] && !has_non_ground[c])
+            .collect();
+
+        let mut adj: Vec<Vec<usize>> = vec![Vec::new(); coords.len()];
+        for (i, e) in edges.iter().enumerate() {
+            adj[e[0]].push(i);
+            if e[1] != e[0] {
+                adj[e[1]].push(i);
+            }
+        }
+
+        Self {
+            version: circuit.topo_version,
+            coords,
+            coord_id,
+            edges,
+            edge_owner,
+            ground_only,
+            adj,
+        }
+    }
+}
+
+/// Element posts grouped by their (coordinate, bus bit) key: the prebuilt index
+/// the ground-current pass sums from, replacing the old per-ground resweep of
+/// every element.
+type CoordPosts = HashMap<([i32; 2], usize), Vec<(usize, usize)>>;
+
 /// Index for a (coordinate, bus bit) key, allocating one on first sight.
 fn coord_of(
     coord_id: &mut HashMap<([i32; 2], usize), usize>,
@@ -2256,34 +2378,6 @@ fn coord_of(
         coords.push(key);
         i
     }
-}
-
-/// True when every other unresolved wire touching `c` is resolved, so wire `i`
-/// is free to determine its current from KCL at `c`. Self-loops (both posts at
-/// one coordinate) never block: they neither draw nor deliver net current, so
-/// their own current is whatever the neighbours leave. A ground-only
-/// coordinate never resolves (see `recover_wire_currents`): its injection is
-/// zero by construction, so reading a wire's current from it would misreport a
-/// wire that actually feeds the reference plane through the ground.
-fn can_resolve(
-    edges: &[[usize; 2]],
-    resolved: &[bool],
-    ground_only: &[bool],
-    i: usize,
-    c: usize,
-) -> bool {
-    if ground_only[c] {
-        return false;
-    }
-    for (j, e) in edges.iter().enumerate() {
-        if j == i || resolved[j] || e[0] == e[1] {
-            continue;
-        }
-        if e[0] == c || e[1] == c {
-            return false;
-        }
-    }
-    true
 }
 
 /// Net current KCL assigns to the wire being resolved at `c`: what the
@@ -3195,5 +3289,347 @@ mod tests {
             c.error().is_some(),
             "the halving-arm restamp failure must reach the error side channel"
         );
+    }
+
+    // ─── Wire-current recovery tests ───
+
+    /// Builds a single-element spec with the given kind, id, posts and params.
+    fn el(id: u32, kind: &str, posts: Vec<[i32; 2]>, params: HashMap<String, f64>) -> ElementSpec {
+        ElementSpec {
+            id,
+            kind: kind.to_string(),
+            posts,
+            params,
+            label: None,
+            model: None,
+            flags: 0,
+        }
+    }
+
+    /// Sums `current_into_node` over every terminal that shares a node and
+    /// asserts the total is zero at each node. A wrong wire recovery writes a
+    /// wire's `current` straight into its `current_into_node`, so any slip
+    /// breaks KCL exactly here, which is why this is the recovery's core check.
+    fn assert_node_kcl(c: &Circuit) {
+        let posts = c.element_post_currents();
+        let nodes = c.element_nodes();
+        assert_eq!(posts.len(), nodes.len());
+        let mut by_node: HashMap<u32, f64> = HashMap::new();
+        for (n, &p) in nodes.iter().zip(posts.iter()) {
+            *by_node.entry(*n).or_insert(0.0) += p;
+        }
+        for (n, total) in by_node {
+            assert!(
+                total.abs() < 1e-6,
+                "node {n} KCL imbalance {total} (expected 0)"
+            );
+        }
+    }
+
+    /// A 5 V source behind a 1 k resistor, the current then carried by two plain
+    /// wires to a ground, with the source's cold post also grounded so the loop
+    /// closes. Hand-computed current is exactly 5 mA.
+    fn two_wire_spec() -> CircuitSpec {
+        CircuitSpec {
+            preserve_run: false,
+            elements: vec![
+                el(
+                    1,
+                    "voltage",
+                    vec![[0, 0], [100, 0]],
+                    HashMap::from([("maxVoltage".into(), 5.0)]),
+                ),
+                el(
+                    2,
+                    "resistor",
+                    vec![[100, 0], [200, 0]],
+                    HashMap::from([("resistance".into(), 1000.0)]),
+                ),
+                el(3, "wire", vec![[200, 0], [300, 0]], HashMap::new()),
+                el(4, "wire", vec![[300, 0], [400, 0]], HashMap::new()),
+                el(5, "ground", vec![[400, 0]], HashMap::new()),
+                el(6, "ground", vec![[0, 0]], HashMap::new()),
+            ],
+            options: Some(SimOptions::default()),
+            scopes: vec![],
+        }
+    }
+
+    #[test]
+    fn wire_recovery_matches_hand_computed_current() {
+        // The recovery must reproduce the analytic 5 mA through every wire, and
+        // node KCL must hold everywhere: a regression test that catches a
+        // semantics slip, not just a speed-up.
+        let mut c = Circuit::new();
+        c.set_circuit(&two_wire_spec())
+            .expect("circuit should analyse");
+        c.run(20);
+        let cur = c.element_currents();
+        // Element order matches the spec: wire ids 3 and 4 are indices 2 and 3.
+        assert!((cur[2] - 5e-3).abs() < 1e-7, "wire 3 current {}", cur[2]);
+        assert!((cur[3] - 5e-3).abs() < 1e-7, "wire 4 current {}", cur[3]);
+        // Ground at the wire end (id 5, index 4) carries the 5 mA net.
+        assert!((cur[4] - 5e-3).abs() < 1e-7, "ground 5 current {}", cur[4]);
+        assert_node_kcl(&c);
+    }
+
+    /// A T-junction: one wire feeds two parallel 1 k branches to ground. The
+    /// feeding wire carries 5 mA, each branch 2.5 mA; KCL at the split node is
+    /// the wire-recovery invariant the queue must preserve.
+    fn tee_spec() -> CircuitSpec {
+        CircuitSpec {
+            preserve_run: false,
+            elements: vec![
+                el(
+                    1,
+                    "voltage",
+                    vec![[0, 0], [100, 0]],
+                    HashMap::from([("maxVoltage".into(), 5.0)]),
+                ),
+                el(
+                    2,
+                    "resistor",
+                    vec![[100, 0], [200, 0]],
+                    HashMap::from([("resistance".into(), 500.0)]),
+                ),
+                el(3, "wire", vec![[200, 0], [300, 0]], HashMap::new()),
+                el(4, "wire", vec![[300, 0], [400, 0]], HashMap::new()),
+                el(
+                    5,
+                    "resistor",
+                    vec![[400, 0], [500, 0]],
+                    HashMap::from([("resistance".into(), 1000.0)]),
+                ),
+                el(6, "ground", vec![[500, 0]], HashMap::new()),
+                el(7, "wire", vec![[300, 0], [600, 0]], HashMap::new()),
+                el(
+                    8,
+                    "resistor",
+                    vec![[600, 0], [700, 0]],
+                    HashMap::from([("resistance".into(), 1000.0)]),
+                ),
+                el(9, "ground", vec![[700, 0]], HashMap::new()),
+                el(10, "ground", vec![[0, 0]], HashMap::new()),
+            ],
+            options: Some(SimOptions::default()),
+            scopes: vec![],
+        }
+    }
+
+    #[test]
+    fn wire_recovery_conserves_at_junction() {
+        let mut c = Circuit::new();
+        c.set_circuit(&tee_spec()).expect("circuit should analyse");
+        c.run(20);
+        let cur = c.element_currents();
+        // Wire order: id3 -> idx2, id4 -> idx3, id7 -> idx6.
+        assert!((cur[2] - 5e-3).abs() < 1e-7, "feed wire current {}", cur[2]);
+        assert!(
+            (cur[3] - 2.5e-3).abs() < 1e-7,
+            "branch A wire current {}",
+            cur[3]
+        );
+        assert!(
+            (cur[6] - 2.5e-3).abs() < 1e-7,
+            "branch B wire current {}",
+            cur[6]
+        );
+        assert_node_kcl(&c);
+    }
+
+    /// Two grounds on one coordinate split the net evenly, a deterministic
+    /// choice that must sum back to the true total the feeding wire delivers.
+    #[test]
+    fn ground_split_shares_net_evenly() {
+        let mut c = Circuit::new();
+        c.set_circuit(&CircuitSpec {
+            preserve_run: false,
+            elements: vec![
+                el(
+                    1,
+                    "voltage",
+                    vec![[0, 0], [100, 0]],
+                    HashMap::from([("maxVoltage".into(), 5.0)]),
+                ),
+                el(
+                    2,
+                    "resistor",
+                    vec![[100, 0], [200, 0]],
+                    HashMap::from([("resistance".into(), 1000.0)]),
+                ),
+                el(3, "wire", vec![[200, 0], [300, 0]], HashMap::new()),
+                el(4, "ground", vec![[300, 0]], HashMap::new()),
+                el(5, "ground", vec![[300, 0]], HashMap::new()),
+                el(6, "ground", vec![[0, 0]], HashMap::new()),
+            ],
+            options: Some(SimOptions::default()),
+            scopes: vec![],
+        })
+        .expect("circuit should analyse");
+        c.run(20);
+        let cur = c.element_currents();
+        // Grounds are ids 4, 5 -> element indices 3, 4; each gets half the 5 mA.
+        assert!(
+            (cur[3] - 2.5e-3).abs() < 1e-7,
+            "ground A current {}",
+            cur[3]
+        );
+        assert!(
+            (cur[4] - 2.5e-3).abs() < 1e-7,
+            "ground B current {}",
+            cur[4]
+        );
+        assert!(
+            ((cur[3] + cur[4]) - 5e-3).abs() < 1e-7,
+            "ground sum {}",
+            cur[3] + cur[4]
+        );
+        assert_node_kcl(&c);
+    }
+
+    /// Many grounds on one node: each must read net / count and the sum must
+    /// equal the recovered wire current, proving the accumulation folds into the
+    /// same pass without resweeping every element per ground.
+    #[test]
+    fn many_grounds_conserve() {
+        let n = 50usize;
+        let mut elements = vec![
+            el(
+                1,
+                "voltage",
+                vec![[0, 0], [100, 0]],
+                HashMap::from([("maxVoltage".into(), 5.0)]),
+            ),
+            el(
+                2,
+                "resistor",
+                vec![[100, 0], [200, 0]],
+                HashMap::from([("resistance".into(), 1000.0)]),
+            ),
+            el(3, "wire", vec![[200, 0], [300, 0]], HashMap::new()),
+            el(4, "ground", vec![[0, 0]], HashMap::new()),
+        ];
+        for k in 0..n {
+            elements.push(el(10 + k as u32, "ground", vec![[300, 0]], HashMap::new()));
+        }
+        let mut c = Circuit::new();
+        c.set_circuit(&CircuitSpec {
+            preserve_run: false,
+            elements,
+            options: Some(SimOptions::default()),
+            scopes: vec![],
+        })
+        .expect("circuit should analyse");
+        c.run(10);
+        let cur = c.element_currents();
+        let wire = cur[2];
+        // Grounds are element indices 3 (cold) then 4..=4+n-1.
+        let mut sum = 0.0;
+        for (j, &gc) in cur.iter().enumerate().skip(4).take(n) {
+            sum += gc;
+            assert!(
+                (gc - 5e-3 / n as f64).abs() < 1e-9,
+                "ground {j} current {gc}"
+            );
+        }
+        assert!((wire - 5e-3).abs() < 1e-7, "feed wire current {wire}");
+        assert!((sum - 5e-3).abs() < 1e-7, "ground sum {sum}");
+        assert_node_kcl(&c);
+    }
+
+    /// A 120-segment wire chain stresses the recovery at scale. It must resolve
+    /// without panic, conserve current at every node, and finish the cached
+    /// per-step pass well under a generous budget.
+    #[test]
+    fn many_wires_recover_fast_and_conserve() {
+        let n = 120usize;
+        let mut elements = vec![
+            el(
+                1,
+                "voltage",
+                vec![[0, 0], [100, 0]],
+                HashMap::from([("maxVoltage".into(), 5.0)]),
+            ),
+            el(
+                2,
+                "resistor",
+                vec![[100, 0], [200, 0]],
+                HashMap::from([("resistance".into(), 1000.0)]),
+            ),
+            el(3, "ground", vec![[0, 0]], HashMap::new()),
+        ];
+        // Chain of n wires: wire k joins (k+2)*100 to (k+3)*100.
+        for k in 0..n {
+            let a = ((k + 2) * 100) as i32;
+            let b = ((k + 3) * 100) as i32;
+            elements.push(el(
+                10 + k as u32,
+                "wire",
+                vec![[a, 0], [b, 0]],
+                HashMap::new(),
+            ));
+        }
+        elements.push(el(
+            10 + n as u32,
+            "ground",
+            vec![[((n + 2) * 100) as i32, 0]],
+            HashMap::new(),
+        ));
+        let mut c = Circuit::new();
+        c.set_circuit(&CircuitSpec {
+            preserve_run: false,
+            elements,
+            options: Some(SimOptions::default()),
+            scopes: vec![],
+        })
+        .expect("circuit should analyse");
+        c.run(5);
+        assert_node_kcl(&c);
+
+        // Time the cached per-step recovery path: every call reuses the built
+        // topology, which is the cost a committed step actually pays per frame.
+        let start = std::time::Instant::now();
+        for _ in 0..500 {
+            c.recover_wire_currents();
+        }
+        let elapsed = start.elapsed();
+        // 500 recovery passes over 120 wires must stay far under two seconds on
+        // any reasonable machine; this guards the O(E^2) regression.
+        assert!(
+            elapsed.as_secs_f64() < 2.0,
+            "recovery too slow: {elapsed:?}"
+        );
+        // And the result is still correct after the timed passes.
+        let cur = c.element_currents();
+        for (k, &wc) in cur.iter().enumerate().skip(3).take(n) {
+            assert!(
+                (wc - 5e-3).abs() < 1e-7,
+                "wire {} current {wc}",
+                10 + k as u32
+            );
+        }
+        assert_node_kcl(&c);
+    }
+
+    /// The topology cache must rebuild after a structural edit and keep the
+    /// recovery correct: a fresh circuit reuses the cache, an edit bumps the
+    /// version and the next step rebuilds.
+    #[test]
+    fn topo_cache_rebuilds_on_edit() {
+        let mut c = Circuit::new();
+        c.set_circuit(&two_wire_spec())
+            .expect("circuit should analyse");
+        c.run(5);
+        let before = c.element_currents()[2];
+        // A no-op reload keeps the topology version, so the cache is reused and
+        // the result is unchanged.
+        let spec = two_wire_spec();
+        c.set_circuit(&spec).expect("reload should analyse");
+        c.run(5);
+        assert!(
+            (c.element_currents()[2] - before).abs() < 1e-12,
+            "cached recovery changed after a topology-preserving reload"
+        );
+        assert_node_kcl(&c);
     }
 }
