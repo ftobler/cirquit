@@ -141,6 +141,52 @@ describe('revertScrollValuePopover', () => {
   });
 });
 
+describe('scrollValuePopover is torn down by whole-document events', () => {
+  it('undo clears an open popover', () => {
+    useStore.getState().commit();
+    openOn();
+
+    useStore.getState().undo();
+
+    expect(useStore.getState().scrollValuePopover).toBeNull();
+  });
+
+  it('redo clears an open popover', () => {
+    // Build a redo future: commit, open the popover, then undo so redoStack
+    // holds the snapshot. The undo clears the popover; reopen it without
+    // touching the circuit so the redo future survives, then redo.
+    useStore.getState().commit();
+    openOn();
+    useStore.getState().undo();
+    useStore.getState().openScrollValuePopover({
+      session: { id: 1, kind: 'resistor', param: 'resistance', values: [1], index: 0, original: 1, steps: 0, remainder: 0 },
+      name: 'R',
+      x: 0,
+      y: 0,
+    });
+
+    useStore.getState().redo();
+
+    expect(useStore.getState().scrollValuePopover).toBeNull();
+  });
+
+  it('loadNetlist clears an open popover', () => {
+    openOn();
+
+    useStore.getState().loadNetlist('$ 1 0.000000 10.0 -1\n');
+
+    expect(useStore.getState().scrollValuePopover).toBeNull();
+  });
+
+  it('newCircuit clears an open popover', () => {
+    openOn();
+
+    useStore.getState().newCircuit();
+
+    expect(useStore.getState().scrollValuePopover).toBeNull();
+  });
+});
+
 describe('the whole session is one undo entry', () => {
   it('commit, open, steps and close undo back to the original circuit', () => {
     const id = addResistor();
