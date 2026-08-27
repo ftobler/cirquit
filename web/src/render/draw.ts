@@ -733,7 +733,9 @@ export function currentDotsFrom(
     g.ctx.lineTo(b.x, b.y);
     g.ctx.stroke();
     g.ctx.restore();
-    offset = Math.random() * DOT_SPACING;
+    // Deterministic shimmer: a stable per-segment phase from the start point so
+    // the pattern is identical every frame (no Math.random reseed on each draw).
+    offset = (((a.x * 73856093) ^ (a.y * 19349663)) % DOT_SPACING + DOT_SPACING) % DOT_SPACING;
   } else {
     // Wrap the phase into one dot interval so the pattern is continuous.
     offset = phase % DOT_SPACING;
