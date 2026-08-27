@@ -1117,6 +1117,16 @@ export function xmlToText(source: string): string {
           `# ${tag} not converted: this build models it as code ${defFor(kind)?.dumpCode}`,
         );
       }
+    } else if (lines.length === 0) {
+      // A dropped-only routed wire leaves no element lines, yet `[] !== null`
+      // would have fallen through to the else below and pushed a real file-slot
+      // ordinal without advancing the counter. Its slot index would then collide
+      // with the next real element, and a scope aimed at the dropped wire would
+      // plot that element instead of writing -1. Treat the empty dump like the
+      // null case: no slot consumed, the dropped-point trace still rides along,
+      // and scope and slider ordinals hold.
+      ctx.slots.push(-1);
+      elementLinesOut.push(...droppedTraces(node));
     } else {
       // A trace comment rides directly under the line it describes but must
       // not take a file slot: only real element lines shift the ordinals the

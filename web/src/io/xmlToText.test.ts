@@ -1350,6 +1350,31 @@ b"/>
     expect(empty.split('\n')).toContain('# rw point ";,160" dropped: unreadable component');
   });
 
+  it('does not let a dropped-only routed wire consume a scope slot', () => {
+    // A routed wire whose every point is unreadable leaves no element line, so
+    // its dump is `[]`. Without the length guard that empty array still pushed a
+    // file-slot ordinal and left the counter untouched, so the next real
+    // element shared that index and a scope aimed at the dropped wire plotted the
+    // neighbour. The guard must park the dropped wire at slot -1 and leave the
+    // following element's slot (and any scope targeting it) exactly as if the
+    // wire were absent.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+      <rw x="304 160 560 160" f="0">;,160</rw>
+      <r x="192 160 304 160" f="0" r="1000"/>
+      <o en="0" sp="64" p="0"><p v="0"/></o>
+      <o en="1" sp="64" p="0"><p v="0"/></o>
+    </cir>
+    `;
+    const text = xmlToText(src);
+    const scopes = text.split('\n').filter((l) => l.startsWith('o '));
+    // The first scope targets the dropped wire (index 0) and must write -1, not
+    // the resistor's slot 0, so it never collides with the second scope below.
+    expect(scopes[0]).toMatch(/^o -1 /);
+    // The second scope targets the resistor (index 1), which keeps slot 0 as it
+    // would with no routed wire present.
+    expect(scopes[1]).toMatch(/^o 0 /);
+  });
+
   it('converts a potentiometer to its 174 line', () => {
     // PotElm writes ma/po/sl (PotElm.java:79-81) onto the port's
     // maxResistance position caption stream.
