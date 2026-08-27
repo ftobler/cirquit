@@ -9,7 +9,6 @@ import { useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 import { SCOPE_DEFAULTS_STORAGE_KEY } from './scopeDefaults';
 import type { StorageLike } from './appPrefs';
-import { DEFAULT_SETTINGS } from '../model/types';
 
 beforeEach(() => useStore.setState(fresh()));
 
