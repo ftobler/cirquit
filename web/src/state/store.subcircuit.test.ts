@@ -3,7 +3,9 @@
  *  that reset it. The engine is untouched; everything here is frontend state. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { documentFromComposite } from '../io/compositeDocument';
 import { compositeModelLine, getModel, parseCompositeModelLine, saveModel } from '../io/subcircuits';
+import * as netlistParse from '../io/netlist/parse';
 import {
   clearUserModels,
   forwardVoltageFor,
@@ -176,6 +178,28 @@ describe('enterSubcircuit', () => {
     // A refusal leaves the canvas on the outer circuit: no half-loaded inner
     // document pointing at an uneditable 410 child.
     expect(useStore.getState().elements.some((e) => e.kind === 'customComposite')).toBe(true);
+  });
+
+  it('routes a generated-inner parse failure to subcircuitError instead of throwing', () => {
+    useStore.getState().loadNetlist(outer());
+    // A corrupt model that reconstructs to text parseCircuit refuses: the
+    // failure must become the banner, never an exception out of the click
+    // handler (review finding H4).
+    const inner = documentFromComposite(getModel('myCirc')!);
+    const realParse = netlistParse.parseCircuit;
+    const spy = vi
+      .spyOn(netlistParse, 'parseCircuit')
+      .mockImplementation((text: string) => {
+        if (text === inner) throw new Error('corrupt generated model');
+        return realParse(text);
+      });
+    try {
+      expect(useStore.getState().enterSubcircuit('myCirc')).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(useStore.getState().subcircuitError).toMatch(/corrupt generated model/);
+    expect(useStore.getState().subcircuitStack).toHaveLength(0);
   });
 });
 

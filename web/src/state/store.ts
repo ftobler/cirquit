@@ -3102,7 +3102,18 @@ function createAppStore() {
     // with the unsupported-kind banner rather than half-loading, reusing
     // ParsedCircuit.unsupported rather than inventing a second signal.
     const inner = documentFromComposite(model);
-    const missing = describeMissingComponents(parseCircuit(inner).unsupported);
+    // The generated inner text is reconstructed from a stored model: a corrupt
+    // model or a converter fault must become the normal subcircuit-error
+    // banner, not an exception escaping the click handler (review finding H4).
+    let missing: string | null;
+    try {
+      missing = describeMissingComponents(parseCircuit(inner).unsupported);
+    } catch (e) {
+      set({
+        subcircuitError: `Could not open subcircuit: ${e instanceof Error ? e.message : String(e)}`,
+      });
+      return false;
+    }
     if (missing !== null) {
       set({ subcircuitError: missing });
       return false;
