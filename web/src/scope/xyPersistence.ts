@@ -6,11 +6,14 @@
  * frame loop alongside the sticky-scale maps.
  */
 
+import { backingStoreSize } from '../ui/canvas/backingStoreSize';
+
 export interface XYPersistenceEntry {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D | null;
   w: number;
   h: number;
+  dpr: number;
   lastTrailSimTime: number;
   /** Frames since the last fade; see FADE_FRAME_INTERVAL in draw.ts. */
   fadeCounter: number;
@@ -18,16 +21,26 @@ export interface XYPersistenceEntry {
 
 const entries = new Map<number, XYPersistenceEntry>();
 
-/** The scope's persistence canvas at this size, allocating (or reallocating
- *  after a resize) on first use. The caller mutates the returned entry's
- *  trail bookkeeping in place, which is what keeps the map authoritative. */
+/** The scope's persistence canvas at this CSS size, allocating (or
+ *  reallocating after a resize or a device-pixel-ratio change) on first use.
+ *  The backing store is dpr-scaled with the same helper the on-screen scope
+ *  canvas uses, so the trail is rasterised at device resolution instead of
+ *  being upscaled and blurred on hiDPI displays. The context transform keeps
+ *  the fade and locus in CSS-pixel coordinates, matching the caller's draw
+ *  space, and the caller blits the full backing store with an explicit
+ *  destination size. The caller mutates the returned entry's trail
+ *  bookkeeping in place, which is what keeps the map authoritative. */
 export function xyPersistenceFor(scopeId: number, w: number, h: number): XYPersistenceEntry {
+  const dpr = (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1;
   let entry = entries.get(scopeId);
-  if (!entry || entry.w !== w || entry.h !== h) {
+  if (!entry || entry.w !== w || entry.h !== h || entry.dpr !== dpr) {
     const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    entry = { canvas, ctx: canvas.getContext('2d'), w, h, lastTrailSimTime: -1, fadeCounter: 0 };
+    const backing = backingStoreSize(w, h, dpr);
+    canvas.width = backing.width;
+    canvas.height = backing.height;
+    const ctx = canvas.getContext('2d');
+    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    entry = { canvas, ctx, w, h, dpr, lastTrailSimTime: -1, fadeCounter: 0 };
     entries.set(scopeId, entry);
   }
   return entry;

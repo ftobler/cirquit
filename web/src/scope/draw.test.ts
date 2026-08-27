@@ -951,6 +951,7 @@ const withTrailCanvas = <T>(
     strokeStyle: '',
     lineWidth: 0,
     globalAlpha: 1,
+    setTransform: vi.fn(),
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),

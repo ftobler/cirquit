@@ -10,9 +10,33 @@ const stubDocument = () => {
   };
 };
 
+/** A richer stub that records the backing-store size and the transform the
+ *  entry applies, so the dpr scaling can be asserted directly. */
+const stubDocumentWithCtx = () => {
+  const created: { width: number; height: number; transforms: number[] }[] = [];
+  (globalThis as { document?: unknown }).document = {
+    createElement: () => {
+      const c = {
+        width: 0,
+        height: 0,
+        transforms: [] as number[],
+        getContext: () => ({
+          setTransform: (a: number, _b: number, _c: number, d: number) => {
+            c.transforms.push(a, d);
+          },
+        }),
+      };
+      created.push(c);
+      return c;
+    },
+  };
+  return created;
+};
+
 afterEach(() => {
   pruneXYPersistence([]);
   delete (globalThis as { document?: unknown }).document;
+  delete (globalThis as { window?: unknown }).window;
 });
 
 describe('X-Y persistence canvases', () => {
@@ -52,5 +76,26 @@ describe('X-Y persistence canvases', () => {
     clearXYPersistence(4);
     expect(xyPersistenceFor(3, 200, 100)).toBe(a);
     expect(clearXYPersistence(3)).toBeUndefined();
+  });
+
+  it('sizes the backing store at device resolution and transforms to CSS px', () => {
+    const created = stubDocumentWithCtx();
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 2 };
+    const a = xyPersistenceFor(5, 200, 100);
+    expect(a.dpr).toBe(2);
+    expect(created[0].width).toBe(400);
+    expect(created[0].height).toBe(200);
+    expect(created[0].transforms).toEqual([2, 2]);
+  });
+
+  it('reallocates when the device pixel ratio changes', () => {
+    const created = stubDocumentWithCtx();
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    const a = xyPersistenceFor(6, 200, 100);
+    expect(created[0].width).toBe(200);
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 3 };
+    const b = xyPersistenceFor(6, 200, 100);
+    expect(b).not.toBe(a);
+    expect(created[1].width).toBe(600);
   });
 });
