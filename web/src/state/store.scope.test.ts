@@ -4,10 +4,12 @@ import {
   effectiveMeasurements,
   plotOverridesScope,
 } from '../engine/scopeModel';
+import { SimEngine } from '../engine/simulator';
 import { useStore } from './store';
 import { addResistor, fresh } from './store.test-helpers';
 import { SCOPE_DEFAULTS_STORAGE_KEY } from './scopeDefaults';
 import type { StorageLike } from './appPrefs';
+import { DEFAULT_SETTINGS } from '../model/types';
 
 beforeEach(() => useStore.setState(fresh()));
 
@@ -149,6 +151,41 @@ describe('scope line display-field fidelity', () => {
     expect(qb.manScale).toBe(4);
     expect(qa.acCoupled).toBe(true);
     expect(qb.acCoupled).toBe(false);
+  });
+});
+
+describe('scope plot over a refused-only element stays unregistered', () => {
+  // A customComposite whose model never resolved builds as kind '' (engineKindOf
+  // in simulator.ts), which the engine does not support, so setCircuit drops it
+  // from the spec while the resistor beside it keeps running. A docked scope
+  // tracing the composite must therefore stay unregistered: no engine trace is
+  // allocated for its plot and the load never panics.
+  const NETLIST = [
+    '$ 1 0.000005 10 50 5 50 5e-11',
+    'r 0 0 16 0 0 100',
+    '410 16 0 32 0 0 unresolvedModel',
+    'o 1 64 0 4099 20 0.05 0 1',
+    '',
+  ].join('\n');
+
+  it('builds the rest of the circuit and allocates no engine trace for the dropped element', async () => {
+    useStore.getState().loadNetlist(NETLIST);
+    const st = useStore.getState();
+    const composite = st.elements.find((e) => e.kind === 'customComposite')!;
+    const resistor = st.elements.find((e) => e.kind === 'resistor')!;
+    const scope = st.scopes[0];
+    // The `o 1` line names element index 1, the composite, so the plot keeps
+    // pointing at it through the load.
+    expect(scope.plots[0].elementId).toBe(composite.id);
+
+    const engine = await SimEngine.create();
+    // The build succeeds: the resistor runs, the composite is simply absent.
+    expect(engine.setCircuit(st.elements, st.settings, st.scopes)).toBeNull();
+    expect(engine.indexOf(resistor.id)).toBeDefined();
+    expect(engine.indexOf(composite.id)).toBeUndefined();
+    // The plot still references the composite but never got an engine index,
+    // so ScopePanel has nothing to draw and must not throw on it.
+    expect(engine.scopeIndexOf(scope.plots[0].id)).toBeUndefined();
   });
 });
 

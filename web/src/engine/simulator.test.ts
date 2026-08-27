@@ -289,6 +289,23 @@ describe('setCircuit refusal keeps the previous bookkeeping', () => {
     expect(engine.indexOf(9)).toBeUndefined();
   });
 
+  it('a refused setCircuit preserves every previous scope trace index', async () => {
+    const engine = await SimEngine.create();
+    expect(engine.setCircuit(TWO_CAPS, DEFAULT_SETTINGS, SCOPES)).toBeNull();
+    // The docked panel's single plot is trace 0 on the healthy build.
+    const before = SCOPES[0].plots.map((p) => engine.scopeIndexOf(p.id));
+    expect(before.every((i) => i !== undefined)).toBe(true);
+
+    // The refusal would otherwise leave scopeOrder pointing at the refused
+    // build (whose traces were never published), so ScopePanel would draw
+    // against an index the engine does not hold. The previous indices must be
+    // byte-for-byte unchanged.
+    expect(engine.setCircuit(REFUSED, DEFAULT_SETTINGS, SCOPES)).toContain(
+      'resistance must be positive',
+    );
+    expect(SCOPES[0].plots.map((p) => engine.scopeIndexOf(p.id))).toEqual(before);
+  });
+
   it('the previous circuit still solves while the refusal banner is up', async () => {
     const engine = await SimEngine.create();
     expect(engine.setCircuit(TWO_CAPS, DEFAULT_SETTINGS, [])).toBeNull();
