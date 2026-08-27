@@ -792,7 +792,13 @@ export function regenerateTransistorLine(rawLine: string, entry: UserTransistorE
  *  use because it does not model every token. */
 export function regenerateDiodeLine(rawLine: string, entry: UserDiodeEntry): string {
   const leading = /^\s*/.exec(rawLine)?.[0] ?? '';
-  return leading + diodeModelLine(entry);
+  // The file line's flags token (index 2) is unmodeled by the engine, so an
+  // edit to a modelled param must echo the original byte rather than the
+  // writable entry's `flags` (which the editor may have reset to 0), or a
+  // non-zero flags would be silently dropped on save.
+  const fileTokens = rawLine.trim().split(/[ \t]+/);
+  const fileFlags = fileTokens.length > 2 ? Number(fileTokens[2]) || 0 : entry.flags ?? 0;
+  return leading + diodeModelLine({ ...entry, flags: fileFlags });
 }
 
 /** Whether two diode models are the same body, the comparison the save path

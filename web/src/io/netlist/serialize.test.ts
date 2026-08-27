@@ -4,6 +4,7 @@ import { dropId, SAMPLE } from './fixtures';
 import { makeElement } from '../../state/store';
 import { convertWires } from '../../render/wireConverter';
 import { DEFAULT_SETTINGS } from '../../model/types';
+import { putUserModel, clearUserModels, type UserDiodeEntry } from '../../model/deviceModels';
 
 describe('subset dump', () => {
   it('dumps two elements out of the whole circuit and reparses them equal apart from ids', () => {
@@ -382,5 +383,41 @@ describe('routed wires serialize as plain w lines', () => {
     // A fixture that already round-trips must stay untouched: convertWires was
     // never called, so nothing in the byte stream can regress.
     expect(save(parsed.elements)).toBe(ROUTED);
+  });
+});
+
+describe('diode model flags survive an edit', () => {
+  it('keeps the file 34 line flags token when a modelled param is edited', () => {
+    clearUserModels();
+    // A `34` line carrying a non-zero, unmodeled flags token (here 2), with a
+    // diode that names it.
+    const text = [
+      '$ 1 0.000005 10 50 5 50 5e-11',
+      'd 1 2 3 4 2 mydiode',
+      '34 mydiode 2 1e-9 0 2 0',
+    ].join('\n');
+    const parsed = parseCircuit(text);
+    // The editor (advanced mode) would reset flags to 0 while editing a param;
+    // confirm the dumper still echoes the original file flags token regardless.
+    const edited: UserDiodeEntry = {
+      name: 'mydiode',
+      builtIn: false,
+      flags: 0,
+      saturationCurrent: 2e-9,
+      seriesResistance: 0,
+      emissionCoefficient: 2,
+      breakdownVoltage: 0,
+    };
+    putUserModel('diode', edited);
+    const out = serializeCircuit(
+      parsed.elements,
+      { ...DEFAULT_SETTINGS, ...parsed.settings },
+      parsed.scopes,
+      parsed.passthrough,
+      parsed.order,
+    );
+    const modelLine = out.split('\n').find((l) => l.startsWith('34 ')) ?? '';
+    // flags token preserved as 2, saturation current reflects the edit.
+    expect(modelLine).toBe('34 mydiode 2 2e-9 0 2 0');
   });
 });
