@@ -2998,6 +2998,11 @@ function createAppStore() {
       // delete against elements this replace deleted. Same stale-pointer rule
       // as scopeProperties above.
       deviceModelEditor: null,
+      // A load is a new document: an open scroll-value popover holds the id of
+      // the element it was wheel-edited, which this replace may delete. Leaving
+      // it would strand a value editor over a vanished part, the same
+      // stale-pointer rule as scopeProperties and deviceModelEditor above.
+      scrollValuePopover: null,
       ...bumpRevision(s),
       // A load is a new document: the frame loop's rebuild gate must refuse to
       // inject the previous circuit's live charges into it.
@@ -3330,6 +3335,10 @@ function createAppStore() {
       // Same for a device-model editor anchored to an element New just
       // dropped: its OK could only reach a stale id.
       deviceModelEditor: null,
+      // New drops the open scroll-value popover too: it was wheel-editing an
+      // element this fresh circuit just emptied out, so its OK could only reach
+      // a stale id. Same stale-pointer rule as deviceModelEditor above.
+      scrollValuePopover: null,
       // New drops the drill-in session too: the outer document is gone.
       subcircuitStack: [],
       ...bumpRevision(s),
@@ -3427,6 +3436,11 @@ function createAppStore() {
       // edit deletes a model name the restored document may reference again.
       // Closing is the only safe outcome.
       deviceModelEditor: null,
+      // An undo can delete the element a scroll-value popover was wheel-editing,
+      // so the popover must drop with the same stale-pointer rule as
+      // deviceModelEditor above; leaving it strands a value editor over a
+      // vanished part.
+      scrollValuePopover: null,
       // An in-flight gesture cannot survive a state revert: a scope drag would
       // keep mutating past its reverted baseline and an element gesture would
       // swallow the next rotate's commit, so both flags drop with the state.
@@ -3470,6 +3484,9 @@ function createAppStore() {
       // Same stale-anchor rule as undo: the editor cannot ride the redone
       // document either.
       deviceModelEditor: null,
+      // Same stale-pointer rule as undo: a redo can recreate an element the
+      // popover was not wheel-editing, so it drops the same way.
+      scrollValuePopover: null,
       // Same gesture teardown as undo.
       scopeGesture: false,
       elementGesture: null,
