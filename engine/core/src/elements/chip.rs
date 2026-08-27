@@ -16,11 +16,6 @@ use crate::element::Base;
 use crate::spec::ElementSpec;
 use crate::stamp::{Stamper, GROUND};
 
-/// File flag saying the `highVoltage` token follows the common fields
-/// (ChipElm.java:34). The TS writer sets it whenever the high voltage is not
-/// the default 5 V, so the token stream stays unambiguous.
-pub const FLAG_CUSTOM_VOLTAGE: i64 = 1 << 13;
-
 /// Port-extension flag saying the chip's bit order is upstream's
 /// BIT_ORDER_BUS (ChipElm.java:37): every bit-pin group collapses onto one
 /// coordinate and its pins carry per-post bus tags. Upstream carries the
