@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SimEngine } from '../engine/simulator';
 import {
+  beginReadoutFrame,
   readElementReadout,
   readoutEquals,
   tickReadout,
@@ -25,10 +26,13 @@ function makeEngine(
 }
 
 /** A manual animation-frame scheduler: every rAF the code requests is queued
- *  until `runNext` fires it, the same shape the browser drives. */
+ *  until `runNext` fires it, the same shape the browser drives. Each fired
+ *  callback receives a monotonically increasing frame timestamp, matching how
+ *  all of a browser's rAF callbacks in one frame see the same stamp. */
 function stubFrames() {
-  const callbacks: Array<() => void> = [];
-  vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+  const callbacks: Array<(t: number) => void> = [];
+  let stamp = 0;
+  vi.stubGlobal('requestAnimationFrame', (cb: (t: number) => void) => {
     callbacks.push(cb);
     return callbacks.length;
   });
@@ -38,7 +42,7 @@ function stubFrames() {
   return {
     runNext: () => {
       const cb = callbacks.shift();
-      if (cb) cb();
+      if (cb) cb(++stamp);
     },
   };
 }
@@ -70,6 +74,62 @@ describe('readElementReadout', () => {
     expect(spy.elementCurrents).toHaveBeenCalledTimes(1);
     expect(spy.elementVoltages).toHaveBeenCalledTimes(1);
     expect(spy.elementPowers).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one triple fetch across reads in the same frame', () => {
+    // The canvas info box (hovered) and the LiveReadout pump (selected) read in
+    // the same animation frame; opening one frame and reading two ids must hit
+    // the wasm boundary once for each array, not once per id. This is the
+    // genuine dedup: the three crossings drop from N per frame (N consumers) to
+    // exactly one.
+    const engine = makeEngine(
+      [0, 0, 5, 9],
+      [0, 0, 1.5, 3],
+      [0, 0, 7.5, 27],
+      (id) => (id === 7 ? 2 : id === 8 ? 3 : undefined),
+    );
+    const spy = engine as unknown as {
+      elementCurrents: ReturnType<typeof vi.fn>;
+      elementVoltages: ReturnType<typeof vi.fn>;
+      elementPowers: ReturnType<typeof vi.fn>;
+    };
+    spy.elementCurrents = vi.fn(engine.elementCurrents);
+    spy.elementVoltages = vi.fn(engine.elementVoltages);
+    spy.elementPowers = vi.fn(engine.elementPowers);
+    beginReadoutFrame(1);
+    expect(readElementReadout(engine, 7)).toEqual({ current: 5, voltage: 1.5, power: 7.5 });
+    expect(readElementReadout(engine, 8)).toEqual({ current: 9, voltage: 3, power: 27 });
+    expect(spy.elementCurrents).toHaveBeenCalledTimes(1);
+    expect(spy.elementVoltages).toHaveBeenCalledTimes(1);
+    expect(spy.elementPowers).toHaveBeenCalledTimes(1);
+    // A new frame opens a fresh fetch, so the next read crosses again.
+    beginReadoutFrame(2);
+    readElementReadout(engine, 7);
+    expect(spy.elementCurrents).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips the shared fetch when the caller passes its own arrays', () => {
+    // The frame loop fetches the triple once and threads it into each read,
+    // so a read given arrays must not cross the wasm boundary at all.
+    const engine = makeEngine([0, 0, 5], [0, 0, 1.5], [0, 0, 7.5]);
+    const spy = engine as unknown as {
+      elementCurrents: ReturnType<typeof vi.fn>;
+      elementVoltages: ReturnType<typeof vi.fn>;
+      elementPowers: ReturnType<typeof vi.fn>;
+    };
+    spy.elementCurrents = vi.fn(engine.elementCurrents);
+    spy.elementVoltages = vi.fn(engine.elementVoltages);
+    spy.elementPowers = vi.fn(engine.elementPowers);
+    expect(
+      readElementReadout(engine, 7, {
+        currents: new Float64Array([0, 0, 5]),
+        voltages: new Float64Array([0, 0, 1.5]),
+        powers: new Float64Array([0, 0, 7.5]),
+      }),
+    ).toEqual({ current: 5, voltage: 1.5, power: 7.5 });
+    expect(spy.elementCurrents).toHaveBeenCalledTimes(0);
+    expect(spy.elementVoltages).toHaveBeenCalledTimes(0);
+    expect(spy.elementPowers).toHaveBeenCalledTimes(0);
   });
 
   it('reads an empty readout for an id the engine skipped', () => {
@@ -150,5 +210,44 @@ describe('tickReadout', () => {
     stop();
     frames.runNext();
     expect(emitted).toEqual([{ current: 1 }]);
+  });
+
+  it('fetches the triple once per frame when the read serves hovered and selected', () => {
+    // The hook's pump opens a frame per rAF and reads the selected element;
+    // a frame that also reads the hovered element (what the canvas info box
+    // does) must share the pump's single fetch. Two reads, one crossing each.
+    const frames = stubFrames();
+    const currents = [0, 0, 5, 9];
+    const voltages = [0, 0, 1.5, 3];
+    const powers = [0, 0, 7.5, 27];
+    const engine = makeEngine(
+      currents,
+      voltages,
+      powers,
+      (id) => (id === 7 ? 2 : id === 8 ? 3 : undefined),
+    );
+    const spy = engine as unknown as {
+      elementCurrents: ReturnType<typeof vi.fn>;
+      elementVoltages: ReturnType<typeof vi.fn>;
+      elementPowers: ReturnType<typeof vi.fn>;
+    };
+    spy.elementCurrents = vi.fn(engine.elementCurrents);
+    spy.elementVoltages = vi.fn(engine.elementVoltages);
+    spy.elementPowers = vi.fn(engine.elementPowers);
+    let last: ElementReadout = {};
+    const stop = tickReadout(
+      () => {
+        readElementReadout(engine, 7);
+        last = readElementReadout(engine, 8);
+        return last;
+      },
+      () => {},
+    );
+    frames.runNext();
+    expect(last).toEqual({ current: 9, voltage: 3, power: 27 });
+    expect(spy.elementCurrents).toHaveBeenCalledTimes(1);
+    expect(spy.elementVoltages).toHaveBeenCalledTimes(1);
+    expect(spy.elementPowers).toHaveBeenCalledTimes(1);
+    stop();
   });
 });
