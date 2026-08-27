@@ -51,6 +51,27 @@ describe('readElementReadout', () => {
     expect(readElementReadout(engine, 7)).toEqual({ current: 5, voltage: 1.5, power: 7.5 });
   });
 
+  it('crosses each operating-point array exactly once per read', () => {
+    // The three getters each copy a full array across the wasm boundary, so a
+    // read must fetch each once and index the same copies for all three values.
+    const currents = [0, 0, 5];
+    const voltages = [0, 0, 1.5];
+    const powers = [0, 0, 7.5];
+    const engine = makeEngine(currents, voltages, powers);
+    const spy = engine as unknown as {
+      elementCurrents: ReturnType<typeof vi.fn>;
+      elementVoltages: ReturnType<typeof vi.fn>;
+      elementPowers: ReturnType<typeof vi.fn>;
+    };
+    spy.elementCurrents = vi.fn(engine.elementCurrents);
+    spy.elementVoltages = vi.fn(engine.elementVoltages);
+    spy.elementPowers = vi.fn(engine.elementPowers);
+    expect(readElementReadout(engine, 7)).toEqual({ current: 5, voltage: 1.5, power: 7.5 });
+    expect(spy.elementCurrents).toHaveBeenCalledTimes(1);
+    expect(spy.elementVoltages).toHaveBeenCalledTimes(1);
+    expect(spy.elementPowers).toHaveBeenCalledTimes(1);
+  });
+
   it('reads an empty readout for an id the engine skipped', () => {
     const engine = makeEngine([5], [1.5], [7.5], () => undefined);
     expect(readElementReadout(engine, 99)).toEqual({});

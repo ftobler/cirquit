@@ -27,7 +27,12 @@ export interface ElementInfoValues extends ElementReadout {
 
 /** Reads the three engine operating-point arrays for one element id. Pure, so
  *  the mapping is testable without React or a rAF; a missing engine, a missing
- *  selection, or an id the engine skipped all read as an empty readout. */
+ *  selection, or an id the engine skipped all read as an empty readout.
+ *
+ *  The three getters each cross the wasm boundary into a fresh full-array copy,
+ *  so we fetch all three once and index the same copies for every value rather
+ *  than crossing three times per read. That keeps a hovered or selected
+ *  element's per-frame readout to a single triple crossing. */
 export function readElementReadout(
   engine: ElementReadoutSource | null,
   selectedId: number | undefined,
@@ -35,10 +40,13 @@ export function readElementReadout(
   if (!engine || selectedId === undefined) return {};
   const idx = engine.indexOf(selectedId);
   if (idx === undefined) return {};
+  const currents = engine.elementCurrents();
+  const voltages = engine.elementVoltages();
+  const powers = engine.elementPowers();
   return {
-    current: engine.elementCurrents()[idx],
-    voltage: engine.elementVoltages()[idx],
-    power: engine.elementPowers()[idx],
+    current: currents[idx],
+    voltage: voltages[idx],
+    power: powers[idx],
   };
 }
 
