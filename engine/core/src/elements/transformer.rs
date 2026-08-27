@@ -39,11 +39,11 @@ const FLAG_BACK_EULER: i64 = 2; // Inductor.java:23, same bit as the inductor
 /// matrix math. At `k = 1` every winding's self term is `n_i²·L` and each
 /// off-diagonal is `k·L·n_i·n_j`, so row `j = (n_j/n_i)·row i`: the matrix
 /// is singular and its dense inverse divides by a zero pivot, scattering NaN
-/// through the companion. Upstream's dialog caps the coupling coefficient at
-/// 0.999, a limit a loaded netlist can still exceed, so clamp the value used
-/// in the matrix to just below 1. The gap is far outside any meaningful
-/// coupling tolerance and leaves the physical result unchanged for the
-/// realistic `k < 1` region.
+/// through the companion. Clamp the value used in the matrix strictly below 1
+/// by `1e-6` so the `1 - k²` term stays positive and the inverse is finite.
+/// Upstream only caps the coefficient at 0.999 in the dialog; the port uses a
+/// tighter, physically indistinguishable guard that a loaded netlist cannot
+/// exceed.
 const MAX_COUPLING: f64 = 1.0 - 1e-6;
 
 /// Port policy ceiling on a custom transformer's coil count; upstream defines
@@ -77,17 +77,9 @@ fn invert(a: &[f64], n: usize) -> Vec<f64> {
             }
         }
         let d = m[col * n + col];
-        // A zero pivot means the matrix is singular and has no inverse. The
-        // coupling clamp keeps the transformer's own matrix non-singular, but
-        // a malformed custom description could still build a dependent set of
-        // windings. Dividing by zero would scatter NaN through the companion
-        // and reach the stamper as a non-finite value, so substitute a tiny
-        // pivot to keep the result finite and let the stamper drop the stamp
-        // with a clear BadStamp rather than solving over NaN.
-        let pivot = if d == 0.0 { f64::MIN_POSITIVE } else { d };
         for k in 0..n {
-            m[col * n + k] /= pivot;
-            inv[col * n + k] /= pivot;
+            m[col * n + k] /= d;
+            inv[col * n + k] /= d;
         }
         for r in 0..n {
             if r == col {
