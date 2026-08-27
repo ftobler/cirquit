@@ -90,6 +90,8 @@ export function embeddedScopeOf(e: CircuitElement): Scope | null {
  *  stale, and a steady-state frame rebuilds nothing. */
 let lastElements: CircuitElement[] | null = null;
 let lastEmbedded: Scope[] = [];
+let lastDocked: Scope[] | null = null;
+let lastCombined: Scope[] | null = null;
 
 export function traceScopes(docked: Scope[], elements: CircuitElement[]): Scope[] {
   if (lastElements !== elements) {
@@ -98,5 +100,12 @@ export function traceScopes(docked: Scope[], elements: CircuitElement[]): Scope[
       .map((e) => embeddedScopeOf(e))
       .filter((s): s is Scope => s !== null);
   }
-  return lastEmbedded.length > 0 ? [...docked, ...lastEmbedded] : docked;
+  if (lastEmbedded.length === 0) return docked;
+  // Cache the merged array so callers that compare on reference (the per-frame
+  // scope-id set in useFrameLoop) do not rebuild it every animation frame.
+  if (lastCombined === null || lastDocked !== docked) {
+    lastDocked = docked;
+    lastCombined = [...docked, ...lastEmbedded];
+  }
+  return lastCombined;
 }
