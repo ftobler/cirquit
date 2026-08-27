@@ -10,6 +10,7 @@
 import init, {
   Simulator as WasmSimulator,
   supportedKinds,
+  engineVersion,
   TriggerInfo,
 } from '../wasm/circuit_engine';
 import { postsForRender, resolveBusWidths } from '../model/busWidths';
@@ -54,6 +55,12 @@ function engineModelOf(e: CircuitElement): string | null {
   return null;
 }
 
+/** The engine build identity the frontend expects. Bump `ENGINE_VERSION` in
+ *  engine/wasm/src/lib.rs and this together; a mismatch means the wasm glue was
+ *  not rebuilt against the current facade, and `create` throws rather than
+ *  drive an unpaired engine. */
+export const ENGINE_VERSION = '1';
+
 export class SimEngine {
   private sim: WasmSimulator;
   private kinds: Set<string>;
@@ -70,7 +77,20 @@ export class SimEngine {
 
   static async create(): Promise<SimEngine> {
     await ensureWasm();
+    const got = engineVersion();
+    if (got !== ENGINE_VERSION) {
+      // A stale wasm blob would misbehave rather than fail loudly, so refuse to
+      // drive it: the owner must rebuild with `just wasm`.
+      throw new Error(
+        `wasm/facade version mismatch (engine ${got}, facade ${ENGINE_VERSION}), rebuild with just wasm`,
+      );
+    }
     return new SimEngine(new WasmSimulator(), new Set(supportedKinds().split('\n')));
+  }
+
+  /** The engine build identity, exposed for the version-handshake test. */
+  engineVersion(): string {
+    return engineVersion();
   }
 
   /** Element types this engine build can actually solve. */

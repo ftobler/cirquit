@@ -431,6 +431,16 @@ impl Simulator {
     }
 }
 
+/// Build-time identity of the wasm/JS glue pair. The facade checks it in
+/// `SimEngine.create()` and throws on mismatch, so a stale wasm blob served
+/// against a newer frontend surfaces at startup instead of misbehaving silently.
+pub const ENGINE_VERSION: &str = "1";
+
+#[wasm_bindgen(js_name = engineVersion)]
+pub fn engine_version() -> String {
+    ENGINE_VERSION.to_string()
+}
+
 /// Element type names this build can simulate, newline separated. The UI uses
 /// it to grey out types it can draw but not yet solve.
 #[wasm_bindgen(js_name = supportedKinds)]

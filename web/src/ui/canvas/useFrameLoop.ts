@@ -30,6 +30,28 @@ import { drawInfoBox, infoBoxX, infoBoxY } from '../../render/infoBox';
 import { infoBoxLines } from '../infoBoxLines';
 import { beginReadoutFrame, frameReadoutArrays } from '../useLiveSimReadout';
 
+/** A Rust panic (the wasm build uses `panic = "abort"`) surfaces as a
+ *  `WebAssembly.RuntimeError` that aborts every later engine call, so once the
+ *  engine traps the frame loop must stop driving it. Set when `frameSafely`
+ *  catches a RuntimeError, read by the loop to skip `run()` and the draw, and
+ *  surfaced as a dedicated banner. Module-level because the loop holds no
+ *  per-frame trap state of its own and the flag must outlive the frame that
+ *  tripped it. */
+export let engineTrapped = false;
+
+/** Clears the trap flag, e.g. when a fresh engine is handed to the loop. */
+export function resetEngineTrap(): void {
+  engineTrapped = false;
+}
+
+/** Reads the trap flag without exposing a writable binding. */
+export function isEngineTrapped(): boolean {
+  return engineTrapped;
+}
+
+/** Banner shown while the engine is trapped; clear that a reload is needed. */
+export const ENGINE_TRAPPED_MESSAGE = 'Simulation engine trapped; reload the page';
+
 /** Runs one animation frame's work without letting a throw kill the loop.
  *  `report` receives the error message. The loop re-schedules before this
  *  runs, so a crash only skips that frame's work and the next frame still
@@ -39,6 +61,15 @@ export function frameSafely(body: () => void, report: (message: string) => void)
   try {
     body();
   } catch (err) {
+    // A RuntimeError from the wasm boundary is an engine trap: unrecoverable
+    // under panic=abort, so mark the engine dead and report the dedicated
+    // banner rather than the opaque trap string. The loop then stops driving
+    // the dead engine and keeps this banner up.
+    if (err instanceof Error && err.name === 'RuntimeError') {
+      engineTrapped = true;
+      report(ENGINE_TRAPPED_MESSAGE);
+      return;
+    }
     report(err instanceof Error ? err.message : String(err));
   }
 }
@@ -180,6 +211,22 @@ export function useFrameLoop(
       // a frame carry the same stamp, so the several rAF loops that read stay
       // on one shared fetch of the three engine arrays for the whole frame.
       beginReadoutFrame(stamp);
+      // The engine has trapped (a Rust panic under panic=abort): every later
+      // wasm call would throw again, so stop running it and stop drawing the
+      // now-frozen arrays, and keep one clear banner up. The loop still
+      // re-schedules (the rAF at the top of `frame`), so the banner persists
+      // without ever driving the dead engine again.
+      if (engineTrapped) {
+        if (lastFrameErrorRef.current !== ENGINE_TRAPPED_MESSAGE) {
+          lastFrameErrorRef.current = ENGINE_TRAPPED_MESSAGE;
+          useStore
+            .getState()
+            .setProblem(
+              mergeProblem(useStore.getState().unsupportedProblem, [ENGINE_TRAPPED_MESSAGE]),
+            );
+        }
+        return;
+      }
       // The loop re-schedules before the body, so a throw in it would spin
       // the loop with nothing drawn. The simulator wrapper converts wasm
       // throws into error flags, but a render bug would still escape: catch

@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SimEngine } from './simulator';
+import { SimEngine, ENGINE_VERSION } from './simulator';
 import { frameStatsOf, scopePlotsToSpecs, sharedPlotElement } from './scopeModel';
 import type { Scope, ScopePlot } from './scopeModel';
 import { traceScopes, embeddedScopeOf } from '../scope/embedded';
@@ -22,6 +22,17 @@ import {
   parseCompositeModelLine,
   registerSessionModel,
 } from '../io/subcircuits';
+
+describe('engine/facade version handshake', () => {
+  it('the wasm engine reports the version the facade expects', async () => {
+    // `SimEngine.create` throws if the wasm build identity disagrees with the
+    // facade's ENGINE_VERSION, so a successful create already proves the pair
+    // matches. This pins the round trip: the engine must report exactly the
+    // constant the frontend compiles against.
+    const engine = await SimEngine.create();
+    expect(engine.engineVersion()).toBe(ENGINE_VERSION);
+  });
+});
 
 describe('SimEngine per-post arrays', () => {
   it('postOffset indexes elementPostCurrents slices for mixed post counts', async () => {
