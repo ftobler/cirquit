@@ -1,13 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { SimEngine } from '../../engine/simulator';
 import { DEFAULT_SETTINGS, type Point } from '../../model/types';
 import type { Drag } from './useCanvasInteractions';
 import { backingStoreSize } from './backingStoreSize';
 import {
   buildReport,
+  ENGINE_TRAPPED_MESSAGE,
   frameSafely,
+  isEngineTrapped,
   paintedSelection,
   paintedSet,
+  resetEngineTrap,
   scopeDrawPayload,
 } from './useFrameLoop';
 
@@ -82,6 +85,56 @@ describe('frameSafely', () => {
       () => calls.push('report'),
     );
     expect(calls).toEqual(['body']);
+  });
+});
+
+describe('engine trap guard', () => {
+  beforeEach(() => resetEngineTrap());
+
+  it('flags the engine dead when a RuntimeError escapes the body', () => {
+    // A Rust panic under panic=abort crosses the boundary as a
+    // WebAssembly.RuntimeError, whose name is "RuntimeError". The guard must
+    // mark the engine trapped so the loop stops driving it.
+    expect(isEngineTrapped()).toBe(false);
+    const trap = new Error('wasm abort');
+    trap.name = 'RuntimeError';
+    expect(() => frameSafely(() => {
+      throw trap;
+    }, () => {})).not.toThrow();
+    expect(isEngineTrapped()).toBe(true);
+  });
+
+  it('does not flag a plain render error as a trap', () => {
+    // A non-trap throw (a draw bug) must keep the loop alive, not stop the sim.
+    frameSafely(() => {
+      throw new Error('draw bug');
+    }, () => {});
+    expect(isEngineTrapped()).toBe(false);
+  });
+
+  it('resetEngineTrap clears the flag for a fresh engine', () => {
+    const trap = new Error('wasm abort');
+    trap.name = 'RuntimeError';
+    frameSafely(() => {
+      throw trap;
+    }, () => {});
+    expect(isEngineTrapped()).toBe(true);
+    resetEngineTrap();
+    expect(isEngineTrapped()).toBe(false);
+  });
+
+  it('surfaces the dedicated banner text for a trapped frame', () => {
+    const reported: string[] = [];
+    const trap = new Error('unreachable executed');
+    trap.name = 'RuntimeError';
+    frameSafely(
+      () => {
+        throw trap;
+      },
+      (message) => reported.push(message),
+    );
+    // The guard keeps the opaque trap string out of the banner.
+    expect(reported).toEqual([ENGINE_TRAPPED_MESSAGE]);
   });
 });
 
