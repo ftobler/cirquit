@@ -90,6 +90,26 @@ fn transformer_voltage_ratio_open_secondary() {
 }
 
 #[test]
+fn transformer_coupling_coef_one_is_not_singular() {
+    // couplingCoef = 1 makes the mutual matrix singular: its rows become
+    // linearly dependent and the companion inverse divides by a zero pivot,
+    // which used to scatter NaN through the stamps and surface a BadStamp.
+    // The matrix math clamps k just below 1, so the open secondary reads
+    // (1 - 1e-6)·V1 instead of failing, and the circuit solves.
+    let v2 = open_secondary_v2(
+        "transformer",
+        &[[0, 0], [100, 0], [0, 100], [100, 100]],
+        &[("inductance", 4.0), ("ratio", 1.0), ("couplingCoef", 1.0)],
+        None,
+        (1, 3),
+    );
+    assert!(
+        v2.is_finite() && close(v2, 9.99999, 1e-4),
+        "couplingCoef = 1 open secondary read {v2}, expected ~9.99999"
+    );
+}
+
+#[test]
 fn transformer_dc_pass_stamps_shorts_not_the_ac_ratio() {
     // Since the transformer family gained its own DC branch, the operating
     // point stamps every winding as a 1e-6 ohm short with the mutual terms
