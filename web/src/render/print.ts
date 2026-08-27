@@ -49,4 +49,7 @@ export function printCircuit(
   // put a blank schematic on paper. Wait for the load unless it already fired.
   if (img.complete) print();
   else img.onload = print;
+  // A failed decode fires onerror, not onload, so without this the overlay
+  // would stay stranded forever (afterprint/timeout never run).
+  img.onerror = cleanup;
 }
