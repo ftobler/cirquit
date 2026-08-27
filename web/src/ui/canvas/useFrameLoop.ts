@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
+import type { Scope } from '../../engine/scopeModel';
 import { scopeParamsFingerprint } from '../../engine/scopeModel';
 import { defFor, toolDef } from '../../model/registry';
 import { cachedBusWidths, postsForRender } from '../../model/busWidths';
@@ -185,6 +186,12 @@ export function useFrameLoop(
   // current document (a load or New bumps the counter, so their rebuilds seed
   // from the new file's tokens instead).
   const builtDocument = useRef(-1);
+  // The live scope-id list, cached on the allScopes identity so the prune
+  // passes below (each of which builds a Set from it) do not allocate a fresh
+  // array on every animation frame. traceScopes returns the same array
+  // reference while the scopes and elements are unchanged, so this only
+  // rebuilds when a scope is added, removed or renamed.
+  const liveScopeIdsRef = useRef<{ scopes: Scope[]; ids: number[] } | null>(null);
   const stateRef = useStoreRef();
 
   // ---- the frame loop -----------------------------------------------------
@@ -269,12 +276,16 @@ export function useFrameLoop(
           // Drop sticky auto-scale state for scopes that no longer exist (a
           // removed panel or element), keeping the map bounded across a
           // session.
-          pruneScaleStates(allScopes.map((s) => s.id));
-          pruneXYScales(allScopes.map((s) => s.id));
+          const liveScopeIds =
+            liveScopeIdsRef.current?.scopes === allScopes
+              ? liveScopeIdsRef.current.ids
+              : (liveScopeIdsRef.current = { scopes: allScopes, ids: allScopes.map((s) => s.id) }).ids;
+          pruneScaleStates(liveScopeIds);
+          pruneXYScales(liveScopeIds);
           // Same rule for the X-Y persistence canvases: an embedded window has
           // no docked panel to clear its entry on unmount, so a deleted 403
           // element (or another document load) would leak one canvas each.
-          pruneXYPersistence(allScopes.map((s) => s.id));
+          pruneXYPersistence(liveScopeIds);
 
           // Reload the engine whenever the netlist changed.
           if (engine && loadedRevision.current !== state.revision) {
