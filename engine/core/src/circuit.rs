@@ -1777,13 +1777,17 @@ impl Circuit {
                     }
                     let (c0, c1) = (topo.edges[i][0], topo.edges[i][1]);
                     if c0 == c1 {
-                        // Self-loop: its current is the leftover after the
-                        // coordinate's real wires have peeled, so defer it until
-                        // `degree[c]` has reached zero (the re-enqueue below).
+                        // Self-loop: the old code only ever resolved a wire in
+                        // `resolve_stuck_wires` when its two posts differed, so a
+                        // self-loop never got a KCL-derived value there, only the
+                        // `0.0` that routine assigns. Match that: a self-loop
+                        // carries no net node current regardless of the coordinate's
+                        // other injectors, and it is only marked resolved once every
+                        // other wire at the coordinate has peeled away.
                         if degree[c] != 0 {
                             continue;
                         }
-                        currents[i] = kcl_sum(&topo.edges, &resolved, &injection, c0, &currents);
+                        currents[i] = 0.0;
                         resolved[i] = true;
                         continue;
                     }
@@ -3612,8 +3616,9 @@ mod tests {
     }
 
     /// The topology cache must rebuild after a structural edit and keep the
-    /// recovery correct: a fresh circuit reuses the cache, an edit bumps the
-    /// version and the next step rebuilds.
+    /// recovery correct: `set_circuit` bumps `topo_version` unconditionally, so
+    /// even a no-op reload rebuilds the cache, and the next step must still
+    /// recover correctly from the rebuilt copy.
     #[test]
     fn topo_cache_rebuilds_on_edit() {
         let mut c = Circuit::new();
@@ -3621,15 +3626,193 @@ mod tests {
             .expect("circuit should analyse");
         c.run(5);
         let before = c.element_currents()[2];
-        // A no-op reload keeps the topology version, so the cache is reused and
-        // the result is unchanged.
+        // A no-op reload bumps `topo_version`, so the cache is rebuilt (not
+        // reused) and the result must still come out unchanged.
         let spec = two_wire_spec();
         c.set_circuit(&spec).expect("reload should analyse");
         c.run(5);
         assert!(
             (c.element_currents()[2] - before).abs() < 1e-12,
-            "cached recovery changed after a topology-preserving reload"
+            "recovery changed after a reload that rebuilds the topology cache"
         );
+        assert_node_kcl(&c);
+    }
+
+    /// A closed ring of `n` wires with no leaf to peel from: every ring node has
+    /// degree 2, so the queue resolves nothing and the whole loop is handed to
+    /// `resolve_stuck_wires`. A source drives the ring, so the minimum-norm
+    /// solve must still return wire currents that satisfy KCL at every node.
+    fn closed_ring_spec(n: usize) -> CircuitSpec {
+        let n = n.max(3);
+        let cx = 300i32;
+        let cy = 200i32;
+        let r = 100i32;
+        let points: Vec<[i32; 2]> = (0..n)
+            .map(|k| {
+                let a = 2.0 * std::f64::consts::PI * (k as f64) / (n as f64);
+                [
+                    cx + (r as f64 * a.cos()).round() as i32,
+                    cy + (r as f64 * a.sin()).round() as i32,
+                ]
+            })
+            .collect();
+        // The ring is driven at two opposite points: a resistor injects 5 mA at
+        // `points[0]` and a second resistor sinks it at `points[n/2]`, so current
+        // must flow around the loop through two parallel paths. Without the second
+        // resistor the wire graph would be an isolated cycle and the minimum-norm
+        // solve reports zero (the upstream "wire loop detected" behaviour).
+        let sink = points[n / 2];
+        let mut elements = vec![
+            el(
+                1,
+                "voltage",
+                vec![[0, 0], [100, 0]],
+                HashMap::from([("maxVoltage".into(), 5.0)]),
+            ),
+            el(
+                2,
+                "resistor",
+                vec![[100, 0], points[0]],
+                HashMap::from([("resistance".into(), 1000.0)]),
+            ),
+            el(
+                3,
+                "resistor",
+                vec![sink, [400, 0]],
+                HashMap::from([("resistance".into(), 1000.0)]),
+            ),
+            el(4, "ground", vec![[0, 0]], HashMap::new()),
+            el(5, "ground", vec![[400, 0]], HashMap::new()),
+        ];
+        for k in 0..n {
+            let a = points[k];
+            let b = points[(k + 1) % n];
+            elements.push(el(10 + k as u32, "wire", vec![a, b], HashMap::new()));
+        }
+        CircuitSpec {
+            preserve_run: false,
+            elements,
+            options: Some(SimOptions::default()),
+            scopes: vec![],
+        }
+    }
+
+    #[test]
+    fn closed_ring_reaches_stuck_solve_and_conserves() {
+        let n = 6usize;
+        let mut c = Circuit::new();
+        c.set_circuit(&closed_ring_spec(n))
+            .expect("circuit should analyse");
+        c.run(20);
+        // KCL must hold at every node of the loop: every ring node has degree 2,
+        // so none of the wires is a leaf and the stuck-wire solve must carry them.
+        assert_node_kcl(&c);
+        // The driven loop carries real (non-zero) current, otherwise we would not
+        // actually be exercising the stuck-wire path.
+        let cur = c.element_currents();
+        let loop_current: f64 = cur.iter().skip(5).take(n).map(|x| x.abs()).sum();
+        assert!(
+            loop_current > 1e-6,
+            "ring carried no current: {loop_current}"
+        );
+    }
+
+    /// Two wires drawn in parallel between the SAME pair of coordinates. They
+    /// form a component with no leaf, so both enter `resolve_stuck_wires`, which
+    /// splits the current equally by the minimum-norm solve. This catches a
+    /// regression where the queue would peel one branch to a different value.
+    #[test]
+    fn parallel_wires_split_equally() {
+        let mut c = Circuit::new();
+        c.set_circuit(&CircuitSpec {
+            preserve_run: false,
+            elements: vec![
+                el(
+                    1,
+                    "voltage",
+                    vec![[0, 0], [100, 0]],
+                    HashMap::from([("maxVoltage".into(), 5.0)]),
+                ),
+                el(
+                    2,
+                    "resistor",
+                    vec![[100, 0], [200, 0]],
+                    HashMap::from([("resistance".into(), 1000.0)]),
+                ),
+                el(3, "wire", vec![[200, 0], [300, 0]], HashMap::new()),
+                el(4, "wire", vec![[200, 0], [300, 0]], HashMap::new()),
+                el(
+                    5,
+                    "resistor",
+                    vec![[300, 0], [400, 0]],
+                    HashMap::from([("resistance".into(), 1000.0)]),
+                ),
+                el(6, "ground", vec![[400, 0]], HashMap::new()),
+                el(7, "ground", vec![[0, 0]], HashMap::new()),
+            ],
+            options: Some(SimOptions::default()),
+            scopes: vec![],
+        })
+        .expect("circuit should analyse");
+        c.run(20);
+        let cur = c.element_currents();
+        // Wires id 3, 4 -> element indices 2, 3. The two 1 k resistors are in
+        // series, so the loop carries 2.5 mA total; the parallel pair splits it
+        // equally at 1.25 mA each.
+        let a = cur[2];
+        let b = cur[3];
+        assert!((a - 1.25e-3).abs() < 1e-7, "parallel wire A current {a}");
+        assert!((b - 1.25e-3).abs() < 1e-7, "parallel wire B current {b}");
+        assert!((a - b).abs() < 1e-9, "parallel wires unequal: {a} vs {b}");
+        assert!(
+            ((a + b) - 2.5e-3).abs() < 1e-7,
+            "parallel pair sum {}",
+            a + b
+        );
+        assert_node_kcl(&c);
+    }
+
+    /// A self-loop wire (both posts identical) co-located at a coordinate that
+    /// also carries a driven node: a resistor to a voltage source and a ground.
+    /// The old `resolve_stuck_wires` only ever assigned `0.0` to a self-loop, so
+    /// the recovered current must be exactly `0.0` here, never the coordinate's
+    /// injection. This is the exact regression the O2 rewrite introduced.
+    #[test]
+    fn self_loop_wire_current_is_zero() {
+        let mut c = Circuit::new();
+        c.set_circuit(&CircuitSpec {
+            preserve_run: false,
+            elements: vec![
+                el(
+                    1,
+                    "voltage",
+                    vec![[0, 0], [100, 0]],
+                    HashMap::from([("maxVoltage".into(), 5.0)]),
+                ),
+                el(
+                    2,
+                    "resistor",
+                    vec![[100, 0], [200, 0]],
+                    HashMap::from([("resistance".into(), 1000.0)]),
+                ),
+                el(3, "wire", vec![[200, 0], [200, 0]], HashMap::new()),
+                el(4, "ground", vec![[200, 0]], HashMap::new()),
+                el(5, "ground", vec![[0, 0]], HashMap::new()),
+            ],
+            options: Some(SimOptions::default()),
+            scopes: vec![],
+        })
+        .expect("circuit should analyse");
+        c.run(20);
+        let cur = c.element_currents();
+        // Wire id 3 -> element index 2; the self-loop must read exactly 0.0.
+        assert!(
+            cur[2].abs() < 1e-12,
+            "self-loop current {} (expected 0)",
+            cur[2]
+        );
+        // The real 5 mA path is resistor -> ground at [200, 0]; KCL still holds.
+        assert!((cur[3] - 5e-3).abs() < 1e-7, "ground current {}", cur[3]);
         assert_node_kcl(&c);
     }
 }
