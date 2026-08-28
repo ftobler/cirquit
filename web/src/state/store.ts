@@ -1481,7 +1481,16 @@ function createAppStore() {
     // identical to the chain they replace: the engine merges wires into nodes
     // by coordinate, so a reload sees the same node voltages.
     s.commit();
-    set({ elements: converted, ...bumpRevision(s) });
+    // convertWires absorbs every non-first wire in a selected chain into the
+    // surviving routed wire, so those ids vanish from `elements`. Drop them
+    // from the selection the same way addWires prunes its parallel-dedupe
+    // pass, otherwise selectedIds would outlive removed elements.
+    const surviving = new Set(converted.map((e) => e.id));
+    set({
+      elements: converted,
+      selectedIds: s.selectedIds.filter((id) => surviving.has(id)),
+      ...bumpRevision(s),
+    });
   },
 
   createTest: () => {
