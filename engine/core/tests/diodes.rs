@@ -1,6 +1,7 @@
 //! Diodes, zeners, varactors and the tunnel diode.
 
 mod common;
+use circuit_core::elements::build_element;
 use common::*;
 
 #[test]
@@ -579,6 +580,41 @@ fn varactor_terminal_voltage_matches_the_matrix_solve_through_a_resistor() {
         close(c.element_currents()[2], i_total2, 1e-9),
         "step 2 current: simulated {}, expected {i_total2}",
         c.element_currents()[2]
+    );
+}
+
+/// Regression for EM2: a varactor built from a hostile netlist with a
+/// non-positive or non-finite `baseCapacitance` must be rejected at build
+/// time, never stamped. A negative companion conductance (geq = 2*C/dt)
+/// behaves as an active negative resistance, and a zero or NaN slips past the
+/// stamper's per-stamp positivity checks to poison the solve, diverging from
+/// the b17 negative-reactives policy that already rejects non-positive
+/// capacitors and inductors. The guard lives in `VaractorCap::new`, mirrored
+/// on `Diode::new_varactor`, so `build_element` returns the error.
+#[test]
+fn varactor_rejects_nonpositive_or_nonfinite_base_capacitance() {
+    let bad = |c: f64| {
+        build_element(&elm(
+            1,
+            "varactor",
+            &[[0, 0], [100, 0]],
+            &[("baseCapacitance", c)],
+        ))
+        .err()
+        .map(|e| e.contains("baseCapacitance"))
+        .unwrap_or(false)
+    };
+
+    assert!(bad(0.0), "zero baseCapacitance must be rejected");
+    assert!(bad(-4e-12), "negative baseCapacitance must be rejected");
+    assert!(
+        bad(f64::NEG_INFINITY),
+        "negative-infinite baseCapacitance must be rejected"
+    );
+    assert!(bad(f64::NAN), "NaN baseCapacitance must be rejected");
+    assert!(
+        build_element(&elm(1, "varactor", &[[0, 0], [100, 0]], &[])).is_ok(),
+        "default baseCapacitance must still build"
     );
 }
 
