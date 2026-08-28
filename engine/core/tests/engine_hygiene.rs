@@ -140,6 +140,71 @@ fn a_lamp_with_a_zero_rating_is_rejected_at_build() {
 }
 
 #[test]
+fn a_zero_negative_or_nan_total_width_memristor_is_rejected_at_build() {
+    // A totalWidth that is non-positive or non-finite makes the dopant blend
+    // dopeWidth/totalWidth a 0/0 (NaN) division, stamping a NaN resistance
+    // that used to vanish silently. The build must reject it like any other
+    // degenerate spec, naming the element and the offending parameter.
+    for tw in [0.0, -10.0, f64::NAN] {
+        let mut c = Circuit::new();
+        let err = c
+            .set_circuit(&CircuitSpec {
+                preserve_run: false,
+                elements: vec![
+                    elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+                    elm(
+                        2,
+                        "memristor",
+                        &[[0, 0], [0, 100]],
+                        &[("totalWidth", tw), ("rOn", 100.0), ("rOff", 16000.0)],
+                    ),
+                    elm(3, "ground", &[[0, 100]], &[]),
+                ],
+                options: Some(opts(1e-5, false)),
+                scopes: Vec::new(),
+            })
+            .expect_err("a non-positive totalWidth must be rejected");
+        assert!(
+            err.contains("memristor") && err.contains("totalWidth"),
+            "rejection of totalWidth = {tw} should name the element and parameter, got: {err}"
+        );
+        assert!(
+            err.contains("id 2"),
+            "rejection should carry the id, got: {err}"
+        );
+    }
+}
+
+#[test]
+fn a_valid_total_width_memristor_stamps_finite_resistance() {
+    // The guard only rejects degenerate widths: a healthy memristor still
+    // builds and stamps a finite (never NaN) resistance from the dopant blend.
+    let mut c = Circuit::new();
+    c.set_circuit(&CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 5.0)]),
+            elm(
+                2,
+                "memristor",
+                &[[0, 0], [0, 100]],
+                &[("totalWidth", 10e-9), ("rOn", 100.0), ("rOff", 16000.0)],
+            ),
+            elm(3, "ground", &[[0, 100]], &[]),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    })
+    .expect("a healthy memristor must analyse");
+    c.run(5);
+    assert!(
+        c.element_currents()[1].is_finite(),
+        "memristor current must stay finite, got {}",
+        c.element_currents()[1]
+    );
+}
+
+#[test]
 fn a_zero_max_resistance_potentiometer_still_builds() {
     // The potentiometer is deliberately NOT rejected here: its track halves
     // floor at 1e-6 ohm in recompute(), so a zero from a hand-edited file

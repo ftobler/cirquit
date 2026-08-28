@@ -291,7 +291,7 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
         "thermistor" => Box::new(thermistor::Thermistor::new(spec)),
         "threePhaseMotor" => Box::new(three_phase_motor::ThreePhaseMotor::new(spec)),
         "timer" => Box::new(timer::Timer::new(spec)),
-        "memristor" => Box::new(memristor::Memristor::new(spec)),
+        "memristor" => Box::new(memristor::Memristor::new(spec)?),
         "motorProtectionSwitch" => {
             Box::new(motor_protection_switch::MotorProtectionSwitch::new(spec))
         }

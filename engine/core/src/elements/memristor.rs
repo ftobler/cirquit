@@ -43,22 +43,36 @@ impl Memristor {
     const DEFAULT_TOTAL_WIDTH: f64 = 10e-9;
     const DEFAULT_MOBILITY: f64 = 1e-10;
 
-    pub fn new(spec: &ElementSpec) -> Self {
+    pub fn new(spec: &ElementSpec) -> Result<Self, String> {
+        // A totalWidth that is non-positive or non-finite makes the dopant blend
+        // `dope_width/total_width` a 0/0 (NaN) division at recompute() and every
+        // step after, stamping a NaN resistance that used to vanish silently.
+        // Reject it the same way set_param does (and the way resistor/capacitor/
+        // inductor reject degenerate reactives): name the element and parameter.
+        let total_width = spec.param("totalWidth", Self::DEFAULT_TOTAL_WIDTH);
+        if !total_width.is_finite() || total_width <= 0.0 {
+            return Err(format!(
+                "memristor (id {}) totalWidth must be positive, got {}",
+                spec.id, total_width
+            ));
+        }
+        let dope_width = spec
+            .param("dopeWidth", Self::DEFAULT_DOPE_WIDTH)
+            .clamp(0.0, total_width);
         let mut m = Self {
             base: Base::with_posts(2),
             r_on: spec.param("r_on", Self::DEFAULT_R_ON),
             r_off: spec.param("r_off", Self::DEFAULT_R_OFF),
-            dope_width: spec.param("dopeWidth", Self::DEFAULT_DOPE_WIDTH),
-            total_width: spec.param("totalWidth", Self::DEFAULT_TOTAL_WIDTH),
+            dope_width,
+            total_width,
             mobility: spec.param("mobility", Self::DEFAULT_MOBILITY),
             resistance: 0.0,
         };
         // A hostile netlist can carry a dopeWidth outside [0, totalWidth].
         // Clamp it before recompute() so the very first stamped resistance can
         // never go negative; start_iteration still guards the per-step advance.
-        m.dope_width = m.dope_width.clamp(0.0, m.total_width);
         m.recompute();
-        m
+        Ok(m)
     }
 
     /// The resistance blend for the current state, MemristorElm.java:126:
