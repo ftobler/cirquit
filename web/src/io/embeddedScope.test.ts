@@ -300,6 +300,80 @@ describe('embedded window drawing', () => {
     const svg = rec.toString(64, 32);
     expect(svg).toContain('>Scope<');
   });
+
+  it('draws the plotted element Show Extended Info when Show Extended Info is on', () => {
+    // Mirrors the docked panel: an embedded 403 window must surface the
+    // plotted element's getInfo lines through the same resolver. The resolver
+    // lives on the scopeDraw payload; before the fix the embedded path passed
+    // `undefined` for elmInfo and these lines never reached the canvas.
+    const element = scopeElement();
+    element.embedded!.display.showElmInfo = true;
+    const data = new Float32Array(16 * 2);
+    for (let k = 0; k < 8; k++) {
+      data[k * 2] = -1;
+      data[k * 2 + 1] = 1;
+    }
+    const source = {
+      time: 0.001,
+      scopeIndexOf: (id: number) => (id === 101 ? 0 : undefined),
+      scopeData: () => data,
+      scopeDiverged: () => false,
+      triggerInfo: () => {
+        throw new Error('a freeRun window never asks for the trigger anchor');
+      },
+      recentSamples: () => new Float32Array(0),
+    };
+    const rec = new SvgRecorder();
+    const g = context(rec);
+    g.scopeDraw = {
+      source,
+      simTime: 0.001,
+      timeStep: 5e-6,
+      dark: true,
+      decimalDigits: 3,
+      elmInfo: (id: number) => (id === 2 ? ['R = 1 kΩ', 'I = 2 mA'] : null),
+    };
+    defFor('scope')!.draw(g, element);
+    const svg = rec.toString(64, 32);
+    expect(svg).toContain('R = 1 kΩ');
+    expect(svg).toContain('I = 2 mA');
+  });
+
+  it('draws no element info when Show Extended Info is off, even with a resolver', () => {
+    // The flag still gates the block; a resolver present in the payload must
+    // not push info lines onto a window that asked to hide them.
+    const element = scopeElement();
+    element.embedded!.display.showElmInfo = false;
+    const data = new Float32Array(16 * 2);
+    for (let k = 0; k < 8; k++) {
+      data[k * 2] = -1;
+      data[k * 2 + 1] = 1;
+    }
+    const source = {
+      time: 0.001,
+      scopeIndexOf: (id: number) => (id === 101 ? 0 : undefined),
+      scopeData: () => data,
+      scopeDiverged: () => false,
+      triggerInfo: () => {
+        throw new Error('a freeRun window never asks for the trigger anchor');
+      },
+      recentSamples: () => new Float32Array(0),
+    };
+    const rec = new SvgRecorder();
+    const g = context(rec);
+    g.scopeDraw = {
+      source,
+      simTime: 0.001,
+      timeStep: 5e-6,
+      dark: true,
+      decimalDigits: 3,
+      elmInfo: (id: number) => (id === 2 ? ['R = 1 kΩ', 'I = 2 mA'] : null),
+    };
+    defFor('scope')!.draw(g, element);
+    const svg = rec.toString(64, 32);
+    expect(svg).not.toContain('R = 1 kΩ');
+    expect(svg).not.toContain('I = 2 mA');
+  });
 });
 
 describe('store integration', () => {

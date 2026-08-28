@@ -495,6 +495,11 @@ export interface DrawContext {
     dark: boolean;
     decimalDigits: number;
     themeColors?: ThemeColors;
+    /** Resolves a plotted element id to its Show Extended Info lines, shared
+     *  with the hover box so the embedded 403 window draws the same readout the
+     *  docked panels do. Omitted only on the export/icon paths, which never
+     *  draw a scope header. */
+    elmInfo?: (elementId: number) => string[] | null;
   };
 }
 

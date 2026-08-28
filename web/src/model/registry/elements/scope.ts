@@ -62,7 +62,10 @@ function drawScopeElm(g: DrawContext, e: CircuitElement): void {
       live.dark,
       live.decimalDigits,
       live.themeColors,
-      undefined,
+      // The plotted element's Show Extended Info line, resolved from the live
+      // element list like the docked panels do. Absent only on export/icon
+      // paths, which set no scopeDraw at all and so never reach here.
+      live.elmInfo,
       // No settings gear: the window accepts no pointer gestures, so the
       // wheel would advertise a properties dialog nothing can open.
       { settingsWheel: false },
