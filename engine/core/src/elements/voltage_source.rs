@@ -368,8 +368,11 @@ impl Element for VoltageSource {
         // Upstream clamps to the largest frequency the timestep can resolve
         // (1/(8*sim.maxTimeStep), VoltageElm.java:500) and silently declines
         // past it; the port has no confirm dialogs, so silent clamping is the
-        // matching behaviour. `ctx.dt` is the fixed `options.time_step`.
-        let max_freq = 1.0 / (8.0 * ctx.dt);
+        // matching behaviour. `maxTimeStep` is the fixed nominal step
+        // (`options.time_step`), so clamp against `ctx.nominal_dt` and not
+        // `ctx.dt`: the working step shrinks under adaptive halving, and using
+        // it would let the clamp grow unbounded and admit absurd frequencies.
+        let max_freq = 1.0 / (8.0 * ctx.nominal_dt);
         if self.gen.frequency > max_freq {
             self.gen.frequency = max_freq;
         }
@@ -405,5 +408,48 @@ impl Element for VoltageSource {
         // effect without a rebuild; a DC value lives in the constant matrix
         // and the caller's restamp picks it up.
         self.gen.set_param(name, value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn ac_frequency_clamps_to_nominal_step_not_working_step() {
+        // Under adaptive halving `ctx.dt` is the shrunk working step while
+        // `ctx.nominal_dt` stays at `options.time_step`. The clamp must track
+        // the nominal step: a frequency that clears the (larger) working-step
+        // bound but exceeds the nominal one must still be clamped.
+        let spec = ElementSpec {
+            id: 1,
+            kind: "voltage".into(),
+            posts: Vec::new(),
+            params: HashMap::new(),
+            label: None,
+            model: None,
+            flags: 0,
+        };
+        let mut vs = VoltageSource::new(&spec);
+        let ctx = SimCtx {
+            dt: 1e-6,         // halved working step
+            nominal_dt: 5e-6, // fixed nominal step (options.time_step)
+            ..SimCtx::default()
+        };
+        // 100 kHz sits between the two bounds: below 1/(8*dt)=125 kHz, above
+        // 1/(8*nominal_dt)=25 kHz.
+        vs.set_frequency(&ctx, 100_000.0);
+        let max_by_nominal = 1.0 / (8.0 * ctx.nominal_dt);
+        let max_by_dt = 1.0 / (8.0 * ctx.dt);
+        assert!(
+            (vs.gen.frequency - max_by_nominal).abs() < 1e-9,
+            "frequency should clamp to 1/(8*nominal_dt)={max_by_nominal}, got {}",
+            vs.gen.frequency
+        );
+        assert_ne!(
+            vs.gen.frequency, max_by_dt,
+            "frequency must not be clamped to the shrunk working step bound"
+        );
     }
 }
