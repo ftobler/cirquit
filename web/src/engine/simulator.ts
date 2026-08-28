@@ -18,6 +18,7 @@ import type { CircuitElement, SimSettings } from '../model/types';
 import { modelJsonFor } from '../model/sampleCache';
 import type { LiveState } from '../io/liveState';
 import { defaultWidth, frameStatsOf, scopePlotsToSpecs } from './scopeModel';
+import { ENGINE_TRAPPED_MESSAGE, trapGuard } from './trapGuard';
 import type { FrameStats, Scope, ScopeTraceSpec, WidthResolver } from './scopeModel';
 
 let wasmReady: Promise<void> | null = null;
@@ -223,7 +224,17 @@ export class SimEngine {
   }
 
   reset(): void {
-    this.sim.reset();
+    // A dead engine traps every later call, so a Reset click after a run()-panic
+    // must not throw an uncaught RuntimeError into the React handler. Route the
+    // crossing through the same trap funnel the frame loop uses: on a trap the
+    // dead-engine flag is set and the loop's banner comes up, instead of an
+    // unhandled rejection with no banner.
+    trapGuard(
+      () => {
+        this.sim.reset();
+      },
+      () => {},
+    );
   }
 
   /**
@@ -235,14 +246,24 @@ export class SimEngine {
    * message when the reset recorded a hard failure.
    */
   findDcOperatingPoint(): string | null {
-    try {
-      // The engine spells success "found"; this surface keeps setCircuit's
-      // convention that null means success, passing "degraded" through.
-      const outcome = this.sim.findDcOperatingPoint();
-      return outcome === 'found' ? null : outcome;
-    } catch (err) {
-      return err instanceof Error ? err.message : String(err);
-    }
+    let outcome: string | null = null;
+    let reported: string | null = null;
+    trapGuard(
+      () => {
+        // The engine spells success "found"; this surface keeps setCircuit's
+        // convention that null means success, passing "degraded" through.
+        outcome = this.sim.findDcOperatingPoint();
+      },
+      (message) => {
+        reported = message;
+      },
+    );
+    // A trap means the engine is dead: route through the dedicated banner the
+    // menu dedupe expects, not the raw wasm trap string.
+    if (reported === ENGINE_TRAPPED_MESSAGE) return ENGINE_TRAPPED_MESSAGE;
+    // A non-trap throw keeps the prior convention (the engine message); a normal
+    // outcome keeps null-on-success and passes "degraded" through.
+    return outcome === 'found' ? null : (outcome ?? reported);
   }
 
   /** Re-arms the stop triggers without rewinding time, so a simulation paused

@@ -30,50 +30,28 @@ import { overlayLiveState, recordBuildOnSuccess, shouldInjectLiveState } from '.
 import { drawInfoBox, infoBoxX, infoBoxY } from '../../render/infoBox';
 import { infoBoxLines } from '../infoBoxLines';
 import { beginReadoutFrame, frameReadoutArrays } from '../useLiveSimReadout';
+import {
+  ENGINE_TRAPPED_MESSAGE,
+  engineTrapped,
+  isEngineTrapped,
+  resetEngineTrap,
+  setEngineTrapped,
+  trapGuard,
+} from '../../engine/trapGuard';
 
-/** A Rust panic (the wasm build uses `panic = "abort"`) surfaces as a
- *  `WebAssembly.RuntimeError` that aborts every later engine call, so once the
- *  engine traps the frame loop must stop driving it. Set when `frameSafely`
- *  catches a RuntimeError, read by the loop to skip `run()` and the draw, and
- *  surfaced as a dedicated banner. Module-level because the loop holds no
- *  per-frame trap state of its own and the flag must outlive the frame that
- *  tripped it. */
-export let engineTrapped = false;
-
-/** Clears the trap flag, e.g. when a fresh engine is handed to the loop. */
-export function resetEngineTrap(): void {
-  engineTrapped = false;
-}
-
-/** Reads the trap flag without exposing a writable binding. */
-export function isEngineTrapped(): boolean {
-  return engineTrapped;
-}
-
-/** Banner shown while the engine is trapped; clear that a reload is needed. */
-export const ENGINE_TRAPPED_MESSAGE = 'Simulation engine trapped; reload the page';
+/** The engine's trap state now lives in `engine/trapGuard` so the user-action
+ *  crossings (reset, findDcOperatingPoint) share one dead-engine flag with the
+ *  frame loop. Re-exported here so the existing import sites and tests stay
+ *  put; `frameSafely` is the same guard the crossings use. */
+export { engineTrapped, ENGINE_TRAPPED_MESSAGE, isEngineTrapped, resetEngineTrap, setEngineTrapped };
 
 /** Runs one animation frame's work without letting a throw kill the loop.
  *  `report` receives the error message. The loop re-schedules before this
  *  runs, so a crash only skips that frame's work and the next frame still
  *  arrives. Kept out of the hook so the survival guarantee is testable
- *  without a DOM. */
-export function frameSafely(body: () => void, report: (message: string) => void): void {
-  try {
-    body();
-  } catch (err) {
-    // A RuntimeError from the wasm boundary is an engine trap: unrecoverable
-    // under panic=abort, so mark the engine dead and report the dedicated
-    // banner rather than the opaque trap string. The loop then stops driving
-    // the dead engine and keeps this banner up.
-    if (err instanceof Error && err.name === 'RuntimeError') {
-      engineTrapped = true;
-      report(ENGINE_TRAPPED_MESSAGE);
-      return;
-    }
-    report(err instanceof Error ? err.message : String(err));
-  }
-}
+ *  without a DOM; it is the trap guard the user-action crossings route through
+ *  as well, so one dead-engine flag stops every path. */
+export const frameSafely = trapGuard;
 
 /** Opacity of the armed tool's ghost: a thin wash, lighter than the renderer's
  *  half-alpha preview overlays (render/draw.ts) so it reads as "not placed yet"
@@ -102,6 +80,28 @@ export function buildReport(
     problem: mergeProblem(unsupportedProblem, err ? [err] : []),
     notice: mergeProblem(null, err ? [] : warnings),
   };
+}
+
+/**
+ * Decides whether the frame loop must attempt a `setCircuit` for this revision.
+ * Pure, so the retry-storm guard is testable without a canvas. A refused build
+ * is recorded by revision, and this returns false for that same revision so the
+ * loop does not re-hammer the engine every frame: the engine keeps its previous
+ * circuit behind the error banner until the user edits (bumping `revision`) or a
+ * fresh document loads (which clears the record).
+ */
+export function shouldRebuild(
+  loadedRevision: number,
+  revision: number,
+  failedRevision: number,
+  failedErr: string | null,
+): boolean {
+  // No netlist change since the last attempt: nothing to do.
+  if (loadedRevision === revision) return false;
+  // A change arrived, but this exact revision already refused: do not re-attempt
+  // it every frame. The engine keeps its previous circuit behind the banner.
+  if (failedRevision === revision && failedErr !== null) return false;
+  return true;
 }
 
 /**
@@ -168,6 +168,13 @@ export function useFrameLoop(
   const postCRef = useRef(new Map<number, number[]>());
   const lastFrameRef = useRef(performance.now());
   const loadedRevision = useRef(-1);
+  // The revision and message of the last build that refused, so a permanently
+  // refused circuit (a duplicate id, a rejected stamp) is not re-attempted
+  // every frame: the engine keeps its previous circuit behind the error banner
+  // until the user edits (bumping revision) or a fresh document loads. Cleared
+  // on a successful build so a later edit that also fails re-attempts fresh.
+  const failedRevisionRef = useRef(-1);
+  const failedErrRef = useRef<string | null>(null);
   const appliedParamRevision = useRef(-1);
   const appliedScopeFp = useRef('');
   // Whether the simulation was running at the end of the last frame. The stop
@@ -288,7 +295,15 @@ export function useFrameLoop(
           pruneXYPersistence(liveScopeIds);
 
           // Reload the engine whenever the netlist changed.
-          if (engine && loadedRevision.current !== state.revision) {
+          if (
+            engine &&
+            shouldRebuild(
+              loadedRevision.current,
+              state.revision,
+              failedRevisionRef.current,
+              failedErrRef.current,
+            )
+          ) {
             loadedRevision.current = state.revision;
             // A new netlist invalidates every element's accumulated phase, and
             // clearing the maps stops them growing across circuit loads.
@@ -309,12 +324,20 @@ export function useFrameLoop(
             const err = engine.setCircuit(build, settings, allScopes, widthOf, continues);
             // A failed build leaves the engine on a stale or partial circuit, so
             // the next rebuild must not pull live tokens off it; record only on
-            // success (recordBuildOnSuccess).
+            // success (recordBuildOnSuccess). A refusal is recorded so the reload
+            // gate skips it next frame instead of hammering the engine every frame.
             builtDocument.current = recordBuildOnSuccess(
               builtDocument.current,
               state.document,
               err,
             );
+            if (err) {
+              failedRevisionRef.current = state.revision;
+              failedErrRef.current = err;
+            } else {
+              failedRevisionRef.current = -1;
+              failedErrRef.current = null;
+            }
             // Merge, not replace: the load-time message has to survive the
             // first engine build, which is what wiped it before. The engine's
             // own warnings only flash; see buildReport.
@@ -341,8 +364,13 @@ export function useFrameLoop(
               appliedScopeFp.current = fp;
               if (!engine.applyScopeParams(allScopes, settings, widthOf)) {
                 // A trace index out of range means the last setCircuit failed;
-                // force the reload branch next frame.
-                loadedRevision.current = -1;
+                // force the reload branch next frame. But if that build already
+                // refused this exact revision, retrying would only re-hammer the
+                // engine behind the banner, so leave `loadedRevision` pinned: the
+                // reload gate re-attempts on the next real revision bump.
+                if (!(failedRevisionRef.current === state.revision && failedErrRef.current !== null)) {
+                  loadedRevision.current = -1;
+                }
                 // That retry rebuilds and renumbers nodes without bumping
                 // `revision`, so the store's revision-bump clear cannot reach
                 // it; clear the stale highlight before the retry renders.
