@@ -1396,6 +1396,10 @@ function createAppStore() {
           (x) => x.elementId === undefined || !selectedIds.includes(x.elementId),
         ),
         selectedIds: [],
+        // A deleted element can be the one the slider dialog is open on, so its
+        // target id drops the same way a bound slider does above; leaving it
+        // points the panel at a vanished part.
+        sliderElementId: null,
         ...bumpRevision(s),
       };
     });
@@ -3038,6 +3042,10 @@ function createAppStore() {
       // it would strand a value editor over a vanished part, the same
       // stale-pointer rule as scopeProperties and deviceModelEditor above.
       scrollValuePopover: null,
+      // A load is a new document: the open slider dialog targets one element id
+      // from the old file, which this replace may delete. Leaving it would point
+      // the slider panel at a vanished part, the same stale-pointer rule.
+      sliderElementId: null,
       // A load is a new document: an open context menu holds the id of the
       // element it was raised on, which this replace may delete. Leaving it
       // keeps modalSurface() true with nothing on screen, killing every
@@ -3383,6 +3391,10 @@ function createAppStore() {
       // element this fresh circuit just emptied out, so its OK could only reach
       // a stale id. Same stale-pointer rule as deviceModelEditor above.
       scrollValuePopover: null,
+      // New drops the open slider dialog's target element too: it was bound to
+      // an element this fresh circuit just emptied out, so it would only point
+      // at a vanished part. Same stale-pointer rule as deviceModelEditor above.
+      sliderElementId: null,
       // New drops the open context menu too: it was raised on an element this
       // fresh circuit just emptied out, so its actions could only reach a stale
       // id and it would hold modalSurface() shut. A dialog or open Element
@@ -3492,6 +3504,9 @@ function createAppStore() {
       // deviceModelEditor above; leaving it strands a value editor over a
       // vanished part.
       scrollValuePopover: null,
+      // An undo can delete the element the slider dialog targets, so its target
+      // id drops the same way; leaving it points the panel at a vanished part.
+      sliderElementId: null,
       // An undo can leave the element a context menu was raised on behind: the
       // menu would hold modalSurface() true with nothing on screen and its
       // actions could target a stale id. Closing is the only safe outcome, the
@@ -3546,6 +3561,9 @@ function createAppStore() {
       // Same stale-pointer rule as undo: a redo can recreate an element the
       // popover was not wheel-editing, so it drops the same way.
       scrollValuePopover: null,
+      // Same stale-pointer rule as undo: a redo can recreate an element the
+      // slider dialog targeted, so its target id drops the same way.
+      sliderElementId: null,
       // Same stale-pointer rule as undo: a redo can recreate an element the
       // context menu was raised on, so the menu drops too, along with any dialog
       // or open Element Properties panel.
