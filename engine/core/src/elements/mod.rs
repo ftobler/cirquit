@@ -316,7 +316,7 @@ pub fn build_element(spec: &ElementSpec) -> Result<Box<dyn Element>, String> {
         "darlington" => Box::new(darlington::Darlington::new(spec)),
         "diode" => Box::new(diode::Diode::new(spec)),
         "zener" => Box::new(diode::Diode::new_zener(spec)),
-        "varactor" => Box::new(diode::Diode::new_varactor(spec)),
+        "varactor" => Box::new(diode::Diode::new_varactor(spec)?),
         "led" => Box::new(led::Led::new(spec)),
         "ledArray" => Box::new(led_array::LedArray::new(spec)?),
         "tunnelDiode" => Box::new(tunnel_diode::TunnelDiode::new(spec)),

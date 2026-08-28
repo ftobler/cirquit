@@ -65,9 +65,21 @@ struct VaractorCap {
 }
 
 impl VaractorCap {
-    fn new(spec: &ElementSpec) -> Self {
+    /// The spec constructor rejects a non-positive or non-finite
+    /// `baseCapacitance` instead of storing it, matching the b17
+    /// negative-reactives policy that guards every other reactive element
+    /// (see `Capacitor::build`): a negative companion conductance stamps as
+    /// an active negative resistance, and an exact zero or NaN slips through
+    /// the stamper's positivity checks to diverge the solve.
+    fn new(spec: &ElementSpec) -> Result<Self, String> {
         let base_capacitance = spec.param("baseCapacitance", 4e-12);
-        Self {
+        if !base_capacitance.is_finite() || base_capacitance <= 0.0 {
+            return Err(format!(
+                "{} (id {}) baseCapacitance must be positive and finite, got {}",
+                spec.kind, spec.id, base_capacitance
+            ));
+        }
+        Ok(Self {
             base_capacitance,
             capacitance: base_capacitance,
             // The persisted transient state (VaractorElm.java:16, the
@@ -79,7 +91,7 @@ impl VaractorCap {
             i_prev: 0.0,
             geq: 0.0,
             ieq: 0.0,
-        }
+        })
     }
 }
 
@@ -130,10 +142,10 @@ impl Diode {
 
     /// `VaractorElm` always uses the plain diode model (never a Zener), and
     /// adds a voltage-dependent capacitance in parallel (VaractorElm.java:6).
-    pub fn new_varactor(spec: &ElementSpec) -> Self {
+    pub fn new_varactor(spec: &ElementSpec) -> Result<Self, String> {
         let mut d = Self::build(spec, 0.0);
-        d.varactor = Some(VaractorCap::new(spec));
-        d
+        d.varactor = Some(VaractorCap::new(spec)?);
+        Ok(d)
     }
 
     fn build(spec: &ElementSpec, z_voltage: f64) -> Self {
