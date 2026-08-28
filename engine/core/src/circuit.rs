@@ -1575,6 +1575,9 @@ impl Circuit {
                     ..Default::default()
                 };
             }
+            // Restore the warm start AFTER the restamp that rebuilds the
+            // closures, otherwise the fresh x = 0 discards the committed state.
+            self.restore_committed();
             self.good_iterations = 0;
         }
         let mut report = StepReport {
@@ -1664,7 +1667,6 @@ impl Circuit {
                     report.iterations += iterations;
                     report.rejected_steps += 1;
                     self.good_iterations = 0;
-                    self.restore_committed();
                     // A halve re-stamps the reactive companions; if that fails
                     // the rejected Newton step must not be reported as
                     // converged. Surface the stamp error exactly like
@@ -1675,6 +1677,10 @@ impl Circuit {
                         self.error = report.error.clone();
                         return report;
                     }
+                    // Restore the warm start AFTER set_time_step's restamp,
+                    // which rebuilds every closure with a fresh x = 0 and would
+                    // otherwise throw the committed solution away.
+                    self.restore_committed();
                     step = self.current_time_step;
                 }
                 Err(StepError::NotConverged(iterations, failing)) => {
@@ -3814,5 +3820,194 @@ mod tests {
         // The real 5 mA path is resistor -> ground at [200, 0]; KCL still holds.
         assert!((cur[3] - 5e-3).abs() < 1e-7, "ground current {}", cur[3]);
         assert_node_kcl(&c);
+    }
+}
+
+// ─── Warm-start survival across the adaptive restamp ───
+
+#[cfg(test)]
+mod warm_start_tests {
+    use crate::spec::{CircuitSpec, ElementSpec, SimOptions, SolverType};
+    use crate::Circuit;
+    use std::collections::HashMap;
+
+    fn e(id: u32, kind: &str, posts: &[[i32; 2]], params: &[(&str, f64)]) -> ElementSpec {
+        ElementSpec {
+            id,
+            kind: kind.into(),
+            posts: posts.to_vec(),
+            params: params
+                .iter()
+                .map(|(k, v)| (k.to_string(), *v))
+                .collect::<HashMap<_, _>>(),
+            label: None,
+            model: None,
+            flags: 0,
+        }
+    }
+
+    /// A 10 V source drives 1 k into a diode clamp to ground: the diode is the
+    /// stiff nonlinear element. Well posed and convergent, so it exercises the
+    /// warm-start path without changing the answer; the test pins data flow.
+    fn diode_clamp() -> CircuitSpec {
+        CircuitSpec {
+            preserve_run: false,
+            elements: vec![
+                e(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+                e(
+                    2,
+                    "resistor",
+                    &[[0, 0], [100, 0]],
+                    &[("resistance", 1000.0)],
+                ),
+                e(3, "diode", &[[100, 0], [100, 100]], &[]),
+                e(4, "ground", &[[100, 100]], &[]),
+                e(5, "ground", &[[0, 100]], &[]),
+            ],
+            options: Some(SimOptions {
+                solver_type: SolverType::Auto,
+                time_step: 1e-5,
+                min_time_step: 1e-10,
+                adaptive: true,
+                steps_per_frame: 1,
+                max_subiterations: 100,
+                dc_operating_point: false,
+                simplify: true,
+            }),
+            scopes: Vec::new(),
+        }
+    }
+
+    /// C1 regression: `restore_committed` must run AFTER `set_time_step`. The
+    /// halving/doubling arms call `set_time_step`, whose `restamp` rebuilds
+    /// every closure with a fresh `x = 0`, discarding the warm start. Restoring
+    /// before that call (the old order) throws the committed solution away and
+    /// the retry begins cold from `x = 0`. This pins the contract the fixed
+    /// order relies on: after `set_time_step` zeroes `x`, `restore_committed`
+    /// reinstates `last_x` into the freshly built closures.
+    #[test]
+    fn restore_committed_reinstates_warm_start_after_restamp() {
+        let mut c = Circuit::new();
+        c.set_circuit(&diode_clamp())
+            .expect("the diode clamp should analyse");
+        // Commit a step so `last_x` holds the warm-start state.
+        c.run(1);
+        assert!(
+            !c.last_x.is_empty(),
+            "a committed step must populate last_x"
+        );
+        let committed = c.last_x.clone();
+
+        // Replicate the halving arm's `set_time_step` call: it restamps and
+        // rebuilds the closures with x = 0.
+        let dt = c.current_time_step / 2.0;
+        c.set_time_step(dt).expect("restamp must succeed");
+        let cold = c
+            .closures
+            .iter()
+            .zip(committed.iter())
+            .any(|(cl, lx)| cl.sys.x() != lx.as_slice());
+        assert!(
+            cold,
+            "set_time_step must zero the warm-start x (the C1 premise)"
+        );
+
+        // The fix restores AFTER set_time_step, so the retry resumes from the
+        // committed state rather than from x = 0.
+        c.restore_committed();
+        for (cl, lx) in c.closures.iter().zip(committed.iter()) {
+            assert_eq!(
+                cl.sys.x(),
+                lx.as_slice(),
+                "restore_committed must reinstate last_x after the restamp"
+            );
+        }
+    }
+
+    /// C1 regression, behavioural: an adaptive run that actually rejects and
+    /// halves must still converge and agree with the non-adaptive result. The
+    /// warm start is what lets the halved retry resume from the committed node
+    /// voltages instead of from zero. The assertion that `rejected_steps > 0`
+    /// guarantees the halving arm (and its reordered restore) ran at least once.
+    #[test]
+    fn adaptive_halving_converges_and_matches_fixed_step() {
+        // A square wave through 200 ohm into a diode clamp: the diode's
+        // exponential knee cannot settle within a one-pass Newton budget, so
+        // every edge rejects and halves, driving the halving arm (and its
+        // reordered restore) to run. The warm start is what lets each halved
+        // retry resume from the committed node voltages instead of from zero.
+        let rejecting = CircuitSpec {
+            preserve_run: false,
+            elements: vec![
+                e(
+                    1,
+                    "voltage",
+                    &[[0, 100], [0, 0]],
+                    &[
+                        ("waveform", 2.0),
+                        ("frequency", 1000.0),
+                        ("maxVoltage", 10.0),
+                    ],
+                ),
+                e(2, "resistor", &[[0, 0], [100, 0]], &[("resistance", 200.0)]),
+                e(3, "diode", &[[100, 0], [100, 100]], &[]),
+                e(4, "ground", &[[100, 100]], &[]),
+                e(5, "ground", &[[0, 100]], &[]),
+            ],
+            options: Some(SimOptions {
+                solver_type: SolverType::Auto,
+                time_step: 5e-6,
+                min_time_step: 1.25e-6,
+                adaptive: true,
+                steps_per_frame: 1,
+                max_subiterations: 1,
+                dc_operating_point: false,
+                simplify: true,
+            }),
+            scopes: Vec::new(),
+        };
+        let mut c = Circuit::new();
+        c.set_circuit(&rejecting)
+            .expect("the diode clamp should analyse");
+        let report = c.run(120);
+        assert!(
+            report.converged,
+            "the adaptive run must converge: {:?}",
+            report.error
+        );
+        assert!(
+            report.rejected_steps >= 1,
+            "the run must reject at least one step to exercise the halving arm"
+        );
+
+        // The non-adaptive run at the same final step must settle to the same
+        // clamp voltage, proving the warm-started halving path reaches the
+        // correct steady state.
+        let mut fixed = Circuit::new();
+        fixed
+            .set_circuit(&CircuitSpec {
+                preserve_run: false,
+                elements: rejecting.elements,
+                options: Some(SimOptions {
+                    solver_type: SolverType::Auto,
+                    time_step: report.time_step,
+                    min_time_step: 1.25e-6,
+                    adaptive: false,
+                    steps_per_frame: 1,
+                    max_subiterations: 100,
+                    dc_operating_point: false,
+                    simplify: true,
+                }),
+                scopes: Vec::new(),
+            })
+            .expect("the fixed-step clone should analyse");
+        fixed.run(120);
+
+        let adaptive_v = c.element_voltages()[2];
+        let fixed_v = fixed.element_voltages()[2];
+        assert!(
+            (adaptive_v - fixed_v).abs() < 1e-9,
+            "adaptive clamp voltage {adaptive_v} must match fixed-step {fixed_v}"
+        );
     }
 }
