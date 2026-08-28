@@ -216,3 +216,156 @@ pub fn build_closures(
         element_closure,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::element::Element;
+    use crate::elements::build_element;
+    use crate::spec::{ElementSpec, SolverType};
+    use std::collections::HashMap;
+
+    /// Builds one element of `kind` with its node ids and voltage-source base
+    /// assigned directly, bypassing the coordinate-merge that `assign_nodes`
+    /// would do on a full `set_circuit`. That is exactly the state
+    /// `build_closures` expects: concrete node ids per post and a `vs_base` for
+    /// any voltage-source unknown the element owns.
+    fn el(kind: &str, nodes: &[usize], vs_base: usize) -> Box<dyn Element> {
+        let spec = ElementSpec {
+            id: 0,
+            kind: kind.to_string(),
+            posts: vec![[0i32; 2]; nodes.len()],
+            params: HashMap::new(),
+            label: None,
+            model: None,
+            flags: 0,
+        };
+        let mut e = build_element(&spec).expect("element must build from a bare spec");
+        e.base_mut().nodes = nodes.to_vec();
+        e.base_mut().vs_base = vs_base;
+        e
+    }
+
+    /// The public, comparable shape of a `ClosureMap`: everything the caller
+    /// addresses a circuit through, with the opaque `Solver` left out (it is not
+    /// `PartialEq` and carries no information an address test needs).
+    #[allow(clippy::type_complexity)]
+    fn map_shape(
+        m: &ClosureMap,
+    ) -> (
+        usize,
+        Vec<Vec<usize>>,
+        Vec<Vec<usize>>,
+        Vec<usize>,
+        Vec<usize>,
+        Vec<usize>,
+        Vec<usize>,
+        Vec<usize>,
+    ) {
+        (
+            m.closures.len(),
+            m.closures.iter().map(|c| c.node_rows.clone()).collect(),
+            m.closures.iter().map(|c| c.vs_rows.clone()).collect(),
+            m.node_closure.clone(),
+            m.node_row.clone(),
+            m.vs_closure.clone(),
+            m.vs_row.clone(),
+            m.element_closure.clone(),
+        )
+    }
+
+    /// Two independent resistor pairs with no node in common: a four-node graph
+    /// that must split into exactly two closures.
+    fn two_subcircuits() -> ClosureMap {
+        let elements: Vec<Box<dyn Element>> = vec![
+            el("resistor", &[1, 2], 0),
+            el("resistor", &[1, 0], 0),
+            el("resistor", &[3, 4], 0),
+            el("resistor", &[3, 0], 0),
+        ];
+        build_closures(&elements, 5, 0, false, SolverType::Auto)
+            .expect("two disjoint subcircuits solve")
+    }
+
+    #[test]
+    fn two_disjoint_subcircuits_make_two_closures() {
+        // The two pairs share no non-ground node, so the union-find yields two
+        // roots and therefore two closures.
+        let m = two_subcircuits();
+        assert_eq!(
+            m.closures.len(),
+            2,
+            "expected two closures, got {}",
+            m.closures.len()
+        );
+
+        // Closures are ordered by smallest member node, so {1,2} precedes {3,4}.
+        assert_eq!(
+            m.closures[0].node_rows,
+            vec![1, 2],
+            "first closure node_rows"
+        );
+        assert_eq!(
+            m.closures[1].node_rows,
+            vec![3, 4],
+            "second closure node_rows"
+        );
+
+        // Node 1 and 2 live in closure 0 with closure-local rows 0 and 1; nodes
+        // 3 and 4 live in closure 1 with local rows 0 and 1.
+        assert_eq!(m.node_closure, vec![0, 0, 0, 1, 1], "node_closure");
+        assert_eq!(m.node_row, vec![0, 0, 1, 0, 1], "node_row");
+
+        // The element index is the order elements were supplied: the first two
+        // land in closure 0, the second two in closure 1.
+        assert_eq!(m.element_closure, vec![0, 0, 1, 1], "element_closure");
+    }
+
+    #[test]
+    fn build_closures_is_deterministic() {
+        // The same input must always produce closures in the same order, so the
+        // solver addresses node and VS rows through a stable map across rebuilds.
+        let a = map_shape(&two_subcircuits());
+        let b = map_shape(&two_subcircuits());
+        let c = map_shape(&two_subcircuits());
+        assert_eq!(a, b, "repeated builds diverged");
+        assert_eq!(b, c, "repeated builds diverged");
+    }
+
+    #[test]
+    fn voltage_source_routes_into_its_first_non_ground_closure() {
+        // One source between node 1 and ground plus a resistor on the same node.
+        // The source must stamp into closure 0, whose only node is 1, and take
+        // the row right after the node block (local row 1).
+        let elements: Vec<Box<dyn Element>> =
+            vec![el("voltage", &[1, 0], 0), el("resistor", &[1, 0], 0)];
+        let m = build_closures(&elements, 2, 1, false, SolverType::Auto)
+            .expect("voltage + resistor solves");
+
+        assert_eq!(m.closures.len(), 1, "one connected closure");
+        assert_eq!(m.closures[0].node_rows, vec![1], "closure node 1");
+        assert_eq!(m.closures[0].vs_rows, vec![0], "global VS 0 in closure 0");
+        assert_eq!(m.node_closure, vec![0, 0], "node 1 in closure 0");
+        assert_eq!(m.node_row, vec![0, 0], "node 0 maps to local row 0");
+        // The source's only VS owns local row 1 (node block of size 1 + 0 prior VS).
+        assert_eq!(m.vs_closure, vec![0], "VS 0 in closure 0");
+        assert_eq!(m.vs_row, vec![1], "VS 0 local row 1");
+    }
+
+    #[test]
+    fn ground_only_sources_return_no_solution() {
+        // A voltage source whose both terminals sit on ground merges onto node 0
+        // and leaves the whole circuit with no non-ground node. With a voltage
+        // source still present there is no closure row to stamp into, so the
+        // build must reject with the explicit "no solution" message rather than
+        // indexing an empty closures list and panicking.
+        let elements: Vec<Box<dyn Element>> = vec![el("voltage", &[0, 0], 0)];
+        let result = build_closures(&elements, 1, 1, false, SolverType::Auto);
+        assert!(result.is_err(), "ground-only source must not build");
+        let msg = result.err().expect("ground-only source returns Err");
+        assert!(
+            msg.contains("no solution"),
+            "expected the no-solution message, got: {msg}"
+        );
+    }
+}
