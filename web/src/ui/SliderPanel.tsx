@@ -4,8 +4,24 @@
 
 import { useStore } from '../state/store';
 import { resolveParam, sliderPositionToValue, sliderValueToPosition } from '../model/sliders';
-import { fieldLabel } from '../model/types';
+import { fieldLabel, type CircuitElement } from '../model/types';
+import { fieldValue } from './elementFields';
 import { formatValue } from '../render/draw';
+
+/** The display-unit value a slider row shows for its bound field: the same
+ *  `fieldValue` the element-properties dialog uses, so a scaled slider (duty
+ *  cycle in percent, phase shift in degrees) reads back in its display units
+ *  and parks the thumb where the value actually is. A raw param read would
+ *  disagree with the `value * paramScale` write path and sit at the wrong
+ *  position. Returns 0 for the non-numeric (text/contents) rows a slider can
+ *  never bind. */
+export function sliderReadbackValue(
+  element: CircuitElement,
+  resolved: { name: string; field: import('../model/types').FieldDef },
+): number {
+  const raw = fieldValue(element, resolved.field);
+  return typeof raw === 'number' ? raw : 0;
+}
 
 export function SliderPanel({ elementId }: { elementId?: number }) {
   const sliders = useStore((s) => s.sliders);
@@ -31,7 +47,11 @@ export function SliderPanel({ elementId }: { elementId?: number }) {
     <section className="sliders">
       <h3>Sliders</h3>
       {rows.map(({ slider, element, resolved }) => {
-        const value = element.params[resolved.name] ?? 0;
+        // Read the display-unit value the property dialog uses (scale/get
+        // applied), so the thumb and the read-out agree with the write path
+        // that multiplies by paramScale. A raw param read at 0.5 would park
+        // a 50% duty cycle at the far left and print "0.5 %".
+        const value = sliderReadbackValue(element, resolved);
         const position = sliderValueToPosition(value, slider.min, slider.max, slider.logarithmic);
         const label = slider.text || fieldLabel(element, resolved.field);
         return (
