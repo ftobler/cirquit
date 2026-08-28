@@ -895,6 +895,23 @@ function basic(node: XmlNode, code: string, tail: string[]): string {
   return [code, coords(node), flagsFor(node), ...tail].join(' ');
 }
 
+/** Counts the element lines a node emits, or null when it has no port model
+ *  and degrades to a comment. Mirrors `elementLines` line counting exactly but
+ *  never runs a writer, so it is safe to call before the mosfet models are
+ *  loaded and cheap enough for the slot pre-pass. */
+function elementLineCount(node: XmlNode): number | null {
+  if (node.tag === 'rw') {
+    const parts = node.text.split(';');
+    const points = parts
+      .filter(readablePoint)
+      .map((p) => p.split(',').map((v) => String(Number(v))));
+    const dropped = parts.length - points.length;
+    if (points.length < 2) return dropped > 0 ? 0 : null;
+    return points.length - 1;
+  }
+  return WRITERS[node.tag] !== undefined ? 1 : null;
+}
+
 /** Flattens document-supplied text so it stays on one line: the attribute
  *  parse accepts literal newlines inside quoted values (xml.ts), and an
  *  unescaped one would let a `#` comment's continuation read as an element
@@ -1064,7 +1081,25 @@ export function xmlToText(source: string): string {
   );
   ctx.kinds = xmlElements.map((c) => (c.tag === 'rw' ? 'wire' : (KIND_BY_TAG[c.tag] ?? null)));
 
+  // Pre-assign every element's emitted file slot before any scope or slider
+  // line is resolved, so an `<o>` or `<adj>` that precedes its target still
+  // rewrites to the correct ordinal instead of -1. The slot index here matches
+  // `ctx.kinds` exactly: both are indexed by position among the filtered
+  // element nodes, in document order.
   let slot = 0;
+  for (const node of xmlElements) {
+    const count = elementLineCount(node);
+    // A null count (no port model) or a zero count (a dropped-only routed wire
+    // that emits no lines) consumes no file slot and parks at -1, exactly as
+    // the old lazy push did, so the following element keeps the current slot.
+    if (count === null || count === 0) {
+      ctx.slots.push(-1);
+    } else {
+      ctx.slots.push(slot);
+      slot += count;
+    }
+  }
+
   for (const node of cir.children) {
     const tag = node.tag;
     if (tag === 'o') {
@@ -1105,12 +1140,12 @@ export function xmlToText(source: string): string {
 
     const lines = elementLines(node, ctx);
     if (lines === null) {
-      ctx.slots.push(-1);
       passthrough.push(commentLine(node));
       // A tag the port models but cannot convert yet gains one marker line
       // directly under its comment. Both ride passthrough, so neither takes
       // a file slot: scope and slider ordinals hold, and a plot aimed at the
-      // degraded element itself keeps writing -1.
+      // degraded element itself keeps writing -1. The slot for this ordinal was
+      // pre-assigned to -1 in the pass above.
       const kind = UNCONVERTED_TAG_KINDS[tag];
       if (kind !== undefined) {
         passthrough.push(
@@ -1124,16 +1159,15 @@ export function xmlToText(source: string): string {
       // with the next real element, and a scope aimed at the dropped wire would
       // plot that element instead of writing -1. Treat the empty dump like the
       // null case: no slot consumed, the dropped-point trace still rides along,
-      // and scope and slider ordinals hold.
-      ctx.slots.push(-1);
+      // and scope and slider ordinals hold. The slot for this ordinal was
+      // pre-assigned to -1 in the pass above.
       elementLinesOut.push(...droppedTraces(node));
     } else {
       // A trace comment rides directly under the line it describes but must
       // not take a file slot: only real element lines shift the ordinals the
-      // scope and slider lines count against.
+      // scope and slider lines count against. The slot for this ordinal was
+      // pre-assigned in the pass above.
       elementLinesOut.push(...lines, ...droppedTraces(node));
-      ctx.slots.push(slot);
-      slot += lines.length;
     }
   }
 
