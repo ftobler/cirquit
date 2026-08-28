@@ -1557,7 +1557,10 @@ impl Circuit {
         // stepping, so a doubled dt is what the step actually attempts
         // (SimulationManager.java:1312-1318); the commit-side increment and
         // failure-zero rules below stay identical (:1415-1418).
-        if self.good_iterations >= 3 && self.current_time_step < self.options.time_step {
+        if self.options.adaptive
+            && self.good_iterations >= 3
+            && self.current_time_step < self.options.time_step
+        {
             let doubled = (self.current_time_step * 2.0).min(self.options.time_step);
             // A restamp failure while doubling is a stamp error, not a clean
             // step: report it as not-converged so the run halts instead of
@@ -3221,7 +3224,15 @@ mod tests {
         // step that could not re-stamp froze as a converged no-op. The doubling
         // arm of step_once must write the channel itself; this test isolates
         // that arm so it is the only thing that can seed `c.error()`.
-        let mut c = scoped_circuit();
+        let mut spec = scoped_spec(5e-6);
+        spec.options = Some(SimOptions {
+            // The doubling arm only fires under adaptive; opt in so the test
+            // actually exercises that arm's re-stamp failure path.
+            adaptive: true,
+            ..SimOptions::default()
+        });
+        let mut c = Circuit::new();
+        c.set_circuit(&spec).expect("circuit should analyse");
         // Below the nominal working step so the easy-step doubler has somewhere
         // to climb; a normal re-stamp with no probe present succeeds.
         c.set_time_step(2.5e-6)
@@ -3299,6 +3310,35 @@ mod tests {
             c.error().is_some(),
             "the halving-arm restamp failure must reach the error side channel"
         );
+    }
+
+    #[test]
+    fn doubling_arm_never_fires_with_adaptive_off() {
+        // Regression for ES2. With adaptive OFF but current_time_step left
+        // strictly below options.time_step (e.g. carried over from a prior
+        // run), the easy-step doubling arm must NOT enlarge the step. Only
+        // the adaptive=true path is allowed to double, mirroring the halving
+        // arm's own `self.options.adaptive` guard.
+        let mut spec = scoped_spec(5e-6);
+        spec.options = Some(SimOptions {
+            adaptive: false,
+            ..SimOptions::default()
+        });
+        let mut c = Circuit::new();
+        c.set_circuit(&spec).expect("circuit should analyse");
+        // Force a working step strictly below the nominal step.
+        c.set_time_step(2.5e-6)
+            .expect("the setup restamp must succeed");
+        // With the guard missing, three clean steps build good_iterations >= 3
+        // and the fourth step_once doubles the working step back up to 5e-6.
+        for _ in 0..6 {
+            let r = c.step_once();
+            assert!(r.converged, "steps must converge");
+            assert_eq!(
+                c.current_time_step, 2.5e-6,
+                "adaptive OFF must leave the manually-set step untouched"
+            );
+        }
     }
 
     // ─── Wire-current recovery tests ───
