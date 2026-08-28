@@ -2628,10 +2628,18 @@ function createAppStore() {
       const a = st.scopes.find((x) => x.id === aId);
       const b = st.scopes.find((x) => x.id === bId);
       if (!a || !b) return st;
+      const scopes = st.scopes
+        .filter((x) => x.id !== bId)
+        .map((x) => (x.id === aId ? { ...x, plots: [...x.plots, ...b.plots] } : x));
+      // bId is gone, so a properties dialog pointed at it would be an orphan
+      // holding modalSurface() shut with nothing on screen (the same stale
+      // gate removeScope clears).
       return {
-        scopes: st.scopes
-          .filter((x) => x.id !== bId)
-          .map((x) => (x.id === aId ? { ...x, plots: [...x.plots, ...b.plots] } : x)),
+        scopes,
+        scopeProperties:
+          st.scopeProperties !== null && scopes.some((x) => x.id === st.scopeProperties)
+            ? st.scopeProperties
+            : null,
         ...bumpRevision(st),
       };
     });
@@ -2736,8 +2744,16 @@ function createAppStore() {
       const first = st.scopes[0];
       // Everything folds into the first scope, plot order preserved, matching
       // the reverse combine loop of ScopeManager.combineAll.
+      const scopes = [{ ...first, plots: st.scopes.flatMap((x) => x.plots) }];
+      // Every non-first scope vanishes, so a properties dialog pointed at one
+      // of those would be an orphan holding modalSurface() shut (the same
+      // stale gate removeScope clears).
       return {
-        scopes: [{ ...first, plots: st.scopes.flatMap((x) => x.plots) }],
+        scopes,
+        scopeProperties:
+          st.scopeProperties !== null && scopes.some((x) => x.id === st.scopeProperties)
+            ? st.scopeProperties
+            : null,
         ...bumpRevision(st),
       };
     });
@@ -2776,7 +2792,17 @@ function createAppStore() {
           last = p;
         }
       }
-      return { scopes: out, ...bumpRevision(st) };
+      // All original scopes are replaced by fresh ids, so a properties dialog
+      // pointed at any of the old ids would be an orphan holding
+      // modalSurface() shut (the same stale gate removeScope clears).
+      return {
+        scopes: out,
+        scopeProperties:
+          st.scopeProperties !== null && out.some((x) => x.id === st.scopeProperties)
+            ? st.scopeProperties
+            : null,
+        ...bumpRevision(st),
+      };
     });
   },
 
