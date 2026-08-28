@@ -101,4 +101,16 @@ describe('formatUnitsAscii', () => {
   it('shows a placeholder for non-finite values', () => {
     expect(formatUnitsAscii(NaN, 'V')).toBe('--');
   });
+
+  it('survives the round trip at extreme magnitudes without emitting NaN or collapsing to 0', () => {
+    // A value display must round-trip through parseUnits whatever the scale, so
+    // a tiny or huge stored value never gets silently lost in the edit box.
+    for (const v of [1e-12, 1e-9, 1e3, 1e9, 0]) {
+      const text = formatUnitsAscii(v);
+      expect(text).not.toContain('NaN');
+      // A non-zero extreme must keep its scale, not round to the flat "0".
+      if (v !== 0) expect(text).not.toMatch(/^0(\.0*)?$/);
+      expect(parseUnits(text)).toBeCloseTo(v, 10);
+    }
+  });
 });

@@ -951,3 +951,35 @@ v 0 0 0 16 0 2 40 5 5 0 0.56
     expect(legacy.sliders[0].logarithmic).toBe(false);
   });
 });
+
+describe('hostile netlist input degrades gracefully', () => {
+  const HEADER = '$ 1 0.000005 10 50 5 43 5e-11\n';
+
+  it('does not throw on fractional flags, and still reads a sane circuit', () => {
+    // A hand-edited line can carry a fractional flags token; it must not abort
+    // the whole load. The element loads (flags kept as given) and the rest of
+    // the file survives.
+    const parsed = parseCircuit(`${HEADER}r 0 0 16 0 1.5 100\nr 32 0 48 0 0 220\n`);
+    expect(() => parsed.elements).not.toThrow();
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['resistor', 'resistor']);
+  });
+
+  it('does not throw on an out-of-range scope index, and leaves the plot unattached', () => {
+    // A scope whose element index points past the element list must not panic.
+    // The scope is kept but its plot has no element id, and the rest parses.
+    const parsed = parseCircuit(`${HEADER}r 0 0 16 0 0 100\no 99 64 0 4099 20 0.05 0 1\n`);
+    expect(parsed.scopes).toHaveLength(1);
+    expect(parsed.scopes[0].plots[0].elementId).toBeUndefined();
+    expect(parsed.elements.map((e) => e.kind)).toEqual(['resistor']);
+  });
+
+  it('does not throw on a non-finite or zero timeStep, and drops the bad setting', () => {
+    // A garbage or zero timeStep token must not crash the load; the setting is
+    // simply not applied rather than poisoning the simulation with NaN.
+    for (const ts of ['abc', '0']) {
+      const parsed = parseCircuit(`$ 1 ${ts} 10 50 5 43 5e-11\nr 0 0 16 0 0 100\n`);
+      expect(parsed.elements).toHaveLength(1);
+      expect(parsed.settings.timeStep).toBeUndefined();
+    }
+  });
+});

@@ -594,3 +594,28 @@ fn composite_child_good_expression_still_builds_and_runs() {
     let report = c.run(3);
     assert!(report.converged, "did not converge: {:?}", report.error);
 }
+
+#[test]
+fn a_spec_element_with_wrong_post_count_is_rejected_at_build() {
+    // set_circuit validates every element's post count against its kind before
+    // committing, so a hand-corrupted netlist (a post dropped or invented) fails
+    // the build instead of welding a terminal onto a phantom node.
+    let mut c = Circuit::new();
+    let spec = CircuitSpec {
+        preserve_run: false,
+        elements: vec![
+            elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
+            // A resistor needs two posts; only one is supplied here.
+            elm(2, "resistor", &[[0, 0]], &[("resistance", 1000.0)]),
+        ],
+        options: Some(opts(1e-5, false)),
+        scopes: Vec::new(),
+    };
+    let err = c
+        .set_circuit(&spec)
+        .expect_err("an element whose post count mismatches the spec must be rejected");
+    assert!(
+        err.contains("resistor") && err.contains("id 2"),
+        "rejection should name the element and id, got: {err}"
+    );
+}
