@@ -3012,6 +3012,15 @@ function createAppStore() {
       // it would strand a value editor over a vanished part, the same
       // stale-pointer rule as scopeProperties and deviceModelEditor above.
       scrollValuePopover: null,
+      // A load is a new document: an open context menu holds the id of the
+      // element it was raised on, which this replace may delete. Leaving it
+      // keeps modalSurface() true with nothing on screen, killing every
+      // shortcut until a lucky Escape, and its actions could touch a stale id.
+      // Same stale-pointer rule as scopeProperties above. A dialog or open
+      // Element Properties panel is stranded on the old file the same way.
+      contextMenu: null,
+      dialog: null,
+      elementProperties: null,
       ...bumpRevision(s),
       // A load is a new document: the frame loop's rebuild gate must refuse to
       // inject the previous circuit's live charges into it.
@@ -3348,6 +3357,13 @@ function createAppStore() {
       // element this fresh circuit just emptied out, so its OK could only reach
       // a stale id. Same stale-pointer rule as deviceModelEditor above.
       scrollValuePopover: null,
+      // New drops the open context menu too: it was raised on an element this
+      // fresh circuit just emptied out, so its actions could only reach a stale
+      // id and it would hold modalSurface() shut. A dialog or open Element
+      // Properties panel is stranded the same way. Same rule as above.
+      contextMenu: null,
+      dialog: null,
+      elementProperties: null,
       // New drops the drill-in session too: the outer document is gone.
       subcircuitStack: [],
       ...bumpRevision(s),
@@ -3450,6 +3466,14 @@ function createAppStore() {
       // deviceModelEditor above; leaving it strands a value editor over a
       // vanished part.
       scrollValuePopover: null,
+      // An undo can leave the element a context menu was raised on behind: the
+      // menu would hold modalSurface() true with nothing on screen and its
+      // actions could target a stale id. Closing is the only safe outcome, the
+      // same stale-pointer rule as deviceModelEditor above. Same for a dialog
+      // or open Element Properties panel.
+      contextMenu: null,
+      dialog: null,
+      elementProperties: null,
       // An in-flight gesture cannot survive a state revert: a scope drag would
       // keep mutating past its reverted baseline and an element gesture would
       // swallow the next rotate's commit, so both flags drop with the state.
@@ -3496,6 +3520,12 @@ function createAppStore() {
       // Same stale-pointer rule as undo: a redo can recreate an element the
       // popover was not wheel-editing, so it drops the same way.
       scrollValuePopover: null,
+      // Same stale-pointer rule as undo: a redo can recreate an element the
+      // context menu was raised on, so the menu drops too, along with any dialog
+      // or open Element Properties panel.
+      contextMenu: null,
+      dialog: null,
+      elementProperties: null,
       // Same gesture teardown as undo.
       scopeGesture: false,
       elementGesture: null,
