@@ -4145,6 +4145,45 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
     useStore.getState().setSliderElement(null);
     expect(useStore.getState().sliderElementId).toBeNull();
   });
+
+  it('teardown paths clear a dangling sliderElementId', () => {
+    // The open-slider dialog target must not outlive the element it points at:
+    // undo, redo, load, new and delete all reset it, exactly as the other
+    // id-anchored fields (deviceModelEditor, scrollValuePopover, contextMenu)
+    // already do.
+    const id = addResistor();
+    useStore.getState().setSliderElement(id);
+    expect(useStore.getState().sliderElementId).toBe(id);
+
+    useStore.getState().undo();
+    expect(useStore.getState().sliderElementId).toBeNull();
+
+    useStore.getState().setSliderElement(id);
+    useStore.getState().redo();
+    expect(useStore.getState().sliderElementId).toBeNull();
+
+    useStore.getState().setSliderElement(id);
+    useStore.getState().loadNetlist('$ 1 0.000000 10.0 50 5 50\n');
+    expect(useStore.getState().sliderElementId).toBeNull();
+
+    useStore.getState().setSliderElement(id);
+    useStore.getState().newCircuit();
+    expect(useStore.getState().sliderElementId).toBeNull();
+
+    const delId = useStore.getState().addElement({
+      kind: 'resistor',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 64,
+      flags: 0,
+      params: { resistance: 1000 },
+    });
+    useStore.getState().select([delId]);
+    useStore.getState().setSliderElement(12345);
+    useStore.getState().deleteSelected();
+    expect(useStore.getState().sliderElementId).toBeNull();
+  });
 });
 
 describe('convert wires to routed', () => {
