@@ -972,8 +972,18 @@ function scopeLine(node: XmlNode, ctx: ConvertContext): string {
     });
     kinds.push(kind);
   }
+  // The scope is in manual scale when upstream's flag carried the bit, or when
+  // any plot brought an explicit manual scale (`ms`): upstream's XML writer
+  // strips the per-plot bits from the `<o>` flag word but always keeps
+  // FLAG_MAN_SCALE, so the flag alone suffices for a faithful round-trip; the
+  // plot check covers a document that authored the manual scale on the plot
+  // without the scope-level bit. Either way the encoder must emit the
+  // manDivisions token and the per-plot ms/mp pair, so the manual scaling
+  // survives a save instead of degrading to auto scale.
+  const manualScale = decoded.manualScale || plots.some((p) => p.manScale !== null);
   const scope = {
     ...decoded,
+    manualScale,
     speed: attr(node, 'sp', 64),
     position: attr(node, 'p', 0),
     manDivisions: attr(node, 'md', 8),
