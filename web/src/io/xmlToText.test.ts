@@ -275,6 +275,48 @@ describe('xml to text conversion', () => {
     expect(parseCircuit(text).sliders).toHaveLength(1);
   });
 
+  it('resolves an in-order scope unchanged (regression baseline)', () => {
+    // The <o> follows the elements it references; this is the legal, common
+    // order and must keep emitting the correct positive slot.
+    const text = xmlToText(SIMPLE);
+    expect(text).toMatch(/^o 0 4 0 \d+ 10 0.05 0 1$/m);
+  });
+
+  it('resolves an out-of-order scope to a positive slot, not -1', () => {
+    // NF2: when the <o> scope precedes the element it references, the lazy
+    // single-pass slot assignment used to leave ctx.slots empty for the target,
+    // serialising -1. Upstream XML is legal in any element order, so the slot
+    // must pre-exist. en="0" targets the resistor that appears later here.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <o en="0" sp="4" f="x2" p="0">
+    <p v="0" sc="10"/>
+  </o>
+  <r x="192 160 304 160" f="0" r="1000"/>
+  <c x="304 160 304 224" f="0" c="0.000001" iv="0.001" sr="0" vd="0.5"/>
+  <g x="304 224 304 240" f="0"/>
+  <v x="192 160 128 160" f="0" wf="2" fr="1000" maxv="5"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toMatch(/^o 0 4 0 \d+ 10 0.05 0 1$/m);
+    expect(text).not.toMatch(/^o -1 /m);
+    expect(parseCircuit(text).scopes).toHaveLength(1);
+  });
+
+  it('resolves an out-of-order slider to a positive slot, not -1', () => {
+    // Same ordering hazard for <adj>: the slider precedes the resistor it binds
+    // to. e="0" targets the resistor declared later in the document.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <adj e="0" ei="0" en="Resistance" mn="100" mx="10000" st="R"/>
+  <r x="192 160 304 160" f="0" r="1000"/>
+</cir>
+`;
+    const text = xmlToText(src);
+    expect(text).toMatch(/^38 0 F0 0 100 10000 R 0$/m);
+    expect(text).not.toMatch(/^38 -1 /m);
+    expect(parseCircuit(text).sliders).toHaveLength(1);
+  });
+
   it('traces a dropped internal resistance on a rail', () => {
     // Upstream builds a real series resistor onto an internal node when ir > 0
     // (VoltageElm.java:148-157); the text format has no home for it, so the
