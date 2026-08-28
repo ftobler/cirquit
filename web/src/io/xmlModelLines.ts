@@ -12,6 +12,15 @@
 import type { XmlNode } from './xml';
 import { escapeToken } from './netlist/tokens';
 
+/** Escapes one child dump field for the `_`-joined token: a value's own `_`
+ *  would read as another field separator, and a space would read as one on
+ *  the loader's space split (`modelToEngineSpec`), so each is encoded (`_`
+ *  -> `\u`, space -> `\s`) and a backslash first. Mirrors `subcircuitBuild.ts`
+ *  `escapeChildField`, the text path the XML writer must stay in step with. */
+function escapeChildField(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/_/g, '\\u').replace(/ /g, '\\s');
+}
+
 /** Reads an attribute as a number, falling back on absence and throwing on
  *  garbage so a broken file fails loudly instead of producing a wrong line. */
 export function attr(node: XmlNode, name: string, fallback: number): number {
@@ -99,9 +108,20 @@ export function compositeModel(node: XmlNode): string {
       // (composite.rs, `dumps.get(i)`), so the two lists have to stay in step:
       // a child that contributes no line contributes no dump either, and one
       // whose tag carries no fields still contributes its flags.
-      dumps.push(childDumpToken(child)?.replaceAll('_', ' ') ?? String(attr(child, 'f', 0)));
+      // The engine's `apply_dump` (`composite.rs`) splits each child dump on
+      // `_`, so the fields ride the line joined by `_` (with each value
+      // escaped by `escapeChildField`, the way `subcircuitBuild.ts`'s
+      // `childDumpToken` does). The per-child string is escaped and the `_`
+      // separators become spaces (`escapeToken`'s `\s`), then the whole lot is
+      // escaped again so the inter-child boundary survives the loader's
+      // whitespace split: exactly the `.` line that `compositeModelLine`
+      // writes for a model built from a selection.
+      dumps.push(childDumpToken(child) ?? String(attr(child, 'f', 0)));
     }
   }
+  const elmDump = dumps
+    .map((t) => escapeToken(t.replaceAll('_', ' ')))
+    .join(' ');
   return [
     '.',
     escapeToken(node.attrs.nm ?? ''),
@@ -111,7 +131,7 @@ export function compositeModel(node: XmlNode): string {
     count,
     ext.join(' '),
     escapeToken(lines.join('\r')),
-    escapeToken(dumps.join(' ')),
+    escapeToken(elmDump),
   ].join(' ');
 }
 
@@ -132,16 +152,25 @@ const CHILD_CLASS: Record<string, string> = {
 
 /** One ccm child's `_`-joined dump token: its flags then its fields, the shape
  *  `composite.rs`'s `apply_dump` splits. Gates carry inputCount/output/high
- *  voltage; wires and labeled nodes carry nothing. */
+ *  voltage; wires and labeled nodes carry nothing. Every field is escaped the
+ *  way `subcircuitBuild.ts`'s `childDumpToken` escapes them, so a space or
+ *  underscore inside a child model name survives the loader's `_`/`space`
+ *  split instead of being misread as a field boundary. */
 function childDumpToken(node: XmlNode): string | null {
   const tag = node.tag;
   const f = attr(node, 'f', 0);
   if (tag === 'And' || tag === 'Or' || tag === 'Nand' || tag === 'Nor' || tag === 'Xor') {
-    return [f, attr(node, 'in', 2), attr(node, 'o', 0), attr(node, 'hi', 5)].join('_');
+    return [f, attr(node, 'in', 2), attr(node, 'o', 0), attr(node, 'hi', 5)]
+      .map((v) => escapeChildField(String(v)))
+      .join('_');
   }
-  if (tag === 'I') return [f, attr(node, 'sl', 0.5), attr(node, 'hi', 5)].join('_');
-  if (tag === 'd') return [f, node.attrs.mo ?? 'default'].join('_');
-  if (tag === 'cc') return [f, node.attrs.mo ?? ''].join('_');
-  if (tag === 'w' || tag === 'rw' || tag === 'ln') return String(f);
+  if (tag === 'I') {
+    return [f, attr(node, 'sl', 0.5), attr(node, 'hi', 5)]
+      .map((v) => escapeChildField(String(v)))
+      .join('_');
+  }
+  if (tag === 'd') return [f, node.attrs.mo ?? 'default'].map((v) => escapeChildField(String(v))).join('_');
+  if (tag === 'cc') return [f, node.attrs.mo ?? ''].map((v) => escapeChildField(String(v))).join('_');
+  if (tag === 'w' || tag === 'rw' || tag === 'ln') return escapeChildField(String(f));
   return null;
 }
