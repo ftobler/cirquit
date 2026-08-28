@@ -53,6 +53,10 @@ impl Memristor {
             mobility: spec.param("mobility", Self::DEFAULT_MOBILITY),
             resistance: 0.0,
         };
+        // A hostile netlist can carry a dopeWidth outside [0, totalWidth].
+        // Clamp it before recompute() so the very first stamped resistance can
+        // never go negative; start_iteration still guards the per-step advance.
+        m.dope_width = m.dope_width.clamp(0.0, m.total_width);
         m.recompute();
         m
     }
@@ -140,7 +144,11 @@ impl Element for Memristor {
         match name {
             "r_on" if value > 0.0 => self.r_on = value,
             "r_off" if value > 0.0 => self.r_off = value,
-            "dopeWidth" => self.dope_width = value,
+            "dopeWidth" => {
+                // Mirror the construction clamp: a live edit must also stay in
+                // [0, totalWidth] so the resistance blend stays non-negative.
+                self.dope_width = value.clamp(0.0, self.total_width);
+            }
             "totalWidth" if value > 0.0 => self.total_width = value,
             "mobility" => self.mobility = value,
             _ => return false,

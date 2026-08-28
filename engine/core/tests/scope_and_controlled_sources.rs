@@ -1515,6 +1515,80 @@ fn memristor_resistance_scope_samples_the_stamped_blend() {
 }
 
 #[test]
+fn memristor_hostile_dopewidth_token_cannot_stamp_negative_resistance() {
+    // A hand-edited netlist can carry a dopeWidth outside [0, totalWidth]:
+    // before the clamp, recompute() turned wd = dopeWidth/totalWidth > 1 into a
+    // negative resistance (r_on*wd + r_off*(1 - wd)), so the first transient
+    // step stamped an active negative resistor. The clamp in new()/set_param
+    // must keep the stamped resistance inside [r_on, r_off] and the live
+    // dopeWidth ratio inside [0, 1] at all times.
+    let dt = 1e-6;
+    let i = 1e-3;
+    let (r_on, r_off) = (100.0, 16000.0);
+    let total_width = 1e-8;
+    let mobility = 1e-10;
+
+    let c = &mut build_with(
+        vec![
+            elm(1, "current", &[[0, 0], [100, 0]], &[("current", i)]),
+            elm(
+                2,
+                "memristor",
+                &[[100, 0], [200, 0]],
+                &[
+                    ("r_on", r_on),
+                    ("r_off", r_off),
+                    ("totalWidth", total_width),
+                    ("mobility", mobility),
+                    ("dopeWidth", 2.0 * total_width), // hostile: out of range
+                ],
+            ),
+            elm(3, "ground", &[[0, 0]], &[]),
+            elm(4, "ground", &[[200, 0]], &[]),
+        ],
+        opts(dt, false),
+        vec![element_scope(2, ScopeValue::Resistance)],
+    );
+
+    // The first step must not stamp a negative resistance.
+    c.run(1);
+    let (lo, hi) = last_column(c, 0);
+    let r = lo.max(hi);
+    assert!(r >= 0.0, "memristor stamped negative resistance {r}");
+    assert!(r <= r_off + 1e-6, "memristor resistance {r} exceeds r_off");
+    assert!(
+        r >= r_on - 1e-6,
+        "memristor resistance {r} fell below r_on (clamp)"
+    );
+
+    // The live dopeWidth ratio must stay inside [0, 1].
+    let ratio = c.element_states()[1];
+    assert!(
+        (0.0..=1.0).contains(&ratio),
+        "memristor dopeWidth ratio {ratio} left [0, 1]"
+    );
+
+    // A hostile live edit through set_param must stay clamped too.
+    assert!(c.set_param(2, "dopeWidth", 5.0 * total_width));
+    c.run(1);
+    let (lo2, hi2) = last_column(c, 0);
+    let r2 = lo2.max(hi2);
+    assert!(
+        r2 >= 0.0,
+        "memristor stamped negative resistance after set_param {r2}"
+    );
+    assert!(
+        r2 <= r_off + 1e-6 && r2 >= r_on - 1e-6,
+        "memristor resistance {r2} left the clamp"
+    );
+    let ratio2 = c.element_states()[1];
+    assert!(
+        (0.0..=1.0).contains(&ratio2),
+        "memristor dopeWidth ratio {ratio2} left [0, 1] after set_param"
+    );
+}
+
+#[test]
 fn ohmmeter_resistance_scope_samples_the_instrument_reading() {
     // Upstream's Show Resistance box on an ohmmeter: VAL_R samples
     // getVoltageDiff()/current (OhmMeterElm.java:40-42), the same reading the
