@@ -5,6 +5,8 @@ import { batteryTypeTables } from '../model/registry/elements/battery';
 import { defFor, postsOf } from '../model/registry';
 import { UNCONVERTED_TAG_KINDS, xmlToText } from './xmlToText';
 import { parseCircuit, serializeCircuit } from './netlist';
+import { decodeScopeLine } from './scopeLine';
+import type { ScopePlot } from '../engine/scopeModel';
 import { DEFAULT_SETTINGS } from '../model/types';
 
 const SIMPLE = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
@@ -1529,6 +1531,43 @@ b"/>
         `# ${tag} not converted: this build models it as code ${def!.dumpCode}`,
       );
     }
+  });
+
+  it('round-trips a manual-scaled plot out of the XML ms/mp attributes', () => {
+    // Upstream's XML writer strips the per-plot bits from the `<o>` flag word
+    // but always keeps FLAG_MAN_SCALE, so a faithful document carries the
+    // manual scale on the `<p>` plot as `ms`/`mp`. If the converter leaves the
+    // built scope's `manualScale` false, the encoder (encodeScopeLine) omits
+    // the manDivisions token and the per-plot ms/mp pair, and the manual
+    // scaling is lost on the next save. The test probes the emitted text for
+    // the manual-scale tokens, so it fails before the fix and passes after,
+    // then decodes the line back through the codec to confirm the scope is
+    // actually manual and the per-plot ms/mp survived.
+    const src = `<cir f="1" ts="0.000005" ic="10" cb="50" pb="50" vr="5" mts="5e-11">
+  <r x="192 160 304 160" f="0" r="1000"/>
+  <o en="0" sp="64" f="4162" p="0">
+    <p v="0"/>
+    <p v="1" ms="2" mp="100"/>
+  </o>
+</cir>
+`;
+    const text = xmlToText(src);
+    const line = text.split('\n').find((l) => l.startsWith('o '))!;
+    // The emitted `o` line: after the plot count (2) comes manDivisions (8),
+    // then the per-plot manual pairs; the second plot carries ms=2 mp=100.
+    expect(line).toMatch(/^o 0 64 [0-9]+ \d+ 20 0\.05 0 2 8 /);
+    expect(line).toMatch(/2 100/);
+    const raw = line.split(' ').slice(2);
+    const decoded = decodeScopeLine(
+      raw,
+      [{ value: 'voltage' }, { value: 'current' }] as ScopePlot[],
+      ['resistor', 'resistor'],
+      0,
+    );
+    expect(decoded.manualScale).toBe(true);
+    expect(decoded.manDivisions).toBe(8);
+    expect(decoded.perPlot[1].manScale).toBe(2);
+    expect(decoded.perPlot[1].manVPosition).toBe(100);
   });
 
   it('seeds a momentary DPDT switch with no position as pressed', () => {
