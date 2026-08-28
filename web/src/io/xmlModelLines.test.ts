@@ -6,6 +6,7 @@ import {
   diodeModel,
   transistorModel,
 } from './xmlModelLines';
+import { modelToEngineSpec, parseCompositeModelLine } from './subcircuits';
 
 /** Builds an `XmlNode` without children boilerplate. */
 function node(tag: string, attrs: Record<string, string>, children: XmlNode[] = []): XmlNode {
@@ -95,7 +96,7 @@ describe('xmlModelLines compositeModel', () => {
       ],
     );
     expect(compositeModel(n)).toBe(
-      '. op 0 2 2 2 A 1 0 2 B 2 1 2 AndGateElm\\s1\\s2\\s3 0\\s2\\s0\\s5',
+      '. op 0 2 2 2 A 1 0 2 B 2 1 2 AndGateElm\\s1\\s2\\s3 0\\\\s2\\\\s0\\\\s5',
     );
   });
 
@@ -116,5 +117,33 @@ describe('xmlModelLines compositeModel', () => {
       node('unknown', { nn: '4 5 6', f: '0' }),
     ]);
     expect(compositeModel(n)).toBe('. op 0 1 1 1 A 1 0 2 \\0 \\0');
+  });
+
+  it('keeps one dump token per ccm child when there are two (F1)', () => {
+    // A multi-child composite must round-trip to one engine dump per child.
+    // Before the fix the inter-child boundary was escaped the same as the
+    // intra-child field separators, so the loader merged every child into one
+    // blob and `apply_dump` read garbage for child 1.
+    const n = node('ccm', { nm: 'op', f: '0', sx: '1', sy: '1' }, [
+      node('ext', { nm: 'A', nd: '1', ps: '0', sd: '2' }),
+      node('And', { nn: '1 2 3', f: '0' }),
+      node('And', { nn: '4 5 6', f: '0' }),
+    ]);
+    const line = compositeModel(n);
+    const model = parseCompositeModelLine(line);
+    expect(modelToEngineSpec(model!).dumps).toHaveLength(2);
+  });
+
+  it('keeps a space-bearing child model name intact across the dump (F2)', () => {
+    // A diode child whose model name has a space must survive the dump as one
+    // field. Before the fix the field value was never escaped, so `my model`
+    // split into three fields and the engine read the wrong name.
+    const n = node('ccm', { nm: 'op', f: '0', sx: '1', sy: '1' }, [
+      node('ext', { nm: 'A', nd: '1', ps: '0', sd: '2' }),
+      node('d', { nn: '1 2', mo: 'my model', f: '0' }),
+    ]);
+    const line = compositeModel(n);
+    const model = parseCompositeModelLine(line);
+    expect(modelToEngineSpec(model!).dumps[0]).toBe('0_my\\smodel');
   });
 });
