@@ -387,6 +387,86 @@ describe('encodeScopeLine round-trip', () => {
   });
 });
 
+describe('X-Y axis selection block text path', () => {
+  // The port's own six-int axis block (plotX plotY plotBrightness plotColorR
+  // plotColorG plotColorB) rides the text `o` line only on a non-default X-Y
+  // selection. The XML side is covered, but the text path had no test (F2): a
+  // regression in the emit guard or the consume gate would silently drop the
+  // chosen axes and colour modulators on a text save/reload.
+  const plots = [plot(0, 'voltage'), plot(0, 'current'), plot(0, 'voltage')];
+  const kinds = ['resistor', 'resistor', 'resistor'];
+
+  // A scope decoded from a plotXY line (flag bit 64) with three plots, then
+  // overlaid with the caller's field overrides. The X-Y block defaults come
+  // back from the decode since this line carries no block.
+  const xyScope = (over: Partial<Scope>): Scope => {
+    const decoded = decodeScopeLine(
+      ['64', '0', '4163', '20', '0.05', '0', '3', '0', '2', '0', '3'],
+      plots,
+      kinds,
+      0,
+    );
+    return { ...loadedScope(decoded, plots), ...over };
+  };
+
+  const NON_DEFAULT = {
+    plotXY: true,
+    plotX: 2,
+    plotY: 0,
+    plotBrightness: 3,
+    plotColorR: 1,
+    plotColorG: -1,
+    plotColorB: 4,
+  } as const;
+
+  it('round-trips a non-default axis and modulator selection', () => {
+    const encoded = encodeScopeLine(xyScope({ ...NON_DEFAULT }), () => 0, kinds);
+    const back = decodeScopeLine(encoded, plots, kinds, 0);
+    expect(back.plotXY).toBe(true);
+    expect(back.plotX).toBe(2);
+    expect(back.plotY).toBe(0);
+    expect(back.plotBrightness).toBe(3);
+    expect(back.plotColorR).toBe(1);
+    expect(back.plotColorG).toBe(-1);
+    expect(back.plotColorB).toBe(4);
+  });
+
+  it('appends the six-int block only for a non-default selection', () => {
+    const encDef = encodeScopeLine(xyScope({ plotXY: true }), () => 0, kinds);
+    const encNon = encodeScopeLine(xyScope({ ...NON_DEFAULT }), () => 0, kinds);
+    // The only token difference is the appended six-int axis block.
+    expect(encNon.length).toBe(encDef.length + 6);
+    // A default X-Y line decodes with the makeScope defaults, never a block.
+    const reDef = decodeScopeLine(encDef, plots, kinds, 0);
+    expect(reDef.plotX).toBe(0);
+    expect(reDef.plotY).toBe(1);
+    expect(reDef.plotBrightness).toBe(-1);
+    expect(reDef.plotColorR).toBe(-1);
+    expect(reDef.plotColorG).toBe(-1);
+    expect(reDef.plotColorB).toBe(-1);
+    // The re-encoded default matches itself byte-for-byte, so an untouched
+    // upstream X-Y line still saves unchanged.
+    expect(encodeScopeLine(loadedScope(reDef, plots), () => 0, kinds)).toEqual(encDef);
+  });
+
+  it('never grows the block for a non-X-Y scope', () => {
+    const encNoXY = encodeScopeLine(
+      xyScope({ ...NON_DEFAULT, plotXY: false }),
+      () => 0,
+      kinds,
+    );
+    const encDef = encodeScopeLine(xyScope({ plotXY: true }), () => 0, kinds);
+    // plotXY off suppresses the guard entirely, so the token count matches a
+    // default X-Y scope (the flag word differs, the block never appears).
+    expect(encNoXY.length).toBe(encDef.length);
+    const back = decodeScopeLine(encNoXY, plots, kinds, 0);
+    expect(back.plotXY).toBe(false);
+    expect(back.plotX).toBe(0);
+    expect(back.plotY).toBe(1);
+    expect(back.plotBrightness).toBe(-1);
+  });
+});
+
 describe('per-plot measurement bits under FLAG_PERPLOTFLAGS', () => {
   // flags 266242 = showV + FLAG_PLOTS + FLAG_PERPLOTFLAGS. Plot A's token
   // '420' (hex) sets the mask-present sentinel (bit 10) plus bit 5, the
