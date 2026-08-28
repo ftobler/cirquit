@@ -18,6 +18,7 @@ import {
   divergedCaption,
   drawGridLines,
   drawScope,
+  yOf,
   emptyCursor,
   isDrawable,
   layoutHeader,
@@ -1444,12 +1445,12 @@ describe('drawScope measurement gating', () => {
 describe('drawGridLines visibility', () => {
   const W = 200;
   const H = 150;
-  const transform = (): PlotTransform => ({
+  const transform = (positionOffset = 0): PlotTransform => ({
     gridMid: 0,
     gridMult: 74 / 5,
     gridMax: 5,
     showNegative: true,
-    positionOffset: 0,
+    positionOffset,
     stepY: 2,
   });
   // Horizontal gridlines are the only strokes whose moveTo starts at x = 0
@@ -1474,6 +1475,27 @@ describe('drawGridLines visibility', () => {
 
   it('same-units scopes always get their division lines', () => {
     expect(horizontalCount(true, false)).toBeGreaterThan(1);
+  });
+
+  it('manual-scale horizontal lines track the trace via yOf, including positionOffset', () => {
+    // A non-zero vertical position offset (manVPosition != 0) shifts the trace
+    // through yOf, which folds positionOffset in. The gridlines must use the
+    // same mapping, or the centre and division lines drift off the trace.
+    const t = transform(1);
+    const maxy = Math.floor((H - 1) / 2);
+    const expected: number[] = [];
+    for (let ll = -100; ll <= 100; ll++) {
+      const yl = yOf(t, maxy, ll * t.stepY);
+      if (yl >= 0 && yl < H - 1) expected.push(yl);
+    }
+    const { ctx } = mkCtx(W, H);
+    drawGridLines(ctx, t, W, H, 0, 64, 5e-6, false, true, makeTheme());
+    const got = (ctx.moveTo as ReturnType<typeof vi.fn>).mock.calls
+      .filter(([x, y]) => x === 0 && y >= 0)
+      .map(([, y]) => y)
+      .sort((a, b) => a - b);
+    expected.sort((a, b) => a - b);
+    expect(got).toEqual(expected);
   });
 });
 

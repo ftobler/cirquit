@@ -312,7 +312,7 @@ function transformFor(
   };
 }
 
-function yOf(t: PlotTransform, maxy: number, v: number): number {
+export function yOf(t: PlotTransform, maxy: number, v: number): number {
   return maxy - t.gridMult * (v - t.gridMid + t.positionOffset);
 }
 
@@ -384,7 +384,7 @@ export function drawGridLines(
   const showH = manualScale || allSameUnits;
   for (let ll = -100; ll <= 100; ll++) {
     if (ll !== 0 && !showH) continue;
-    const yl = maxy - (ll * t.stepY - t.gridMid) * t.gridMult;
+    const yl = yOf(t, maxy, ll * t.stepY);
     if (yl < 0 || yl >= h - 1) continue;
     ctx.strokeStyle = ll === 0 ? theme.scopeGridMajor : theme.scopeGridMinor;
     ctx.lineWidth = 1;
