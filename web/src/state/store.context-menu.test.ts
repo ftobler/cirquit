@@ -33,12 +33,15 @@ describe('contextMenu is torn down by whole-document events', () => {
   });
 
   it('redo closes an open context menu', () => {
-    const id = addResistor();
+    // Build an undo/redo pair, then open the menu without committing so that
+    // redo() keeps a non-empty redoStack and actually reaches its teardown.
+    addResistor();
     useStore.getState().commit();
-    useStore.getState().openContextMenu(10, 20, id, { x: 0, y: 0 }, false);
     useStore.getState().undo();
-    // Reopen on the surviving resistor so the redo future stays intact.
-    useStore.getState().openContextMenu(10, 20, id, { x: 0, y: 0 }, false);
+    expect(useStore.getState().redoStack.length).toBeGreaterThan(0);
+
+    // openContextMenu does not commit, so it leaves the redo future intact.
+    useStore.getState().openContextMenu(10, 20, 1, { x: 0, y: 0 }, false);
     expect(useStore.getState().contextMenu).not.toBeNull();
 
     useStore.getState().redo();
