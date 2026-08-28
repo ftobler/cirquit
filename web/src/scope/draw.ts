@@ -943,6 +943,75 @@ export function xyPairFor(
   return { x: px, y: py };
 }
 
+/** Pure X-Y pixel mapping (ScopePlot2d.java:149-163), extracted from drawXY so
+ *  the auto/manual scale rules are testable headlessly. `xs`/`ys` are the
+ *  recent-sample windows and `prev` the stored sticky scale. In manual mode the
+ *  mapping ignores the samples and reads each axis plot's manScale/manVPosition
+ *  (ScopePlot2d.java:159-162), so a hand-set X-Y scale holds; otherwise it grows
+ *  the sticky scale to contain the extremes and never shrinks
+ *  (ScopePlot2d.java:151-152). */
+export function xyMapping(
+  scope: Scope,
+  plots: { x: DrawablePlot; y: DrawablePlot },
+  xs: ArrayLike<number>,
+  ys: ArrayLike<number>,
+  prev: { x: number; y: number },
+  w: number,
+  h: number,
+): {
+  xsTo: (v: number) => number;
+  ysTo: (v: number) => number;
+  scaleX: number;
+  scaleY: number;
+  manual: boolean;
+} {
+  if (scope.manualScale) {
+    const divisions = scope.manDivisions || MAN_DIVISIONS;
+    const manScaleX = plots.x.manScale ?? seedManScale(5, divisions);
+    const manScaleY = plots.y.manScale ?? seedManScale(5, divisions);
+    const gridPx = (Math.min(w, h) / 2) / (divisions / 2 + 0.05);
+    const posX = plots.x.manVPosition || 0;
+    const posY = plots.y.manVPosition || 0;
+    return {
+      manual: true,
+      scaleX: prev.x,
+      scaleY: prev.y,
+      xsTo: (v: number) => (w * 0.499 + (v / manScaleX) * gridPx + (gridPx * divisions * posX) / 200) | 0,
+      ysTo: (v: number) => (h * 0.499 - (v / manScaleY) * gridPx - (gridPx * divisions * posY) / 200) | 0,
+    };
+  }
+  // Per-axis sticky power-of-two auto scale (ScopePlot2d.java:31-32, 149-163):
+  // the X axis defaults to 5, the Y axis to 0.1, each doubles to contain the
+  // locus and never shrinks, holding the largest scale that ever contained the
+  // signal. The scale persists across frames, so a small current trace stays
+  // legible.
+  let maxX = -Infinity;
+  let minX = Infinity;
+  let maxY = -Infinity;
+  let minY = Infinity;
+  for (let i = 0; i < xs.length; i++) {
+    if (xs[i] > maxX) maxX = xs[i];
+    if (xs[i] < minX) minX = xs[i];
+  }
+  for (let i = 0; i < ys.length; i++) {
+    if (ys[i] > maxY) maxY = ys[i];
+    if (ys[i] < minY) minY = ys[i];
+  }
+  if (!Number.isFinite(maxX)) maxX = 0;
+  if (!Number.isFinite(minX)) minX = 0;
+  if (!Number.isFinite(maxY)) maxY = 0;
+  if (!Number.isFinite(minY)) minY = 0;
+  const scaleX = nextAxisScale(prev.x, maxX, minX, axisSamplesFit(xs, prev.x, w));
+  const scaleY = nextAxisScale(prev.y, maxY, minY, axisSamplesFit(ys, prev.y, h));
+  return {
+    manual: false,
+    scaleX,
+    scaleY,
+    xsTo: (v: number) => (w * (1 + v / scaleX) * 0.499) | 0,
+    ysTo: (v: number) => (h * (1 - v / scaleY) * 0.499) | 0,
+  };
+}
+
 /** Draws the X-Y locus from the recent-sample rings (ScopePlot2d.java). The
  *  axes come from `xyPairFor`; a brightness or RGB index tints and dims the
  *  locus by those plots' latest samples (computeAlpha/computeColor), and unset
@@ -963,32 +1032,22 @@ function drawXY(
   const ys = engine.recentSamples(pair.y.index);
   const n = Math.min(xs.length, ys.length);
   if (n < 2) return;
-  // Per-axis sticky power-of-two auto scale (ScopePlot2d.java:31-32,
-  // 149-163): the X axis defaults to 5, the Y axis to 0.1, each doubles to
-  // contain and halves once when the whole locus stayed inside the band. The
-  // scale persists across frames, so a small current trace stays legible.
-  let maxX = -Infinity;
-  let minX = Infinity;
-  let maxY = -Infinity;
-  let minY = Infinity;
-  for (let i = 0; i < n; i++) {
-    if (xs[i] > maxX) maxX = xs[i];
-    if (xs[i] < minX) minX = xs[i];
-    if (ys[i] > maxY) maxY = ys[i];
-    if (ys[i] < minY) minY = ys[i];
-  }
-  if (!Number.isFinite(maxX)) maxX = 0;
-  if (!Number.isFinite(minX)) minX = 0;
-  if (!Number.isFinite(maxY)) maxY = 0;
-  if (!Number.isFinite(minY)) minY = 0;
   const prev = xyScaleFor(scope.id);
-  const scale = {
-    x: nextAxisScale(prev.x, maxX, minX, axisSamplesFit(xs, prev.x, w)),
-    y: nextAxisScale(prev.y, maxY, minY, axisSamplesFit(ys, prev.y, h)),
-  };
-  setXYScale(scope.id, scale);
-  const xsTo = (v: number) => (w * (1 + v / scale.x) * 0.499) | 0;
-  const ysTo = (v: number) => (h * (1 - v / scale.y) * 0.499) | 0;
+  // Manual mode maps through each plot's manScale/manVPosition and skips the
+  // auto scale, so a hand-set X-Y scale is honoured; auto mode only grows the
+  // sticky scale (ScopePlot2d.java:149-163).
+  const m = xyMapping(
+    scope,
+    { x: pair.x.plot, y: pair.y.plot },
+    xs,
+    ys,
+    prev,
+    w,
+    h,
+  );
+  if (!m.manual) setXYScale(scope.id, { x: m.scaleX, y: m.scaleY });
+  const xsTo = m.xsTo;
+  const ysTo = m.ysTo;
 
   const entry = xyPersistenceFor(scope.id, w, h);
   const pctx = entry.ctx;

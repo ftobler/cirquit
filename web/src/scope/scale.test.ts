@@ -127,14 +127,20 @@ describe('X-Y axis scale', () => {
     expect(xyScaleFor(1)).toEqual({ x: 5, y: 0.1 });
   });
 
-  it('nextAxisScale doubles to contain and halves once when the locus fits', () => {
+  it('nextAxisScale only ever grows, matching ScopePlot2d.java:151-152', () => {
+    // A bigger peak doubles the scale.
     expect(nextAxisScale(5, 8, -8, false)).toBe(10);
-    expect(nextAxisScale(5, 3, -3, true)).toBe(2.5);
-    // A spike blocks the halving.
+    // The fit flag is ignored on the X-Y axes: a small locus keeps the old scale
+    // instead of halving back down like the 1d scope would.
+    expect(nextAxisScale(5, 3, -3, true)).toBe(5);
     expect(nextAxisScale(5, 3, -3, false)).toBe(5);
+    // A peak that already fits leaves the scale untouched.
+    expect(nextAxisScale(5, 2, -2, false)).toBe(5);
+    // A shrinking peak never pulls the scale down.
+    expect(nextAxisScale(8, 1, -1, false)).toBe(8);
   });
 
-  it('axisSamplesFit gates the halving on the reduce-range band', () => {
+  it('axisSamplesFit still measures the reduce-range band for callers', () => {
     // scale 5 over 500 px: a sample at 4 maps to ~200 px from centre, so it
     // never fits; a sample near the centre (0.1 -> ~5 px) does.
     expect(axisSamplesFit([0, 4], 5, 500)).toBe(false);
