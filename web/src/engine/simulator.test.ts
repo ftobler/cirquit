@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SimEngine, ENGINE_VERSION } from './simulator';
+import type { Simulator as WasmSimulator } from '../wasm/circuit_engine';
+import { ENGINE_TRAPPED_MESSAGE, isEngineTrapped, resetEngineTrap } from '../ui/canvas/useFrameLoop';
 import { frameStatsOf, scopePlotsToSpecs, sharedPlotElement } from './scopeModel';
 import type { Scope, ScopePlot } from './scopeModel';
 import { traceScopes, embeddedScopeOf } from '../scope/embedded';
@@ -1444,5 +1446,61 @@ describe('sharedPlotElement', () => {
   it('returns null when nothing resolves or the list is empty', () => {
     expect(sharedPlotElement([p(1, null)])).toBe(null);
     expect(sharedPlotElement([])).toBe(null);
+  });
+});
+
+describe('SimEngine reset and findDcOperatingPoint route through the trap guard', () => {
+  // The real wasm module cannot be made to trap from a test, so the facade is
+  // driven through a structural stub of the handful of methods it touches.
+  // These pin R1: a dead-engine trap must not escape reset()/findDcOperatingPoint
+  // as an uncaught RuntimeError, and must set the shared dead-engine flag so the
+  // frame loop's banner comes up instead of an unhandled rejection.
+
+  const runtimeError = (msg: string): Error => {
+    const e = new Error(msg);
+    e.name = 'RuntimeError';
+    return e;
+  };
+
+  /** Builds a SimEngine over a stubbed wasm simulator (the constructor is
+   *  private to the module, so it is reached through a cast). */
+  const stubEngine = (sim: WasmSimulator): SimEngine =>
+    new (SimEngine as unknown as new (s: WasmSimulator, kinds: Set<string>) => SimEngine)(
+      sim,
+      new Set(['resistor']),
+    );
+
+  it('reset on a trapped engine does not throw and flags the engine dead', () => {
+    resetEngineTrap();
+    const engine = stubEngine({
+      reset: () => {
+        throw runtimeError('wasm abort');
+      },
+    } as unknown as WasmSimulator);
+    expect(isEngineTrapped()).toBe(false);
+    expect(() => engine.reset()).not.toThrow();
+    expect(isEngineTrapped()).toBe(true);
+  });
+
+  it('findDcOperatingPoint on a trapped engine returns the dedicated banner', () => {
+    resetEngineTrap();
+    const engine = stubEngine({
+      findDcOperatingPoint: () => {
+        throw runtimeError('wasm abort');
+      },
+    } as unknown as WasmSimulator);
+    expect(engine.findDcOperatingPoint()).toBe(ENGINE_TRAPPED_MESSAGE);
+    expect(isEngineTrapped()).toBe(true);
+  });
+
+  it('findDcOperatingPoint returns a non-trap error message as before', () => {
+    resetEngineTrap();
+    const engine = stubEngine({
+      findDcOperatingPoint: () => {
+        throw new Error('no solution');
+      },
+    } as unknown as WasmSimulator);
+    expect(engine.findDcOperatingPoint()).toBe('no solution');
+    expect(isEngineTrapped()).toBe(false);
   });
 });

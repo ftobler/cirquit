@@ -12,6 +12,7 @@ import {
   paintedSet,
   resetEngineTrap,
   scopeDrawPayload,
+  shouldRebuild,
 } from './useFrameLoop';
 
 describe('backingStoreSize', () => {
@@ -135,6 +136,35 @@ describe('engine trap guard', () => {
     );
     // The guard keeps the opaque trap string out of the banner.
     expect(reported).toEqual([ENGINE_TRAPPED_MESSAGE]);
+  });
+});
+
+describe('shouldRebuild (refused-build retry guard)', () => {
+  // R2: a permanently-refused setCircuit (a duplicate id, a rejected stamp) must
+  // not be re-attempted every frame. The gate records the failure by revision;
+  // until `revision` advances the loop skips the rebuild and the engine keeps its
+  // previous circuit behind the error banner.
+
+  it('attempts the first build for a new revision', () => {
+    expect(shouldRebuild(-1, 5, -1, null)).toBe(true);
+  });
+
+  it('does not re-attempt a revision whose build already refused', () => {
+    // Once the refusal is recorded, every later frame for the same revision must
+    // skip setCircuit rather than call it ~60x/sec.
+    for (let frame = 0; frame < 20; frame++) {
+      expect(shouldRebuild(5, 5, 5, 'duplicate element id')).toBe(false);
+    }
+  });
+
+  it('re-attempts when a fresh revision arrives', () => {
+    expect(shouldRebuild(5, 6, 5, 'duplicate element id')).toBe(true);
+  });
+
+  it('re-attempts a previously-refused revision once the record is cleared', () => {
+    // A successful build (or a fresh document) clears the recorded error, so a
+    // real change re-attempts instead of being suppressed forever.
+    expect(shouldRebuild(5, 5, -1, null)).toBe(false);
   });
 });
 
