@@ -214,7 +214,7 @@ describe('scopeDrawPayload', () => {
         return 0.0025;
       },
     } as unknown as SimEngine;
-    const payload = scopeDrawPayload(engine, DEFAULT_SETTINGS, true);
+    const payload = scopeDrawPayload(engine, DEFAULT_SETTINGS, true, []);
     expect(reads).toBe(1);
     expect(payload).toMatchObject({
       source: engine,
@@ -224,10 +224,12 @@ describe('scopeDrawPayload', () => {
       decimalDigits: DEFAULT_SETTINGS.decimalDigits,
     });
     expect(payload?.themeColors).toBe(DEFAULT_SETTINGS);
+    // The resolver is wired so an embedded window can show element info.
+    expect(typeof payload?.elmInfo).toBe('function');
   });
 
   it('builds nothing without an engine, touching no clock', () => {
-    expect(scopeDrawPayload(null, DEFAULT_SETTINGS, false)).toBeUndefined();
+    expect(scopeDrawPayload(null, DEFAULT_SETTINGS, false, [])).toBeUndefined();
   });
 });
 

@@ -27,3 +27,20 @@ export function infoBoxLines(
   if (bad > 0) lines.push(`${bad} bad connection${bad === 1 ? '' : 's'}`);
   return lines;
 }
+
+/** Builds the Show Extended Info resolver a scope header uses: for a plotted
+ *  element id it returns that element's getInfo-style lines, the same ones the
+ *  hover box shows, so the two surfaces cannot drift. Returns null for an id
+ *  with no matching element. The docked panel, the undocked window and the
+ *  embedded 403 window all draw through `drawScope`, so they share this one
+ *  resolver rather than each re-implementing the lookup. */
+export function elmInfoResolver(
+  elements: readonly CircuitElement[],
+  engine: SimEngine | null,
+): (elementId: number) => string[] | null {
+  return (elementId: number) => {
+    const element = elements.find((e) => e.id === elementId);
+    if (!element) return null;
+    return infoLines(element.kind, element, readElementInfoValues(engine, element));
+  };
+}

@@ -28,7 +28,7 @@ import { armedHandle } from './pointerDown';
 import { backingStoreSize } from './backingStoreSize';
 import { overlayLiveState, recordBuildOnSuccess, shouldInjectLiveState } from '../../io/liveState';
 import { drawInfoBox, infoBoxX, infoBoxY } from '../../render/infoBox';
-import { infoBoxLines } from '../infoBoxLines';
+import { elmInfoResolver, infoBoxLines } from '../infoBoxLines';
 import { beginReadoutFrame, frameReadoutArrays } from '../useLiveSimReadout';
 import {
   ENGINE_TRAPPED_MESSAGE,
@@ -116,6 +116,7 @@ export function scopeDrawPayload(
   engine: SimEngine | null,
   settings: SimSettings,
   dark: boolean,
+  elements: readonly CircuitElement[],
 ): DrawContext['scopeDraw'] {
   if (engine === null) return undefined;
   return {
@@ -125,6 +126,11 @@ export function scopeDrawPayload(
     dark,
     decimalDigits: settings.decimalDigits,
     themeColors: settings,
+    // The embedded 403 window draws the plotted element's Show Extended Info
+    // line through the same `drawScope` the docked panels use, so it needs the
+    // same resolver. Built once per frame and shared by reference across every
+    // element's draw, exactly like the other payload fields.
+    elmInfo: elmInfoResolver(elements, engine),
   };
 }
 
@@ -575,7 +581,7 @@ export function useFrameLoop(
           // One draw payload per frame, hoisted out of the element loop so
           // its engine.time read stays a single wasm crossing no matter how
           // many elements draw.
-          const scopeDraw = scopeDrawPayload(engine, settings, dark);
+          const scopeDraw = scopeDrawPayload(engine, settings, dark, elements);
 
           // One selection list paints the whole frame: the frozen group while
           // a move drag is armed (paintedSelection), else the live selection.

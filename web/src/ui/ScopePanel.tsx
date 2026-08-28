@@ -33,8 +33,7 @@ import { backingStoreSize } from './canvas/backingStoreSize';
 import { ScopeMenu } from './ScopeMenu';
 import { ScopeProperties } from './ScopeProperties';
 import { SimInfoPanel } from './SimInfoPanel';
-import { infoLines } from '../render/infoBox';
-import { readElementInfoValues } from './useLiveSimReadout';
+import { elmInfoResolver } from './infoBoxLines';
 
 interface Props {
   engine: SimEngine | null;
@@ -121,17 +120,11 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
         dark,
         settings.decimalDigits,
         settings,
-        (id: number) => {
-          // The Show Extended Info header draws the plotted element's full
-          // getInfo lines, the same ones the hover box shows, so the two
-          // surfaces cannot drift. The readout comes from the engine's
-          // already pulled-back flat arrays; only kinds whose tables need
-          // per-element scope values (the transistor) pay the on-demand
-          // single-element crossing.
-          const element = elementsRef.current.find((e) => e.id === id);
-          if (!element) return null;
-          return infoLines(element.kind, element, readElementInfoValues(engine, element));
-        },
+        // The Show Extended Info header draws the plotted element's full
+        // getInfo lines, the same ones the hover box shows, so the two
+        // surfaces cannot drift. Shared with the embedded 403 window and the
+        // undocked window through one resolver.
+        elmInfoResolver(elementsRef.current, engine),
       );
     };
     raf = requestAnimationFrame(draw);
