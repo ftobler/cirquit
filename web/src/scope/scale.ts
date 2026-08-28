@@ -261,22 +261,22 @@ export function pruneXYScales(live: Iterable<number>): void {
   }
 }
 
-/** Per-axis sticky X-Y scale update (ScopePlot2d.java:149-163). Reuses the 1d
- *  auto-scale rule: double in powers of two until the frame's peak fits, then
- *  halve once when every sample stayed inside the reduce-range band. */
+/** Per-axis sticky X-Y scale update (ScopePlot2d.java:149-163). Unlike the 1d
+ *  scope, the X-Y rule only ever grows: it doubles in powers of two until the
+ *  frame's peak fits and never halves, because upstream keys it off the latest
+ *  sample and keeps the largest scale that ever contained the signal
+ *  (ScopePlot2d.java:151-152). The `fit` argument is accepted for call-site
+ *  symmetry but ignored: there is no reduce-range band on the X-Y axes. */
 export function nextAxisScale(
   prev: number,
   maxSample: number,
   minSample: number,
-  fit: boolean,
+  _fit: boolean,
 ): number {
-  return nextScaleState(
-    { gridMax: prev, showNegative: false },
-    maxSample,
-    minSample,
-    fit,
-    { maxScale: false },
-  ).gridMax;
+  let gridMax = prev;
+  const max = Math.max(Math.abs(maxSample), Math.abs(minSample));
+  while (max > gridMax) gridMax *= 2;
+  return gridMax;
 }
 
 /** The sticky X-Y modulator scales (brightness, R, G, B), keyed by scope id.

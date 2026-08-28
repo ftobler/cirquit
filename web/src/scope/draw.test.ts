@@ -33,6 +33,7 @@ import {
   xyBrightnessAlpha,
   xyColorChannel,
   xyCrossColors,
+  xyMapping,
   xyPairFor,
   type DrawablePlot,
   type PlotTransform,
@@ -1142,6 +1143,58 @@ describe('xyPairFor', () => {
   it('returns null when nothing can sample', () => {
     const scope = scopeOf([rawOnlyPlot], { plotXY: true });
     expect(xyPairFor(scope, indexById)).toBeNull();
+  });
+});
+
+describe('xyMapping', () => {
+  const px = plot(1, 'voltage');
+  const py = plot(2, 'current');
+
+  it('auto mode only grows the sticky scale, matching ScopePlot2d.java:151-152', () => {
+    // A peak that exceeds the stored scale doubles it...
+    const big = xyMapping(scopeOf([px, py], { plotXY: true }), { x: px, y: py }, [8, -8], [0.2, -0.2], { x: 5, y: 0.1 }, 200, 200);
+    expect(big.scaleX).toBe(10);
+    expect(big.scaleY).toBe(0.2);
+    expect(big.manual).toBe(false);
+    // ...and a shrinking peak never pulls the scale below the stored value.
+    const small = xyMapping(scopeOf([px, py], { plotXY: true }), { x: px, y: py }, [1, -1], [0.01, -0.01], { x: 8, y: 0.4 }, 200, 200);
+    expect(small.scaleX).toBe(8);
+    expect(small.scaleY).toBe(0.4);
+    // A peak that already fits leaves the scale untouched.
+    const fits = xyMapping(scopeOf([px, py], { plotXY: true }), { x: px, y: py }, [3, -3], [0.05, -0.05], { x: 5, y: 0.1 }, 200, 200);
+    expect(fits.scaleX).toBe(5);
+    expect(fits.scaleY).toBe(0.1);
+  });
+
+  it('manual mode ignores the samples and maps through manScale/manVPosition', () => {
+    const xManual = { ...px, manScale: 2, manVPosition: 0 };
+    const yManual = { ...py, manScale: 0.1, manVPosition: 0 };
+    const scope = scopeOf([xManual, yManual], { plotXY: true, manualScale: true });
+    // The pixel for a fixed sample must be independent of the live extremes:
+    // feeding wildly different windows yields the same mapping.
+    const wide = xyMapping(scope, { x: xManual, y: yManual }, [100, -100], [10, -10], { x: 5, y: 0.1 }, 200, 200);
+    const tiny = xyMapping(scope, { x: xManual, y: yManual }, [0.001, -0.001], [0.0001, -0.0001], { x: 5, y: 0.1 }, 200, 200);
+    expect(wide.manual).toBe(true);
+    // scaleX/scaleY are left at the stored auto values, untouched by manual mode.
+    expect(wide.scaleX).toBe(5);
+    expect(wide.scaleY).toBe(0.1);
+    // A value of 2 V maps to x = 200*0.499 + (2/2)*gridPx, gridPx = 100/4.05.
+    const gridPx = 100 / 4.05;
+    expect(wide.xsTo(2)).toBe(tiny.xsTo(2));
+    expect(wide.xsTo(2)).toBe((200 * 0.499 + (2 / 2) * gridPx) | 0);
+    expect(wide.ysTo(0.1)).toBe(tiny.ysTo(0.1));
+    expect(wide.ysTo(0.1)).toBe((200 * 0.499 - (0.1 / 0.1) * gridPx) | 0);
+  });
+
+  it('manual mode honours a non-zero vertical position offset', () => {
+    const xManual = { ...px, manScale: 2, manVPosition: 100 };
+    const yManual = { ...py, manScale: 0.1, manVPosition: -100 };
+    const scope = scopeOf([xManual, yManual], { plotXY: true, manualScale: true });
+    const gridPx = 100 / 4.05;
+    const m = xyMapping(scope, { x: xManual, y: yManual }, [0], [0], { x: 5, y: 0.1 }, 200, 200);
+    // x moves right by gridPx*divisions*100/200 = gridPx*8*0.5 = 4*gridPx.
+    expect(m.xsTo(0)).toBe((200 * 0.499 + 0 + (gridPx * 8 * 100) / 200) | 0);
+    expect(m.ysTo(0)).toBe((200 * 0.499 - 0 - (gridPx * 8 * -100) / 200) | 0);
   });
 });
 
