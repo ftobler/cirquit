@@ -1630,4 +1630,18 @@ b"/>
     expect(parsed.elements[0].params.position).toBe(1);
     expect(parsed.elements[0].params.momentary).toBe(1);
   });
+
+  it('emits the exact resistor, capacitor and scope token sequences (golden)', () => {
+    // A fixpoint check would pass for a self-consistent-but-wrong writer, so the
+    // golden token pins the exact line shape: a resistor with no extra tokens,
+    // a capacitor carrying its four FLAG_RESISTANCE tokens, and a default scope
+    // with a fixed speed, not just "contains the right substring".
+    const lines = xmlToText(SIMPLE).split('\n');
+    expect(lines).toContain('r 192 160 304 160 0 1000');
+    expect(lines).toContain('c 304 160 304 224 4 0.000001 0.5 0.001 0');
+    // The scope line pins the full token shape, including the display-flag word
+    // (4098): a writer that consistently mis-mapped `f="x2"` would still pass a
+    // fixpoint check but would emit a different flag here and be caught.
+    expect(lines).toContain('o 0 4 0 4098 10 0.05 0 1');
+  });
 });
