@@ -852,3 +852,59 @@ describe('uninterpretable plot tokens survive an edit-save cycle', () => {
     expect(useStore.getState().toNetlist()).toBe(saved);
   });
 });
+
+describe('scope-combining actions drop an orphaned Scope Properties dialog', () => {
+  // combineScopes folds bId's plots into aId and removes bId. A properties
+  // dialog pointed at bId must close, otherwise modalSurface() stays true and
+  // every keyboard shortcut is dead (the same stale-pointer family the
+  // removeScope/undo/redo/load/new fixes addressed).
+  it('combineScopes nulls scopeProperties when it pointed at the removed scope', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    const sa = useStore.getState().scopes.find((x) => x.plots[0].elementId === a)!;
+    const sb = useStore.getState().scopes.find((x) => x.plots[0].elementId === b)!;
+    useStore.getState().openScopeProperties(sb.id);
+    expect(useStore.getState().scopeProperties).toBe(sb.id);
+
+    useStore.getState().combineScopes(sa.id, sb.id);
+
+    expect(useStore.getState().scopeProperties).toBeNull();
+    expect(useStore.getState().scopes.some((x) => x.id === sb.id)).toBe(false);
+  });
+
+  // combineAllScopes folds every scope into the first, so every non-first
+  // scope id vanishes.
+  it('combineAllScopes nulls scopeProperties when it pointed at a folded scope', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    const sb = useStore.getState().scopes.find((x) => x.plots[0].elementId === b)!;
+    useStore.getState().openScopeProperties(sb.id);
+    expect(useStore.getState().scopeProperties).toBe(sb.id);
+
+    useStore.getState().combineAllScopes();
+
+    expect(useStore.getState().scopeProperties).toBeNull();
+    expect(useStore.getState().scopes.some((x) => x.id === sb.id)).toBe(false);
+  });
+
+  // separateAllScopes rebuilds every scope with fresh ids, so every original
+  // scope id vanishes.
+  it('separateAllScopes nulls scopeProperties when it pointed at a replaced scope', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    const sa = useStore.getState().scopes.find((x) => x.plots[0].elementId === a)!;
+    useStore.getState().openScopeProperties(sa.id);
+    expect(useStore.getState().scopeProperties).toBe(sa.id);
+
+    useStore.getState().separateAllScopes();
+
+    expect(useStore.getState().scopeProperties).toBeNull();
+    expect(useStore.getState().scopes.some((x) => x.id === sa.id)).toBe(false);
+  });
+});
