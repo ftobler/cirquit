@@ -236,6 +236,26 @@ describe('armed-tool ghost preview', () => {
   });
 });
 
+describe('wire-insert preview', () => {
+  it('previews seams for wire segments joined with a shared -1 id', () => {
+    // While a wire tool is dragged the run is 0, 1 or 2 segments not in
+    // `elements`; the frame loop joins them all under id -1 so each tests
+    // against the settled schematic but never against its own sibling vertex.
+    const across = el('wire', 0, 0, 160, 0);
+    const segA = { ...el('wire', 80, 0, 80, 80), id: -1 };
+    const segB = { ...el('wire', 80, 80, 160, 80), id: -1 };
+
+    const preview = dragHintPoints([across, segA, segB], [-1], [
+      { x: 80, y: 0 },
+      { x: 80, y: 80 },
+      { x: 160, y: 80 },
+    ]);
+    // The top end of segA touches the horizontal wire; its bend and the far
+    // end rest on nothing, so only that one seam marks.
+    expect(preview).toEqual([{ x: 80, y: 0, vertical: true }]);
+  });
+});
+
 describe('gesture gating', () => {
   it('arms exactly for the gestures whose posts can commit', () => {
     expect(dragHintsActive({ mode: 'none' })).toBe(false);

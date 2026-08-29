@@ -925,10 +925,44 @@ export function useFrameLoop(
               ctx.save();
               ctx.globalAlpha = GHOST_ALPHA;
               const preview = neutralDrawContext(ctx, theme, settings, view.scale);
-              for (const seg of segments) {
-                wireDef.draw(preview, { ...seg, id: -1, kind: 'wire', flags: 0, params: {} });
+              // The run's wires, rebuilt as full elements so the same scan the
+              // part previews use can test them. All share id -1: the segments
+              // are one insert, so each must test against the settled
+              // schematic, never against its own sibling vertex.
+              const segEls: CircuitElement[] = segments.map((seg) => ({
+                ...seg,
+                id: -1,
+                kind: 'wire',
+                flags: 0,
+                params: {},
+              }));
+              for (const segEl of segEls) {
+                wireDef.draw(preview, segEl);
               }
               ctx.restore();
+
+              // Drag hints for the wires being inserted: where each run meets
+              // the settled schematic, the same seam bars a part drag shows.
+              // The run is not in `elements`, so it joins the scene only for
+              // this scan, tagged -1 so it tests as the moving part.
+              ctx.strokeStyle = theme.wire;
+              ctx.lineWidth = 2 / view.scale;
+              const wireHalf = 6 / view.scale;
+              const wireMovers: Point[] = [];
+              for (const seg of segEls) {
+                wireMovers.push({ x: seg.x1, y: seg.y1 }, { x: seg.x2, y: seg.y2 });
+              }
+              for (const h of cachedDragHints([...elements, ...segEls], [-1], wireMovers)) {
+                ctx.beginPath();
+                if (h.vertical) {
+                  ctx.moveTo(h.x, h.y - wireHalf);
+                  ctx.lineTo(h.x, h.y + wireHalf);
+                } else {
+                  ctx.moveTo(h.x - wireHalf, h.y);
+                  ctx.lineTo(h.x + wireHalf, h.y);
+                }
+                ctx.stroke();
+              }
             }
           }
 
