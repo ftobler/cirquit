@@ -208,6 +208,34 @@ describe('touch hints', () => {
   });
 });
 
+describe('armed-tool ghost preview', () => {
+  it('previews the same seams a committed placement would, via a -1 ghost id', () => {
+    // While a tool is armed the ghost is not in `elements`; the frame loop
+    // joins it with id -1 and tags it the moving part, so its posts preview
+    // against the settled schematic exactly as a live placement drag does.
+    const across = el('wire', 0, 0, 160, 0);
+    const ghost = { ...el('wire', 80, 0, 80, 80), id: -1 };
+
+    const preview = dragHintPoints([across, ghost], [-1], [
+      { x: 80, y: 0 },
+      { x: 80, y: 80 },
+    ]);
+    expect(preview).toEqual([{ x: 80, y: 0, vertical: true }]);
+  });
+
+  it('does not collide with a real element id when the ghost joins the scene', () => {
+    const real = { ...el('wire', 0, 0, 80, 0), id: 1 };
+    const ghost = { ...el('wire', 80, 0, 160, 0), id: -1 };
+
+    // The ghost is the only dragged member; the real wire stays static, so
+    // their shared endpoint reads as a seam, not as the ghost meeting itself.
+    expect(dragHintPoints([real, ghost], [-1], [
+      { x: 80, y: 0 },
+      { x: 160, y: 0 },
+    ])).toEqual([{ x: 80, y: 0, vertical: true }]);
+  });
+});
+
 describe('gesture gating', () => {
   it('arms exactly for the gestures whose posts can commit', () => {
     expect(dragHintsActive({ mode: 'none' })).toBe(false);

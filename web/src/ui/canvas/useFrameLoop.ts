@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
 import type { Scope } from '../../engine/scopeModel';
 import { scopeParamsFingerprint } from '../../engine/scopeModel';
-import { defFor, toolDef } from '../../model/registry';
+import { defFor, postsOf, toolDef } from '../../model/registry';
 import { cachedBusWidths, postsForRender } from '../../model/busWidths';
 import { storedBusWidth } from '../../model/registry/elements/wire';
 import type { CircuitElement, DrawContext, Point, SimSettings } from '../../model/types';
@@ -887,6 +887,28 @@ export function useFrameLoop(
               // dead part sitting at 0 V.
               ghostDef.draw(neutralDrawContext(ctx, theme, settings, view.scale), ghost);
               ctx.restore();
+            }
+
+            // Drag hints for the armed ghost: where its posts would meet the
+            // settled schematic, the same seam bars a live placement drag
+            // shows. The preview should be as honest about connections as the
+            // committed drop would be, so a post landing on a wire or against
+            // a colinear neighbour is marked before the press. The ghost is not
+            // in `elements`, so it joins the scene only for this scan, tagged
+            // with id -1 so it tests as the moving part against the real lines.
+            ctx.strokeStyle = theme.wire;
+            ctx.lineWidth = 2 / view.scale;
+            const ghostHalf = 6 / view.scale;
+            for (const h of cachedDragHints([...elements, ghost], [-1], postsOf(ghost))) {
+              ctx.beginPath();
+              if (h.vertical) {
+                ctx.moveTo(h.x, h.y - ghostHalf);
+                ctx.lineTo(h.x, h.y + ghostHalf);
+              } else {
+                ctx.moveTo(h.x - ghostHalf, h.y);
+                ctx.lineTo(h.x + ghostHalf, h.y);
+              }
+              ctx.stroke();
             }
           }
 
