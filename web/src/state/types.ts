@@ -8,6 +8,7 @@ import type {
 } from '../engine/scopeModel';
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { FloatRect } from '../ui/floatingScopes';
+import type { ScopeDropTarget } from './scopeLayout';
 import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
 import type { ModelFamily, UserModelEntry, UserModelSnapshot } from '../model/deviceModels';
@@ -356,6 +357,12 @@ export interface AppState {
    *  cascade slot when omitted. A scope already floating is raised and keeps
    *  its rect unless a new one is given. */
   floatScope(id: number, rect?: FloatRect): void;
+  /** Drag and drop in the dock: moves a scope onto a column (stacked at its
+   *  bottom) or into a new column, renumbering every position so the file
+   *  keeps upstream's layout invariant (scopeLayout.ts). One undo entry; a
+   *  floating scope dropped on the dock docks there. A no-op drop pushes no
+   *  undo entry. */
+  moveScope(id: number, target: ScopeDropTarget): void;
   /** Puts a floating scope back in the dock. */
   dockScope(id: number): void;
   /** Moves or resizes a floating panel (already clamped by the caller). */

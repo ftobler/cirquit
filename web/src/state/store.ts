@@ -115,6 +115,7 @@ import {
   type SimSettings,
 } from '../model/types';
 import type { AppState, ScrollValuePopover, Slider, Snapshot, ViewTransform } from './types';
+import { moveScopeTo } from './scopeLayout';
 import { APP_PREF_KEYS, loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
 import { loadStoredClipboard, saveStoredClipboard } from './clipboardStorage';
 import { loadScopeDefaults } from './scopeDefaults';
@@ -2840,6 +2841,25 @@ function createAppStore() {
     // so a panel waiting for its first layout never moves when others are
     // raised or docked.
     set({ floating: [...s.floating, { id, rect: rect ?? null, slot: s.floating.length, z }] });
+  },
+
+  moveScope: (id, target) => {
+    const s = get();
+    const next = moveScopeTo(s.scopes, id, target);
+    const floating = s.floating.some((f) => f.id === id);
+    if (next === null) {
+      // The layout already says this, but a floating scope dropped there
+      // still means "put it back in the dock".
+      if (floating) s.dockScope(id);
+      return;
+    }
+    s.commit();
+    set((st) => ({
+      scopes: next,
+      floating: floating ? st.floating.filter((f) => f.id !== id) : st.floating,
+      // The list order is the engine's trace order, as for stackScope.
+      ...bumpRevision(st),
+    }));
   },
 
   dockScope: (id) => {

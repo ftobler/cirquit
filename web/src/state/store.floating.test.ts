@@ -106,4 +106,29 @@ describe('floating scope panels', () => {
       .loadNetlist('$ 1 0.000005 10 50 5 43 5e-11\nr 0 0 16 0 0 100\no 0 64 0 4099\n');
     expect(useStore.getState().floating).toEqual([]);
   });
+
+  it('a drop moves a scope as one undo step and docks a floating one', () => {
+    const [a, b] = twoScopes();
+    const depth = useStore.getState().undoStack.length;
+    useStore.getState().floatScope(b, rect);
+    useStore.getState().moveScope(b, { kind: 'stack', withId: a });
+    const st = useStore.getState();
+    expect(st.floating).toEqual([]);
+    expect(st.scopes.map((s) => [s.id, s.position])).toEqual([
+      [a, 0],
+      [b, 0],
+    ]);
+    expect(st.undoStack.length).toBe(depth + 1);
+    useStore.getState().undo();
+    expect(useStore.getState().scopes.map((s) => s.position)).toEqual([0, 1]);
+  });
+
+  it('a no-op drop pushes no undo entry, but still docks a floating scope', () => {
+    const [, b] = twoScopes();
+    useStore.getState().floatScope(b, rect);
+    const depth = useStore.getState().undoStack.length;
+    useStore.getState().moveScope(b, { kind: 'column', beforeId: null });
+    expect(useStore.getState().undoStack.length).toBe(depth);
+    expect(useStore.getState().floating).toEqual([]);
+  });
 });
