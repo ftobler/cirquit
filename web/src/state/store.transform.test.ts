@@ -394,16 +394,29 @@ describe('the selection group pivot', () => {
     expect([mt.x1, mt.y1, mt.x2, mt.y2]).toEqual([360, 0, 200, 0]);
   });
 
-  it('a lone element keeps the upstreamTurn axis, odd-length kinds included', () => {
-    // The single-element command must stay exactly what the Rotate axis
-    // finding pinned: the grid-snapped axis that holds odd-defaultLength
-    // kinds to the grid, not a turn about the exact midpoint.
+  it('four turns of a mixed-parity selection put it back exactly', () => {
+    // The owner's report: a group rotated four times came out somewhere else.
+    // A 3x2-square group is the shape whose snapped upstream axis wandered.
+    const a = addAt('resistor', 96, 96, 144, 96);
+    const b = addAt('wire', 96, 96, 96, 128);
+    useStore.getState().select([a, b]);
+    const original = useStore.getState().elements;
+
+    for (let i = 0; i < 4; i++) useStore.getState().rotateSelection();
+
+    expect(useStore.getState().elements).toEqual(original);
+  });
+
+  it('a lone odd-length element returns home after four turns', () => {
     const id = addAt('busSplitter', 80, 112, 128, 112);
     useStore.getState().select([id]);
+    const original = useStore.getState().elements[0];
 
     useStore.getState().rotateSelection();
+    expect(useStore.getState().elements[0]).toMatchObject({ x1: 112, y1: 144, x2: 112, y2: 96 });
+    for (let i = 0; i < 3; i++) useStore.getState().rotateSelection();
 
-    expect(useStore.getState().elements[0]).toMatchObject({ x1: 96, y1: 128, x2: 96, y2: 80 });
+    expect(useStore.getState().elements[0]).toEqual(original);
   });
 });
 
@@ -451,9 +464,10 @@ describe('rotate under an in-flight pointer gesture', () => {
     expect(useStore.getState().elements[0]).toEqual(original);
   });
 
-  it('a move gesture turns each element about its own midpoint, not the group', () => {
-    // Stated in the plan and worth pinning: group rotation is a separate
-    // feature, so two parts keep their own centres.
+  it('a move gesture turns the grabbed group as one body', () => {
+    // The owner's report: rotating while dragging turned each part about its
+    // own midpoint and tore the circuit apart. The group pivot is the box
+    // centre (80,80), the same one a settled rotate uses.
     const a = addResistor();
     const b = useStore.getState().addElement({
       kind: 'resistor',
@@ -471,8 +485,8 @@ describe('rotate under an in-flight pointer gesture', () => {
     useStore.getState().rotateSelection();
 
     const [ra, rb] = useStore.getState().elements;
-    expect([ra.x1, ra.y1, ra.x2, ra.y2]).toEqual([80, 80, 80, -80]);
-    expect([rb.x1, rb.y1, rb.x2, rb.y2]).toEqual([80, 240, 80, 80]);
+    expect([ra.x1, ra.y1, ra.x2, ra.y2]).toEqual([0, 160, 0, 0]);
+    expect([rb.x1, rb.y1, rb.x2, rb.y2]).toEqual([160, 160, 160, 0]);
   });
 
   it('a place gesture pins the press anchor and banks the turn count', () => {

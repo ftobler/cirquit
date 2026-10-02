@@ -273,9 +273,9 @@ export interface ElementDef {
   /** Length in grid units the part is created with, both for a toolbox drag
    *  and for a single click (`makeGhostElement`). Absent falls back to
    *  `DEFAULT_PLACEMENT_LENGTH` (4). An odd value is allowed: the
-   *  settled-selection rotate snaps its axis to the grid the way upstream
-   *  does, so a part whose half-length is not a grid step stays on the grid,
-   *  at the cost of shifting up to one square per turn (`rotateElement`). */
+   *  rotate pivot (`turnPivot`) keeps such a part on the grid by toggling it
+   *  half a square diagonally between two places, so four turns still return
+   *  it to where it started. */
   defaultLength?: number;
   /** Elements upstream forces vertical on toolbar placement (ground, voltage). */
   vertical?: boolean;

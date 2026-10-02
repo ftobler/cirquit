@@ -11,7 +11,7 @@ import {
   mirrorElement,
   rotateElement,
   selectionMirrorCentre,
-  selectionTurnPivot,
+  turnPivot,
   swapTerminalOrder,
   turnPointAbout,
 } from './transform';
@@ -166,27 +166,29 @@ describe('rotateElement', () => {
     for (const v of [r.x1, r.y1, r.x2, r.y2]) expect(Math.abs(v % 16)).toBe(0);
   });
 
-  it('keeps an odd-length part on the grid by snapping the turn axis', () => {
+  it('keeps an odd-length part on the grid and returns it home after four turns', () => {
     // A 3-grid chip (bus splitter, half adder, ROM and the rest of the
-    // odd-`defaultLength` kinds) has its midpoint half a square off the grid.
-    // Turning about that exact point put both endpoints between grid lines,
-    // where no wire can reach them; upstream snaps the flip axis first, which
-    // shifts the turned part by up to one square and keeps it on the grid.
+    // odd-`defaultLength` kinds) has its midpoint half a square off the grid,
+    // so a turn about that exact point would strand both endpoints between
+    // grid lines. turnPivot moves the pivot half a square right instead: cx
+    // 104 + 8 = 112, cy 112.
     const chip = element('busSplitter', 80, 112, 128, 112);
-    // The explicit first turn is upstream's own arithmetic: cx 104, cy 112,
-    // xmy = snapGrid(-8) = -16, then flipXY followed by flipY about 2*cy.
-    expect(rotateElement(chip)).toMatchObject({ x1: 96, y1: 128, x2: 96, y2: 80 });
+    expect(rotateElement(chip)).toMatchObject({ x1: 112, y1: 144, x2: 112, y2: 96 });
 
     let e: CircuitElement = chip;
+    const centres = new Set<string>();
     for (let turn = 1; turn <= 4; turn++) {
       e = rotateElement(e);
       for (const v of [e.x1, e.y1, e.x2, e.y2]) {
         expect(Math.abs(v % 16), `turn ${turn}: ${e.x1},${e.y1} ${e.x2},${e.y2}`).toBe(0);
       }
-      // A rigid turn: the span keeps its length, whatever the axis snap did to
-      // the part's position.
       expect(Math.hypot(e.x2 - e.x1, e.y2 - e.y1)).toBe(48);
+      centres.add(`${(e.x1 + e.x2) / 2},${(e.y1 + e.y2) / 2}`);
     }
+    // The owner's bug: upstream's snapped axis walked the part a square per
+    // turn. Here it toggles between two places and four turns are identity.
+    expect(centres.size).toBe(2);
+    expect(e).toEqual(chip);
   });
 
   it('leaves an even-length part exactly where the midpoint turn put it', () => {
@@ -765,48 +767,61 @@ describe('selection group pivot', () => {
   const r1 = element('resistor', 100, 100, 164, 100);
   const r2 = element('resistor', 100, 132, 164, 132);
 
-  it('derives no shared pivot for an empty or single-element selection', () => {
-    // The lone-element command stays `upstreamTurn`, whose grid-snapped axis
-    // shift for odd-defaultLength kinds is documented deliberate behaviour.
-    expect(selectionTurnPivot([])).toBeUndefined();
-    expect(selectionTurnPivot([r1])).toBeUndefined();
+  it('derives no shared mirror centre for an empty or single-element selection', () => {
+    expect(turnPivot([])).toBeUndefined();
     expect(selectionMirrorCentre([])).toBeUndefined();
     expect(selectionMirrorCentre([r1])).toBeUndefined();
   });
 
-  it('walks the selection bounding box once, truncating like Java integer division', () => {
-    // Upstream prepareFlip: min and max over both endpoints of every selected
-    // element, then (min+max)/2 as an int. This pair spans x 0..163 and
-    // y 0..33, so the centres are 81 and 16, not 81.5 and 16.5; rounding
-    // instead of truncating would drift every odd-span selection by a square.
-    const pair = [element('wire', 0, 0, 163, 0), element('wire', 0, 33, 160, 33)];
-    expect(selectionMirrorCentre(pair)).toBe(81);
-    // The turn pivot encodes the snapped axis (x - y = snapGrid(81 - 16) = 64)
-    // and the doubled centre (x + y = 2*cy + xmy): (16 + 64, 16).
-    expect(selectionTurnPivot(pair)).toEqual({ x: 80, y: 16 });
+  it('turns about the exact box centre when width and height share parity', () => {
+    // 4x2 squares: the centre is a grid point. 3x1: a grid-cell centre. Both
+    // map the grid onto itself, so the group turns in place.
+    expect(turnPivot([r1, r2])).toEqual({ x: 132, y: 116 });
+    expect(turnPivot([element('wire', 0, 0, 48, 0), element('wire', 0, 16, 48, 16)])).toEqual({ x: 24, y: 8 });
   });
 
-  it('truncates a negative-span bounding box toward zero, as Java division does', () => {
-    // The pair spans x -163..0 and y -133..0, so both centres divide an odd
-    // negative sum: truncation gives -81 and -66, where a Math.floor
-    // regression would answer -82 and -67.
+  it('moves the pivot half a square along x when the parities differ', () => {
+    // Odd width: right. Odd height: left. The asymmetry is what closes the
+    // four-turn cycle, see turnPivot.
+    expect(turnPivot([element('wire', 0, 0, 48, 0)])).toEqual({ x: 32, y: 0 });
+    expect(turnPivot([element('wire', 0, 0, 0, 48)])).toEqual({ x: -8, y: 24 });
+  });
+
+  it('walks the selection bounding box once for the mirror, truncating like Java integer division', () => {
+    // Upstream prepareFlip: min and max over both endpoints of every selected
+    // element, then (min+max)/2 as an int. This pair spans x 0..163, so the
+    // centre is 81, not 81.5; rounding instead of truncating would drift
+    // every odd-span selection by a square.
+    const pair = [element('wire', 0, 0, 163, 0), element('wire', 0, 33, 160, 33)];
+    expect(selectionMirrorCentre(pair)).toBe(81);
+  });
+
+  it('truncates a negative-span mirror centre toward zero, as Java division does', () => {
+    // Truncation gives -81 where a Math.floor regression would answer -82.
     const pair = [element('wire', -163, 0, 0, 0), element('wire', 0, -133, 0, 0)];
     expect(selectionMirrorCentre(pair)).toBe(-81);
-    // The snapped axis is snapGrid(-81 + 66) = -16, so the pivot is
-    // (-66 - 16, -66); turning about it reproduces upstream's composed flips.
-    expect(selectionTurnPivot(pair)).toEqual({ x: -82, y: -66 });
-    const turned = rotateElement(pair[0], selectionTurnPivot(pair)!);
-    // Cross-checked against CommandManager.rotate by hand: center2 = -132,
-    // xmy = -16, so (x,y) lands on (y - 16, -148 - x).
-    expect([turned.x1, turned.y1]).toEqual([-16, 15]);
-    expect([turned.x2, turned.y2]).toEqual([-16, -148]);
+  });
+
+  it('turns a mixed-parity group rigidly and returns it home after four turns', () => {
+    // A 3x2-square group (a resistor and a wire hanging off its left end):
+    // the shape that wandered a square per turn under the snapped axis.
+    let group = [element('resistor', 0, 0, 48, 0), element('wire', 0, 0, 0, 32)];
+    const original = group;
+    for (let turn = 1; turn <= 4; turn++) {
+      const pivot = turnPivot(group)!;
+      group = group.map((e) => rotateElement(e, pivot));
+      // The shared joint survives every turn: the group is never torn apart.
+      expect([group[0].x1, group[0].y1]).toEqual([group[1].x1, group[1].y1]);
+      for (const e of group) for (const v of [e.x1, e.y1, e.x2, e.y2]) expect(Math.abs(v % 16)).toBe(0);
+    }
+    expect(group).toEqual(original);
   });
 
   it('turns the stacked pair rigidly to the upstream coordinates', () => {
     // CommandManager.rotate on this exact pair puts R1 at x=116 and R2 at
     // x=148; the invariant form is the 32-unit column gap with no coordinate
     // shared between the elements.
-    const pivot = selectionTurnPivot([r1, r2])!;
+    const pivot = turnPivot([r1, r2])!;
     const t1 = rotateElement(r1, pivot);
     const t2 = rotateElement(r2, pivot);
     expect([t1.x1, t1.y1, t1.x2, t1.y2]).toEqual([116, 148, 116, 84]);
@@ -826,7 +841,7 @@ describe('selection group pivot', () => {
     // the shared pivot, and all three centroid distances must survive
     // exactly. The squared distances are integers, so toBe is exact.
     const arms = [element('wire', 0, 0, 160, 0), element('wire', 0, 0, 0, 160), element('wire', 160, 0, 320, 160)];
-    const pivot = selectionTurnPivot(arms)!;
+    const pivot = turnPivot(arms)!;
     expect(pivot).toEqual({ x: 160, y: 80 });
     const centroid = (e: CircuitElement) => ({ x: (e.x1 + e.x2) / 2, y: (e.y1 + e.y2) / 2 });
     const sq = (p: Point, q: Point) => (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
@@ -845,7 +860,7 @@ describe('selection group pivot', () => {
       ...element('switch2', 0, 160, 160, 160, 0, { position: 1, throwCount: 2 }),
       state: 1,
     };
-    const pivot = selectionTurnPivot([element('resistor', 0, 0, 160, 0), sw])!;
+    const pivot = turnPivot([element('resistor', 0, 0, 160, 0), sw])!;
     const turned = rotateElement(sw, pivot);
     expect(turned.state).toBe(1);
     expect(turned.params.position).toBe(1);

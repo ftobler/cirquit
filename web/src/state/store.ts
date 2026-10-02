@@ -45,7 +45,7 @@ import {
   mirrorElement,
   rotateElement,
   selectionMirrorCentre,
-  selectionTurnPivot,
+  turnPivot,
   swapTerminalOrder,
   switch2PosCount,
 } from '../model/transform';
@@ -1423,19 +1423,19 @@ function createAppStore() {
     }
     // Nothing grabbed: the settled-selection command, one undo entry.
     if (gesture === null) {
-      // One pivot for the whole selection: upstream walks the bounding box
-      // once and turns every part about it (CommandManager.prepareFlip,
-      // CommandManager.java:385-405, rotate :419-431), so a multi-select
-      // comes out rigid. A lone element keeps upstreamTurn: its grid-snapped
-      // axis is what holds odd-defaultLength kinds to the grid.
-      const pivot = selectionTurnPivot(selectedElements());
-      transformSelected(canRotate, pivot ? (e) => rotateElement(e, pivot) : rotateElement);
+      // One pivot for the whole selection, so a multi-select comes out rigid
+      // and four turns close the cycle (see turnPivot).
+      const pivot = turnPivot(selectedElements());
+      transformSelected(canRotate, (e) => rotateElement(e, pivot));
       return;
     }
     if (gesture.kind === 'move') {
       // The pointer-down commit is this drag's whole baseline, so the turn
       // rides along with it: one Ctrl+Z undoes the move and the turns together.
-      transformSelected(canRotate, rotateElement, true);
+      // The grabbed group turns as one body, like a settled one: a per-part
+      // pivot would tear every wire between the parts apart.
+      const pivot = turnPivot(selectedElements());
+      transformSelected(canRotate, (e) => rotateElement(e, pivot), true);
       return;
     }
     // A placement turns about its own (x1,y1), which is the press anchor: the

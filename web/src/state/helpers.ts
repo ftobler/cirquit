@@ -123,9 +123,9 @@ export function makeToolElement(tool: string, x1: number, y1: number, x2: number
  *  in the bundled corpus, because `L/2` is the settled-selection rotate's
  *  pivot and a part whose half-length lands on the grid turns in place:
  *  64/2 = 32 = 2*GRID_SIZE, while 48/2 = 24 is not a multiple of 16. An odd
- *  length still stays on the grid (`rotateElement` snaps the turn axis, as
- *  upstream does), but it shifts up to one square per turn, which the default
- *  has no reason to pay. `renderToolIcon` needs the same fallback for its own
+ *  length still stays on the grid (`turnPivot` shifts the turn half a square),
+ *  but it toggles between two places as it turns, which the default has no
+ *  reason to pay. `renderToolIcon` needs the same fallback for its own
  *  reasons, so both read this constant and cannot drift apart. */
 export const DEFAULT_PLACEMENT_LENGTH = 4;
 

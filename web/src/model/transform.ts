@@ -93,47 +93,11 @@ function flipSwitch2(e: CircuitElement): CircuitElement {
   };
 }
 
-/** Upstream's grid snap, `(v + gridSize/2 - 1) & ~(gridSize - 1)`
- *  (UIManager.java:989-991, CirSim.java:536-538). It floors rather than
- *  rounds, so an exact half square lands on the lower grid line and a negative
- *  coordinate snaps the same way; `state/helpers.ts`'s `snap` rounds instead,
- *  which is what a cursor wants but would not reproduce this axis. */
-function snapGrid(v: number): number {
-  return Math.floor((v + GRID_SIZE / 2 - 1) / GRID_SIZE) * GRID_SIZE;
-}
-
-/**
- * The quarter turn a settled selection gets: upstream's rotate, a diagonal
- * flip about the snapped axis `x - y = xmy` followed by a vertical flip about
- * the element's centre line (CommandManager.java:419-431, `flipXY` then
- * `flipY`, CircuitElm.java:688-703). Composed, the two are exactly the turn
- * `turnPointAbout` performs about the element's midpoint, with one difference
- * that is the whole point of doing it this way: the axis is snapped to the
- * grid first.
- *
- * That snap is what keeps an odd-length part on the grid. A 3-grid chip or the
- * 9-grid three-phase motor has its midpoint half a square off the grid, and a
- * turn about that point lands both endpoints between grid lines, where no wire
- * can reach them. Snapping the axis translates the turned part by up to one
- * grid square instead, which is what upstream does and what the placement
- * kinds with odd `defaultLength` need. For an even-length part the snap is
- * identity and the result is bit-for-bit the old midpoint turn.
- *
- * The centres truncate because Java's integer division does (`(minx+maxx)/2`),
- * and both flips read the truncated value.
- */
-function upstreamTurn(e: CircuitElement): (p: Point) => Point {
-  const cx = Math.trunc((e.x1 + e.x2) / 2);
-  const cy = Math.trunc((e.y1 + e.y2) / 2);
-  const xmy = snapGrid(cx - cy);
-  return (p) => ({ x: p.y + xmy, y: 2 * cy - (p.x - xmy) });
-}
-
-/** The prepareFlip walk (CommandManager.java:385-405): min and max over both
- *  endpoints of every selected element, then one centre per axis. The centres
- *  truncate because Java's integer division does, and rounding here instead
- *  would drift every odd-span selection by a grid square. */
-function flipCentres(selected: CircuitElement[]): { cx: number; cy: number } {
+/** Min and max over both endpoints of every element. Endpoints only, not
+ *  drawn bodies: a rigid turn carries every body along with its endpoints, so
+ *  this box turns rigidly too and the pivot rule sees the same shape, turned,
+ *  every quarter. */
+function endpointBox(selected: CircuitElement[]): { minx: number; maxx: number; miny: number; maxy: number } {
   let minx = Infinity;
   let maxx = -Infinity;
   let miny = Infinity;
@@ -144,35 +108,52 @@ function flipCentres(selected: CircuitElement[]): { cx: number; cy: number } {
     miny = Math.min(e.y1, e.y2, miny);
     maxy = Math.max(e.y1, e.y2, maxy);
   }
-  return { cx: Math.trunc((minx + maxx) / 2), cy: Math.trunc((miny + maxy) / 2) };
+  return { minx, maxx, miny, maxy };
 }
 
 /**
- * One shared pivot for a whole selection's quarter turn. Upstream computes a
- * single pivot from the selection bounding box and turns every part about it
- * (prepareFlip plus CommandManager.java:419-431), so a multi-select comes out
- * as a rigid body instead of each part circling its own midpoint and
- * scrambling the group. The returned point is exactly the one that makes
- * `turnPointAbout(p, pivot, 1)` reproduce upstream's composed
- * flipXY-then-flipY: its `x - y` is the snapped axis `snapGrid(cx - cy)` and
- * its `x + y` is `2*cy + xmy`.
+ * The pivot a settled quarter turn uses, for one element or a whole
+ * selection. Every selected part turns about this one point, so a group comes
+ * out as a rigid body, and four turns return it exactly to where it started.
  *
- * Undefined for fewer than two elements on purpose: the single-element
- * command keeps `upstreamTurn`, whose axis shift for odd-defaultLength kinds
- * is deliberate (c8912da: the snapped axis is what holds such a part to the
- * grid, at the cost of drifting up to one square per turn).
+ * A quarter turn maps grid points to grid points only when the pivot is a grid
+ * point or a grid-cell centre. The box centre is one of those when the box's
+ * width and height (in grid squares) share parity, and then it is the pivot:
+ * the part turns in place. When they differ (a 3x0 chip, a 1x2 group) the
+ * centre sits half a square off on one axis only and no grid-preserving turn
+ * in place exists. The pivot then moves half a square along x, right when the
+ * odd side is the width and left when it is the height. That choice is what
+ * closes the cycle: the first turn moves the box centre by (+1/2, +1/2)
+ * squares and the second by (-1/2, -1/2), so the group toggles between two
+ * neighbouring places instead of walking away. Upstream snaps its turn axis
+ * instead (CommandManager.java:385-431), which keeps parts on the grid but
+ * lets them wander a square per turn; the owner asked for the stable cycle.
  */
-export function selectionTurnPivot(selected: CircuitElement[]): Point | undefined {
-  if (selected.length < 2) return undefined;
-  const { cx, cy } = flipCentres(selected);
-  const xmy = snapGrid(cx - cy);
-  return { x: cy + xmy, y: cy };
+export function turnPivot(selected: CircuitElement[]): Point | undefined {
+  if (selected.length === 0) return undefined;
+  const { minx, maxx, miny, maxy } = endpointBox(selected);
+  const cx = (minx + maxx) / 2;
+  const cy = (miny + maxy) / 2;
+  const w = Math.round((maxx - minx) / GRID_SIZE);
+  const h = Math.round((maxy - miny) / GRID_SIZE);
+  if ((w - h) % 2 === 0) return { x: cx, y: cy };
+  const half = GRID_SIZE / 2;
+  return { x: w % 2 !== 0 ? cx + half : cx - half, y: cy };
+}
+
+/** The prepareFlip walk (CommandManager.java:385-405): one centre per axis of
+ *  the endpoint box. The centres truncate because Java's integer division
+ *  does, and rounding here instead would drift every odd-span selection by a
+ *  grid square. */
+function flipCentres(selected: CircuitElement[]): { cx: number; cy: number } {
+  const { minx, maxx, miny, maxy } = endpointBox(selected);
+  return { cx: Math.trunc((minx + maxx) / 2), cy: Math.trunc((miny + maxy) / 2) };
 }
 
 /**
  * One shared axis for a whole selection's mirror: the bounding box centre
  * upstream's mirror command reflects every selected part across
- * (CommandManager.java:408-417), truncated like the turn's, so the group
+ * (CommandManager.java:408-417), truncated as Java's division is, so the group
  * mirrors as a body instead of each part folding about its own centre.
  * Undefined for fewer than two elements, leaving the single-element command
  * exactly as it was.
@@ -214,28 +195,24 @@ const withoutRoute = (e: CircuitElement): CircuitElement => {
 };
 
 /**
- * A 90 degree turn. With no pivot it is upstream's rotate about the element's
- * own snapped axis (`upstreamTurn`), the settled-selection command. A
- * placement drag passes its press anchor as the pivot instead, so Space turns
- * the part about the point the user pressed on rather than dragging that
- * anchor away from under the cursor; that path stays on the exact
- * `turnPointAbout`, which is already grid-exact because the anchor is a
- * snapped grid point.
+ * A 90 degree turn. With no pivot it turns about the element's own
+ * `turnPivot`; a selection passes the shared `turnPivot` of all its parts. A
+ * placement drag passes its press anchor instead, so Space turns the part
+ * about the point the user pressed on rather than dragging that anchor away
+ * from under the cursor.
  *
  * `rotateFlags` is pivot-independent: its vertical test reads the pre-turn
- * endpoints. The pivot path's arithmetic is exact for grid-aligned input, but
- * an element whose endpoints have mismatched parity (e.g. from a hand-edited
- * netlist) would land on half coordinates, so `turnPointAbout` rounds to keep
- * the store invariant "every stored endpoint is an integer" intact. For
+ * endpoints. The arithmetic is exact for grid-aligned input, but an element
+ * whose endpoints have mismatched parity (e.g. from a hand-edited netlist)
+ * would land on half coordinates, so `turnPointAbout` rounds to keep the
+ * store invariant "every stored endpoint is an integer" intact. For
  * grid-aligned input the rounding is identity.
  */
 export function rotateElement(e: CircuitElement, pivot?: Point): CircuitElement {
   if (!canRotate(e)) return e;
-  const turn = pivot
-    ? (p: Point) => turnPointAbout(p, pivot, 1)
-    : upstreamTurn(e);
-  const p1 = turn({ x: e.x1, y: e.y1 });
-  const p2 = turn({ x: e.x2, y: e.y2 });
+  const about = pivot ?? turnPivot([e])!;
+  const p1 = turnPointAbout({ x: e.x1, y: e.y1 }, about, 1);
+  const p2 = turnPointAbout({ x: e.x2, y: e.y2 }, about, 1);
   const base = {
     ...withoutRoute(e),
     x1: p1.x,
