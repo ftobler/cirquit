@@ -2,6 +2,9 @@ import {
   calcLeads,
   canvasFont,
   circle,
+  dsign,
+  elementLength,
+  endpoints,
   interp,
   label,
   lead,
@@ -9,7 +12,7 @@ import {
 } from '../../../render/draw';
 import { PROBE_CIRCLE, PROBE_SHOW_VOLTAGE } from '../flags';
 import { meterCaption, readParams, twoPosts, writeParams, bodyBox } from '../shared';
-import type { ElementDef } from '../../types';
+import type { ElementDef, Point } from '../../types';
 
 export const PROBE_DEF: ElementDef = {
   kind: 'probe',
@@ -18,6 +21,12 @@ export const PROBE_DEF: ElementDef = {
   dumpCode: 'p',
   postCount: 2,
   posts: twoPosts,
+  // Post 0 is the positive lead (the reading is v0 - v1). Upstream drops the
+  // part horizontally, which puts + on the left and, after one turn, on the
+  // bottom; users read that as upside down. A click places it vertically with
+  // + on top instead. Only the placement changes: the stored segment and the
+  // file format are upstream's.
+  vertical: true,
   defaultFlags: PROBE_SHOW_VOLTAGE | PROBE_CIRCLE,  // ProbeElm.java:52
   defaults: { meter: 0, scale: 0, resistance: 1e7 },  // ProbeElm.java:53-54
   parse: (t, e) => {
@@ -65,6 +74,16 @@ export const PROBE_DEF: ElementDef = {
     g.ctx.textAlign = 'center';
     g.ctx.textBaseline = 'middle';
     g.ctx.fillText('V', mid.x, mid.y);
+    // Plus mark beside the post-0 lead, just outside the circle and off the
+    // axis by dsign (ProbeElm.java:224-230, the ammeter's same mark). Without
+    // it the polarity is invisible and a turned meter reads backwards.
+    const [p1, p2] = endpoints(e);
+    const dn = elementLength(e);
+    if (dn > 0) {
+      const plus = probePlusPoint(p1, p2, dn);
+      g.ctx.font = canvasFont(12);
+      g.ctx.fillText('+', plus.x, plus.y);
+    }
     // The label shows the selected meter reading with its per-mode unit, the
     // draw switch upstream shares with the test point (ProbeElm.java:183-218);
     // for TP_VOL the engine's value is that differential anyway. The editor
@@ -75,3 +94,9 @@ export const PROBE_DEF: ElementDef = {
     label(g, e, meterCaption(meter, g.value, g.valueDigits), 18);
   },
 };
+
+/** Where the probe's + mark sits: on the post-0 side, 4 units clear of the
+ *  24-unit circle and 10 units off the axis on the dsign side. */
+export function probePlusPoint(p1: Point, p2: Point, dn: number): Point {
+  return interp(p1, p2, 0.5 - 16 / dn, -10 * dsign(p1, p2));
+}

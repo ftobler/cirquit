@@ -277,7 +277,8 @@ export interface ElementDef {
    *  half a square diagonally between two places, so four turns still return
    *  it to where it started. */
   defaultLength?: number;
-  /** Elements upstream forces vertical on toolbar placement (ground, voltage). */
+  /** Elements placed vertically on a toolbar click: upstream's ground and
+   *  voltage sources, plus the port's voltmeter (positive lead on top). */
   vertical?: boolean;
   /** Elements whose placement drag snaps to the dominant axis, so a
    *  transistor, op-amp or SPDT can never be drawn diagonal. */
