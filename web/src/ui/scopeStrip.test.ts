@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { Scope } from '../engine/scopeModel';
 import {
   DEFAULT_STRIP_HEIGHT,
+  dockedScopes,
   MIN_STRIP_HEIGHT,
   SCOPE_STRIP_STORAGE_KEY,
   clampStripHeight,
@@ -60,5 +62,15 @@ describe('scope strip height', () => {
     };
     expect(loadStripHeight(throwing)).toBe(DEFAULT_STRIP_HEIGHT);
     expect(() => saveStripHeight(200, throwing)).not.toThrow();
+  });
+});
+
+describe('dock membership', () => {
+  const scopes = [{ id: 1 }, { id: 2 }, { id: 3 }] as Scope[];
+
+  it('draws every scope not floating, in panel order', () => {
+    expect(dockedScopes(scopes, []).map((s) => s.id)).toEqual([1, 2, 3]);
+    expect(dockedScopes(scopes, [{ id: 2 }]).map((s) => s.id)).toEqual([1, 3]);
+    expect(dockedScopes(scopes, [{ id: 3 }, { id: 1 }, { id: 2 }])).toEqual([]);
   });
 });

@@ -1061,8 +1061,9 @@ export function useFrameLoop(
           // none. Hovering an element swaps the `t =` / `time step =` stats for
           // its getInfo-style readout, read from the same per-frame arrays the
           // live sim readout uses. Drawn after restore so the view transform
-          // cannot move it.
-          if (scopes.length === 0) {
+          // cannot move it. With every scope floating the strip is gone, so
+          // this fallback draws again.
+          if (!scopes.some((x) => !state.floating.some((f) => f.id === x.id))) {
             const boxLines = infoBoxLines(hoveredId, elements, engine, settings);
             drawInfoBox(
               ctx,

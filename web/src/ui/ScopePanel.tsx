@@ -40,13 +40,32 @@ import {
   clampStripHeight,
   loadStripHeight,
   saveStripHeight,
+  dockedScopes,
 } from './scopeStrip';
+import {
+  clampFloatRect,
+  defaultFloatRect,
+  movedRect,
+  resizedRect,
+  type Bounds,
+  type FloatRect,
+} from './floatingScopes';
 
 interface Props {
   engine: SimEngine | null;
 }
 
-function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: Scope }) {
+function ScopeTraceCanvas({
+  engine,
+  scope,
+  floating = false,
+}: {
+  engine: SimEngine | null;
+  scope: Scope;
+  /** A floating panel carries its own title bar with dock and close, so the
+   *  corner buttons are for the dock only. */
+  floating?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cursorRef = useRef<ScopeCursor>(emptyCursor());
   // Whether the pointer press landed on the settings wheel. Only a press that
@@ -347,19 +366,37 @@ function ScopeTraceCanvas({ engine, scope }: { engine: SimEngine | null; scope: 
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
+        // A capture lost without a pointerup must still end a plot-Y drag,
+        // or its gesture flag would merge later edits into one undo entry.
+        onLostPointerCapture={() => {
+          if (dragPointerIdRef.current !== null) endPointerInteraction();
+        }}
         onPointerLeave={onPointerLeave}
         onWheel={onWheel}
         onContextMenu={onContextMenu}
       />
-      <button
-        type="button"
-        className="scope-close"
-        aria-label="Remove scope"
-        onClick={() => useStore.getState().removeScope(scope.id)}
-        title="Remove scope"
-      >
-        ×
-      </button>
+      {!floating && (
+        <>
+          <button
+            type="button"
+            className="scope-undock"
+            aria-label="Float scope"
+            onClick={() => useStore.getState().floatScope(scope.id)}
+            title="Float over the schematic"
+          >
+            ⧉
+          </button>
+          <button
+            type="button"
+            className="scope-close"
+            aria-label="Remove scope"
+            onClick={() => useStore.getState().removeScope(scope.id)}
+            title="Remove scope"
+          >
+            ×
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -448,8 +485,190 @@ function StripResizeHandle({
   );
 }
 
+/** What a floating panel's title bar reads: the scope label, or the name the
+ *  element context menu uses for it. */
+function floatTitle(scopes: Scope[], scope: Scope): string {
+  const label = scope.label.trim();
+  return label !== '' ? label : `Scope ${scopes.indexOf(scope) + 1}`;
+}
+
+/** An in-progress title-bar move or corner resize. */
+interface FloatDrag {
+  pointerId: number;
+  mode: 'move' | 'resize';
+  startX: number;
+  startY: number;
+  start: FloatRect;
+}
+
+/**
+ * One scope floating over the schematic: a title bar to drag it by (a
+ * double-click docks it), dock and close buttons, the trace canvas, and a
+ * grip in the bottom-right corner to resize it. Pressing anywhere on the
+ * panel raises it. Moves update the store directly; none of it is an edit.
+ */
+function FloatingScope({
+  engine,
+  scope,
+  title,
+  rect,
+  z,
+  bounds,
+}: {
+  engine: SimEngine | null;
+  scope: Scope;
+  title: string;
+  rect: FloatRect;
+  z: number;
+  bounds: () => Bounds;
+}) {
+  const dragRef = useRef<FloatDrag | null>(null);
+  const begin = (mode: FloatDrag['mode']) => (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    // A press on a title-bar button is a click, not a drag.
+    if (e.target instanceof Element && e.target.closest('button')) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { pointerId: e.pointerId, mode, startX: e.clientX, startY: e.clientY, start: rect };
+  };
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    const next =
+      drag.mode === 'move'
+        ? movedRect(drag.start, dx, dy, bounds())
+        : resizedRect(drag.start, dx, dy, bounds());
+    useStore.getState().setFloatRect(scope.id, next);
+  };
+  const end = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+  const handlers = (mode: FloatDrag['mode']) => ({
+    onPointerDown: begin(mode),
+    onPointerMove: onMove,
+    onPointerUp: end,
+    onPointerCancel: end,
+    // A capture lost without a pointerup (window blur) must end the drag,
+    // or a later plain hover would keep moving the panel.
+    onLostPointerCapture: end,
+  });
+  return (
+    <section
+      className="scope-float"
+      aria-label={title}
+      // Stacking is a z-index, never DOM order: moving the node would drop
+      // the pointer capture a drag took in this very press.
+      style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: z }}
+      onPointerDownCapture={() => useStore.getState().raiseFloatingScope(scope.id)}
+    >
+      <div
+        className="scope-float-title"
+        {...handlers('move')}
+        onDoubleClick={() => useStore.getState().dockScope(scope.id)}
+        title="Drag to move, double-click to dock"
+      >
+        <span className="scope-float-name">{title}</span>
+        <button
+          type="button"
+          aria-label="Scope properties"
+          title="Properties"
+          onClick={() => useStore.getState().openScopeProperties(scope.id)}
+        >
+          ⚙
+        </button>
+        <button
+          type="button"
+          aria-label="Dock scope"
+          title="Dock"
+          onClick={() => useStore.getState().dockScope(scope.id)}
+        >
+          ⤓
+        </button>
+        <button
+          type="button"
+          aria-label="Remove scope"
+          title="Remove scope"
+          onClick={() => useStore.getState().removeScope(scope.id)}
+        >
+          ×
+        </button>
+      </div>
+      {/* A float or dock remounts the canvas, which resets an X-Y scope's
+          persistence trail and autoscale: display caches keyed to the
+          canvas, rebuilt within a sweep. */}
+      <ScopeTraceCanvas engine={engine} scope={scope} floating />
+      <div className="scope-float-grip" aria-hidden="true" {...handlers('resize')} />
+    </section>
+  );
+}
+
+/**
+ * The layer the floating panels live in: it covers the centre area (the
+ * schematic and the dock) without taking pointer input itself, so the
+ * schematic underneath stays fully usable between panels. Its size is the
+ * bounds every panel is clamped to, so a shrinking window pulls panels back
+ * in rather than losing them off the edge.
+ */
+function FloatingScopeLayer({ engine }: { engine: SimEngine | null }) {
+  const scopes = useStore((s) => s.scopes);
+  const floating = useStore((s) => s.floating);
+  const layerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<Bounds>({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = layerRef.current;
+    if (!el) return;
+    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const bounds = useCallback(
+    () => ({ w: layerRef.current?.clientWidth ?? 0, h: layerRef.current?.clientHeight ?? 0 }),
+    [],
+  );
+  // A panel floated without a rect is placed at its cascade slot as soon as
+  // the layer has a size, and the rect is stored, so it never slides when
+  // the window resizes or other panels come and go.
+  useEffect(() => {
+    if (size.w <= 0 || size.h <= 0) return;
+    for (const f of floating) {
+      if (f.rect === null) useStore.getState().setFloatRect(f.id, defaultFloatRect(f.slot, size));
+    }
+  }, [floating, size]);
+  return (
+    <div ref={layerRef} className="scope-float-layer">
+      {floating.map((f) => {
+        const scope = scopes.find((x) => x.id === f.id);
+        // A removed scope's entry lingers harmlessly (undo can bring the
+        // scope back, still floating) and draws nothing meanwhile.
+        if (!scope) return null;
+        return (
+          <FloatingScope
+            key={f.id}
+            engine={engine}
+            scope={scope}
+            title={floatTitle(scopes, scope)}
+            rect={f.rect ? clampFloatRect(f.rect, size) : defaultFloatRect(f.slot, size)}
+            z={f.z}
+            bounds={bounds}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export function ScopePanel({ engine }: Props) {
   const scopes = useStore((s) => s.scopes);
+  const floating = useStore((s) => s.floating);
   const elements = useStore((s) => s.elements);
   const scopeProperties = useStore((s) => s.scopeProperties);
   const closeScopeProperties = useStore((s) => s.closeScopeProperties);
@@ -469,32 +688,38 @@ export function ScopePanel({ engine }: Props) {
 
   if (scopes.length === 0) return null;
 
+  // Floating scopes draw in their own panels over the schematic; the dock
+  // shows the rest, and folds away entirely once every scope floats.
+  const docked = dockedScopes(scopes, floating);
   // Group panels by stacking position; each position is one flex column.
-  const positions = [...new Set(scopes.map((x) => x.position))].sort((a, b) => a - b);
+  const positions = [...new Set(docked.map((x) => x.position))].sort((a, b) => a - b);
 
   return (
     <>
-      {/* The stored height can exceed a window shrunk since; the CSS
-          max-height keeps the schematic visible without rewriting it. */}
-      <div ref={stripRef} className="bottom-strip" style={{ height: stripHeight }}>
-        <StripResizeHandle
-          height={stripHeight}
-          onResize={resizeStrip}
-          available={availableHeight}
-        />
-        <div className="scopes">
-          {positions.map((pos) => (
-            <div key={pos} className="scope-col">
-              {scopes
-                .filter((x) => x.position === pos)
-                .map((scope) => (
-                  <ScopeTraceCanvas key={scope.id} engine={engine} scope={scope} />
-                ))}
-            </div>
-          ))}
+      {docked.length > 0 && (
+        // The stored height can exceed a window shrunk since; the CSS
+        // max-height keeps the schematic visible without rewriting it.
+        <div ref={stripRef} className="bottom-strip" style={{ height: stripHeight }}>
+          <StripResizeHandle
+            height={stripHeight}
+            onResize={resizeStrip}
+            available={availableHeight}
+          />
+          <div className="scopes">
+            {positions.map((pos) => (
+              <div key={pos} className="scope-col">
+                {docked
+                  .filter((x) => x.position === pos)
+                  .map((scope) => (
+                    <ScopeTraceCanvas key={scope.id} engine={engine} scope={scope} />
+                  ))}
+              </div>
+            ))}
+          </div>
+          <SimInfoPanel engine={engine} />
         </div>
-        <SimInfoPanel engine={engine} />
-      </div>
+      )}
+      <FloatingScopeLayer engine={engine} />
       <ScopeMenu engine={engine} nameOf={(plot) => elementNameOf(elements, plot.elementId)} />
       {scopeProperties !== null && (
         // Keyed by the scope: the stack tabs switch which scope the open

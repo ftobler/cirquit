@@ -762,6 +762,7 @@ function createAppStore() {
   document: 0,
   subcircuitStack: [],
   undocked: null,
+  floating: [],
 
   setRunning: (running) => set({ running }),
   toggleRunning: () => set((s) => ({ running: !s.running })),
@@ -2824,6 +2825,43 @@ function createAppStore() {
     });
   },
 
+  floatScope: (id, rect) => {
+    const s = get();
+    if (!s.scopes.some((x) => x.id === id)) return;
+    const existing = s.floating.find((f) => f.id === id);
+    const z = topFloatZ(s.floating) + 1;
+    if (existing) {
+      set({
+        floating: s.floating.map((f) => (f.id === id ? { ...f, rect: rect ?? f.rect, z } : f)),
+      });
+      return;
+    }
+    // The cascade slot is fixed now, from how many panels are already out,
+    // so a panel waiting for its first layout never moves when others are
+    // raised or docked.
+    set({ floating: [...s.floating, { id, rect: rect ?? null, slot: s.floating.length, z }] });
+  },
+
+  dockScope: (id) => {
+    if (!get().floating.some((f) => f.id === id)) return;
+    set((st) => ({ floating: st.floating.filter((f) => f.id !== id) }));
+  },
+
+  setFloatRect: (id, rect) => {
+    if (!get().floating.some((f) => f.id === id)) return;
+    set((st) => ({ floating: st.floating.map((f) => (f.id === id ? { ...f, rect } : f)) }));
+  },
+
+  raiseFloatingScope: (id) => {
+    const s = get();
+    const entry = s.floating.find((f) => f.id === id);
+    const top = topFloatZ(s.floating);
+    // Already on top: no state change, so a press on the front panel does
+    // not re-render the layer at all.
+    if (!entry || (entry.z === top && s.floating.filter((f) => f.z === top).length === 1)) return;
+    set({ floating: s.floating.map((f) => (f.id === id ? { ...f, z: top + 1 } : f)) });
+  },
+
   openUndockedScope: (elementId) => {
     const s = get();
     // One undocked window at a time: the mirror pushes a copied snapshot per
@@ -3005,6 +3043,9 @@ function createAppStore() {
     get().closeUndockedScope();
 
     set((s) => ({
+      // Floating panels belong to the document on screen: a fresh one starts
+      // with every scope docked, like upstream's.
+      floating: [],
       elements: resolved,
       scopes,
       sliders: parsed.sliders.map((c): Slider => ({ ...c })),
@@ -3358,6 +3399,7 @@ function createAppStore() {
     // mirroring the old one's scope id.
     get().closeUndockedScope();
     set((s) => ({
+      floating: [],
       elements: [],
       scopes: [],
       sliders: [],
@@ -3695,6 +3737,11 @@ function createAppStore() {
 }
 
 const globalScope = globalThis as { [STORE_INSTANCE_KEY]?: AppStore };
+/** The highest stacking index among the floating panels, 0 when none. */
+function topFloatZ(floating: AppState['floating']): number {
+  return floating.reduce((m, f) => Math.max(m, f.z), 0);
+}
+
 export const useStore: AppStore = (globalScope[STORE_INSTANCE_KEY] ??= createAppStore());
 
 /** The view zoomed by `factor` about the current screen centre, which is the

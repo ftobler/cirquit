@@ -6,6 +6,7 @@
  * are testable under node.
  */
 
+import type { Scope } from '../engine/scopeModel';
 import type { StorageLike } from '../state/appPrefs';
 
 export const SCOPE_STRIP_STORAGE_KEY = 'scopeStrip.height';
@@ -64,3 +65,9 @@ export function saveStripHeight(
   }
 }
 
+/** The scopes the dock draws: every scope not floating over the schematic,
+ *  in panel order. */
+export function dockedScopes(scopes: Scope[], floating: readonly { id: number }[]): Scope[] {
+  if (floating.length === 0) return scopes;
+  return scopes.filter((s) => !floating.some((f) => f.id === s.id));
+}

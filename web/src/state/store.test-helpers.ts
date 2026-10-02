@@ -53,6 +53,7 @@ export const fresh = () => ({
   document: 0,
   subcircuitStack: [],
   undocked: null,
+  floating: [],
 });
 
 export const addResistor = () =>

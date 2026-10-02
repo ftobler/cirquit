@@ -100,6 +100,7 @@ export function ScopeMenu({ engine, nameOf }: Props) {
     scope,
     previous,
     plotId: scopeMenu.plotId,
+    floating: st.floating.some((f) => f.id === scope.id),
     exportCsv: () => {
       if (!engine) return;
       const width = scopeWidth(scope.id) ?? 500;
@@ -124,6 +125,8 @@ export function ScopeMenu({ engine, nameOf }: Props) {
       clearScaleStates,
       resetScope: st.resetScope,
       openScopeProperties: st.openScopeProperties,
+      floatScope: st.floatScope,
+      dockScope: st.dockScope,
     },
   });
 

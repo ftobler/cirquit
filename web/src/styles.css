@@ -1729,6 +1729,116 @@ input[type='range'] {
   opacity: 1;
 }
 
+/* The floating scope panels' layer: covers the centre area but takes no
+   input itself, so the schematic between panels stays fully usable. Below
+   the banners (37) and the mobile drawers (35). */
+.scope-float-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.scope-float {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  background: var(--md-outline-variant);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--md-elevation-3);
+  overflow: hidden;
+}
+
+.scope-float-title {
+  flex: 0 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px 0 10px;
+  background: var(--menu-surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.scope-float-title:active {
+  cursor: grabbing;
+}
+
+.scope-float-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-float-title button {
+  padding: 0 6px;
+  min-height: 20px;
+  font-size: 14px;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.scope-float-title button:hover,
+.scope-float-title button:focus-visible {
+  opacity: 1;
+}
+
+/* The resize grip: a small corner square drawn as two diagonal ticks. */
+.scope-float-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  z-index: 3;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(
+    135deg,
+    transparent 55%,
+    var(--md-outline) 55%,
+    var(--md-outline) 62%,
+    transparent 62%,
+    transparent 75%,
+    var(--md-outline) 75%,
+    var(--md-outline) 82%,
+    transparent 82%
+  );
+}
+
+/* The undock button sits left of the close button and only shows while the
+   pointer is over its scope, so the resting trace keeps its corner clear. */
+.scope-undock {
+  position: absolute;
+  top: 3px;
+  right: 34px;
+  padding: 2px 7px;
+  font-size: 16px;
+  line-height: 1.25;
+  opacity: 0;
+  z-index: 2;
+}
+
+.scope:hover .scope-undock {
+  opacity: 0.5;
+}
+
+.scope .scope-undock:hover,
+.scope-undock:focus-visible {
+  opacity: 1;
+}
+
 /* The scope properties dialog, a fixed overlay like the dialogs. */
 .scope-props {
   position: fixed;

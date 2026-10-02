@@ -35,6 +35,7 @@ const harness = (
     scope?: { id: number; maxScale: boolean; plots: ScopePlot[] };
     previous?: { id: number };
     plotId?: number;
+    floating?: boolean;
   } = {},
 ): Harness => {
   const calls: string[] = [];
@@ -43,6 +44,7 @@ const harness = (
     scope,
     previous: overrides.previous,
     plotId: overrides.plotId ?? 11,
+    floating: overrides.floating ?? false,
     exportCsv: () => calls.push('exportCsv'),
     commands: {
       removeScope: (id) => calls.push(`removeScope ${id}`),
@@ -54,6 +56,8 @@ const harness = (
       clearScaleStates: (ids) => calls.push(`clearScaleStates ${ids.join(',')}`),
       resetScope: (id) => calls.push(`resetScope ${id}`),
       openScopeProperties: (id) => calls.push(`openScopeProperties ${id}`),
+      floatScope: (id) => calls.push(`floatScope ${id}`),
+      dockScope: (id) => calls.push(`dockScope ${id}`),
     },
   });
   return { rows, calls };
@@ -77,6 +81,7 @@ describe('scopeMenuRows', () => {
       'Remove Plot',
       'Reset',
       'Export CSV',
+      'Float',
       'Properties',
     ]);
   });
@@ -130,6 +135,16 @@ describe('scopeMenuRows', () => {
     const h = harness();
     run(h, 'Properties');
     expect(h.calls).toEqual(['openScopeProperties 2']);
+  });
+
+  it('floats a docked scope and docks a floating one', () => {
+    const docked = harness();
+    run(docked, 'Float');
+    expect(docked.calls).toEqual(['floatScope 2']);
+    const floating = harness({ floating: true });
+    expect(floating.rows.some((r) => r.label === 'Float')).toBe(false);
+    run(floating, 'Dock');
+    expect(floating.calls).toEqual(['dockScope 2']);
   });
 
   it('disables Stack, Unstack and Combine exactly without a previous scope', () => {

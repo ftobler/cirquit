@@ -7,6 +7,7 @@ import type {
   ScopeValue,
 } from '../engine/scopeModel';
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
+import type { FloatRect } from '../ui/floatingScopes';
 import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
 import type { ModelFamily, UserModelEntry, UserModelSnapshot } from '../model/deviceModels';
@@ -341,6 +342,27 @@ export interface AppState {
    *  before the hardcoded combos. Not part of the undo Snapshot: it is an
    *  app setting, and undoing a circuit edit must not rewrite a shortcut. */
   shortcuts: ShortcutOverlay;
+  /** Scopes taken out of the dock to float over the schematic as panels
+   *  inside the app. `rect` is CSS px in the centre area, null until the
+   *  layer first places the panel at its cascade `slot` (only the layer knows
+   *  its pixel size). Array order is float order and stays stable, so the
+   *  DOM never reorders under a drag; `z` is the stacking order, highest on
+   *  top. Transient UI state: not part of Snapshot, no undo entry, not in
+   *  the file (a floating scope saves like any other), and emptied by any
+   *  load or New. An entry whose scope is gone is simply skipped, so undoing
+   *  a removal brings the scope back still floating. */
+  floating: { id: number; rect: FloatRect | null; slot: number; z: number }[];
+  /** Takes a scope out of the dock into a floating panel at `rect`, or at its
+   *  cascade slot when omitted. A scope already floating is raised and keeps
+   *  its rect unless a new one is given. */
+  floatScope(id: number, rect?: FloatRect): void;
+  /** Puts a floating scope back in the dock. */
+  dockScope(id: number): void;
+  /** Moves or resizes a floating panel (already clamped by the caller). */
+  setFloatRect(id: number, rect: FloatRect): void;
+  /** Brings a floating panel to the top of the stack. */
+  raiseFloatingScope(id: number): void;
+
   /** The open undocked scope window: the id of the scope it mirrors and the
    *  handle postMessage pushes go to. Transient UI state like `dialog`: never
    *  part of Snapshot, no undo entry, closed when the child window closes or

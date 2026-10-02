@@ -28,6 +28,9 @@ export function scopeMenuRows(env: {
   previous?: { id: number };
   /** The plot id ScopePanel resolved under the cursor, not a value. */
   plotId: number;
+  /** Whether the scope floats over the schematic rather than sitting in the
+   *  dock; the Float row then reads Dock. */
+  floating: boolean;
   exportCsv: () => void;
   commands: {
     removeScope(id: number): void;
@@ -39,9 +42,11 @@ export function scopeMenuRows(env: {
     clearScaleStates(ids: number[]): void;
     resetScope(id: number): void;
     openScopeProperties(id: number): void;
+    floatScope(id: number): void;
+    dockScope(id: number): void;
   };
 }): ScopeMenuRow[] {
-  const { scope, previous, plotId, exportCsv, commands } = env;
+  const { scope, previous, plotId, floating, exportCsv, commands } = env;
   return [
     {
       label: 'Remove Scope',
@@ -90,6 +95,12 @@ export function scopeMenuRows(env: {
     {
       label: 'Export CSV',
       action: exportCsv,
+    },
+    {
+      // The port's own row: a scope can float over the schematic as a
+      // movable, resizable panel, and go back into the dock.
+      label: floating ? 'Dock' : 'Float',
+      action: () => (floating ? commands.dockScope(scope.id) : commands.floatScope(scope.id)),
     },
     {
       label: 'Properties',
