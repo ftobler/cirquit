@@ -27,6 +27,13 @@ describe('FOCUSABLE_SELECTOR', () => {
 });
 
 describe('nextFocusIndex', () => {
+  it('skips a control taken out of the Tab order, as a roving group does', () => {
+    for (const clause of FOCUSABLE_SELECTOR.split(',').map((c) => c.trim())) {
+      expect(clause, clause).toContain(':not([tabindex="-1"])');
+    }
+    expect(FOCUSABLE_SELECTOR).toMatch(/^button:not/);
+  });
+
   it('returns null for an empty list', () => {
     expect(nextFocusIndex([], null, false)).toBeNull();
     expect(nextFocusIndex([], null, true)).toBeNull();

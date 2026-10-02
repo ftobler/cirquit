@@ -11,13 +11,24 @@ export interface Focusable {
 /** What the trap's caller collects as focusable rows, in DOM order: form
  *  controls, any tabindex other than the explicit off-switch, and links.
  *  An anchor needs href to be in the tab order, and an explicit
- *  tabindex="-1" takes any element back out of it, so the anchor clause
- *  carries the same guard as the bare [tabindex] one beside it. Lives beside
+ *  tabindex="-1" takes any element back out of it, so every clause carries
+ *  that guard. Lives beside
  *  nextFocusIndex so the wrap rules and the row list they run over are
  *  node-tested together; useFocusTrap imports it rather than keeping its own
  *  copy that can drift. */
-export const FOCUSABLE_SELECTOR =
-  'button, textarea, input, select, [tabindex]:not([tabindex="-1"]), a[href]:not([tabindex="-1"])';
+export const FOCUSABLE_SELECTOR = [
+  'button',
+  'textarea',
+  'input',
+  'select',
+  '[tabindex]',
+  'a[href]',
+]
+  // A roving-tabindex group (a tab rail, a segmented button) keeps only its
+  // current member in the Tab order; the trap must skip the rest like the
+  // browser does, so every clause carries the off-switch.
+  .map((c) => `${c}:not([tabindex="-1"])`)
+  .join(', ');
 
 /** Where a Tab press should land, given the list of focusables and the
  *  currently focused element.
