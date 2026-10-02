@@ -19,10 +19,14 @@
 import {
   arrowHead,
   closedPolyline,
+  currentDotsFrom,
   line,
   voltageColor,
 } from '../../../render/draw';
 import { CHIP_FLIP_X, CHIP_FLIP_Y } from './dFlipFlop';
+import { drawDiodeBody } from './diode';
+import { TRANSISTOR_DEF } from './transistor';
+import { TRANSISTOR_FLIP } from '../flags';
 import { boxOfPoints } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
@@ -77,10 +81,55 @@ function optoPosts(e: CircuitElement): Point[] {
   ];
 }
 
-function drawOptocoupler(g: DrawContext, e: CircuitElement): void {
+/** The optocoupler's inner parts, laid out as upstream places its composite
+ *  children (OptocouplerElm.java:150-157): the LED a vertical diode from
+ *  post 0 to post 1, inset 32 toward the body, so it points from anode to
+ *  cathode; the phototransistor a 16-unit horizontal NPN on the midline of
+ *  the east posts, inset 24..40, whose collector and emitter sit level with
+ *  posts 2 and 3. FLAG_FLIP_Y flips the transistor so its collector follows
+ *  post 2. Each post wires straight across to its inner terminal. */
+export function optoGeometry(e: CircuitElement): {
+  posts: Point[];
+  led: CircuitElement;
+  phototransistor: CircuitElement;
+  inner: Point[];
+} {
   const posts = optoPosts(e);
   const dx = (e.flags & CHIP_FLIP_X) !== 0 ? -1 : 1;
   const midp = (posts[2].y + posts[3].y) / 2;
+  const led: CircuitElement = {
+    id: e.id,
+    kind: 'diode',
+    x1: posts[0].x + 32 * dx,
+    y1: posts[0].y,
+    x2: posts[1].x + 32 * dx,
+    y2: posts[1].y,
+    flags: 0,
+    params: {},
+  };
+  const phototransistor: CircuitElement = {
+    id: e.id,
+    kind: 'transistor',
+    x1: posts[2].x - 40 * dx,
+    y1: midp,
+    x2: posts[2].x - 24 * dx,
+    y2: midp,
+    flags: (e.flags & CHIP_FLIP_Y) !== 0 ? TRANSISTOR_FLIP : 0,
+    params: { pnp: 1 },
+  };
+  const [, coll, emit] = TRANSISTOR_DEF.posts(phototransistor);
+  const inner = [
+    { x: led.x1, y: led.y1 },
+    { x: led.x2, y: led.y2 },
+    coll,
+    emit,
+  ];
+  return { posts, led, phototransistor, inner };
+}
+
+function drawOptocoupler(g: DrawContext, e: CircuitElement): void {
+  const { posts, led, phototransistor, inner } = optoGeometry(e);
+  const dx = (e.flags & CHIP_FLIP_X) !== 0 ? -1 : 1;
 
   // The housing, a stroked rect (OptocouplerElm.java:89-90, 133-139).
   const xr = e.x1 + cspc2 - cspc;
@@ -93,44 +142,50 @@ function drawOptocoupler(g: DrawContext, e: CircuitElement): void {
   ];
   closedPolyline(g, body, g.theme.lightGray);
 
-  // The four corner stubs, each voltage-coloured (OptocouplerElm.java:93-99).
-  const stub0 = { x: posts[0].x + cspc, y: posts[0].y };
-  const stub1 = { x: posts[1].x + cspc, y: posts[1].y };
-  const stub2 = { x: posts[2].x - cspc, y: posts[2].y };
-  const stub3 = { x: posts[3].x - cspc, y: posts[3].y };
-  line(g, posts[0], stub0, voltageColor(g, g.voltages[0]));
-  line(g, posts[1], stub1, voltageColor(g, g.voltages[1]));
-  line(g, posts[2], stub2, voltageColor(g, g.voltages[2]));
-  line(g, posts[3], stub3, voltageColor(g, g.voltages[3]));
+  // Each post wires across to its inner terminal, voltage-coloured and
+  // carrying its own terminal current (OptocouplerElm.java:93-99). The
+  // phototransistor's own dot runs are off below, so these are its only ones.
+  for (let i = 0; i < 4; i++) {
+    line(g, posts[i], inner[i], voltageColor(g, g.voltages[i]));
+    currentDotsFrom(g, inner[i], posts[i], g.postCurrents[i] ?? 0, g.postDotPhases[i] ?? 0);
+  }
 
-  // The LED between the two west stubs, inset 32 beyond the housing edge
-  // (OptocouplerElm.java:150): the triangle pointing into the body with the
-  // cathode bar, the port's usual diode symbol at body weight.
-  const ledA = { x: posts[0].x + 32 * dx, y: posts[0].y };
-  const ledK = { x: posts[1].x + 32 * dx, y: posts[1].y };
-  line(g, stub0, ledA, voltageColor(g, g.voltages[0]));
-  line(g, stub1, ledK, voltageColor(g, g.voltages[1]));
-  const ledColour = g.theme.wire;
-  line(g, { x: ledA.x, y: ledA.y - 8 }, { x: ledA.x, y: ledA.y + 8 }, ledColour);
-  const [barA, barK] = [
-    { x: ledK.x - 8, y: ledK.y },
-    { x: ledK.x + 8, y: ledK.y },
-  ];
-  line(g, ledA, { x: ledK.x, y: ledK.y - 8 }, ledColour);
-  line(g, ledA, { x: ledK.x, y: ledK.y + 8 }, ledColour);
-  line(g, barA, barK, ledColour);
+  // The children draw with the port's own diode and transistor symbols, fed
+  // the slice of this element's terminal state each one owns. The LED's
+  // current is post 0's, sign-flipped as for any two-terminal part; the
+  // phototransistor's base is internal, so it gets the emitter voltage and no
+  // current.
+  drawDiodeBody(
+    {
+      ...g,
+      voltages: [g.voltages[0], g.voltages[1]],
+      current: -(g.postCurrents[0] ?? 0),
+      dotPhase: g.postDotPhases[0] ?? g.dotPhase,
+    },
+    led,
+    false,
+  );
+  TRANSISTOR_DEF.draw(
+    {
+      ...g,
+      voltages: [g.voltages[3], g.voltages[2], g.voltages[3]],
+      postCurrents: [0, 0, 0],
+      postDotPhases: [0, 0, 0],
+      showCurrent: false,
+    },
+    phototransistor,
+  );
 
-  // The phototransistor between the two east stubs, inset 24..40 beyond the
-  // housing (OptocouplerElm.java:156): a bar with the emitter arrow.
-  const tA = { x: posts[2].x - 40 * dx, y: midp };
-  const tB = { x: posts[2].x - 24 * dx, y: midp };
-  line(g, stub2, tA, voltageColor(g, g.voltages[2]));
-  line(g, stub3, tB, voltageColor(g, g.voltages[3]));
-  line(g, { x: tA.x, y: tA.y - 8 }, { x: tA.x, y: tA.y + 8 }, g.theme.wire);
-  line(g, tA, { x: tB.x, y: tB.y - 8 }, g.theme.wire);
-  line(g, tA, { x: tB.x, y: tB.y + 8 }, g.theme.wire);
-  line(g, tB, { x: tB.x, y: tB.y + 6 }, g.theme.wire);
-  arrowHead(g, { x: tB.x - 8, y: tB.y + 6 }, { x: tB.x, y: tB.y + 6 }, 8, g.theme.wire);
+  // The light: two short arrows from the LED across to the phototransistor
+  // (OptocouplerElm.java:105-114), 10 units apart about the LED's midline.
+  const sx = led.x1 + 4 * dx;
+  const sy = (led.y1 + led.y2) / 2;
+  for (const y of [sy - 5, sy + 5]) {
+    const from = { x: sx, y };
+    const tip = { x: sx + 18 * dx, y };
+    line(g, from, { x: tip.x - 4 * dx, y }, g.theme.lightGray, 1);
+    arrowHead(g, from, tip, 5, g.theme.lightGray);
+  }
 }
 
 export const OPTOCOUPLER_DEF: ElementDef = {
