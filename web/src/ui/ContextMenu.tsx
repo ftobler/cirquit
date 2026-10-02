@@ -12,7 +12,7 @@ import { parsesToElements } from '../io/importSummary';
 import { defFor, type ToolboxEntry } from '../model/registry';
 import { toolShortcut } from '../model/search';
 import type { SimSettings } from '../model/types';
-import { canMirror, canRotate, canSwap } from '../model/transform';
+import { canMirrorSelection as canMirrorSel, canRotate, canRotateSelection as canRotateSel, canSwap } from '../model/transform';
 import { makeGhostElement, useStore } from '../state/store';
 import { canCreateSlider, canSplitWire, elementScopeCommands, paletteGroups } from './contextMenuRows';
 import { ToolIcon } from './ToolIcon';
@@ -126,8 +126,8 @@ export function ContextMenu() {
   // while the key still turns something, nor turn the old selection when the
   // key turns the ghost.
   const canRotateGhost = tool !== null && canRotate({ ...makeGhostElement(tool, 0, 0, 0), id: -1 });
-  const canRotateSelection = canRotateGhost || (selected.length > 0 && selected.every(canRotate));
-  const canMirrorSelection = selected.length > 0 && selected.every(canMirror);
+  const canRotateSelection = canRotateGhost || canRotateSel(selected);
+  const canMirrorSelection = canMirrorSel(selected);
   const canSwapSelection = selected.length > 0 && selected.every(canSwap);
 
   const run = (action: () => void) => {
@@ -226,10 +226,16 @@ export function ContextMenu() {
       action: () => useStore.getState().rotateSelection(),
     },
     {
-      label: 'Mirror',
-      shortcut: 'Alt+M',
+      label: 'Mirror Horizontally',
+      shortcut: 'Alt+H',
       disabled: !editable || !canMirrorSelection,
-      action: () => useStore.getState().mirrorSelection(),
+      action: () => useStore.getState().mirrorSelection('horizontal'),
+    },
+    {
+      label: 'Mirror Vertically',
+      shortcut: 'Alt+V',
+      disabled: !editable || !canMirrorSelection,
+      action: () => useStore.getState().mirrorSelection('vertical'),
     },
   ];
 

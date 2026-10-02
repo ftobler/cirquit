@@ -335,6 +335,7 @@ describe('alt geometry chords', () => {
 
 describe('no conflicts in the SHORTCUTS table', () => {
   const VALID_TYPES = new Set([
+    'mirrorVertical',
     'undo',
     'redo',
     'delete',
@@ -499,7 +500,9 @@ describe('chord signatures', () => {
     // Rotate has two table rows, Space first and Alt+r behind it; the dialog
     // names the first.
     expect(rows.find((r) => r.action === 'rotate')?.chord).toBe('Space');
-    expect(rows.find((r) => r.action === 'mirror')?.chord).toBe('Alt+m');
+    // Mirror has Alt+h first and the older Alt+m alias behind it.
+    expect(rows.find((r) => r.action === 'mirror')?.chord).toBe('Alt+h');
+    expect(rows.find((r) => r.action === 'mirrorVertical')?.chord).toBe('Alt+v');
     expect(rows.find((r) => r.action === 'swap')?.chord).toBe('Alt+t');
     expect(rows.find((r) => r.action === 'toggleRunning')?.chord).toBe('');
   });

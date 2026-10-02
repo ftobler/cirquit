@@ -15,7 +15,7 @@ import {
   type LibraryGroup,
 } from '../io/library';
 import { parsesToElements } from '../io/importSummary';
-import { canMirror, canRotate } from '../model/transform';
+import { canMirrorSelection as canMirrorSel, canRotate, canRotateSelection as canRotateSel } from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
 import { makeGhostElement, useStore } from '../state/store';
@@ -480,8 +480,8 @@ export function Menubar({ engine }: Props) {
   // while the key still turns something, nor turn the old selection when the
   // key turns the ghost.
   const canRotateGhost = tool !== null && canRotate({ ...makeGhostElement(tool, 0, 0, 0), id: -1 });
-  const canRotateSelection = canRotateGhost || (selected.length > 0 && selected.every(canRotate));
-  const canMirrorSelection = selected.length > 0 && selected.every(canMirror);
+  const canRotateSelection = canRotateGhost || canRotateSel(selected);
+  const canMirrorSelection = canMirrorSel(selected);
   // The clipboard only ever holds text this app serialised, but guard anyway:
   // a manually-set garbage string must grey out Paste. Memoized like the
   // context menu's canPaste, since parsing on every render is wasteful. The
@@ -630,10 +630,16 @@ export function Menubar({ engine }: Props) {
       onClick: fire(() => useStore.getState().rotateSelection()),
     },
     {
-      label: 'Mirror',
-      shortcut: 'Alt+M',
+      label: 'Mirror Horizontally',
+      shortcut: 'Alt+H',
       disabled: !editable || !canMirrorSelection,
-      onClick: fire(() => useStore.getState().mirrorSelection()),
+      onClick: fire(() => useStore.getState().mirrorSelection('horizontal')),
+    },
+    {
+      label: 'Mirror Vertically',
+      shortcut: 'Alt+V',
+      disabled: !editable || !canMirrorSelection,
+      onClick: fire(() => useStore.getState().mirrorSelection('vertical')),
     },
   ];
 

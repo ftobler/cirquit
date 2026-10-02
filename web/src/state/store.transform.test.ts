@@ -577,19 +577,12 @@ describe('rotate under an in-flight pointer gesture', () => {
   });
 
   it('a selection the menu greys out is a no-op in every gesture state', () => {
-    const resistor = addResistor();
-    const text = useStore.getState().addElement({
-      kind: 'decoration',
-      x1: 0,
-      y1: 0,
-      x2: 0,
-      y2: 0,
-      flags: 0,
-      params: {},
-    });
-    // Mixed: canRotate refuses the annotation, so the whole command is off,
-    // the same guard the disabled menu row uses.
-    useStore.getState().select([resistor, text]);
+    // Annotations only: nothing in the group can turn, so the whole command
+    // is off, the same guard the disabled menu row uses. (A label inside a
+    // group with real parts rides along instead, see the group tests.)
+    const addText = (x: number) =>
+      useStore.getState().addElement({ kind: 'decoration', x1: x, y1: 0, x2: x, y2: 0, flags: 0, params: {} });
+    useStore.getState().select([addText(0), addText(64)]);
     const original = useStore.getState().elements.map((e) => ({ ...e }));
     const before = useStore.getState().undoStack.length;
 

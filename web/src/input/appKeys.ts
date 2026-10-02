@@ -29,6 +29,7 @@ const EDIT_ACTIONS = new Set<ShortcutAction['type']>([
   'selectAll',
   'rotate',
   'mirror',
+  'mirrorVertical',
   'swap',
   'place',
 ]);
@@ -75,7 +76,7 @@ export function handleAppKeyDown(s: AppState, ev: AppKeyEvent, host: AppKeyHost)
   // repeat by design. True still suppresses the browser default, or a held
   // Space assigned to a command would scroll the page on every repeat.
   if (ev.repeat && hasChord(s.shortcuts, chordOf(ev))) return true;
-  const action = matchShortcut(ev, s.shortcuts);
+  const action = dragMirrorAction(s, ev) ?? matchShortcut(ev, s.shortcuts);
   if (!action) return false;
   // With editing disabled the edit keys are dropped, not ignored: the status
   // bar explains why nothing happened (CommandManager.java:22-24). View and
@@ -87,12 +88,28 @@ export function handleAppKeyDown(s: AppState, ev: AppKeyEvent, host: AppKeyHost)
     s.setStatus('Editing disabled. Re-enable from the Options menu.');
     return true;
   }
-  // A held rotate key turns once, not at the key-repeat rate: Space is rotate
-  // now, and a resting thumb would otherwise spin the part. The nudge, delete
+  // A held rotate or mirror key acts once, not at the key-repeat rate: Space
+  // is rotate now, and a resting thumb would otherwise spin the part. The nudge, delete
   // and zoom keys keep repeating by design.
-  if (ev.repeat && action.type === 'rotate') return true;
+  if (ev.repeat && (action.type === 'rotate' || action.type === 'mirror' || action.type === 'mirrorVertical')) {
+    return true;
+  }
   applyShortcut(s, action, host);
   return true;
+}
+
+/** Plain h and v while a move drag holds the selection: the mirror keys at
+ *  their most useful, without Alt. Outside a drag v arms the DC voltage
+ *  source, a placement no drag can start, so the letters are free exactly
+ *  while dragging. A repeat still resolves here, so the caller can swallow
+ *  it instead of letting it fall through to the voltage-source placement. */
+function dragMirrorAction(s: AppState, ev: AppKeyEvent): ShortcutAction | null {
+  if (s.elementGesture?.kind !== 'move') return null;
+  if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) return null;
+  const key = ev.key.toLowerCase();
+  if (key === 'h') return { type: 'mirror' };
+  if (key === 'v') return { type: 'mirrorVertical' };
+  return null;
 }
 
 /** One keyup: a momentary switch returns to rest when its shortcut key is let
@@ -188,7 +205,10 @@ export function applyShortcut(s: AppState, action: ShortcutAction, host: AppKeyH
       s.rotateSelection();
       break;
     case 'mirror':
-      s.mirrorSelection();
+      s.mirrorSelection('horizontal');
+      break;
+    case 'mirrorVertical':
+      s.mirrorSelection('vertical');
       break;
     case 'swap':
       s.swapTerminals();

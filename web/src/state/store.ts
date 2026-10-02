@@ -39,12 +39,18 @@ import { convertWires } from '../render/wireConverter';
 import { lShapeRoute, routeWire, routingObstacles } from '../render/wireRouter';
 import { postDotPoints, shouldDrawDot } from '../render/junction';
 import {
-  canMirror,
+  canMirrorSelection,
   canRotate,
+  canRotateSelection,
   canSwap,
   mirrorElement,
+  mirrorElementVertical,
+  mirrorInGroup,
+  mirrorVerticalInGroup,
   rotateElement,
+  rotateInGroup,
   selectionMirrorCentre,
+  selectionMirrorCentreY,
   turnPivot,
   swapTerminalOrder,
   switch2PosCount,
@@ -1423,10 +1429,7 @@ function createAppStore() {
     }
     // Nothing grabbed: the settled-selection command, one undo entry.
     if (gesture === null) {
-      // One pivot for the whole selection, so a multi-select comes out rigid
-      // and four turns close the cycle (see turnPivot).
-      const pivot = turnPivot(selectedElements());
-      transformSelected(canRotate, (e) => rotateElement(e, pivot));
+      rotateGroup(false);
       return;
     }
     if (gesture.kind === 'move') {
@@ -1434,18 +1437,17 @@ function createAppStore() {
       // rides along with it: one Ctrl+Z undoes the move and the turns together.
       // The grabbed group turns as one body, like a settled one: a per-part
       // pivot would tear every wire between the parts apart.
-      const pivot = turnPivot(selectedElements());
-      transformSelected(canRotate, (e) => rotateElement(e, pivot), true);
+      rotateGroup(true);
       return;
     }
     // A placement turns about its own (x1,y1), which is the press anchor: the
     // place branch only ever writes (x2,y2), so the anchor stays under the
     // point the user pressed. The turn is banked so the next pointer-move
     // re-applies it to the cursor-derived endpoint instead of erasing it.
-    const turned = transformSelected(canRotate, (e) => rotateElement(e, { x: e.x1, y: e.y1 }), true);
+    const turned = transformSelected(everyOf(canRotate), (e) => rotateElement(e, { x: e.x1, y: e.y1 }), true);
     if (turned) set({ elementGesture: { ...gesture, placeTurns: (gesture.placeTurns + 1) % 4 } });
   },
-  mirrorSelection: () => {
+  mirrorSelection: (axis = 'horizontal') => {
     const { elementGesture: gesture } = get();
     // The same gesture dispatch rotate takes. A placement cannot take a
     // mirror: unlike a turn there is nothing to bank, and the next
@@ -1454,12 +1456,24 @@ function createAppStore() {
     if (gesture?.kind === 'place') return;
     // The analogous shared axis: upstream reflects every selected part across
     // the one bbox centre (CommandManager.java:408-417), so the group mirrors
-    // as a body instead of each part folding about its own centre.
-    const centre = selectionMirrorCentre(selectedElements());
+    // as a body instead of each part folding about its own centre. A lone
+    // element mirrors about its own centre.
+    const selected = selectedElements();
+    const skipCommit = gesture?.kind === 'move';
+    if (axis === 'vertical') {
+      const centre = selectionMirrorCentreY(selected);
+      transformSelected(
+        canMirrorSelection,
+        centre === undefined ? (e) => mirrorElementVertical(e) : (e) => mirrorVerticalInGroup(e, centre),
+        skipCommit,
+      );
+      return;
+    }
+    const centre = selectionMirrorCentre(selected);
     transformSelected(
-      canMirror,
-      centre === undefined ? mirrorElement : (e) => mirrorElement(e, centre),
-      gesture?.kind === 'move',
+      canMirrorSelection,
+      centre === undefined ? (e) => mirrorElement(e) : (e) => mirrorInGroup(e, centre),
+      skipCommit,
     );
   },
   swapTerminals: () => {
@@ -1467,7 +1481,7 @@ function createAppStore() {
     // placement whose next pointer-move would rewrite the swapped endpoints.
     const { elementGesture: gesture } = get();
     if (gesture?.kind === 'place') return;
-    return transformSelected(canSwap, swapTerminalOrder, gesture?.kind === 'move');
+    return transformSelected(everyOf(canSwap), swapTerminalOrder, gesture?.kind === 'move');
   },
 
   convertWiresToRouted: () => {
@@ -3912,20 +3926,20 @@ function selectedElements(): CircuitElement[] {
 }
 
 /**
- * One-undo-step geometry command over the selection. Refuses to touch a mixed
- * or unsupported selection, which keeps the menu's disabled state and the
- * keyboard path from diverging: if the menu would grey the item out, the same
- * `guard` makes the command a no-op here. Returns whether it applied, so a
+ * One-undo-step geometry command over the selection. `guard` judges the
+ * whole selection, and is the same predicate the menu uses to grey the item
+ * out, so the menu's disabled state and the keyboard path cannot diverge: a
+ * refused selection is a no-op here. Returns whether it applied, so a
  * caller banking gesture state (the placement's quarter turns) does not count
  * a refused command.
  */
 function transformSelected(
-  guard: (e: CircuitElement) => boolean,
+  guard: (selected: CircuitElement[]) => boolean,
   apply: (e: CircuitElement) => CircuitElement,
   skipCommit = false,
 ): boolean {
   const selected = selectedElements();
-  if (selected.length === 0 || !selected.every(guard)) return false;
+  if (selected.length === 0 || !guard(selected)) return false;
   // skipCommit is the in-flight pointer gesture's escape hatch, the same
   // reasoning as deleteSelected(true): the drag already committed its baseline
   // at pointer-down, and a second commit here would cost the gesture an extra
@@ -3936,6 +3950,26 @@ function transformSelected(
     ...bumpRevision(st),
   }));
   return true;
+}
+
+/** A per-element guard lifted to the whole selection. */
+const everyOf =
+  (guard: (e: CircuitElement) => boolean) =>
+  (selected: CircuitElement[]): boolean =>
+    selected.every(guard);
+
+/** The settled and in-drag group turn: one pivot for the whole selection, so a
+ *  multi-select comes out rigid and four turns close the cycle (see
+ *  turnPivot). Under a move drag the turn folds into the drag's own entry. */
+function rotateGroup(skipCommit: boolean): void {
+  const selected = selectedElements();
+  const pivot = turnPivot(selected);
+  if (pivot === undefined) return;
+  transformSelected(
+    canRotateSelection,
+    selected.length === 1 ? (e) => rotateElement(e, pivot) : (e) => rotateInGroup(e, pivot),
+    skipCommit,
+  );
 }
 
 export type { AppState, ViewTransform };

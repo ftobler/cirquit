@@ -12,7 +12,7 @@
  */
 
 import { FLAG_SWAP, chipExtentsOf, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP, postCountOf } from './registry';
-import { CHIP_FLIP_X, CHIP_FLIP_XY } from './registry/elements/dFlipFlop';
+import { CHIP_FLIP_X, CHIP_FLIP_XY, CHIP_FLIP_Y } from './registry/elements/dFlipFlop';
 import { COMPARATOR_SWAP, SWITCH2_CENTER_OFF } from './registry/flags';
 import { GRID_SIZE, type CircuitElement, type Point } from './types';
 
@@ -103,10 +103,13 @@ function endpointBox(selected: CircuitElement[]): { minx: number; maxx: number; 
   let miny = Infinity;
   let maxy = -Infinity;
   for (const e of selected) {
-    minx = Math.min(e.x1, e.x2, minx);
-    maxx = Math.max(e.x1, e.x2, maxx);
-    miny = Math.min(e.y1, e.y2, miny);
-    maxy = Math.max(e.y1, e.y2, maxy);
+    // A post-only annotation's second point is a meaningless stray, so only
+    // its anchor counts; otherwise a text label could skew the group pivot.
+    const [x2, y2] = isAnchorOnly(e) ? [e.x1, e.y1] : [e.x2, e.y2];
+    minx = Math.min(e.x1, x2, minx);
+    maxx = Math.max(e.x1, x2, maxx);
+    miny = Math.min(e.y1, y2, miny);
+    maxy = Math.max(e.y1, y2, maxy);
   }
   return { minx, maxx, miny, maxy };
 }
@@ -425,4 +428,120 @@ export function mirrorElement(e: CircuitElement, centre?: number): CircuitElemen
 export function swapTerminalOrder(e: CircuitElement): CircuitElement {
   if (!canSwap(e)) return e;
   return { ...withoutRoute(e), x1: e.x2, y1: e.y2, x2: e.x1, y2: e.y1 };
+}
+
+// ─── Group transforms ───
+
+/** A post-only annotation (text, readout): one meaningful point, the anchor.
+ *  It cannot turn or mirror on its own, but inside a group it rides along. */
+function isAnchorOnly(e: CircuitElement): boolean {
+  return !canRotate(e);
+}
+
+/** Move an anchor-only element so its anchor lands on `p`, carrying the stray
+ *  second point by the same offset so the element's shape is untouched. */
+function moveAnchorTo(e: CircuitElement, p: Point): CircuitElement {
+  const dx = p.x - e.x1;
+  const dy = p.y - e.y1;
+  return { ...e, x1: p.x, y1: p.y, x2: e.x2 + dx, y2: e.y2 + dy };
+}
+
+/** A chip on a strictly vertical segment, the port's own rotated chip form.
+ *  It has no upstream flip, so a mirror that includes it declines. */
+function isVerticalChip(e: CircuitElement): boolean {
+  return chipExtentsOf(e) !== undefined && e.x1 === e.x2 && e.y1 !== e.y2;
+}
+
+/** Whether Rotate applies to the selection. A lone element must be able to
+ *  turn; a group always can, its anchor-only annotations riding along as long
+ *  as at least one part really turns. */
+export function canRotateSelection(selected: CircuitElement[]): boolean {
+  if (selected.length === 1) return canRotate(selected[0]);
+  return selected.some(canRotate);
+}
+
+/** Whether Mirror (either axis) applies to the selection. A lone element
+ *  keeps the per-part rule: only asymmetric bodies, since a mirrored
+ *  two-terminal part is just a terminal swap. A group mirrors as one rigid
+ *  body, so every part takes part, plain two-terminal ones included, as
+ *  upstream's group flip does (CommandManager.java:408-417 runs the base
+ *  CircuitElm.flipX on every selected element). */
+export function canMirrorSelection(selected: CircuitElement[]): boolean {
+  if (selected.length === 1) return canMirror(selected[0]);
+  return selected.length > 1 && selected.some(canRotate) && selected.every(groupMirrorable);
+}
+
+/** Whether one part can take its share of a group mirror. Two-terminal parts
+ *  and annotations reflect their points and are always fine. A part with
+ *  hanging posts (an SCR gate, a wattmeter's second pair) needs per-kind
+ *  bookkeeping a bare endpoint reflection lacks: without `canMirror` its
+ *  hanging posts land on the wrong side and their wires detach, so such a
+ *  part refuses the whole group, as it did before group mirroring. */
+function groupMirrorable(e: CircuitElement): boolean {
+  if (isVerticalChip(e)) return false;
+  return canMirror(e) || postCountOf(e) <= 2;
+}
+
+/** One element's share of a group quarter turn about the shared pivot. */
+export function rotateInGroup(e: CircuitElement, pivot: Point): CircuitElement {
+  if (isAnchorOnly(e)) return moveAnchorTo(e, turnPointAbout({ x: e.x1, y: e.y1 }, pivot, 1));
+  return rotateElement(e, pivot);
+}
+
+/** One element's share of a group mirror across the vertical line x = cx.
+ *  Parts with orientation bookkeeping take `mirrorElement`; every other part
+ *  just reflects its endpoints, upstream's base flipX (CircuitElm.java:
+ *  681-686). */
+export function mirrorInGroup(e: CircuitElement, cx: number): CircuitElement {
+  if (isAnchorOnly(e)) return moveAnchorTo(e, { x: 2 * cx - e.x1, y: e.y1 });
+  if (canMirror(e)) return mirrorElement(e, cx);
+  return { ...withoutRoute(e), x1: 2 * cx - e.x1, x2: 2 * cx - e.x2 };
+}
+
+/** The chip family's vertical flip, upstream's ChipElm.flipY
+ *  (ChipElm.java:630-638): toggle FLAG_FLIP_Y and, inside a group, reflect
+ *  the anchor across the shared centre shifted up by the pin span, so the pin
+ *  rows land on the reflected rows. A lone chip only toggles the bit, which
+ *  reverses its pin order in place. The segment stays horizontal. */
+function mirrorChipY(e: CircuitElement, cy: number, sharedCentre: boolean): CircuitElement {
+  const flags = e.flags ^ CHIP_FLIP_Y;
+  if (!sharedCentre) return { ...withoutRoute(e), flags };
+  const ext = chipExtentsOf(e)!;
+  const fsy = (e.flags & CHIP_FLIP_XY) !== 0 ? ext.sx : ext.sy;
+  const y = 2 * cy - e.y1 - (fsy - 1) * ext.cspc2;
+  return { ...withoutRoute(e), y1: y, y2: y, flags };
+}
+
+/**
+ * Reflect across the horizontal line y = cy (its own midpoint when no centre
+ * is given). A vertical reflection is a horizontal one followed by a half
+ * turn, about any point on the line, so every kind with orientation
+ * bookkeeping reuses the already-correct `mirrorElement` and `rotateElement`
+ * instead of a third copy of its flag rules. The axis is x = cy and the
+ * half turn's pivot (cy, cy): with that pivot each quarter turn maps integer
+ * points to integer points (x' = y, y' = 2cy - x), so nothing rounds midway.
+ * Chips use their own FLAG_FLIP_Y instead, because the half turn would
+ * leave them in the port's vertical-segment form.
+ */
+export function mirrorElementVertical(e: CircuitElement, centre?: number): CircuitElement {
+  if (!canMirror(e)) return e;
+  const cy = centre ?? (e.y1 + e.y2) / 2;
+  if (chipExtentsOf(e) !== undefined) return mirrorChipY(e, cy, centre !== undefined);
+  const pivot = { x: cy, y: cy };
+  return rotateElement(rotateElement(mirrorElement(e, cy), pivot), pivot);
+}
+
+/** One element's share of a group mirror across the horizontal line y = cy:
+ *  the vertical twin of `mirrorInGroup`. */
+export function mirrorVerticalInGroup(e: CircuitElement, cy: number): CircuitElement {
+  if (isAnchorOnly(e)) return moveAnchorTo(e, { x: e.x1, y: 2 * cy - e.y1 });
+  if (canMirror(e)) return mirrorElementVertical(e, cy);
+  return { ...withoutRoute(e), y1: 2 * cy - e.y1, y2: 2 * cy - e.y2 };
+}
+
+/** The shared horizontal axis a group's vertical mirror reflects across: the
+ *  truncated box centre, upstream's flipY center2 (CommandManager prepareFlip). */
+export function selectionMirrorCentreY(selected: CircuitElement[]): number | undefined {
+  if (selected.length < 2) return undefined;
+  return flipCentres(selected).cy;
 }

@@ -347,3 +347,54 @@ describe('Escape ownership', () => {
     expect(useStore.getState().subcircuitStack).toHaveLength(0);
   });
 });
+
+describe('mirror keys', () => {
+  /** A diode on a row (0,0)-(64,0) plus a wire down from its anode: a group
+   *  whose vertical mirror is visible on the wire. */
+  const group = () => {
+    const d = useStore.getState().addElement({ kind: 'diode', x1: 0, y1: 0, x2: 64, y2: 0, flags: 0, params: {} });
+    const w = useStore.getState().addElement({ kind: 'wire', x1: 0, y1: 0, x2: 0, y2: 32, flags: 0, params: {} });
+    useStore.getState().select([d, w]);
+  };
+
+  it('plain v mirrors vertically while a move drag holds the selection', () => {
+    group();
+    useStore.getState().commit();
+    useStore.getState().beginElementGesture('move');
+
+    expect(handleAppKeyDown(useStore.getState(), key({ key: 'v' }), recordingHost())).toBe(true);
+
+    expect(useStore.getState().tool).toBeNull();
+    const [, w] = useStore.getState().elements;
+    expect([w.y1, w.y2]).toEqual([32, 0]);
+  });
+
+  it('plain h mirrors horizontally while dragging, and a held key acts once', () => {
+    group();
+    useStore.getState().commit();
+    useStore.getState().beginElementGesture('move');
+
+    handleAppKeyDown(useStore.getState(), key({ key: 'h' }), recordingHost());
+    handleAppKeyDown(useStore.getState(), key({ key: 'h', repeat: true }), recordingHost());
+
+    const [d] = useStore.getState().elements;
+    expect([d.x1, d.x2]).toEqual([64, 0]);
+    // The repeat neither mirrored back nor fell through to a placement.
+    expect(useStore.getState().tool).toBeNull();
+  });
+
+  it('plain v still arms the voltage source outside a drag', () => {
+    group();
+    handleAppKeyDown(useStore.getState(), key({ key: 'v' }), recordingHost());
+    expect(useStore.getState().tool).toBe('voltage');
+  });
+
+  it('Alt+V and Alt+H mirror a settled selection', () => {
+    group();
+    handleAppKeyDown(useStore.getState(), key({ key: 'v', altKey: true }), recordingHost());
+    expect(useStore.getState().elements[1]).toMatchObject({ y1: 32, y2: 0 });
+    handleAppKeyDown(useStore.getState(), key({ key: 'h', altKey: true }), recordingHost());
+    expect(useStore.getState().elements[0]).toMatchObject({ x1: 64, x2: 0 });
+    expect(useStore.getState().tool).toBeNull();
+  });
+});

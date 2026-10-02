@@ -29,6 +29,7 @@ export type ShortcutAction =
   | { type: 'selectAll' }
   | { type: 'rotate' }
   | { type: 'mirror' }
+  | { type: 'mirrorVertical' }
   | { type: 'swap' }
   | { type: 'toggleRunning' }
   | { type: 'print' }
@@ -125,7 +126,14 @@ export const SHORTCUTS: ShortcutEntry[] = [
   // The shift guard keeps Shift+Space unbound, like the letter rows.
   { mod: false, shift: false, key: ' ', action: { type: 'rotate' } },
   { mod: false, alt: true, shift: false, key: 'r', action: { type: 'rotate' } },
+  // Alt+H and Alt+V mirror left-right and top-bottom. Alt+H sits first so
+  // defaultBindingFor('mirror') reports it; Alt+M stays as the older alias.
+  // While a move drag holds the selection, plain h and v mirror too
+  // (appKeys.ts): v otherwise arms the DC voltage source, which a drag
+  // cannot use, so the plain letters are free exactly then.
+  { mod: false, alt: true, shift: false, key: 'h', action: { type: 'mirror' } },
   { mod: false, alt: true, shift: false, key: 'm', action: { type: 'mirror' } },
+  { mod: false, alt: true, shift: false, key: 'v', action: { type: 'mirrorVertical' } },
   { mod: false, alt: true, shift: false, key: 't', action: { type: 'swap' } },
 
   // Upstream's '/' opens the Find Component dialog (UIManager.java:1103-1110).
@@ -152,6 +160,7 @@ export const COMMAND_ACTIONS = [
   'selectAll',
   'rotate',
   'mirror',
+  'mirrorVertical',
   'swap',
   'zoomIn',
   'zoomOut',
@@ -207,7 +216,8 @@ export const ACTION_LABELS: Record<CommandAction, string> = {
   duplicate: 'Duplicate',
   selectAll: 'Select All',
   rotate: 'Rotate',
-  mirror: 'Mirror',
+  mirror: 'Mirror Horizontally',
+  mirrorVertical: 'Mirror Vertically',
   swap: 'Swap',
   zoomIn: 'Zoom In',
   zoomOut: 'Zoom Out',
