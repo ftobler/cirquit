@@ -7,7 +7,7 @@
  * sharing a stacking position render into one column.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { SimEngine } from '../engine/simulator';
 import type { Scope } from '../engine/scopeModel';
 import { defFor } from '../model/registry';
@@ -50,6 +50,7 @@ import {
   type Bounds,
   type FloatRect,
 } from './floatingScopes';
+import { columnWeights, dragSplitter } from './scopeColumns';
 
 interface Props {
   engine: SimEngine | null;
@@ -666,6 +667,68 @@ function FloatingScopeLayer({ engine }: { engine: SimEngine | null }) {
   );
 }
 
+/**
+ * The grab band between two docked scope columns. Dragging it moves width
+ * from one neighbour to the other; a double-click shares the strip equally
+ * again; the arrow keys nudge it. The band straddles the 1 px gap the
+ * columns already leave, so the resting strip looks as before.
+ */
+function ColumnSplitter({
+  index,
+  weights,
+  onChange,
+  totalWidth,
+}: {
+  index: number;
+  weights: number[];
+  onChange: (w: number[]) => void;
+  totalWidth: () => number;
+}) {
+  const dragRef = useRef<{ pointerId: number; x: number; start: number[] } | null>(null);
+  const end = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  const share = Math.round((weights[index] / weights.reduce((a, b) => a + b, 0)) * 100);
+  return (
+    <div
+      className="scope-col-splitter"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize scope columns ${index + 1} and ${index + 2}`}
+      aria-valuenow={share}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      tabIndex={0}
+      title="Drag to resize the columns, double-click to share equally"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        dragRef.current = { pointerId: e.pointerId, x: e.clientX, start: weights };
+      }}
+      onPointerMove={(e) => {
+        const d = dragRef.current;
+        if (!d || d.pointerId !== e.pointerId) return;
+        onChange(dragSplitter(d.start, index, e.clientX - d.x, totalWidth()));
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      // A capture lost without a pointerup must end the drag, or a later
+      // plain hover would keep resizing.
+      onLostPointerCapture={end}
+      onDoubleClick={() => onChange(weights.map(() => 1))}
+      onKeyDown={(e) => {
+        const step = e.key === 'ArrowRight' ? 20 : e.key === 'ArrowLeft' ? -20 : 0;
+        if (step === 0) return;
+        e.preventDefault();
+        onChange(dragSplitter(weights, index, e.shiftKey ? step * 4 : step, totalWidth()));
+      }}
+    />
+  );
+}
+
 export function ScopePanel({ engine }: Props) {
   const scopes = useStore((s) => s.scopes);
   const floating = useStore((s) => s.floating);
@@ -674,6 +737,15 @@ export function ScopePanel({ engine }: Props) {
   const closeScopeProperties = useStore((s) => s.closeScopeProperties);
   const [stripHeight, setStripHeight] = useState(loadStripHeight);
   const stripRef = useRef<HTMLDivElement>(null);
+  // Column width shares, session-only, tagged with the column positions they
+  // were made for. A stack, unstack, float or dock changes what the columns
+  // are, and then the shares fall back to equal rather than reappearing on
+  // columns they never belonged to.
+  const [storedWeights, setStoredWeights] = useState<{ key: string; weights: number[] } | null>(
+    null,
+  );
+  const scopesRef = useRef<HTMLDivElement>(null);
+  const scopesWidth = useCallback(() => scopesRef.current?.clientWidth ?? 0, []);
 
   const resizeStrip = useCallback((h: number, persist: boolean) => {
     setStripHeight(h);
@@ -693,6 +765,12 @@ export function ScopePanel({ engine }: Props) {
   const docked = dockedScopes(scopes, floating);
   // Group panels by stacking position; each position is one flex column.
   const positions = [...new Set(docked.map((x) => x.position))].sort((a, b) => a - b);
+  const columnsKey = positions.join(',');
+  const weights = columnWeights(
+    storedWeights?.key === columnsKey ? storedWeights.weights : null,
+    positions.length,
+  );
+  const setWeights = (w: number[]) => setStoredWeights({ key: columnsKey, weights: w });
 
   return (
     <>
@@ -705,15 +783,25 @@ export function ScopePanel({ engine }: Props) {
             onResize={resizeStrip}
             available={availableHeight}
           />
-          <div className="scopes">
-            {positions.map((pos) => (
-              <div key={pos} className="scope-col">
-                {docked
-                  .filter((x) => x.position === pos)
-                  .map((scope) => (
-                    <ScopeTraceCanvas key={scope.id} engine={engine} scope={scope} />
-                  ))}
-              </div>
+          <div ref={scopesRef} className="scopes">
+            {positions.map((pos, i) => (
+              <Fragment key={pos}>
+                {i > 0 && (
+                  <ColumnSplitter
+                    index={i - 1}
+                    weights={weights}
+                    onChange={setWeights}
+                    totalWidth={scopesWidth}
+                  />
+                )}
+                <div className="scope-col" style={{ flex: `${weights[i]} 1 0px` }}>
+                  {docked
+                    .filter((x) => x.position === pos)
+                    .map((scope) => (
+                      <ScopeTraceCanvas key={scope.id} engine={engine} scope={scope} />
+                    ))}
+                </div>
+              </Fragment>
             ))}
           </div>
           <SimInfoPanel engine={engine} />
