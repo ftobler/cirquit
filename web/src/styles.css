@@ -1615,11 +1615,52 @@ input[type='range'] {
    scopes are present; the canvas draws the info box itself when there are
    none. */
 .bottom-strip {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   height: 150px;
+  min-height: 80px;
+  max-height: 85%;
   background: var(--md-outline-variant);
   border-top: 1px solid var(--border);
+}
+
+/* The grab bar straddling the strip's top border: a thin hit band that only
+   shows itself on hover, focus or drag, so the resting strip looks as before. */
+.scope-strip-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  height: 8px;
+  z-index: 3;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.scope-strip-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  width: 40px;
+  height: 4px;
+  margin-left: -20px;
+  border-radius: 2px;
+  background: var(--md-outline);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.scope-strip-handle:hover::after,
+.scope-strip-handle:focus-visible::after,
+.scope-strip-handle:active::after {
+  opacity: 1;
+}
+
+.scope-strip-handle:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--md-outline) 30%, transparent);
 }
 
 .scopes {

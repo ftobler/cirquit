@@ -10,13 +10,15 @@ const SRC_DIR = fileURLToPath(new URL('.', import.meta.url));
 // CSS would mean a custom property per element for no benefit. ScopeProperties
 // sets the channel-selector dot's colour from the trace-colour map, which the
 // theme and the user's Other Options colours decide at run time: no CSS class
-// can track those. Every other inline style must be a class in a real
+// can track those. ScopePanel sets the strip height the user dragged, a
+// per-viewer number no class can hold. Every other inline style must be a class in a real
 // stylesheet, so this scan keeps the `style={{` rule enforced in CI.
 const DYNAMIC_STYLE_FILES = [
   'ui/ContextMenu.tsx',
   'ui/ScopeMenu.tsx',
   'ui/canvas/ScrollValuePopup.tsx',
   'ui/ScopeProperties.tsx',
+  'ui/ScopePanel.tsx',
 ];
 
 function walk(dir: string): string[] {

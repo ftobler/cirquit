@@ -7,7 +7,7 @@
  * sharing a stacking position render into one column.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SimEngine } from '../engine/simulator';
 import type { Scope } from '../engine/scopeModel';
 import { defFor } from '../model/registry';
@@ -34,6 +34,13 @@ import { ScopeMenu } from './ScopeMenu';
 import { ScopeProperties } from './ScopeProperties';
 import { SimInfoPanel } from './SimInfoPanel';
 import { elmInfoResolver } from './infoBoxLines';
+import {
+  DEFAULT_STRIP_HEIGHT,
+  MIN_STRIP_HEIGHT,
+  clampStripHeight,
+  loadStripHeight,
+  saveStripHeight,
+} from './scopeStrip';
 
 interface Props {
   engine: SimEngine | null;
@@ -366,11 +373,99 @@ function elementNameOf(
   return element ? (defFor(element.kind)?.label ?? element.kind) : 'missing';
 }
 
+/**
+ * The grab bar on the strip's top edge. Dragging it up grows the strip; a
+ * double-click puts it back to the default; the arrow keys nudge it for
+ * keyboard users. The height is stored once the drag ends, not per move.
+ */
+function StripResizeHandle({
+  height,
+  onResize,
+  available,
+}: {
+  height: number;
+  onResize: (h: number, persist: boolean) => void;
+  available: () => number;
+}) {
+  const dragRef = useRef<{ pointerId: number; startY: number; startH: number; last: number } | null>(
+    null,
+  );
+  // The stored height may exceed what a window shrunk since lets the CSS
+  // max-height show; every gesture starts from the clamped, displayed value
+  // so it has no dead zone.
+  const shown = () => clampStripHeight(height, available());
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const start = shown();
+    dragRef.current = { pointerId: e.pointerId, startY: e.clientY, startH: start, last: start };
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    drag.last = clampStripHeight(drag.startH + (drag.startY - e.clientY), available());
+    onResize(drag.last, false);
+  };
+  const end = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    // A cancelled or already lost pointer may no longer hold the capture,
+    // and releasing it then throws on some browsers.
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    onResize(drag.last, true);
+  };
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = e.shiftKey ? 50 : 10;
+    if (e.key === 'ArrowUp') onResize(clampStripHeight(shown() + step, available()), true);
+    else if (e.key === 'ArrowDown') onResize(clampStripHeight(shown() - step, available()), true);
+    else return;
+    e.preventDefault();
+  };
+  return (
+    <div
+      className="scope-strip-handle"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize scopes"
+      aria-valuenow={shown()}
+      aria-valuemin={MIN_STRIP_HEIGHT}
+      tabIndex={0}
+      title="Drag to resize the scopes, double-click to reset"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={end}
+      onPointerCancel={end}
+      // Capture lost without a pointerup (a window blur, an OS gesture) must
+      // end the drag too, or a later plain hover would keep resizing.
+      onLostPointerCapture={end}
+      onDoubleClick={() => onResize(DEFAULT_STRIP_HEIGHT, true)}
+      onKeyDown={onKeyDown}
+    />
+  );
+}
+
 export function ScopePanel({ engine }: Props) {
   const scopes = useStore((s) => s.scopes);
   const elements = useStore((s) => s.elements);
   const scopeProperties = useStore((s) => s.scopeProperties);
   const closeScopeProperties = useStore((s) => s.closeScopeProperties);
+  const [stripHeight, setStripHeight] = useState(loadStripHeight);
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  const resizeStrip = useCallback((h: number, persist: boolean) => {
+    setStripHeight(h);
+    if (persist) saveStripHeight(h);
+  }, []);
+  // The centre area's height, the share the clamp works against. Read on
+  // demand, since only a drag or a key press needs it.
+  const availableHeight = useCallback(
+    () => stripRef.current?.parentElement?.clientHeight ?? 0,
+    [],
+  );
 
   if (scopes.length === 0) return null;
 
@@ -379,7 +474,14 @@ export function ScopePanel({ engine }: Props) {
 
   return (
     <>
-      <div className="bottom-strip">
+      {/* The stored height can exceed a window shrunk since; the CSS
+          max-height keeps the schematic visible without rewriting it. */}
+      <div ref={stripRef} className="bottom-strip" style={{ height: stripHeight }}>
+        <StripResizeHandle
+          height={stripHeight}
+          onResize={resizeStrip}
+          available={availableHeight}
+        />
         <div className="scopes">
           {positions.map((pos) => (
             <div key={pos} className="scope-col">
