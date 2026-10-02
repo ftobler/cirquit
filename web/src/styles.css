@@ -1433,7 +1433,9 @@ input[type='range'] {
    `--md-outline` used everywhere else is not. */
 .field input[type='number'],
 .field input[type='text'],
-.field select {
+.field select,
+.sp-field,
+.scope-props select {
   width: 100%;
   font: inherit;
   color: var(--text);
@@ -1469,9 +1471,8 @@ input[type='range'] {
 .dialog textarea,
 .library-search,
 .tool-search,
-.scalebox,
-.scalebox-narrow,
-.scalebox-wide,
+.sp-field,
+.scope-props select,
 .shortcuts-table input[type='text'],
 .subcircuit-list li.editing input {
   border-color: var(--md-outline-interactive);
@@ -1839,27 +1840,91 @@ input[type='range'] {
   opacity: 1;
 }
 
-/* The scope properties dialog, a fixed overlay like the dialogs. */
+/* The scope properties dialog: a floating panel like the other dialogs, but
+   without a scrim, so the trace it edits stays visible. The header drags it
+   aside (an inline transform carries the offset), a rail on the left picks the
+   section, and the pane keeps one height so switching sections never makes
+   the dialog jump. Dense on purpose (MD3 structured refinement). */
 .scope-props {
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 50;
-  /* A dialog like the rest, so it takes the same neutral floating grey and
-     the same padding, min-width and corner radius. */
+  display: flex;
+  flex-direction: column;
+  width: 580px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
   background: var(--menu-surface);
   border-radius: var(--md-shape-lg);
-  padding: 14px 16px;
-  max-height: 85vh;
-  overflow-y: auto;
-  min-width: 360px;
-  max-width: 560px;
   box-shadow: var(--md-elevation-3);
+  font: var(--md-type-body-medium);
+  overflow: hidden;
 }
 
 .scope-props:focus-visible {
   outline: 2px solid var(--accent);
+}
+
+.sp-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px 8px 16px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.sp-header:active {
+  cursor: grabbing;
+}
+
+.sp-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-title h3 {
+  margin: 0;
+  font: var(--md-type-title-medium);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-subtitle {
+  font: var(--md-type-label-medium);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Square icon buttons: header actions, channel remove, position centre. */
+.scope-props .sp-icon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  background: transparent;
+  border-radius: 50%;
+}
+
+.scope-props .sp-icon:hover,
+.scope-props .sp-icon:focus-visible {
+  background: var(--hover);
+}
+
+.scope-props .sp-icon:disabled,
+.scope-props .sp-icon:disabled:hover {
+  background: transparent;
 }
 
 /* The stack tabs: one per scope sharing this scope's column, so the dialog can
@@ -1869,7 +1934,7 @@ input[type='range'] {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin: 0 0 10px;
+  padding: 0 16px 8px;
 }
 
 /* Rest is the panel's own grey so an inactive tab reads as unselected without
@@ -1888,92 +1953,211 @@ input[type='range'] {
   color: var(--md-on-primary-container);
 }
 
-.scope-props h3 {
-  margin: 0 0 10px;
-  /* The dialog title on the same tier as the other dialogs' h2, so this
-     overlay reads as one of the app's modals rather than a small panel. */
-  font: var(--md-type-headline-small);
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--text);
+.sp-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
-.scope-props fieldset {
-  border: 1px solid var(--border);
-  margin: 0 0 10px;
-  padding: 8px 10px 10px;
-  border-radius: var(--md-shape-xs);
+/* The section rail: a column of text tabs, the current one an accent-tinted
+   pill, MD3's navigation rail shrunk to the app's density. */
+.sp-rail {
+  flex: 0 0 104px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
+  border-right: 1px solid var(--border);
 }
 
-.scope-props legend {
-  font-size: 12px;
-  padding: 0 4px;
+.scope-props .sp-rail button {
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.scope-props .sp-rail button:hover,
+.scope-props .sp-rail button:focus-visible {
+  background: var(--hover);
+}
+
+.scope-props .sp-rail button.current,
+.scope-props .sp-rail button.current:hover {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+.sp-pane {
+  flex: 1;
+  min-width: 0;
+  height: 340px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  padding: 10px 16px 12px;
+}
+
+.sp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  margin: 2px 0;
+}
+
+.sp-row-label {
+  flex: 0 0 72px;
+  color: var(--muted);
+  font: var(--md-type-label-large);
+}
+
+.sp-row-controls {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sp-subhead {
+  margin: 12px 0 4px;
+  font: var(--md-type-label-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
-.scope-props label {
-  /* A control row, not a block: the radio/checkbox text sits centred on the
-     box instead of riding its top edge, and the whole dialog's rows line up. */
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 3px 0;
-  font-size: 12px;
+.sp-subhead:first-child {
+  margin-top: 0;
 }
 
-.scope-props .row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin: 4px 0;
-  /* The trigger and manual-scale rows carry several controls; on a narrow
-     dialog they wrap instead of clipping. */
-  flex-wrap: wrap;
+.sp-hint {
+  margin: 10px 0 0;
+  font: var(--md-type-label-medium);
+  color: var(--muted);
 }
 
-/* The dialog's row buttons are compact, not stretched: the global
-   `.row button { flex: 1 }` is for the options sidebar, and a full-width
-   stepper with a single triangle in it reads as a mistake. */
-.scope-props .row button {
-  flex: 0 0 auto;
+.sp-muted {
+  color: var(--muted);
 }
 
-.scope-props .row button[aria-label*='max value'] {
-  min-width: 28px;
-  height: 26px;
-  padding: 0 6px;
-  line-height: 1;
+/* The segmented button: one outlined capsule split into toggles, the chosen
+   one filled with the secondary container and a check-free label (dense). */
+.sp-segmented {
+  display: inline-flex;
+  border: 1px solid var(--md-outline-interactive);
+  border-radius: 999px;
+  overflow: hidden;
 }
 
-/* The per-trace channel selector: one chip per trace, its colour as a dot,
-   the selected one raised. The selector chips stay flat in their rest state
-   (the raised `scope-props button` fill would make every trace look selected),
-   and hover gives the unselected ones a whisper of the shared hover wash. */
-.scope-props .scope-channels {
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.scope-props .scope-channel {
+.scope-props .sp-segmented button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 3px 12px;
+  border-radius: 0;
   background: transparent;
-  color: var(--muted);
-  padding: 2px 8px;
-  border-radius: var(--md-shape-sm);
-}
-
-.scope-props .scope-channel:hover,
-.scope-props .scope-channel:focus-visible {
-  background: color-mix(in srgb, var(--text) 8%, var(--menu-surface));
-}
-
-.scope-props .scope-channel.current,
-.scope-props .scope-channel.current:hover,
-.scope-props .scope-channel.current:focus-visible {
-  background: color-mix(in srgb, var(--text) 14%, var(--menu-surface));
   color: var(--text);
+  font: var(--md-type-label-large);
+}
+
+.scope-props .sp-segmented button + button {
+  border-left: 1px solid var(--md-outline-interactive);
+}
+
+.scope-props .sp-segmented button:hover,
+.scope-props .sp-segmented button:focus-visible {
+  background: var(--hover);
+}
+
+.scope-props .sp-segmented button.selected,
+.scope-props .sp-segmented button.selected:hover {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+.scope-props .sp-segmented button:disabled,
+.scope-props .sp-segmented button:disabled:hover {
+  background: transparent;
+}
+
+/* Filter chips: outlined at rest, tonal when on. */
+.sp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.scope-props .sp-chip {
+  padding: 3px 12px;
+  border: 1px solid var(--md-outline-interactive);
+  border-radius: var(--md-shape-sm);
+  background: transparent;
+  color: var(--text);
+}
+
+.scope-props .sp-chip:hover,
+.scope-props .sp-chip:focus-visible {
+  background: var(--hover);
+}
+
+.scope-props .sp-chip.on,
+.scope-props .sp-chip.on:hover {
+  border-color: transparent;
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+.scope-props .sp-chip.on::before {
+  /* Decorative: the switch's aria-checked already says it is on. */
+  content: '✓ ' / '';
+}
+
+.scope-props .sp-chip:disabled,
+.scope-props .sp-chip:disabled:hover {
+  background: transparent;
+}
+
+/* One row per channel: colour dot, name, source element, then its own
+   controls, so a combined scope needs no channel picker. */
+.sp-channels {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sp-channel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 4px 0 8px;
+  border-radius: var(--md-shape-sm);
+  background: color-mix(in srgb, var(--text) 5%, var(--menu-surface));
+}
+
+.sp-channel-name {
+  flex: 0 0 auto;
+  font: var(--md-type-label-large);
+  white-space: nowrap;
+}
+
+.sp-channel-source {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-channel-scale .sp-position {
+  flex: 1;
+  min-width: 60px;
 }
 
 .scope-props .channel-dot {
@@ -1984,41 +2168,139 @@ input[type='range'] {
   flex: 0 0 auto;
 }
 
-/* A trace running its own measurement readouts carries a small second dot in
-   the trace colour, beside the chip's label. */
-.scope-props .channel-badge {
-  width: 5px;
-  height: 5px;
+/* A channel with its own readouts carries a small accent dot on its segment. */
+.sp-badge {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
+  background: var(--accent);
   display: inline-block;
-  flex: 0 0 auto;
 }
 
-.scope-props input[type='range'] {
+.sp-stepper,
+.sp-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sp-slider {
   flex: 1;
 }
 
-/* The scope dialog's text inputs keep the per-field widths the inline styles
-   used to carry: 64 px for the scale and trigger boxes, 48 px for the
-   narrower divisions box, full width for the label. */
-.scalebox {
+.sp-slider input[type='range'] {
+  flex: 1;
+  min-width: 80px;
+}
+
+.scope-props .sp-stepper button,
+.scope-props .sp-slider button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: color-mix(in srgb, var(--text) 10%, var(--menu-surface));
+}
+
+.scope-props .sp-stepper button:hover,
+.scope-props .sp-stepper button:focus-visible,
+.scope-props .sp-slider button:hover,
+.scope-props .sp-slider button:focus-visible {
+  background: color-mix(in srgb, var(--text) 18%, var(--menu-surface));
+}
+
+.scope-props .sp-stepper button:active,
+.scope-props .sp-slider button:active {
+  background: color-mix(in srgb, var(--text) 24%, var(--menu-surface));
+}
+
+.scope-props .sp-stepper button:disabled,
+.scope-props .sp-slider button:disabled {
+  background: color-mix(in srgb, var(--text) 10%, var(--menu-surface));
+}
+
+.sp-readout {
+  min-width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-field {
+  width: 120px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-field-narrow {
   width: 64px;
 }
 
-.scalebox-narrow {
-  width: 48px;
+.sp-field-wide {
+  flex: 1;
+  width: auto;
+  min-width: 0;
 }
 
-.scalebox-wide {
+.sp-field[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.sp-xy {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px 12px;
+  margin-bottom: 6px;
+}
+
+.sp-select {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--muted);
+  font: var(--md-type-label-medium);
+}
+
+.sp-select select {
   width: 100%;
 }
 
-.scope-props .scope-props-actions {
+.sp-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.scope-props .sp-actions button:not(.primary) {
+  background: transparent;
+  color: var(--accent);
+}
+
+.scope-props .sp-actions button:not(.primary):hover,
+.scope-props .sp-actions button:not(.primary):focus-visible {
+  background: var(--hover);
+}
+
+.sp-spacer {
+  flex: 1;
+}
+
+/* Phone width: the rail becomes a scrolling strip over the pane. */
+@media (max-width: 600px) {
+  .sp-body {
+    flex-direction: column;
+  }
+
+  .sp-rail {
+    flex: 0 0 auto;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sp-row-label {
+    flex-basis: 60px;
+  }
 }
 
 .fatal {
