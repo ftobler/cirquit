@@ -35,5 +35,24 @@ describe('optocoupler symbol geometry', () => {
       expect(Math.abs(led.x1 - posts[0].x)).toBeLessThan(Math.abs(led.x1 - posts[2].x));
       expect(Math.abs(phototransistor.x2 - posts[2].x)).toBeLessThan(Math.abs(phototransistor.x2 - posts[0].x));
     });
+
+    it(`keeps the light arrows clear of the LED and the transistor bar (${name})`, () => {
+      const { led, phototransistor, light } = optoGeometry(opto(flags));
+      // The LED triangle and cathode bar reach 8 either side of its axis; the
+      // transistor's base bar runs 3 units in from its first endpoint.
+      const ledReach = 8;
+      const bar = phototransistor.x1;
+      for (const [from, tip] of light) {
+        const lo = Math.min(from.x, tip.x);
+        const hi = Math.max(from.x, tip.x);
+        expect(lo > led.x1 + ledReach || hi < led.x1 - ledReach).toBe(true);
+        expect(Math.abs(from.x - led.x1)).toBeGreaterThan(ledReach);
+        // The arrow lies wholly between the LED and the bar, pointing at it.
+        expect(Math.abs(tip.x - bar)).toBeLessThan(Math.abs(from.x - bar));
+        expect(Math.min(Math.abs(from.x - bar), Math.abs(tip.x - bar))).toBeGreaterThan(0);
+        expect((tip.x - led.x1) * (bar - led.x1)).toBeGreaterThan(0);
+        expect(Math.abs(tip.x - led.x1)).toBeLessThan(Math.abs(bar - led.x1));
+      }
+    });
   }
 });

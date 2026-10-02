@@ -93,6 +93,7 @@ export function optoGeometry(e: CircuitElement): {
   led: CircuitElement;
   phototransistor: CircuitElement;
   inner: Point[];
+  light: [Point, Point][];
 } {
   const posts = optoPosts(e);
   const dx = (e.flags & CHIP_FLIP_X) !== 0 ? -1 : 1;
@@ -124,11 +125,22 @@ export function optoGeometry(e: CircuitElement): {
     coll,
     emit,
   ];
-  return { posts, led, phototransistor, inner };
+  // The light: two short arrows from the LED across to the phototransistor
+  // (OptocouplerElm.java:105-114), 10 units apart about the LED's midline.
+  // The tails start 10 out from the LED axis, past the triangle's 8-unit half
+  // width, and the tips stop 3 short of the transistor's bar at 24 out, so
+  // the arrows float in the gap without touching either symbol.
+  const sx = led.x1 + 10 * dx;
+  const sy = (led.y1 + led.y2) / 2;
+  const light: [Point, Point][] = [sy - 5, sy + 5].map((y) => [
+    { x: sx, y },
+    { x: sx + 11 * dx, y },
+  ]);
+  return { posts, led, phototransistor, inner, light };
 }
 
 function drawOptocoupler(g: DrawContext, e: CircuitElement): void {
-  const { posts, led, phototransistor, inner } = optoGeometry(e);
+  const { posts, led, phototransistor, inner, light } = optoGeometry(e);
   const dx = (e.flags & CHIP_FLIP_X) !== 0 ? -1 : 1;
 
   // The housing, a stroked rect (OptocouplerElm.java:89-90, 133-139).
@@ -176,14 +188,8 @@ function drawOptocoupler(g: DrawContext, e: CircuitElement): void {
     phototransistor,
   );
 
-  // The light: two short arrows from the LED across to the phototransistor
-  // (OptocouplerElm.java:105-114), 10 units apart about the LED's midline.
-  const sx = led.x1 + 4 * dx;
-  const sy = (led.y1 + led.y2) / 2;
-  for (const y of [sy - 5, sy + 5]) {
-    const from = { x: sx, y };
-    const tip = { x: sx + 18 * dx, y };
-    line(g, from, { x: tip.x - 4 * dx, y }, g.theme.lightGray, 1);
+  for (const [from, tip] of light) {
+    line(g, from, { x: tip.x - 4 * dx, y: tip.y }, g.theme.lightGray, 1);
     arrowHead(g, from, tip, 5, g.theme.lightGray);
   }
 }
