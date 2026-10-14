@@ -709,7 +709,12 @@ button.active,
   min-width: 360px;
   max-width: 620px;
   max-height: 85vh;
-  overflow-y: auto;
+  /* The panel itself never scrolls: a scrollbar on a rounded box paints over
+     the corner radius. The body scrolls inside the padding instead, so the
+     bar stays within the dialog, and the title and buttons stay in view. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: var(--md-elevation-3);
   outline: none;
 }
@@ -752,6 +757,9 @@ button.active,
    base so modal prose reads comfortably under the headline-small title. */
 .dialog-body {
   font: var(--md-type-body-medium);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .dialog .hint {
