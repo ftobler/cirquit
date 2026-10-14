@@ -505,6 +505,20 @@ button.active,
   position: relative;
 }
 
+/* Every in-panel scroller gets a slim bar with a transparent track, so the
+   bar reads as a thumb floating inside the panel padding instead of a
+   full-height gutter running over the rounded corners. */
+.dropdown-menu,
+.dialog-body,
+.context-commands,
+.context-palette-list,
+.subcircuit-list,
+.toolbox-list,
+.right {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent;
+}
+
 .dropdown-menu {
   position: absolute;
   /* Above the problem banner (37) so an open menu overlays it, below dialogs
@@ -518,7 +532,9 @@ button.active,
   overflow: auto;
   background: var(--menu-surface);
   border-radius: var(--md-shape-md);
-  padding: 6px;
+  /* Block padding larger than the radius keeps the bar's ends clear of the
+     rounded corners. */
+  padding: 10px 6px;
   box-shadow: var(--md-elevation-2);
 }
 
