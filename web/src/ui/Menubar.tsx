@@ -442,13 +442,13 @@ export function Menubar({ engine }: Props) {
     label: p.title,
     onClick: () => openDocsPage(p.file),
   }));
+  helpItems.push(helpAboutRow(fire(() => openDialog('about'))));
   helpItems.push(
     helpGithubRow(() => {
       closeMenus();
       window.open(PROJECT_GITHUB_URL, '_blank', 'noopener');
     }),
   );
-  helpItems.push(helpAboutRow(fire(() => openDialog('about'))));
 
   const copyImage = async () => {
     closeMenus();
