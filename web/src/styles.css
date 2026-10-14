@@ -505,18 +505,42 @@ button.active,
   position: relative;
 }
 
-/* Every in-panel scroller gets a slim bar with a transparent track, so the
-   bar reads as a thumb floating inside the panel padding instead of a
-   full-height gutter running over the rounded corners. */
-.dropdown-menu,
-.dialog-body,
-.context-commands,
-.context-palette-list,
-.subcircuit-list,
-.toolbox-list,
-.right {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent;
+/* In-panel scrollers keep the platform bar width but drop the end arrows and
+   use a transparent track, so the bar reads as a thumb inside the panel
+   padding instead of a gutter running over the rounded corners. Only the
+   webkit pseudo-elements are used: in Chrome a standard scrollbar-color or
+   scrollbar-width would switch them off and bring the arrows back. */
+.dropdown-menu::-webkit-scrollbar,
+.dialog-body::-webkit-scrollbar,
+.context-commands::-webkit-scrollbar,
+.context-palette-list::-webkit-scrollbar,
+.subcircuit-list::-webkit-scrollbar,
+.toolbox-list::-webkit-scrollbar,
+.right::-webkit-scrollbar {
+  width: 15px;
+}
+
+.dropdown-menu::-webkit-scrollbar-button,
+.dialog-body::-webkit-scrollbar-button,
+.context-commands::-webkit-scrollbar-button,
+.context-palette-list::-webkit-scrollbar-button,
+.subcircuit-list::-webkit-scrollbar-button,
+.toolbox-list::-webkit-scrollbar-button,
+.right::-webkit-scrollbar-button {
+  display: none;
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb,
+.dialog-body::-webkit-scrollbar-thumb,
+.context-commands::-webkit-scrollbar-thumb,
+.context-palette-list::-webkit-scrollbar-thumb,
+.subcircuit-list::-webkit-scrollbar-thumb,
+.toolbox-list::-webkit-scrollbar-thumb,
+.right::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text) 35%, transparent);
+  border-radius: 8px;
+  border: 4px solid transparent;
+  background-clip: padding-box;
 }
 
 .dropdown-menu {
@@ -776,6 +800,12 @@ button.active,
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* The bar lives in the dialog's own right padding: the gutter is always
+     reserved and the body reaches that far out, so content keeps the same
+     margin whether or not it scrolls instead of gaining a bar's width of
+     dead space on the right. 15px matches the webkit bar width above. */
+  scrollbar-gutter: stable;
+  margin-right: -15px;
 }
 
 .dialog .hint {
