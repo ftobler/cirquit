@@ -3,6 +3,7 @@ import {
   dcOutcomeReport,
   deferred,
   fileMenuTailRows,
+  helpAboutRow,
   findDcOperatingPointRow,
   toggleFullScreenRow,
   type MenuItemDef,
@@ -105,24 +106,31 @@ describe('fileMenuTailRows', () => {
   const tail = (fired: string[]) => ({
     print: () => void fired.push('Print…'),
     fullScreen: () => void fired.push('Toggle Full Screen'),
-    about: () => void fired.push('About…'),
   });
 
-  it('keeps the upstream tail order: Print, Toggle Full Screen, About', () => {
-    // Menus.java:139-143 puts the toggle between Print and About. Pinning the
-    // assembled tail here keeps the position honest without rendering JSX.
+  it('ends with Print then Toggle Full Screen, and no About', () => {
     const fired: string[] = [];
     const rows = fileMenuTailRows(tail(fired));
-    expect(rows.map((r) => r.label)).toEqual(['Print…', 'Toggle Full Screen', 'About…']);
+    expect(rows.map((r) => r.label)).toEqual(['Print…', 'Toggle Full Screen']);
     expect(rows[0]?.shortcut).toBe('Ctrl+P');
     for (const r of rows) r.onClick();
-    expect(fired).toEqual(['Print…', 'Toggle Full Screen', 'About…']);
+    expect(fired).toEqual(['Print…', 'Toggle Full Screen']);
   });
 
-  it('separates the toggle from both neighbours, like Menus.java:140,:142', () => {
+  it('separates the toggle from Print, like Menus.java:140', () => {
     const rows = fileMenuTailRows(tail([]));
     expect(rows[0]?.sepBefore).toBeUndefined();
     expect(rows[1]?.sepBefore).toBe(true);
-    expect(rows[2]?.sepBefore).toBe(true);
+  });
+});
+
+describe('helpAboutRow', () => {
+  it('is the About row, set off by a separator, and fires its handler', () => {
+    let ran = false;
+    const row = helpAboutRow(() => void (ran = true));
+    expect(row.label).toBe('About…');
+    expect(row.sepBefore).toBe(true);
+    row.onClick();
+    expect(ran).toBe(true);
   });
 });

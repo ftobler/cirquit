@@ -25,6 +25,7 @@ import { useMenuKeyboard } from './menuKeyboard';
 import {
   dcOutcomeReport,
   fileMenuTailRows,
+  helpAboutRow,
   findDcOperatingPointRow,
   type MenuItemDef,
 } from './menuRows';
@@ -439,6 +440,7 @@ export function Menubar({ engine }: Props) {
     label: p.title,
     onClick: () => openDocsPage(p.file),
   }));
+  helpItems.push(helpAboutRow(fire(() => openDialog('about'))));
 
   const copyImage = async () => {
     closeMenus();
@@ -572,8 +574,7 @@ export function Menubar({ engine }: Props) {
       disabled: !hasRecovery,
       onClick: fire(() => useStore.getState().recoverAutoSave()),
     },
-    // Upstream's File tail (Menus.java:139-143): Print, then the Full Screen
-    // toggle between separators, then About. The command toggles the browser
+    // The File tail: Print, then the Full Screen toggle after a separator. The command toggles the browser
     // surface on the document element and re-fits the circuit afterwards
     // (CommandManager.java:305-311). The fit goes through requestCenter, whose
     // layout-effect path measures the canvas before fitting: entering full
@@ -582,7 +583,6 @@ export function Menubar({ engine }: Props) {
     ...fileMenuTailRows({
       print: fire(doPrint),
       fullScreen: fire(() => runFullScreenToggle(document, useStore.getState().requestCenter)),
-      about: fire(() => openDialog('about')),
     }),
   ];
 

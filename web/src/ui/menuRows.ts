@@ -53,19 +53,17 @@ export function toggleFullScreenRow(onToggle: () => void): MenuItemDef {
   };
 }
 
-/** The File menu's last three rows in upstream order (Menus.java:139-143):
- *  Print, the Full Screen toggle, then About, with separators around the
- *  toggle like upstream's addSeparator calls. Built here rather than inline
- *  so the headless tests pin order and separators against drift. */
+/** The File menu's last two rows: Print, then the Full Screen toggle after a
+ *  separator like upstream's addSeparator call (Menus.java:139-141). About
+ *  is not here: it lives under Help. Built here rather than inline so the
+ *  headless tests pin order and separators against drift. */
 export function fileMenuTailRows(tail: {
   print: () => void;
   fullScreen: () => void;
-  about: () => void;
 }): MenuItemDef[] {
   return [
     { label: 'Print…', shortcut: 'Ctrl+P', onClick: tail.print },
     { ...toggleFullScreenRow(tail.fullScreen), sepBefore: true },
-    { label: 'About…', onClick: tail.about, sepBefore: true },
   ];
 }
 
@@ -88,4 +86,10 @@ export function dcOutcomeReport(result: string | null): {
     };
   }
   return { notice: null, problem: result };
+}
+
+/** The Help > About row, which opens the About dialog. Sits after the docs
+ *  pages behind a separator. */
+export function helpAboutRow(onAbout: () => void): MenuItemDef {
+  return { label: 'About…', onClick: onAbout, sepBefore: true };
 }
