@@ -4,6 +4,7 @@ import {
   deferred,
   fileMenuTailRows,
   helpAboutRow,
+  helpGithubRow,
   findDcOperatingPointRow,
   toggleFullScreenRow,
   type MenuItemDef,
@@ -130,6 +131,16 @@ describe('helpAboutRow', () => {
     const row = helpAboutRow(() => void (ran = true));
     expect(row.label).toBe('About…');
     expect(row.sepBefore).toBe(true);
+    row.onClick();
+    expect(ran).toBe(true);
+  });
+});
+
+describe('helpGithubRow', () => {
+  it('is a plain GitHub row that fires its handler', () => {
+    let ran = false;
+    const row = helpGithubRow(() => void (ran = true));
+    expect(row.label).toBe('GitHub');
     row.onClick();
     expect(ran).toBe(true);
   });

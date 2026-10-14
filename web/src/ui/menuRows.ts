@@ -93,3 +93,8 @@ export function dcOutcomeReport(result: string | null): {
 export function helpAboutRow(onAbout: () => void): MenuItemDef {
   return { label: 'About…', onClick: onAbout, sepBefore: true };
 }
+
+/** The Help > GitHub row, opening the project repository in a new tab. */
+export function helpGithubRow(onOpen: () => void): MenuItemDef {
+  return { label: 'GitHub', onClick: onOpen };
+}

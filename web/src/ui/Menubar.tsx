@@ -19,6 +19,7 @@ import { canMirrorSelection as canMirrorSel, canRotate, canRotateSelection as ca
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
 import { makeGhostElement, useStore } from '../state/store';
+import { PROJECT_GITHUB_URL } from './about';
 import { runFullScreenToggle } from './fullscreen';
 import { menubarButtonClass } from './controlClasses';
 import { useMenuKeyboard } from './menuKeyboard';
@@ -26,6 +27,7 @@ import {
   dcOutcomeReport,
   fileMenuTailRows,
   helpAboutRow,
+  helpGithubRow,
   findDcOperatingPointRow,
   type MenuItemDef,
 } from './menuRows';
@@ -440,6 +442,12 @@ export function Menubar({ engine }: Props) {
     label: p.title,
     onClick: () => openDocsPage(p.file),
   }));
+  helpItems.push(
+    helpGithubRow(() => {
+      closeMenus();
+      window.open(PROJECT_GITHUB_URL, '_blank', 'noopener');
+    }),
+  );
   helpItems.push(helpAboutRow(fire(() => openDialog('about'))));
 
   const copyImage = async () => {

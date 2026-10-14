@@ -3,7 +3,7 @@
  *  form difference with the same function. */
 
 import { useStore } from '../state/store';
-import { staticDeploymentUrl } from './about';
+import { PROJECT_GITHUB_URL, staticDeploymentUrl } from './about';
 import { Dialog } from './Dialog';
 
 export function AboutDialog() {
@@ -30,8 +30,8 @@ export function AboutDialog() {
           Falstad's CircuitJS1
         </a>
         . The source for this project lives at{' '}
-        <a href="https://github.com/ftobler/cirquit" target="_blank" rel="noreferrer">
-          github.com/ftobler/cirquit
+        <a href={PROJECT_GITHUB_URL} target="_blank" rel="noreferrer">
+          {PROJECT_GITHUB_URL.replace('https://', '')}
         </a>
         . It is licensed under the GNU General Public License version 2.0 or later, and the bundled
         example circuits keep their upstream attribution.

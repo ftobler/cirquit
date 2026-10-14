@@ -2,6 +2,10 @@
  *  like the other ui/ modules (AGENTS.md: nothing testable belongs inside a
  *  React component). */
 
+/** The project's GitHub repository, the one source for the About dialog link
+ *  and the Help > GitHub menu row. */
+export const PROJECT_GITHUB_URL = 'https://github.com/ftobler/cirquit';
+
 /** The zip the About dialog offers for download. It is named for the project
  *  rather than for what it is, because the name is what the user ends up with
  *  in their downloads folder; the CI step that builds it uses the same name. */
