@@ -2177,6 +2177,17 @@ function createAppStore() {
       set((s) => ({ history: clearFuture(s.history) }));
   },
 
+  revertBatch: (snapshot, history) =>
+    set((s) => ({
+      ...snapshot,
+      // App preferences stay live through a batch abort for the same reason an
+      // undo keeps them: they are not rewound by the stacks.
+      settings: withLiveAppPrefs(snapshot.settings, s.settings),
+      // The one teardown list, so a failed batch cannot strand a dialog or a
+      // gesture on elements it just removed.
+      ...applyRevert(s, { scopes: snapshot.scopes }, history),
+    })),
+
   clearPending: () =>
     set((s) =>
       s.pendingParams.size === 0 && s.pendingStates.size === 0

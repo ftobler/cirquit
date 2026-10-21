@@ -661,6 +661,10 @@ export interface AppState {
    *  immediate Ctrl+Y resurrect the degenerate element they exist to prevent.
    *  Callers still tear their drag down right after, as with `undo`. */
   revertToBaseline(): void;
+  /** Restores a failed batch's pre-state and history. `history.batch` owns the
+   *  decision; this is the store's one application of it, so the command layer
+   *  never writes snapshot fields directly. */
+  revertBatch(snapshot: Snapshot, history: History): void;
   /** Drops queued value edits; the frame loop calls this after applying them. */
   clearPending(): void;
 
