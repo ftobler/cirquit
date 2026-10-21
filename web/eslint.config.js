@@ -5,8 +5,9 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  // Generated wasm bindings are not ours to lint.
-  { ignores: ['dist', 'src/wasm'] },
+  // Generated wasm bindings are not ours to lint, and neither is the built
+  // MCP server artifact (a bundle of the sources plus their dependencies).
+  { ignores: ['dist', 'dist-mcp', 'src/wasm'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

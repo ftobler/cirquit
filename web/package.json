@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:mcp": "vite build -c vite.mcp.config.ts",
     "preview": "vite preview",
     "test": "vitest",
     "typecheck": "tsc -b --noEmit",
