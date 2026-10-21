@@ -3,7 +3,7 @@ import { GRID_SIZE } from '../model/types';
 import { parseCircuit } from '../io/netlist';
 import { clearSessionModels, saveModel } from '../io/subcircuits';
 import { useStore } from './store';
-import { addCapacitor, addResistor, dropId, fresh } from './store.test-helpers';
+import { addCapacitor, addResistor, dropId, fresh, undoDepth } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
 
@@ -169,9 +169,9 @@ describe('copy, paste and duplicate', () => {
     ],
   ] as const)('%s is one undo step', (_name, run) => {
     addResistor();
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     run(useStore.getState().elements[0].id);
-    expect(useStore.getState().undoStack.length).toBe(before + 1);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
     useStore.getState().undo();
     expect(useStore.getState().elements).toHaveLength(1);
   });
@@ -193,14 +193,14 @@ describe('copy, paste and duplicate', () => {
     const a = addResistor();
     useStore.getState().select([a]);
     useStore.setState({ clipboard: 'this is not a netlist' });
-    const undoBefore = useStore.getState().undoStack.length;
+    const undoBefore = undoDepth(useStore.getState());
     useStore.getState().pasteFromClipboard();
     const s = useStore.getState();
     expect(s.elements).toHaveLength(1);
     expect(s.selectedIds).toEqual([a]);
     expect(s.revision).toBe(1);
     // No insert means no commit: the undo stack must not grow either.
-    expect(s.undoStack).toHaveLength(undoBefore);
+    expect(undoDepth(s)).toBe(undoBefore);
   });
 
   it('pasting a corrupt stored clipboard is a silent no-op', () => {
@@ -211,14 +211,14 @@ describe('copy, paste and duplicate', () => {
     const a = addResistor();
     useStore.getState().select([a]);
     useStore.setState({ clipboard: '<cir ><w a="1">' });
-    const undoBefore = useStore.getState().undoStack.length;
+    const undoBefore = undoDepth(useStore.getState());
     const revisionBefore = useStore.getState().revision;
     useStore.getState().pasteFromClipboard();
     const s = useStore.getState();
     expect(s.elements).toHaveLength(1);
     expect(s.selectedIds).toEqual([a]);
     expect(s.revision).toBe(revisionBefore);
-    expect(s.undoStack).toHaveLength(undoBefore);
+    expect(undoDepth(s)).toBe(undoBefore);
   });
 
   it('paste with no clipboard is a no-op', () => {

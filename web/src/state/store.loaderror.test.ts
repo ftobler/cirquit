@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildReport } from '../ui/canvas/useFrameLoop';
 import { useStore } from './store';
-import { fresh } from './store.test-helpers';
+import { fresh, undoDepth } from './store.test-helpers';
 
 const GOOD = '$ 1 0.000005 10 50 5 5 1e-9\nr 0 0 160 0 0 1000\n';
 // isXml matches (the first line opens `<cir `), and the parser's nesting check
@@ -32,7 +32,7 @@ describe('loadNetlist error routing', () => {
     expect(s.unsupportedProblem).toBeNull();
     // The old circuit stays on screen untouched, down to element identity.
     expect(s.elements).toBe(kept);
-    expect(s.undoStack).toHaveLength(0);
+    expect(undoDepth(s)).toBe(0);
   });
 
   it('reports the conversion failure text, not an opaque refusal', () => {

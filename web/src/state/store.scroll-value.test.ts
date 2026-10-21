@@ -7,7 +7,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { selectionValue, stepScrollValue } from '../model/scrollValue';
 import { useStore } from './store';
-import { addResistor, fresh } from './store.test-helpers';
+import { addResistor, fresh, undoDepth, commit } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
 
@@ -46,14 +46,23 @@ describe('openScrollValuePopover', () => {
   it('pushes no undo entry by itself; the opener commits first', () => {
     // onWheel commits before opening (the port of upstream's constructor
     // pushUndo), so the store action must not commit again behind its back.
-    const depth = useStore.getState().undoStack.length;
+    const depth = undoDepth(useStore.getState());
     useStore.getState().openScrollValuePopover({
-      session: { id: 1, kind: 'resistor', param: 'resistance', values: [1], index: 0, original: 1, steps: 0, remainder: 0 },
+      session: {
+        id: 1,
+        kind: 'resistor',
+        param: 'resistance',
+        values: [1],
+        index: 0,
+        original: 1,
+        steps: 0,
+        remainder: 0,
+      },
       name: 'R',
       x: 0,
       y: 0,
     });
-    expect(useStore.getState().undoStack.length).toBe(depth);
+    expect(undoDepth(useStore.getState())).toBe(depth);
   });
 });
 
@@ -143,7 +152,7 @@ describe('revertScrollValuePopover', () => {
 
 describe('scrollValuePopover is torn down by whole-document events', () => {
   it('undo clears an open popover', () => {
-    useStore.getState().commit();
+    commit();
     openOn();
 
     useStore.getState().undo();
@@ -155,11 +164,20 @@ describe('scrollValuePopover is torn down by whole-document events', () => {
     // Build a redo future: commit, open the popover, then undo so redoStack
     // holds the snapshot. The undo clears the popover; reopen it without
     // touching the circuit so the redo future survives, then redo.
-    useStore.getState().commit();
+    commit();
     openOn();
     useStore.getState().undo();
     useStore.getState().openScrollValuePopover({
-      session: { id: 1, kind: 'resistor', param: 'resistance', values: [1], index: 0, original: 1, steps: 0, remainder: 0 },
+      session: {
+        id: 1,
+        kind: 'resistor',
+        param: 'resistance',
+        values: [1],
+        index: 0,
+        original: 1,
+        steps: 0,
+        remainder: 0,
+      },
       name: 'R',
       x: 0,
       y: 0,
@@ -191,8 +209,8 @@ describe('the whole session is one undo entry', () => {
   it('commit, open, steps and close undo back to the original circuit', () => {
     const id = addResistor();
     const store = useStore.getState();
-    store.commit();
-    const depth = useStore.getState().undoStack.length;
+    commit();
+    const depth = undoDepth(useStore.getState());
 
     store.openScrollValuePopover({
       session: {
@@ -211,7 +229,7 @@ describe('the whole session is one undo entry', () => {
     });
     useStore.getState().stepScrollValuePopover(100);
     useStore.getState().closeScrollValuePopover();
-    expect(useStore.getState().undoStack.length).toBe(depth);
+    expect(undoDepth(useStore.getState())).toBe(depth);
 
     useStore.getState().undo();
     expect(useStore.getState().elements.find((e) => e.id === id)?.params.resistance).toBe(1000);

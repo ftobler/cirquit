@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { useStore } from './store';
-import { fresh } from './store.test-helpers';
+import { fresh, commit } from './store.test-helpers';
 import {
   clearSampleCache,
   getAudioSamples,
@@ -77,7 +77,7 @@ describe('audio and data file loads', () => {
     const id = useStore.getState().addElement(audioInput);
     useStore.getState().loadAudioFile(id, [1.0], 8000, 'first');
     const fileNum1 = useStore.getState().elements.find((e) => e.id === id)!.params.fileNum;
-    useStore.getState().commit();
+    commit();
 
     useStore.getState().loadAudioFile(id, [2.0], 8000, 'second');
     const fileNum2 = useStore.getState().elements.find((e) => e.id === id)!.params.fileNum;
@@ -109,9 +109,9 @@ describe('audio and data file loads', () => {
 
     // Loading a new netlist is a fresh document: the previous file's buffers
     // go with it, so the audio element's fileNum resolves to nothing.
-    useStore.getState().loadNetlist(
-      '$ 0 5e-6 10 50 5 50 5e-11\n411 0 0 64 0 16 1 60 5 0 0 0.5 5 0 0\n',
-    );
+    useStore
+      .getState()
+      .loadNetlist('$ 0 5e-6 10 50 5 50 5e-11\n411 0 0 64 0 16 1 60 5 0 0 0.5 5 0 0\n');
     const el = useStore.getState().elements[0];
     expect(el.kind).toBe('audioInput');
     expect(modelJsonFor(el)).toBeNull();

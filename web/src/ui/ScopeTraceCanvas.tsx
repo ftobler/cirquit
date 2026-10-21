@@ -74,9 +74,9 @@ export function ScopeTraceCanvas({
   elementsRef.current = useStore((s) => s.elements);
   const settings = useStore((s) => s.settings);
   const dark = useStore((s) => s.dark);
-  // Watched so an undo or redo that force-clears the gesture flag mid-drag can
-  // cancel the plot drag here; see the orphan check below.
-  const scopeGesture = useStore((s) => s.scopeGesture);
+  // Watched so an undo or redo that aborts the gesture transaction mid-drag
+  // can cancel the plot drag here; see the orphan check below.
+  const scopeOpen = useStore((s) => s.history.open !== null);
 
   // Measure the canvas width and keep the geometry registry in step, so the
   // frame loop can size the engine ring without reading the DOM.
@@ -182,11 +182,11 @@ export function ScopeTraceCanvas({
         cursor.dragPlotYStart = y;
         cursor.dragPlotYInitial = target.manVPosition ?? 0;
         // Capture the pointer so moves keep arriving even if the cursor leaves
-        // the canvas, then commit the pre-drag baseline once and let the moves
-        // mutate without committing, like an element drag.
+        // the canvas, then open the pre-drag transaction once and let the moves
+        // mutate without checkpointing, like an element drag.
         dragPointerIdRef.current = e.pointerId;
         canvasRef.current?.setPointerCapture(e.pointerId);
-        useStore.getState().beginScopeGesture();
+        useStore.getState().beginTransaction('Scope');
         return;
       }
     }
@@ -206,7 +206,7 @@ export function ScopeTraceCanvas({
     cursor.hoverSettingsWheel = inSettingsWheel(x, y, w, h);
     // The revert may land between two moves, before the effect above runs;
     // tear the orphaned drag down here rather than mutate past its baseline.
-    if (cursor.draggingPlotY && !useStore.getState().scopeGesture) {
+    if (cursor.draggingPlotY && useStore.getState().history.open === null) {
       endPointerInteraction();
       return;
     }
@@ -239,16 +239,16 @@ export function ScopeTraceCanvas({
     }
     // A plot-Y drag ends here, closing its single undo entry. A wheel burst is
     // ended by its own idle timer, so this is a no-op for those.
-    useStore.getState().endScopeGesture();
+    useStore.getState().endTransaction();
   }, []);
 
-  // An undo or redo mid-drag reverts state and force-clears the gesture flag,
+  // An undo or redo mid-drag reverts state and aborts the open transaction,
   // because a live gesture cannot survive a revert. Dragging on would then
   // commit per move against the stale press-time anchor, splitting one gesture
   // into many entries, so an orphaned drag cancels like a pointer cancel.
   useEffect(() => {
-    if (!scopeGesture && cursorRef.current.draggingPlotY) endPointerInteraction();
-  }, [scopeGesture, endPointerInteraction]);
+    if (!scopeOpen && cursorRef.current.draggingPlotY) endPointerInteraction();
+  }, [scopeOpen, endPointerInteraction]);
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const pressedWheel = settingsWheelPressRef.current;
@@ -283,12 +283,12 @@ export function ScopeTraceCanvas({
   // entry rather than one per threshold crossing.
   const extendWheelGesture = () => {
     const st = useStore.getState();
-    if (!st.scopeGesture) st.beginScopeGesture();
+    if (st.history.open === null) st.beginTransaction('Scope');
     if (wheelGestureTimerRef.current !== null) clearTimeout(wheelGestureTimerRef.current);
     wheelGestureTimerRef.current = window.setTimeout(() => {
       // Only end the wheel gesture: a plot-Y drag is still in flight and must
       // keep its single undo entry until pointer-up releases it.
-      if (!cursorRef.current.draggingPlotY) useStore.getState().endScopeGesture();
+      if (!cursorRef.current.draggingPlotY) useStore.getState().endTransaction();
       wheelGestureTimerRef.current = null;
     }, 500);
   };
@@ -317,7 +317,7 @@ export function ScopeTraceCanvas({
   useEffect(() => {
     return () => {
       if (wheelGestureTimerRef.current !== null) clearTimeout(wheelGestureTimerRef.current);
-      useStore.getState().endScopeGesture();
+      useStore.getState().endTransaction();
     };
   }, []);
 

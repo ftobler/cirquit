@@ -81,33 +81,81 @@ upstream's `analyzeCircuit` never touches `t`; only Reset does.
 
 - `Snapshot` carries `settings` and `view` (`web/src/state/types.ts`), like
   upstream's `UndoItem` (`UndoManager.java:36-45`).
-- `commit` dedups against the top of the stack via a canonical `snapshotKey`
-  (`UndoManager.java:50-53`). A no-change click adds nothing; a focus-only edit
-  adds nothing, which makes `beginEdit` safe. On a dedup the redo stack is
-  still cleared, as upstream's `pushUndo` does.
-- `beginEdit()` is `commit()`: inputs commit on focus, range inputs on pointer
-  down, so a typing run or slider drag is one undo entry.
+- History is pure data in `web/src/state/history.ts`: `History` holds the undo
+  and redo `HistoryEntry` lists and the open transaction. The store holds that
+  value and calls the transitions, so the boundary rules are testable without
+  zustand.
+- A step is a **transaction**: `transact(label, fn)` checkpoints the pre-state,
+  runs `fn`, and closes in a `finally`. A throw leaves no half-entry. A nested
+  call joins the outer transaction, so a command that calls another command is
+  still one step. Gestures that span many pointer or wheel events use
+  `beginTransaction`/`endTransaction`; a revert **aborts** the open transaction
+  (`abort`), so one can never outlive the baseline it was opened against.
+- Inside an open transaction a checkpoint is a no-op. That is what retired the
+  old `scopeGesture` flag and the `skipCommit` parameters: the transaction owns
+  the boundary, so a setter or a mid-drag command checkpoints unconditionally.
+- `checkpoint` dedups against the top of the stack via a canonical
+  `snapshotKey` (`UndoManager.java:50-53`). A no-change action adds nothing; a
+  focus-only edit adds nothing, which makes `beginEdit` safe. On a dedup the
+  redo future is still cleared, as upstream's `pushUndo` does.
+- `beginEdit(label)` is a labelled checkpoint: inputs commit on focus, range
+  inputs on pointer down, so a typing run or slider drag is one undo entry
+  named after its field (`Edit Resistance`).
 - **Diverges from upstream (owner decision).** Switch toggles are undoable.
   Upstream's `doSwitch` (`MouseManager.java:314-326`) returns before the
   mouse-down `pushUndo`. Do not "fix" back.
+- **Diverges from upstream.** A transaction that ends with its document state
+  equal to its own pushed baseline pops that entry again, so a click that only
+  selected, a drag that returned to its start, or a cancelled placement leaves
+  no undo entry that does nothing. Upstream's `UndoManager` has no transaction
+  concept and keeps the dead entry its mouse-down `pushUndo` created. The
+  pruning lives in `end` in `web/src/state/history.ts`.
 - Undo bumps `revision` (engine reload) but not `document`, so the clock keeps
   running.
 - Snapshots are un-aliased because `clone` copies every element and params
   object; the "does not alias the live state into the undo snapshot" test makes
-  a future in-place mutator fail loudly.
+  a future in-place mutator fail loudly. `history.test.ts` adds a table over
+  every nested field, so a new nested shape without a clone line fails there.
 - Arrow nudge is one undo step per press (`UIManager.java:1163`); the matcher
   emits a unit step and App resolves it through `gridSize(settings)`, so a
   small-grid circuit nudges by 8.
+- Labels are Edit-menu wording (`Add Resistor`, `Move`, `Delete`, `Rotate`,
+  `Paste`, `Cut`, `Duplicate`, `Combine Scopes`, `Create Test Harness`). An
+  added kind takes the registry def's `label`, so the entry names the part the
+  user placed. The source is `user`, `agent` or `system`, defaulting to `user`;
+  `agent` is reserved for a future MCP tool call.
+
+## The one revert teardown
+
+`applyRevert` in `web/src/state/store.ts` is the single stale-pointer teardown
+used by `undo`, `redo`, `revertToBaseline`, `loadNetlist`, `newCircuit` and both
+halves of the subcircuit drill-in. It holds the whole list once: selected ids,
+hover, the scope-properties survival check, the device-model editor, the
+scroll-value popover, the slider dialog's target, the context menu, dialog,
+element properties, the element gesture, the revert epoch bump and the revision
+bump.
+
+**A new transient UI field that names an element or scope id must be added to
+`applyRevert`.** The failure it prevents is an invisible modal that keeps
+`modalSurface()` true and kills the keyboard, a value editor or slider panel
+pointing at a vanished part, or a drag still mutating past a baseline whose
+elements are gone. The list used to be written out in `undo` and again in
+`redo` and partially in load and New, and every shipped `*-teardown` fix was a
+missed copy of it.
+
+Scope properties survive only when the restored scope list still holds the
+scope; the other fields always clear, because a create rebinds by element id or
+deletes a model name the restored document may reference again.
 
 ## Undo internals
 
 - Snapshot fingerprints are cached in a `WeakMap<Snapshot, string>` at push;
   safe because snapshots are immutable after push and `clone()` keeps key
   order.
-- Drill-in stack entries carry suspended undo/redo stacks. A no-edit exit
-  restores both; an edited exit restores undo, appends the model-change
-  baseline and clears redo (a stale future would let redo revert the model
-  edit).
+- Drill-in stack entries carry a suspended `History`. A no-edit exit restores
+  it; an edited exit restores its undo side, appends the model-change baseline
+  through `pushExternal` and clears redo (a stale future would let redo revert
+  the model edit).
 - Safari does not focus on some field changes: `changeArmsBaseline(cell, id)`
   arms and commits in one step, and a self-armed session dies when the element
   id changes.
@@ -128,11 +176,11 @@ upstream's `analyzeCircuit` never touches `t`; only Reset does.
   `newCircuit`, and synchronously cancels any live gesture (place, move,
   dragpost, rowcol, scope drag, momentary holds). Refused loads bump nothing.
 - Every document replacement (undo, redo, load, New, recover) must clear
-  id-anchored transient UI: context menu, dialog, element properties, scope
-  properties, scroll-value popover, slider element id, device model editor,
-  hover id, undocked window, gestures. A stale id leaves an invisible modal
-  that kills the keyboard. `deleteSelected`, `combineScopes` and friends clear
-  the ids they remove.
+  id-anchored transient UI. That list lives once in `applyRevert` (see "The one
+  revert teardown"); do not copy it into a new caller. The undocked window is
+  closed separately because a fresh document's scope ids can collide with the
+  mirrored one. `deleteSelected`, `combineScopes` and friends clear the ids they
+  remove.
 - Run-mode mutations without an undo entry (keyboard throws, momentary
   releases, fuse unblow, settings) discard the redo future
   (`discardRedoFuture`), or a later redo silently rewinds them.

@@ -55,7 +55,11 @@ import {
   swapTerminalOrder,
   switch2PosCount,
 } from '../model/transform';
-import { LOGIC_INPUT_TERNARY, SWITCH2_CENTER_OFF, VOLTAGE_PULSE_DUTY } from '../model/registry/flags';
+import {
+  LOGIC_INPUT_TERNARY,
+  SWITCH2_CENTER_OFF,
+  VOLTAGE_PULSE_DUTY,
+} from '../model/registry/flags';
 import { defFor, postsOf } from '../model/registry';
 import { chipPinsOf } from '../model/registry/chips';
 import { CS_INPUT_COUNT_KINDS } from '../model/registry/elements/vcvs';
@@ -114,7 +118,20 @@ import {
   type Point,
   type SimSettings,
 } from '../model/types';
-import type { AppState, ScrollValuePopover, Slider, Snapshot, ViewTransform } from './types';
+import type { AppState, ScrollValuePopover, Slider, ViewTransform } from './types';
+import {
+  abort,
+  begin,
+  checkpoint,
+  clearFuture,
+  clone,
+  emptyHistory,
+  end,
+  pushExternal,
+  stepBack,
+  stepForward,
+  type History,
+} from './history';
 import { moveScopeTo } from './scopeLayout';
 import { APP_PREF_KEYS, loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
 import { loadStoredClipboard, saveStoredClipboard } from './clipboardStorage';
@@ -194,109 +211,6 @@ const BITS_NORMALIZERS: Readonly<Record<string, (value: number) => number>> = {
   'dpdtSwitch:poleCount': normalizePoleCount,
 };
 
-const clone = (s: Snapshot): Snapshot => ({
-  elements: s.elements.map((e) => {
-    const copy = { ...e, params: { ...e.params } };
-    // A route is a nested array; without this a future in-place route mutator
-    // would silently corrupt the undo snapshot.
-    if (e.route) copy.route = e.route.map((r) => [...r]);
-    // The embedded-scope interpretation nests a plot list and per-plot display
-    // fields; clone them so a snapshot never aliases the live element, the
-    // same rule the route and model payloads follow.
-    if (e.embedded) {
-      copy.embedded = {
-        ...e.embedded,
-        tokens: [...e.embedded.tokens],
-        plots: e.embedded.plots.map((p) => ({ ...p })),
-        display: {
-          ...e.embedded.display,
-          perPlot: e.embedded.display.perPlot.map((d) => ({ ...d })),
-        },
-      };
-    }
-    // A resolved device model is a nested object, and the custom-logic rules
-    // vectors inside it are arrays; clone them so a snapshot can never alias
-    // the live element. The OTA's model is the same carrier holding a string
-    // array (the composite child-dump tokens), which clones as a plain copy.
-    // The composite's own engine spec is the third payload shape: its external
-    // and dump vectors are arrays too, and the `external` key is what tells the
-    // two object payloads apart (a custom-logic model never carries one). The
-    // battery's table is a plain string, immutable, so it passes through, while
-    // the string-array child dumps still clone so a snapshot never aliases them.
-    if (e.model !== undefined) {
-      copy.model =
-        typeof e.model === 'string'
-          ? e.model
-          : Array.isArray(e.model)
-            ? [...e.model]
-            : 'external' in e.model
-              ? { ...e.model, external: [...e.model.external], dumps: [...e.model.dumps] }
-              : {
-                  ...e.model,
-                  inputs: [...e.model.inputs],
-                  outputs: [...e.model.outputs],
-                  rulesLeft: [...e.model.rulesLeft],
-                  rulesRight: [...e.model.rulesRight],
-                };
-    }
-    return copy;
-  }),
-  // Plots and triggers are nested objects, so a shallow spread would alias the
-  // live state into the undo snapshot. raw is an array of line tokens with the
-  // same aliasing risk, so it is cloned like the sliders' raw.
-  scopes: s.scopes.map((x) => ({
-    ...x,
-    raw: x.raw ? [...x.raw] : null,
-    trigger: { ...x.trigger },
-    // The measurement mask is a nested object like the trigger: clone it so a
-    // snapshot can never alias the live plot's override.
-    plots: x.plots.map((p) => ({
-      ...p,
-      measurements: p.measurements ? { ...p.measurements } : null,
-    })),
-  })),
-  sliders: s.sliders.map((x) => ({ ...x, raw: [...x.raw] })),
-  settings: { ...s.settings },
-  view: { ...s.view },
-  // The document's lines. A shallow copy is enough because the entries are
-  // strings and small immutable records that the one mutator (the subcircuit
-  // rename) replaces rather than edits in place.
-  passthrough: [...s.passthrough],
-  order: [...s.order],
-  // Unreadable o lines carry the same nested shape as a resolved scope's raw
-  // tokens and plot list, so they need the same deep copy or a future
-  // in-place edit would alias the live state into the undo snapshot.
-  unmatchedScopes: s.unmatchedScopes.map((x) => ({
-    ...x,
-    raw: [...x.raw],
-    plots: x.plots.map((p) => ({ ...p })),
-  })),
-});
-
-/** Canonical fingerprint of the snapshot state, mirroring upstream's dump
- *  comparison (UndoManager.java:50-53). The top-level object is built in a
- *  fixed property order so equal content always stringifies equally; the inner
- *  objects carry the insertion order they were constructed with, which is
- *  stable because every mutator spreads rather than reordering. */
-const snapshotKey = (s: Snapshot): string =>
-  JSON.stringify({
-    elements: s.elements,
-    scopes: s.scopes,
-    sliders: s.sliders,
-    settings: s.settings,
-    view: s.view,
-    // The document's lines belong in the fingerprint too: a subcircuit rename
-    // changes nothing else, so without them a second rename would dedup
-    // against the first commit, the entry would never be pushed and undo would
-    // skip a step.
-    passthrough: s.passthrough,
-    order: s.order,
-    // Without this an unmatched-scope-only edit (recovering a file whose
-    // unreadable o lines differ from the previous one) would dedup against
-    // the top of the stack and undo would skip the step.
-    unmatchedScopes: s.unmatchedScopes,
-  });
-
 /** The snapshot's settings with the live app-pref values re-applied. SimSettings
  *  is snapshotted whole, but the pure app prefs (colours, digit counts, font
  *  size, wheel sensitivity, crosshair, symbol and hitbox toggles) take no undo
@@ -310,32 +224,6 @@ function withLiveAppPrefs(snapshotSettings: SimSettings, live: SimSettings): Sim
   const out = { ...snapshotSettings } as Record<(typeof APP_PREF_KEYS)[number], unknown>;
   for (const k of APP_PREF_KEYS) out[k] = live[k];
   return out as SimSettings;
-}
-
-/** Undo entries beyond this cap fall off the front of the stack, silently
- *  and without touching the redo side. The push sites that can meet a full
- *  stack (commit, the drill-in exit, recovery) slice; redo pushes without
- *  slicing because it writes back onto a stack that just shrank by its pop,
- *  so the cap holds on its own there. */
-const UNDO_LIMIT = 100;
-
-/** Push-time fingerprint cache, keyed by snapshot identity. A fingerprint is
- *  a full-document stringify, megabytes on SRAM/ROM sheets, and commit
- *  compares the live state against the stack top on every call; caching each
- *  pushed snapshot's key beside it makes that comparison a WeakMap lookup,
- *  so a commit stringifies only the live state once. Snapshots are never
- *  mutated after they are pushed, so a cached key cannot go stale; snapshots
- *  pushed without a key already computed (undo/redo pushes, the drill-in and
- *  recovery exits) simply compute and cache theirs on the first comparison.
- *  Evicted entries drop out of the map with their snapshots. */
-const snapshotKeyCache = new WeakMap<Snapshot, string>();
-
-function cachedSnapshotKey(s: Snapshot): string {
-  const hit = snapshotKeyCache.get(s);
-  if (hit !== undefined) return hit;
-  const key = snapshotKey(s);
-  snapshotKeyCache.set(s, key);
-  return key;
 }
 
 /** The one serialization body shared by `toNetlist` (the non-live document)
@@ -428,8 +316,7 @@ function makePlot(
   // screen, the port of ScopePlot's constructor (ScopePlot.java:62-66): ohms
   // can only be positive, watts and coulombs sit low for backward
   // compatibility.
-  const manVPosition =
-    value === 'power' || value === 'charge' || value === 'resistance' ? -100 : 0;
+  const manVPosition = value === 'power' || value === 'charge' || value === 'resistance' ? -100 : 0;
   return {
     id,
     elementId,
@@ -569,10 +456,74 @@ type AppStore = ReturnType<typeof createAppStore>;
  *  previous build would then light the wrong net, so the bump clears it: the
  *  hover re-sets it on the next shift-hover. Every rebuild path goes through
  *  this helper, so no revision bump can leave a stale highlight. */
-const bumpRevision = (s: Pick<AppState, 'revision'>): { revision: number; highlightedNode: null } => ({
+const bumpRevision = (
+  s: Pick<AppState, 'revision'>,
+): { revision: number; highlightedNode: null } => ({
   revision: s.revision + 1,
   highlightedNode: null,
 });
+
+/** The one stale-pointer teardown every restore owes: undo, redo,
+ *  revertToBaseline, loadNetlist, newCircuit and both halves of the subcircuit
+ *  drill-in route through here. The list used to be written out twice (undo
+ *  and redo) and partially again in the load and New paths, and every shipped
+ *  `*-teardown` fix was a missed copy of it. A new transient UI field that
+ *  names an element or scope id must be added here, or a revert leaves an
+ *  invisible modal holding `modalSurface()` shut, a value editor or slider
+ *  panel pointing at a vanished part, or a gesture still mutating past the
+ *  baseline it was armed against.
+ *
+ * `history` is the post-revert history (or the empty one after a document
+ * replacement); the caller builds it so the stacks and the restore stay one
+ * decision. */
+function applyRevert(
+  s: AppState,
+  restore: { scopes: readonly Scope[] },
+  history: History,
+): Partial<AppState> {
+  return {
+    history,
+    // A restored or replaced document may not hold the selected ids at all.
+    selectedIds: [],
+    // The hovered element may be gone; a surviving id would highlight a
+    // different part until the mouse moves again.
+    hoveredId: null,
+    // The open Scope Properties dialog survives only when the restored scope
+    // list still holds its scope. A stale id would hold modalSurface() true
+    // forever with nothing on screen, the invisible gate removeScope clears.
+    scopeProperties:
+      s.scopeProperties !== null && restore.scopes.some((x) => x.id === s.scopeProperties)
+        ? s.scopeProperties
+        : null,
+    // The device-model editor gets no survival check: a create rebinds by
+    // element id the restored list may not hold, and an edit deletes a model
+    // name the restored document may reference again. Closing is the only safe
+    // outcome.
+    deviceModelEditor: null,
+    // The scroll-value popover wheel-edits an element id the revert may have
+    // deleted; leaving it strands a value editor over a vanished part.
+    scrollValuePopover: null,
+    // The Sliders dialog targets one element id the revert may have deleted;
+    // leaving it points the panel at a vanished part.
+    sliderElementId: null,
+    // A context menu raised on a deleted element would hold modalSurface()
+    // true with nothing on screen, and its actions could target a stale id. A
+    // dialog or open Element Properties panel is stranded on the old document
+    // the same way.
+    contextMenu: null,
+    dialog: null,
+    elementProperties: null,
+    // An in-flight element gesture cannot survive a revert: the drag was armed
+    // against elements the restore just replaced, and its release-time work
+    // belongs to a drop against the live document.
+    elementGesture: null,
+    // Tell the canvas interaction layer the baseline moved, so it can stand a
+    // live pointer gesture down. Outside Snapshot, so an undo spread cannot
+    // rewind it.
+    revertEpoch: s.revertEpoch + 1,
+    ...bumpRevision(s),
+  };
+}
 
 /** True when applying `patch` to `e` would actually change it, the guard the
  *  drag paths lean on so a pointer event that stays inside one grid cell does
@@ -672,9 +623,7 @@ function connectNewWiresAcrossPosts(
     // taken during the gesture still points at real geometry.
     let reused = false;
     for (const pc of pieces) {
-      if (
-        duplicatesColinearElement(scene, made, { x: pc.x1, y: pc.y1 }, { x: pc.x2, y: pc.y2 })
-      ) {
+      if (duplicatesColinearElement(scene, made, { x: pc.x1, y: pc.y1 }, { x: pc.x2, y: pc.y2 })) {
         continue;
       }
       added.push(reused ? pc : { ...pc, id });
@@ -734,9 +683,7 @@ function createAppStore() {
   notice: null,
   hoveredId: null,
   highlightedNode: null,
-  undoStack: [],
-  redoStack: [],
-  scopeGesture: false,
+    history: emptyHistory(),
   elementGesture: null,
   toolTurns: 0,
   revertEpoch: 0,
@@ -787,11 +734,7 @@ function createAppStore() {
     // Scale must be positive too, not just finite: a stored 0 makes zoomReset's
     // 1 / scale Infinity and Infinity * 0 re-poisons the view outside this
     // guard's reach.
-    if (
-      !Number.isFinite(view.x) ||
-      !Number.isFinite(view.y) ||
-      !(view.scale > 0)
-    ) {
+      if (!Number.isFinite(view.x) || !Number.isFinite(view.y) || !(view.scale > 0)) {
       return;
     }
     set({ view });
@@ -847,7 +790,7 @@ function createAppStore() {
         // Settings ride the snapshots but deliberately take no undo entry, so
         // a stale redo future would snap an undone setting back on redo. Kill
         // the future without committing; the no-entry design stays.
-        redoStack: [],
+          history: clearFuture(s.history),
       };
     });
   },
@@ -933,39 +876,40 @@ function createAppStore() {
     // library from the restored `.` lines. Upstream snapshots carry model
     // definition nodes and genuinely roll model edits back, so this is a
     // conscious divergence from it, not parity.
-    s.commit();
-    putUserModel(family, entry);
-    if (prevName !== undefined && prevName !== entry.name) deleteUserModel(family, prevName);
-    if (attachedElementId !== undefined) {
-      // The create-from-element path: the fresh model is already in the
-      // writable store, so `setModelName`'s resolution sees it and rebinds the
-      // element, bumping `revision` for the rebuild.
-      s.setModelName(attachedElementId, entry.name);
-      return;
-    }
-    // An in-place edit: re-resolve every element that names the model against
-    // the new entry, so a shared model's edit reaches all of them in one step,
-    // and bump `revision` so the engine rebuild reads the new params. A rename
-    // also moves those elements to the new name.
-    set((st) => {
-      const names =
-        prevName === undefined || prevName === entry.name
-          ? [entry.name]
-          : [prevName, entry.name];
-      let changed = false;
-      const elements = st.elements.map((e) => {
-        if (e.modelName === undefined || !names.includes(e.modelName)) return e;
-        if (modelFamilyFor(e.kind) !== family) return e;
-        const next = { ...e };
-        if (e.modelName !== entry.name) next.modelName = entry.name;
-        const params = resolveModelParams(family, entry.name, undefined);
-        if (params !== undefined) next.params = { ...e.params, ...params };
-        if (next.modelName === e.modelName && next.params === e.params) return e;
-        changed = true;
-        return next;
+    s.transact('Edit Model', () => {
+      putUserModel(family, entry);
+      if (prevName !== undefined && prevName !== entry.name) deleteUserModel(family, prevName);
+      if (attachedElementId !== undefined) {
+        // The create-from-element path: the fresh model is already in the
+        // writable store, so `setModelName`'s resolution sees it and rebinds the
+        // element, bumping `revision` for the rebuild.
+        s.setModelName(attachedElementId, entry.name);
+        return;
+      }
+      // An in-place edit: re-resolve every element that names the model against
+      // the new entry, so a shared model's edit reaches all of them in one step,
+      // and bump `revision` so the engine rebuild reads the new params. A rename
+      // also moves those elements to the new name.
+      set((st) => {
+        const names =
+          prevName === undefined || prevName === entry.name
+            ? [entry.name]
+            : [prevName, entry.name];
+        let changed = false;
+        const elements = st.elements.map((e) => {
+          if (e.modelName === undefined || !names.includes(e.modelName)) return e;
+          if (modelFamilyFor(e.kind) !== family) return e;
+          const next = { ...e };
+          if (e.modelName !== entry.name) next.modelName = entry.name;
+          const params = resolveModelParams(family, entry.name, undefined);
+          if (params !== undefined) next.params = { ...e.params, ...params };
+          if (next.modelName === e.modelName && next.params === e.params) return e;
+          changed = true;
+          return next;
+        });
+        if (!changed) return st;
+        return { elements, ...bumpRevision(st) };
       });
-      if (!changed) return st;
-      return { elements, ...bumpRevision(st) };
     });
   },
 
@@ -989,73 +933,55 @@ function createAppStore() {
     if (!e) return;
     // A row or column sweep shifts only one stored endpoint; updateElement
     // rounds the new coordinate so geometry stays integral.
-    const patch = post === 0 ? { x1: e.x1 + dx, y1: e.y1 + dy } : { x2: e.x2 + dx, y2: e.y2 + dy };
+      const patch =
+        post === 0 ? { x1: e.x1 + dx, y1: e.y1 + dy } : { x2: e.x2 + dx, y2: e.y2 + dy };
     s.updateElement(id, patch);
   },
 
-  commit: () =>
-    set((s) => {
-      // A commit whose serialised state matches the top of the stack is a no-op
-      // (a repeat click, or a field focus that changed nothing) and must not
-      // grow the stack. The redo stack is still cleared, exactly as upstream's
-      // pushUndo clears it before its own dedup check.
-      const key = cachedSnapshotKey(s);
-      const top = s.undoStack[s.undoStack.length - 1];
-      if (top && key === cachedSnapshotKey(top)) return { redoStack: [] };
-      // The pushed clone holds the same content the key was computed from, so
-      // the fingerprint travels with it and the next comparison never pays a
-      // second stringify for the same bytes.
-      const snap = clone(s);
-      snapshotKeyCache.set(snap, key);
-      return {
-        undoStack: [...s.undoStack, snap].slice(-UNDO_LIMIT),
-        redoStack: [],
-      };
-    }),
-
-  // The pre-gesture state is already the top of the undo stack (nothing has
-  // mutated since the last commit), so this commit dedups against it and the
-  // real baseline is left in place; raising the flag then lets the setters
-  // mutate freely until the gesture ends. If the stack was empty, this pushes
-  // the baseline so the gesture has something to undo back to.
-  beginScopeGesture: () => {
-    get().commit();
-    set({ scopeGesture: true });
+    transact: (label, fn, source = 'user') => {
+      set((s) => ({ history: begin(s.history, s, label, source) }));
+      try {
+        return fn();
+      } finally {
+        set((s) => ({ history: end(s.history, s) }));
+      }
   },
 
-  // No commit here: the post-gesture state is the live one and the baseline is
-  // already on the stack, so undo restores the whole gesture in a single step.
-  endScopeGesture: () => set({ scopeGesture: false }),
+    beginTransaction: (label, source = 'user') =>
+      set((s) => ({ history: begin(s.history, s, label, source) })),
 
-  // No commit here, unlike beginScopeGesture: both callers (the placement arm
-  // and the move arm in pointerDown) have already pushed the gesture's undo
-  // baseline, and a second commit would split one drag across two undo steps.
+    endTransaction: () => set((s) => ({ history: end(s.history, s) })),
+
   beginElementGesture: (kind) => set({ elementGesture: { kind, placeTurns: 0 } }),
 
-  endElementGesture: () => set({ elementGesture: null }),
+    endElementGesture: () => {
+      set((s) => ({ elementGesture: null, history: end(s.history, s) }));
+    },
 
-  beginEdit: () => get().commit(),
+    beginEdit: (label = 'Edit') =>
+      set((s) => ({ history: checkpoint(s.history, s, label, 'user') })),
 
   addElement: (e) => {
     const id = allocateId();
-    get().commit();
-    set((s) => ({
-      // Geometry must stay integral regardless of caller (see the invariant on
-      // makeElement), so a stray fractional coordinate is rounded at the door
-      // the same way updateElement does.
-      elements: [
-        ...s.elements,
-        {
-          ...e,
-          id,
-          x1: Math.round(e.x1),
-          y1: Math.round(e.y1),
-          x2: Math.round(e.x2),
-          y2: Math.round(e.y2),
-        },
-      ],
-      ...bumpRevision(s),
-    }));
+    get().transact(`Add ${defFor(e.kind)?.label ?? e.kind}`, () =>
+      set((s) => ({
+        // Geometry must stay integral regardless of caller (see the invariant on
+        // makeElement), so a stray fractional coordinate is rounded at the door
+        // the same way updateElement does.
+        elements: [
+          ...s.elements,
+          {
+            ...e,
+            id,
+            x1: Math.round(e.x1),
+            y1: Math.round(e.y1),
+            x2: Math.round(e.x2),
+            y2: Math.round(e.y2),
+          },
+        ],
+        ...bumpRevision(s),
+      })),
+    );
     return id;
   },
 
@@ -1129,54 +1055,56 @@ function createAppStore() {
     if (!target || defFor(target.kind) === undefined) return;
     const next = elementDefaults(target);
     if (!elementResetChanged(target, next)) return;
-    s.commit();
-    set((st) => ({
-      elements: st.elements.map((e) => (e.id === id ? next : e)),
-      ...bumpRevision(st),
-    }));
+    s.transact('Reset Element', () =>
+      set((st) => ({
+        elements: st.elements.map((e) => (e.id === id ? next : e)),
+        ...bumpRevision(st),
+      })),
+    );
   },
 
   addWires: (segments) => {
     if (segments.length === 0) return [];
-    // One commit for the whole run: the two segments of an L are one gesture,
-    // so one Ctrl+Z must take both back. The splits below deliberately do not
-    // commit again, for the same reason (see placeWireEnd).
-    get().commit();
-    const made = segments.map((seg) => ({
-      ...makeElement('wire', seg.x1, seg.y1, seg.x2, seg.y2),
-      id: allocateId(),
-    }));
-    set((s) => ({ elements: [...s.elements, ...made], ...bumpRevision(s) }));
-    // The run's two free ends connect to what they landed on, exactly as a
-    // dragged single wire does (finishPlacement, pointerDown.ts). The corner
-    // between two segments is skipped: it is this gesture's own junction, and
-    // splitting there would have the second segment split the first.
-    const first = made[0];
-    const last = made[made.length - 1];
-    get().placeWireEnd(last.id, last.x2, last.y2);
-    get().autoSplitAt({ x: first.x1, y: first.y1 }, first.id);
-    get().autoSplitAt({ x: last.x2, y: last.y2 }, last.id);
-    // Last, like upstream's endDrag runs draggingDone after the endpoint
-    // splits: the run breaks at every junction post its segments crossed, so
-    // drawing through a T-junction connects there. Still the gesture's single
-    // undo entry, owned by the commit above.
-    const madeIds = made.map((e) => e.id);
-    const pass = connectNewWiresAcrossPosts(get().elements, madeIds);
-    if (pass) {
-      set((st) => ({
-        elements: st.elements.filter((e) => !pass.gone.has(e.id)).concat(pass.added),
-        ...bumpRevision(st),
+    // One transaction for the whole run: the two segments of an L are one
+    // gesture, so one Ctrl+Z must take both back. The splits below deliberately
+    // do not checkpoint again, for the same reason (see placeWireEnd).
+    return get().transact('Add Wire', () => {
+      const made = segments.map((seg) => ({
+        ...makeElement('wire', seg.x1, seg.y1, seg.x2, seg.y2),
+        id: allocateId(),
       }));
-    }
-    // A leg whose every piece dropped as a parallel duplicate left nothing in
-    // the store behind it: only ids that still hold an element may reach
-    // finishWireDrag's select.
-    const surviving = new Set(get().elements.map((e) => e.id));
-    return madeIds.filter((id) => surviving.has(id));
+      set((s) => ({ elements: [...s.elements, ...made], ...bumpRevision(s) }));
+      // The run's two free ends connect to what they landed on, exactly as a
+      // dragged single wire does (finishPlacement, pointerDown.ts). The corner
+      // between two segments is skipped: it is this gesture's own junction, and
+      // splitting there would have the second segment split the first.
+      const first = made[0];
+      const last = made[made.length - 1];
+      get().placeWireEnd(last.id, last.x2, last.y2);
+      get().autoSplitAt({ x: first.x1, y: first.y1 }, first.id);
+      get().autoSplitAt({ x: last.x2, y: last.y2 }, last.id);
+      // Last, like upstream's endDrag runs draggingDone after the endpoint
+      // splits: the run breaks at every junction post its segments crossed, so
+      // drawing through a T-junction connects there. Still the gesture's single
+          // undo entry, owned by the transaction above.
+      const madeIds = made.map((e) => e.id);
+      const pass = connectNewWiresAcrossPosts(get().elements, madeIds);
+      if (pass) {
+        set((st) => ({
+          elements: st.elements.filter((e) => !pass.gone.has(e.id)).concat(pass.added),
+          ...bumpRevision(st),
+        }));
+      }
+      // A leg whose every piece dropped as a parallel duplicate left nothing in
+      // the store behind it: only ids that still hold an element may reach
+      // finishWireDrag's select.
+      const surviving = new Set(get().elements.map((e) => e.id));
+      return madeIds.filter((id) => surviving.has(id));
+    });
   },
 
   placeWireEnd: (id, x, y) => {
-    // The placement's undo baseline is the commit `addElement` took at
+      // The placement's undo baseline is the transaction `addElement` opened at
     // pointer-down, so the whole gesture (drop and split) is one undo step.
     // Committing again here would split it into two.
     const s = get();
@@ -1279,11 +1207,12 @@ function createAppStore() {
     const p = { x: snap(point.x), y: snap(point.y) };
     const halves = splitWire(target, p, allocateId);
     if (!halves) return;
-    s.commit();
-    set((st) => ({
-      elements: st.elements.filter((e) => e.id !== id).concat(halves),
-      ...bumpRevision(st),
-    }));
+    s.transact('Split Wire', () =>
+      set((st) => ({
+        elements: st.elements.filter((e) => e.id !== id).concat(halves),
+        ...bumpRevision(st),
+      })),
+    );
   },
 
   moveElements: (ids, dx, dy) => {
@@ -1323,11 +1252,9 @@ function createAppStore() {
   nudgeSelection: (dx, dy) => {
     const { selectedIds } = get();
     if (selectedIds.length === 0) return;
-    // Commit before the move so one arrow press is exactly one undo step,
-    // matching upstream's nudge (UIManager.java:1163); the move itself never
-    // pushes.
-    get().commit();
-    get().moveElements(selectedIds, dx, dy);
+    // One arrow press is exactly one undo step, matching upstream's nudge
+    // (UIManager.java:1163); the move itself never checkpoints.
+    get().transact('Move', () => get().moveElements(selectedIds, dx, dy));
   },
 
   zoomIn: () => set((s) => ({ view: zoomAroundCentre(s, ZOOM_FACTOR) })),
@@ -1352,89 +1279,82 @@ function createAppStore() {
 
   requestCenter: () => set((s) => ({ centerRequest: s.centerRequest + 1 })),
 
-  deleteSelected: (skipCommit) => {
-    const { selectedIds, elementGesture: gesture } = get();
+    deleteSelected: () => {
+      const { selectedIds } = get();
     if (selectedIds.length === 0) return;
-    // skipCommit is the placement-cancel path's escape hatch: the element
-    // being deleted was created by the same gesture's addElement commit, so
-    // that commit is already the whole gesture's undo baseline. Committing
-    // again here would push a second entry holding the about-to-be-deleted
-    // element, and the first Ctrl+Z would resurrect it instead of undoing the
-    // placement outright. Every other caller deletes real, pre-existing
-    // state and still needs its own commit.
-    // A command landing while the pointer owns the selection must not split
-    // one gesture across two undo entries, so it folds into the drag's
-    // pointer-down baseline exactly as a rotate does. Deletion is stable under
-    // the remaining moves (a missing id moves nothing), so both gesture kinds
-    // fold, which for a placement is precisely what the explicit flag above
-    // has always done.
-    if (!skipCommit && gesture !== null) skipCommit = true;
-    if (!skipCommit) get().commit();
-    set((s) => {
-      // A scope goes when any of its plots names a deleted element, matching
-      // upstream's cleanup of scopes whose element is gone.
-      const scopes = s.scopes.filter(
-        (x) => !x.plots.some((p) => p.elementId !== null && selectedIds.includes(p.elementId)),
-      );
-      return {
-        // One pass over the survivors of the delete: an embedded window whose
-        // traced element just went degrades to its placeholder frame, its
-        // plots' targets nulled the way a docked scope's whole line goes below.
-        // The window element and its raw config token stay, so undo puts the
-        // traces back.
-        elements: s.elements
-          .filter((e) => !selectedIds.includes(e.id))
-          .map((e) => {
-            if (e.kind !== 'scope' || !e.embedded) return e;
-            if (
-              !e.embedded.plots.some(
-                (p) => p.elementId !== null && selectedIds.includes(p.elementId),
-              )
-            ) {
-              return e;
-            }
-            return {
-              ...e,
-              embedded: {
-                ...e.embedded,
-                plots: e.embedded.plots.map((p) =>
-                  p.elementId !== null && selectedIds.includes(p.elementId)
-                    ? { ...p, elementId: null }
-                    : p,
-                ),
-              },
-            };
-          }),
-        scopes,
-        // A deleted element can take the open Scope Properties dialog's scope
-        // with it (the context menu's Delete row works while that dialog is
-        // up), and a surviving id would hold modalSurface() shut with nothing
-        // on screen, the same invisible gate removeScope clears.
-        scopeProperties:
-          s.scopeProperties !== null && scopes.some((x) => x.id === s.scopeProperties)
-            ? s.scopeProperties
-            : null,
-        // A slider bound to a deleted element goes with it, matching upstream's
-        // deleteSliders (CirSim.java:523-531). Its order slot stays, exactly like
-        // a dropped scope's: the line stops serialising because no config
-        // resolves it, and an undo restores both and puts the line back in
-        // place.
-        sliders: s.sliders.filter(
-          (x) => x.elementId === undefined || !selectedIds.includes(x.elementId),
-        ),
-        selectedIds: [],
-        // A deleted element can be the one the slider dialog is open on, so its
-        // target id drops the same way a bound slider does above; leaving it
-        // points the panel at a vanished part.
-        sliderElementId: null,
-        ...bumpRevision(s),
-      };
+    // A command landing while a pointer gesture owns the selection folds into
+    // that gesture's open transaction, exactly as a mid-drag rotate does, so
+    // one drag never splits across two undo entries. The placement-cancel path
+    // that used to need a skipCommit flag is the same case: its transaction is
+    // still open when the collapsed part is deleted, so it lands as part of the
+    // placement step rather than resurrecting the stray element on undo.
+    get().transact('Delete', () => {
+      set((s) => {
+        // A scope goes when any of its plots names a deleted element, matching
+        // upstream's cleanup of scopes whose element is gone.
+        const scopes = s.scopes.filter(
+          (x) => !x.plots.some((p) => p.elementId !== null && selectedIds.includes(p.elementId)),
+        );
+        return {
+          // One pass over the survivors of the delete: an embedded window whose
+          // traced element just went degrades to its placeholder frame, its
+          // plots' targets nulled the way a docked scope's whole line goes below.
+          // The window element and its raw config token stay, so undo puts the
+          // traces back.
+          elements: s.elements
+            .filter((e) => !selectedIds.includes(e.id))
+            .map((e) => {
+              if (e.kind !== 'scope' || !e.embedded) return e;
+              if (
+                !e.embedded.plots.some(
+                  (p) => p.elementId !== null && selectedIds.includes(p.elementId),
+                )
+              ) {
+                return e;
+              }
+              return {
+                ...e,
+                embedded: {
+                  ...e.embedded,
+                  plots: e.embedded.plots.map((p) =>
+                    p.elementId !== null && selectedIds.includes(p.elementId)
+                      ? { ...p, elementId: null }
+                      : p,
+                  ),
+                },
+              };
+            }),
+          scopes,
+          // A deleted element can take the open Scope Properties dialog's scope
+          // with it (the context menu's Delete row works while that dialog is
+          // up), and a surviving id would hold modalSurface() shut with nothing
+          // on screen, the same invisible gate removeScope clears.
+          scopeProperties:
+            s.scopeProperties !== null && scopes.some((x) => x.id === s.scopeProperties)
+              ? s.scopeProperties
+              : null,
+          // A slider bound to a deleted element goes with it, matching upstream's
+          // deleteSliders (CirSim.java:523-531). Its order slot stays, exactly like
+          // a dropped scope's: the line stops serialising because no config
+          // resolves it, and an undo restores both and puts the line back in
+          // place.
+          sliders: s.sliders.filter(
+            (x) => x.elementId === undefined || !selectedIds.includes(x.elementId),
+          ),
+          selectedIds: [],
+          // A deleted element can be the one the slider dialog is open on, so its
+          // target id drops the same way a bound slider does above; leaving it
+          // points the panel at a vanished part.
+          sliderElementId: null,
+          ...bumpRevision(s),
+        };
+      });
+      // A writable model whose last referencing element just went leaves the
+      // session namespace with it. A file model's `34`/`32` line is never
+      // touched, so it survives in passthrough and re-registers on the next
+      // load.
+      pruneUnreferencedModels(useStore.getState().elements);
     });
-    // A writable model whose last referencing element just went leaves the
-    // session namespace with it. A file model's `34`/`32` line is never
-    // touched, so it survives in passthrough and re-registers on the next
-    // load.
-    pruneUnreferencedModels(useStore.getState().elements);
   },
 
   rotateSelection: () => {
@@ -1450,22 +1370,24 @@ function createAppStore() {
     }
     // Nothing grabbed: the settled-selection command, one undo entry.
     if (gesture === null) {
-      rotateGroup(false);
+        rotateGroup('Rotate');
       return;
     }
     if (gesture.kind === 'move') {
-      // The pointer-down commit is this drag's whole baseline, so the turn
-      // rides along with it: one Ctrl+Z undoes the move and the turns together.
-      // The grabbed group turns as one body, like a settled one: a per-part
-      // pivot would tear every wire between the parts apart.
-      rotateGroup(true);
+        // The drag's open transaction is this gesture's whole baseline, so the
+        // turn joins it: one Ctrl+Z undoes the move and the turns together. The
+        // grabbed group turns as one body, like a settled one: a per-part pivot
+        // would tear every wire between the parts apart.
+        rotateGroup('Rotate');
       return;
     }
     // A placement turns about its own (x1,y1), which is the press anchor: the
     // place branch only ever writes (x2,y2), so the anchor stays under the
     // point the user pressed. The turn is banked so the next pointer-move
     // re-applies it to the cursor-derived endpoint instead of erasing it.
-    const turned = transformSelected(everyOf(canRotate), (e) => rotateElement(e, { x: e.x1, y: e.y1 }), true);
+      const turned = transformSelected('Rotate', everyOf(canRotate), (e) =>
+        rotateElement(e, { x: e.x1, y: e.y1 }),
+      );
     if (turned) set({ elementGesture: { ...gesture, placeTurns: (gesture.placeTurns + 1) % 4 } });
   },
   mirrorSelection: (axis = 'horizontal') => {
@@ -1480,29 +1402,31 @@ function createAppStore() {
     // as a body instead of each part folding about its own centre. A lone
     // element mirrors about its own centre.
     const selected = selectedElements();
-    const skipCommit = gesture?.kind === 'move';
     if (axis === 'vertical') {
       const centre = selectionMirrorCentreY(selected);
       transformSelected(
+          'Mirror',
         canMirrorSelection,
-        centre === undefined ? (e) => mirrorElementVertical(e) : (e) => mirrorVerticalInGroup(e, centre),
-        skipCommit,
+          centre === undefined
+            ? (e) => mirrorElementVertical(e)
+            : (e) => mirrorVerticalInGroup(e, centre),
       );
       return;
     }
     const centre = selectionMirrorCentre(selected);
     transformSelected(
+        'Mirror',
       canMirrorSelection,
       centre === undefined ? (e) => mirrorElement(e) : (e) => mirrorInGroup(e, centre),
-      skipCommit,
     );
   },
   swapTerminals: () => {
-    // Mirror's gesture dispatch: fold into a move drag's own entry, refuse a
-    // placement whose next pointer-move would rewrite the swapped endpoints.
+      // Mirror's gesture dispatch: a move drag's open transaction absorbs the
+      // swap, and a placement is refused because its next pointer-move would
+      // rewrite the swapped endpoints.
     const { elementGesture: gesture } = get();
     if (gesture?.kind === 'place') return;
-    return transformSelected(everyOf(canSwap), swapTerminalOrder, gesture?.kind === 'move');
+      return transformSelected('Swap Terminals', everyOf(canSwap), swapTerminalOrder);
   },
 
   convertWiresToRouted: () => {
@@ -1511,24 +1435,28 @@ function createAppStore() {
     // Nothing to convert: the returned list is the same elements, so no undo
     // entry and no revision bump (a repeated click on a converted circuit is
     // a no-op, matching the menu's disabled state).
-    if (converted.length === s.elements.length && converted.every((e, i) => e === s.elements[i])) {
+      if (
+        converted.length === s.elements.length &&
+        converted.every((e, i) => e === s.elements[i])
+      ) {
       return;
     }
-    // One commit for the whole command, so the merge is one undo step, exactly
-    // as upstream pushes once before WireConverter.convertWires
+    // One transaction for the whole command, so the merge is one undo step,
+    // exactly as upstream pushes once before WireConverter.convertWires
     // (CommandManager.java:141-145). The merged wires are electrically
     // identical to the chain they replace: the engine merges wires into nodes
     // by coordinate, so a reload sees the same node voltages.
-    s.commit();
-    // convertWires absorbs every non-first wire in a selected chain into the
-    // surviving routed wire, so those ids vanish from `elements`. Drop them
-    // from the selection the same way addWires prunes its parallel-dedupe
-    // pass, otherwise selectedIds would outlive removed elements.
-    const surviving = new Set(converted.map((e) => e.id));
-    set({
-      elements: converted,
-      selectedIds: s.selectedIds.filter((id) => surviving.has(id)),
-      ...bumpRevision(s),
+    s.transact('Convert Wires to Routed Wires', () => {
+      // convertWires absorbs every non-first wire in a selected chain into the
+      // surviving routed wire, so those ids vanish from `elements`. Drop them
+      // from the selection the same way addWires prunes its parallel-dedupe
+      // pass, otherwise selectedIds would outlive removed elements.
+      const surviving = new Set(converted.map((e) => e.id));
+      set({
+        elements: converted,
+        selectedIds: s.selectedIds.filter((id) => surviving.has(id)),
+        ...bumpRevision(s),
+      });
     });
   },
 
@@ -1556,28 +1484,29 @@ function createAppStore() {
       chip.flags,
     );
     if (placements.length === 0) return false;
-    // One commit for the whole harness, so Create Test is one undo step,
+    // One transaction for the whole harness, so Create Test is one undo step,
     // exactly as upstream pushes once before TestCreator.createTest
     // (CommandManager.java:146-149).
-    get().commit();
-    const added = placements.map((p) => {
-      const e = {
-        ...makeElement(p.kind, p.x1, p.y1, p.x2, p.y2),
-        id: allocateId(),
-      };
-      // Upstream sets only the bus input's width (TestCreator.java:81); value
-      // and hiV/loV stay at the BusLogicInputElm field defaults
-      // (BusLogicInputElm.java:26-28), which are exactly the registry entry's
-      // defaults ({ busWidth: 4, hiV: 5, loV: 0 }), so makeElement already
-      // carries them and just the width is overridden here.
-      if (p.busWidth !== undefined) e.params.busWidth = p.busWidth;
-      if (p.flags !== undefined) e.flags |= p.flags;
-      return e;
+    get().transact('Create Test Harness', () => {
+      const added = placements.map((p) => {
+        const e = {
+          ...makeElement(p.kind, p.x1, p.y1, p.x2, p.y2),
+          id: allocateId(),
+        };
+        // Upstream sets only the bus input's width (TestCreator.java:81); value
+        // and hiV/loV stay at the BusLogicInputElm field defaults
+        // (BusLogicInputElm.java:26-28), which are exactly the registry entry's
+        // defaults ({ busWidth: 4, hiV: 5, loV: 0 }), so makeElement already
+        // carries them and just the width is overridden here.
+        if (p.busWidth !== undefined) e.params.busWidth = p.busWidth;
+        if (p.flags !== undefined) e.flags |= p.flags;
+        return e;
+      });
+      set((st) => ({
+        elements: [...st.elements, ...added],
+        ...bumpRevision(st),
+      }));
     });
-    set((st) => ({
-      elements: [...st.elements, ...added],
-      ...bumpRevision(st),
-    }));
     return true;
   },
 
@@ -1668,7 +1597,7 @@ function createAppStore() {
     );
     // A rename that matched no `.` line and no 410 (a purely saved model, or
     // a session model with nothing behind it) is a library-only rename:
-    // nothing to commit. Unchanged lines and elements come back by identity,
+      // nothing to checkpoint. Unchanged lines and elements come back by identity,
     // so this compares references.
     const untouched =
       order.every((entry, i) => entry === s.order[i]) &&
@@ -1678,8 +1607,9 @@ function createAppStore() {
     // The document changed, so this is an edit like any other: one commit
     // before it makes the rename one undo step. The revision bump is the
     // engine's cue to reread a netlist that now names the model differently.
-    get().commit();
-    set((st) => ({ elements, passthrough, order, ...bumpRevision(st) }));
+    get().transact('Rename Subcircuit', () =>
+      set((st) => ({ elements, passthrough, order, ...bumpRevision(st) })),
+    );
     return outcome;
   },
 
@@ -1760,7 +1690,11 @@ function createAppStore() {
         // bumping `revision` (which would trigger a full rebuild and rewind the
         // clock). A Map keyed by id and name coalesces slider drags to the last
         // value.
-        pendingParams: new Map(s.pendingParams).set(`${id}:${name}`, { id, name, value: pending }),
+          pendingParams: new Map(s.pendingParams).set(`${id}:${name}`, {
+            id,
+            name,
+            value: pending,
+          }),
         paramRevision: s.paramRevision + 1,
       };
     });
@@ -1780,34 +1714,35 @@ function createAppStore() {
       return;
     }
     // Baseline at the apply point, the loadAudioFile/loadDataFile pattern: the
-    // textarea's onFocus already committed, so this dedups against it, and a
+    // textarea's onFocus already checkpointed, so this dedups against it, and a
     // direct call without a focus still gets its own undo entry.
-    s.commit();
-    set((st) => ({
-      elements: st.elements.map((e) => {
-        if (e.id !== id) return e;
-        const params = { ...e.params };
-        // Clear the whole addr/val family first, or a shrink leaves a stale
-        // trailing pair that memoryDump writes back out.
-        let k = 0;
-        while (params[`addr${k}`] !== undefined) {
-          delete params[`addr${k}`];
-          delete params[`val${k}`];
-          k++;
-        }
-        pairs.forEach(([addr, val], i) => {
-          params[`addr${i}`] = addr;
-          params[`val${i}`] = val;
-        });
-        return { ...e, params };
-      }),
-      // The contents live in params but the engine reads them only at build
-      // time (sram.rs load_contents), so the change must reload; bumping
-      // `paramRevision` keeps the fast-path bookkeeping in step even though
-      // nothing is queued for it.
-      ...bumpRevision(st),
-      paramRevision: st.paramRevision + 1,
-    }));
+    s.transact('Edit Memory', () =>
+      set((st) => ({
+        elements: st.elements.map((e) => {
+          if (e.id !== id) return e;
+          const params = { ...e.params };
+          // Clear the whole addr/val family first, or a shrink leaves a stale
+          // trailing pair that memoryDump writes back out.
+          let k = 0;
+          while (params[`addr${k}`] !== undefined) {
+            delete params[`addr${k}`];
+            delete params[`val${k}`];
+            k++;
+          }
+          pairs.forEach(([addr, val], i) => {
+            params[`addr${i}`] = addr;
+            params[`val${i}`] = val;
+          });
+          return { ...e, params };
+        }),
+        // The contents live in params but the engine reads them only at build
+        // time (sram.rs load_contents), so the change must reload; bumping
+        // `paramRevision` keeps the fast-path bookkeeping in step even though
+        // nothing is queued for it.
+        ...bumpRevision(st),
+        paramRevision: st.paramRevision + 1,
+      })),
+    );
   },
 
   setModelName: (id, name) =>
@@ -1883,34 +1818,36 @@ function createAppStore() {
         resolveParam(element.kind, x.editItem, x.text)?.name === resolved.name,
     );
     if (dup) return;
-    s.commit();
-    set((st) => ({
-      // raw stays empty so the writer emits the port's canonical fresh line
-      // (`e F0 editItem min max text step`, no `ano` since this slider is
-      // unshared; serialize.ts sliderLineFor);
-      // the min/max are upstream's Adjustable defaults (Adjustable.java:34-35).
-      sliders: [
-        ...st.sliders,
-        {
-          id: allocateId(),
-          elementId,
-          editItem,
-          min: 1,
-          max: 1000,
-          step: 0,
-          text: caption ?? '',
-          logarithmic: false,
-          shared: null,
-          raw: [],
-        },
-      ],
-    }));
+    s.transact('Add Slider', () =>
+      set((st) => ({
+        // raw stays empty so the writer emits the port's canonical fresh line
+        // (`e F0 editItem min max text step`, no `ano` since this slider is
+        // unshared; serialize.ts sliderLineFor);
+        // the min/max are upstream's Adjustable defaults (Adjustable.java:34-35).
+        sliders: [
+          ...st.sliders,
+          {
+            id: allocateId(),
+            elementId,
+            editItem,
+            min: 1,
+            max: 1000,
+            step: 0,
+            text: caption ?? '',
+            logarithmic: false,
+            shared: null,
+            raw: [],
+          },
+        ],
+      })),
+    );
   },
 
   removeSlider: (id) => {
     if (!get().sliders.some((x) => x.id === id)) return;
-    get().commit();
-    set((st) => ({ sliders: st.sliders.filter((x) => x.id !== id) }));
+    get().transact('Remove Slider', () =>
+      set((st) => ({ sliders: st.sliders.filter((x) => x.id !== id) })),
+    );
   },
 
   setSliderElement: (id) => set({ sliderElementId: id }),
@@ -1980,9 +1917,7 @@ function createAppStore() {
     const linked = new Set(
       link !== 0
         ? s.elements
-            .filter(
-              (e) => e.kind === 'mbbSwitch' && e.id !== id && (e.params.link ?? 0) === link,
-            )
+              .filter((e) => e.kind === 'mbbSwitch' && e.id !== id && (e.params.link ?? 0) === link)
             .map((e) => e.id)
         : [],
     );
@@ -2028,33 +1963,35 @@ function createAppStore() {
     const s = get();
     const target = s.elements.find((e) => e.id === id);
     if (!target) return;
-    // The decode lands asynchronously, so the undo baseline is taken here, at
-    // the apply point, not on the file input's onFocus (OptionsPanel
-    // loadFileInto): an edit the user makes between starting the decode and
-    // its landing commits its own entry first, and this commit separates the
-    // file load from it, so the two never share one undo step. A decode that
-    // fails in the caller never reaches this action, so it leaves no entry.
-    s.commit();
-    // A fresh number, never reused, so an undo of this load restores the
-    // element's previous fileNum whose cache entry still holds the old file.
-    const fileNum = nextFileNum();
-    setAudioSamples(fileNum, samples, samplingRate);
-    // One set: the fileNum and the rail label travel together, so the undo
-    // snapshot restores both. The old cache entry is deliberately kept.
-    s.updateElement(id, { params: { ...target.params, fileNum }, text: fileName });
+    // The decode lands asynchronously, so the transaction opens here, at the
+    // apply point, not on the file input's onFocus (OptionsPanel loadFileInto):
+    // an edit the user makes between starting the decode and its landing gets
+    // its own entry first, and this step separates the file load from it. A
+    // decode that fails in the caller never reaches this action, so it leaves
+    // no entry.
+    s.transact('Load Audio File', () => {
+      // A fresh number, never reused, so an undo of this load restores the
+      // element's previous fileNum whose cache entry still holds the old file.
+      const fileNum = nextFileNum();
+      setAudioSamples(fileNum, samples, samplingRate);
+      // One set: the fileNum and the rail label travel together, so the undo
+      // snapshot restores both. The old cache entry is deliberately kept.
+      s.updateElement(id, { params: { ...target.params, fileNum }, text: fileName });
+    });
   },
 
   loadDataFile: (id, samples, fileName) => {
     const s = get();
     const target = s.elements.find((e) => e.id === id);
     if (!target) return;
-    // Same as loadAudioFile: the baseline is this commit at the apply point,
-    // never the file input's onFocus, so an unrelated edit that lands while
-    // the decode is in flight keeps its own undo step.
-    s.commit();
-    const fileNum = nextFileNum();
-    setDataSamples(fileNum, samples);
-    s.updateElement(id, { params: { ...target.params, fileNum }, text: fileName });
+    // Same as loadAudioFile: the step opens at the apply point, never on the
+    // file input's onFocus, so an unrelated edit that lands while the decode is
+    // in flight keeps its own undo step.
+    s.transact('Load Data File', () => {
+      const fileNum = nextFileNum();
+      setDataSamples(fileNum, samples);
+      s.updateElement(id, { params: { ...target.params, fileNum }, text: fileName });
+    });
   },
 
   unblowFuses: () =>
@@ -2087,8 +2024,8 @@ function createAppStore() {
         ...(pendingChanged ? { pendingStates } : {}),
         // Run-mode reset: no undo entry, but the fuse state rides the
         // snapshots, so a stale redo future would rewind the reset along with
-        // everything else. Kill the future like a commit would.
-        redoStack: [],
+          // everything else. Kill the future like a checkpoint would.
+          history: clearFuture(s.history),
       };
     }),
 
@@ -2114,7 +2051,7 @@ function createAppStore() {
         // The assignment rides every snapshot without an undo entry of its
         // own, like toggleSwitchByKey above: kill the stale redo future or
         // Ctrl+Shift+Z would rewind it silently along with everything else.
-        redoStack: [],
+          history: clearFuture(s.history),
       };
     }),
 
@@ -2140,7 +2077,7 @@ function createAppStore() {
     }
     // The throw rides the snapshots without an entry of its own, so a redo
     // future left standing would silently rewind it on Ctrl+Shift+Z. Truncate,
-    // matching the commit-per-toggle rule the pointer path follows.
+      // matching the checkpoint-per-toggle rule the pointer path follows.
     if (toggled) get().discardRedoFuture();
     return toggled;
   },
@@ -2198,18 +2135,18 @@ function createAppStore() {
     if (released) get().discardRedoFuture();
   },
 
-  discardRedoFuture: () => set({ redoStack: [] }),
+    discardRedoFuture: () => set((s) => ({ history: clearFuture(s.history) })),
 
   // The zero-length collapse guards' revert (the post drag onto its partner
   // and the row or column sweep that folds both posts together): same restore
   // as undo, but no redo future. A plain undo() would push the just-refused
-  // collapsed geometry onto the redoStack, so an immediate Ctrl+Y would bring
+    // collapsed geometry onto the redo future, so an immediate Ctrl+Y would bring
   // back the degenerate element the guard exists to prevent. The mid-gesture
   // nuance is unchanged: undo() still drops elementGesture here, which stays
   // harmless because every caller tears its drag down right after.
   revertToBaseline: () => {
     get().undo();
-    set({ redoStack: [] });
+      set((s) => ({ history: clearFuture(s.history) }));
   },
 
   clearPending: () =>
@@ -2225,31 +2162,34 @@ function createAppStore() {
     // already showing this quantity is not duplicated, while a scope on a
     // different quantity of the same element still is.
     if (
-      get().scopes.some((x) => x.plots.some((p) => p.elementId === elementId && p.value === value))
+        get().scopes.some((x) =>
+          x.plots.some((p) => p.elementId === elementId && p.value === value),
+        )
     ) {
       return;
     }
-    get().commit();
-    set((s) => {
-      const id = allocateId();
-      const plots: ScopePlot[] = [makePlot(id, elementId, value)];
-      // A voltage scope gets a current companion for most elements, mirroring
-      // upstream's addValue (Scope.java:355-367); output-like elements are
-      // excluded, and the current companion follows the show-dots setting.
-      const kind = s.elements.find((e) => e.id === elementId)?.kind;
-      if (
-        value === 'voltage' &&
-        s.settings.showCurrent &&
-        kind !== undefined &&
-        !OUTPUT_LIKE.has(kind)
-      ) {
-        plots.push(makePlot(allocateId(), elementId, 'current'));
-      }
-      return {
-        scopes: [...s.scopes, makeScope(id, null, plots, UI_SCOPE_SPEED, s.scopes.length)],
-        ...bumpRevision(s),
-      };
-    });
+    get().transact('Add Scope', () =>
+      set((s) => {
+        const id = allocateId();
+        const plots: ScopePlot[] = [makePlot(id, elementId, value)];
+        // A voltage scope gets a current companion for most elements, mirroring
+        // upstream's addValue (Scope.java:355-367); output-like elements are
+        // excluded, and the current companion follows the show-dots setting.
+        const kind = s.elements.find((e) => e.id === elementId)?.kind;
+        if (
+          value === 'voltage' &&
+          s.settings.showCurrent &&
+          kind !== undefined &&
+          !OUTPUT_LIKE.has(kind)
+        ) {
+          plots.push(makePlot(allocateId(), elementId, 'current'));
+        }
+        return {
+          scopes: [...s.scopes, makeScope(id, null, plots, UI_SCOPE_SPEED, s.scopes.length)],
+          ...bumpRevision(s),
+        };
+          }),
+    );
   },
 
   addToScope: (elementId, scopeId, value) => {
@@ -2261,44 +2201,46 @@ function createAppStore() {
     // is the misclick addScope guards against. Another scope may already show
     // it and that is fine.
     if (scope.plots.some((p) => p.elementId === elementId && p.value === value)) return;
-    s.commit();
-    set((st) => {
-      const target = st.scopes.find((x) => x.id === scopeId);
-      if (!target) return st;
-      const plots = [...target.plots, makePlot(allocateId(), elementId, value)];
-      // The voltage plot drags its current companion along like addScope and
-      // upstream's addValue (Scope.java:360-367), unless this scope already
-      // shows the current.
-      const kind = st.elements.find((e) => e.id === elementId)?.kind;
-      if (
-        value === 'voltage' &&
-        st.settings.showCurrent &&
-        kind !== undefined &&
-        !OUTPUT_LIKE.has(kind) &&
-        !plots.some((p) => p.elementId === elementId && p.value === 'current')
-      ) {
-        plots.push(makePlot(allocateId(), elementId, 'current'));
-      }
-      return {
-        scopes: st.scopes.map((x) => (x.id === scopeId ? { ...x, plots } : x)),
-        ...bumpRevision(st),
-      };
-    });
+    s.transact('Add to Scope', () =>
+      set((st) => {
+        const target = st.scopes.find((x) => x.id === scopeId);
+        if (!target) return st;
+        const plots = [...target.plots, makePlot(allocateId(), elementId, value)];
+        // The voltage plot drags its current companion along like addScope and
+        // upstream's addValue (Scope.java:360-367), unless this scope already
+        // shows the current.
+        const kind = st.elements.find((e) => e.id === elementId)?.kind;
+        if (
+          value === 'voltage' &&
+          st.settings.showCurrent &&
+          kind !== undefined &&
+          !OUTPUT_LIKE.has(kind) &&
+          !plots.some((p) => p.elementId === elementId && p.value === 'current')
+        ) {
+          plots.push(makePlot(allocateId(), elementId, 'current'));
+        }
+        return {
+          scopes: st.scopes.map((x) => (x.id === scopeId ? { ...x, plots } : x)),
+          ...bumpRevision(st),
+        };
+          }),
+    );
   },
 
   removeScope: (id) => {
     if (!get().scopes.some((x) => x.id === id)) return;
-    get().commit();
-    set((s) => ({
-      scopes: s.scopes.filter((x) => x.id !== id),
-      // The dialog's component renders null once its scope is gone but stays
-      // mounted with its Escape listener, so a stale id here would keep
-      // modalSurface() true forever and every shortcut would die. Another
-      // scope's removal leaves the open dialog alone: the stack tabs can
-      // still reach it.
-      scopeProperties: s.scopeProperties === id ? null : s.scopeProperties,
-      ...bumpRevision(s),
-    }));
+    get().transact('Remove Scope', () =>
+      set((s) => ({
+        scopes: s.scopes.filter((x) => x.id !== id),
+        // The dialog's component renders null once its scope is gone but stays
+        // mounted with its Escape listener, so a stale id here would keep
+        // modalSurface() true forever and every shortcut would die. Another
+        // scope's removal leaves the open dialog alone: the stack tabs can
+        // still reach it.
+        scopeProperties: s.scopeProperties === id ? null : s.scopeProperties,
+        ...bumpRevision(s),
+      })),
+    );
   },
 
   resetScope: (id) => {
@@ -2313,14 +2255,15 @@ function createAppStore() {
     const clamped = scopeSpeed(speed);
     const scope = s.scopes.find((x) => x.id === id);
     // A no-op must not queue an engine patch, or a wheel tick with nothing to
-    // do would still touch the engine; committing it would also push a
+      // do would still touch the engine; checkpointing it would also push a
     // spurious undo entry. The frame loop's fingerprint comparison picks the
     // change up without any counter.
     if (!scope || scope.speed === clamped) return;
-    if (!s.scopeGesture) s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x) => (x.id === id ? { ...x, speed: clamped } : x)),
-    }));
+    s.transact('Edit Scope Speed', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) => (x.id === id ? { ...x, speed: clamped } : x)),
+      })),
+    );
   },
 
   setScopeTrigger: (id, patch) => {
@@ -2337,12 +2280,13 @@ function createAppStore() {
     ) {
       return;
     }
-    if (!s.scopeGesture) s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x) => (x.id === id ? { ...x, trigger } : x)),
-      // The trigger is part of the engine spec, so it must reload.
-      ...bumpRevision(st),
-    }));
+    s.transact('Edit Scope Trigger', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) => (x.id === id ? { ...x, trigger } : x)),
+        // The trigger is part of the engine spec, so it must reload.
+        ...bumpRevision(st),
+      })),
+    );
   },
 
   setScopeFlags: (id, patch) => {
@@ -2352,42 +2296,44 @@ function createAppStore() {
     // A patch whose keys already hold their values changes nothing; skipping
     // it avoids both the notify and a spurious undo entry.
     if (Object.entries(patch).every(([k, v]) => scope[k as keyof Scope] === v)) return;
-    if (!s.scopeGesture) s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x) => (x.id === id ? { ...x, ...patch } : x)),
-    }));
+    s.transact('Edit Scope', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+      })),
+    );
   },
 
   resetScopeToDefaults: (id) => {
     const s = get();
     const scope = s.scopes.find((x) => x.id === id);
     if (!scope) return;
-    s.commit();
-    // The traces stay: a reset is about how the panel is drawn, not about what
-    // it watches. Only the per-plot state the dialog can set by hand (manual
-    // scale, vertical position, coupling) goes back to automatic, and
-    // `makePlot`'s rule that a power, charge or resistance trace starts at the
-    // bottom of the manual screen is reapplied rather than zeroed.
-    const plots = scope.plots.map((p) => ({
-      ...p,
-      manScale: null,
-      manVPosition: makePlot(p.id, p.elementId, p.value).manVPosition,
-      acCoupled: false,
-      // Reset to Default is about how the panel draws: the per-trace
-      // measurement overrides go back to inheriting the scope word too.
-      measurements: null,
-    }));
-    // `makeScope` is what a fresh panel goes through, stored defaults and all,
-    // so "default" here means the same thing the Save as Default button writes:
-    // the two buttons sit side by side and must agree.
-    const fresh = makeScope(scope.id, scope.raw, plots, UI_SCOPE_SPEED, scope.position);
-    set((st) => ({
-      scopes: st.scopes.map((x) => (x.id === id ? fresh : x)),
-      // The trigger and the plot set are part of the engine spec, so the
-      // rebuild gate moves; the frame loop's scope fingerprint picks up the
-      // rest on its own comparison.
-      ...bumpRevision(st),
-    }));
+    s.transact('Reset Scope', () => {
+      // The traces stay: a reset is about how the panel is drawn, not about
+      // what it watches. Only the per-plot state the dialog can set by hand
+      // (manual scale, vertical position, coupling) goes back to automatic, and
+      // `makePlot`'s rule that a power, charge or resistance trace starts at
+      // the bottom of the manual screen is reapplied rather than zeroed.
+  const plots = scope.plots.map((p) => ({
+    ...p,
+    manScale: null,
+    manVPosition: makePlot(p.id, p.elementId, p.value).manVPosition,
+    acCoupled: false,
+    // Reset to Default is about how the panel draws: the per-trace
+    // measurement overrides go back to inheriting the scope word too.
+    measurements: null,
+  }));
+  // `makeScope` is what a fresh panel goes through, stored defaults and all,
+  // so "default" here means the same thing the Save as Default button writes:
+  // the two buttons sit side by side and must agree.
+  const fresh = makeScope(scope.id, scope.raw, plots, UI_SCOPE_SPEED, scope.position);
+  set((st) => ({
+    scopes: st.scopes.map((x) => (x.id === id ? fresh : x)),
+    // The trigger and the plot set are part of the engine spec, so the
+    // rebuild gate moves; the frame loop's scope fingerprint picks up the
+    // rest on its own comparison.
+    ...bumpRevision(st),
+  }));
+    });
   },
 
   setScopeShowValue: (scopeId, value, show) => {
@@ -2404,19 +2350,20 @@ function createAppStore() {
     const addPlot = show && first !== null && !scope.plots.some((p) => p.value === value);
     // A repeat click changes nothing and must not push an undo entry.
     if (!addPlot && scope[key] === show) return;
-    if (!s.scopeGesture) s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x) =>
-        x.id === scopeId
-          ? {
-              ...x,
-              [key]: show,
-              plots: addPlot ? [...x.plots, makePlot(allocateId(), first, value)] : x.plots,
-            }
-          : x,
-      ),
-      ...(addPlot ? bumpRevision(st) : {}),
-    }));
+    s.transact('Edit Scope', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) =>
+          x.id === scopeId
+            ? {
+                ...x,
+                [key]: show,
+                plots: addPlot ? [...x.plots, makePlot(allocateId(), first, value)] : x.plots,
+              }
+            : x,
+        ),
+        ...(addPlot ? bumpRevision(st) : {}),
+      })),
+    );
   },
 
   setPlotCoupling: (scopeId, plotId, acCoupled) => {
@@ -2428,23 +2375,24 @@ function createAppStore() {
     // repeat of the same state changes nothing and must not push an undo
     // entry.
     if (!plot || plot.acCoupled === (acCoupled && plot.value === 'voltage')) return;
-    if (!s.scopeGesture) s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x) =>
-        x.id === scopeId
-          ? {
-              ...x,
-              plots: x.plots.map((p) =>
-                p.id === plotId ? { ...p, acCoupled: acCoupled && p.value === 'voltage' } : p,
-              ),
-            }
-          : x,
-      ),
-      // AC coupling is a scope-capture flag, applied through the engine's
-      // scope fast path (applyScopeParams), so toggling it must not rewind
-      // the simulation. The trigger path has no fast path yet and still
-      // reloads; see setScopeTrigger.
-    }));
+    s.transact('Edit Scope', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) =>
+          x.id === scopeId
+            ? {
+                ...x,
+                plots: x.plots.map((p) =>
+                  p.id === plotId ? { ...p, acCoupled: acCoupled && p.value === 'voltage' } : p,
+                ),
+              }
+            : x,
+        ),
+        // AC coupling is a scope-capture flag, applied through the engine's
+        // scope fast path (applyScopeParams), so toggling it must not rewind
+        // the simulation. The trigger path has no fast path yet and still
+        // reloads; see setScopeTrigger.
+      })),
+    );
   },
 
   /** One plot's per-trace measurement readout, the properties dialog's
@@ -2460,24 +2408,29 @@ function createAppStore() {
     // undo entry. Without a mask the checkbox shows the inherited value, so
     // a click always flips something.
     if (!plot || (plot.measurements !== null && plot.measurements[key] === on)) return;
-    if (!s.scopeGesture) s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x) =>
-        x.id === scope.id
-          ? {
-              ...x,
-              plots: x.plots.map((p) =>
-                p.id === plotId
-                  ? {
-                      ...p,
-                      measurements: { ...measurementsFromScope(x), ...p.measurements, [key]: on },
-                    }
-                  : p,
-              ),
-            }
-          : x,
-      ),
-    }));
+    s.transact('Edit Scope', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) =>
+          x.id === scope.id
+            ? {
+                ...x,
+                plots: x.plots.map((p) =>
+                  p.id === plotId
+                    ? {
+                        ...p,
+                            measurements: {
+                              ...measurementsFromScope(x),
+                              ...p.measurements,
+                              [key]: on,
+                            },
+                      }
+                    : p,
+                ),
+              }
+            : x,
+        ),
+      })),
+    );
   },
 
   /** Drops every plot's measurement mask in one scope so all traces inherit
@@ -2489,17 +2442,20 @@ function createAppStore() {
     // A scope without overrides has nothing to clear and must not push an
     // undo entry.
     if (!scope || !scope.plots.some((p) => p.measurements !== null)) return;
-    if (!s.scopeGesture) s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x) =>
-        x.id === scopeId
-          ? {
-              ...x,
-              plots: x.plots.map((p) => (p.measurements === null ? p : { ...p, measurements: null })),
-            }
-          : x,
-      ),
-    }));
+    s.transact('Edit Scope', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) =>
+          x.id === scopeId
+            ? {
+                ...x,
+                    plots: x.plots.map((p) =>
+                      p.measurements === null ? p : { ...p, measurements: null },
+                    ),
+              }
+            : x,
+        ),
+      })),
+    );
   },
 
   setPlotManScale: (plotId, manScale) => {
@@ -2510,13 +2466,14 @@ function createAppStore() {
     // A repeat of the current scale changes nothing and must not push an undo
     // entry.
     if (plot.manScale === manScale) return;
-    if (!s.scopeGesture) s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x) => ({
-        ...x,
-        plots: x.plots.map((p) => (p.id === plotId ? { ...p, manScale } : p)),
+    s.transact('Edit Scope', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) => ({
+          ...x,
+          plots: x.plots.map((p) => (p.id === plotId ? { ...p, manScale } : p)),
+        })),
       })),
-    }));
+    );
   },
 
   setPlotManPosition: (plotId, manVPosition) => {
@@ -2528,18 +2485,19 @@ function createAppStore() {
     // A repeat of the current position (a drag frame that clamped to the same
     // value) changes nothing and must not push an undo entry.
     if (plot.manVPosition === clamped) return;
-    if (!s.scopeGesture) s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x) => ({
-        ...x,
-        plots: x.plots.map((p) =>
-          // Upstream's +-V_POSITION_STEPS span (Scope.java:1227-1228); the
-          // draw divides by the same 200, so a 200 parks a plot at the very
-          // top of the screen.
-          p.id === plotId ? { ...p, manVPosition: clamped } : p,
-        ),
+    s.transact('Edit Scope', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) => ({
+          ...x,
+          plots: x.plots.map((p) =>
+            // Upstream's +-V_POSITION_STEPS span (Scope.java:1227-1228); the
+            // draw divides by the same 200, so a 200 parks a plot at the very
+            // top of the screen.
+            p.id === plotId ? { ...p, manVPosition: clamped } : p,
+          ),
+        })),
       })),
-    }));
+    );
   },
 
   togglePlot: (scopeId, value) => {
@@ -2547,33 +2505,37 @@ function createAppStore() {
     if (!scope) return;
     const has = scope.plots.some((p) => p.value === value && p.elementId !== null);
     if (has && scope.plots.length <= 1) return;
-    get().commit();
-    set((s) => {
-      const target = s.scopes.find((x) => x.id === scopeId);
-      if (!target) return s;
-      if (target.plots.some((p) => p.value === value && p.elementId !== null)) {
-        // Removing must never empty the panel; the guard above already
-        // refused the single-plot scope.
+    get().transact('Toggle Scope Plot', () =>
+      set((s) => {
+        const target = s.scopes.find((x) => x.id === scopeId);
+        if (!target) return s;
+        if (target.plots.some((p) => p.value === value && p.elementId !== null)) {
+          // Removing must never empty the panel; the guard above already
+          // refused the single-plot scope.
+          return {
+            scopes: s.scopes.map((x) =>
+              x.id === scopeId
+                    ? {
+                        ...x,
+                        plots: x.plots.filter((p) => !(p.value === value && p.elementId !== null)),
+                      }
+                : x,
+            ),
+            ...bumpRevision(s),
+          };
+        }
+        const elementId = target.plots.find((p) => p.elementId !== null)?.elementId ?? null;
+        if (elementId === null) return s;
         return {
           scopes: s.scopes.map((x) =>
             x.id === scopeId
-              ? { ...x, plots: x.plots.filter((p) => !(p.value === value && p.elementId !== null)) }
+              ? { ...x, plots: [...x.plots, makePlot(allocateId(), elementId, value)] }
               : x,
           ),
           ...bumpRevision(s),
         };
-      }
-      const elementId = target.plots.find((p) => p.elementId !== null)?.elementId ?? null;
-      if (elementId === null) return s;
-      return {
-        scopes: s.scopes.map((x) =>
-          x.id === scopeId
-            ? { ...x, plots: [...x.plots, makePlot(allocateId(), elementId, value)] }
-            : x,
-        ),
-        ...bumpRevision(s),
-      };
-    });
+          }),
+    );
   },
 
   /** The scope popup's Remove Plot: drops exactly the plot the menu opened
@@ -2592,18 +2554,19 @@ function createAppStore() {
     if (plot.value === null || plot.elementId === null) return;
     // Removing must never empty the panel.
     if (!scope || scope.plots.length <= 1) return;
-    s.commit();
-    // The removed plot leaves no sticky-scale entry behind: the auto-scale is
-    // keyed by (scope id, units family) like upstream's per-scope scale[]
-    // (Scope.java:266-267), so the family entry either still backs a sibling
-    // trace on this panel or dies with the scope when the frame loop prunes
-    // dead ids.
-    set((st) => ({
-      scopes: st.scopes.map((x) =>
-        x.id === scopeId ? { ...x, plots: x.plots.filter((p) => p.id !== plotId) } : x,
-      ),
-      ...bumpRevision(st),
-    }));
+    s.transact('Remove Plot', () => {
+      // The removed plot leaves no sticky-scale entry behind: the auto-scale is
+      // keyed by (scope id, units family) like upstream's per-scope scale[]
+      // (Scope.java:266-267), so the family entry either still backs a sibling
+      // trace on this panel or dies with the scope when the frame loop prunes
+      // dead ids.
+      set((st) => ({
+        scopes: st.scopes.map((x) =>
+          x.id === scopeId ? { ...x, plots: x.plots.filter((p) => p.id !== plotId) } : x,
+        ),
+        ...bumpRevision(st),
+      }));
+    });
   },
 
   /** The properties dialog's Show Vce vs Ic row, upstream's showvcevsic menu
@@ -2634,181 +2597,71 @@ function createAppStore() {
       scope.plots[1].value === 'ic';
     // Already the arrangement: a repeat click must not push an undo entry.
     if (pair) return;
-    s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x) =>
-        x.id === scopeId
-          ? {
-              ...x,
-              plotXY: true,
-              plotX: 0,
-              plotY: 1,
-              plotBrightness: -1,
-              plotColorR: -1,
-              plotColorG: -1,
-              plotColorB: -1,
-              plots: [
-                makePlot(allocateId(), elementId, 'vce'),
-                makePlot(allocateId(), elementId, 'ic'),
-              ],
-            }
-          : x,
-      ),
-      ...bumpRevision(st),
-    }));
+    s.transact('Show Vce vs Ic', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) =>
+          x.id === scopeId
+            ? {
+                ...x,
+                plotXY: true,
+                plotX: 0,
+                plotY: 1,
+                plotBrightness: -1,
+                plotColorR: -1,
+                plotColorG: -1,
+                plotColorB: -1,
+                plots: [
+                  makePlot(allocateId(), elementId, 'vce'),
+                  makePlot(allocateId(), elementId, 'ic'),
+                ],
+              }
+            : x,
+        ),
+        ...bumpRevision(st),
+      })),
+    );
   },
 
   combineScopes: (aId, bId) => {
     if (aId === bId) return;
     const s = get();
     if (!s.scopes.some((x) => x.id === aId) || !s.scopes.some((x) => x.id === bId)) return;
-    s.commit();
-    set((st) => {
-      const a = st.scopes.find((x) => x.id === aId);
-      const b = st.scopes.find((x) => x.id === bId);
-      if (!a || !b) return st;
-      const scopes = st.scopes
-        .filter((x) => x.id !== bId)
-        .map((x) => (x.id === aId ? { ...x, plots: [...x.plots, ...b.plots] } : x));
-      // bId is gone, so a properties dialog pointed at it would be an orphan
-      // holding modalSurface() shut with nothing on screen (the same stale
-      // gate removeScope clears).
-      return {
-        scopes,
-        scopeProperties:
-          st.scopeProperties !== null && scopes.some((x) => x.id === st.scopeProperties)
-            ? st.scopeProperties
-            : null,
-        ...bumpRevision(st),
-      };
-    });
+    s.transact('Combine Scopes', () =>
+      set((st) => {
+        const a = st.scopes.find((x) => x.id === aId);
+        const b = st.scopes.find((x) => x.id === bId);
+        if (!a || !b) return st;
+        const scopes = st.scopes
+          .filter((x) => x.id !== bId)
+          .map((x) => (x.id === aId ? { ...x, plots: [...x.plots, ...b.plots] } : x));
+        // bId is gone, so a properties dialog pointed at it would be an orphan
+        // holding modalSurface() shut with nothing on screen (the same stale
+        // gate removeScope clears).
+        return {
+          scopes,
+          scopeProperties:
+            st.scopeProperties !== null && scopes.some((x) => x.id === st.scopeProperties)
+              ? st.scopeProperties
+              : null,
+          ...bumpRevision(st),
+        };
+          }),
+    );
   },
 
   separateScope: (id) => {
     const s = get();
     if (!s.scopes.some((x) => x.id === id)) return;
-    s.commit();
-    set((st) => {
-      const scope = st.scopes.find((x) => x.id === id);
-      if (!scope) return st;
-      const others = st.scopes.filter((x) => x.id !== id);
-      const base = others.reduce((m, x) => Math.max(m, x.position), -1) + 1;
-      const out: Scope[] = [];
-      let last: ScopePlot | null = null;
-      // A voltage plot and the current plot of the same element stay together
-      // (Scope.separate, Scope.java:453-471); anything else splits off.
-      for (const p of scope.plots) {
-        const prev = out[out.length - 1];
-        if (
-          last &&
-          last.elementId === p.elementId &&
-          last.value === 'voltage' &&
-          p.value === 'current'
-        ) {
-          out[out.length - 1] = { ...prev, plots: [...prev.plots, p] };
-          last = p;
-          continue;
-        }
-        out.push({
-          // A split scope inherits the parent's speed over the stored scope
-          // defaults, exactly as Scope.separate calls setSpeed after the new
-          // Scope's initialize() ran loadDefaults (Scope.java:459-468).
-          ...makeScope(allocateId(), null, [p], scope.speed, base + out.length),
-          speed: scope.speed,
-        });
-        last = p;
-      }
-      return { scopes: [...others, ...out], ...bumpRevision(st) };
-    });
-  },
-
-  stackScope: (id) => {
-    const s = get();
-    const i = s.scopes.findIndex((x) => x.id === id);
-    if (i <= 0 || s.scopes[i].position === s.scopes[i - 1].position) return;
-    s.commit();
-    set((st) => {
-      const target = st.scopes[i - 1].position;
-      // Move the scope into the previous column and close the gap it left
-      // (ScopeManager.stackScope, ScopeManager.java:253-262).
-      return {
-        scopes: st.scopes.map((x, j) => {
-          if (j === i) return { ...x, position: target };
-          if (j > i) return { ...x, position: Math.max(0, x.position - 1) };
-          return x;
-        }),
-        ...bumpRevision(st),
-      };
-    });
-  },
-
-  unstackScope: (id) => {
-    const s = get();
-    let i = s.scopes.findIndex((x) => x.id === id);
-    if (i <= 0) return;
-    // Selecting the top scope of a stack still un-stacks it
-    // (ScopeManager.unstackScope, ScopeManager.java:264-274).
-    if (s.scopes[i].position !== s.scopes[i - 1].position) i += 1;
-    s.commit();
-    set((st) => ({
-      scopes: st.scopes.map((x, j) => (j >= i ? { ...x, position: x.position + 1 } : x)),
-      ...bumpRevision(st),
-    }));
-  },
-
-  stackAllScopes: () => {
-    if (get().scopes.length === 0) return;
-    // One commit for the whole batch, so the menu command is one undo step.
-    get().commit();
-    set((s) => ({
-      scopes: s.scopes.map((x) => ({ ...x, position: 0, showMax: false, showMin: false })),
-      ...bumpRevision(s),
-    }));
-  },
-
-  unstackAllScopes: () => {
-    if (get().scopes.length === 0) return;
-    get().commit();
-    set((s) => ({
-      scopes: s.scopes.map((x, i) => ({ ...x, position: i, showMax: true })),
-      ...bumpRevision(s),
-    }));
-  },
-
-  combineAllScopes: () => {
-    const s = get();
-    if (s.scopes.length < 2) return;
-    s.commit();
-    set((st) => {
-      const first = st.scopes[0];
-      // Everything folds into the first scope, plot order preserved, matching
-      // the reverse combine loop of ScopeManager.combineAll.
-      const scopes = [{ ...first, plots: st.scopes.flatMap((x) => x.plots) }];
-      // Every non-first scope vanishes, so a properties dialog pointed at one
-      // of those would be an orphan holding modalSurface() shut (the same
-      // stale gate removeScope clears).
-      return {
-        scopes,
-        scopeProperties:
-          st.scopeProperties !== null && scopes.some((x) => x.id === st.scopeProperties)
-            ? st.scopeProperties
-            : null,
-        ...bumpRevision(st),
-      };
-    });
-  },
-
-  separateAllScopes: () => {
-    const s = get();
-    if (s.scopes.length === 0) return;
-    s.commit();
-    set((st) => {
-      let position = 0;
-      const out: Scope[] = [];
-      for (const scope of st.scopes) {
-        // Reuses the per-scope pairing rule: a V+I pair of the same element
-        // stays together, everything else splits off (Scope.separate).
+    s.transact('Separate Scope', () =>
+      set((st) => {
+        const scope = st.scopes.find((x) => x.id === id);
+        if (!scope) return st;
+        const others = st.scopes.filter((x) => x.id !== id);
+        const base = others.reduce((m, x) => Math.max(m, x.position), -1) + 1;
+        const out: Scope[] = [];
         let last: ScopePlot | null = null;
+        // A voltage plot and the current plot of the same element stay together
+        // (Scope.separate, Scope.java:453-471); anything else splits off.
         for (const p of scope.plots) {
           const prev = out[out.length - 1];
           if (
@@ -2825,24 +2678,143 @@ function createAppStore() {
             // A split scope inherits the parent's speed over the stored scope
             // defaults, exactly as Scope.separate calls setSpeed after the new
             // Scope's initialize() ran loadDefaults (Scope.java:459-468).
-            ...makeScope(allocateId(), null, [p], scope.speed, position++),
+            ...makeScope(allocateId(), null, [p], scope.speed, base + out.length),
             speed: scope.speed,
           });
           last = p;
         }
-      }
-      // All original scopes are replaced by fresh ids, so a properties dialog
-      // pointed at any of the old ids would be an orphan holding
-      // modalSurface() shut (the same stale gate removeScope clears).
-      return {
-        scopes: out,
-        scopeProperties:
-          st.scopeProperties !== null && out.some((x) => x.id === st.scopeProperties)
-            ? st.scopeProperties
-            : null,
+        return { scopes: [...others, ...out], ...bumpRevision(st) };
+          }),
+    );
+  },
+
+  stackScope: (id) => {
+    const s = get();
+    const i = s.scopes.findIndex((x) => x.id === id);
+    if (i <= 0 || s.scopes[i].position === s.scopes[i - 1].position) return;
+    s.transact('Stack Scope', () =>
+      set((st) => {
+        const target = st.scopes[i - 1].position;
+        // Move the scope into the previous column and close the gap it left
+        // (ScopeManager.stackScope, ScopeManager.java:253-262).
+        return {
+          scopes: st.scopes.map((x, j) => {
+            if (j === i) return { ...x, position: target };
+            if (j > i) return { ...x, position: Math.max(0, x.position - 1) };
+            return x;
+          }),
+          ...bumpRevision(st),
+        };
+          }),
+    );
+  },
+
+  unstackScope: (id) => {
+    const s = get();
+    let i = s.scopes.findIndex((x) => x.id === id);
+    if (i <= 0) return;
+    // Selecting the top scope of a stack still un-stacks it
+    // (ScopeManager.unstackScope, ScopeManager.java:264-274).
+    if (s.scopes[i].position !== s.scopes[i - 1].position) i += 1;
+    s.transact('Unstack Scope', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x, j) => (j >= i ? { ...x, position: x.position + 1 } : x)),
         ...bumpRevision(st),
-      };
-    });
+      })),
+    );
+  },
+
+  stackAllScopes: () => {
+    if (get().scopes.length === 0) return;
+    // One transaction for the whole batch, so the menu command is one undo step.
+    get().transact('Stack All Scopes', () =>
+      set((s) => ({
+        scopes: s.scopes.map((x) => ({ ...x, position: 0, showMax: false, showMin: false })),
+        ...bumpRevision(s),
+      })),
+    );
+  },
+
+  unstackAllScopes: () => {
+    if (get().scopes.length === 0) return;
+    get().transact('Unstack All Scopes', () =>
+      set((s) => ({
+        scopes: s.scopes.map((x, i) => ({ ...x, position: i, showMax: true })),
+        ...bumpRevision(s),
+      })),
+    );
+  },
+
+  combineAllScopes: () => {
+    const s = get();
+    if (s.scopes.length < 2) return;
+    s.transact('Combine All Scopes', () =>
+      set((st) => {
+        const first = st.scopes[0];
+        // Everything folds into the first scope, plot order preserved, matching
+        // the reverse combine loop of ScopeManager.combineAll.
+        const scopes = [{ ...first, plots: st.scopes.flatMap((x) => x.plots) }];
+        // Every non-first scope vanishes, so a properties dialog pointed at one
+        // of those would be an orphan holding modalSurface() shut (the same
+        // stale gate removeScope clears).
+        return {
+          scopes,
+          scopeProperties:
+            st.scopeProperties !== null && scopes.some((x) => x.id === st.scopeProperties)
+              ? st.scopeProperties
+              : null,
+          ...bumpRevision(st),
+        };
+          }),
+    );
+  },
+
+  separateAllScopes: () => {
+    const s = get();
+    if (s.scopes.length === 0) return;
+    s.transact('Separate All Scopes', () =>
+      set((st) => {
+        let position = 0;
+        const out: Scope[] = [];
+        for (const scope of st.scopes) {
+          // Reuses the per-scope pairing rule: a V+I pair of the same element
+          // stays together, everything else splits off (Scope.separate).
+          let last: ScopePlot | null = null;
+          for (const p of scope.plots) {
+            const prev = out[out.length - 1];
+            if (
+              last &&
+              last.elementId === p.elementId &&
+              last.value === 'voltage' &&
+              p.value === 'current'
+            ) {
+              out[out.length - 1] = { ...prev, plots: [...prev.plots, p] };
+              last = p;
+              continue;
+            }
+            out.push({
+              // A split scope inherits the parent's speed over the stored scope
+              // defaults, exactly as Scope.separate calls setSpeed after the new
+              // Scope's initialize() ran loadDefaults (Scope.java:459-468).
+              ...makeScope(allocateId(), null, [p], scope.speed, position++),
+              speed: scope.speed,
+            });
+            last = p;
+          }
+        }
+        // All original scopes are replaced by fresh ids, so a properties dialog
+        // pointed at any of the old ids would be an orphan holding
+        // modalSurface() shut (the same stale gate removeScope clears).
+        return {
+          scopes: out,
+          scopeProperties:
+            st.scopeProperties !== null && out.some((x) => x.id === st.scopeProperties)
+              ? st.scopeProperties
+              : null,
+          ...bumpRevision(st),
+        };
+          }),
+    );
   },
 
   floatScope: (id, rect) => {
@@ -2872,13 +2844,14 @@ function createAppStore() {
       if (floating) s.dockScope(id);
       return;
     }
-    s.commit();
-    set((st) => ({
-      scopes: next,
-      floating: floating ? st.floating.filter((f) => f.id !== id) : st.floating,
-      // The list order is the engine's trace order, as for stackScope.
-      ...bumpRevision(st),
-    }));
+    s.transact('Move Scope', () =>
+      set((st) => ({
+        scopes: next,
+        floating: floating ? st.floating.filter((f) => f.id !== id) : st.floating,
+        // The list order is the engine's trace order, as for stackScope.
+        ...bumpRevision(st),
+      })),
+    );
   },
 
   dockScope: (id) => {
@@ -2927,31 +2900,28 @@ function createAppStore() {
       return;
     }
     attachUndockedWindow(win, () => get().closeUndockedScope());
-    s.commit();
-    set((st) => {
-      // Upstream's identically named command drops a floating scope element
-      // onto the schematic near the clicked element (CommandManager.java:
-      // 192-198); this port re-interprets the row as a display-only second
-      // window instead. What carries over is upstream's always-fresh-scope
-      // rule: no dedup against existing panels, because redocking one would
-      // surprise whoever docked it. The plot shape is addScope's
-      // voltage-plus-current-companion pair.
-      const id = allocateId();
-      const plots: ScopePlot[] = [makePlot(id, elementId, 'voltage')];
-      const kind = st.elements.find((e) => e.id === elementId)?.kind;
-      if (
-        st.settings.showCurrent &&
-        kind !== undefined &&
-        !OUTPUT_LIKE.has(kind)
-      ) {
-        plots.push(makePlot(allocateId(), elementId, 'current'));
-      }
-      return {
-        scopes: [...st.scopes, makeScope(id, null, plots, UI_SCOPE_SPEED, st.scopes.length)],
-        ...bumpRevision(st),
-        undocked: { scopeId: id, windowRef: undockedWindow() },
-      };
-    });
+    s.transact('View in Undocked Scope', () =>
+      set((st) => {
+        // Upstream's identically named command drops a floating scope element
+        // onto the schematic near the clicked element (CommandManager.java:
+        // 192-198); this port re-interprets the row as a display-only second
+        // window instead. What carries over is upstream's always-fresh-scope
+        // rule: no dedup against existing panels, because redocking one would
+        // surprise whoever docked it. The plot shape is addScope's
+        // voltage-plus-current-companion pair.
+        const id = allocateId();
+        const plots: ScopePlot[] = [makePlot(id, elementId, 'voltage')];
+        const kind = st.elements.find((e) => e.id === elementId)?.kind;
+            if (st.settings.showCurrent && kind !== undefined && !OUTPUT_LIKE.has(kind)) {
+          plots.push(makePlot(allocateId(), elementId, 'current'));
+        }
+        return {
+          scopes: [...st.scopes, makeScope(id, null, plots, UI_SCOPE_SPEED, st.scopes.length)],
+          ...bumpRevision(st),
+          undocked: { scopeId: id, windowRef: undockedWindow() },
+        };
+          }),
+    );
   },
 
   closeUndockedScope: () => {
@@ -3071,7 +3041,10 @@ function createAppStore() {
     // The load banner: the missing-elements message plus any clamp-on-load
     // warnings (a hand-edited 12-input gate loading as 8), joined the same way
     // the frame loop joins the engine warnings, so a rebuild cannot wipe them.
-    const loadProblem = mergeProblem(describeMissingComponents(parsed.unsupported), parsed.warnings);
+      const loadProblem = mergeProblem(
+        describeMissingComponents(parsed.unsupported),
+        parsed.warnings,
+      );
 
     // A load is a new document, so an undocked window mirroring the previous
     // one goes with it. The mirror's vanished-scope check cannot be trusted
@@ -3104,10 +3077,6 @@ function createAppStore() {
         powerRange: DEFAULT_SETTINGS.powerRange,
         ...parsed.settings,
       },
-      selectedIds: [],
-      hoveredId: null,
-      undoStack: [],
-      redoStack: [],
       problem: loadProblem,
       // The same message in its own field: the frame loop's first engine build
       // must not wipe the banner, so it merges this with the engine warnings
@@ -3117,53 +3086,17 @@ function createAppStore() {
       notice: null,
       // A refusal from the previous circuit says nothing about this one.
       subcircuitError: null,
-      // A load is a new document: any open Scope Properties dialog pointed at
-      // the old file's scope list, so its id can only be stale. Leaving it
-      // would keep modalSurface() true with nothing on screen, killing every
-      // shortcut until a lucky Escape.
-      scopeProperties: null,
       // A load is a new document: any drill-in session that returned to it no
       // longer has a home, so the context stack is reset wholesale, exactly as
       // upstream's resetEditingContext clears it (CirSim.java:508-511).
       subcircuitStack: [],
-      // A load is a new document: an open device-model editor holds an element
-      // id or model name captured from the old file, so its OK could rebind or
-      // delete against elements this replace deleted. Same stale-pointer rule
-      // as scopeProperties above.
-      deviceModelEditor: null,
-      // A load is a new document: an open scroll-value popover holds the id of
-      // the element it was wheel-edited, which this replace may delete. Leaving
-      // it would strand a value editor over a vanished part, the same
-      // stale-pointer rule as scopeProperties and deviceModelEditor above.
-      scrollValuePopover: null,
-      // A load is a new document: the open slider dialog targets one element id
-      // from the old file, which this replace may delete. Leaving it would point
-      // the slider panel at a vanished part, the same stale-pointer rule.
-      sliderElementId: null,
-      // A load is a new document: an open context menu holds the id of the
-      // element it was raised on, which this replace may delete. Leaving it
-      // keeps modalSurface() true with nothing on screen, killing every
-      // shortcut until a lucky Escape, and its actions could touch a stale id.
-      // Same stale-pointer rule as scopeProperties above. A dialog or open
-      // Element Properties panel is stranded on the old file the same way.
-      contextMenu: null,
-      dialog: null,
-      elementProperties: null,
-      ...bumpRevision(s),
+        // The stale-pointer list, the gesture cancel, the epoch bump and the
+        // fresh history all live in applyRevert, so no replacement path can miss
+        // one of them.
+        ...applyRevert(s, { scopes }, emptyHistory()),
       // A load is a new document: the frame loop's rebuild gate must refuse to
       // inject the previous circuit's live charges into it.
       document: s.document + 1,
-      // The same rule for the canvas layer, here rather than in each caller:
-      // a live gesture was mutating against elements this replace deleted, so
-      // every route through loadNetlist (file open, Escape out of a drill-in,
-      // recovery) must stand it down the way an undo does: the epoch bump
-      // cancels the canvas drag, and the flags drop here so the action is
-      // self-contained even when no keyed panel unmounts to do it. Refused
-      // loads return above without reaching this, so nothing moves for a
-      // document that never changed.
-      scopeGesture: false,
-      elementGesture: null,
-      revertEpoch: s.revertEpoch + 1,
     }));
     // A load is a new document on screen too: centre it the way upstream's
     // finishReadCircuit always does unless RC_NO_CENTER is passed
@@ -3286,14 +3219,13 @@ function createAppStore() {
       document: s.saveNetlist(),
       view: s.view,
       session: { samples: snapshotSampleCache(), models: snapshotUserModels() },
-      // The outer level's undo histories are suspended here for the drill-in,
+        // The outer level's undo history is suspended here for the drill-in,
       // upstream's pushContext stash (CirSim.java:476-482). Both loads of the
-      // round trip wipe the live stacks unconditionally, so without this every
-      // pre-drill edit would come home unundoable. Copied, not aliased, like
-      // the session caches: a stack mutated between here and its restore must
-      // not reach back into this entry.
-      undo: [...s.undoStack],
-      redo: [...s.redoStack],
+        // round trip wipe the live history unconditionally, so without this every
+        // pre-drill edit would come home unundoable. `History` is immutable, so
+        // the reference is safe to carry; an open transaction is aborted first,
+        // since the load is about to replace its baseline.
+        history: abort(s.history),
       // The app's own clean check, evaluated before anything is loaded: live
       // charge alone never reads dirty against lastSaved, so a charged but
       // unsaved-looking circuit counts as clean here exactly as it does in
@@ -3324,7 +3256,8 @@ function createAppStore() {
     // map was cleared by the inner load, so the lookup reaches storage).
     const lineModel = modelInText(top.document, top.modelName);
     const storedModel = getModel(top.modelName);
-    const previous = lineModel ?? storedModel ?? {
+      const previous = lineModel ??
+        storedModel ?? {
       name: top.modelName,
       flags: 0,
       sizeX: 1,
@@ -3364,8 +3297,7 @@ function createAppStore() {
       const nextLastSaved = top.cleanAtEnter ? get().toNetlist() : s.lastSaved;
       set({
         view: top.view,
-        undoStack: top.undo,
-        redoStack: top.redo,
+          history: top.history,
         subcircuitStack: stack.slice(0, -1),
         lastSaved: nextLastSaved,
         // A prior refused exit may have left a message here; a successful return
@@ -3412,11 +3344,8 @@ function createAppStore() {
       // model-change baseline lands on top of it, so pre-drill edits stay
       // undoable past an edited drill-in too; upstream's popContext restores
       // its stashed stacks the same way (CirSim.java:500-506). The redo future
-      // dies with the model change, the way every other edit clears it. The
-      // cap evicts from the front, silently dropping the oldest entries
-      // exactly as commit's push does.
-      undoStack: [...top.undo, pre].slice(-UNDO_LIMIT),
-      redoStack: [],
+        // dies with the model change, the way every other edit clears it.
+        history: pushExternal(top.history, pre, 'Edit Subcircuit'),
       view: top.view,
       subcircuitStack: stack.slice(0, -1),
       // Same as the no-edit return: clear any stale refusal so the caller's
@@ -3466,49 +3395,18 @@ function createAppStore() {
         adaptiveTimeStep: DEFAULT_SETTINGS.adaptiveTimeStep,
         autoDC: DEFAULT_SETTINGS.autoDC,
       },
-      selectedIds: [],
-      hoveredId: null,
-      undoStack: [],
-      redoStack: [],
       problem: null,
       // A fresh circuit has no unsupported lines, so nothing for the frame
       // loop to merge into the engine warnings.
       unsupportedProblem: null,
       notice: null,
       subcircuitError: null,
-      // New drops every scope, so an open Scope Properties dialog would be
-      // stranded on a vanished id, holding modalSurface() shut.
-      scopeProperties: null,
-      // Same for a device-model editor anchored to an element New just
-      // dropped: its OK could only reach a stale id.
-      deviceModelEditor: null,
-      // New drops the open scroll-value popover too: it was wheel-editing an
-      // element this fresh circuit just emptied out, so its OK could only reach
-      // a stale id. Same stale-pointer rule as deviceModelEditor above.
-      scrollValuePopover: null,
-      // New drops the open slider dialog's target element too: it was bound to
-      // an element this fresh circuit just emptied out, so it would only point
-      // at a vanished part. Same stale-pointer rule as deviceModelEditor above.
-      sliderElementId: null,
-      // New drops the open context menu too: it was raised on an element this
-      // fresh circuit just emptied out, so its actions could only reach a stale
-      // id and it would hold modalSurface() shut. A dialog or open Element
-      // Properties panel is stranded the same way. Same rule as above.
-      contextMenu: null,
-      dialog: null,
-      elementProperties: null,
       // New drops the drill-in session too: the outer document is gone.
       subcircuitStack: [],
-      ...bumpRevision(s),
+        // The same stale-pointer list, epoch bump and history reset as a load.
+        ...applyRevert(s, { scopes: [] }, emptyHistory()),
       // New is a fresh document, like a load: no live charges carry over.
       document: s.document + 1,
-      // New does not route through loadNetlist, so it owes the same gesture
-      // teardown on its own: the drag in flight was armed against elements
-      // this replace just emptied out. The flags drop with the epoch bump,
-      // the way an undo pairs them.
-      scopeGesture: false,
-      elementGesture: null,
-      revertEpoch: s.revertEpoch + 1,
     }));
     // An empty fresh circuit is clean.
     set({ lastSaved: get().toNetlist() });
@@ -3560,118 +3458,41 @@ function createAppStore() {
       // lastSaved to the recovered netlist, which would read as clean; the
       // RECOVERED_UNSAVED sentinel can never equal a serialised dump.
       lastSaved: RECOVERED_UNSAVED,
-      // The cap evicts from the front, silently dropping the oldest entries
-      // exactly as commit's push does.
-      undoStack: [...s.undoStack, pre].slice(-UNDO_LIMIT),
-      redoStack: [],
+      history: pushExternal(s.history, pre, 'Recover Auto-Save'),
     }));
   },
 
   undo: () => {
     const s = get();
-    const prev = s.undoStack[s.undoStack.length - 1];
-    if (!prev) return;
+    const step = stepBack(s.history, s);
+    if (!step) {
+      // No entry to pop, but a revert still abandons a transaction the
+      // baseline no longer covers (a gesture whose checkpoint deduped).
+      if (s.history.open !== null) set((st) => ({ history: abort(st.history) }));
+      return;
+    }
     set({
-      ...prev,
-      settings: withLiveAppPrefs(prev.settings, s.settings),
-      undoStack: s.undoStack.slice(0, -1),
-      redoStack: [...s.redoStack, clone(s)],
-      selectedIds: [],
-      // Same stale-pointer rule as loadNetlist: the restored element list may
-      // no longer hold the hovered element, so a surviving id would highlight
-      // a different part until the mouse moves again.
-      hoveredId: null,
-      // The restored snapshot's scope list may no longer hold the open
-      // dialog's scope (an undone addScope): a surviving id would hold
-      // modalSurface() true forever with nothing on screen, the same invisible
-      // gate removeScope clears. The Edit menu row is reachable by mouse while
-      // that dialog is up, so this path is live.
-      scopeProperties: prev.scopes.some((x) => x.id === s.scopeProperties)
-        ? s.scopeProperties
-        : null,
-      // The device-model editor gets no survival check, unlike scopeProperties:
-      // a create rebinds by element id the restored list may not hold, and an
-      // edit deletes a model name the restored document may reference again.
-      // Closing is the only safe outcome.
-      deviceModelEditor: null,
-      // An undo can delete the element a scroll-value popover was wheel-editing,
-      // so the popover must drop with the same stale-pointer rule as
-      // deviceModelEditor above; leaving it strands a value editor over a
-      // vanished part.
-      scrollValuePopover: null,
-      // An undo can delete the element the slider dialog targets, so its target
-      // id drops the same way; leaving it points the panel at a vanished part.
-      sliderElementId: null,
-      // An undo can leave the element a context menu was raised on behind: the
-      // menu would hold modalSurface() true with nothing on screen and its
-      // actions could target a stale id. Closing is the only safe outcome, the
-      // same stale-pointer rule as deviceModelEditor above. Same for a dialog
-      // or open Element Properties panel.
-      contextMenu: null,
-      dialog: null,
-      elementProperties: null,
-      // An in-flight gesture cannot survive a state revert: a scope drag would
-      // keep mutating past its reverted baseline and an element gesture would
-      // swallow the next rotate's commit, so both flags drop with the state.
-      scopeGesture: false,
-      elementGesture: null,
-      // Tell the canvas interaction layer the baseline moved, so it can stand
-      // a live pointer gesture down; outside Snapshot, so {...prev} above
-      // cannot rewind it.
-      revertEpoch: s.revertEpoch + 1,
-      ...bumpRevision(s),
+      ...step.restore,
+      settings: withLiveAppPrefs(step.restore.settings, s.settings),
+      ...applyRevert(s, step.restore, step.history),
     });
-    // The `.` lines that came back define library models, so the session half
-    // of the library follows them. Both line sets are read, so a step that did
-    // not touch a `.` line changes nothing here.
-    syncSessionModels(s.passthrough, prev.passthrough);
-    // A restored element can reference a writable device model the delete that
-    // took it away pruned from the store; put such a model back, or a save
-    // would drop its `34`/`32` line and a reload would silently revert it.
+    syncSessionModels(s.passthrough, step.restore.passthrough);
     restorePrunedModels(useStore.getState().elements);
   },
 
   redo: () => {
     const s = get();
-    const next = s.redoStack[s.redoStack.length - 1];
-    if (!next) return;
+    const step = stepForward(s.history, s);
+    if (!step) {
+      if (s.history.open !== null) set((st) => ({ history: abort(st.history) }));
+      return;
+    }
     set({
-      ...next,
-      settings: withLiveAppPrefs(next.settings, s.settings),
-      redoStack: s.redoStack.slice(0, -1),
-      undoStack: [...s.undoStack, clone(s)],
-      selectedIds: [],
-      // Same stale-pointer rule as undo: the redone element list may no
-      // longer hold the hovered element, so a surviving id would highlight
-      // a different part until the mouse moves again.
-      hoveredId: null,
-      // Same stale-id rule as undo: the redone snapshot may not hold the open
-      // dialog's scope either.
-      scopeProperties: next.scopes.some((x) => x.id === s.scopeProperties)
-        ? s.scopeProperties
-        : null,
-      // Same stale-anchor rule as undo: the editor cannot ride the redone
-      // document either.
-      deviceModelEditor: null,
-      // Same stale-pointer rule as undo: a redo can recreate an element the
-      // popover was not wheel-editing, so it drops the same way.
-      scrollValuePopover: null,
-      // Same stale-pointer rule as undo: a redo can recreate an element the
-      // slider dialog targeted, so its target id drops the same way.
-      sliderElementId: null,
-      // Same stale-pointer rule as undo: a redo can recreate an element the
-      // context menu was raised on, so the menu drops too, along with any dialog
-      // or open Element Properties panel.
-      contextMenu: null,
-      dialog: null,
-      elementProperties: null,
-      // Same gesture teardown as undo.
-      scopeGesture: false,
-      elementGesture: null,
-      revertEpoch: s.revertEpoch + 1,
-      ...bumpRevision(s),
+      ...step.restore,
+      settings: withLiveAppPrefs(step.restore.settings, s.settings),
+      ...applyRevert(s, step.restore, step.history),
     });
-    syncSessionModels(s.passthrough, next.passthrough);
+    syncSessionModels(s.passthrough, step.restore.passthrough);
     restorePrunedModels(useStore.getState().elements);
   },
 
@@ -3708,7 +3529,10 @@ function createAppStore() {
     set({ scrollValuePopover: { ...p, session } });
   },
 
-  closeScrollValuePopover: () => set({ scrollValuePopover: null }),
+    closeScrollValuePopover: () => {
+      set({ scrollValuePopover: null });
+      get().endTransaction();
+    },
 
   revertScrollValuePopover: () => {
     const p = get().scrollValuePopover;
@@ -3716,12 +3540,13 @@ function createAppStore() {
     // Restore the opening value only when a step moved away from it: upstream
     // guards setElmValue with if (i != lastidx) (ScrollValuePopup.java:202),
     // so Space on an untouched popup must not bump paramRevision and queue an
-    // identical engine write. The undo baseline taken on open keeps the whole
-    // session one undo step either way (ScrollValuePopup.close(false)).
+      // identical engine write. The open transaction closes here either way; an
+      // untouched session's live state equals its baseline and is pruned.
     if (selectionValue(p.session) !== p.session.original) {
       get().setParam(p.session.id, p.session.param, p.session.original);
     }
     set({ scrollValuePopover: null });
+      get().endTransaction();
   },
 
   openScopeMenu: (x, y, scopeId, plotId) => set({ scopeMenu: { x, y, scopeId, plotId } }),
@@ -3749,16 +3574,18 @@ function createAppStore() {
   },
 
   cutSelection: () => {
-    // Put the selection on the clipboard first, then let the existing delete
-    // remove it with its single commit, so cut is one undo step.
-    get().copySelection();
-    get().deleteSelected();
+    // Put the selection on the clipboard first, then let the delete remove it
+    // inside the same transaction, so cut is one labelled undo step.
+    get().transact('Cut', () => {
+      get().copySelection();
+      get().deleteSelected();
+    });
   },
 
   pasteFromClipboard: () => {
     const text = get().clipboard;
     if (text === null) return;
-    insertElementsFromText(text);
+      insertElementsFromText(text, 'Paste');
   },
 
   duplicateSelection: () => {
@@ -3770,7 +3597,7 @@ function createAppStore() {
     // element's `.` line is already in the document (the part came from here),
     // so the clipboard carries no passthrough lines; the insert path resolves
     // the model from the library for the fresh id.
-    insertElementsFromText(serializeCircuit(selected, s.settings));
+      insertElementsFromText(serializeCircuit(selected, s.settings), 'Duplicate');
   },
   }));
 }
@@ -3782,6 +3609,16 @@ function topFloatZ(floating: AppState['floating']): number {
 }
 
 export const useStore: AppStore = (globalScope[STORE_INSTANCE_KEY] ??= createAppStore());
+
+/** Derived history readouts for the UI. They are functions over the store
+ *  state, not stored fields, so a menu cannot hold a stale copy and the
+ *  history owns the only truth. */
+export const canUndo = (s: Pick<AppState, 'history'>): boolean => s.history.undo.length > 0;
+export const canRedo = (s: Pick<AppState, 'history'>): boolean => s.history.redo.length > 0;
+export const undoLabel = (s: Pick<AppState, 'history'>): string | null =>
+  s.history.undo[s.history.undo.length - 1]?.label ?? null;
+export const redoLabel = (s: Pick<AppState, 'history'>): string | null =>
+  s.history.redo[s.history.redo.length - 1]?.label ?? null;
 
 /** The view zoomed by `factor` about the current screen centre, which is the
  *  target upstream's keyboard zoom uses (zoomCircuit, MouseManager.java:1339). */
@@ -3804,7 +3641,7 @@ export function nextSwitchState(e: CircuitElement): number {
     // The word cycles 0..2^width-1, upstream's toggle()
     // (BusLogicInputElm.java:116-120).
     const max = 2 ** Math.min(31, Math.max(2, Math.trunc(e.params.busWidth ?? 4)));
-    return (((e.state ?? e.params.value ?? 0) + 1) % max + max) % max;
+    return ((((e.state ?? e.params.value ?? 0) + 1) % max) + max) % max;
   }
   if (e.kind === 'mbbSwitch') return ((e.state ?? 0) + 1) % 4;
   // A centre-off two-throw switch cycles all three stops including the open
@@ -3882,7 +3719,7 @@ function pasteOffset(
  *  clipboard can hold bytes another app wrote or a user edited by hand, a
  *  paste replaces nothing, and the memos that gate Paste grey it out first,
  *  so there is no banner to raise here either. */
-function insertElementsFromText(text: string): void {
+function insertElementsFromText(text: string, label: string): void {
   let parsed: ParsedCircuit;
   try {
     parsed = parseCircuit(text);
@@ -3901,7 +3738,7 @@ function insertElementsFromText(text: string): void {
   // after the paste.
   registerFileModels(parsed.diodeFileModels, parsed.transistorFileModels);
   const state = useStore.getState();
-  state.commit();
+  state.transact(label, () => {
   // One shared offset for the whole copy, derived from the bounding boxes the
   // way upstream's doPaste does, so the duplicate never sits on top of the
   // original and a repeat paste lands beyond the last one.
@@ -3923,10 +3760,10 @@ function insertElementsFromText(text: string): void {
     .map(resolveCompositeModel);
   // A pasted `.` line replaces every existing line of the same model name, or
   // a same-document paste stacks duplicate `.` lines and a reload would
-  // re-bind the older 410s to the pasted model. The session map the paste just
-  // overwrote (registerSessionModel) is the source of truth, so both line
-  // stores converge to one line per name with it. The `34`/`32`/`!`/unknown
-  // lines still append unchanged.
+    // re-bind the older 410s to the pasted model. The session map the paste
+    // just overwrote (registerSessionModel) is the source of truth, so both
+    // line stores converge to one line per name with it. The `34`/`32`/`!`/
+    // unknown lines still append unchanged.
   const replacedNames = new Set(
     parsed.passthrough
       .map((line) => parseCompositeModelLine(line)?.name)
@@ -3949,6 +3786,7 @@ function insertElementsFromText(text: string): void {
     ],
     ...bumpRevision(s),
   }));
+  });
 }
 
 /** The model a netlist text's `.` lines define under `name`, or undefined when
@@ -4020,21 +3858,21 @@ function selectedElements(): CircuitElement[] {
  * a refused command.
  */
 function transformSelected(
+  label: string,
   guard: (selected: CircuitElement[]) => boolean,
   apply: (e: CircuitElement) => CircuitElement,
-  skipCommit = false,
 ): boolean {
   const selected = selectedElements();
   if (selected.length === 0 || !guard(selected)) return false;
-  // skipCommit is the in-flight pointer gesture's escape hatch, the same
-  // reasoning as deleteSelected(true): the drag already committed its baseline
-  // at pointer-down, and a second commit here would cost the gesture an extra
-  // undo entry that reverts to a half-turned element.
-  if (!skipCommit) useStore.getState().commit();
+  // Always a transaction: a settled command opens its own step, while a turn
+  // landing mid-drag joins the gesture's open transaction, so the drag stays
+  // one entry without a separate skip flag.
+  useStore.getState().transact(label, () =>
   useStore.setState((st) => ({
     elements: st.elements.map((e) => (st.selectedIds.includes(e.id) ? apply(e) : e)),
     ...bumpRevision(st),
-  }));
+    })),
+  );
   return true;
 }
 
@@ -4046,15 +3884,15 @@ const everyOf =
 
 /** The settled and in-drag group turn: one pivot for the whole selection, so a
  *  multi-select comes out rigid and four turns close the cycle (see
- *  turnPivot). Under a move drag the turn folds into the drag's own entry. */
-function rotateGroup(skipCommit: boolean): void {
+ *  turnPivot). Under a move drag the turn joins the drag's own transaction. */
+function rotateGroup(label: string): void {
   const selected = selectedElements();
   const pivot = turnPivot(selected);
   if (pivot === undefined) return;
   transformSelected(
+    label,
     canRotateSelection,
     selected.length === 1 ? (e) => rotateElement(e, pivot) : (e) => rotateInGroup(e, pivot),
-    skipCommit,
   );
 }
 

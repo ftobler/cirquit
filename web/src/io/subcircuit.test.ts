@@ -38,7 +38,7 @@ import { escapeToken, unescapeToken } from './netlist/tokens';
 import { DEFAULT_SETTINGS, type CircuitElement } from '../model/types';
 import { LABELED_NODE_INTERNAL } from '../model/registry/flags';
 import { makeElement, makeToolElement, useStore } from '../state/store';
-import { fresh } from '../state/store.test-helpers';
+import { fresh, undoDepth } from '../state/store.test-helpers';
 
 /** A representative `.` line: a two-1k-resistor divider with `in` on node 1
  *  (north) and `out` on node 3 (south), `\r`-separated model lines and
@@ -269,9 +269,7 @@ describe('the `.` model line', () => {
 
   it('an escaped name and pin name survive the round trip', () => {
     const line =
-      '. my\\sdiv\\spart 0 1 1 1 my\\snode 1 0 2 ' +
-      'ResistorElm\\s1\\s2 ' +
-      '0\\\\s1000';
+      '. my\\sdiv\\spart 0 1 1 1 my\\snode 1 0 2 ' + 'ResistorElm\\s1\\s2 ' + '0\\\\s1000';
     const model = parseCompositeModelLine(line)!;
     expect(model.name).toBe('my div part');
     expect(model.extList[0].name).toBe('my node');
@@ -687,9 +685,7 @@ describe('building a model from a selection', () => {
     const fields = unescapeToken(back[0]).split(' ').map(unescapeChildField);
     expect(fields).toEqual(['4', '0', 'false', 'my_switch on']);
     // And the `.` line round trip keeps the elmDump byte for byte.
-    const reparsed = parseCompositeModelLine(
-      compositeModelLine({ ...model, name: 'labelled' }),
-    );
+    const reparsed = parseCompositeModelLine(compositeModelLine({ ...model, name: 'labelled' }));
     expect(reparsed).toEqual({ ...model, name: 'labelled' });
   });
 
@@ -724,7 +720,16 @@ describe('building a model from a selection', () => {
   it('the child-dump field escaping round-trips any value', () => {
     // Backslashes come first in the encoding, so a value that already looks
     // like an escape, or mixes all three special characters, still decodes.
-    for (const value of ['plain', 'with_space', '1N_4148', 'a\\b', 'a\\u', 'a\\s', 'a\\_b', 'x_u\\v w']) {
+    for (const value of [
+      'plain',
+      'with_space',
+      '1N_4148',
+      'a\\b',
+      'a\\u',
+      'a\\s',
+      'a\\_b',
+      'x_u\\v w',
+    ]) {
       expect(unescapeChildField(escapeChildField(value))).toBe(value);
     }
   });
@@ -823,7 +828,9 @@ describe('the model library and Subcircuit Manager store', () => {
     expect(listed[0].name).toBe('stored');
     expect(listed[0].nodeList).toBe(model.nodeList);
     expect(listed[0].extList).toEqual(model.extList);
-    expect(storage.getItem('subcircuit:stored')).toBe(compositeModelLine({ ...model, name: 'stored' }));
+    expect(storage.getItem('subcircuit:stored')).toBe(
+      compositeModelLine({ ...model, name: 'stored' }),
+    );
 
     expect(removeModel('stored', storage)).toBe('stored');
     expect(listModels(storage)).toEqual([]);
@@ -1258,9 +1265,9 @@ describe('renaming a subcircuit the open file introduced', () => {
   it('is one undo step, and undo puts the line and the model back', () => {
     load();
     // A load clears the stacks, so the rename's own commit is the only entry.
-    expect(useStore.getState().undoStack).toHaveLength(0);
+    expect(undoDepth(useStore.getState())).toBe(0);
     rename('divider', 'amp');
-    expect(useStore.getState().undoStack).toHaveLength(1);
+    expect(undoDepth(useStore.getState())).toBe(1);
 
     useStore.getState().undo();
     expect(netlist()).toBe(FILE);
@@ -1277,7 +1284,7 @@ describe('renaming a subcircuit the open file introduced', () => {
     load();
     rename('divider', 'amp');
     rename('amp', 'buffer');
-    expect(useStore.getState().undoStack).toHaveLength(2);
+    expect(undoDepth(useStore.getState())).toBe(2);
     useStore.getState().undo();
     expect(names()).toEqual(['amp']);
     useStore.getState().undo();
@@ -1294,7 +1301,7 @@ describe('renaming a subcircuit the open file introduced', () => {
     expect(rename('saved', 'renamed')).toBe('renamed');
     // No document edit, so no undo entry and not a byte of the file moved.
     expect(useStore.getState().passthrough).toBe(before);
-    expect(useStore.getState().undoStack).toHaveLength(0);
+    expect(undoDepth(useStore.getState())).toBe(0);
     expect(netlist()).toBe(FILE);
     expect(names()).toEqual(['divider', 'renamed']);
   });
@@ -1305,7 +1312,7 @@ describe('renaming a subcircuit the open file introduced', () => {
     expect(rename('saved', 'renamed')).toBe('renamed');
     expect(names()).toEqual(['renamed']);
     expect(useStore.getState().passthrough).toEqual([]);
-    expect(useStore.getState().undoStack).toHaveLength(0);
+    expect(undoDepth(useStore.getState())).toBe(0);
   });
 
   it('a refusal leaves the file exactly as it was', () => {
@@ -1318,7 +1325,7 @@ describe('renaming a subcircuit the open file introduced', () => {
     expect(rename('divider', 'amp')).toBe('taken');
     expect(rename('nothing', 'amp')).toBe('missing');
     expect(netlist()).toBe(FILE);
-    expect(useStore.getState().undoStack).toHaveLength(0);
+    expect(undoDepth(useStore.getState())).toBe(0);
   });
 
   it('renaming the copy from the file uncovers the saved model of that name', () => {
@@ -1344,7 +1351,7 @@ describe('renaming a subcircuit the open file introduced', () => {
     expect(rename('pasted', 'moved')).toBe('renamed');
     expect(names()).toEqual(['divider', 'moved']);
     expect(netlist()).toBe(FILE);
-    expect(useStore.getState().undoStack).toHaveLength(0);
+    expect(undoDepth(useStore.getState())).toBe(0);
   });
 
   it('an undo of an unrelated edit leaves the library alone', () => {
@@ -1522,9 +1529,7 @@ describe('renaming a subcircuit a 410 element names', () => {
     expect(rename('divider', 'amp')).toBe('renamed');
     const saved = netlist();
     expect(saved).toBe(
-      ghost
-        .replace('. divider', '. amp')
-        .replace('410 0 0 96 0 1 divider', '410 0 0 96 0 1 amp'),
+      ghost.replace('. divider', '. amp').replace('410 0 0 96 0 1 divider', '410 0 0 96 0 1 amp'),
     );
     expect(saved).toContain('410 0 0 96 0 1 nomodel');
     const [renamed, ghostly] = useStore.getState().elements;
@@ -1541,7 +1546,7 @@ describe('renaming a subcircuit a 410 element names', () => {
     expect(rename('saved', 'renamed')).toBe('renamed');
     // The 410 says `divider`, not `saved`, so the document did not move: no
     // undo entry and not a byte of the file changed.
-    expect(useStore.getState().undoStack).toHaveLength(0);
+    expect(undoDepth(useStore.getState())).toBe(0);
     expect(netlist()).toBe(FILE);
     expect(composite().text).toBe('divider');
   });

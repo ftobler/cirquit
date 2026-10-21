@@ -5,7 +5,7 @@ import { CHIP_BIT_ORDER_BUS } from '../model/registry/elements/dFlipFlop';
 import { FULL_ADDER_BITS } from '../model/registry/elements/fullAdder';
 import { WIRE_SHOW_BUS_VALUE } from '../model/registry/flags';
 import { useStore } from './store';
-import { addResistor, fresh } from './store.test-helpers';
+import { addResistor, fresh, undoDepth } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
 
@@ -127,11 +127,11 @@ describe('createTest', () => {
   it('reports false and places nothing when no single chip is selected', () => {
     const id = addResistor();
     useStore.getState().select([id]);
-    const undoBefore = useStore.getState().undoStack.length;
+    const undoBefore = undoDepth(useStore.getState());
 
     expect(useStore.getState().createTest()).toBe(false);
     expect(useStore.getState().elements).toHaveLength(1);
-    expect(useStore.getState().undoStack).toHaveLength(undoBefore);
+    expect(undoDepth(useStore.getState())).toBe(undoBefore);
 
     useStore.getState().select([]);
     expect(useStore.getState().createTest()).toBe(false);

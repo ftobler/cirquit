@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { postsOf } from '../model/registry';
 import { useStore } from './store';
-import { addResistor, fresh } from './store.test-helpers';
+import { addResistor, fresh, undoDepth, commit } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
 
@@ -251,18 +251,18 @@ describe('rotate, mirror and swap terminals', () => {
   ] as const)('%s is one undo step', (_name, setUp, run) => {
     setUp();
     const original = useStore.getState().elements[0];
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     run();
 
-    expect(useStore.getState().undoStack.length).toBe(before + 1);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
     useStore.getState().undo();
     expect(useStore.getState().elements[0]).toEqual(original);
   });
 
   it('is a no-op with nothing selected, leaving the undo stack untouched', () => {
     addResistor();
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     const revision = useStore.getState().revision;
 
     useStore.getState().rotateSelection();
@@ -270,7 +270,7 @@ describe('rotate, mirror and swap terminals', () => {
     useStore.getState().swapTerminals();
 
     const s = useStore.getState();
-    expect(s.undoStack).toHaveLength(before);
+    expect(undoDepth(s)).toBe(before);
     expect(s.revision).toBe(revision);
   });
 
@@ -285,7 +285,7 @@ describe('rotate, mirror and swap terminals', () => {
       flags: 0,
       params: {},
     });
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     // Mirror is only offered on the asymmetric bodies.
     useStore.getState().select([resistor]);
@@ -295,7 +295,7 @@ describe('rotate, mirror and swap terminals', () => {
     useStore.getState().rotateSelection();
 
     const s = useStore.getState();
-    expect(s.undoStack).toHaveLength(before);
+    expect(undoDepth(s)).toBe(before);
     expect(s.elements.find((e) => e.id === resistor)).toMatchObject({ x1: 0, x2: 160 });
   });
 });
@@ -433,29 +433,29 @@ describe('rotate under an in-flight pointer gesture', () => {
     // The no-gesture arm of the dispatcher must be the command it always was.
     grabbed();
     const original = useStore.getState().elements[0];
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().rotateSelection();
 
-    expect(useStore.getState().undoStack.length).toBe(before + 1);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
     useStore.getState().undo();
     expect(useStore.getState().elements[0]).toEqual(original);
   });
 
-  it('a move gesture folds every turn into the drag\'s own undo entry', () => {
+  it("a move gesture folds every turn into the drag's own undo entry", () => {
     grabbed();
     const original = useStore.getState().elements[0];
-    // The pointer-down commit: the drag's whole baseline, as pointerDown.ts
-    // pushes it before arming the move.
-    useStore.getState().commit();
+    // The pointer-down transaction: the drag's whole baseline, as
+    // pointerDown.ts opens it before arming the move.
+    useStore.getState().beginTransaction('Move');
     useStore.getState().beginElementGesture('move');
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().rotateSelection();
     useStore.getState().rotateSelection();
     useStore.getState().rotateSelection();
 
-    expect(useStore.getState().undoStack).toHaveLength(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
     // Three turns from horizontal leave it vertical, and one Ctrl+Z takes the
     // whole gesture back.
     expect(useStore.getState().elements[0].x1).toBe(useStore.getState().elements[0].x2);
@@ -479,7 +479,7 @@ describe('rotate under an in-flight pointer gesture', () => {
       params: { resistance: 1000 },
     });
     useStore.getState().select([a, b]);
-    useStore.getState().commit();
+    commit();
     useStore.getState().beginElementGesture('move');
 
     useStore.getState().rotateSelection();
@@ -491,8 +491,9 @@ describe('rotate under an in-flight pointer gesture', () => {
 
   it('a place gesture pins the press anchor and banks the turn count', () => {
     grabbed();
+    useStore.getState().beginTransaction('Add Resistor');
     useStore.getState().beginElementGesture('place');
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     // (x1,y1) is drag.start: the place branch only ever writes (x2,y2), so the
     // anchor must never move and the free end walks the four quadrants.
@@ -514,21 +515,21 @@ describe('rotate under an in-flight pointer gesture', () => {
     expect(useStore.getState().elementGesture?.placeTurns).toBe(0);
     r = useStore.getState().elements[0];
     expect([r.x1, r.y1, r.x2, r.y2]).toEqual([0, 0, 160, 0]);
-    expect(useStore.getState().undoStack).toHaveLength(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
   });
 
   it('endElementGesture restores committing', () => {
     grabbed();
-    useStore.getState().commit();
+    useStore.getState().beginTransaction('Move');
     useStore.getState().beginElementGesture('move');
     useStore.getState().rotateSelection();
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().endElementGesture();
     expect(useStore.getState().elementGesture).toBeNull();
     useStore.getState().rotateSelection();
 
-    expect(useStore.getState().undoStack.length).toBe(before + 1);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
   });
 
   it('undo drops an in-flight element gesture', () => {
@@ -537,7 +538,7 @@ describe('rotate under an in-flight pointer gesture', () => {
     // state revert: left raised it would swallow the next rotate's commit and
     // leave the drag mutating with no fresh baseline.
     const id = grabbed();
-    useStore.getState().commit();
+    commit();
     useStore.getState().beginElementGesture('move');
     useStore.getState().updateElement(id, { x1: 16 });
     expect(useStore.getState().elementGesture).toEqual({ kind: 'move', placeTurns: 0 });
@@ -548,7 +549,7 @@ describe('rotate under an in-flight pointer gesture', () => {
 
   it('redo drops an in-flight element gesture too', () => {
     grabbed();
-    useStore.getState().commit();
+    commit();
     useStore.getState().beginElementGesture('move');
     useStore.getState().undo();
     // A Ctrl+Shift+Z landing on a drag still armed must not leave the flag
@@ -562,18 +563,18 @@ describe('rotate under an in-flight pointer gesture', () => {
 
   it('a rotate after a mid-drag undo costs exactly one own entry', () => {
     const id = grabbed();
-    useStore.getState().commit();
+    commit();
     useStore.getState().beginElementGesture('move');
     useStore.getState().undo();
     // The undo cleared the selection like any revert; the user re-selects and
     // turns. With no gesture armed the command must commit normally again,
     // not ride the dead gesture branch into a free mutation.
     useStore.getState().select([id]);
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().rotateSelection();
 
-    expect(useStore.getState().undoStack.length).toBe(before + 1);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
   });
 
   it('a selection the menu greys out is a no-op in every gesture state', () => {
@@ -581,10 +582,12 @@ describe('rotate under an in-flight pointer gesture', () => {
     // is off, the same guard the disabled menu row uses. (A label inside a
     // group with real parts rides along instead, see the group tests.)
     const addText = (x: number) =>
-      useStore.getState().addElement({ kind: 'decoration', x1: x, y1: 0, x2: x, y2: 0, flags: 0, params: {} });
+      useStore
+        .getState()
+        .addElement({ kind: 'decoration', x1: x, y1: 0, x2: x, y2: 0, flags: 0, params: {} });
     useStore.getState().select([addText(0), addText(64)]);
     const original = useStore.getState().elements.map((e) => ({ ...e }));
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().rotateSelection();
     useStore.getState().beginElementGesture('move');
@@ -594,7 +597,7 @@ describe('rotate under an in-flight pointer gesture', () => {
     useStore.getState().rotateSelection();
 
     expect(useStore.getState().elements).toEqual(original);
-    expect(useStore.getState().undoStack).toHaveLength(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
     // A refused command must not bank a turn either, or the placement's
     // pointer-move would start rotating a part that never turned.
     expect(useStore.getState().elementGesture?.placeTurns).toBe(0);
@@ -635,7 +638,7 @@ describe('mirror, swap and delete under an in-flight pointer gesture', () => {
   const grabbedMove = (add: () => number) => {
     const id = add();
     useStore.getState().select([id]);
-    useStore.getState().commit();
+    useStore.getState().beginTransaction('Move');
     useStore.getState().beginElementGesture('move');
     return id;
   };
@@ -643,14 +646,14 @@ describe('mirror, swap and delete under an in-flight pointer gesture', () => {
   it('a mirror mid-move folds into the drag like a rotate does', () => {
     const id = grabbedMove(addTransistorHere);
     const original = useStore.getState().elements.find((e) => e.id === id);
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     // One drag step first: a command landing on an untouched gesture would
     // dedup its own commit away, hiding the split this pins.
     useStore.getState().moveElements([id], 16, 0);
 
     useStore.getState().mirrorSelection();
 
-    expect(useStore.getState().undoStack).toHaveLength(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
     const t = useStore.getState().elements.find((e) => e.id === id)!;
     expect(t.x1).toBe(176);
     expect(t.x2).toBe(16);
@@ -662,12 +665,12 @@ describe('mirror, swap and delete under an in-flight pointer gesture', () => {
   it('a swap mid-move folds into the drag too', () => {
     const id = grabbedMove(addDiodeHere);
     const original = useStore.getState().elements.find((e) => e.id === id);
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     useStore.getState().moveElements([id], 16, 0);
 
     useStore.getState().swapTerminals();
 
-    expect(useStore.getState().undoStack).toHaveLength(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
     const d = useStore.getState().elements.find((e) => e.id === id)!;
     expect(d.x1).toBe(176);
     expect(d.x2).toBe(16);
@@ -679,13 +682,13 @@ describe('mirror, swap and delete under an in-flight pointer gesture', () => {
   it('a delete mid-move folds into the drag baseline instead of splitting it', () => {
     const id = grabbedMove(addResistor);
     const original = useStore.getState().elements.find((e) => e.id === id);
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     useStore.getState().moveElements([id], 16, 0);
 
     useStore.getState().deleteSelected();
 
     expect(useStore.getState().elements).toHaveLength(0);
-    expect(useStore.getState().undoStack).toHaveLength(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
     useStore.getState().endElementGesture();
     useStore.getState().undo();
     expect(useStore.getState().elements.find((e) => e.id === id)).toEqual(original);
@@ -698,42 +701,43 @@ describe('mirror, swap and delete under an in-flight pointer gesture', () => {
     const id = addTransistorHere();
     useStore.getState().select([id]);
     useStore.getState().beginElementGesture('place');
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     const beforeElements = useStore.getState().elements.map((e) => ({ ...e }));
 
     useStore.getState().mirrorSelection();
 
     const s = useStore.getState();
     expect(s.elements.map((e) => ({ ...e }))).toEqual(beforeElements);
-    expect(s.undoStack).toHaveLength(before);
+    expect(undoDepth(s)).toBe(before);
   });
 
   it('a placement refuses a swap for the same reason', () => {
     const id = addDiodeHere();
     useStore.getState().select([id]);
     useStore.getState().beginElementGesture('place');
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     const beforeElements = useStore.getState().elements.map((e) => ({ ...e }));
 
     useStore.getState().swapTerminals();
 
     const s = useStore.getState();
     expect(s.elements.map((e) => ({ ...e }))).toEqual(beforeElements);
-    expect(s.undoStack).toHaveLength(before);
+    expect(undoDepth(s)).toBe(before);
   });
 
   it('a delete mid-placement folds into the placement baseline like the cancel path', () => {
     // addElement's commit at the arm is the placement's whole baseline, the
     // same state finishPlacement's explicit skipCommit relies on.
+    useStore.getState().beginTransaction('Add Resistor');
     const id = addResistor();
     useStore.getState().select([id]);
     useStore.getState().beginElementGesture('place');
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().deleteSelected();
 
     expect(useStore.getState().elements).toHaveLength(0);
-    expect(useStore.getState().undoStack).toHaveLength(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
     useStore.getState().undo();
     expect(useStore.getState().elements).toHaveLength(0);
   });
@@ -760,7 +764,7 @@ describe('the armed tool ghost turn', () => {
   it('is a no-op with no tool armed', () => {
     useStore.getState().turnTool();
     expect(useStore.getState().toolTurns).toBe(0);
-    expect(useStore.getState().undoStack).toHaveLength(0);
+    expect(undoDepth(useStore.getState())).toBe(0);
   });
 
   it('is a no-op on a tool canRotate refuses', () => {
@@ -773,9 +777,9 @@ describe('the armed tool ghost turn', () => {
 
   it('commits nothing: the ghost is not in the document', () => {
     useStore.getState().setTool('resistor');
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     useStore.getState().turnTool();
-    expect(useStore.getState().undoStack).toHaveLength(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
     expect(useStore.getState().elements).toHaveLength(0);
   });
 
@@ -784,7 +788,7 @@ describe('the armed tool ghost turn', () => {
     useStore.getState().select([id]);
     useStore.getState().setTool('resistor');
     useStore.getState().turnTool();
-    useStore.getState().commit();
+    commit();
     useStore.getState().setTool('capacitor');
     useStore.getState().turnTool();
 
@@ -802,13 +806,13 @@ describe('the armed tool ghost turn', () => {
     useStore.getState().setTool('resistor');
     // The resistor's own creation is already on the stack; the ghost turn adds
     // nothing to it.
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().rotateSelection();
 
     expect(useStore.getState().toolTurns).toBe(1);
     expect(useStore.getState().elements[0]).toEqual(original);
-    expect(useStore.getState().undoStack).toHaveLength(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
   });
 
   it('yields to a gesture in flight, in both kinds', () => {

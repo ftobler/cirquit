@@ -195,13 +195,10 @@ export function finishPlacement(drag: Drag, state: AppState): void {
   const def = e ? defFor(e.kind) : undefined;
   if (e && def && collapsedToPoint(e)) {
     state.select([e.id]);
-    // skipCommit: the addElement commit at pointer-down is the single undo
-    // baseline for this whole gesture. Without it, deleteSelected's own
-    // commit would push a second entry holding the stray element, and the
-    // first Ctrl+Z would resurrect it instead of undoing the placement, the
-    // same one-gesture-one-undo-entry reasoning behind beginPointerGesture's
-    // switch-toggle commit below.
-    state.deleteSelected(true);
+    // The placement's open transaction is the single undo baseline for this
+    // whole gesture, so the delete joins it rather than pushing a second entry
+    // that would resurrect the stray element on undo.
+    state.deleteSelected();
   } else if (e) {
     if (e.kind === 'wire') {
       // A wire end dropped on another wire's interior splits that wire so the
@@ -219,7 +216,10 @@ export function finishPlacement(drag: Drag, state: AppState): void {
     // split what it crossed, so the second call finds an endpoint there and
     // does nothing.
     const posts = postsOf(e);
-    for (const q of [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }]) {
+    for (const q of [
+      { x: e.x1, y: e.y1 },
+      { x: e.x2, y: e.y2 },
+    ]) {
       if (posts.some((r) => r.x === q.x && r.y === q.y)) state.autoSplitAt(q, e.id);
     }
   }
@@ -403,7 +403,7 @@ export function startRowCol(
       if (e.x2 === x) captured.push({ id: e.id, post: 1 });
     }
   }
-  state.commit();
+  state.beginTransaction('Move');
   dragRef.current = { mode: 'rowcol', axis, captured, last: { x, y }, button };
 }
 
@@ -525,10 +525,12 @@ export function beginPointerGesture(
         // and two-level logic input, `throwCount` throws for an SPDT, and the
         // three positions of a ternary logic input (nextSwitchState).
         const next = nextSwitchState(hit);
-        // One click is one undo entry. Upstream does not push here (doSwitch
+        // One click is one undo entry: the press opens the transaction and the
+        // pointer-up teardown closes it. Upstream does not push here (doSwitch
         // returns before the mouse-down pushUndo), this is a deliberate
-        // divergence; the dedup in commit keeps repeat clicks from stacking.
-        state.commit();
+        // divergence; a momentary press-release that ends where it started is
+        // pruned by the transaction's own empty check.
+        state.beginTransaction('Toggle Switch');
         if (momentary) {
           // A push switch is closed only while held: the press toggles it and
           // the pointer-up path toggles back (doSwitch + heldSwitchElm.mouseUp,
@@ -581,11 +583,13 @@ export function beginPointerGesture(
     // ~150 defs that declare none used to place as a point and be deleted
     // again by finishPlacement, which is what made a click look like nothing
     // happened.
+    state.beginTransaction(`Add ${toolDef(state.tool)?.label ?? 'Element'}`);
     const id = state.addElement(makeGhostElement(state.tool, x, y, state.toolTurns));
     dragRef.current = { mode: 'place', start: { x, y }, id, button: ev.button };
-    // The addElement commit above is this gesture's whole undo baseline, so
-    // raise the flag before anything else can commit: a Space rotate mid-drag
-    // must fold into it, and it must turn about this press anchor.
+    // The transaction opened before addElement is this gesture's whole undo
+    // baseline, so raise the gesture flag before anything else can checkpoint:
+    // a Space rotate mid-drag folds into it, and it turns about this press
+    // anchor. The pointer-up teardown closes the transaction.
     state.beginElementGesture('place');
     state.select([id]);
     return;
@@ -600,7 +604,9 @@ export function beginPointerGesture(
       // keeps its dragpost branch below.
       state.select(ev.ctrlKey ? [...state.selectedIds, hit.id] : [hit.id]);
     }
-    state.commit();
+    // The press opens one transaction for the whole drag: a move, a post drag
+    // or a Space rotate mid-drag all fold into it, and pointer-up closes it.
+    state.beginTransaction('Move');
     // A press that lands on an endpoint handle drags that endpoint; a press on
     // the body moves the element whole. Ctrl is the explicit override, and
     // grabs the nearer endpoint from anywhere on the element: it still reaches
@@ -641,10 +647,11 @@ export function beginPointerGesture(
         button: ev.button,
       };
       // Same one-gesture-one-undo-entry reasoning as the placement above: the
-      // state.commit() before this branch is the move's baseline, and a Space
-      // rotate mid-move rides along with it. An endpoint drag raises nothing:
-      // the next pointer-move drags that post straight back to the cursor, so
-      // a turn there would have no meaning.
+      // transaction opened before this branch is the move's baseline, and a
+      // Space rotate mid-move rides along with it. An endpoint drag raises the
+      // same transaction: the next pointer-move drags that post straight back
+      // to the cursor, so a turn there has no meaning, but the drag is still
+      // one step.
       state.beginElementGesture('move');
     }
     return;

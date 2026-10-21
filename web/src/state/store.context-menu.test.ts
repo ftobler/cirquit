@@ -8,21 +8,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { modalSurface } from '../input/modalSurface';
 import { useStore } from './store';
-import { addResistor, fresh } from './store.test-helpers';
+import { addResistor, fresh, redoDepth, commit } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
 
 const openMenu = () => {
   const id = addResistor();
-  useStore
-    .getState()
-    .openContextMenu(10, 20, id, { x: 0, y: 0 }, false);
+  useStore.getState().openContextMenu(10, 20, id, { x: 0, y: 0 }, false);
   return id;
 };
 
 describe('contextMenu is torn down by whole-document events', () => {
   it('undo closes an open context menu and drops the keyboard gate', () => {
-    useStore.getState().commit();
+    commit();
     openMenu();
     expect(modalSurface(useStore.getState())).toBe(true);
 
@@ -36,9 +34,9 @@ describe('contextMenu is torn down by whole-document events', () => {
     // Build an undo/redo pair, then open the menu without committing so that
     // redo() keeps a non-empty redoStack and actually reaches its teardown.
     addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().undo();
-    expect(useStore.getState().redoStack.length).toBeGreaterThan(0);
+    expect(redoDepth(useStore.getState())).toBeGreaterThan(0);
 
     // openContextMenu does not commit, so it leaves the redo future intact.
     useStore.getState().openContextMenu(10, 20, 1, { x: 0, y: 0 }, false);
@@ -70,7 +68,7 @@ describe('contextMenu is torn down by whole-document events', () => {
   });
 
   it('the dialog and elementProperties panels close the same way', () => {
-    useStore.getState().commit();
+    commit();
     useStore.getState().openDialog('shortcuts');
     useStore.getState().requestEdit(addResistor());
 

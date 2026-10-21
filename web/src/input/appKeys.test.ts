@@ -10,7 +10,7 @@ import { clearUserModels } from '../model/deviceModels';
 import { openScrollValue } from '../model/scrollValue';
 import type { AppState } from '../state/types';
 import { useStore } from '../state/store';
-import { addResistor, fresh } from '../state/store.test-helpers';
+import { addResistor, fresh, undoDepth, commit } from '../state/store.test-helpers';
 import { handleAppKeyDown, handleAppKeyUp, type AppKeyEvent, type AppKeyHost } from './appKeys';
 import { modalSurface } from './modalSurface';
 
@@ -96,7 +96,7 @@ describe.each(SURFACES)('keydown while %s is up', (_name, open) => {
     useStore.getState().select([id]);
     useStore.setState(open());
     const host = recordingHost();
-    const undoDepth = useStore.getState().undoStack.length;
+    const depth = undoDepth(useStore.getState());
 
     for (const ev of [
       key({ key: 'Delete' }),
@@ -113,7 +113,7 @@ describe.each(SURFACES)('keydown while %s is up', (_name, open) => {
     expect(host.calls).toEqual([]);
     expect(useStore.getState().elements).toHaveLength(1);
     expect(useStore.getState().tool).toBeNull();
-    expect(useStore.getState().undoStack.length).toBe(undoDepth);
+    expect(undoDepth(useStore.getState())).toBe(depth);
   });
 
   it('still releases a held momentary on keyup', () => {
@@ -352,14 +352,18 @@ describe('mirror keys', () => {
   /** A diode on a row (0,0)-(64,0) plus a wire down from its anode: a group
    *  whose vertical mirror is visible on the wire. */
   const group = () => {
-    const d = useStore.getState().addElement({ kind: 'diode', x1: 0, y1: 0, x2: 64, y2: 0, flags: 0, params: {} });
-    const w = useStore.getState().addElement({ kind: 'wire', x1: 0, y1: 0, x2: 0, y2: 32, flags: 0, params: {} });
+    const d = useStore
+      .getState()
+      .addElement({ kind: 'diode', x1: 0, y1: 0, x2: 64, y2: 0, flags: 0, params: {} });
+    const w = useStore
+      .getState()
+      .addElement({ kind: 'wire', x1: 0, y1: 0, x2: 0, y2: 32, flags: 0, params: {} });
     useStore.getState().select([d, w]);
   };
 
   it('plain v mirrors vertically while a move drag holds the selection', () => {
     group();
-    useStore.getState().commit();
+    commit();
     useStore.getState().beginElementGesture('move');
 
     expect(handleAppKeyDown(useStore.getState(), key({ key: 'v' }), recordingHost())).toBe(true);
@@ -371,7 +375,7 @@ describe('mirror keys', () => {
 
   it('plain h mirrors horizontally while dragging, and a held key acts once', () => {
     group();
-    useStore.getState().commit();
+    commit();
     useStore.getState().beginElementGesture('move');
 
     handleAppKeyDown(useStore.getState(), key({ key: 'h' }), recordingHost());

@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
-import {
-  axisConstrained,
-  constrainPostDrag,
-  defFor,
-} from '../../model/registry';
+import { axisConstrained, constrainPostDrag, defFor } from '../../model/registry';
 import { rectContains } from '../../model/registry/shared';
 import {
   isZoomOnly,
@@ -88,10 +84,13 @@ export function useCanvasInteractions(
   // A system gesture (notification shade, incoming call) cancels the pointer
   // mid-gesture; the recognizer's cancel drops the state and the timers must
   // go with it. The cleanup covers an unmount with a gesture in flight.
-  useEffect(() => () => {
+  useEffect(
+    () => () => {
     if (longPressTimerRef.current !== null) clearTimeout(longPressTimerRef.current);
     if (dragDelayTimerRef.current !== null) clearTimeout(dragDelayTimerRef.current);
-  }, []);
+    },
+    [],
+  );
 
   /** Disarms the drag and lowers the store's gesture flag together. The two
    *  must never come apart: a stale `elementGesture` would make the next
@@ -219,7 +218,8 @@ export function useCanvasInteractions(
     pinchPrevMidRef.current = { x: a.midX, y: a.midY };
   };
 
-  const toCircuit = useCallback((clientX: number, clientY: number): Point => {
+  const toCircuit = useCallback(
+    (clientX: number, clientY: number): Point => {
     const canvas = canvasRef.current;
     const { view } = stateRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -229,18 +229,23 @@ export function useCanvasInteractions(
       y: (clientY - rect.top) / view.scale + view.y,
     };
     // Both refs are stable for the life of the component.
-  }, [canvasRef, stateRef]);
+    },
+    [canvasRef, stateRef],
+  );
 
   /** The pointer in canvas-relative client pixels, the crosshair's stored
    *  position. Kept view-independent so the frame loop can re-project it
    *  through the current view: a keyboard zoom or Center Circuit moves the
    *  circuit point under a stationary cursor, and the guides must follow. */
-  const toClient = useCallback((clientX: number, clientY: number): Point => {
+  const toClient = useCallback(
+    (clientX: number, clientY: number): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     return { x: clientX - rect.left, y: clientY - rect.top };
-  }, [canvasRef]);
+    },
+    [canvasRef],
+  );
 
   const hitTest = useCallback(
     (p: Point, preferredId: number | null = null): CircuitElement | null => {
@@ -418,8 +423,7 @@ export function useCanvasInteractions(
           // changed while the axis lock held the endpoint still.
           const movedPost = placed.x2 !== x2 || placed.y2 !== y2;
           const paramsChanged =
-            extra !== undefined &&
-            Object.entries(extra).some(([k, v]) => placed.params[k] !== v);
+            extra !== undefined && Object.entries(extra).some(([k, v]) => placed.params[k] !== v);
           if (movedPost || paramsChanged) {
             const patch: { x2: number; y2: number; params?: Record<string, number> } = { x2, y2 };
             if (extra !== undefined) patch.params = { ...placed.params, ...extra };
@@ -482,8 +486,7 @@ export function useCanvasInteractions(
           // vanished mid-drag there is nothing to write either.
           const movedPost = !postAt(e, drag.post, x, y);
           const paramsChanged =
-            extra !== undefined &&
-            Object.entries(extra).some(([k, v]) => e.params[k] !== v);
+            extra !== undefined && Object.entries(extra).some(([k, v]) => e.params[k] !== v);
           if (movedPost || paramsChanged) {
             const patch: {
               x1?: number;
@@ -589,7 +592,12 @@ export function useCanvasInteractions(
 
     if (drag.mode === 'select') {
       const p = toCircuit(ev.clientX, ev.clientY);
-      const inside = selectByBox(state.elements, boxFromPoints(drag.start, p), drag.shift, state.selectedIds);
+      const inside = selectByBox(
+        state.elements,
+        boxFromPoints(drag.start, p),
+        drag.shift,
+        state.selectedIds,
+      );
       state.select(inside);
     }
 
@@ -657,24 +665,22 @@ export function useCanvasInteractions(
         state.stepScrollValuePopover(wheelPixels(ev.deltaY, ev.deltaMode));
         return;
       }
-      // The first scroll of a session is one undo step, exactly as upstream's
-      // ScrollValuePopup constructor pushes the undo stack before applying the
-      // opening deltaY (ScrollValuePopup.java:59, :76). commit's dedup drops a
-      // session that never changes anything.
-      state.commit();
+      // The first scroll of a session opens one transaction; the popover's
+      // close (or revert) ends it, so the whole wheel burst is one labelled
+      // step. Building the session and its field label first lets the entry
+      // carry the field's own name (`Edit Resistance`).
       const session0 = openScrollValue(hit.kind, hit.id, hit.params[param] ?? 0);
+      const def = defFor(hit.kind);
+      const stepped = def?.fields?.find((f) => f.name === session0.param);
+      const titled = stepped ?? def?.fields?.[0];
+      const name = titled ? fieldLabel(hit, titled) : session0.param;
+      state.beginTransaction(`Edit ${name}`);
       const session = stepScrollValue(
         session0,
         wheelPixels(ev.deltaY, ev.deltaMode),
         state.settings.wheelSensitivity,
       );
       state.setParam(session.id, session.param, selectionValue(session));
-      // The title is the stepped field's label, resolved per element because a
-      // dynamic label (the source's "Voltage"/"Max Voltage") needs the params.
-      const def = defFor(hit.kind);
-      const stepped = def?.fields?.find((f) => f.name === session.param);
-      const titled = stepped ?? def?.fields?.[0];
-      const name = titled ? fieldLabel(hit, titled) : session.param;
       state.openScrollValuePopover({ session, name, x: ev.clientX, y: ev.clientY });
       return;
     }

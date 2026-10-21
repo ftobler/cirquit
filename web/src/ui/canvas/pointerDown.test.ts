@@ -9,7 +9,7 @@ import { HIT_TOLERANCE_PX } from '../../render/geometry';
 import { boxFromPoints, selectByBox } from '../../render/selection';
 import { makeGhostElement, snap, useStore } from '../../state/store';
 import { DEFAULT_PLACEMENT_LENGTH } from '../../state/helpers';
-import { fresh } from '../../state/store.test-helpers';
+import { fresh, undoDepth, redoDepth, commit } from '../../state/store.test-helpers';
 import {
   abandonForLongPress,
   armedHandle,
@@ -196,11 +196,11 @@ describe('pointer-down on a switch while running', () => {
   it('inside the rect toggles, arms no drag and pushes one undo entry', () => {
     const id = addEl('switch');
     const r = refs();
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     beginPointerGesture(down(), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(1);
     expect(r.dragRef.current).toEqual({ mode: 'none', button: 0 });
-    expect(useStore.getState().undoStack.length).toBe(before + 1);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
   });
 
   it('outside the rect on a lead selects and arms move, without toggling', () => {
@@ -209,7 +209,14 @@ describe('pointer-down on a switch while running', () => {
     beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(0);
     expect(useStore.getState().selectedIds).toEqual([id]);
-    expect(r.dragRef.current).toEqual({ mode: 'move', ids: [id], last: { x: 30, y: 0 }, moved: false, gated: false, button: 0 });
+    expect(r.dragRef.current).toEqual({
+      mode: 'move',
+      ids: [id],
+      last: { x: 30, y: 0 },
+      moved: false,
+      gated: false,
+      button: 0,
+    });
   });
 
   it('a press outside the rect leads to a real move', () => {
@@ -229,7 +236,14 @@ describe('pointer-down on a switch while running', () => {
   it('ctrl inside the rect grabs the nearer endpoint without toggling', () => {
     const id = addEl('switch');
     const r = refs();
-    beginPointerGesture(down({ ctrlKey: true }), { x: 100, y: -5 }, useStore.getState(), hit(id), false, r);
+    beginPointerGesture(
+      down({ ctrlKey: true }),
+      { x: 100, y: -5 },
+      useStore.getState(),
+      hit(id),
+      false,
+      r,
+    );
     expect(useStore.getState().elements[0].state).toBe(0);
     expect(r.dragRef.current).toEqual({
       mode: 'dragpost',
@@ -245,7 +259,14 @@ describe('pointer-down on a switch while running', () => {
   it('alt still pans instead of toggling', () => {
     const id = addEl('switch');
     const r = refs();
-    beginPointerGesture(down({ altKey: true }), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
+    beginPointerGesture(
+      down({ altKey: true }),
+      { x: 80, y: -5 },
+      useStore.getState(),
+      hit(id),
+      false,
+      r,
+    );
     expect(useStore.getState().elements[0].state).toBe(0);
     expect(r.dragRef.current.mode).toBe('pan');
   });
@@ -281,13 +302,27 @@ describe('pointer-down on an SPDT while running', () => {
     beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(0);
     expect(useStore.getState().selectedIds).toEqual([id]);
-    expect(r.dragRef.current).toEqual({ mode: 'move', ids: [id], last: { x: 30, y: 0 }, moved: false, gated: false, button: 0 });
+    expect(r.dragRef.current).toEqual({
+      mode: 'move',
+      ids: [id],
+      last: { x: 30, y: 0 },
+      moved: false,
+      gated: false,
+      button: 0,
+    });
   });
 
   it('ctrl inside the fan arms dragpost without toggling', () => {
     const id = addEl('switch2');
     const r = refs();
-    beginPointerGesture(down({ ctrlKey: true }), { x: 80, y: 0 }, useStore.getState(), hit(id), false, r);
+    beginPointerGesture(
+      down({ ctrlKey: true }),
+      { x: 80, y: 0 },
+      useStore.getState(),
+      hit(id),
+      false,
+      r,
+    );
     expect(useStore.getState().elements[0].state).toBe(0);
     expect(r.dragRef.current).toEqual({
       mode: 'dragpost',
@@ -360,7 +395,14 @@ describe('momentary switches', () => {
   it('a different finger cannot release a momentary the holding finger keeps down', () => {
     const id = addEl('switch', { params: { position: 1, momentary: 1 }, state: 1 });
     const r = refs();
-    beginPointerGesture(down({ pointerId: 5 }), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
+    beginPointerGesture(
+      down({ pointerId: 5 }),
+      { x: 80, y: -5 },
+      useStore.getState(),
+      hit(id),
+      false,
+      r,
+    );
     expect(useStore.getState().elements[0].state).toBe(0);
     releaseHeldMomentary(9, r);
     expect(useStore.getState().elements[0].state).toBe(0); // still held
@@ -379,13 +421,13 @@ describe('momentary switches', () => {
     expect(hit(id).state).toBe(0); // closed while held
     useStore.getState().updateElement(id, { x2: 320 });
     useStore.getState().undo();
-    expect(useStore.getState().redoStack.length).toBe(1);
+    expect(redoDepth(useStore.getState())).toBe(1);
     // The revert also restored the rested throw (the snapshot predates the
     // press), and upstream's one-toggle-per-event mouseUp still runs against
     // whatever state now stands.
     releaseHeldMomentary(1, r);
     expect(hit(id).state).toBe(0);
-    expect(useStore.getState().redoStack).toEqual([]);
+    expect(redoDepth(useStore.getState())).toBe(0);
   });
 });
 
@@ -557,7 +599,14 @@ describe('touch gating', () => {
     const r = refs();
     beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), true, r);
     expect(useStore.getState().elements[0].state).toBe(0);
-    expect(r.dragRef.current).toEqual({ mode: 'move', ids: [id], last: { x: 30, y: 0 }, moved: false, gated: true, button: 0 });
+    expect(r.dragRef.current).toEqual({
+      mode: 'move',
+      ids: [id],
+      last: { x: 30, y: 0 },
+      moved: false,
+      gated: true,
+      button: 0,
+    });
   });
 });
 
@@ -643,10 +692,7 @@ describe('the wire tool draws a run instead of placing a part', () => {
     const r = wireDrag({ x: 100, y: 100 });
     const drag = r.dragRef.current;
     if (drag.mode !== 'wire') throw new Error('expected a wire drag');
-    finishWireDrag(
-      { ...drag, current: { x: 224, y: 96 }, axis: 'h' },
-      useStore.getState(),
-    );
+    finishWireDrag({ ...drag, current: { x: 224, y: 96 }, axis: 'h' }, useStore.getState());
     const wires = useStore.getState().elements;
     expect(wires).toHaveLength(1);
     expect([wires[0].x1, wires[0].y1, wires[0].x2, wires[0].y2]).toEqual([96, 96, 224, 96]);
@@ -656,10 +702,7 @@ describe('the wire tool draws a run instead of placing a part', () => {
     const r = wireDrag({ x: 100, y: 100 });
     const drag = r.dragRef.current;
     if (drag.mode !== 'wire') throw new Error('expected a wire drag');
-    finishWireDrag(
-      { ...drag, current: { x: 224, y: 160 }, axis: 'h' },
-      useStore.getState(),
-    );
+    finishWireDrag({ ...drag, current: { x: 224, y: 160 }, axis: 'h' }, useStore.getState());
     const wires = useStore.getState().elements;
     expect(wires).toHaveLength(2);
     expect(wires.every((w) => w.kind === 'wire')).toBe(true);
@@ -789,14 +832,14 @@ describe('a long-press while a placement is armed', () => {
   it('stands the tool down, keeps the tap-placed part and spends no extra undo', () => {
     const h = touchDownWithTool('resistor');
     expect(useStore.getState().elements).toHaveLength(1);
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     fireLongPress(h);
 
     const s = useStore.getState();
     expect(s.tool).toBeNull();
     expect(s.elements).toHaveLength(1);
-    expect(s.undoStack.length).toBe(baseline);
+    expect(undoDepth(s)).toBe(baseline);
     expect(s.elementGesture).toBeNull();
     expect(h.r.dragRef.current).toEqual({ mode: 'none' });
   });
@@ -806,27 +849,29 @@ describe('a long-press while a placement is armed', () => {
     const drag = h.r.dragRef.current;
     if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
     useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     fireLongPress(h);
 
     const s = useStore.getState();
     expect(s.elements).toHaveLength(0);
     expect(s.tool).toBeNull();
-    expect(s.undoStack.length).toBe(baseline);
+    // The placement transaction is pruned when the cancel deletes what it
+    // added: the gesture ended where it started, so it leaves no dead entry.
+    expect(undoDepth(s)).toBe(baseline - 1);
   });
 
   it('disarms the wire tool and inserts no run', () => {
     const h = touchDownWithTool('wire');
     expect(h.r.dragRef.current.mode).toBe('wire');
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     fireLongPress(h);
 
     const s = useStore.getState();
     expect(s.tool).toBeNull();
     expect(s.elements).toHaveLength(0);
-    expect(s.undoStack.length).toBe(baseline);
+    expect(undoDepth(s)).toBe(baseline);
     expect(h.r.dragRef.current).toEqual({ mode: 'none' });
   });
 
@@ -861,14 +906,14 @@ describe('a second finger landing on an armed gesture', () => {
   it('disarms a wire drag the first finger armed and inserts no run', () => {
     const h = touchDownWithTool('wire');
     expect(h.r.dragRef.current.mode).toBe('wire');
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     landSecondFinger(h);
 
     const s = useStore.getState();
     expect(s.tool).toBeNull();
     expect(s.elements).toHaveLength(0);
-    expect(s.undoStack.length).toBe(baseline);
+    expect(undoDepth(s)).toBe(baseline);
     expect(s.elementGesture).toBeNull();
     expect(h.r.dragRef.current).toEqual({ mode: 'none' });
     // The recognizer dropped the single-finger state with the pinch, so no
@@ -883,14 +928,16 @@ describe('a second finger landing on an armed gesture', () => {
     const drag = h.r.dragRef.current;
     if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
     useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     landSecondFinger(h);
 
     const s = useStore.getState();
     expect(s.elements).toHaveLength(0);
     expect(s.tool).toBeNull();
-    expect(s.undoStack.length).toBe(baseline);
+    // The placement transaction is pruned when the cancel deletes what it
+    // added: the gesture ended where it started, so it leaves no dead entry.
+    expect(undoDepth(s)).toBe(baseline - 1);
   });
 });
 
@@ -910,7 +957,7 @@ describe('a cancelled pointer on an armed gesture', () => {
     const drag = h.r.dragRef.current;
     if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
     useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     cancelWhileArmed(h);
 
@@ -918,7 +965,9 @@ describe('a cancelled pointer on an armed gesture', () => {
     expect(s.elements).toHaveLength(0);
     expect(s.tool).toBeNull();
     expect(s.contextMenu).toBeNull();
-    expect(s.undoStack.length).toBe(baseline);
+    // The placement transaction is pruned when the cancel deletes what it
+    // added: the gesture ended where it started, so it leaves no dead entry.
+    expect(undoDepth(s)).toBe(baseline - 1);
   });
 
   it('disarms a wire drag and inserts no run', () => {
@@ -974,7 +1023,7 @@ describe('cancelLiveDrag: a revert landing mid-gesture', () => {
     expect(placed.dragRef.current).toEqual({ mode: 'none' });
     expect(wired.dragRef.current).toEqual({ mode: 'none' });
     // The cancellation itself spends no undo entry.
-    expect(s.undoStack).toHaveLength(1);
+    expect(undoDepth(s)).toBe(1);
   });
 
   it('deletes a placement dragged back to its anchor instead of stranding it', () => {
@@ -1041,7 +1090,14 @@ describe('cancelLiveDrag: a revert landing mid-gesture', () => {
 
     // A group move armed on one element.
     const mover = refs();
-    beginPointerGesture(down({ clientX: 80, clientY: 64 }), { x: 80, y: 64 }, useStore.getState(), hit(moved), false, mover);
+    beginPointerGesture(
+      down({ clientX: 80, clientY: 64 }),
+      { x: 80, y: 64 },
+      useStore.getState(),
+      hit(moved),
+      false,
+      mover,
+    );
     const move = mover.dragRef.current;
     if (move.mode !== 'move') throw new Error('expected a move to be armed');
     stepMoveDrag(move, { x: 96, y: 64 }, useStore.getState());
@@ -1065,7 +1121,7 @@ describe('cancelLiveDrag: a revert landing mid-gesture', () => {
     startRowCol('row', 0, { x: 0, y: 0 }, useStore.getState(), sweeper.dragRef);
     expect(sweeper.dragRef.current.mode).toBe('rowcol');
 
-    const entries = useStore.getState().undoStack.length;
+    const entries = undoDepth(useStore.getState());
     cancelLiveDrag(mover, 1, useStore.getState());
     cancelLiveDrag(poster, 1, useStore.getState());
     cancelLiveDrag(sweeper, 1, useStore.getState());
@@ -1078,7 +1134,7 @@ describe('cancelLiveDrag: a revert landing mid-gesture', () => {
     const wire = s.elements.find((e) => e.id === crossed)!;
     expect([wire.x1, wire.y1, wire.x2, wire.y2]).toEqual([224, 0, 224, 320]);
     // The cancellation itself commits nothing.
-    expect(s.undoStack).toHaveLength(entries);
+    expect(undoDepth(s)).toBe(entries);
   });
 
   it('releases a held momentary so no switch sticks closed', () => {
@@ -1096,7 +1152,14 @@ describe('cancelLiveDrag: a revert landing mid-gesture', () => {
 
   it('leaves pan and select drags alone', () => {
     const panner = refs();
-    beginPointerGesture(down({ altKey: true }), { x: 100, y: 100 }, useStore.getState(), null, false, panner);
+    beginPointerGesture(
+      down({ altKey: true }),
+      { x: 100, y: 100 },
+      useStore.getState(),
+      null,
+      false,
+      panner,
+    );
     expect(panner.dragRef.current.mode).toBe('pan');
     const selecter = refs();
     beginPointerGesture(down(), { x: 4, y: 4 }, useStore.getState(), null, false, selecter);
@@ -1168,7 +1231,14 @@ describe('escape out of a drill-in cancels the live gesture', () => {
     const before = useStore.getState().revertEpoch;
     useStore.getState().setTool('resistor');
     const r = refs();
-    beginPointerGesture(down({ clientX: 100, clientY: 100 }), { x: 100, y: 100 }, useStore.getState(), null, false, r);
+    beginPointerGesture(
+      down({ clientX: 100, clientY: 100 }),
+      { x: 100, y: 100 },
+      useStore.getState(),
+      null,
+      false,
+      r,
+    );
     expect(useStore.getState().elementGesture).not.toBeNull();
 
     useStore.getState().exitSubcircuit();
@@ -1193,13 +1263,13 @@ describe('finishPlacement cancelling a collapsed drop', () => {
   it('one Ctrl+Z after the cancel restores the pre-placement circuit, not the stray element', () => {
     useStore.getState().setTool('resistor');
     const r = refs();
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     beginPointerGesture(down(), { x: 100, y: 100 }, useStore.getState(), null, false, r);
     const drag = r.dragRef.current;
     if (drag.mode !== 'place') throw new Error('expected a placement to be armed');
     expect(useStore.getState().elements).toHaveLength(1);
     // addElement's own commit is the gesture's only undo baseline so far.
-    expect(useStore.getState().undoStack.length).toBe(before + 1);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
     // The drag dragged the free end back onto the press anchor, exactly what
     // the place branch's pointer-move would have written.
     useStore.getState().updateElement(drag.id, { x2: drag.start.x, y2: drag.start.y });
@@ -1209,7 +1279,7 @@ describe('finishPlacement cancelling a collapsed drop', () => {
     // The cancel deleted the stray zero-length element...
     expect(useStore.getState().elements).toHaveLength(0);
     // ...without pushing a second undo entry on top of addElement's.
-    expect(useStore.getState().undoStack.length).toBe(before + 1);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
 
     useStore.getState().undo();
     // The one undo entry restores the pre-placement circuit; it must not
@@ -1258,11 +1328,11 @@ describe('pointer-down on a switch while paused', () => {
     const id = addEl('switch');
     useStore.getState().setRunning(false);
     const r = refs();
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     beginPointerGesture(down(), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(1);
     expect(r.dragRef.current).toEqual({ mode: 'none', button: 0 });
-    expect(useStore.getState().undoStack.length).toBe(before + 1);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
     // The up path disarms the first click before the second lands.
     r.dragRef.current = { mode: 'none' };
     beginPointerGesture(down(), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
@@ -1276,14 +1346,28 @@ describe('pointer-down on a switch while paused', () => {
     beginPointerGesture(down(), { x: 30, y: 0 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(0);
     expect(useStore.getState().selectedIds).toEqual([id]);
-    expect(r.dragRef.current).toEqual({ mode: 'move', ids: [id], last: { x: 30, y: 0 }, moved: false, gated: false, button: 0 });
+    expect(r.dragRef.current).toEqual({
+      mode: 'move',
+      ids: [id],
+      last: { x: 30, y: 0 },
+      moved: false,
+      gated: false,
+      button: 0,
+    });
   });
 
   it('ctrl while paused still arms dragpost', () => {
     const id = addEl('switch2');
     useStore.getState().setRunning(false);
     const r = refs();
-    beginPointerGesture(down({ ctrlKey: true }), { x: 100, y: -5 }, useStore.getState(), hit(id), false, r);
+    beginPointerGesture(
+      down({ ctrlKey: true }),
+      { x: 100, y: -5 },
+      useStore.getState(),
+      hit(id),
+      false,
+      r,
+    );
     expect(r.dragRef.current?.mode).toBe('dragpost');
   });
 });
@@ -1306,14 +1390,26 @@ describe('endpoint handle auto-grab', () => {
     const id = addEl('resistor');
     const r = refs();
     beginPointerGesture(down(), { x: 160, y: reach - 2 }, useStore.getState(), hit(id), false, r);
-    expect(r.dragRef.current).toMatchObject({ mode: 'dragpost', id, post: 2, start: { x: 0, y: 0 } });
+    expect(r.dragRef.current).toMatchObject({
+      mode: 'dragpost',
+      id,
+      post: 2,
+      start: { x: 0, y: 0 },
+    });
   });
 
   it('a press on the body away from the endpoints still moves the whole element', () => {
     const id = addEl('resistor');
     const r = refs();
     beginPointerGesture(down(), { x: 80, y: 0 }, useStore.getState(), hit(id), false, r);
-    expect(r.dragRef.current).toEqual({ mode: 'move', ids: [id], last: { x: 80, y: 0 }, moved: false, gated: false, button: 0 });
+    expect(r.dragRef.current).toEqual({
+      mode: 'move',
+      ids: [id],
+      last: { x: 80, y: 0 },
+      moved: false,
+      gated: false,
+      button: 0,
+    });
   });
 
   it('the grab is inclusive right at the radius and gives way to a move just past it', () => {
@@ -1322,7 +1418,14 @@ describe('endpoint handle auto-grab', () => {
     beginPointerGesture(down(), { x: reach, y: 0 }, useStore.getState(), hit(id), false, at);
     expect(at.dragRef.current).toMatchObject({ mode: 'dragpost', post: 1 });
     const past = refs();
-    beginPointerGesture(down(), { x: reach + 0.001, y: 0 }, useStore.getState(), hit(id), false, past);
+    beginPointerGesture(
+      down(),
+      { x: reach + 0.001, y: 0 },
+      useStore.getState(),
+      hit(id),
+      false,
+      past,
+    );
     expect(past.dragRef.current.mode).toBe('move');
   });
 
@@ -1343,7 +1446,14 @@ describe('endpoint handle auto-grab', () => {
   it('ctrl still forces the post drag from the middle of the body', () => {
     const id = addEl('resistor');
     const r = refs();
-    beginPointerGesture(down({ ctrlKey: true }), { x: 100, y: 0 }, useStore.getState(), hit(id), false, r);
+    beginPointerGesture(
+      down({ ctrlKey: true }),
+      { x: 100, y: 0 },
+      useStore.getState(),
+      hit(id),
+      false,
+      r,
+    );
     expect(r.dragRef.current).toMatchObject({ mode: 'dragpost', id, post: 2 });
   });
 
@@ -1401,9 +1511,9 @@ describe('finishPostDrag', () => {
     const dragged = addWire(80, 80, 80, 80);
     // What the drag did: commit the baseline at pointer-down, then move post 2
     // onto the crossed wire's interior.
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(dragged, { x2: 80, y2: 0 });
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     finishPostDrag(postDrag(dragged, 2), useStore.getState());
 
@@ -1413,7 +1523,7 @@ describe('finishPostDrag', () => {
       .map((e) => [e.x1, e.y1, e.x2, e.y2]);
     expect(spans).toContainEqual([0, 0, 80, 0]);
     expect(spans).toContainEqual([80, 0, 160, 0]);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
 
     useStore.getState().undo();
     const s = useStore.getState();
@@ -1435,7 +1545,10 @@ describe('finishPostDrag', () => {
     addWire(0, 0, 160, 0);
     addWire(80, 80, 80, 0);
 
-    finishPostDrag({ mode: 'move', ids: [], last: { x: 80, y: 0 }, moved: true }, useStore.getState());
+    finishPostDrag(
+      { mode: 'move', ids: [], last: { x: 80, y: 0 }, moved: true },
+      useStore.getState(),
+    );
 
     expect(useStore.getState().elements).toHaveLength(2);
   });
@@ -1462,7 +1575,7 @@ describe('finishPostDrag', () => {
   it('reverts a drag that collapsed the element instead of splitting', () => {
     addWire(0, 0, 160, 0);
     const dragged = addWire(80, 80, 80, 80);
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(dragged, { x1: 80, y1: 0, x2: 80, y2: 0 });
 
     finishPostDrag(postDrag(dragged, 2), useStore.getState());
@@ -1480,12 +1593,12 @@ describe('finishPostDrag', () => {
     // Ctrl+Y would bring it back.
     addWire(0, 0, 160, 0);
     const dragged = addWire(80, 80, 80, 80);
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(dragged, { x1: 80, y1: 0, x2: 80, y2: 0 });
 
     finishPostDrag(postDrag(dragged, 2), useStore.getState());
 
-    expect(useStore.getState().redoStack).toEqual([]);
+    expect(redoDepth(useStore.getState())).toBe(0);
     expect(useStore.getState().elements.find((e) => e.id === dragged)).toMatchObject({
       y1: 80,
       y2: 80,
@@ -1655,7 +1768,14 @@ describe('arming the store gesture flag', () => {
     // rotate would be erased; Space falls through to the settled path instead.
     const id = addEl('resistor');
     const r = refs();
-    beginPointerGesture(down({ ctrlKey: true }), { x: 80, y: 0 }, useStore.getState(), hit(id), false, r);
+    beginPointerGesture(
+      down({ ctrlKey: true }),
+      { x: 80, y: 0 },
+      useStore.getState(),
+      hit(id),
+      false,
+      r,
+    );
     expect(r.dragRef.current.mode).toBe('dragpost');
     expect(useStore.getState().elementGesture).toBeNull();
   });
@@ -1668,7 +1788,14 @@ describe('arming the store gesture flag', () => {
     expect(useStore.getState().elementGesture).toBeNull();
 
     const pan = refs();
-    beginPointerGesture(down({ altKey: true }), { x: 400, y: 400 }, useStore.getState(), null, false, pan);
+    beginPointerGesture(
+      down({ altKey: true }),
+      { x: 400, y: 400 },
+      useStore.getState(),
+      null,
+      false,
+      pan,
+    );
     expect(pan.dragRef.current.mode).toBe('pan');
     expect(useStore.getState().elementGesture).toBeNull();
 
@@ -1695,7 +1822,7 @@ describe('the alt chords refuse to sweep when editing is off', () => {
     useStore.getState().updateSettings({ editable: false });
     const id = addEl('resistor');
     const r = refs();
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     beginPointerGesture(down(patch), { x: 0, y: 0 }, useStore.getState(), hit(id), false, r);
     return { r, before };
   };
@@ -1705,14 +1832,14 @@ describe('the alt chords refuse to sweep when editing is off', () => {
     expect(r.dragRef.current).toEqual({ mode: 'none' });
     expect(useStore.getState().status).toBe('Editing disabled. Re-enable from the Options menu.');
     // No sweep baseline may be committed behind the refusal.
-    expect(useStore.getState().undoStack.length).toBe(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
   });
 
   it('alt+meta refuses the column sweep', () => {
     const { r, before } = refusedChord({ altKey: true, metaKey: true });
     expect(r.dragRef.current).toEqual({ mode: 'none' });
     expect(useStore.getState().status).toBe('Editing disabled. Re-enable from the Options menu.');
-    expect(useStore.getState().undoStack.length).toBe(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
   });
 
   it('editing enabled still arms both sweeps', () => {
@@ -1759,7 +1886,14 @@ describe('isChordedRelease', () => {
     // foreign release must be tellable from the holding finger's lift.
     const id = addEl('switch', { params: { position: 1, momentary: 1 }, state: 1 });
     const r = refs();
-    beginPointerGesture(down({ pointerId: 5 }), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
+    beginPointerGesture(
+      down({ pointerId: 5 }),
+      { x: 80, y: -5 },
+      useStore.getState(),
+      hit(id),
+      false,
+      r,
+    );
     expect(r.heldMomentaryRef.current).toBe(id);
     expect(r.dragRef.current).toEqual({ mode: 'none', button: 0 });
     expect(isChordedRelease(r.dragRef.current, 2)).toBe(true);
@@ -1784,7 +1918,7 @@ describe('a chorded press while a gesture is armed', () => {
 
   it('an alt+shift press mid-move does not start a sweep over the drag', () => {
     const { id, r } = armMove();
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     beginPointerGesture(
       down({ altKey: true, shiftKey: true }),
       { x: 96, y: 16 },
@@ -1795,7 +1929,7 @@ describe('a chorded press while a gesture is armed', () => {
     );
     expect(r.dragRef.current).toMatchObject({ mode: 'move', ids: [id] });
     // No sweep baseline may be committed under the running move either.
-    expect(useStore.getState().undoStack.length).toBe(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
   });
 
   it('the armed drag still moves after swallowing the chorded press', () => {
@@ -1809,7 +1943,14 @@ describe('a chorded press while a gesture is armed', () => {
 
   it('once disarmed, the same middle press pans again', () => {
     const r = refs();
-    beginPointerGesture(down({ button: 1 }), { x: 400, y: 400 }, useStore.getState(), null, false, r);
+    beginPointerGesture(
+      down({ button: 1 }),
+      { x: 400, y: 400 },
+      useStore.getState(),
+      null,
+      false,
+      r,
+    );
     expect(r.dragRef.current).toMatchObject({ mode: 'pan' });
   });
 
@@ -1818,7 +1959,14 @@ describe('a chorded press while a gesture is armed', () => {
     const r = refs();
     beginPointerGesture(down(), { x: 80, y: -5 }, useStore.getState(), hit(id), false, r);
     expect(useStore.getState().elements[0].state).toBe(0); // closed while held
-    beginPointerGesture(down({ button: 1 }), { x: 400, y: 400 }, useStore.getState(), null, false, r);
+    beginPointerGesture(
+      down({ button: 1 }),
+      { x: 400, y: 400 },
+      useStore.getState(),
+      null,
+      false,
+      r,
+    );
     expect(r.dragRef.current).toEqual({ mode: 'none', button: 0 });
     expect(r.heldMomentaryRef.current).toBe(id);
     expect(useStore.getState().elements[0].state).toBe(0); // still closed
