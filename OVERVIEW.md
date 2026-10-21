@@ -546,6 +546,11 @@ fetch it).
   ('true' low, 'false' high, SwitchElm.java:56-62), un-inverting startup
   levels for 75 boolean lines across 35 bundled circuits, numerics unchanged,
   saves byte-stable.
+- Headless MCP server: `web/mcp/` exposes the command and query tables as MCP
+  tools over stdio, with a `SimHost` that owns building and stepping and a step
+  budget so an absurd request returns a `stopped` reason instead of hanging.
+  Built separately from the site, so the SDK never reaches `web/dist`. See
+  [docs/mcp.md](docs/mcp.md).
 - 624 Rust tests, most of them the end-to-end circuit checks across
   `engine/core/tests/` (the old monolithic `circuits.rs` was split into topic
   files), plus in-module unit tests and one doctest.
