@@ -1,7 +1,10 @@
 # Guidelines for agents
 
 Read [OVERVIEW.md](OVERVIEW.md) first. It holds the architecture, the porting
-roadmap, and the conventions that are easy to get wrong.
+roadmap, and the conventions that are easy to get wrong. Then read the
+[docs/](docs/README.md) page for the area you are touching, and
+[docs/decisions.md](docs/decisions.md) before changing behaviour toward
+upstream.
 
 ## What this is
 

@@ -777,7 +777,7 @@ fetch it).
   ratio loses secondary saturation upstream while the port scales by `|n|` and
   saturates, which is the saner behaviour to keep. The engine probe returns
   `voltage_diff()` for the unselectable meter modes, where upstream draws zero, a
-  cross-layer quirk recorded in the knowledge base.
+  cross-layer quirk recorded in [docs/elements.md](docs/elements.md).
 
 ---
 
