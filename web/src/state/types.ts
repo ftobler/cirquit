@@ -521,11 +521,19 @@ export interface AppState {
    *  move transaction is open (the zero-length drop and the context menu
    *  alike), the deletion joins that transaction instead of splitting it. */
   deleteSelected(): void;
+  /** Deletes exactly `ids`, the explicit-target form behind `deleteSelected`
+   *  and the `element.delete` command. A command path must never have to fake
+   *  a selection to reach the same code. */
+  deleteElements(ids: number[]): void;
   /** Rotates the selection 90 degrees about each element's midpoint, one undo
    *  entry. Under an `elementGesture` it skips the commit (the gesture's
    *  pointer-down commit is the baseline) and a placement turns about its press
    *  anchor instead, banking the turn in `elementGesture.placeTurns`. */
   rotateSelection(): void;
+  /** Rotates exactly `ids` as one rigid body about one pivot, one undo entry.
+   *  This is the settled command without the gesture dispatch, so an explicit
+   *  id list can never arm or disturb a placement. */
+  rotateElements(ids: number[]): void;
   /** Mirrors the selection, one undo entry: `horizontal` (the default)
    *  reflects left to right across a vertical axis, `vertical` top to bottom.
    *  A group reflects as one rigid body about its shared centre, a lone
@@ -534,25 +542,33 @@ export interface AppState {
    *  since a mirror has no banked form the placement's cursor-driven endpoint
    *  would keep. */
   mirrorSelection(axis?: 'horizontal' | 'vertical'): void;
+  /** Mirrors exactly `ids` across the shared centre of that set. Explicit-id
+   *  form of `mirrorSelection`, with the same one-step boundary. */
+  mirrorElements(ids: number[], axis?: 'horizontal' | 'vertical'): void;
   /** Exchanges posts 0 and 1 on each selected two-terminal part, under the
    *  same in-flight gesture rule as `mirrorSelection`. */
   swapTerminals(): void;
+  /** Swaps posts 0 and 1 on exactly `ids`, the explicit-target form. */
+  swapTerminalsOf(ids: number[]): void;
   /** Merges plain-wire chains into routed wires, one undo entry, engine
-   *  reload via the revision bump (the Convert Wires to Routed Wires command). */
-  convertWiresToRouted(): void;
+   *  reload via the revision bump (the Convert Wires to Routed Wires command).
+   *  Omit `ids` to use the selection. */
+  convertWiresToRouted(ids?: number[]): void;
   /** Builds a test harness around the single selected chip (TestCreator.java):
    *  one logic input per input pin and one logic output per output pin,
    *  `gridSize * 4` outward from each post. Returns false when no single chip
    *  is selected, in which case nothing is placed and the caller shows the
-   *  "Select a single chip element first" alert. One undo entry on success. */
-  createTest(): boolean;
+   *  "Select a single chip element first" alert. One undo entry on success.
+   *  `chipId` names the chip explicitly, for the command path. */
+  createTest(chipId?: number): boolean;
   /** Builds a subcircuit model from the selected elements, or from the whole
    *  circuit when nothing is selected (the File>Create Subcircuit command,
    *  CommandManager.doCreateSubcircuit). On success the model waits in
    *  `subcircuitDraft` for a name and the Create Subcircuit dialog opens;
    *  returns false with the reason in `subcircuitError` when the selection
-   *  cannot become a model, so the caller can alert. */
-  createSubcircuit(): boolean;
+   *  cannot become a model, so the caller can alert. `ids` names the elements
+   *  explicitly, for the command path. */
+  createSubcircuit(ids?: number[]): boolean;
   /** Names the pending `subcircuitDraft`, stores it in the model library and
    *  closes the dialog. A no-op with no draft pending. */
   saveSubcircuitDraft(name: string): void;
@@ -815,7 +831,16 @@ export interface AppState {
   closeScopeProperties(): void;
   selectAll(): void;
   copySelection(): void;
+  /** Copies exactly `ids` to the internal clipboard, the explicit-target form
+   *  behind `copySelection`. */
+  copyElements(ids: number[]): void;
   cutSelection(): void;
-  pasteFromClipboard(): void;
+  /** Copies and deletes exactly `ids` as one undo step. */
+  cutElements(ids: number[]): void;
+  /** Pastes, optionally with the copy's top-left landing at circuit point
+   *  `at`. Omit `at` for the menubar/keyboard fan-out rule. */
+  pasteFromClipboard(at?: Point): void;
   duplicateSelection(): void;
+  /** Duplicates exactly `ids` without touching the clipboard. */
+  duplicateElements(ids: number[]): void;
 }
