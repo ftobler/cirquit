@@ -26,13 +26,23 @@ const CR = 37;
 const PHASE_SPACING = 32;
 const PHASE_LABELS = ['U', 'V', 'W'];
 
+/** Port extension: whether a quarter turn has reversed the phase stack. The
+ *  port allows turning every two-point part, but a motor's phase order follows
+ *  the absolute screen axis, so a turn needs this bit to keep each post on its
+ *  rigid image. Upstream has no flag (canFlipX/Y are false, so it never turns
+ *  one) and ignores the bit; a saved port circuit simply carries it in the
+ *  common flags word. */
+export const MOTOR_PHASE_FLIP = 1;
+
 /** The axis direction sign upstream's setPoints derives from which axis the
  *  drag dominates (`q = (|dy| > |dx|) ? -1 : 1`, ThreePhaseMotorElm.java:86).
  *  Unlike `dsign` it is not the drag's sign, so a right-to-left motor still
- *  stacks U above V above W. */
+ *  stacks U above V above W. MOTOR_PHASE_FLIP negates it after an odd number
+ *  of quarter turns. */
 function motorAxis(e: CircuitElement): { p1: Point; p2: Point; q: number } {
   const [p1, p2] = endpoints(e);
-  const q = Math.abs(p2.y - p1.y) > Math.abs(p2.x - p1.x) ? -1 : 1;
+  const side = Math.abs(p2.y - p1.y) > Math.abs(p2.x - p1.x) ? -1 : 1;
+  const q = (e.flags & MOTOR_PHASE_FLIP) !== 0 ? -side : side;
   return { p1, p2, q };
 }
 

@@ -128,12 +128,14 @@ describe('chip extents', () => {
     expect(chipExtentsOf(toolElement('customComposite'))).toEqual({ sx: 1, sy: 1, cspc2: 32 });
   });
 
-  it('still refuses the genuinely unmirrorable bodies', () => {
-    // Upstream forbids flip outright for these four (OTAElm.java:191-192,
-    // WattmeterElm.java:282-283, ThreePhaseMotorElm, MotorProtectionSwitchElm)
-    // and a two-post part has Swap instead.
-    for (const kind of ['ota', 'wattmeter', 'threePhaseMotor', 'motorProtectionSwitch']) {
-      expect(canMirror(toolElement(kind)), kind).toBe(false);
+  it('refuses the bodies still without mirror bookkeeping', () => {
+    // Upstream forbids flip outright for the three-phase motor
+    // (ThreePhaseMotorElm.java:429-430), and its phase stack follows the
+    // absolute axis, so a bare reflection cannot be rigid. The port added
+    // side bookkeeping for the OTA, wattmeter and motor protection switch.
+    expect(canMirror(toolElement('threePhaseMotor'))).toBe(false);
+    for (const kind of ['ota', 'wattmeter', 'motorProtectionSwitch']) {
+      expect(canMirror(toolElement(kind)), kind).toBe(true);
     }
     expect(canMirror(toolElement('resistor'))).toBe(false);
   });

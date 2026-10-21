@@ -20,7 +20,8 @@
  * leads and the +/- glyphs only: upstream negates hs into hsswap for in1p,
  * in2p and textp alone (OpAmpRealElm.java:222-238), while the supply rails
  * and the triangle keep the plain hs, so posts 3/4 sit at the same ends of
- * the rails whether the flag is set or not.
+ * the rails whether the flag is set or not. The port's own
+ * OPAMPREAL_BODY_FLIP (bit 2) carries the rail side through a turn.
  */
 
 import {
@@ -52,12 +53,21 @@ function opBodyLeads(e: CircuitElement): [Point, Point] {
   return [interp(p1, p2, f), interp(p1, p2, 1 - f)];
 }
 
+/** Port extension: the supply-rail and triangle side after an odd number of
+ *  quarter turns. The rails use the plain `dsign` side, not the input swap,
+ *  so a turn or a vertical mirror needs its own bit to keep them on the rigid
+ *  image. Upstream never sets it: canFlipX/Y limit the transforms it allows,
+ *  and the port's flip bookkeeping writes it only when the geometry needs it. */
+export const OPAMPREAL_BODY_FLIP = 4;
+
 /** Signed perpendicular of the triangle body: `opheight*dsign`, never
- *  negated. The rails and the outline hang off this side whatever the swap
- *  says (OpAmpRealElm.java:222-242), which is what keeps posts 3/4 fixed. */
+ *  negated by the input swap. The rails and the outline hang off this side
+ *  whatever the swap says (OpAmpRealElm.java:222-242), which is what keeps
+ *  posts 3/4 fixed. OPAMPREAL_BODY_FLIP negates it after a turn. */
 function bodySide(e: CircuitElement): number {
   const [p1, p2] = endpoints(e);
-  return OPHEIGHT * dsign(p1, p2);
+  const flip = (e.flags & OPAMPREAL_BODY_FLIP) !== 0 ? -1 : 1;
+  return OPHEIGHT * dsign(p1, p2) * flip;
 }
 
 /** Signed perpendicular of the inverting input, negated by FLAG_SWAP

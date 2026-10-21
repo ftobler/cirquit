@@ -20,13 +20,46 @@ const CHANNEL_SPACING = 48;
 /** Body height, the y span of setPoints (MotorProtectionSwitchElm.java:97). */
 const MPS_HEIGHT = 192;
 
+/** Port extension: the body's dihedral orientation. The body always extends
+ *  from the first dragged point in fixed local +x/+y directions upstream, and
+ *  upstream forbids flipping it (canFlipX/Y are false), so it has no flags.
+ *  The port turns and mirrors every two-point part; this three-bit state
+ *  records the rotation and the mirror so each post lands on its rigid image
+ *  while an unrotated loaded file (state 0) keeps the old coordinates. Bits
+ *  0-1 are the quarter-turn count, bit 2 the mirror. */
+export const MPS_ORIENT_MASK = 7;
+export const MPS_ROTATION_MASK = 3;
+export const MPS_MIRROR = 4;
+
+/** Local body coordinates to circuit space: mirror across the local y axis
+ *  first, then the stored number of quarter turns, then the anchor. This is
+ *  the dihedral element D = R^r M^m; transform.ts composes turns and mirrors
+ *  into the same state. */
+function mpsMap(e: CircuitElement): (x: number, y: number) => Point {
+  const state = e.flags & MPS_ORIENT_MASK;
+  const turns = state & MPS_ROTATION_MASK;
+  const mirror = (state & MPS_MIRROR) !== 0 ? -1 : 1;
+  return (x, y) => {
+    let px = mirror * x;
+    let py = y;
+    for (let i = 0; i < turns; i++) {
+      const nx = py;
+      py = -px;
+      px = nx;
+    }
+    return { x: e.x1 + px, y: e.y1 + py };
+  };
+}
+
 /** The six posts, in upstream's order: per channel the top terminal at
- *  `y`, then the bottom terminal at `y + 192` (MotorProtectionSwitchElm.java:95-100). */
+ *  `y`, then the bottom terminal at `y + 192` (MotorProtectionSwitchElm.java:95-100),
+ *  both carried by the body's orientation state. */
 function motorProtectionSwitchPosts(e: CircuitElement): Point[] {
+  const map = mpsMap(e);
   const posts: Point[] = [];
   for (let i = 0; i < 3; i++) {
-    posts.push({ x: e.x1 + i * CHANNEL_SPACING, y: e.y1 });
-    posts.push({ x: e.x1 + i * CHANNEL_SPACING, y: e.y1 + MPS_HEIGHT });
+    posts.push(map(i * CHANNEL_SPACING, 0));
+    posts.push(map(i * CHANNEL_SPACING, MPS_HEIGHT));
   }
   return posts;
 }
@@ -44,8 +77,7 @@ function channelCurrent(g: DrawContext, e: CircuitElement, i: number): number {
 }
 
 function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
-  const ax = e.x1;
-  const ay = e.y1;
+  const map = mpsMap(e);
   const blown = (e.params.blown ?? 0) !== 0;
   const topColor = (i: number) => voltageColor(g, g.voltages[2 * i]);
   const bottomColor = (i: number) => voltageColor(g, g.voltages[2 * i + 1]);
@@ -53,100 +85,100 @@ function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
   // Light meter-panel grid behind the three channels
   // (MotorProtectionSwitchElm.java:177-181).
   for (let i = 0; i < 3; i++) {
-    line(
-      g,
-      { x: ax - 24, y: ay + 80 + 48 * i },
-      { x: ax + 120, y: ay + 80 + 48 * i },
-      g.theme.text,
-      1,
-    );
+    line(g, map(-24, 80 + 48 * i), map(120, 80 + 48 * i), g.theme.text, 1);
   }
   for (let i = 0; i < 4; i++) {
     line(
       g,
-      { x: ax + i * CHANNEL_SPACING - 24, y: ay + 80 },
-      { x: ax + i * CHANNEL_SPACING - 24, y: ay + 176 },
+      map(i * CHANNEL_SPACING - 24, 80),
+      map(i * CHANNEL_SPACING - 24, 176),
       g.theme.text,
       1,
     );
   }
 
   for (let i = 0; i < 3; i++) {
-    const x = ax + i * CHANNEL_SPACING;
-    const topPost = { x, y: ay };
-    const bottomPost = { x, y: ay + MPS_HEIGHT };
+    const x = i * CHANNEL_SPACING;
+    const topPost = map(x, 0);
+    const bottomPost = map(x, MPS_HEIGHT);
 
     // Terminal, fuse mark, blade and body stub down to the heat element
     // (MotorProtectionSwitchElm.java:149-160).
-    lead(g, topPost, { x, y: ay + 32 }, topColor(i));
+    lead(g, topPost, map(x, 32), topColor(i));
     if (blown) {
-      line(g, { x: x - 4, y: ay + 32 }, { x: x + 4, y: ay + 32 }, topColor(i));
+      line(g, map(x - 4, 32), map(x + 4, 32), topColor(i));
     }
-    const bladeStart = { x: blown ? x - 16 : x, y: ay + 32 };
-    lead(g, bladeStart, { x, y: ay + 64 }, topColor(i));
-    lead(g, { x, y: ay + 64 }, { x, y: ay + 80 }, topColor(i));
+    const bladeStart = map(blown ? x - 16 : x, 32);
+    lead(g, bladeStart, map(x, 64), topColor(i));
+    lead(g, map(x, 64), map(x, 80), topColor(i));
 
     // The fuse X just below the terminal (MotorProtectionSwitchElm.java:159-160),
     // a plain drawLine upstream and so drawn at fine width 1.
+    const x1 = map(x - 4, 12);
+    const x2 = map(x + 4, 20);
+    const x3 = map(x + 4, 12);
+    const x4 = map(x - 4, 20);
     g.ctx.strokeStyle = topColor(i);
     g.ctx.lineWidth = 1;
     g.ctx.beginPath();
-    g.ctx.moveTo(x - 4, ay + 12);
-    g.ctx.lineTo(x + 4, ay + 20);
-    g.ctx.moveTo(x + 4, ay + 12);
-    g.ctx.lineTo(x - 4, ay + 20);
+    g.ctx.moveTo(x1.x, x1.y);
+    g.ctx.lineTo(x2.x, x2.y);
+    g.ctx.moveTo(x3.x, x3.y);
+    g.ctx.lineTo(x4.x, x4.y);
     g.ctx.stroke();
 
     // The zigzag heat element whose I²t integration trips the switch
     // (MotorProtectionSwitchElm.java:164-170), plain drawLines upstream.
     const heatColor = voltageColor(g, (g.voltages[2 * i] + g.voltages[2 * i + 1]) / 2);
-    line(g, { x, y: ay + 80 }, { x, y: ay + 96 }, heatColor, 1);
-    line(g, { x: x - 12, y: ay + 96 }, { x: x - 12, y: ay + 112 }, heatColor, 1);
-    line(g, { x: x - 12, y: ay + 96 }, { x, y: ay + 96 }, heatColor, 1);
-    line(g, { x: x - 12, y: ay + 112 }, { x, y: ay + 112 }, heatColor, 1);
-    line(g, { x, y: ay + 112 }, { x, y: ay + 128 }, heatColor, 1);
+    line(g, map(x, 80), map(x, 96), heatColor, 1);
+    line(g, map(x - 12, 96), map(x - 12, 112), heatColor, 1);
+    line(g, map(x - 12, 96), map(x, 96), heatColor, 1);
+    line(g, map(x - 12, 112), map(x, 112), heatColor, 1);
+    line(g, map(x, 112), map(x, 128), heatColor, 1);
 
     // The overcurrent threshold marker (MotorProtectionSwitchElm.java:175).
+    const marker = map(x, 152);
     g.ctx.fillStyle = g.theme.text;
     g.ctx.font = canvasFont(11);
     g.ctx.textAlign = 'center';
     g.ctx.textBaseline = 'middle';
-    g.ctx.fillText('I>', x, ay + 152);
+    g.ctx.fillText('I>', marker.x, marker.y);
 
-    lead(g, { x, y: ay + 176 }, bottomPost, bottomColor(i));
+    lead(g, map(x, 176), bottomPost, bottomColor(i));
   }
 
   // The label terminal block on the left and the label text beside it
   // (MotorProtectionSwitchElm.java:141-146, :183-191). Upstream draws the
   // block's grid and lead as plain `g.drawLine` calls, so they stay at fine
   // width 1 while the channel leads draw thick.
-  const square = { x: ax - CHANNEL_SPACING - 12, y: ay + 36 };
+  const square = map(-CHANNEL_SPACING - 12, 36);
   closedPolyline(
     g,
     [
       square,
-      { x: square.x + 24, y: square.y },
-      { x: square.x + 24, y: square.y + 24 },
-      { x: square.x, y: square.y + 24 },
+      map(-CHANNEL_SPACING + 12, 36),
+      map(-CHANNEL_SPACING + 12, 60),
+      map(-CHANNEL_SPACING - 12, 60),
       square,
     ],
     g.theme.text,
     1,
   );
-  line(g, { x: square.x - CHANNEL_SPACING / 2, y: square.y + 12 }, square, g.theme.text, 1);
+  line(g, map(-CHANNEL_SPACING - 12 - CHANNEL_SPACING / 2, 48), square, g.theme.text, 1);
   line(
     g,
-    { x: square.x - CHANNEL_SPACING / 2, y: square.y },
-    { x: square.x - CHANNEL_SPACING / 2, y: square.y + 24 },
+    map(-CHANNEL_SPACING - 12 - CHANNEL_SPACING / 2, 36),
+    map(-CHANNEL_SPACING - 12 - CHANNEL_SPACING / 2, 60),
     g.theme.text,
     1,
   );
   if (e.text) {
+    const label = map(120, 48);
     g.ctx.fillStyle = g.theme.text;
     g.ctx.font = canvasFont(11);
     g.ctx.textAlign = 'left';
     g.ctx.textBaseline = 'middle';
-    g.ctx.fillText(e.text, ax + 120, square.y + 12);
+    g.ctx.fillText(e.text, label.x, label.y);
   }
 
   // Current dots on each channel, only while the switch is intact, like
@@ -156,13 +188,13 @@ function drawMotorProtectionSwitch(g: DrawContext, e: CircuitElement): void {
   if (!blown) {
     for (let i = 0; i < 3; i++) {
       const current = channelCurrent(g, e, i);
-      const x = ax + i * CHANNEL_SPACING;
-      currentDots(g, { x, y: ay }, { x, y: ay + 80 }, current);
+      const x = i * CHANNEL_SPACING;
+      currentDots(g, map(x, 0), map(x, 80), current);
       // The lower run is the mirror of the upper one, like upstream's
       // `drawDots(g, posts[i*2+1], leads[i*2+1], -curcounts[i])`
       // (MotorProtectionSwitchElm.java:197): the dots on the lower lead move
       // toward the bottom post when the channel conducts top to bottom.
-      currentDots(g, { x, y: ay + 176 }, { x, y: ay + MPS_HEIGHT }, current);
+      currentDots(g, map(x, 176), map(x, MPS_HEIGHT), current);
     }
   }
 }
@@ -174,6 +206,7 @@ export const MOTOR_PROTECTION_SWITCH_DEF: ElementDef = {
   dumpCode: '428',
   postCount: 6,
   posts: motorProtectionSwitchPosts,
+  canMirror: true,  // port extension; upstream canFlipX/Y are false
   defaultLength: 4, // 64 px, the base getDragLength
   defaults: { resistance: 0.0613, i2t: 6.73 },
   // dump() and the token constructor both go resistance, i2t, blown, label

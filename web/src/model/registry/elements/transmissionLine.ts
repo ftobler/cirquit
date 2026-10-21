@@ -6,9 +6,26 @@ import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types
  *  (TransLineElm.java:111). */
 const SEP = 8;
 
+/** Port extension: negates the offset side. Upstream gates turning and
+ *  mirroring on orientation (canFlipX only when horizontal, canFlipY only when
+ *  vertical), so its plain `ds` side never has to survive both. The port
+ *  allows both transforms; this bit keeps the offset side on the rigid image
+ *  through the second quarter turn and through a vertical part's mirror. */
+export const TRANSMISSION_LINE_FLIP = 1;
+
 interface LineGeometry {
   posts: Point[];
   inner: Point[];
+}
+
+/** Upstream's `ds` side sign (TransLineElm.java:106-123), negated by
+ *  TRANSMISSION_LINE_FLIP so a turned or mirrored line keeps its conductors on
+ *  their own side of the axis. */
+function lineDs(e: CircuitElement): number {
+  const p1 = { x: e.x1, y: e.y1 };
+  const p2 = { x: e.x2, y: e.y2 };
+  const side = p1.y === p2.y ? Math.sign(p2.x - p1.x) : -Math.sign(p2.y - p1.y);
+  return (e.flags & TRANSMISSION_LINE_FLIP) !== 0 ? -side : side;
 }
 
 /** Port of TransLineElm.setPoints (:106-123). Posts 0 and 1, the two inner
@@ -20,7 +37,7 @@ function lineGeometry(e: CircuitElement): LineGeometry {
   const p1 = { x: e.x1, y: e.y1 };
   const p2 = { x: e.x2, y: e.y2 };
   const width = e.params.width ?? 32;
-  const ds = p1.y === p2.y ? Math.sign(p2.x - p1.x) : -Math.sign(p2.y - p1.y);
+  const ds = lineDs(e);
   const off = -width * ds;
   const p3 = interp(p1, p2, 0, off);
   const p4 = interp(p1, p2, 1, off);
@@ -92,6 +109,7 @@ export const TRANSMISSION_LINE_DEF: ElementDef = {
   dumpCode: '171',
   postCount: 4,
   posts: (e) => lineGeometry(e).posts,
+  canMirror: true,  // port extension; upstream's flip gates are orientation-only
   noDiagonal: true,  // TransLineElm.java:36
   // Upstream's fresh constructor sets delay = 1000*sim.maxTimeStep = 0.005
   // (TransLineElm.java:42-44), the same value the engine falls back to.

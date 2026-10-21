@@ -11,7 +11,6 @@ import {
   calcLeads,
   canvasFont,
   currentDots,
-  dsign,
   elementLength,
   endpoints,
   interp,
@@ -19,11 +18,18 @@ import {
   line,
   voltageColor,
 } from '../../../render/draw';
+import { GRID_SIZE } from '../../types';
 import { OPEN_HS, readParams, writeParams, postsBox } from '../shared';
+import { ANALOG_SWITCH_FLIP, ANALOG_SWITCH_FLIP_X, ANALOG_SWITCH_FLIP_Y } from './analogSwitch';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 const FLAG_INVERT = 1;  // AnalogSwitchElm.java:26
 const FLAG_PULLDOWN = 2;  // AnalogSwitchElm.java:27
+
+/** Upstream's `snapGrid` (CirSim.java:536-538, gridRound = gridSize/2 - 1). */
+function snapGrid(x: number): number {
+  return Math.floor((x + GRID_SIZE / 2 - 1) / GRID_SIZE) * GRID_SIZE;
+}
 
 interface AnalogSwitch2Geometry {
   p1: Point;
@@ -37,12 +43,23 @@ interface AnalogSwitch2Geometry {
 
 /** The throw terminals, their fan points and the control post, matching
  *  AnalogSwitch2Elm.setPoints (AnalogSwitch2Elm.java:32-44): throw 1 hangs at
- *  `+openhs` on the `dsign`-determined side and throw 2 at `-openhs`, both at
- *  the far end; the control sits at the body midpoint on the `+openhs` side. */
+ *  `+openhs` on the flip-determined side and throw 2 at `-openhs`, both at
+ *  the far end; the control sits at the body midpoint on the `+openhs` side.
+ *  `openhs` and the lead shift are the same expressions the SPST uses, since
+ *  the child inherits setPoints' flip handling before laying out its throws. */
 function analogSwitch2Geometry(e: CircuitElement): AnalogSwitch2Geometry {
   const [p1, p2] = endpoints(e);
-  const [lead1, lead2] = calcLeads(e, 32);
-  const openhs = dsign(p1, p2) * OPEN_HS;
+  let [lead1, lead2] = calcLeads(e, 32);
+  const flipX = (e.flags & ANALOG_SWITCH_FLIP_X) !== 0;
+  const flipY = (e.flags & ANALOG_SWITCH_FLIP_Y) !== 0;
+  const flipped = (e.flags & ANALOG_SWITCH_FLIP) !== 0;
+  const cx = (p1.x + p2.x) / 2;
+  const cy = (p1.y + p2.y) / 2;
+  const adjx = snapGrid(cx + (flipX ? 1 : -1)) - cx;
+  const adjy = snapGrid(cy + (flipY ? 1 : -1)) - cy;
+  lead1 = { x: lead1.x + adjx, y: lead1.y + adjy };
+  lead2 = { x: lead2.x + adjx, y: lead2.y + adjy };
+  const openhs = (flipX !== flipY) !== flipped ? -OPEN_HS : OPEN_HS;
   return {
     p1,
     p2,
@@ -112,6 +129,7 @@ export const ANALOG_SWITCH2_DEF: ElementDef = {
   dumpCode: '160',
   postCount: 4,
   posts: analogSwitch2Posts,
+  canMirror: true,  // port extension; upstream's inherited flipX reflects it
   noDiagonal: true,  // AnalogSwitchElm.java:42
   defaultFlags: FLAG_PULLDOWN,  // the fresh constructor sets it (AnalogSwitchElm.java:43)
   defaults: { r_on: 20, r_off: 1e10, threshold: 2.5 },

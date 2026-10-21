@@ -379,16 +379,23 @@ interface CustomGeometry {
   primaryCoils: number;
 }
 
-/** Port of CustomTransformerElm.setPoints (:270-321), always horizontal. The
- *  winding offsets accumulate down the left (primary) and right (secondary)
- *  columns as the description's coils stack. A description that does not parse
- *  renders as the constructor default `1,1:1`, mirroring the engine's
- *  `new_custom` fallback, so a malformed `406` line still gets its six posts
- *  and loads instead of bricking on "expects 6 posts, got 0". The text itself
- *  is left untouched and round-trips byte-for-byte. */
+/** Port of CustomTransformerElm.setPoints (:270-321). Upstream forces
+ *  `point2.y = point1.y` and has no vertical form (canFlipXY is false), so its
+ *  two node columns are always the vertical lines through the endpoints. The
+ *  port turns every two-point part, so the columns follow the stored axis:
+ *  horizontal keeps upstream's squashed axis exactly, vertical is the port's
+ *  turned form, and any legacy diagonal file keeps the old horizontal
+ *  geometry. The winding offsets accumulate down the left (primary) and right
+ *  (secondary) columns as the description's coils stack. A description that
+ *  does not parse renders as the constructor default `1,1:1`, mirroring the
+ *  engine's `new_custom` fallback, so a malformed `406` line still gets its
+ *  six posts and loads instead of bricking on "expects 6 posts, got 0". The
+ *  text itself is left untouched and round-trips byte-for-byte. */
 function customGeometry(e: CircuitElement): CustomGeometry | null {
   const [p1, raw] = endpoints(e);
-  const axis = { x: raw.x, y: p1.y };
+  const horizontal = p1.y === raw.y;
+  const vertical = p1.x === raw.x;
+  const axis = horizontal || vertical ? raw : { x: raw.x, y: p1.y };
   const flip = (e.flags & TAPPED_FLIP) !== 0 ? -1 : 1;
   const parsed =
     parseCustomDescription(customDesc(e)) ??
@@ -403,7 +410,7 @@ function customGeometry(e: CircuitElement): CustomGeometry | null {
   // before the engine's build rejection names the count.
   if (parsed.coils.length > MAX_CUSTOM_COILS) return null;
   const { coils, nodeCount, primaryCoils } = parsed;
-  const dn = Math.abs(axis.x - p1.x);
+  const dn = Math.hypot(axis.x - p1.x, axis.y - p1.y);
   if (dn < 1) return null;
   const ce = 0.5 - 12 / dn;
   const cd = 0.5 - 2 / dn;

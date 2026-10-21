@@ -59,6 +59,15 @@ function arrowSpan(a: Point, b: Point): [Point, Point] {
   return [interp(a, b, 0.3333), interp(a, b, 0.6666)];
 }
 
+/** Port extension bits for the OTA's two offset families. The OTA has no
+ *  upstream flip flags (canFlipX/Y are false), yet the port turns and mirrors
+ *  it like any other part. `hs` feeds the input, text and triangle offsets and
+ *  already carries `dsign`; the bias pin's 32/8 offsets are absolute upstream.
+ *  A single bit cannot keep both rigid under a reflection, so each family has
+ *  its own toggle. Bit 0 is the composite's FLAG_ESCAPE. */
+export const OTA_HS_FLIP = 2;
+export const OTA_ABS_FLIP = 4;
+
 /** Body geometry, mirroring OTAElm.setPoints (OTAElm.java:94-149). The lead
  *  pair arrays are `[post, body]` in post order. */
 export interface OtaGeometry {
@@ -96,7 +105,9 @@ export function otaGeometry(e: CircuitElement): OtaGeometry {
   const lead1 = dn > WTOT ? interp(p1, p2, 1 - WTOT / dn, 0) : p1;
   const lead2 = dn > WTOT ? p2 : interp(p1, p2, WTOT / dn, 0);
   const point2bis = dn > WTOT ? p2 : lead2;
-  const hs = OPHEIGHT * dsign(p1, p2);
+  const hsFlip = (e.flags & OTA_HS_FLIP) !== 0 ? -1 : 1;
+  const abs = (e.flags & OTA_ABS_FLIP) !== 0 ? -1 : 1;
+  const hs = OPHEIGHT * dsign(p1, p2) * hsFlip;
   const in1: [Point, Point] = [interp(p1, point2bis, 0, hs), interp(lead1, lead2, 0, hs)];
   const in2: [Point, Point] = [interp(p1, point2bis, 0, -hs), interp(lead1, lead2, 0, -hs)];
   return {
@@ -106,7 +117,10 @@ export function otaGeometry(e: CircuitElement): OtaGeometry {
     in1,
     in2,
     in3: [p1, lead1],
-    in4: [interp(lead1, lead2, 1 - 16 / WTOT, 32), interp(lead1, lead2, 1 - 16 / WTOT, 8)],
+    in4: [
+      interp(lead1, lead2, 1 - 16 / WTOT, 32 * abs),
+      interp(lead1, lead2, 1 - 16 / WTOT, 8 * abs),
+    ],
     textp: [interp(lead1, lead2, 0.1, hs), interp(lead1, lead2, 0.1, -hs)],
     triangle: [
       interp(lead1, lead2, 0, (3 * hs) / 2),
@@ -253,6 +267,7 @@ export const OTA_DEF: ElementDef = {
   dumpCode: '402',
   postCount: 5,
   posts: otaPosts,
+  canMirror: true,  // port extension; upstream canFlipX/Y are false
   noDiagonal: true,  // OTAElm.java:34
   defaults: { posVolt: DEF_POS_VOLT, negVolt: DEF_NEG_VOLT },
   // The line is `... flags <child dump token>...`, one `_`-joined token per

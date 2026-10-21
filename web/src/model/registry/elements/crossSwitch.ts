@@ -29,6 +29,13 @@ const OPEN_HS = 16;
 /** The 3*openhs spacing between the two pole pairs (CrossSwitchElm.java:69). */
 const POLE_GAP = 48;
 
+/** Port extension: negates every perpendicular offset after a mirror. The
+ *  cross switch has no upstream flip flags, so its base reflection would leave
+ *  the throws and the second pole on the wrong side of the axis. Upstream
+ *  offers the command but its reflection is not rigid; the port keeps the
+ *  posts on their own reflections. */
+export const CROSS_SWITCH_FLIP = 1;
+
 /** The four circuit posts, in upstream's `getPost` order
  *  (CrossSwitchElm.java:178-184): the two poles at the first endpoint, the
  *  throws at `1 + 3*16/dn` of the span, just past the far end. */
@@ -36,11 +43,12 @@ function crossSwitchPosts(e: CircuitElement): Point[] {
   const [p1, p2] = endpoints(e);
   const dn = elementLength(e);
   const dp = dn > 0 ? OPEN_HS / dn : 0;
+  const side = (e.flags & CROSS_SWITCH_FLIP) !== 0 ? -1 : 1;
   return [
     interp(p1, p2, 0, 0),
-    interp(p1, p2, 1 + 3 * dp, OPEN_HS),
-    interp(p1, p2, 0, -POLE_GAP),
-    interp(p1, p2, 1 + 3 * dp, -OPEN_HS * 4),
+    interp(p1, p2, 1 + 3 * dp, OPEN_HS * side),
+    interp(p1, p2, 0, -POLE_GAP * side),
+    interp(p1, p2, 1 + 3 * dp, -OPEN_HS * 4 * side),
   ];
 }
 
@@ -52,6 +60,7 @@ function crossSwitchGeometry(e: CircuitElement) {
   const dn = elementLength(e);
   const dp = dn > 0 ? OPEN_HS / dn : 0;
   const iec = (e.flags & SWITCH_IEC) !== 0;
+  const side = (e.flags & CROSS_SWITCH_FLIP) !== 0 ? -1 : 1;
 
   const polePosts: Point[] = [];
   const poleLeads: Point[] = [];
@@ -63,37 +72,40 @@ function crossSwitchGeometry(e: CircuitElement) {
   // the leads under the IEC symbol.
   const leverTips: [Point, Point][] = [];
   for (let i = 0; i < 2; i++) {
-    const offset = -i * POLE_GAP;
+    const offset = -i * POLE_GAP * side;
     polePosts.push(interp(p1, p2, 0, offset));
     poleLeads.push(interp(lead1, lead2, 0, offset));
-    throwPosts.push(interp(p1, p2, 1, offset - OPEN_HS), interp(p1, p2, 1, offset + OPEN_HS));
+    throwPosts.push(
+      interp(p1, p2, 1, offset - OPEN_HS * side),
+      interp(p1, p2, 1, offset + OPEN_HS * side),
+    );
     throwLeads.push(
-      interp(lead1, lead2, 1, offset - OPEN_HS),
-      interp(lead1, lead2, 1, offset + OPEN_HS),
-      interp(lead1, lead2, 1, offset + OPEN_HS / 3),
+      interp(lead1, lead2, 1, offset - OPEN_HS * side),
+      interp(lead1, lead2, 1, offset + OPEN_HS * side),
+      interp(lead1, lead2, 1, offset + (OPEN_HS / 3) * side),
       iec
-        ? interp(lead1, lead2, 1.2, offset - OPEN_HS / 3)
-        : interp(lead1, lead2, 1, offset - OPEN_HS),
+        ? interp(lead1, lead2, 1.2, offset - (OPEN_HS / 3) * side)
+        : interp(lead1, lead2, 1, offset - OPEN_HS * side),
     );
     leverTips.push([throwLeads[i * 4 + 3], throwLeads[i * 4 + 1]]);
   }
   // The cross network past the far end (CrossSwitchElm.java:82-88): a
   // diagonal whose two ends are posts 1 and 3.
   const cross = [
-    interp(p1, p2, 1 + dp, OPEN_HS),
-    interp(p1, p2, 1 + 2 * dp, OPEN_HS),
-    interp(p1, p2, 1 + 3 * dp, OPEN_HS),
-    interp(p1, p2, 1 + 2 * dp, -OPEN_HS),
-    interp(p1, p2, 1 + dp, -OPEN_HS * 4),
-    interp(p1, p2, 1 + 3 * dp, -OPEN_HS * 4),
+    interp(p1, p2, 1 + dp, OPEN_HS * side),
+    interp(p1, p2, 1 + 2 * dp, OPEN_HS * side),
+    interp(p1, p2, 1 + 3 * dp, OPEN_HS * side),
+    interp(p1, p2, 1 + 2 * dp, -OPEN_HS * side),
+    interp(p1, p2, 1 + dp, -OPEN_HS * 4 * side),
+    interp(p1, p2, 1 + 3 * dp, -OPEN_HS * 4 * side),
   ];
 
   const position = (e.state ?? e.params.position ?? 0) === 1 ? 1 : 0;
   // The dashed mechanical link between the two levers, sliding with the lever
   // (CrossSwitchElm.java:121-129).
   const linePoints = [
-    interp(p1, p2, 0.5, -8 + 13 * position),
-    interp(p1, p2, 0.5, -49 + 13 * position),
+    interp(p1, p2, 0.5, (-8 + 13 * position) * side),
+    interp(p1, p2, 0.5, (-49 + 13 * position) * side),
   ];
 
   return { p1, p2, iec, polePosts, poleLeads, throwPosts, throwLeads, leverTips, cross, linePoints };
@@ -178,6 +190,7 @@ export const CROSS_SWITCH_DEF: ElementDef = {
   dumpCode: '430',
   postCount: 4,
   posts: crossSwitchPosts,
+  canMirror: true,  // port extension; upstream's base reflection is not rigid
   interactive: true,
   // The clickable bank spans both levers: each pole's lead plus both its lever
   // tips, so the second lever's pivot and throws read as clickable. Upstream's
