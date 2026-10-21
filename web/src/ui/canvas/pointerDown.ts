@@ -480,8 +480,8 @@ export function beginPointerGesture(
   // Alt+Shift sweeps every stored endpoint on the row, Alt+Meta the column;
   // checked before pan so the modifiers win (MouseManager.java:1087-1090).
   // Editing is refused first: these are edits, so a published read-only
-  // circuit may not be reshaped from them, exactly as EDIT_ACTIONS drops
-  // nudge and rotate on the keyboard path.
+  // circuit may not be reshaped from them, exactly as an edit command's
+  // `edits` gate drops nudge and rotate on the keyboard path.
   if (ev.button === 0 && ev.altKey && ev.shiftKey) {
     if (refuseEditing(state)) return;
     startRowCol('row', ev.button, p, state, dragRef);

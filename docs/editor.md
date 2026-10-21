@@ -122,8 +122,9 @@ upstream's `analyzeCircuit` never touches `t`; only Reset does.
 - Labels are Edit-menu wording (`Add Resistor`, `Move`, `Delete`, `Rotate`,
   `Paste`, `Cut`, `Duplicate`, `Combine Scopes`, `Create Test Harness`). An
   added kind takes the registry def's `label`, so the entry names the part the
-  user placed. The source is `user`, `agent` or `system`, defaulting to `user`;
-  `agent` is reserved for a future MCP tool call.
+  user placed. A command's `undoLabel` supplies the same wording through
+  `execute` (`docs/commands.md`). The source is `user`, `agent` or `system`,
+  defaulting to `user`; `execute` records `agent` for a non-user caller.
 
 ## The one revert teardown
 
@@ -396,8 +397,9 @@ revision bump. The run-mode switch toggle is hoisted above the gate so a switch
 still throws (upstream's doSwitch runs before its read-only forcing,
 MouseManager.java:1101). Select, place, move, post drag and rubber band are
 blocked; pan and wheel zoom stay live; the wheel value stepper falls through
-to zoom; the key handler drops `EDIT_ACTIONS` with "Editing disabled.
-Re-enable from the Options menu."
+to zoom; the keyboard path refuses an edit command with "Editing disabled.
+Re-enable from the Options menu." The gate now lives on each command's `edits`
+flag (`docs/commands.md`), not a key-action list.
 
 ## Zoom and view
 

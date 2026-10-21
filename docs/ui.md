@@ -51,8 +51,10 @@ React state; anything it needs must be a ref or a store field. A 60 Hz
 
 ## Menus and dialogs
 
-- Every menu command is a store action. Deferred rows render `disabled` with
-  the reason in `title`.
+- Every menu command is a command-registry id: the label, disabled state and
+  disabled reason come from the definition, so a menu cannot diverge from the
+  keyboard (`docs/commands.md`). Deferred rows render `disabled` with the
+  reason in `title`.
 - Dialog state lives in the store (`dialog: DialogName | null`,
   `openDialog`/`closeDialog`) so the menubar, App's dialog host and key paths
   share it. The `Dialog.tsx` shell handles Escape, backdrop click and a Tab
@@ -81,7 +83,8 @@ React state; anything it needs must be a ref or a store field. A 60 Hz
   focuses its first field on mount (EditDialog.java:249-255).
 - Load problems show as a full-width banner under the menubar.
 - The undo/redo menubar buttons are disabled on empty stacks via
-  `undoStack.length` selectors (commit/undo/redo replace arrays wholesale).
+  `history.undo.length` selectors (the transitions replace the arrays
+  wholesale) and their titles name the step (`Undo Add Resistor`).
 
 ## Escape inside dialogs
 
