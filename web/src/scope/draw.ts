@@ -42,6 +42,7 @@ import { drawInfo, type InfoLine } from './info';
 import { drawFFT, drawPhaseBand } from './spectrum';
 import { xyPersistenceFor } from './xyPersistence';
 import { UNIT } from './units';
+import { cursorReadout, isPanned, viewRightTime, viewSpeed, type ScopeView } from './view';
 
 // The units table lives in units.ts so scale.ts can key sticky scales by the
 // same family without importing this module; re-exported for the dialog rows
@@ -205,17 +206,33 @@ function traceColor(colors: Map<number, string>, plot: ScopePlot, theme: Theme):
 interface Window {
   count: number;
   xOffset: number;
+  /** Pixels per captured column: 1 while running, the paused view's zoom when
+   *  the trace is panned or magnified. */
+  stepX: number;
   posOf: (k: number) => number;
 }
 
-function plainWindow(data: Float32Array, w: number): Window {
+function plainWindow(data: Float32Array, w: number, view?: ScopeView): Window {
   const columns = data.length / 2;
-  const count = Math.min(columns, w);
-  const start = columns > w ? columns - w : 0;
+  const zoom = view && view.zoom > 0 ? view.zoom : 1;
+  const offset = view ? Math.max(0, view.offsetColumns) : 0;
+  const visible = Math.max(0, Math.min(columns, w / zoom));
+  const count = Math.floor(visible);
+  // The window's right edge sits `offset` columns behind the newest capture.
+  const end = Math.max(0, columns - offset);
+  const start = Math.max(0, Math.min(end, end - visible));
   // Right-anchor before the ring wraps: the newest column draws at pixel
   // w - 1, matching the grid's timeToX (right edge is sim time). Once the
   // ring is full the newest w columns fill the canvas and xOffset is 0.
-  return { count, xOffset: w - count, posOf: (k) => start + k };
+  return {
+    count,
+    xOffset: w - count * zoom,
+    stepX: zoom,
+    posOf: (k) => {
+      const pos = Math.floor(start) + k;
+      return pos >= 0 && pos < end && pos < columns ? pos : -1;
+    },
+  };
 }
 
 function triggerWindow(data: Float32Array, info: TriggerInfoLike, w: number): Window {
@@ -225,6 +242,7 @@ function triggerWindow(data: Float32Array, info: TriggerInfoLike, w: number): Wi
   return {
     count,
     xOffset: 0,
+    stepX: 1,
     posOf: (k) => {
       const ring = (info.start_index + k) % cap;
       const pos = (ring + cap - info.snapshot_start) % cap;
@@ -352,7 +370,7 @@ function drawTrace(
     if (pos < 0) continue;
     const lo = yOf(t, maxy, data[pos * 2]);
     const hi = yOf(t, maxy, data[pos * 2 + 1]);
-    const x = win.xOffset + k + 0.5;
+    const x = win.xOffset + (k + 0.5) * win.stepX;
     if (hi === lo) {
       ctx.moveTo(x, lo);
       ctx.lineTo(x, lo + 0.5);
@@ -766,7 +784,7 @@ function drawCursor(
 
   const lines: InfoLine[] = [];
   let y = -10;
-  const k = Math.round(x) - selected.win.xOffset;
+  const k = Math.round((x - selected.win.xOffset) / selected.win.stepX);
   const cursorValue = k >= 0 && k < selected.count ? selected.max[k] : null;
   if (cursorValue !== null) {
     const dotY = yOf(selected.transform, maxy, cursorValue);
@@ -791,15 +809,22 @@ function drawCursor(
       ctx.moveTo(dragX, 0);
       ctx.lineTo(dragX, h);
       ctx.stroke();
-      const dragK = Math.round(dragX) - selected.win.xOffset;
+      const dragK = Math.round((dragX - selected.win.xOffset) / selected.win.stepX);
       const startValue = dragK >= 0 && dragK < selected.count ? selected.max[dragK] : null;
-      const deltaT = cursor.cursorTime - cursor.dragStartTime;
-      lines.push({ text: `Δt=${formatValue(Math.abs(deltaT), 's', decimalDigits)}`, y: (y += 15) });
-      if (startValue !== null && cursorValue !== null) {
+      // Two cursors, read as a pair: the time between them, the frequency that
+      // implies, and the voltage/current step between their samples.
+      const readout = cursorReadout(cursor.dragStartTime, cursor.cursorTime, startValue, cursorValue);
+      lines.push({ text: `Δt=${formatValue(readout.dt, 's', decimalDigits)}`, y: (y += 15) });
+      if (readout.hz !== null) {
+        lines.push({ text: `1/Δt=${formatValue(readout.hz, 'Hz', decimalDigits)}`, y: (y += 15) });
+      }
+      if (readout.dv !== null) {
         lines.push({
-          text: `Δ=${formatValue(cursorValue - startValue, UNIT[selected.plot.value], decimalDigits)}`,
+          text: `dV=${formatValue(readout.dv, UNIT[selected.plot.value], decimalDigits)}`,
           y: (y += 15),
         });
+      }
+      if (cursorValue !== null) {
         lines.push({
           text: formatValue(cursorValue, UNIT[selected.plot.value], decimalDigits),
           y: (y += 15),
@@ -1232,6 +1257,11 @@ export interface DrawScopeOptions {
    *  window has no pointer handling at all, so it draws without the gear
    *  rather than advertising a click that does nothing. Default true. */
   settingsWheel?: boolean;
+  /** The paused viewer's zoom and pan through captured history. Omitted by
+   *  the embedded and undocked windows, which always draw the live window.
+   *  Ignored while a trigger has fired, where the trigger anchor owns the
+   *  horizontal placement. */
+  view?: ScopeView;
 }
 
 /** The per-frame entry point: draws one scope canvas. `dark` follows the White
@@ -1257,7 +1287,7 @@ export function drawScope(
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, w, h);
   if (w < 2 || h < 2) return;
-  const speed = scopeSpeed(scope.speed);
+  const baseSpeed = scopeSpeed(scope.speed);
 
   // A diverged trace captions the frozen signal instead of passing it off as
   // a healthy flatline. Drawn after the background fill but before the XY and
@@ -1315,7 +1345,7 @@ export function drawScope(
         scope,
         transform,
         infoPlot,
-        speed,
+        baseSpeed,
         timeStep,
         w,
         h,
@@ -1349,11 +1379,23 @@ export function drawScope(
 
   const allSameUnits = sameUnits(plots.map((p) => p.plot));
 
+  // The paused view applies only to the live window. A fired trigger owns the
+  // horizontal placement, so panning never fights the trigger anchor.
+  const view = trigInfo && trigInfo.triggered ? undefined : options?.view;
+  const panned = view !== undefined && isPanned(view);
+  // Magnifying or panning changes the seconds per column and the time at the
+  // right edge, never the saved speed token or the capture itself.
+  const speed = panned ? viewSpeed(view, baseSpeed) : baseSpeed;
+  const drawTime = panned ? viewRightTime(simTime, view, baseSpeed, timeStep) : simTime;
+
   const states: MeasurableState[] = plots.map(({ plot, index }) => {
     const data = engine.scopeData(index);
     // The anchored trigger window applies only once a trigger has fired;
     // before that (and in auto-run) the plain most-recent window is shown.
-    const win = trigInfo && trigInfo.triggered ? triggerWindow(data, trigInfo, w) : plainWindow(data, w);
+    const win =
+      trigInfo && trigInfo.triggered
+        ? triggerWindow(data, trigInfo, w)
+        : plainWindow(data, w, panned && view ? view : undefined);
     const { maxSample, minSample } = scanWindow(data, win);
     const state = scaleStateFor(scope.id, plot.value);
     const opts = { maxScale: scope.maxScale && !scope.manualScale, allSameUnits };
@@ -1387,7 +1429,7 @@ export function drawScope(
     first.transform,
     w,
     h,
-    simTime,
+    drawTime,
     speed,
     timeStep,
     allSameUnits,
@@ -1474,7 +1516,7 @@ export function drawScope(
     ctx,
     cursor,
     states,
-    simTime,
+    drawTime,
     speed,
     timeStep,
     w,
@@ -1515,7 +1557,7 @@ export function selectPlotAt(
     // against plots[0]'s samples resolved the wrong plot on mixed scopes.
     const data = engine.scopeData(index);
     const win = plainWindow(data, w);
-    const k = Math.round(x) - win.xOffset;
+    const k = Math.round((x - win.xOffset) / win.stepX);
     const state = scaleStateFor(scope.id, plot.value);
     const t = transformFor(scope, plot, state, 0, 0, h, allSameUnits);
     const pos = win.posOf(k);

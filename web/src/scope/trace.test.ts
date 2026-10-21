@@ -60,6 +60,14 @@ describe('scope trace polyline', () => {
     expect(points[2]).not.toBeNull();
   });
 
+  it('spaces columns by the paused view zoom', () => {
+    // Two pixels per column: each point advances two pixels instead of one.
+    const data = new Float32Array([0, 1, 1, 3, -2, 2]);
+    const win = { count: 3, xOffset: 0, stepX: 2, posOf: (k: number) => k };
+    const points = tracePolyline(data, win, { gridMid: 0, gridMult: 10, positionOffset: 0 }, 50);
+    expect(solidPoints(points).map((p) => p.x)).toEqual([1, 3, 5]);
+  });
+
   it('a right-anchored pre-wrap window places the newest column at the right edge', () => {
     // 3 written columns on a 4 pixel canvas: the offset pushes drawn column k
     // to pixel xOffset + k, so the newest column (k = 2) sits at pixel 3.

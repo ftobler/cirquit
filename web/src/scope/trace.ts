@@ -16,6 +16,9 @@ export interface TraceWindow {
    *  trigger-anchored, positive before the ring wraps so the newest column
    *  sits at the right edge. */
   xOffset: number;
+  /** Pixels per column, the paused view's zoom. Omitted (or 1) is one column
+   *  per pixel. */
+  stepX?: number;
   posOf: (k: number) => number;
 }
 
@@ -38,6 +41,7 @@ export function tracePolyline(
   maxy: number,
 ): (TracePoint | null)[] {
   const points: (TracePoint | null)[] = [];
+  const stepX = win.stepX ?? 1;
   for (let k = 0; k < win.count; k++) {
     const pos = win.posOf(k);
     if (pos < 0) {
@@ -46,7 +50,7 @@ export function tracePolyline(
     }
     const mid = (data[pos * 2] + data[pos * 2 + 1]) / 2;
     points.push({
-      x: win.xOffset + k + 0.5,
+      x: win.xOffset + (k + 0.5) * stepX,
       y: maxy - t.gridMult * (mid - t.gridMid + t.positionOffset),
     });
   }

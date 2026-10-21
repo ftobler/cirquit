@@ -17,6 +17,7 @@ import { cachedDragHints, dragHintsActive } from '../../render/junctionHints';
 import { scopeWidth } from '../../scope/geometry';
 import { traceScopes } from '../../scope/embedded';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
+import { pruneScopeViews } from '../../scope/view';
 import { pruneXYPersistence } from '../../scope/xyPersistence';
 import { GRID_SIZE } from '../../model/types';
 import { wireSegments } from '../../model/wirePlacement';
@@ -295,6 +296,7 @@ export function useFrameLoop(
               : (liveScopeIdsRef.current = { scopes: allScopes, ids: allScopes.map((s) => s.id) }).ids;
           pruneScaleStates(liveScopeIds);
           pruneXYScales(liveScopeIds);
+          pruneScopeViews(liveScopeIds);
           // Same rule for the X-Y persistence canvases: an embedded window has
           // no docked panel to clear its entry on unmount, so a deleted 403
           // element (or another document load) would leak one canvas each.

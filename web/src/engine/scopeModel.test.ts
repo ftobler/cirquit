@@ -236,8 +236,7 @@ describe('scopeModel pure helpers', () => {
       expect(specs.map((s) => s.plotId)).toEqual([100, 103]);
     });
 
-    it('uses scopeSpeed and the resolved width for the ring, doubling when triggered', () => {
-      const widthOf = (id: number) => (id === 1 ? 300 : undefined);
+    it('uses scopeSpeed and the resolved width for the ring, always keeping history behind the window', () => {
       const free = makeScope({
         id: 1,
         speed: 64,
@@ -250,12 +249,20 @@ describe('scopeModel pure helpers', () => {
         trigger: trigger('normal'),
         plots: [makePlot({ id: 20, elementId: 2, value: 'current' })],
       });
-      const specs = scopePlotsToSpecs([free, trig], {} as never, widthOf);
-      // 300 -> next pow2 512; 500 default -> 512.
-      expect(specs[0].columns).toBe(512);
+      // A very wide canvas would ask for 8192 * 2, clamped at the engine cap.
+      const huge = makeScope({
+        id: 3,
+        plots: [makePlot({ id: 30, elementId: 3, value: 'voltage' })],
+      });
+      const specs = scopePlotsToSpecs([free, trig, huge], {} as never, (id) =>
+        id === 1 ? 300 : id === 3 ? 8192 : undefined,
+      );
+      // Free and triggered scopes both keep a display-width-and-a-half of
+      // history: 300 -> next pow2 512, doubled to 1024.
+      expect(specs[0].columns).toBe(1024);
       expect(specs[0].stepsPerColumn).toBe(64);
-      // Triggered scope doubles the ring, clamped at 8192.
       expect(specs[1].columns).toBe(1024);
+      expect(specs[2].columns).toBe(8192);
     });
 
     it('round-trips the static spec fields from each plot', () => {

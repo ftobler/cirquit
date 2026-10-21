@@ -395,10 +395,11 @@ export function scopePlotsToSpecs(
   for (const scope of scopes) {
     const stepsPerColumn = scopeSpeed(scope.speed);
     const widthPx = widthOf(scope.id) ?? DEFAULT_SCOPE_WIDTH;
-    // A triggered scope doubles its ring so pre-trigger history survives
-    // (Scope.java:191-193); the engine clamps at its own bound.
-    let columns = scopeColumnCount(widthPx);
-    if (scope.trigger.mode !== 'freeRun') columns = Math.min(8192, columns * 2);
+    // Every scope doubles its display-width ring. A triggered scope has always
+    // needed pre-trigger history (Scope.java:191-193), and the paused viewer's
+    // pan needs the same room behind the live edge for a free-running one. The
+    // engine clamps at 8192 columns; drawing still shows only the last width.
+    const columns = Math.min(8192, scopeColumnCount(widthPx) * 2);
     for (const plot of scope.plots) {
       if (plot.elementId === null || plot.value === null) continue;
       out.push({

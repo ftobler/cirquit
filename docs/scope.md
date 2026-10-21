@@ -141,6 +141,33 @@ Scope readouts use the long-format `decimalDigits`.
   and turns X-Y on (Scope.java:1312-1317). **Diverges**: unchecking turns X-Y
   off and keeps the pair; upstream re-applies either way.
 
+## Paused pan and zoom, vertical zoom
+
+**Port extension.** The scope capture ring is now sized at `min(8192,
+2 * scopeColumnCount(widthPx))` for every scope, not only triggered ones
+(`web/src/engine/scopeModel.ts` `scopePlotsToSpecs`): the paused viewer needs
+history behind the live window. Drawing still shows the newest width; a
+triggered scope's pre-trigger history is unchanged.
+
+- **Ctrl/Cmd+wheel** on a plot switches the scope to manual scale (seeding any
+  trace without a hand-set scale) and steps the hovered plot's manScale up or
+  down the 1-2-5 series (`wheelManScale` in `web/src/scope/scale.ts`). The
+  burst is one undo entry through `beginScopeGesture`.
+- **While paused**, plain drag pans and plain wheel zooms time about the
+  pointer. Both live in `web/src/scope/view.ts` (module map keyed by scope id,
+  like the sticky scale state), are session-only, and never touch the saved
+  `speed` token or clear the ring. `zoom` is pixels per column;
+  `offsetColumns` is how far the right edge sits behind the newest capture.
+  `drawScope` receives the view through `DrawScopeOptions.view` and derives the
+  effective seconds per column and right-edge time, so `xToTime`/`timeToX` and
+  the grid keep working unchanged. The embedded 403 windows and the undocked
+  popup never pass a view; a fired trigger anchor wins over the view; resuming
+  the simulation resets it. Shift+drag still measures with the two cursors
+  while paused.
+- **Two measurement cursors**: the existing hover cursor and the drag-anchor
+  cursor, read as a pair. The readout shows `Δt`, `1/Δt` (frequency) and `dV`
+  (the sample step in the trace's unit), from the pure `cursorReadout` helper.
+
 ## Per-trace measurements
 
 **Port extension.** Upstream's readout flags are scope-level and its per-plot

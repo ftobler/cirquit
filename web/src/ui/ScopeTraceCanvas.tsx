@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { SimEngine } from '../engine/simulator';
-import type { Scope } from '../engine/scopeModel';
+import type { Scope, ScopePlot } from '../engine/scopeModel';
 import {
   registerScopeWidth,
   unregisterScopeWidth,
@@ -19,6 +19,7 @@ import {
   inSettingsWheel,
 } from '../scope/geometry';
 import {
+  MAN_DIVISIONS,
   drawScope,
   emptyCursor,
   isDrawable,
@@ -27,8 +28,20 @@ import {
   visiblePlotsOf,
   type ScopeCursor,
 } from '../scope/draw';
-import { clearXYScale, dragPlotYPosition } from '../scope/scale';
+import { clearXYScale, dragPlotYPosition, scaleStateFor, seedManScale, wheelManScale } from '../scope/scale';
 import { clearXYPersistence } from '../scope/xyPersistence';
+import {
+  DEFAULT_SCOPE_VIEW,
+  isPanned,
+  panByPixels,
+  resetScopeView,
+  setScopeView,
+  viewFor,
+  viewRightTime,
+  viewSpeed,
+  zoomAboutCursor,
+  type ScopeView,
+} from '../scope/view';
 import { useStore } from '../state/store';
 import { backingStoreSize } from './canvas/backingStoreSize';
 import { elmInfoResolver } from './infoBoxLines';
@@ -74,6 +87,9 @@ export function ScopeTraceCanvas({
   elementsRef.current = useStore((s) => s.elements);
   const settings = useStore((s) => s.settings);
   const dark = useStore((s) => s.dark);
+  // The paused view only applies while the simulation is stopped; resuming
+  // snaps back to the live edge.
+  const running = useStore((s) => s.running);
   // Watched so an undo or redo that force-clears the gesture flag mid-drag can
   // cancel the plot drag here; see the orphan check below.
   const scopeGesture = useStore((s) => s.scopeGesture);
@@ -132,11 +148,14 @@ export function ScopeTraceCanvas({
         // surfaces cannot drift. Shared with the embedded 403 window and the
         // undocked window through one resolver.
         elmInfoResolver(elementsRef.current, engine),
+        // The paused viewer's pan and zoom. While running the stored view is
+        // ignored, so a resume shows live data without waiting for a reset.
+        { view: running ? undefined : viewFor(scope.id) },
       );
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [engine, scope.id, settings, dark]);
+  }, [engine, scope.id, settings, dark, running]);
 
   const canvasRect = () => canvasRef.current?.getBoundingClientRect();
   const size = () => {
@@ -145,6 +164,49 @@ export function ScopeTraceCanvas({
   };
   const speed = scope.speed;
   const simTime = () => engine?.time ?? 0;
+  // A paused pan in flight: the pointer, where it started, and the captured
+  // column count frozen at press so a moving engine time cannot rescale it.
+  const panRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startView: ScopeView;
+    written: number;
+  } | null>(null);
+  // Ctrl+wheel accumulates separately from the time-base wheel so a vertical
+  // zoom burst never triggers a speed change and vice versa.
+  const ctrlWheelDeltaRef = useRef(0);
+
+  const firstTraceIndex = (): number | undefined => {
+    for (const plot of visiblePlotsOf(scope).filter(isDrawable)) {
+      const index = engine?.scopeIndexOf(plot.id);
+      if (index !== undefined) return index;
+    }
+    return undefined;
+  };
+  /** Captured columns in the first visible trace's ring. One crossing at the
+   *  start of a pan or zoom gesture, never per frame. */
+  const capturedColumns = (): number => {
+    const index = firstTraceIndex();
+    return index === undefined || !engine ? 0 : engine.scopeData(index).length / 2;
+  };
+  const activeView = () =>
+    running ? DEFAULT_SCOPE_VIEW : viewFor(scope.id);
+  /** The sim time at the canvas's right edge, moved back by a paused pan. */
+  const drawTime = () => {
+    const view = activeView();
+    return isPanned(view) ? viewRightTime(simTime(), view, speed, settings.timeStep) : simTime();
+  };
+  /** Seconds per column for cursor conversions: the time base magnified by the
+   *  paused view's zoom. */
+  const timeSpeed = () => {
+    const view = activeView();
+    return isPanned(view) ? viewSpeed(view, speed) : speed;
+  };
+  const timeAtX = (
+    x: number,
+    w: number,
+    anchor: { time: number } | null,
+  ) => xToTime(x, drawTime(), w, timeSpeed(), settings.timeStep, anchor);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
@@ -190,8 +252,21 @@ export function ScopeTraceCanvas({
         return;
       }
     }
+    // While paused a plain drag pans the captured history. Shift+drag keeps
+    // the two-cursor measurement, which is otherwise the running-mode drag.
+    if (!running && !e.shiftKey) {
+      panRef.current = {
+        pointerId: e.pointerId,
+        startX: x,
+        startView: viewFor(scope.id),
+        written: capturedColumns(),
+      };
+      canvasRef.current?.setPointerCapture(e.pointerId);
+      cursor.dragStartTime = -1;
+      return;
+    }
     const anchor = engine ? triggerTimeAnchor(engine, scope, w) : null;
-    cursor.dragStartTime = xToTime(x, simTime(), w, speed, settings.timeStep, anchor);
+    cursor.dragStartTime = timeAtX(x, w, anchor);
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -204,6 +279,14 @@ export function ScopeTraceCanvas({
     cursor.hover = true;
     cursor.mouseX = x;
     cursor.hoverSettingsWheel = inSettingsWheel(x, y, w, h);
+    const pan = panRef.current;
+    if (pan && pan.pointerId === e.pointerId) {
+      setScopeView(
+        scope.id,
+        panByPixels(pan.startView, x - pan.startX, w, pan.written),
+      );
+      return;
+    }
     // The revert may land between two moves, before the effect above runs;
     // tear the orphaned drag down here rather than mutate past its baseline.
     if (cursor.draggingPlotY && !useStore.getState().scopeGesture) {
@@ -218,7 +301,7 @@ export function ScopeTraceCanvas({
       return;
     }
     const anchor = engine ? triggerTimeAnchor(engine, scope, w) : null;
-    cursor.cursorTime = xToTime(x, simTime(), w, speed, settings.timeStep, anchor);
+    cursor.cursorTime = timeAtX(x, w, anchor);
   };
 
   /** Shared reset for the end of a pointer gesture: up, cancel and leave all
@@ -236,6 +319,11 @@ export function ScopeTraceCanvas({
     if (pid !== null) {
       canvasRef.current?.releasePointerCapture(pid);
       dragPointerIdRef.current = null;
+    }
+    const pan = panRef.current;
+    if (pan !== null) {
+      canvasRef.current?.releasePointerCapture(pan.pointerId);
+      panRef.current = null;
     }
     // A plot-Y drag ends here, closing its single undo entry. A wheel burst is
     // ended by its own idle timer, so this is a no-op for those.
@@ -295,6 +383,58 @@ export function ScopeTraceCanvas({
 
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
+    const rect = canvasRect();
+    const { w, h } = size();
+    const x = rect ? e.clientX - rect.left : 0;
+    const y = rect ? e.clientY - rect.top : 0;
+    // A wheel-up notch (negative deltaY) zooms in and a down notch out.
+    const notch = (delta: number): 1 | -1 | 0 => (delta < 0 ? 1 : delta > 0 ? -1 : 0);
+
+    // Ctrl+wheel is vertical zoom on the plot under the pointer, switching to
+    // manual scale so the zoomed units per division are what the grid draws.
+    if (e.ctrlKey || e.metaKey) {
+      ctrlWheelDeltaRef.current += e.deltaY * settings.wheelSensitivity;
+      if (Math.abs(ctrlWheelDeltaRef.current) <= 5) return;
+      const dir = notch(ctrlWheelDeltaRef.current);
+      ctrlWheelDeltaRef.current = 0;
+      if (dir === 0 || !engine) return;
+      const visible = visiblePlotsOf(scope).filter(isDrawable);
+      const plot = selectPlotAt(engine, scope, x, y, w, h);
+      const target = plot >= 0 ? visible[plot] : undefined;
+      if (!target) return;
+      extendWheelGesture();
+      const divisions = scope.manDivisions || MAN_DIVISIONS;
+      const seed = (value: ScopePlot['value']) =>
+        seedManScale(scaleStateFor(scope.id, value).gridMax, divisions);
+      if (!scope.manualScale) {
+        // Entering manual mode seeds every trace that has no hand-set scale,
+        // exactly like the properties dialog's Manual choice.
+        for (const p of scope.plots) {
+          if (p.manScale === null) useStore.getState().setPlotManScale(p.id, seed(p.value));
+        }
+        useStore.getState().setScopeFlags(scope.id, { manualScale: true, maxScale: false });
+      }
+      const current = target.manScale ?? seed(target.value);
+      useStore.getState().setPlotManScale(target.id, wheelManScale(current, dir));
+      return;
+    }
+
+    // Paused, the wheel magnifies time about the pointer instead of changing
+    // the saved time base, so the capture's history stays inspectable.
+    if (!running) {
+      wheelDeltaRef.current += e.deltaY * settings.wheelSensitivity;
+      if (Math.abs(wheelDeltaRef.current) <= 5) return;
+      const dir = notch(wheelDeltaRef.current);
+      wheelDeltaRef.current = 0;
+      if (dir === 0) return;
+      const factor = dir > 0 ? 1.25 : 0.8;
+      setScopeView(
+        scope.id,
+        zoomAboutCursor(viewFor(scope.id), factor, x, w, capturedColumns()),
+      );
+      return;
+    }
+
     // Scrolling down slows the time base (zooms out), matching upstream's
     // onMouseWheel -> slowDown/speedUp (Scope.java:1378-1388). Deltas are
     // scaled by the wheel sensitivity and accumulate past a +-5 threshold so
@@ -310,6 +450,16 @@ export function ScopeTraceCanvas({
       useStore.getState().setScopeSpeed(scope.id, speed / 2);
     }
   };
+
+  // Resuming the simulation snaps back to the live edge: a pan that stayed
+  // would hide the data the run is producing. A fresh capture (reset) also
+  // starts live.
+  useEffect(() => {
+    if (running) {
+      resetScopeView(scope.id);
+      wheelDeltaRef.current = 0;
+    }
+  }, [running, scope.id]);
 
   // An unmount (panel closed, circuit reloaded) during a drag or wheel burst
   // must not strand the gesture flag, so the cleanup ends the gesture and
@@ -350,7 +500,7 @@ export function ScopeTraceCanvas({
         // A capture lost without a pointerup must still end a plot-Y drag,
         // or its gesture flag would merge later edits into one undo entry.
         onLostPointerCapture={() => {
-          if (dragPointerIdRef.current !== null) endPointerInteraction();
+          if (dragPointerIdRef.current !== null || panRef.current !== null) endPointerInteraction();
         }}
         onPointerLeave={onPointerLeave}
         onWheel={onWheel}
