@@ -975,3 +975,50 @@ describe('single-shot trigger arm', () => {
     expect(reloaded.trigger.sourcePlotId).toBeNull();
   });
 });
+
+describe('trace colour overrides and math plots', () => {
+  it('sets and clears a session-only colour override', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const plotId = useStore.getState().scopes[0].plots[0].id;
+    useStore.getState().setPlotColor(plotId, '#123456');
+    expect(useStore.getState().scopes[0].plots[0].colorOverride).toBe('#123456');
+    // Garbage clears rather than reaching the canvas as an invalid style.
+    useStore.getState().setPlotColor(plotId, 'not-a-colour');
+    expect(useStore.getState().scopes[0].plots[0].colorOverride).toBeNull();
+    useStore.getState().setPlotColor(plotId, '#abcdef');
+    useStore.getState().undo();
+    expect(useStore.getState().scopes[0].plots[0].colorOverride).toBeNull();
+  });
+
+  it('adds a math plot from the first two sources without touching the o line', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const before = useStore.getState().toNetlist();
+    const scope = useStore.getState().scopes[0];
+    const [a, b] = scope.plots;
+    useStore.getState().addMathPlot(scope.id, 'add');
+    const math = useStore.getState().scopes[0].plots[2];
+    expect(math.math).toEqual({ op: 'add', a: a.id, b: b.id });
+    expect(math.elementId).toBeNull();
+    // A derived trace is not a file plot: the o line is byte-identical.
+    expect(useStore.getState().toNetlist()).toBe(before);
+    // It can be removed again, and the save stays stable throughout.
+    useStore.getState().removePlot(scope.id, math.id);
+    expect(useStore.getState().scopes[0].plots).toHaveLength(2);
+    expect(useStore.getState().toNetlist()).toBe(before);
+  });
+
+  it('adds a derivative from one source and refuses what it cannot derive', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    useStore.getState().addMathPlot(scope.id, 'derivative');
+    const math = useStore.getState().scopes[0].plots[2];
+    expect(math.math?.op).toBe('derivative');
+    expect(math.math?.b).toBe(-1);
+    // No scope at all is a no-op.
+    useStore.getState().addMathPlot(999, 'add');
+    expect(useStore.getState().scopes[0].plots).toHaveLength(3);
+  });
+});

@@ -31,6 +31,7 @@ import {
   type ScopeCursor,
 } from '../scope/draw';
 import { clearXYScale, dragPlotYPosition, scaleStateFor, seedManScale, wheelManScale } from '../scope/scale';
+import { mathScopeSource } from '../scope/math';
 import { clearXYPersistence } from '../scope/xyPersistence';
 import {
   DEFAULT_SCOPE_VIEW,
@@ -137,7 +138,9 @@ export function ScopeTraceCanvas({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       drawScope(
         ctx,
-        engine,
+        // Math traces answer from the same captured rings under synthetic
+        // indices; the delegate stays the engine for every real trace.
+        mathScopeSource(engine, scopeRef.current, settings.timeStep),
         scopeRef.current,
         w,
         h,

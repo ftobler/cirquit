@@ -29,6 +29,7 @@ import { DEFAULT_FLOAT_H, DEFAULT_FLOAT_W, FLOAT_TITLE_H, clampFloatRect } from 
 import { columnWeights, dragSplitter } from './scopeColumns';
 import { dropDecisionAt, type ColumnBox, type DropDecision } from './scopeDrag';
 import { clampActiveTab } from './scopeLayoutMode';
+import { mathOpLabel } from '../scope/math';
 import { scopeDisplayName } from './scopePropsModel';
 
 interface Props {
@@ -502,7 +503,16 @@ export function ScopePanel({ engine }: Props) {
         </div>
       )}
       <FloatingScopeLayer engine={engine} dock={dockDrag} />
-      <ScopeMenu engine={engine} nameOf={(plot) => elementNameOf(elements, plot.elementId)} />
+      <ScopeMenu
+        engine={engine}
+        nameOf={(plot) =>
+          plot.elementId !== null
+            ? elementNameOf(elements, plot.elementId)
+            : plot.math
+              ? `Math ${mathOpLabel(plot.math.op)}`
+              : 'plot'
+        }
+      />
       {scopeProperties !== null && (
         // Keyed by the scope: the stack tabs switch which scope the open
         // dialog edits, and the label and trigger-level boxes hold their text

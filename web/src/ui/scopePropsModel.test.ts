@@ -115,6 +115,30 @@ describe('scope properties model', () => {
     expect(rows.map((r) => r.acAllowed)).toEqual([true, false]);
     expect(rows.every((r) => r.removable)).toBe(true);
     expect(rows.map((r) => r.overrides)).toEqual([false, false]);
+    expect(rows.map((r) => r.math)).toEqual([null, null]);
+    expect(rows.map((r) => r.colorOverridden)).toEqual([false, false]);
+  });
+
+  it('names a math channel by its operation and marks a colour override', () => {
+    const real = plot(1, 'voltage');
+    const math = {
+      ...plot(2, 'voltage', null),
+      math: { op: 'add' as const, a: 1, b: 1 },
+      colorOverride: '#123456',
+    };
+    const rows = channelRows(
+      scopeOf([real, math]),
+      [real, math],
+      (id) => (id === 5 ? 'Resistor' : null),
+      () => undefined,
+      '#ffffff',
+    );
+    expect(rows[1].letter).toBe('ƒ');
+    expect(rows[1].source).toBe('Math A+B');
+    expect(rows[1].math).toBe('add');
+    expect(rows[1].colorOverridden).toBe(true);
+    // A math trace can be removed like a real one.
+    expect(rows[1].removable).toBe(true);
   });
 
   it('flags a channel whose own readouts differ from the scope', () => {

@@ -1,6 +1,7 @@
 /** Application state. Everything the UI reads or mutates lives here. */
 
 import type {
+  MathOp,
   PlotMeasurementKey,
   Scope,
   ScopeTrigger,
@@ -707,6 +708,13 @@ export interface AppState {
   setPlotCoupling(scopeId: number, plotId: number, acCoupled: boolean): void;
   setPlotManScale(plotId: number, manScale: number | null): void;
   setPlotManPosition(plotId: number, manVPosition: number): void;
+  /** Sets or clears one trace's session-only colour override. Display-only:
+   *  no engine revision, never written to the `o` line. */
+  setPlotColor(plotId: number, color: string | null): void;
+  /** Appends a session-only math trace derived from the scope's first (two)
+   *  samplable plots. A no-op when not enough sources exist. It never
+   *  registers an engine trace, so the run and the capture are untouched. */
+  addMathPlot(scopeId: number, op: MathOp): void;
   /** Sets one plot's per-trace measurement readout, the properties dialog's
    *  per-channel checkbox path. The plot's mask is seeded from the scope word
    *  on first use; display-only, like setScopeFlags. */

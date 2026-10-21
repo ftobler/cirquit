@@ -97,10 +97,12 @@ export const MAN_DIVISIONS = 8;
 
 const TRIGGER_COLOR = '#ff8000';
 
+/** A plot the renderer can draw: a real element trace, or a session-only math
+ *  trace (which has no element but carries its source's unit family). */
 export const isDrawable = (plot: ScopePlot): plot is DrawablePlot =>
-  plot.elementId !== null && plot.value !== null;
+  plot.value !== null && (plot.elementId !== null || Boolean(plot.math));
 
-export type DrawablePlot = ScopePlot & { elementId: number; value: ScopeValue };
+export type DrawablePlot = ScopePlot & { value: ScopeValue };
 
 /** Caption shown when a trace has dropped non-finite samples (a diverged
  *  node), so a frozen trace reads as a warning instead of a healthy flatline.
@@ -189,9 +191,13 @@ export function plotColors(scope: Scope, theme: Theme): Map<number, string> {
   let otherCount = 0;
   for (const p of visiblePlotsOf(scope)) {
     if (p.value === null) continue;
-    if (p.value === 'voltage') colors.set(p.id, assignColor(p.value, voltageCount++, theme));
-    else if (p.value === 'current') colors.set(p.id, assignColor(p.value, currentCount++, theme));
-    else colors.set(p.id, assignColor(p.value, otherCount++, theme));
+    // An explicit override paints this trace without moving the positional
+    // colour any sibling gets, which is why the counter still advances.
+    let color: string;
+    if (p.value === 'voltage') color = assignColor(p.value, voltageCount++, theme);
+    else if (p.value === 'current') color = assignColor(p.value, currentCount++, theme);
+    else color = assignColor(p.value, otherCount++, theme);
+    colors.set(p.id, p.colorOverride ?? color);
   }
   return colors;
 }
@@ -1406,7 +1412,7 @@ export function drawScope(
         w,
         h,
         decimalDigits,
-        elmInfo ? elmInfo(infoPlot.elementId) : null,
+        elmInfo && infoPlot.elementId !== null ? elmInfo(infoPlot.elementId) : null,
         textMeasurer(ctx),
       );
       clippedToViewport(ctx, w, h, () => paintHeader(ctx, header, scope, h, theme, traceColors));
@@ -1564,7 +1570,7 @@ export function drawScope(
     w,
     h,
     decimalDigits,
-    elmInfo ? elmInfo(first.plot.elementId) : null,
+    elmInfo && first.plot.elementId !== null ? elmInfo(first.plot.elementId) : null,
     textMeasurer(ctx),
   );
   clippedToViewport(ctx, w, h, () => {

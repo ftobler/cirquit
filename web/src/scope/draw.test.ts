@@ -812,6 +812,20 @@ describe('plotColors', () => {
     expect([...a.values()]).toEqual([...b.values()]);
   });
 
+  it('lets one trace override its colour without shifting its siblings', () => {
+    const scope = scopeOf([
+      { ...plot(1, 'voltage'), colorOverride: '#123456' },
+      plot(2, 'voltage'),
+      plot(3, 'current'),
+    ]);
+    const colors = plotColors(scope, dark);
+    expect(colors.get(1)).toBe('#123456');
+    // The override still consumed the first voltage slot, so the next voltage
+    // trace keeps its usual second-slot colour.
+    expect(colors.get(2)).toBe('#ff0000');
+    expect(colors.get(3)).toBe('#ffff00');
+  });
+
   it('assigns a colour to every plot in X-Y mode', () => {
     // Upstream's 2D branch skips assignColor and leaves plot.color null
     // (Scope.java:311-314), which its own manual-scale bullets would then

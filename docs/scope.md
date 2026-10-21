@@ -216,6 +216,29 @@ token holds only the AC bit.
   side. Phase Angle draws when any visible trace enables it (it reads V and I
   together).
 
+## Trace colour overrides and math traces
+
+**Port extensions, session-only.**
+
+- `ScopePlot.colorOverride` replaces the positional colour for one trace in
+  `plotColors` without moving its siblings: the positional counter still
+  advances, so the next trace keeps the colour it had. `setPlotColor` accepts
+  a six-digit hex or null, is display-only (no engine revision) and is not on
+  the `o` line.
+- `ScopePlot.math` names a derived trace: `add`, `sub`, `mul` or `derivative`
+  over source plot ids. `web/src/scope/math.ts` computes the interleaved
+  min/max ring from the two source rings (`mathScopeSource` decorates the
+  engine's `ScopeDrawSource` with a synthetic index per math plot), so no
+  engine trace is registered and the capture is untouched. The derivative
+  differentiates the column midlines against `speed * timeStep`.
+- File purity: `filePlots(scope)` in `web/src/io/scopeLine.ts` filters math
+  traces out of `encodeScopeLine`, `scopeLineMatches` and the store's
+  `serializeDocument`, so adding or removing one leaves the `o` line
+  byte-identical. Math traces are appended at the end of the plot list.
+- The properties dialog's Traces section carries a native colour swatch per
+  channel plus a Math chip row; `canRemovePlot` and `removePlot` allow a math
+  trace while still protecting raw-only plots.
+
 ## Stacked scopes and channels
 
 The properties dialog shows one tab per scope sharing a column (`stackTabs`,

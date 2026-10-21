@@ -37,6 +37,7 @@ import {
   visiblePlotsOf,
 } from '../scope/draw';
 import { defFor } from '../model/registry';
+import { MATH_OPS, mathSourceCount } from '../scope/math';
 import { isVceIcRow, plotAxisLabel, plotValueRows } from './scopePlotRows';
 import { saveScopeDefaults } from '../state/scopeDefaults';
 import { useStore } from '../state/store';
@@ -525,6 +526,10 @@ function TracesSection({
   const shared = sharedPlotElement(scope.plots);
   const kind =
     shared === null ? null : (st.elements.find((e) => e.id === shared)?.kind ?? null);
+  // Samplable real traces a math channel can derive from.
+  const sources = scope.plots.filter(
+    (p) => !p.math && p.elementId !== null && p.value !== null,
+  ).length;
   // Upstream's Show Vce vs Ic checked state (isShowingVceAndIc, Scope.java:
   // 1258-1260): the 2D plot on and exactly the VCE/IC pair showing.
   const showingVceIc =
@@ -578,20 +583,43 @@ function TracesSection({
             <span className="sp-channel-source" title={c.source}>
               {c.source}
             </span>
-            <Segmented
-              label={`${c.name} coupling`}
-              value={c.plot.acCoupled ? 'ac' : 'dc'}
-              options={[
-                { value: 'dc', label: 'DC' },
-                {
-                  value: 'ac',
-                  label: 'AC',
-                  disabled: !c.acAllowed,
-                  title: c.acAllowed ? 'Block the DC part' : 'AC coupling applies to voltage only',
-                },
-              ]}
-              onChange={(v) => st.setPlotCoupling(scope.id, c.plot.id, v === 'ac')}
+            {/* The colour swatch is the trace's own colour, session-only; the
+                clear button returns it to the positional palette. */}
+            <input
+              type="color"
+              className="sp-color"
+              aria-label={`${c.name} colour`}
+              title="Trace colour"
+              value={c.color}
+              onChange={(e) => st.setPlotColor(c.plot.id, e.target.value)}
             />
+            {c.colorOverridden && (
+              <button
+                type="button"
+                className="sp-icon"
+                aria-label={`Automatic colour for ${c.name}`}
+                title="Use the automatic colour"
+                onClick={() => st.setPlotColor(c.plot.id, null)}
+              >
+                ⟲
+              </button>
+            )}
+            {c.math === null && (
+              <Segmented
+                label={`${c.name} coupling`}
+                value={c.plot.acCoupled ? 'ac' : 'dc'}
+                options={[
+                  { value: 'dc', label: 'DC' },
+                  {
+                    value: 'ac',
+                    label: 'AC',
+                    disabled: !c.acAllowed,
+                    title: c.acAllowed ? 'Block the DC part' : 'AC coupling applies to voltage only',
+                  },
+                ]}
+                onChange={(v) => st.setPlotCoupling(scope.id, c.plot.id, v === 'ac')}
+              />
+            )}
             <button
               type="button"
               className="sp-icon"
@@ -604,6 +632,34 @@ function TracesSection({
             </button>
           </div>
         ))}
+      </div>
+      <div className="sp-subhead">Math</div>
+      <div className="sp-chips">
+        {MATH_OPS.map((m) => {
+          const enough = sources >= mathSourceCount(m.op);
+          return (
+            <Chip
+              key={m.op}
+              checked={scope.plots.some((p) => p.math?.op === m.op)}
+              disabled={!enough}
+              title={
+                enough
+                  ? `Add a ${m.label} trace from the first ${mathSourceCount(m.op)} channels`
+                  : `Needs ${mathSourceCount(m.op)} channels`
+              }
+              onChange={(on) => {
+                if (on) {
+                  st.addMathPlot(scope.id, m.op);
+                  return;
+                }
+                const existing = scope.plots.find((p) => p.math?.op === m.op);
+                if (existing) st.removePlot(scope.id, existing.id);
+              }}
+            >
+              {m.label}
+            </Chip>
+          );
+        })}
       </div>
       <div className="sp-subhead">Plots</div>
       <div className="sp-chips">

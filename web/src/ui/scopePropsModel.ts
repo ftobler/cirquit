@@ -5,8 +5,9 @@
  * ScopeProperties.tsx only lays these out and wires the store actions.
  */
 
-import type { Scope, ScopePlot, ScopeValue } from '../engine/scopeModel';
+import type { MathOp, Scope, ScopePlot, ScopeValue } from '../engine/scopeModel';
 import { plotOverridesScope } from '../engine/scopeModel';
+import { mathOpLabel } from '../scope/math';
 import { UNIT } from '../scope/units';
 import { canRemovePlot } from './scopePlotRows';
 import { parseUnits } from '../model/units';
@@ -60,6 +61,10 @@ export interface ChannelRow {
   removable: boolean;
   /** The channel carries its own readout mask that differs from the scope's. */
   overrides: boolean;
+  /** The math operation this channel derives, or null for a real trace. */
+  math: MathOp | null;
+  /** The channel has a session-only colour override. */
+  colorOverridden: boolean;
 }
 
 /**
@@ -74,17 +79,23 @@ export function channelRows(
   colorOf: (plotId: number) => string | undefined,
   fallbackColor: string,
 ): ChannelRow[] {
-  return visible.map((plot, i) => ({
-    plot,
-    name: `CH ${i + 1}`,
-    letter: channelLetter(plot.value),
-    unit: plot.value === null ? '?' : UNIT[plot.value],
-    source: labelOf(plot.elementId) ?? 'missing element',
-    color: colorOf(plot.id) ?? fallbackColor,
-    acAllowed: plot.value === 'voltage',
-    removable: canRemovePlot(scope.plots, plot.id),
-    overrides: plotOverridesScope(scope, plot),
-  }));
+  return visible.map((plot, i) => {
+    const math = plot.math?.op ?? null;
+    return {
+      plot,
+      name: `CH ${i + 1}`,
+      // A math channel reads as its operation, not its source family's letter.
+      letter: math !== null ? 'ƒ' : channelLetter(plot.value),
+      unit: plot.value === null ? '?' : UNIT[plot.value],
+      source: math !== null ? `Math ${mathOpLabel(math)}` : (labelOf(plot.elementId) ?? 'missing element'),
+      color: colorOf(plot.id) ?? fallbackColor,
+      acAllowed: plot.value === 'voltage',
+      removable: canRemovePlot(scope.plots, plot.id),
+      overrides: plotOverridesScope(scope, plot),
+      math,
+      colorOverridden: (plot.colorOverride ?? null) !== null,
+    };
+  });
 }
 
 /** The dialog's title: the scope's own label, or the "Scope N" name the

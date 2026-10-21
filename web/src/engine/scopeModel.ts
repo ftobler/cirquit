@@ -88,6 +88,17 @@ export const PLOT_MEASUREMENT_KEYS: readonly PlotMeasurementKey[] = [
   'showPhaseAngle',
 ];
 
+/** The session-only derived quantities a math trace can draw. */
+export type MathOp = 'add' | 'sub' | 'mul' | 'derivative';
+
+/** A math trace's source: the operation and the two source plot ids (`b` is
+ *  -1 for a derivative). Never serialised. */
+export interface MathTrace {
+  op: MathOp;
+  a: number;
+  b: number;
+}
+
 export interface ScopePlot {
   /** Trace identity: what the UI and engine key on. */
   id: number;
@@ -123,6 +134,14 @@ export interface ScopePlot {
    *  state always wins when it exists. Null for a UI-created plot. */
   origValueToken: number | null;
   origElementIndex: number | null;
+  /** Session-only math trace derived from other plots (A+B, A-B, A*B, d/dt).
+   *  The engine never samples it and the `o` line never writes it; `value`
+   *  still carries the source family so units, colours and scale keys work. */
+  math?: MathTrace | null;
+  /** Session-only trace colour override. Upstream assigns colour by plot
+   *  position; an override lets one trace stand out without moving the
+   *  others. Never in the file. */
+  colorOverride?: string | null;
 }
 
 export interface Scope {

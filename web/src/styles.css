@@ -2348,6 +2348,19 @@ input[type='range'] {
   background: color-mix(in srgb, var(--text) 5%, var(--menu-surface));
 }
 
+/* A trace's colour swatch: a compact native colour input, so keyboard and
+   screen-reader users get the platform picker. */
+.scope-props .sp-color {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--md-outline);
+  border-radius: var(--md-shape-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
 .sp-channel-name {
   flex: 0 0 auto;
   font: var(--md-type-label-large);
