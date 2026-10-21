@@ -14,7 +14,7 @@ import type {
   ScopeValue,
   TriggerInfoLike,
 } from '../engine/scopeModel';
-import { effectiveMeasurements } from '../engine/scopeModel';
+import { effectiveMeasurements, triggerSourceIndex, triggerSourcePlot } from '../engine/scopeModel';
 import { canvasFont, formatValue, makeTheme, parseRgb } from '../render/draw';
 import type { Theme, ThemeColors } from '../model/types';
 import { MIN_SETTINGS_WHEEL_SIZE, scopeSpeed, timeToX } from './geometry';
@@ -33,6 +33,7 @@ import {
   seedManScale,
   setScaleState,
   setXYScale,
+  valueAtY,
   xyScaleFor,
 } from './scale';
 import { average, dutyCycle, estimateFrequency, maxValue, minValue, rms } from './measure';
@@ -70,6 +71,10 @@ export interface ScopeCursor {
    *  which colours it like a hovered element. The panel sets it from the
    *  pointer position, the draw loop reads it per frame. */
   hoverSettingsWheel: boolean;
+  /** Live trigger level while its marker is being dragged. The store is only
+   *  written on release, so a drag does not rebuild the engine (and wipe the
+   *  capture) on every pixel. Null when not dragging. */
+  triggerLevel: number | null;
 }
 
 export function emptyCursor(): ScopeCursor {
@@ -84,6 +89,7 @@ export function emptyCursor(): ScopeCursor {
     dragPlotYStart: 0,
     dragPlotYInitial: 0,
     hoverSettingsWheel: false,
+    triggerLevel: null,
   };
 }
 
@@ -455,19 +461,68 @@ export function triggerTimeAnchor(
   w: number,
 ): { time: number } | null {
   if (scope.trigger.mode === 'freeRun') return null;
-  // The anchored window is drawn from the first visible trace (drawScope),
-  // so the cursor time conversion must anchor off that same trace: with plot 0
-  // hidden by showV/showI, `scope.plots[0]` is a different trace's ring and
-  // the cursor dot would sit a column off the pointer.
-  const index = visiblePlotsOf(scope)
-    .filter(isDrawable)
-    .map((plot) => engine.scopeIndexOf(plot.id))
-    .find((i): i is number => i !== undefined);
+  // The anchored window is drawn from the trigger source trace (drawScope),
+  // so the cursor time conversion must anchor off that same trace. The source
+  // is the user's chosen plot, else the first samplable one.
+  const index = triggerSourceIndex(scope, (plotId) => engine.scopeIndexOf(plotId));
   if (index === undefined) return null;
   const trig = engine.triggerInfo(index, w);
   const anchor = trig.triggered ? { time: trig.time } : null;
   trig.free();
   return anchor;
+}
+
+/** The first drawable trace's vertical transform, the one the grid, trigger
+ *  line and pointer hit-tests read while the frame's real scale state is not
+ *  at hand. Pure given the engine lookup, like `selectPlotAt`. */
+function firstTraceTransform(
+  engine: ScopeDrawSource,
+  scope: Scope,
+  h: number,
+): PlotTransform | null {
+  const plots = visiblePlotsOf(scope)
+    .filter(isDrawable)
+    .map((plot) => ({ plot, index: engine.scopeIndexOf(plot.id) }))
+    .filter((p): p is { plot: DrawablePlot; index: number } => p.index !== undefined);
+  if (plots.length === 0) return null;
+  return transformFor(
+    scope,
+    plots[0].plot,
+    scaleStateFor(scope.id, plots[0].plot.value),
+    0,
+    0,
+    h,
+    sameUnits(plots.map((p) => p.plot)),
+  );
+}
+
+/** The canvas y of the trigger level line, or null when the trigger is off or
+ *  the scope has no drawable trace. The pointer handler uses it for the
+ *  level-drag hit test. */
+export function triggerLineY(
+  engine: ScopeDrawSource,
+  scope: Scope,
+  _w: number,
+  h: number,
+): number | null {
+  if (scope.trigger.mode === 'freeRun') return null;
+  const t = firstTraceTransform(engine, scope, h);
+  if (!t) return null;
+  return yOf(t, Math.floor((h - 1) / 2), scope.trigger.level);
+}
+
+/** The trigger level a pointer at `y` would set, the inverse of
+ *  `triggerLineY`. Null when there is no drawable trace to map against. */
+export function triggerLevelAtY(
+  engine: ScopeDrawSource,
+  scope: Scope,
+  _w: number,
+  h: number,
+  y: number,
+): number | null {
+  const t = firstTraceTransform(engine, scope, h);
+  if (!t) return null;
+  return valueAtY(t, Math.floor((h - 1) / 2), y);
 }
 
 /** One manual-scale /div bullet: the plot it colours by and its centre. */
@@ -1172,10 +1227,11 @@ function drawTrigger(
   trig: { state: number; triggered: boolean; waiting: boolean } | null,
   w: number,
   h: number,
+  level = scope.trigger.level,
 ): void {
   if (scope.trigger.mode === 'freeRun') return;
   const maxy = Math.floor((h - 1) / 2);
-  const trigY = yOf(t, maxy, scope.trigger.level);
+  const trigY = yOf(t, maxy, level);
   if (trigY >= 0 && trigY < h) {
     ctx.strokeStyle = TRIGGER_COLOR;
     ctx.lineWidth = 1;
@@ -1359,9 +1415,13 @@ export function drawScope(
   }
   if (plots.length === 0) return;
 
-  // The trigger anchor comes from the first trace; all traces share the
-  // scope's ring geometry.
-  const trig = scope.trigger.mode !== 'freeRun' ? engine.triggerInfo(plots[0].index, w) : null;
+  // The trigger anchor comes from the selected source trace (or the first
+  // samplable one); all traces share the scope's ring geometry.
+  const trigIndex = triggerSourceIndex(scope, (plotId) => engine.scopeIndexOf(plotId));
+  const trig =
+    scope.trigger.mode !== 'freeRun' && trigIndex !== undefined
+      ? engine.triggerInfo(trigIndex, w)
+      : null;
   const trigInfo = trig
     ? {
         start_index: trig.start_index,
@@ -1437,7 +1497,20 @@ export function drawScope(
     theme,
     triggerAnchor,
   );
-  drawTrigger(ctx, scope, first.transform, trigInfo, w, h);
+  // The level line is in the source trace's units and scale, so map it
+  // through that trace's transform when it is visible; a hidden source falls
+  // back to the first trace.
+  const sourceId = triggerSourcePlot(scope)?.id;
+  const triggerState = states.find((s) => s.plot.id === sourceId) ?? first;
+  drawTrigger(
+    ctx,
+    scope,
+    triggerState.transform,
+    trigInfo,
+    w,
+    h,
+    cursor.triggerLevel ?? scope.trigger.level,
+  );
 
   const maxy = Math.floor((h - 1) / 2);
 

@@ -10,6 +10,7 @@ import {
   effectiveReadoutTarget,
   initialReadoutTarget,
   parseDivisions,
+  parseHoldoff,
   parseManScale,
   parseValue,
   scopeDisplayName,
@@ -64,7 +65,7 @@ function scopeOf(plots: ScopePlot[], patch: Partial<Scope> = {}): Scope {
     showV: true,
     scaleV: 20,
     scaleA: 0.05,
-    trigger: { mode: 'freeRun', edge: 'rising', level: 0 },
+    trigger: { mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
     ...patch,
   };
 }
@@ -198,6 +199,22 @@ describe('dialog drag clamp', () => {
     expect(clampDialogOffset({ x: 0, y: 0 }, rect, 0, 5000, view).y).toBe(800 - 40 - 200);
     expect(clampDialogOffset({ x: 0, y: 0 }, rect, -5000, 0, view).x).toBe(120 - 400 - 300);
     expect(clampDialogOffset({ x: 10, y: 0 }, rect, 5000, 0, view).x).toBe(10 + 1000 - 120 - 300);
+  });
+});
+
+describe('trigger holdoff parsing', () => {
+  it('accepts a whole number of columns in range', () => {
+    expect(parseHoldoff('0')).toBe(0);
+    expect(parseHoldoff('12')).toBe(12);
+    expect(parseHoldoff('2k')).toBe(2000);
+    expect(parseHoldoff('12.4')).toBe(12);
+  });
+
+  it('refuses negatives, overflow and nonsense', () => {
+    expect(parseHoldoff('-1')).toBeNull();
+    expect(parseHoldoff('9000')).toBeNull();
+    expect(parseHoldoff('abc')).toBeNull();
+    expect(parseHoldoff('')).toBeNull();
   });
 });
 

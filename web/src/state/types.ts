@@ -306,6 +306,12 @@ export interface AppState {
   scopeMenu: { x: number; y: number; scopeId: number; plotId: number } | null;
   /** Scope id whose properties dialog is open, or null. */
   scopeProperties: number | null;
+  /** The scope waiting for its next trigger in single-shot mode, with the
+   *  trigger time seen when it armed (`null` until the first armed frame
+   *  records one). The frame loop pauses the simulation once a newer trigger
+   *  time appears and clears this, holding the capture. Transient like
+   *  `floating`: never in the undo Snapshot and never in the file. */
+  singleShotArmed: { scopeId: number; since: number | null } | null;
   /** True while a menubar dropdown (File/Edit/Scopes/Options/Tools/Help/
    *  Circuits) or the mobile burger panel is open. Upstream's Swing menus are
    *  modal grabs: keys never reach the canvas behind an open menu. One of the
@@ -674,6 +680,18 @@ export interface AppState {
   /** Changes the horizontal zoom without rewinding the simulation. */
   setScopeSpeed(id: number, speed: number): void;
   setScopeTrigger(id: number, patch: Partial<ScopeTrigger>): void;
+  /** Arms single-shot acquisition on `id`: the frame loop records the current
+   *  trigger time, waits for a newer one, then pauses the run to hold the
+   *  capture. A no-op while the scope's trigger mode is not `single`. */
+  armSingleShot(id: number): void;
+  /** The frame loop's half of the single-shot wait: records the baseline on
+   *  the first armed frame, then reports whether a newer trigger has arrived.
+   *  `triggerTime` is the source trace's last trigger time. Returns 'captured'
+   *  once, which also clears the arm. */
+  stepSingleShot(id: number, triggerTime: number): 'idle' | 'waiting' | 'captured';
+  /** Drops the single-shot arm, e.g. leaving single mode or resetting the
+   *  scope. */
+  disarmSingleShot(): void;
   /** Display flags (overlays, scale mode, FFT/X-Y); never forces a reload. */
   setScopeFlags(id: number, patch: Partial<Omit<Scope, 'id' | 'raw' | 'plots' | 'trigger'>>): void;
   /** Puts one scope's display settings, speed and trigger back to what a

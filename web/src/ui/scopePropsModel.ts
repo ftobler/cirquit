@@ -121,6 +121,19 @@ export function parseManScale(text: string): number | null {
   return v !== null && v > 0 ? v : null;
 }
 
+/** Most holdoff columns the trigger field accepts, a screen's worth at the
+ *  engine's 8192-column cap. */
+export const MAX_HOLDOFF = 8192;
+
+/** A trigger holdoff as typed: a whole number of captured columns in
+ *  0..MAX_HOLDOFF, or null for anything else. */
+export function parseHoldoff(text: string): number | null {
+  const v = parseValue(text);
+  if (v === null) return null;
+  const n = Math.round(v);
+  return n >= 0 && n <= MAX_HOLDOFF ? n : null;
+}
+
 /** Which readout word the Readouts section edits: every trace (the scope
  *  word they inherit) or one channel's own mask. */
 export type ReadoutTarget = 'all' | number;

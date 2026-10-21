@@ -76,7 +76,7 @@ const scopeOf = (plots: ScopePlot[], overrides: Partial<Scope> = {}): Scope => (
   showV: true,
   scaleV: 20,
   scaleA: 0.05,
-  trigger: { mode: 'freeRun', edge: 'rising', level: 0 },
+  trigger: { mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
   ...overrides,
 });
 
@@ -172,7 +172,7 @@ describe('triggerTimeAnchor', () => {
     const { engine, called } = anchorEngine((id) => (id === 1 ? 5 : 0));
     const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], {
       showV: false,
-      trigger: { mode: 'normal', edge: 'rising', level: 0 },
+      trigger: { mode: 'normal', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
     });
     expect(triggerTimeAnchor(engine, scope, 100)).toEqual({ time: 42 });
     expect(called).toEqual([0]);
@@ -183,7 +183,7 @@ describe('triggerTimeAnchor', () => {
     // registered; the anchor must land on the first drawable trace after it.
     const { engine, called } = anchorEngine((id) => (id === 2 ? 0 : undefined));
     const scope = scopeOf([plot(1, null), plot(2, 'voltage'), plot(3, 'current')], {
-      trigger: { mode: 'normal', edge: 'rising', level: 0 },
+      trigger: { mode: 'normal', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
     });
     expect(scope.plots[0].id).toBe(1);
     expect(triggerTimeAnchor(engine, scope, 100)).toEqual({ time: 42 });
@@ -916,7 +916,7 @@ const trigEngine = (): SimEngine =>
 
 const trigScope = () =>
   scopeOf([plot(1, 'voltage')], {
-    trigger: { mode: 'normal', edge: 'rising', level: 0 },
+    trigger: { mode: 'normal', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
   });
 
 describe('drawScope trigger colours', () => {

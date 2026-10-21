@@ -40,7 +40,7 @@ const scopeOf = (overrides: Partial<Scope> = {}): Scope => ({
   showV: true,
   scaleV: 20,
   scaleA: 0.05,
-  trigger: { mode: 'freeRun', edge: 'rising', level: 0 },
+  trigger: { mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
   ...overrides,
 });
 
@@ -76,7 +76,7 @@ describe('scope defaults persistence', () => {
       showP2P: true,
       showElmInfo: true,
       speed: 32,
-      trigger: { mode: 'normal', edge: 'falling', level: 2.5 },
+      trigger: { mode: 'normal', edge: 'falling', level: 2.5, holdoff: 0, sourcePlotId: null },
     });
     saveScopeDefaults(scope, storage);
     expect(loadScopeDefaults(storage)).toEqual({

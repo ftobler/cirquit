@@ -297,6 +297,8 @@ describe('scope family undo-restore', () => {
       mode: 'normal',
       edge: 'falling',
       level: 2.5,
+      holdoff: 0,
+      sourcePlotId: null,
     });
     expect(useStore.getState().undoStack.length).toBe(baseline + 1);
 
@@ -308,6 +310,8 @@ describe('scope family undo-restore', () => {
       mode: 'normal',
       edge: 'falling',
       level: 2.5,
+      holdoff: 0,
+      sourcePlotId: null,
     });
   });
 

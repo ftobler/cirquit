@@ -392,3 +392,15 @@ export function dragPlotYPosition(initial: number, dy: number, maxy: number): nu
   const next = initial - Math.round((dy * 200) / (2 * maxySafe));
   return positionToOffset(next);
 }
+
+/** The value at canvas `y`, the inverse of `yOf` (draw.ts). Lets a pointer
+ *  drag on the trigger level line write a value back into the transform. Pure,
+ *  so the round trip is testable without a canvas. */
+export function valueAtY(
+  t: { gridMid: number; gridMult: number; positionOffset: number },
+  maxy: number,
+  y: number,
+): number {
+  if (!(t.gridMult > 0)) return 0;
+  return t.gridMid + (maxy - y) / t.gridMult - t.positionOffset;
+}

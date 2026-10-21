@@ -24,6 +24,8 @@ import {
   emptyCursor,
   isDrawable,
   selectPlotAt,
+  triggerLevelAtY,
+  triggerLineY,
   triggerTimeAnchor,
   visiblePlotsOf,
   type ScopeCursor,
@@ -66,6 +68,8 @@ export function ScopeTraceCanvas({
   // starts there opens the dialog on release, so a plot-Y or time drag that
   // began elsewhere and ends in the corner box does not.
   const settingsWheelPressRef = useRef(false);
+  // A drag of the horizontal trigger level marker.
+  const triggerDragRef = useRef(false);
   // Wheel deltas accumulate and only zoom past a threshold, so trackpad
   // micro-deltas do not hammer the time base (Scope.java:1378-1388).
   const wheelDeltaRef = useRef(0);
@@ -225,6 +229,17 @@ export function ScopeTraceCanvas({
       settingsWheelPressRef.current = true;
       return;
     }
+    // The horizontal dashed trigger level is draggable: a press within a few
+    // pixels of it moves the level instead of starting a pan or a cursor.
+    if (engine && scope.trigger.mode !== 'freeRun') {
+      const lineY = triggerLineY(engine, scope, w, h);
+      if (lineY !== null && Math.abs(y - lineY) <= 5) {
+        triggerDragRef.current = true;
+        dragPointerIdRef.current = e.pointerId;
+        canvasRef.current?.setPointerCapture(e.pointerId);
+        return;
+      }
+    }
     // Manual mode drags the selected plot's vertical position.
     if (scope.manualScale && engine) {
       // selectPlotAt returns an index into the visible-plot list, which the
@@ -279,6 +294,13 @@ export function ScopeTraceCanvas({
     cursor.hover = true;
     cursor.mouseX = x;
     cursor.hoverSettingsWheel = inSettingsWheel(x, y, w, h);
+    if (triggerDragRef.current && engine) {
+      const level = triggerLevelAtY(engine, scope, w, h, y);
+      // Preview only: the store write on release is what rebuilds the engine,
+      // so dragging across the capture does not wipe it.
+      if (level !== null) cursor.triggerLevel = level;
+      return;
+    }
     const pan = panRef.current;
     if (pan && pan.pointerId === e.pointerId) {
       setScopeView(
@@ -311,6 +333,13 @@ export function ScopeTraceCanvas({
     const cursor = cursorRef.current;
     cursor.draggingPlotY = false;
     cursor.dragPlotId = -1;
+    // A trigger-level drag commits once, on release: one undo entry and one
+    // engine rebuild for the whole gesture.
+    if (triggerDragRef.current && cursor.triggerLevel !== null) {
+      useStore.getState().setScopeTrigger(scopeRef.current.id, { level: cursor.triggerLevel });
+    }
+    cursor.triggerLevel = null;
+    triggerDragRef.current = false;
     cursor.dragStartTime = -1;
     cursor.hoverSettingsWheel = false;
     settingsWheelPressRef.current = false;

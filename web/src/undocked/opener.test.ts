@@ -138,7 +138,7 @@ const SCOPE: Scope = {
   showV: true,
   scaleV: 20,
   scaleA: 0.05,
-  trigger: { mode: 'freeRun', edge: 'rising', level: 0 },
+  trigger: { mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
 };
 
 describe('scopeWindowTitle', () => {

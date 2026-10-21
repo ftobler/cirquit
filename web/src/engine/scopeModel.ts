@@ -32,12 +32,28 @@ export type ScopeValue =
   | 'vce';
 
 /** Trigger acquisition settings, mirroring ScopeTrigger.java. Free run
- *  disables the trigger. The strings match the engine's serde names. */
+ *  disables the trigger. The strings match the engine's serde names, except
+ *  `single`, which the port layers on top of Normal acquisition: the UI arms
+ *  it, waits for the next trigger, then pauses the simulation to hold the
+ *  capture. Nothing in the trigger is on the `o` line, so all of it is
+ *  session-only, including the source plot and holdoff. */
 export interface ScopeTrigger {
-  mode: 'freeRun' | 'normal' | 'auto';
+  mode: 'freeRun' | 'normal' | 'auto' | 'single';
   edge: 'rising' | 'falling';
   level: number;
+  /** Extra captured columns to wait before re-arming after a trigger, on top
+   *  of the display width the tracker already holds for. */
+  holdoff: number;
+  /** Plot id whose trace fires the trigger, or null for the scope's first
+   *  samplable plot (upstream's implicit choice). */
+  sourcePlotId: number | null;
 }
+
+/** The trigger a trace spec carries: the engine knows Normal/Auto/FreeRun
+ *  only, so single-shot already arrived as Normal here. */
+export type EngineTrigger = Omit<ScopeTrigger, 'mode' | 'sourcePlotId'> & {
+  mode: 'freeRun' | 'normal' | 'auto';
+};
 
 /** The per-trace measurement readouts a scope plot can override, the port's
  *  own extension: upstream's readout flags are scope-level. The key order here
@@ -313,8 +329,38 @@ export interface ScopeTraceSpec {
   stepsPerColumn: number;
   columns: number;
   acCoupled: boolean;
-  trigger: ScopeTrigger;
+  trigger: EngineTrigger;
   displayWidth: number;
+}
+
+/** The plot whose trace fires this scope's trigger: the chosen source when it
+ *  still names a samplable plot, otherwise the first one. Upstream has no
+ *  source selector (the first plot is implicit), so the selection is a port
+ *  extension and stays out of the file. */
+export function triggerSourcePlot(scope: Scope): ScopePlot | null {
+  const samplable = (p: ScopePlot | undefined): p is ScopePlot =>
+    p !== undefined && p.elementId !== null && p.value !== null;
+  if (scope.trigger.sourcePlotId !== null) {
+    const chosen = scope.plots.find((p) => p.id === scope.trigger.sourcePlotId);
+    if (samplable(chosen)) return chosen;
+  }
+  const candidates = scope.plots.filter(samplable);
+  // With no explicit source, keep the pre-selector behaviour: the first
+  // visible trace (a voltage plot hidden by showV is not what the anchor was
+  // drawn from), falling back to any samplable plot when every trace is
+  // hidden.
+  const shown = (p: ScopePlot): boolean =>
+    p.value === 'voltage' ? scope.showV : p.value === 'current' ? scope.showI : true;
+  return candidates.find(shown) ?? candidates[0] ?? null;
+}
+
+/** The engine trace index the trigger state should be read from. */
+export function triggerSourceIndex(
+  scope: Scope,
+  indexOf: (plotId: number) => number | undefined,
+): number | undefined {
+  const plot = triggerSourcePlot(scope);
+  return plot === null ? undefined : indexOf(plot.id);
 }
 
 /** Structural shape of the wasm `TriggerInfo` the scope renderer reads. The
@@ -409,7 +455,12 @@ export function scopePlotsToSpecs(
         stepsPerColumn,
         columns,
         acCoupled: plot.acCoupled,
-        trigger: scope.trigger,
+        trigger: {
+          mode: scope.trigger.mode === 'single' ? 'normal' : scope.trigger.mode,
+          edge: scope.trigger.edge,
+          level: scope.trigger.level,
+          holdoff: scope.trigger.holdoff,
+        },
         displayWidth: widthPx,
       });
     }

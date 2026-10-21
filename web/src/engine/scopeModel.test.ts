@@ -11,12 +11,16 @@ import {
   scopeParamsFingerprint,
   scopePlotsToSpecs,
   sharedPlotElement,
+  triggerSourceIndex,
+  triggerSourcePlot,
 } from './scopeModel';
 
 const trigger = (mode: ScopeTrigger['mode'] = 'freeRun'): ScopeTrigger => ({
   mode,
   edge: 'rising',
   level: 0,
+  holdoff: 0,
+  sourcePlotId: null,
 });
 
 function makeScope(over: Partial<Scope> = {}): Scope {
@@ -279,7 +283,36 @@ describe('scopeModel pure helpers', () => {
         acCoupled: true,
         displayWidth: 500,
       });
-      expect(spec.trigger).toEqual(trigger('freeRun'));
+      // The spec carries the engine's trigger shape: single-shot already
+      // arrived as normal and the source plot stays in the UI.
+      expect(spec.trigger).toEqual({ mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0 });
+    });
+  });
+
+  describe('trigger source', () => {
+    it('defaults to the first visible samplable plot', () => {
+      const hidden = makeScope({
+        showV: false,
+        plots: [
+          makePlot({ id: 1, elementId: 9, value: 'voltage' }),
+          makePlot({ id: 2, elementId: 9, value: 'current' }),
+        ],
+      });
+      expect(triggerSourcePlot(hidden)?.id).toBe(2);
+      expect(triggerSourceIndex(hidden, (id) => (id === 2 ? 7 : undefined))).toBe(7);
+    });
+
+    it('uses an explicit source plot and falls back when it is gone', () => {
+      const scope = makeScope({
+        trigger: { ...trigger('normal'), sourcePlotId: 3 },
+        plots: [
+          makePlot({ id: 1, elementId: 9, value: 'voltage' }),
+          makePlot({ id: 3, elementId: 9, value: 'current' }),
+        ],
+      });
+      expect(triggerSourcePlot(scope)?.id).toBe(3);
+      const stale = { ...scope, trigger: { ...scope.trigger, sourcePlotId: 99 } };
+      expect(triggerSourcePlot(stale)?.id).toBe(1);
     });
   });
 

@@ -11,7 +11,11 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PlotMeasurementKey, Scope, ScopePlot, ScopeValue } from '../engine/scopeModel';
-import { effectiveMeasurements, sharedPlotElement } from '../engine/scopeModel';
+import {
+  effectiveMeasurements,
+  sharedPlotElement,
+  triggerSourcePlot,
+} from '../engine/scopeModel';
 import {
   barToSpeed,
   clearScaleStates,
@@ -46,6 +50,7 @@ import {
   initialReadoutTarget,
   nextEnabledIndex,
   parseDivisions,
+  parseHoldoff,
   parseManScale,
   parseValue,
   scopeDisplayName,
@@ -745,12 +750,16 @@ function VerticalSection({ scope, channels }: { scope: Scope; channels: ChannelR
 
 function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }) {
   const st = useStore.getState();
+  const armed = useStore((s) => (s.singleShotArmed?.scopeId === scope.id ? s.singleShotArmed : null));
   const bar = speedToBar(scope.speed);
   const setBar = (b: number) => st.setScopeSpeed(scope.id, barToSpeed(Math.max(0, Math.min(10, b))));
   const triggered = scope.trigger.mode !== 'freeRun';
-  // The level is in the first drawn channel's unit, the trace the trigger
-  // watches.
-  const firstValue = visiblePlotsOf(scope)[0]?.value ?? 'voltage';
+  const single = scope.trigger.mode === 'single';
+  // The level is in the trigger source's unit, the trace the trigger watches.
+  const source = triggerSourcePlot(scope);
+  const firstValue = source?.value ?? 'voltage';
+  const kindOf = (elementId: number | null) =>
+    elementId === null ? null : (st.elements.find((e) => e.id === elementId)?.kind ?? null);
   return (
     <>
       <Row label="Time/div">
@@ -781,9 +790,61 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
             { value: 'freeRun', label: 'Free run', title: 'No trigger: the trace scrolls' },
             { value: 'normal', label: 'Normal', title: 'Draw only on a trigger' },
             { value: 'auto', label: 'Auto', title: 'Trigger, or free run when none comes' },
+            {
+              value: 'single',
+              label: 'Single',
+              title: 'Capture one trigger, then pause and hold it',
+            },
           ]}
-          onChange={(mode) => st.setScopeTrigger(scope.id, { mode })}
+          onChange={(mode) => {
+            st.setScopeTrigger(scope.id, { mode });
+            if (mode === 'single') {
+              // Selecting the mode is also the arm gesture, and arming a
+              // paused scope would wait forever.
+              st.armSingleShot(scope.id);
+              st.setRunning(true);
+            } else {
+              st.disarmSingleShot();
+            }
+          }}
         />
+      </Row>
+      {single && (
+        <Row label="Single shot">
+          <button
+            type="button"
+            className="sp-chip"
+            onClick={() => {
+              st.armSingleShot(scope.id);
+              st.setRunning(true);
+            }}
+          >
+            {armed ? 'Armed' : 'Arm'}
+          </button>
+          <span className="sp-muted">
+            {armed ? 'waiting for the next trigger' : 'captures one trigger, then holds'}
+          </span>
+        </Row>
+      )}
+      <Row label="Source">
+        <label className="sp-select">
+          <span>Trigger source</span>
+          <select
+            value={scope.trigger.sourcePlotId ?? ''}
+            onChange={(e) =>
+              st.setScopeTrigger(scope.id, {
+                sourcePlotId: e.target.value === '' ? null : Number(e.target.value),
+              })
+            }
+          >
+            <option value="">First trace</option>
+            {scope.plots.map((p) => (
+              <option key={p.id} value={p.id}>
+                {plotAxisLabel(kindOf(p.elementId), p.value)}
+              </option>
+            ))}
+          </select>
+        </label>
       </Row>
       <Row label="Edge">
         <Segmented
@@ -810,6 +871,20 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
           }}
         />
         <span className="sp-muted">{firstValue === null ? '' : UNIT[firstValue]}</span>
+      </Row>
+      <Row label="Holdoff">
+        <ValueField
+          className="sp-field-narrow"
+          label="Trigger holdoff"
+          disabled={!triggered}
+          value={String(scope.trigger.holdoff)}
+          parse={parseHoldoff}
+          onCommit={(t) => {
+            const n = parseHoldoff(t);
+            if (n !== null) st.setScopeTrigger(scope.id, { holdoff: n });
+          }}
+        />
+        <span className="sp-muted">columns</span>
       </Row>
     </>
   );

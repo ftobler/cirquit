@@ -168,6 +168,33 @@ triggered scope's pre-trigger history is unchanged.
   cursor, read as a pair. The readout shows `Δt`, `1/Δt` (frequency) and `dV`
   (the sample step in the trace's unit), from the pure `cursorReadout` helper.
 
+## Trigger controls
+
+**Port extensions, all session-only.** The text `o` line carries no trigger
+state (FLAG_TRIGGER is not read), so every field below lives in
+`Scope.trigger` only.
+
+- **Drag the level**: a press within 5 px of the dashed trigger line starts a
+  level drag. The preview writes `ScopeCursor.triggerLevel` and the store is
+  updated once on release, so dragging never rebuilds the engine or wipes the
+  capture mid-gesture. `triggerLineY` / `triggerLevelAtY` in `scope/draw.ts`
+  hit-test and invert the first drawable trace's transform; the line itself
+  maps through the trigger source trace when it is visible.
+- **Source plot**: `sourcePlotId` names the plot whose trace fires the
+  trigger. `triggerSourcePlot` falls back to the first visible samplable plot
+  when the selection is null or stale, which preserves the pre-selector
+  behaviour (a voltage trace hidden by showV was never the anchor's source).
+  `triggerTimeAnchor` and the drawn trigger window read that same source.
+- **Holdoff**: `holdoff` is extra captured columns the engine waits after a
+  trigger on top of the display width (`TriggerSpec.holdoff`,
+  `engine/core/src/scope.rs`). 0 keeps the old one-screen-width hold-off.
+- **Single shot**: `mode: 'single'` is the UI's own mode; the engine still
+  receives Normal acquisition. `armSingleShot` records the tracker's last
+  trigger time through `stepSingleShot`, and the frame loop pauses the run
+  when a newer trigger time appears, holding the capture. A latched old trigger
+  therefore cannot capture on the arm frame. Leaving single mode, removing the
+  scope, a load or New drops the arm.
+
 ## Per-trace measurements
 
 **Port extension.** Upstream's readout flags are scope-level and its per-plot

@@ -480,7 +480,7 @@ const RESETTABLE_SETTINGS = [
 ] as const satisfies readonly (keyof SimSettings)[];
 
 function defaultTrigger(): ScopeTrigger {
-  return { mode: 'freeRun', edge: 'rising', level: 0 };
+  return { mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null };
 }
 
 /** A scope panel with the full field set. Position defaults to its own column,
@@ -749,6 +749,7 @@ function createAppStore() {
   contextMenu: null,
   scopeMenu: null,
   scopeProperties: null,
+  singleShotArmed: null,
   menubarOpen: false,
   scrollValuePopover: null,
   partsOpen: defaultPartsOpen(),
@@ -2305,6 +2306,7 @@ function createAppStore() {
       // scope's removal leaves the open dialog alone: the stack tabs can
       // still reach it.
       scopeProperties: s.scopeProperties === id ? null : s.scopeProperties,
+      singleShotArmed: s.singleShotArmed?.scopeId === id ? null : s.singleShotArmed,
       ...bumpRevision(s),
     }));
   },
@@ -2337,20 +2339,57 @@ function createAppStore() {
     if (!scope) return;
     const trigger = { ...scope.trigger, ...patch };
     // A patch that changes nothing must not reload the engine or push an undo
-    // entry; the three fields are the whole ScopeTrigger.
+    // entry; these are the whole ScopeTrigger.
     if (
       trigger.mode === scope.trigger.mode &&
       trigger.edge === scope.trigger.edge &&
-      trigger.level === scope.trigger.level
+      trigger.level === scope.trigger.level &&
+      trigger.holdoff === scope.trigger.holdoff &&
+      trigger.sourcePlotId === scope.trigger.sourcePlotId
     ) {
       return;
     }
     if (!s.scopeGesture) s.commit();
     set((st) => ({
       scopes: st.scopes.map((x) => (x.id === id ? { ...x, trigger } : x)),
+      // Leaving single mode abandons any arm: the trigger is no longer the
+      // one the user asked to capture.
+      singleShotArmed:
+        trigger.mode === 'single' || st.singleShotArmed?.scopeId !== id
+          ? st.singleShotArmed
+          : null,
       // The trigger is part of the engine spec, so it must reload.
       ...bumpRevision(st),
     }));
+  },
+
+  armSingleShot: (id) => {
+    const scope = get().scopes.find((x) => x.id === id);
+    // Arming is only meaningful for a scope whose mode is single. The mode and
+    // the arm are one user gesture in the dialog, so this tolerates the mode
+    // write landing after the arm call.
+    if (!scope || scope.trigger.mode !== 'single') return;
+    set({ singleShotArmed: { scopeId: id, since: null } });
+  },
+
+  stepSingleShot: (id, triggerTime) => {
+    const armed = get().singleShotArmed;
+    if (armed === null || armed.scopeId !== id) return 'idle';
+    if (armed.since === null) {
+      // The first armed frame records what the tracker already has, so a
+      // latched old trigger cannot capture immediately.
+      set({ singleShotArmed: { scopeId: id, since: triggerTime } });
+      return 'waiting';
+    }
+    if (triggerTime > armed.since) {
+      set({ singleShotArmed: null });
+      return 'captured';
+    }
+    return 'waiting';
+  },
+
+  disarmSingleShot: () => {
+    if (get().singleShotArmed !== null) set({ singleShotArmed: null });
   },
 
   setScopeFlags: (id, patch) => {
@@ -3091,8 +3130,10 @@ function createAppStore() {
 
     set((s) => ({
       // Floating panels belong to the document on screen: a fresh one starts
-      // with every scope docked, like upstream's.
+      // with every scope docked, like upstream's. A single-shot arm names a
+      // scope id from the old document, so it goes too.
       floating: [],
+      singleShotArmed: null,
       elements: resolved,
       scopes,
       sliders: parsed.sliders.map((c): Slider => ({ ...c })),
@@ -3447,6 +3488,7 @@ function createAppStore() {
     get().closeUndockedScope();
     set((s) => ({
       floating: [],
+      singleShotArmed: null,
       elements: [],
       scopes: [],
       sliders: [],

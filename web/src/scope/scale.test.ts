@@ -20,11 +20,23 @@ import {
   seedManScale,
   setScaleState,
   setXYScale,
+  valueAtY,
   wheelManScale,
   xyScaleFor,
 } from './scale';
 
 beforeEach(() => pruneScaleStates([]));
+
+describe('valueAtY', () => {
+  it('inverts the pixel mapping, position offset included', () => {
+    const t = { gridMid: 1, gridMult: 10, positionOffset: 2 };
+    // y = maxy - gridMult * (v - gridMid + offset)
+    expect(valueAtY(t, 50, 50)).toBe(-1);
+    expect(valueAtY(t, 50, 20)).toBe(2);
+    expect(valueAtY(t, 50, 50 - 10 * (4 - 1 + 2))).toBe(4);
+    expect(valueAtY({ ...t, gridMult: 0 }, 50, 20)).toBe(0);
+  });
+});
 
 describe('wheel vertical zoom', () => {
   it('steps up and down the 1-2-5 series', () => {

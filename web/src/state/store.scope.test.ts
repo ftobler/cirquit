@@ -377,7 +377,13 @@ describe('reset a scope to the defaults', () => {
     expect(reset.fftPlot).toBe(false);
     expect(reset.label).toBe('');
     expect(reset.speed).toBe(64);
-    expect(reset.trigger).toEqual({ mode: 'freeRun', edge: 'rising', level: 0 });
+    expect(reset.trigger).toEqual({
+      mode: 'freeRun',
+      edge: 'rising',
+      level: 0,
+      holdoff: 0,
+      sourcePlotId: null,
+    });
     // The traces survive: a reset changes how the panel draws, not what it
     // watches.
     expect(reset.plots.map((p) => p.id)).toEqual(scope.plots.map((p) => p.id));
@@ -906,5 +912,66 @@ describe('scope-combining actions drop an orphaned Scope Properties dialog', () 
 
     expect(useStore.getState().scopeProperties).toBeNull();
     expect(useStore.getState().scopes.some((x) => x.id === sa.id)).toBe(false);
+  });
+});
+
+describe('single-shot trigger arm', () => {
+  it('arms only a single-mode scope and records the trigger baseline once', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scope = useStore.getState().scopes[0];
+
+    // Normal mode is not single-shot; arming is a no-op.
+    useStore.getState().setScopeTrigger(scope.id, { mode: 'normal' });
+    useStore.getState().armSingleShot(scope.id);
+    expect(useStore.getState().singleShotArmed).toBeNull();
+
+    useStore.getState().setScopeTrigger(scope.id, { mode: 'single' });
+    useStore.getState().armSingleShot(scope.id);
+    expect(useStore.getState().singleShotArmed).toEqual({ scopeId: scope.id, since: null });
+    // The first armed frame records the tracker's last trigger time.
+    expect(useStore.getState().stepSingleShot(scope.id, 12)).toBe('waiting');
+    expect(useStore.getState().singleShotArmed).toEqual({ scopeId: scope.id, since: 12 });
+    // The same trigger does not capture.
+    expect(useStore.getState().stepSingleShot(scope.id, 12)).toBe('waiting');
+    // A newer one does, and clears the arm.
+    expect(useStore.getState().stepSingleShot(scope.id, 13)).toBe('captured');
+    expect(useStore.getState().singleShotArmed).toBeNull();
+  });
+
+  it('leaving single mode disarms, and so does removing the scope', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    const sa = useStore.getState().scopes[0];
+    useStore.getState().addScope(b, 'voltage');
+    const sb = useStore.getState().scopes[1];
+
+    useStore.getState().setScopeTrigger(sa.id, { mode: 'single' });
+    useStore.getState().armSingleShot(sa.id);
+    useStore.getState().setScopeTrigger(sa.id, { mode: 'normal' });
+    expect(useStore.getState().singleShotArmed).toBeNull();
+
+    useStore.getState().setScopeTrigger(sb.id, { mode: 'single' });
+    useStore.getState().armSingleShot(sb.id);
+    useStore.getState().removeScope(sb.id);
+    expect(useStore.getState().singleShotArmed).toBeNull();
+  });
+
+  it('keeps the source plot and holdoff session-only, never in the o line', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    const source = scope.plots[1];
+    const before = useStore.getState().toNetlist();
+    useStore.getState().setScopeTrigger(scope.id, { holdoff: 40, sourcePlotId: source.id });
+    // The trigger is not part of the file: the line stays byte-identical and
+    // a reload starts from the defaults.
+    const line = useStore.getState().toNetlist();
+    expect(line).toBe(before);
+    useStore.getState().loadNetlist(line);
+    const reloaded = useStore.getState().scopes[0];
+    expect(reloaded.trigger.holdoff).toBe(0);
+    expect(reloaded.trigger.sourcePlotId).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
 import type { Scope } from '../../engine/scopeModel';
-import { scopeParamsFingerprint } from '../../engine/scopeModel';
+import { scopeParamsFingerprint, triggerSourceIndex } from '../../engine/scopeModel';
 import { defFor, postsOf, toolDef } from '../../model/registry';
 import { cachedBusWidths, postsForRender } from '../../model/busWidths';
 import { storedBusWidth } from '../../model/registry/elements/wire';
@@ -503,6 +503,25 @@ export function useFrameLoop(
                     useStore.getState().setRunning(false);
                     break;
                   }
+                }
+              }
+            }
+
+            // Single-shot: the arm records the tracker's last trigger time and
+            // the first newer one pauses the run, holding the capture on the
+            // canvas. A latched old trigger therefore cannot capture at once.
+            const armed = useStore.getState().singleShotArmed;
+            if (running && armed !== null) {
+              const target = state.scopes.find((x) => x.id === armed.scopeId);
+              if (target && target.trigger.mode === 'single') {
+                const index = triggerSourceIndex(target, (plotId) =>
+                  engine.scopeIndexOf(plotId),
+                );
+                if (index !== undefined) {
+                  const info = engine.triggerInfo(index, scopeWidth(target.id) ?? 500);
+                  const outcome = useStore.getState().stepSingleShot(target.id, info.time);
+                  info.free();
+                  if (outcome === 'captured') useStore.getState().setRunning(false);
                 }
               }
             }
