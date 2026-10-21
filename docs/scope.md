@@ -152,7 +152,8 @@ triggered scope's pre-trigger history is unchanged.
 - **Ctrl/Cmd+wheel** on a plot switches the scope to manual scale (seeding any
   trace without a hand-set scale) and steps the hovered plot's manScale up or
   down the 1-2-5 series (`wheelManScale` in `web/src/scope/scale.ts`). The
-  burst is one undo entry through `beginScopeGesture`.
+  burst is one undo entry through the canvas `beginTransaction('Scope')`
+  gesture, closed when the burst goes idle.
 - **While paused**, plain drag pans and plain wheel zooms time about the
   pointer. Both live in `web/src/scope/view.ts` (module map keyed by scope id,
   like the sticky scale state), are session-only, and never touch the saved

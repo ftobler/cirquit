@@ -67,8 +67,9 @@ test-rust:
 bench:
     cd engine && cargo test -p circuit-core --test benchmarks -- --nocapture --test-threads=1
 
-# TypeScript unit tests. Needs the wasm bindings, which `just wasm` builds.
-test-web: wasm
+# TypeScript unit tests. Needs the wasm bindings and the MCP artifact, because
+# the stdio purity test spawns the built server entry.
+test-web: mcp-build
     cd web && npm run test -- --run
 
 # Regenerate the circuit-corpus report (writes web/src/io/corpus-report.json)

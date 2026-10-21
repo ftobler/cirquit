@@ -2529,11 +2529,11 @@ function createAppStore() {
                   p.id === plotId
                     ? {
                         ...p,
-                            measurements: {
-                              ...measurementsFromScope(x),
-                              ...p.measurements,
-                              [key]: on,
-                            },
+                        measurements: {
+                          ...measurementsFromScope(x),
+                          ...p.measurements,
+                          [key]: on,
+                        },
                       }
                     : p,
                 ),
@@ -2559,9 +2559,9 @@ function createAppStore() {
           x.id === scopeId
             ? {
                 ...x,
-                    plots: x.plots.map((p) =>
-                      p.measurements === null ? p : { ...p, measurements: null },
-                    ),
+                plots: x.plots.map((p) =>
+                  p.measurements === null ? p : { ...p, measurements: null },
+                ),
               }
             : x,
         ),
@@ -2659,10 +2659,10 @@ function createAppStore() {
           return {
             scopes: s.scopes.map((x) =>
               x.id === scopeId
-                    ? {
-                        ...x,
-                        plots: x.plots.filter((p) => !(p.value === value && p.elementId !== null)),
-                      }
+                ? {
+                    ...x,
+                    plots: x.plots.filter((p) => !(p.value === value && p.elementId !== null)),
+                  }
                 : x,
             ),
             ...bumpRevision(s),
@@ -2678,7 +2678,7 @@ function createAppStore() {
           ),
           ...bumpRevision(s),
         };
-          }),
+      }),
     );
   },
 

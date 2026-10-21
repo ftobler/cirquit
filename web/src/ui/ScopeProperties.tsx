@@ -665,11 +665,13 @@ function TracesSection({
               }
               onChange={(on) => {
                 if (on) {
-                  st.addMathPlot(scope.id, m.op);
+                  runScopeCommand('scope.addMath', { scopeId: scope.id, op: m.op });
                   return;
                 }
                 const existing = scope.plots.find((p) => p.math?.op === m.op);
-                if (existing) st.removePlot(scope.id, existing.id);
+                if (existing) {
+                  runScopeCommand('scope.removePlot', { scopeId: scope.id, plotId: existing.id });
+                }
               }}
             >
               {m.label}
@@ -874,7 +876,7 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
               // Selecting the mode is also the arm gesture, and arming a
               // paused scope would wait forever.
               st.armSingleShot(scope.id);
-              st.setRunning(true);
+              runScopeCommand('sim.run', {});
             } else {
               st.disarmSingleShot();
             }
@@ -888,7 +890,7 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
             className="sp-chip"
             onClick={() => {
               st.armSingleShot(scope.id);
-              st.setRunning(true);
+              runScopeCommand('sim.run', {});
             }}
           >
             {armed ? 'Armed' : 'Arm'}
@@ -904,7 +906,8 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
           <select
             value={scope.trigger.sourcePlotId ?? ''}
             onChange={(e) =>
-              st.setScopeTrigger(scope.id, {
+              runScopeCommand('scope.setTrigger', {
+                scopeId: scope.id,
                 sourcePlotId: e.target.value === '' ? null : Number(e.target.value),
               })
             }
@@ -953,7 +956,7 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
           parse={parseHoldoff}
           onCommit={(t) => {
             const n = parseHoldoff(t);
-            if (n !== null) st.setScopeTrigger(scope.id, { holdoff: n });
+            if (n !== null) runScopeCommand('scope.setTrigger', { scopeId: scope.id, holdoff: n });
           }}
         />
         <span className="sp-muted">columns</span>

@@ -303,10 +303,9 @@ describe('resources', () => {
   });
 });
 
-// The purity check spawns the built artifact, which only exists after
-// `just mcp-build` (part of `just build`). It is skipped when the artifact is
-// absent so `just test-web` on a clean tree still runs; `just ci` builds the
-// artifact in its build step, so the entry is still gated there.
+// The purity check spawns the built artifact. `just test-web` depends on
+// `mcp-build`, so it is present in a normal run; the skip stays as a guard for
+// running vitest directly on a tree that has never built the server.
 const ARTIFACT = fileURLToPath(new URL('../dist-mcp/cirquit-mcp.mjs', import.meta.url));
 const hasArtifact = existsSync(ARTIFACT);
 

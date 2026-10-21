@@ -6,7 +6,7 @@ import { PLOT_MEASUREMENT_KEYS } from '../engine/scopeModel';
 import { MATH_OPS } from '../scope/math';
 import type { ScopeDropTarget } from '../state/scopeLayout';
 import type { AppState } from '../state/types';
-import type { CommandDef } from './types';
+import { CommandFailure, type CommandDef } from './types';
 
 const scopeValues: ScopeValue[] = [
   'voltage',
@@ -263,14 +263,19 @@ export const scopeCommands: CommandDef[] = [
   {
     id: 'scope.setTrigger',
     label: 'Edit Scope Trigger',
-    description: 'Sets the trigger mode, edge and level (level in the first trace unit).',
+    description:
+      'Sets the trigger mode, edge, level, source plot or holdoff. The level is in the ' +
+      'trigger source trace unit; holdoff is in capture columns. A sourcePlotId of null ' +
+      'watches the first trace.',
     args: {
       type: 'object',
       properties: {
         scopeId,
-        mode: { type: 'string', enum: ['freeRun', 'normal', 'auto'] },
+        mode: { type: 'string', enum: ['freeRun', 'normal', 'auto', 'single'] },
         edge: { type: 'string', enum: ['rising', 'falling'] },
         level: { type: 'number' },
+        sourcePlotId: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
+        holdoff: { type: 'number', minimum: 0 },
       },
       required: ['scopeId'],
       additionalProperties: false,
@@ -284,14 +289,18 @@ export const scopeCommands: CommandDef[] = [
     run: (ctx, a) => {
       const args = a as {
         scopeId: number;
-        mode?: 'freeRun' | 'normal' | 'auto';
+        mode?: 'freeRun' | 'normal' | 'auto' | 'single';
         edge?: 'rising' | 'falling';
         level?: number;
+        sourcePlotId?: number | null;
+        holdoff?: number;
       };
       const patch: Record<string, unknown> = {};
       if (args.mode !== undefined) patch.mode = args.mode;
       if (args.edge !== undefined) patch.edge = args.edge;
       if (args.level !== undefined) patch.level = args.level;
+      if (args.sourcePlotId !== undefined) patch.sourcePlotId = args.sourcePlotId;
+      if (args.holdoff !== undefined) patch.holdoff = args.holdoff;
       ctx.store.getState().setScopeTrigger(args.scopeId, patch);
     },
   },
@@ -384,6 +393,12 @@ export const scopeCommands: CommandDef[] = [
     enabled: (s, a) => (hasPlot(s, (a as { plotId: number }).plotId) ? true : noPlot((a as { plotId: number }).plotId)),
     run: (ctx, a) => {
       const args = a as { plotId: number; color: string | null };
+      // The store coerces anything that is not six-digit hex to "clear", which
+      // would silently turn an agent's "red" into a cleared override. Refuse it
+      // by name instead, so a bad call is a bad call.
+      if (args.color !== null && !/^#[0-9a-fA-F]{6}$/.test(args.color)) {
+        throw new CommandFailure('invalid-args', `color: expected #rrggbb or null, got ${args.color}`);
+      }
       ctx.store.getState().setPlotColor(args.plotId, args.color);
     },
   },

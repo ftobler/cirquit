@@ -206,6 +206,45 @@ describe('history.batch', () => {
   });
 });
 
+describe('scope commands', () => {
+  /** One scope with one plot, the shape the properties dialog edits. */
+  function addScope() {
+    run('element.add', addArgs());
+    const elementId = useStore.getState().elements[0].id;
+    const added = run('scope.add', { elementId });
+    const scopeId = added.ok ? (added.value as number) : 0;
+    const plotId = useStore.getState().scopes.find((s) => s.id === scopeId)!.plots[0].id;
+    return { scopeId, plotId };
+  }
+
+  it('accepts the single trigger mode the dialog offers', () => {
+    const { scopeId } = addScope();
+    expect(run('scope.setTrigger', { scopeId, mode: 'single' }).ok).toBe(true);
+    expect(useStore.getState().scopes.find((s) => s.id === scopeId)!.trigger.mode).toBe('single');
+  });
+
+  it('sets the trigger source plot and holdoff', () => {
+    const { scopeId, plotId } = addScope();
+    expect(run('scope.setTrigger', { scopeId, sourcePlotId: plotId, holdoff: 4 }).ok).toBe(true);
+    const trigger = useStore.getState().scopes.find((s) => s.id === scopeId)!.trigger;
+    expect(trigger.sourcePlotId).toBe(plotId);
+    expect(trigger.holdoff).toBe(4);
+    expect(run('scope.setTrigger', { scopeId, sourcePlotId: null }).ok).toBe(true);
+    expect(useStore.getState().scopes.find((s) => s.id === scopeId)!.trigger.sourcePlotId).toBeNull();
+  });
+
+  it('refuses a colour that is neither hex nor null instead of clearing it', () => {
+    const { plotId } = addScope();
+    const bad = run('scope.setPlotColor', { plotId, color: 'red' });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.error).toBe('invalid-args');
+    expect(run('scope.setPlotColor', { plotId, color: '#ff0000' }).ok).toBe(true);
+    expect(
+      useStore.getState().scopes.flatMap((s) => s.plots).find((p) => p.id === plotId)!.colorOverride,
+    ).toBe('#ff0000');
+  });
+});
+
 describe('history source', () => {
   it('records an agent add as an agent entry', () => {
     run('element.add', addArgs(), 'agent');
