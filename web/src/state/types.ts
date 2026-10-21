@@ -8,6 +8,7 @@ import type {
 } from '../engine/scopeModel';
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { FloatRect } from '../ui/floatingScopes';
+import type { ScopeLayoutMode } from '../ui/scopeLayoutMode';
 import type { ScopeDropTarget } from './scopeLayout';
 import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
@@ -363,6 +364,12 @@ export interface AppState {
    *  floating scope dropped on the dock docks there. A no-op drop pushes no
    *  undo entry. */
   moveScope(id: number, target: ScopeDropTarget): void;
+  /** How the dock arranges its scope columns (strip, tabs, grid). Per-viewer
+   *  and session-only: persisted to localStorage by the setter, never in the
+   *  circuit file and never in the undo Snapshot. */
+  scopeLayout: ScopeLayoutMode;
+  /** Changes the dock layout and persists the choice. */
+  setScopeLayout(mode: ScopeLayoutMode): void;
   /** Puts a floating scope back in the dock. */
   dockScope(id: number): void;
   /** Moves or resizes a floating panel (already clamped by the caller). */

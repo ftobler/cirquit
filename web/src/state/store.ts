@@ -116,6 +116,7 @@ import {
 } from '../model/types';
 import type { AppState, ScrollValuePopover, Slider, Snapshot, ViewTransform } from './types';
 import { moveScopeTo } from './scopeLayout';
+import { loadScopeLayout, saveScopeLayout } from '../ui/scopeLayoutMode';
 import { APP_PREF_KEYS, loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
 import { loadStoredClipboard, saveStoredClipboard } from './clipboardStorage';
 import { loadScopeDefaults } from './scopeDefaults';
@@ -722,6 +723,7 @@ function createAppStore() {
   running: true,
   tool: null,
   dark: true,
+  scopeLayout: loadScopeLayout(),
   view: { x: 0, y: 0, scale: 1 },
   viewSize: { w: 800, h: 600 },
   centerRequest: 0,
@@ -806,6 +808,12 @@ function createAppStore() {
   setProblem: (problem) => set({ problem }),
   setNotice: (notice) => set({ notice }),
   setDark: (dark) => set({ dark }),
+  setScopeLayout: (mode) => {
+    // A per-viewer convenience like the strip height: persist it and move on.
+    // No undo entry, no engine revision, no change to the file.
+    saveScopeLayout(mode);
+    set({ scopeLayout: mode });
+  },
   openDialog: (dialog) => set({ dialog }),
   closeDialog: () => set({ dialog: null }),
   setMenubarOpen: (open) => set((s) => (s.menubarOpen === open ? s : { menubarOpen: open })),

@@ -169,6 +169,23 @@ The properties dialog shows one tab per scope sharing a column (`stackTabs`,
 text inputs. The Channels fieldset selects a trace; coupling and manual scale
 edits target it.
 
+## Dock layouts
+
+**Port extension, per viewer.** The Scopes menu offers three ways to arrange
+the docked columns: `strip` (the historical row), `tabs` (one column visible,
+a tab per column) and `grid` (columns wrap into rows). The choice lives under
+`scopeStrip.layout` (`web/src/ui/scopeLayoutMode.ts`) and in the store's
+`scopeLayout`, never on the `o` line or in the undo Snapshot, so a load or an
+undo cannot change it and a saved circuit repaints the same for every viewer.
+
+`ScopePanel` groups the docked scopes into columns with `scopeColumns` and
+renders one column per stacking position. Only the strip layout draws the
+column splitters and the edge-opens-a-column drop zones; tabs and grid pass
+`wrap` to `dropDecisionAt`, which stacks onto the column under the pointer
+(or the nearest one) because a wrapped column's edge does not name an
+insertion point. The tabs layout shows one column at a time and clamps its
+active index in `clampActiveTab`, since positions are renumbered by every move.
+
 ## Floating scopes
 
 **Owner decision 2026-10-02:** undocking a scope from the dock means an

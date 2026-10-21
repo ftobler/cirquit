@@ -28,6 +28,7 @@ import {
 import { DEFAULT_FLOAT_H, DEFAULT_FLOAT_W, FLOAT_TITLE_H, clampFloatRect } from './floatingScopes';
 import { columnWeights, dragSplitter } from './scopeColumns';
 import { dropDecisionAt, type ColumnBox, type DropDecision } from './scopeDrag';
+import { clampActiveTab } from './scopeLayoutMode';
 import { scopeDisplayName } from './scopePropsModel';
 
 interface Props {
@@ -199,6 +200,7 @@ const DRAG_THRESHOLD_PX = 4;
 export function ScopePanel({ engine }: Props) {
   const scopes = useStore((s) => s.scopes);
   const floating = useStore((s) => s.floating);
+  const scopeLayout = useStore((s) => s.scopeLayout);
   const elements = useStore((s) => s.elements);
   const scopeProperties = useStore((s) => s.scopeProperties);
   const closeScopeProperties = useStore((s) => s.closeScopeProperties);
@@ -211,6 +213,9 @@ export function ScopePanel({ engine }: Props) {
   const [storedWeights, setStoredWeights] = useState<{ key: string; weights: number[] } | null>(
     null,
   );
+  // Which column the tabs layout shows. Session-only, like the layout itself;
+  // the clamp below keeps it in range as columns come and go.
+  const [activeTab, setActiveTab] = useState(0);
   const scopesRef = useRef<HTMLDivElement>(null);
   const scopesWidth = useCallback(() => scopesRef.current?.clientWidth ?? 0, []);
   const [drag, setDrag] = useState<ScopeDrag | null>(null);
@@ -229,9 +234,13 @@ export function ScopePanel({ engine }: Props) {
       const el = pos === undefined ? undefined : columnEls.current.get(pos);
       if (!el) continue;
       const b = el.getBoundingClientRect();
-      boxes.push({ ids: col, left: b.left, right: b.right });
+      boxes.push({ ids: col, left: b.left, right: b.right, top: b.top, bottom: b.bottom });
     }
-    return dropDecisionAt(x, y, id, strip, boxes);
+    // The grid and tabs layouts wrap, so a column's left/right edge no longer
+    // means "open a column here": those layouts stack onto the column under
+    // the pointer instead.
+    const mode = useStore.getState().scopeLayout === 'strip' ? 'strip' : 'wrap';
+    return dropDecisionAt(x, y, id, strip, boxes, mode);
   }, []);
 
   /** Applies a drop. A dock decision moves (and docks) the scope; a float
@@ -387,6 +396,11 @@ export function ScopePanel({ engine }: Props) {
   const setWeights = (w: number[]) => setStoredWeights({ key: columnsKey, weights: w });
   dockedRef.current = docked;
   const stripBox = stripRef.current?.getBoundingClientRect();
+  // One list of scopes per column, in the dock's order. The tabs layout shows
+  // one of these at a time; the strip and grid show them all.
+  const columns = positions.map((pos) => docked.filter((x) => x.position === pos));
+  const active = clampActiveTab(activeTab, columns.length);
+  const shown = scopeLayout === 'tabs' ? columns.slice(active, active + 1) : columns;
 
   return (
     <>
@@ -399,34 +413,60 @@ export function ScopePanel({ engine }: Props) {
             onResize={resizeStrip}
             available={availableHeight}
           />
-          <div ref={scopesRef} className="scopes">
-            {positions.map((pos, i) => (
-              <Fragment key={pos}>
-                {i > 0 && (
-                  <ColumnSplitter
-                    index={i - 1}
-                    weights={weights}
-                    onChange={setWeights}
-                    totalWidth={scopesWidth}
-                  />
-                )}
-                <div
-                  ref={(el) => {
-                    if (el) columnEls.current.set(pos, el);
-                    else columnEls.current.delete(pos);
-                  }}
-                  className={
-                    drag?.decision.kind === 'dock' &&
-                    drag.decision.marker.type === 'column' &&
-                    drag.decision.marker.index === i
-                      ? 'scope-col drop-target'
-                      : 'scope-col'
-                  }
-                  style={{ flex: `${weights[i]} 1 0px` }}
-                >
-                  {docked
-                    .filter((x) => x.position === pos)
-                    .map((scope) => (
+          <div
+            ref={scopesRef}
+            className={scopeLayout === 'strip' ? 'scopes' : `scopes ${scopeLayout}`}
+          >
+            {scopeLayout === 'tabs' && columns.length > 1 && (
+              <div className="scope-dock-tabs" role="tablist" aria-label="Scope columns">
+                {columns.map((col, i) => (
+                  <button
+                    key={col[0].position}
+                    type="button"
+                    role="tab"
+                    aria-selected={i === active}
+                    className={i === active ? 'scope-dock-tab current' : 'scope-dock-tab'}
+                    onClick={() => setActiveTab(i)}
+                  >
+                    {scopeDisplayName(scopes, col[0])}
+                  </button>
+                ))}
+              </div>
+            )}
+            {shown.map((col, idx) => {
+              // The tabs layout renders one column; its real column index is
+              // `active`, so the drop marker and the element ref still name the
+              // right column.
+              const i = scopeLayout === 'tabs' ? active : idx;
+              const pos = col[0].position;
+              return (
+                <Fragment key={pos}>
+                  {scopeLayout === 'strip' && i > 0 && (
+                    <ColumnSplitter
+                      index={i - 1}
+                      weights={weights}
+                      onChange={setWeights}
+                      totalWidth={scopesWidth}
+                    />
+                  )}
+                  <div
+                    ref={(el) => {
+                      if (el) columnEls.current.set(pos, el);
+                      else columnEls.current.delete(pos);
+                    }}
+                    className={
+                      drag?.decision.kind === 'dock' &&
+                      drag.decision.marker.type === 'column' &&
+                      drag.decision.marker.index === i
+                        ? 'scope-col drop-target'
+                        : 'scope-col'
+                    }
+                    // The strip shares width by weight; the grid lets the
+                    // columns wrap at a minimum width, and tabs shows one full
+                    // width column. Those two get no inline flex.
+                    style={scopeLayout === 'strip' ? { flex: `${weights[i]} 1 0px` } : undefined}
+                  >
+                    {col.map((scope) => (
                       <ScopeTraceCanvas
                         key={scope.id}
                         engine={engine}
@@ -434,9 +474,10 @@ export function ScopePanel({ engine }: Props) {
                         onGrip={startGripDrag}
                       />
                     ))}
-                </div>
-              </Fragment>
-            ))}
+                  </div>
+                </Fragment>
+              );
+            })}
           </div>
           <SimInfoPanel engine={engine} />
           {drag?.decision.kind === 'dock' && drag.decision.marker.type === 'gap' && stripBox && (
