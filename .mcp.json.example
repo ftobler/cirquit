@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cirquit": {
+      "command": "node",
+      "args": ["web/dist-mcp/cirquit-mcp.mjs"]
+    }
+  }
+}

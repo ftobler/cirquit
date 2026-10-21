@@ -14,6 +14,7 @@
 # node
 node_modules
 /web/dist/
+/web/dist-mcp/
 *.tsbuildinfo
 
 # editors / os
@@ -21,6 +22,9 @@ node_modules
 .idea/
 .vscode/
 *.log
+
+# a local MCP host config is personal; only the example is committed
+/.mcp.json
 
 # AI Agent scratchpad & project temp space
 .tmp/

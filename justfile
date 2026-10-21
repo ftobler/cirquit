@@ -37,9 +37,17 @@ wasm-dev:
 dev:
     cd web && npm run dev
 
-# Production build of the static site into web/dist.
-build: wasm
+# Production build of the static site into web/dist, plus the MCP artifact.
+build: wasm mcp-build
     cd web && npm run build
+
+# Build the headless MCP server artifact into web/dist-mcp (needs the wasm engine).
+mcp-build: wasm
+    cd web && npm run build:mcp
+
+# Run the built headless MCP server on stdio (build it first with mcp-build).
+mcp:
+    node web/dist-mcp/cirquit-mcp.mjs
 
 # Serve the production build locally.
 preview: build

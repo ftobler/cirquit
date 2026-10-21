@@ -56,6 +56,11 @@ related code with **Diverges from upstream** where it applies.
   a browser popup window.
 - **Voltmeter** (2026-10-02): keep file parity, but click-place vertically
   with + on top and mark the positive lead.
+- **MCP server** (2026-10-21): a headless stdio MCP server ships from the repo
+  in `web/mcp/`, sharing the web tsconfig, Vite and the relative-import style.
+  `@modelcontextprotocol/sdk` is a devDependency and must never reach the site
+  bundle. Tools take and return netlist text; the server has no filesystem
+  access, and the agent's own file tools read and write files.
 
 ## Open owner calls
 

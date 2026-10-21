@@ -17,6 +17,7 @@ go deeper on one area each.
 | [scope.md](scope.md)               | Scope capture, the `o` line, scope drawing and windows.                |
 | [editor.md](editor.md)             | Store, undo, gestures, placement, splitting, transforms.               |
 | [commands.md](commands.md)         | The command registry: the public mutation API and its doors.           |
+| [mcp.md](mcp.md)                   | The headless MCP server: tools, resources, step budget, no-FS policy.  |
 | [keyboard.md](keyboard.md)         | Shortcut matching, assignable keys, precedence.                        |
 | [rendering.md](rendering.md)       | Canvas drawing conventions, symbols, dots and overlays.                |
 | [ui.md](ui.md)                     | React UI, dialogs, menus, preferences, docs pages, deployment.         |

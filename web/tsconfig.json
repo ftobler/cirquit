@@ -19,5 +19,5 @@
     "skipLibCheck": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "test", "vite.config.ts", "eslint.config.js"]
+  "include": ["src", "test", "mcp", "vite.config.ts", "vite.mcp.config.ts", "eslint.config.js"]
 }
