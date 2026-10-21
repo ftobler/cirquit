@@ -4,7 +4,16 @@ import { parseCircuit } from '../io/netlist';
 import { postPatch } from '../render/geometry';
 import { DEFAULT_SETTINGS } from '../model/types';
 import { hasUnsavedChanges, useStore } from './store';
-import { addCapacitor, addResistor, fresh } from './store.test-helpers';
+import {
+  addCapacitor,
+  addResistor,
+  fresh,
+  undoDepth,
+  redoDepth,
+  undoEntry,
+  redoEntry,
+  commit,
+} from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
 
@@ -21,7 +30,7 @@ describe('app preferences survive undo and redo', () => {
     // restore must hand today's values back instead of the snapshot's.
     expect(s.settings.decimalDigits).toBe(5);
     expect(s.settings.wheelSensitivity).toBe(3);
-    expect(s.undoStack).toHaveLength(0);
+    expect(undoDepth(s)).toBe(0);
     void id;
   });
 
@@ -73,8 +82,8 @@ describe('ctrl-drag post movement undo', () => {
   it('collapses a multi-move post drag into one undo step', () => {
     const id = addResistor();
     const original = useStore.getState().elements[0];
-    const commitsBefore = useStore.getState().undoStack.length;
-    useStore.getState().commit();
+    const commitsBefore = undoDepth(useStore.getState());
+    commit();
     // Simulate pointer-move events for the dragged post.
     for (const [x, y] of [
       [16, 0],
@@ -90,15 +99,15 @@ describe('ctrl-drag post movement undo', () => {
     expect(dragged.y1).toBe(original.y1);
     // updateElement never pushes undo entries, so the single commit is the
     // whole drag: one undo restores the original geometry.
-    expect(useStore.getState().undoStack.length).toBe(commitsBefore + 1);
+    expect(undoDepth(useStore.getState())).toBe(commitsBefore + 1);
     useStore.getState().undo();
     expect(useStore.getState().elements[0]).toEqual(original);
   });
 
-  it('undo restores the dragged element\'s endpoints', () => {
+  it("undo restores the dragged element's endpoints", () => {
     const id = addResistor();
     const original = useStore.getState().elements[0];
-    useStore.getState().commit();
+    commit();
     // updateElement never pushes undo entries, so the single commit is the
     // whole drag: one undo restores the original geometry.
     useStore.getState().updateElement(id, postPatch(2, 0, 0));
@@ -122,8 +131,8 @@ describe('ctrl-drag post movement undo', () => {
       params: {},
     });
     const original = useStore.getState().elements[0];
-    const commitsBefore = useStore.getState().undoStack.length;
-    useStore.getState().commit();
+    const commitsBefore = undoDepth(useStore.getState());
+    commit();
     for (const [x, y] of [
       [48, 16],
       [64, 48],
@@ -135,7 +144,7 @@ describe('ctrl-drag post movement undo', () => {
     expect(dragged.y2).toBe(48);
     expect(dragged.x1).toBe(original.x1);
     expect(dragged.y1).toBe(original.y1);
-    expect(useStore.getState().undoStack.length).toBe(commitsBefore + 1);
+    expect(undoDepth(useStore.getState())).toBe(commitsBefore + 1);
     useStore.getState().undo();
     expect(useStore.getState().elements[0]).toEqual(original);
   });
@@ -153,7 +162,7 @@ describe('scope raw snapshot isolation', () => {
     useStore.getState().loadNetlist(NETLIST);
     const scope = useStore.getState().scopes[0];
     const original = [...scope.raw!];
-    useStore.getState().commit();
+    commit();
     // The hypothetical future mutator writes raw in place, so the snapshot's
     // clone must not share the array.
     scope.raw!.push('extra');
@@ -274,12 +283,12 @@ describe('scope family undo-restore', () => {
 
   it('setScopeSpeed commits itself; undo restores the pre-set speed', () => {
     const { scopeId, pre } = fastPath();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
     expect(useStore.getState().scopes[0].speed).toBe(64);
 
     useStore.getState().setScopeSpeed(scopeId, 128);
     expect(useStore.getState().scopes[0].speed).toBe(128);
-    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(useStore.getState())).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
@@ -290,7 +299,7 @@ describe('scope family undo-restore', () => {
 
   it('setScopeTrigger commits itself; undo restores the pre-set trigger', () => {
     const { scopeId, pre } = fastPath();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().setScopeTrigger(scopeId, { mode: 'normal', edge: 'falling', level: 2.5 });
     expect(useStore.getState().scopes[0].trigger).toEqual({
@@ -298,7 +307,7 @@ describe('scope family undo-restore', () => {
       edge: 'falling',
       level: 2.5,
     });
-    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(useStore.getState())).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
@@ -313,7 +322,7 @@ describe('scope family undo-restore', () => {
 
   it('setScopeFlags commits itself; undo restores the pre-set flags', () => {
     const { scopeId, pre } = fastPath();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().setScopeFlags(scopeId, {
       label: 'Renamed',
@@ -324,7 +333,7 @@ describe('scope family undo-restore', () => {
     expect(after.scopes[0].label).toBe('Renamed');
     expect(after.scopes[0].manualScale).toBe(true);
     expect(after.scopes[0].showMax).toBe(false);
-    expect(after.undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(after)).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
@@ -335,11 +344,11 @@ describe('scope family undo-restore', () => {
 
   it('setPlotCoupling commits itself; undo restores the pre-set coupling', () => {
     const { scopeId, plotId, pre } = fastPath();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().setPlotCoupling(scopeId, plotId, true);
     expect(useStore.getState().scopes[0].plots[0].acCoupled).toBe(true);
-    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(useStore.getState())).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
@@ -350,11 +359,11 @@ describe('scope family undo-restore', () => {
 
   it('setPlotManScale commits itself; undo restores the pre-set man scale', () => {
     const { plotId, pre } = fastPath();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().setPlotManScale(plotId, 2);
     expect(useStore.getState().scopes[0].plots[0].manScale).toBe(2);
-    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(useStore.getState())).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
@@ -365,11 +374,11 @@ describe('scope family undo-restore', () => {
 
   it('setPlotManPosition commits itself; undo restores the pre-set position', () => {
     const { plotId, pre } = fastPath();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().setPlotManPosition(plotId, 100);
     expect(useStore.getState().scopes[0].plots[0].manVPosition).toBe(100);
-    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(useStore.getState())).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
@@ -380,14 +389,14 @@ describe('scope family undo-restore', () => {
 
   it('setScopeShowValue commits itself; undo restores the hidden flag', () => {
     const { scopeId, pre } = fastPath();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
     expect(useStore.getState().scopes[0].showV).toBe(true);
 
     // Unchecking Show Voltage in the properties dialog is an ordinary
     // property edit and must be its own undo step, like every sibling setter.
     useStore.getState().setScopeShowValue(scopeId, 'voltage', false);
     expect(useStore.getState().scopes[0].showV).toBe(false);
-    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(useStore.getState())).toBe(baseline + 1);
 
     useStore.getState().undo();
     expect(useStore.getState().scopes).toEqual(pre);
@@ -402,7 +411,7 @@ describe('scope family undo-restore', () => {
     // The stripped panel is the snapshot the setter must commit itself; no
     // explicit commit between here and the call under test.
     const pre = useStore.getState().scopes;
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
     expect(useStore.getState().scopes[0].plots.map((p) => p.value)).toEqual(['voltage']);
 
     // Re-checking Show Current has no plot to reveal, so the branch adds one:
@@ -411,21 +420,18 @@ describe('scope family undo-restore', () => {
     const after = useStore.getState();
     expect(after.scopes[0].showI).toBe(true);
     expect(after.scopes[0].plots.map((p) => p.value)).toEqual(['voltage', 'current']);
-    expect(after.undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(after)).toBe(baseline + 1);
 
     after.undo();
     expect(useStore.getState().scopes).toEqual(pre);
 
     useStore.getState().redo();
-    expect(useStore.getState().scopes[0].plots.map((p) => p.value)).toEqual([
-      'voltage',
-      'current',
-    ]);
+    expect(useStore.getState().scopes[0].plots.map((p) => p.value)).toEqual(['voltage', 'current']);
   });
 
   it('a no-op setter call commits nothing', () => {
     const { scopeId, plotId } = fastPath();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     // Every value below already equals the scope's state, so each setter must
     // bail before its commit: a drag frame or wheel tick that changes nothing
@@ -439,7 +445,7 @@ describe('scope family undo-restore', () => {
     useStore.getState().setScopeShowValue(scopeId, 'voltage', true);
     useStore.getState().setScopeShowValue(scopeId, 'current', true);
 
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
   });
 });
 
@@ -467,7 +473,7 @@ describe('caller-bracketed undo: setText, setModelName', () => {
       text: 'old',
     });
     // The caller's beginEdit, the dialog field's onFocus.
-    useStore.getState().commit();
+    commit();
     const pre = useStore.getState().elements.find((e) => e.id === id);
 
     useStore.getState().setText(id, 'new text');
@@ -488,7 +494,7 @@ describe('caller-bracketed undo: setText, setModelName', () => {
       params: {},
       text: 'A',
     });
-    useStore.getState().commit();
+    commit();
     const pre = useStore.getState().elements.find((e) => e.id === id);
     const preRevision = useStore.getState().revision;
 
@@ -510,7 +516,7 @@ describe('caller-bracketed undo: setText, setModelName', () => {
     const [loaded] = parseCircuit('d 176 80 384 80 2 1N4148').elements;
     useStore.getState().addElement(loaded);
     const id = useStore.getState().elements[0].id;
-    useStore.getState().commit();
+    commit();
     const pre = useStore.getState().elements[0];
     expect(pre.modelName).toBe('1N4148');
 
@@ -586,9 +592,9 @@ describe('file-load undo: the store action takes the baseline', () => {
     // The file input commits nothing on focus, so starting the async load
     // leaves the stack alone. While the decode is in flight the user edits
     // the resistor; that field's onFocus commit is the pre-edit baseline.
-    const commitsBefore = useStore.getState().undoStack.length;
-    useStore.getState().commit();
-    expect(useStore.getState().undoStack.length).toBe(commitsBefore + 1);
+    const commitsBefore = undoDepth(useStore.getState());
+    commit();
+    expect(undoDepth(useStore.getState())).toBe(commitsBefore + 1);
     useStore.getState().setParam(rid, 'resistance', 2200);
     expect(useStore.getState().elements.find((e) => e.id === rid)?.params.resistance).toBe(2200);
 
@@ -611,7 +617,7 @@ describe('file-load undo: the store action takes the baseline', () => {
 
   it('a failed decode leaves no spurious undo entry', () => {
     const id = useStore.getState().addElement(DATA_INPUT);
-    const commitsBefore = useStore.getState().undoStack.length;
+    const commitsBefore = undoDepth(useStore.getState());
     const pre = useStore.getState().elements.find((e) => e.id === id);
 
     // The failure happens entirely in the caller (OptionsPanel loadFileInto):
@@ -619,7 +625,7 @@ describe('file-load undo: the store action takes the baseline', () => {
     // never invokes loadDataFile/loadAudioFile. Because the baseline lives in
     // the store action and not on the file input's onFocus, an aborted load
     // pushes nothing: the stack is exactly where addElement left it.
-    expect(useStore.getState().undoStack.length).toBe(commitsBefore);
+    expect(undoDepth(useStore.getState())).toBe(commitsBefore);
     expect(useStore.getState().elements.find((e) => e.id === id)).toEqual(pre);
 
     // One undo still steps straight back over addElement, not over a phantom
@@ -650,17 +656,17 @@ describe('unblowFuses is a run-mode reset, not an undoable edit', () => {
       flags: 0,
       params: { resistance: 0.0613, i2t: 6.73 },
     });
-    useStore.getState().commit();
+    commit();
     useStore.getState().setElementState(fuseId, 1);
     expect(useStore.getState().elements.find((e) => e.id === fuseId)?.state).toBe(1);
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().unblowFuses();
     const after = useStore.getState();
     expect(after.elements.find((e) => e.id === fuseId)?.state).toBe(0);
     expect(after.pendingStates.has(fuseId)).toBe(false);
     // No commit anywhere on the Reset path, so the stack does not grow.
-    expect(after.undoStack.length).toBe(baseline);
+    expect(undoDepth(after)).toBe(baseline);
 
     // Undo restores the last committed snapshot (the intact fuse); the
     // transient blown state was never committed, so it is unreachable. The
@@ -682,14 +688,14 @@ describe('revertToBaseline: the collapse guards revert', () => {
   it('restores the baseline and stages no redo future', () => {
     const id = addResistor();
     const original = useStore.getState().elements[0];
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(id, { x2: 0, y2: 0 }); // the refused collapse
     expect(useStore.getState().elements[0].x2).toBe(0);
 
     useStore.getState().revertToBaseline();
 
     expect(useStore.getState().elements[0]).toEqual(original);
-    expect(useStore.getState().redoStack).toEqual([]);
+    expect(redoDepth(useStore.getState())).toBe(0);
 
     // Ctrl+Y after the refusal brings nothing back.
     useStore.getState().redo();
@@ -702,7 +708,7 @@ describe('revertToBaseline: the collapse guards revert', () => {
     useStore.getState().revertToBaseline();
 
     expect(useStore.getState().elements).toEqual([]);
-    expect(useStore.getState().redoStack).toEqual([]);
+    expect(redoDepth(useStore.getState())).toBe(0);
   });
 });
 
@@ -754,14 +760,14 @@ describe('run-mode mutations kill the stale redo future', () => {
 
   it('a keyboard throw truncates the future, so a later redo cannot rewind it', () => {
     const id = addKeyedSwitch();
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(id, { x2: 320 });
     useStore.getState().undo();
-    expect(useStore.getState().redoStack.length).toBe(1);
+    expect(redoDepth(useStore.getState())).toBe(1);
 
     expect(useStore.getState().toggleSwitchByKey('k')).toBe(true);
     expect(useStore.getState().elements[0].state).toBe(1);
-    expect(useStore.getState().redoStack).toEqual([]);
+    expect(redoDepth(useStore.getState())).toBe(0);
 
     // The rewound throw must not come back on Ctrl+Shift+Z.
     useStore.getState().redo();
@@ -770,19 +776,19 @@ describe('run-mode mutations kill the stale redo future', () => {
 
   it('unblowFuses truncates the future without taking an undo entry', () => {
     const id = addFuse();
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(id, { x2: 320 });
     useStore.getState().undo();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
     useStore.getState().setElementState(id, 1);
     expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(1);
-    expect(useStore.getState().redoStack.length).toBe(1);
+    expect(redoDepth(useStore.getState())).toBe(1);
 
     useStore.getState().unblowFuses();
     expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(0);
-    expect(useStore.getState().redoStack).toEqual([]);
+    expect(redoDepth(useStore.getState())).toBe(0);
     // Still a run-mode reset: the undo past is untouched.
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
 
     useStore.getState().redo();
     expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(0);
@@ -793,16 +799,16 @@ describe('run-mode mutations kill the stale redo future', () => {
     // future left standing would rewind it silently along with everything
     // else on Ctrl+Shift+Z.
     const id = addKeyedSwitch();
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(id, { x2: 320 });
     useStore.getState().undo();
-    expect(useStore.getState().redoStack.length).toBe(1);
-    const baseline = useStore.getState().undoStack.length;
+    expect(redoDepth(useStore.getState())).toBe(1);
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().setKeyShortcut(id, 'j');
     expect(useStore.getState().elements.find((e) => e.id === id)?.keyShortcut).toBe('j');
-    expect(useStore.getState().redoStack).toEqual([]);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(redoDepth(useStore.getState())).toBe(0);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
 
     // The rewound assignment must not come back on Ctrl+Shift+Z.
     useStore.getState().redo();
@@ -813,29 +819,29 @@ describe('run-mode mutations kill the stale redo future', () => {
     // A no-op write must not kill a redo future behind it, matching the
     // no-op guards the other entry-free mutations carry.
     const id = addKeyedSwitch(); // already 'k'
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(id, { x2: 320 });
     useStore.getState().undo();
-    expect(useStore.getState().redoStack.length).toBe(1);
+    expect(redoDepth(useStore.getState())).toBe(1);
 
     useStore.getState().setKeyShortcut(id, 'K'); // normalises to the stored k
 
     expect(useStore.getState().elements.find((e) => e.id === id)?.keyShortcut).toBe('k');
-    expect(useStore.getState().redoStack.length).toBe(1);
+    expect(redoDepth(useStore.getState())).toBe(1);
   });
 
   it('updateSettings kills the future but stays entry-free', () => {
     const id = addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().setParam(id, 'resistance', 2200);
     useStore.getState().undo();
-    expect(useStore.getState().redoStack.length).toBe(1);
-    const baseline = useStore.getState().undoStack.length;
+    expect(redoDepth(useStore.getState())).toBe(1);
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().updateSettings({ voltageRange: 5 });
     expect(useStore.getState().settings.voltageRange).toBe(5);
-    expect(useStore.getState().redoStack).toEqual([]);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(redoDepth(useStore.getState())).toBe(0);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
 
     // The no-op redo leaves both the settings write and the undone edit alone.
     useStore.getState().redo();
@@ -845,29 +851,29 @@ describe('run-mode mutations kill the stale redo future', () => {
 
   it('a momentary key release kills the future like its keydown did', () => {
     const id = addKeyedMomentary();
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(id, { x2: 320 });
     useStore.getState().undo();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     // Keydown throws entry-free and truncates, exactly like the plain switch
     // test above.
     expect(useStore.getState().toggleSwitchByKey('m')).toBe(true);
     expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(0);
-    expect(useStore.getState().redoStack).toEqual([]);
+    expect(redoDepth(useStore.getState())).toBe(0);
 
     // An undo landing while the key is still down stages a fresh future over
     // which the keyup's release would otherwise ride free.
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(id, { x2: 480 });
     useStore.getState().undo();
-    expect(useStore.getState().redoStack.length).toBe(1);
+    expect(redoDepth(useStore.getState())).toBe(1);
 
     useStore.getState().releaseMomentaryByKey('m');
     expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(1);
-    expect(useStore.getState().redoStack).toEqual([]);
+    expect(redoDepth(useStore.getState())).toBe(0);
     // Both halves stay run-mode actions: no entry anywhere.
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
     useStore.getState().redo();
     expect(useStore.getState().elements.find((e) => e.id === id)?.state).toBe(1);
   });
@@ -1046,10 +1052,10 @@ r 176 96 384 96 0 1000
 describe('redo machinery', () => {
   it('a new edit after an undo clears the redo stack', () => {
     addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().undo();
     addResistor();
-    expect(useStore.getState().redoStack).toEqual([]);
+    expect(redoDepth(useStore.getState())).toBe(0);
   });
 
   it('a dedup commit (snapshot equal to the current state) clears the redo stack', () => {
@@ -1057,12 +1063,12 @@ describe('redo machinery', () => {
     // undo stack again, so this commit hits commit's dedup branch
     // (store.ts:588) while the redo stack is still populated.
     addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().undo();
     useStore.getState().undo();
     useStore.getState().redo();
-    useStore.getState().commit();
-    expect(useStore.getState().redoStack).toEqual([]);
+    commit();
+    expect(redoDepth(useStore.getState())).toBe(0);
   });
 
   it('redo on an empty stack is a safe no-op', () => {
@@ -1083,7 +1089,7 @@ describe('redo machinery', () => {
 
   it('undo bumps the revision', () => {
     addResistor();
-    useStore.getState().commit();
+    commit();
     const before = useStore.getState().revision;
     useStore.getState().undo();
     expect(useStore.getState().revision).toBeGreaterThan(before);
@@ -1091,7 +1097,7 @@ describe('redo machinery', () => {
 
   it('redo bumps the revision', () => {
     addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().undo();
     const before = useStore.getState().revision;
     useStore.getState().redo();
@@ -1100,7 +1106,7 @@ describe('redo machinery', () => {
 
   it('undo clears the selection', () => {
     const id = addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().select([id]);
     useStore.getState().undo();
     expect(useStore.getState().selectedIds).toEqual([]);
@@ -1108,7 +1114,7 @@ describe('redo machinery', () => {
 
   it('redo clears the selection', () => {
     const id = addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().select([id]);
     useStore.getState().undo();
     useStore.getState().select([id]);
@@ -1118,11 +1124,11 @@ describe('redo machinery', () => {
 
   it('newCircuit wipes the undo and redo stacks', () => {
     addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().undo();
     useStore.getState().newCircuit();
-    expect(useStore.getState().undoStack).toHaveLength(0);
-    expect(useStore.getState().redoStack).toHaveLength(0);
+    expect(undoDepth(useStore.getState())).toBe(0);
+    expect(redoDepth(useStore.getState())).toBe(0);
   });
 });
 
@@ -1132,15 +1138,15 @@ describe('commit fingerprint cache', () => {
     const stringify = vi.spyOn(JSON, 'stringify');
     try {
       // The baseline push stringifies the live state once to fingerprint it.
-      useStore.getState().commit();
-      const afterBaseline = useStore.getState().undoStack.length;
+      commit();
+      const afterBaseline = undoDepth(useStore.getState());
       // A second commit with nothing changed must compare against the top
       // through the push-time cache: one further stringify (the live state),
       // never two. On SRAM/ROM sheets each avoided pass is about a megabyte
       // of flat addrN/valN keys.
-      useStore.getState().commit();
+      commit();
       expect(stringify).toHaveBeenCalledTimes(2);
-      expect(useStore.getState().undoStack).toHaveLength(afterBaseline);
+      expect(undoDepth(useStore.getState())).toBe(afterBaseline);
     } finally {
       stringify.mockRestore();
     }
@@ -1151,19 +1157,19 @@ describe('commit fingerprint cache', () => {
     // computed key; the first later comparison must fingerprint them by
     // content, so an equal state still dedups byte-identically.
     addResistor();
-    useStore.getState().commit();
-    const commitsAfterAdd = useStore.getState().undoStack.length;
+    commit();
+    const commitsAfterAdd = undoDepth(useStore.getState());
     useStore.getState().undo();
     useStore.getState().redo();
-    useStore.getState().commit();
-    expect(useStore.getState().undoStack).toHaveLength(commitsAfterAdd);
+    commit();
+    expect(undoDepth(useStore.getState())).toBe(commitsAfterAdd);
   });
 });
 
 describe('stale transient state', () => {
   it('undo clears the hover like loadNetlist does', () => {
     const id = addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().setHovered(id);
     useStore.getState().undo();
     expect(useStore.getState().hoveredId).toBeNull();
@@ -1171,7 +1177,7 @@ describe('stale transient state', () => {
 
   it('redo clears the hover too', () => {
     const id = addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().undo();
     useStore.getState().setHovered(id);
     useStore.getState().redo();
@@ -1193,9 +1199,9 @@ describe('the revert epoch', () => {
 
   it('successive undos keep climbing, never rewound by the restored snapshot', () => {
     addResistor();
-    useStore.getState().commit();
+    commit();
     addCapacitor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().undo();
     const first = useStore.getState().revertEpoch;
     useStore.getState().undo();
@@ -1204,17 +1210,17 @@ describe('the revert epoch', () => {
 
   it('the revert epoch does not ride undo snapshots', () => {
     addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().undo();
     // The counter lives outside Snapshot on purpose: undo's {...prev} spread
     // must never carry an old value back over the fresh bump.
-    expect('revertEpoch' in useStore.getState().undoStack[0]).toBe(false);
-    expect('revertEpoch' in useStore.getState().redoStack[0]).toBe(false);
+    expect('revertEpoch' in undoEntry(useStore.getState(), 0).snap).toBe(false);
+    expect('revertEpoch' in redoEntry(useStore.getState(), 0).snap).toBe(false);
   });
 
   it('a revertToBaseline collapse guard bumps it through undo', () => {
     const id = addResistor();
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(id, { x2: 0, y2: 0 }); // the refused collapse
     const before = useStore.getState().revertEpoch;
     useStore.getState().revertToBaseline();
@@ -1245,10 +1251,294 @@ describe('the revert epoch', () => {
 
   it('an ordinary parameter edit never bumps it', () => {
     const id = addResistor();
-    useStore.getState().commit();
+    commit();
     const before = useStore.getState().revertEpoch;
     useStore.getState().updateElement(id, { params: { resistance: 470 } });
-    useStore.getState().commit();
+    commit();
     expect(useStore.getState().revertEpoch).toBe(before);
+  });
+});
+
+describe('transactions', () => {
+  it('a throwing transact closes and leaves no entry, and the next action is normal', () => {
+    addResistor();
+    const before = undoDepth(useStore.getState());
+
+    expect(() =>
+      useStore.getState().transact('Broken', () => {
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+
+    const s = useStore.getState();
+    expect(s.history.open).toBeNull();
+    expect(undoDepth(s)).toBe(before);
+    // The next real action opens and closes its own transaction normally.
+    addCapacitor();
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
+  });
+
+  it('undo during an open gesture aborts it and the next edit gets its own entry', () => {
+    const id = addResistor();
+    const beforeGesture = undoDepth(useStore.getState());
+    useStore.getState().beginTransaction('Move');
+    useStore.getState().moveElements([id], 16, 0);
+    expect(undoDepth(useStore.getState())).toBe(beforeGesture + 1);
+
+    useStore.getState().undo();
+    expect(useStore.getState().history.open).toBeNull();
+    const afterUndo = undoDepth(useStore.getState());
+    // The gesture baseline is the pre-move state, so the undo reverts the
+    // move rather than the placement.
+    expect(useStore.getState().elements[0].x1).toBe(0);
+
+    useStore.getState().selectAll();
+    useStore.getState().rotateSelection();
+    expect(undoDepth(useStore.getState())).toBe(afterUndo + 1);
+  });
+});
+
+describe('multi-step actions land as one labelled entry', () => {
+  const lastLabel = () => {
+    const s = useStore.getState();
+    return s.history.undo[s.history.undo.length - 1]?.label;
+  };
+
+  it('paste is one Paste entry', () => {
+    const id = addResistor();
+    useStore.getState().select([id]);
+    useStore.getState().copySelection();
+    const before = undoDepth(useStore.getState());
+
+    useStore.getState().pasteFromClipboard();
+
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
+    expect(lastLabel()).toBe('Paste');
+  });
+
+  it('duplicate is one Duplicate entry', () => {
+    const id = addResistor();
+    useStore.getState().select([id]);
+    const before = undoDepth(useStore.getState());
+
+    useStore.getState().duplicateSelection();
+
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
+    expect(lastLabel()).toBe('Duplicate');
+  });
+
+  it('cut is one Cut entry covering the copy and the delete', () => {
+    const id = addResistor();
+    useStore.getState().select([id]);
+    const before = undoDepth(useStore.getState());
+
+    useStore.getState().cutSelection();
+
+    expect(useStore.getState().elements).toHaveLength(0);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
+    expect(lastLabel()).toBe('Cut');
+    useStore.getState().undo();
+    expect(useStore.getState().elements).toHaveLength(1);
+  });
+
+  it('delete is one Delete entry', () => {
+    const id = addResistor();
+    useStore.getState().select([id]);
+    const before = undoDepth(useStore.getState());
+
+    useStore.getState().deleteSelected();
+
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
+    expect(lastLabel()).toBe('Delete');
+  });
+
+  it('createTest is one Create Test Harness entry', () => {
+    const chip = useStore.getState().addElement({
+      kind: 'dFlipFlop',
+      x1: 0,
+      y1: 0,
+      x2: 96,
+      y2: 0,
+      flags: 0,
+      params: { highVoltage: 5 },
+    });
+    useStore.getState().select([chip]);
+    const before = undoDepth(useStore.getState());
+
+    expect(useStore.getState().createTest()).toBe(true);
+
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
+    expect(lastLabel()).toBe('Create Test Harness');
+  });
+
+  it('combineAllScopes is one Combine All Scopes entry', () => {
+    const a = addResistor();
+    const b = addCapacitor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    const before = undoDepth(useStore.getState());
+
+    useStore.getState().combineAllScopes();
+
+    expect(useStore.getState().scopes).toHaveLength(1);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
+    expect(lastLabel()).toBe('Combine All Scopes');
+  });
+
+  it('stackAllScopes is one Stack All Scopes entry', () => {
+    const a = addResistor();
+    const b = addCapacitor();
+    useStore.getState().addScope(a, 'voltage');
+    useStore.getState().addScope(b, 'voltage');
+    const before = undoDepth(useStore.getState());
+
+    useStore.getState().stackAllScopes();
+
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
+    expect(lastLabel()).toBe('Stack All Scopes');
+  });
+
+  it('an L-shaped wire run is one Add Wire entry, splits included', () => {
+    const before = undoDepth(useStore.getState());
+
+    const ids = useStore.getState().addWires([
+      { x1: 0, y1: 0, x2: 160, y2: 0 },
+      { x1: 160, y1: 0, x2: 160, y2: 160 },
+    ]);
+
+    expect(ids.length).toBeGreaterThan(0);
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
+    expect(lastLabel()).toBe('Add Wire');
+    useStore.getState().undo();
+    expect(useStore.getState().elements).toHaveLength(0);
+  });
+
+  it('convertWiresToRouted is one Convert Wires to Routed Wires entry', () => {
+    const addWire = (x1: number, y1: number, x2: number, y2: number) =>
+      useStore.getState().addElement({ kind: 'wire', x1, y1, x2, y2, flags: 0, params: {} });
+    const a = addWire(0, 0, 160, 0);
+    const b = addWire(160, 0, 320, 0);
+    useStore.getState().select([a, b]);
+    const before = undoDepth(useStore.getState());
+
+    useStore.getState().convertWiresToRouted();
+
+    expect(undoDepth(useStore.getState())).toBe(before + 1);
+    expect(lastLabel()).toBe('Convert Wires to Routed Wires');
+  });
+});
+
+describe('applyRevert: one teardown for every restore', () => {
+  const prepare = () => {
+    const a = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    const elementId = addCapacitor();
+    return { elementId, scopeId };
+  };
+
+  const dirt = (elementId: number, scopeId: number) => {
+    useStore.setState({
+      selectedIds: [elementId],
+      hoveredId: elementId,
+      scopeProperties: scopeId,
+      deviceModelEditor: { family: 'diode', initial: { name: 'x' } as never },
+      scrollValuePopover: { session: {} as never, name: 'Resistance', x: 0, y: 0 },
+      sliderElementId: elementId,
+      contextMenu: {
+        x: 0,
+        y: 0,
+        target: elementId,
+        circuit: { x: 0, y: 0 },
+        focusSearch: false,
+      },
+      dialog: 'about',
+      elementProperties: elementId,
+      elementGesture: { kind: 'move', placeTurns: 0 },
+    });
+  };
+
+  const expectClean = (scope: number | null) => {
+    const s = useStore.getState();
+    expect(s.selectedIds).toEqual([]);
+    expect(s.hoveredId).toBeNull();
+    expect(s.scopeProperties).toBe(scope);
+    expect(s.deviceModelEditor).toBeNull();
+    expect(s.scrollValuePopover).toBeNull();
+    expect(s.sliderElementId).toBeNull();
+    expect(s.contextMenu).toBeNull();
+    expect(s.dialog).toBeNull();
+    expect(s.elementProperties).toBeNull();
+    expect(s.elementGesture).toBeNull();
+  };
+
+  it('undo clears every transient pointer and keeps a surviving scope dialog', () => {
+    const { elementId, scopeId } = prepare();
+    dirt(elementId, scopeId);
+    const epoch = useStore.getState().revertEpoch;
+
+    useStore.getState().undo();
+
+    expectClean(scopeId);
+    expect(useStore.getState().revertEpoch).toBe(epoch + 1);
+  });
+
+  it('redo clears every transient pointer and keeps a surviving scope dialog', () => {
+    const { elementId, scopeId } = prepare();
+    useStore.getState().undo();
+    dirt(elementId, scopeId);
+    const epoch = useStore.getState().revertEpoch;
+
+    useStore.getState().redo();
+
+    expectClean(scopeId);
+    expect(useStore.getState().revertEpoch).toBe(epoch + 1);
+  });
+
+  it('loadNetlist clears every transient pointer and drops a scope the new file lacks', () => {
+    const { elementId, scopeId } = prepare();
+    dirt(elementId, scopeId);
+    const epoch = useStore.getState().revertEpoch;
+
+    useStore.getState().loadNetlist('$ 1 0.000005 10 50 5\nr 0 0 160 0 0 100\n');
+
+    expectClean(null);
+    expect(useStore.getState().revertEpoch).toBe(epoch + 1);
+  });
+
+  it('newCircuit clears every transient pointer', () => {
+    const { elementId, scopeId } = prepare();
+    dirt(elementId, scopeId);
+    const epoch = useStore.getState().revertEpoch;
+
+    useStore.getState().newCircuit();
+
+    expectClean(null);
+    expect(useStore.getState().revertEpoch).toBe(epoch + 1);
+  });
+
+  it('revertToBaseline clears every transient pointer and keeps a surviving scope dialog', () => {
+    const { elementId, scopeId } = prepare();
+    dirt(elementId, scopeId);
+    const epoch = useStore.getState().revertEpoch;
+
+    useStore.getState().revertToBaseline();
+
+    expectClean(scopeId);
+    expect(useStore.getState().revertEpoch).toBe(epoch + 1);
+  });
+
+  it('drops the scope dialog when the restored snapshot has no such scope', () => {
+    const a = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    const scopeId = useStore.getState().scopes[0].id;
+    // Remove the scope, then undo restores a document without it.
+    useStore.getState().removeScope(scopeId);
+    addCapacitor();
+    useStore.setState({ scopeProperties: scopeId });
+
+    useStore.getState().undo();
+
+    expect(useStore.getState().scopeProperties).toBeNull();
   });
 });

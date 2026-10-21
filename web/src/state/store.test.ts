@@ -26,7 +26,15 @@ import {
   snap,
   useStore,
 } from './store';
-import { addCapacitor, addResistor, fresh } from './store.test-helpers';
+import {
+  addCapacitor,
+  addResistor,
+  fresh,
+  undoDepth,
+  redoDepth,
+  undoEntry,
+  commit,
+} from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
 
@@ -811,12 +819,12 @@ describe('switch keyboard shortcuts', () => {
 
   it('a keyboard toggle pushes no undo entry, unlike the pointer throw', () => {
     addSwitch({}, 'k');
-    useStore.getState().commit();
-    const before = useStore.getState().undoStack.length;
+    commit();
+    const before = undoDepth(useStore.getState());
     useStore.getState().toggleSwitchByKey('k');
     // The pointer path commits per click (a deliberate port divergence); the
     // keyboard path matches upstream's no-push toggle, so undo does not grow.
-    expect(useStore.getState().undoStack.length).toBe(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
     expect(useStore.getState().elements[0].state).toBe(1);
   });
 
@@ -990,18 +998,18 @@ describe('switch keyboard shortcuts', () => {
     // setElementState arms a switch without touching the stacks, so this
     // builds a real redo future over a held momentary.
     const id = addSwitch({ momentary: 1, position: 1 }, 'k');
-    useStore.getState().commit();
+    commit();
     const r = addResistor();
     useStore.getState().updateElement(r, { params: { resistance: 42 } });
     useStore.getState().undo();
-    expect(useStore.getState().redoStack.length).toBeGreaterThan(0);
+    expect(redoDepth(useStore.getState())).toBeGreaterThan(0);
     useStore.getState().setElementState(id, 0); // held closed
 
     useStore.getState().releaseHeldMomentaries();
     // Same rule as the per-key release: the release writes snapshot-carried
     // state with no entry of its own, so a stale redo future would silently
     // rewind it.
-    expect(useStore.getState().redoStack).toHaveLength(0);
+    expect(redoDepth(useStore.getState())).toBe(0);
   });
 
   it('the MBB cycles its four positions and the DPDT its two', () => {
@@ -1201,8 +1209,8 @@ describe('switch keyboard shortcuts', () => {
     add(3, 0); // group 3
     add(0, 1); // unlinked
     const [unlinkedA, linkedA, linkedB, unlinkedB] = useStore.getState().elements;
-    useStore.getState().commit();
-    const before = useStore.getState().undoStack.length;
+    commit();
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().toggleSwitch(linkedA.id);
 
@@ -1218,7 +1226,7 @@ describe('switch keyboard shortcuts', () => {
     expect(useStore.getState().pendingStates.get(unlinkedA.id)).toBeUndefined();
     expect(useStore.getState().pendingStates.get(unlinkedB.id)).toBeUndefined();
     // A run-mode toggle pushes no undo entry, like the keyboard path.
-    expect(useStore.getState().undoStack.length).toBe(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
   });
 
   it('a different link leaves its group alone', () => {
@@ -1246,7 +1254,9 @@ describe('switch keyboard shortcuts', () => {
     useStore.getState().toggleSwitch(a.id);
     expect(useStore.getState().elements[0].state).toBe(1);
     expect(useStore.getState().elements[1].state).toBe(0);
-    expect(useStore.getState().pendingStates.get(useStore.getState().elements[1].id)).toBeUndefined();
+    expect(
+      useStore.getState().pendingStates.get(useStore.getState().elements[1].id),
+    ).toBeUndefined();
   });
 
   it('a mirrored twin lands on the opposite throw and stays consistent', () => {
@@ -1424,10 +1434,7 @@ describe('crossover switch keyboard shortcuts', () => {
   // The def advertises the Keyboard Shortcut field and the pointer path arms
   // its momentary, so the key loops must honour the kind too: upstream's
   // scans match every SwitchElm subclass (CrossSwitchElm extends SwitchElm).
-  const addCross = (
-    params: { position?: number; momentary?: number } = {},
-    keyShortcut?: string,
-  ) =>
+  const addCross = (params: { position?: number; momentary?: number } = {}, keyShortcut?: string) =>
     useStore.getState().addElement({
       kind: 'crossSwitch',
       x1: 0,
@@ -1610,7 +1617,7 @@ describe('updateSettings reload classification', () => {
 });
 
 describe('resetSettings', () => {
-  it('puts the dialog\'s settings back to their defaults', () => {
+  it("puts the dialog's settings back to their defaults", () => {
     useStore.getState().updateSettings({
       timeStep: 1e-4,
       stepsPerFrame: 320,
@@ -1825,7 +1832,7 @@ r 0 0 16 0 0 100
       expect(s.elements).toHaveLength(1);
       expect(s.elements[0].params.resistance).toBe(100);
       expect(s.hasRecovery).toBe(false);
-      expect(s.undoStack).toHaveLength(1);
+      expect(undoDepth(s)).toBe(1);
       // Undo restores the pre-recovery circuit, not the empty baseline.
       s.undo();
       expect(useStore.getState().elements[0].params.resistance).toBe(1000);
@@ -1852,7 +1859,7 @@ r 0 0 16 0 0 100
     const before = useStore.getState();
     useStore.getState().recoverAutoSave();
     const s = useStore.getState();
-    expect(s.undoStack).toHaveLength(before.undoStack.length);
+    expect(undoDepth(s)).toBe(undoDepth(before));
     expect(s.revision).toBe(before.revision);
     expect(s.hasRecovery).toBe(false);
     expect(s.elements[0].params.resistance).toBe(1000);
@@ -1885,7 +1892,7 @@ r 0 0 16 0 0 100
       // The row stays enabled: the bytes are still in storage.
       expect(s.hasRecovery).toBe(true);
       // No junk undo entry, no revision movement for the autosave watcher.
-      expect(s.undoStack).toHaveLength(before.undoStack.length);
+      expect(undoDepth(s)).toBe(undoDepth(before));
       expect(s.revision).toBe(before.revision);
       expect(s.paramRevision).toBe(before.paramRevision);
     } finally {
@@ -1906,7 +1913,7 @@ r 0 0 16 0 0 100
       const second = useStore.getState();
       expect(second.hasRecovery).toBe(true);
       expect(second.elements).toEqual(first.elements);
-      expect(second.undoStack).toHaveLength(first.undoStack.length);
+      expect(undoDepth(second)).toBe(undoDepth(first));
       expect(second.revision).toBe(first.revision);
       expect(second.problem).toBe(first.problem);
     } finally {
@@ -1929,13 +1936,13 @@ r 0 0 16 0 0 100
       expect(s.elements[0].params.resistance).toBe(100);
       expect(s.hasRecovery).toBe(false);
       expect(s.lastSaved).toBe('\u0000');
-      expect(s.undoStack).toHaveLength(1);
+      expect(undoDepth(s)).toBe(1);
     } finally {
       delete (globalThis as { localStorage?: StorageLike }).localStorage;
     }
   });
 
-  it('undo after a recovery restores the pre-recovery unmatchedScopes, not the recovered file\'s', () => {
+  it("undo after a recovery restores the pre-recovery unmatchedScopes, not the recovered file's", () => {
     // Both files carry a normal resistor plus an `o` line whose element index
     // (5) does not resolve to any element line this build read, the same
     // "index lands on an element line this build could not read" shape
@@ -2442,7 +2449,9 @@ describe('controlled-source input count edits are normalised', () => {
     ['vccs', 2.5, 2],
     ['ccvs', 2.5, 2],
     ['cccs', 2.5, 2],
-  ])('setParam truncates a fractional %s input count to the engine integer', (kind, given, expected) => {
+  ])(
+    'setParam truncates a fractional %s input count to the engine integer',
+    (kind, given, expected) => {
     // The "# of Inputs" range slider can land on a fraction. The engine
     // truncates it to an integer post count (`(x as i64)` in the
     // controlled-source constructors), so the store must write back the same
@@ -2454,7 +2463,8 @@ describe('controlled-source input count edits are normalised', () => {
     const e = after.elements.find((x) => x.id === id);
     expect(e?.params.inputCount).toBe(expected);
     expect(after.pendingParams.get(`${id}:inputCount`)?.value).toBe(expected);
-  });
+    },
+  );
 
   it('clamps the boundary counts to the engine 1..8 range on edit', () => {
     const id = addControlled('vcvs');
@@ -2484,7 +2494,9 @@ describe('gate input count edits are normalised', () => {
     ['norGate', 2.5, 2],
     ['xorGate', 2.5, 2],
     ['xnorGate', 2.5, 2],
-  ])('setParam truncates a fractional %s input count to the engine integer', (kind, given, expected) => {
+  ])(
+    'setParam truncates a fractional %s input count to the engine integer',
+    (kind, given, expected) => {
     // The "# of Inputs" range slider can land on a fraction. The engine
     // truncates it to an integer post count (`(x as i64)` in logic.rs:76), so
     // the store must write back the same integer or a rebuild trips the
@@ -2495,7 +2507,8 @@ describe('gate input count edits are normalised', () => {
     const e = after.elements.find((x) => x.id === id);
     expect(e?.params.inputCount).toBe(expected);
     expect(after.pendingParams.get(`${id}:inputCount`)?.value).toBe(expected);
-  });
+    },
+  );
 
   it('clamps the boundary counts to the engine 1..8 range on edit', () => {
     const id = addGate('andGate');
@@ -2521,7 +2534,9 @@ describe('multiplexer select-bit edits are normalised', () => {
   it.each([
     ['multiplexer', 'bits', 2.5, 2],
     ['deMultiplexer', 'selectBits', 2.5, 3],
-  ])('setParam normalises a fractional %s select-bit count to the engine integer', (kind, name, given, expected) => {
+  ])(
+    'setParam normalises a fractional %s select-bit count to the engine integer',
+    (kind, name, given, expected) => {
     // The "# of Select Bits" number field can land on a fraction. The engine
     // truncates the multiplexer's count and rounds the demultiplexer's to a
     // channel count, so the store must write back the same integer or a
@@ -2533,7 +2548,8 @@ describe('multiplexer select-bit edits are normalised', () => {
     const e = after.elements.find((x) => x.id === id);
     expect(e?.params[name]).toBe(expected);
     expect(after.pendingParams.get(`${id}:${name}`)?.value).toBe(expected);
-  });
+    },
+  );
 
   it('clamps the boundary select-bit counts to the engine range on edit', () => {
     const mux = addChip('multiplexer');
@@ -2683,20 +2699,20 @@ describe('undo parity', () => {
 
   it('restores a value edit in one step', () => {
     const id = addResistor();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().beginEdit();
     useStore.getState().setParam(id, 'resistance', 2000);
 
-    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(useStore.getState())).toBe(baseline + 1);
     useStore.getState().undo();
     expect(useStore.getState().elements[0].params.resistance).toBe(1000);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
   });
 
   it('coalesces a slider drag to one undo entry', () => {
     const id = addResistor();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().beginEdit();
     // The drag ends at 900, not the pre-edit 1000, so the restore assertion
@@ -2707,7 +2723,7 @@ describe('undo parity', () => {
     }
 
     // The whole drag is one session, so exactly one entry lands.
-    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(useStore.getState())).toBe(baseline + 1);
     expect(useStore.getState().elements[0].params.resistance).toBe(900);
     useStore.getState().undo();
     expect(useStore.getState().elements[0].params.resistance).toBe(1000);
@@ -2716,7 +2732,7 @@ describe('undo parity', () => {
   it('restores a run-mode switch toggle', () => {
     const id = addSwitch();
 
-    useStore.getState().commit();
+    commit();
     useStore.getState().setElementState(id, 1);
 
     useStore.getState().undo();
@@ -2730,15 +2746,15 @@ describe('undo parity', () => {
   it('dedups consecutive identical commits', () => {
     // A plain pointer-down over an element that changed nothing since the last
     // commit must not grow the stack.
-    useStore.getState().commit();
-    useStore.getState().commit();
-    expect(useStore.getState().undoStack).toHaveLength(1);
+    commit();
+    commit();
+    expect(undoDepth(useStore.getState())).toBe(1);
   });
 
   it('restores settings and view with the undo', () => {
     useStore.getState().updateSettings({ voltageRange: 10 });
     useStore.getState().setView({ x: 100, y: 50, scale: 2 });
-    useStore.getState().commit();
+    commit();
 
     // A setting changed before a real action is captured at that action's
     // commit: addElement's own commit dedups against the one above, so undoing
@@ -2764,15 +2780,15 @@ describe('undo parity', () => {
 
   it('does not alias the live state into the undo snapshot', () => {
     const id = addResistor();
-    useStore.getState().commit();
+    commit();
 
     useStore.getState().moveElements([id], 3.3, 0);
     useStore.getState().setParam(id, 'resistance', 999);
 
     // The snapshot taken before the drag must still hold the originals; a
     // future in-place mutator would silently corrupt history here.
-    const top = useStore.getState().undoStack[useStore.getState().undoStack.length - 1];
-    expect(top.elements[0]).toMatchObject({
+    const top = undoEntry(useStore.getState(), undoDepth(useStore.getState()) - 1);
+    expect(top.snap.elements[0]).toMatchObject({
       x1: 0,
       y1: 0,
       x2: 160,
@@ -2781,15 +2797,15 @@ describe('undo parity', () => {
     });
     const live = useStore.getState().elements[0];
     expect(live.params.resistance).toBe(999);
-    expect(live.x1).not.toBe(top.elements[0].x1);
+    expect(live.x1).not.toBe(top.snap.elements[0].x1);
   });
 
   it('keeps a real change after a no-op commit undoable', () => {
-    useStore.getState().commit();
+    commit();
     addResistor();
     // The click that changed nothing is one entry whose state still holds the
     // element: the first undo is a no-op, the second removes it.
-    useStore.getState().commit();
+    commit();
     useStore.getState().undo();
     expect(useStore.getState().elements).toHaveLength(1);
     useStore.getState().undo();
@@ -3125,21 +3141,26 @@ describe('scope panels', () => {
     useStore.setState((s) => ({ settings: { ...s.settings, showCurrent: false } }));
     useStore.getState().addScope(addResistor(), 'voltage');
     const scope = useStore.getState().scopes[0];
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().removePlot(scope.id, scope.plots[0].id);
     expect(useStore.getState().scopes[0].plots).toHaveLength(1);
-    expect(useStore.getState().undoStack.length).toBe(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
   });
 
   it('removePlot refuses a raw-only plot', () => {
     // An out-of-table value token loads as a plot kept only to re-emit the
     // o line byte-for-byte; removing it would silently drop those tokens
     // from every later save.
-    useStore.getState().loadNetlist(
-      ['$ 1 0.000005 10 50 5 43 5e-11', 't 0 0 16 0 0 1 0 0 0 0 0', 'o 0 64 9 4099 20 0.05 0 1', ''].join(
-        '\n',
-      ),
+    useStore
+      .getState()
+      .loadNetlist(
+        [
+          '$ 1 0.000005 10 50 5 43 5e-11',
+          't 0 0 16 0 0 1 0 0 0 0 0',
+          'o 0 64 9 4099 20 0.05 0 1',
+          '',
+        ].join('\n'),
     );
     const scope = useStore.getState().scopes[0];
     const rawOnly = scope.plots[0];
@@ -3148,14 +3169,14 @@ describe('scope panels', () => {
     // the refusal below is the raw-only rule and not the length one.
     useStore.getState().addToScope(addResistor(), scope.id, 'voltage');
     expect(useStore.getState().scopes[0].plots).toHaveLength(3);
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().removePlot(scope.id, rawOnly.id);
     expect(useStore.getState().scopes[0].plots).toHaveLength(3);
-    expect(
-      useStore.getState().scopes[0].plots.find((p) => p.id === rawOnly.id),
-    ).toMatchObject({ value: null });
-    expect(useStore.getState().undoStack.length).toBe(before);
+    expect(useStore.getState().scopes[0].plots.find((p) => p.id === rawOnly.id)).toMatchObject({
+      value: null,
+    });
+    expect(undoDepth(useStore.getState())).toBe(before);
   });
 
   it('removePlot ignores a stale plot id', () => {
@@ -3165,11 +3186,11 @@ describe('scope panels', () => {
     // id: an open menu can easily outlive the plot it was opened over.
     const victim = useStore.getState().scopes[0].plots[1].id;
     useStore.getState().togglePlot(scopeId, 'current');
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
 
     useStore.getState().removePlot(scopeId, victim);
     expect(useStore.getState().scopes[0].plots).toHaveLength(1);
-    expect(useStore.getState().undoStack.length).toBe(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
   });
 
   it('removePlot leaves the scope-family scale state alone', () => {
@@ -3192,7 +3213,7 @@ describe('scope panels', () => {
     const [first, second] = useStore.getState().scopes;
     // The target element: a second resistor not yet scoped.
     const other = addResistor();
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     const rev = useStore.getState().revision;
 
     useStore.getState().addToScope(other, first.id, 'voltage');
@@ -3202,14 +3223,14 @@ describe('scope panels', () => {
     const untouched = s.scopes.find((x) => x.id === second.id)!;
     expect(updated.plots.some((p) => p.elementId === other && p.value === 'voltage')).toBe(true);
     expect(untouched.plots.some((p) => p.elementId === other)).toBe(false);
-    expect(s.undoStack.length).toBe(before + 1);
+    expect(undoDepth(s)).toBe(before + 1);
     expect(s.revision).toBe(rev + 1);
 
     // Adding the same plot again is a no-op, no second undo entry.
     useStore.getState().addToScope(other, first.id, 'voltage');
     const after = useStore.getState();
     expect(after.scopes.find((x) => x.id === first.id)!.plots).toHaveLength(updated.plots.length);
-    expect(after.undoStack.length).toBe(before + 1);
+    expect(undoDepth(after)).toBe(before + 1);
   });
 
   it('addToScope is a no-op for an unknown scope and does not dedup across scopes', () => {
@@ -3221,13 +3242,13 @@ describe('scope panels', () => {
     // The same element is already scoped elsewhere; that must not block adding
     // it to a specific scope (unlike addScope's global dedup).
     useStore.getState().addToScope(other, first.id, 'voltage');
-    expect(
-      useStore.getState().scopes.some((x) => x.plots.some((p) => p.elementId === other)),
-    ).toBe(true);
+    expect(useStore.getState().scopes.some((x) => x.plots.some((p) => p.elementId === other))).toBe(
+      true,
+    );
 
-    const before = useStore.getState().undoStack.length;
+    const before = undoDepth(useStore.getState());
     useStore.getState().addToScope(other, 999, 'voltage');
-    expect(useStore.getState().undoStack.length).toBe(before);
+    expect(undoDepth(useStore.getState())).toBe(before);
   });
 
   it('combineScopes merges plot lists and drops the emptied scope', () => {
@@ -3337,13 +3358,13 @@ describe('scope panels', () => {
   });
 
   it('the batch commands are no-ops with nothing to act on', () => {
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
     useStore.getState().stackAllScopes();
     useStore.getState().unstackAllScopes();
     useStore.getState().combineAllScopes();
     useStore.getState().separateAllScopes();
     expect(useStore.getState().scopes).toHaveLength(0);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
   });
 });
 
@@ -3402,12 +3423,12 @@ describe('scope mutator coverage', () => {
     expect(s.revision).toBe(before + 1);
 
     // An unknown id returns before commit, so nothing moves.
-    const baseline = s.undoStack.length;
+    const baseline = undoDepth(s);
     const rev = s.revision;
     useStore.getState().removeScope(999);
     s = useStore.getState();
     expect(s.scopes).toHaveLength(0);
-    expect(s.undoStack.length).toBe(baseline);
+    expect(undoDepth(s)).toBe(baseline);
     expect(s.revision).toBe(rev);
   });
 
@@ -3571,13 +3592,13 @@ describe('arrow-nudge selection', () => {
     const a = addResistor();
     const b = addResistor();
     useStore.getState().select([a, b]);
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().nudgeSelection(GRID_SIZE, 0);
 
     const after = useStore.getState();
     // commit before the move makes the whole press one entry.
-    expect(after.undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(after)).toBe(baseline + 1);
     for (const id of [a, b]) {
       const e = after.elements.find((x) => x.id === id)!;
       expect([e.x1, e.y1, e.x2, e.y2]).toEqual([GRID_SIZE, 0, 160 + GRID_SIZE, 0]);
@@ -3585,7 +3606,7 @@ describe('arrow-nudge selection', () => {
 
     useStore.getState().undo();
     const s = useStore.getState();
-    expect(s.undoStack.length).toBe(baseline);
+    expect(undoDepth(s)).toBe(baseline);
     for (const id of [a, b]) {
       const e = s.elements.find((x) => x.id === id)!;
       expect([e.x1, e.y1, e.x2, e.y2]).toEqual([0, 0, 160, 0]);
@@ -3593,11 +3614,11 @@ describe('arrow-nudge selection', () => {
   });
 
   it('with no selection changes nothing and pushes no undo entry', () => {
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
     useStore.getState().nudgeSelection(GRID_SIZE, 0);
     const s = useStore.getState();
     expect(s.elements).toHaveLength(0);
-    expect(s.undoStack.length).toBe(baseline);
+    expect(undoDepth(s)).toBe(baseline);
   });
 });
 
@@ -3717,7 +3738,7 @@ describe('center circuit', () => {
     useStore.getState().loadNetlist(SAMPLE);
     useStore.getState().setView({ x: 5, y: 9, scale: 3 });
     useStore.getState().setViewSize(800, 600);
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
     const bounds = circuitBounds(useStore.getState().elements);
     expect(bounds).not.toBeNull();
 
@@ -3726,7 +3747,7 @@ describe('center circuit', () => {
     const s = useStore.getState();
     expect(s.view).toEqual(fitView(bounds!, s.viewSize.w, s.viewSize.h));
     // A view change is not a topology change, so the undo stack is untouched.
-    expect(s.undoStack.length).toBe(baseline);
+    expect(undoDepth(s)).toBe(baseline);
   });
 
   it('is a no-op on an empty circuit', () => {
@@ -3880,7 +3901,7 @@ describe('import from text equals open', () => {
     expect(s.elements).toHaveLength(7);
     expect(s.scopes).toHaveLength(1);
     // A load clears the undo stacks exactly like the Open flow.
-    expect(s.undoStack).toHaveLength(0);
+    expect(undoDepth(s)).toBe(0);
   });
 });
 
@@ -3932,14 +3953,14 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
   it('a drag is one undo entry and restores the element with it', () => {
     useStore.getState().loadNetlist(SLIDER_FIXTURE);
     const sliderId = useStore.getState().sliders[0].id;
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().beginEdit();
     useStore.getState().setSliderValue(sliderId, 30);
     useStore.getState().setSliderValue(sliderId, 75);
 
     const mid = useStore.getState();
-    expect(mid.undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(mid)).toBe(baseline + 1);
     expect(mid.elements[0].params.resistance).toBe(75);
 
     useStore.getState().undo();
@@ -4031,7 +4052,7 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
 
   it('addSlider creates a slider bound to the element param, serialized canonically', () => {
     const id = addResistor();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().addSlider(id, 0, 'Resistance');
 
@@ -4054,11 +4075,14 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
     // (parse.ts), so writing one unconditionally here would come back as a
     // misread caption and step on the next load.
     expect(s.sliders[0].raw).toEqual([]);
-    expect(s.toNetlist().split('\n').find((l) => l.startsWith('38 '))).toBe(
-      '38 0 F0 0 1 1000 Resistance 0',
-    );
+    expect(
+      s
+        .toNetlist()
+        .split('\n')
+        .find((l) => l.startsWith('38 ')),
+    ).toBe('38 0 F0 0 1 1000 Resistance 0');
     // One undo step: the dialog's create is an edit like any other.
-    expect(s.undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(s)).toBe(baseline + 1);
 
     s.undo();
     expect(useStore.getState().sliders).toHaveLength(0);
@@ -4077,7 +4101,14 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
       x2: 0,
       y2: 64,
       flags: 16,
-      params: { waveform: 0, frequency: 1000, maxVoltage: 5, bias: 0, phaseShift: 0, dutyCycle: 0.5 },
+      params: {
+        waveform: 0,
+        frequency: 1000,
+        maxVoltage: 5,
+        bias: 0,
+        phaseShift: 0,
+        dutyCycle: 0.5,
+      },
     });
     useStore.getState().addSlider(voltage, 0, 'Max voltage');
     expect(useStore.getState().sliders).toHaveLength(2);
@@ -4094,7 +4125,14 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
       x2: 0,
       y2: 64,
       flags: 16,
-      params: { waveform: 0, frequency: 1000, maxVoltage: 5, bias: 0, phaseShift: 0, dutyCycle: 0.5 },
+      params: {
+        waveform: 0,
+        frequency: 1000,
+        maxVoltage: 5,
+        bias: 0,
+        phaseShift: 0,
+        dutyCycle: 0.5,
+      },
     });
     useStore.getState().addSlider(voltage, 6, 'Duty Cycle');
     expect(useStore.getState().sliders).toHaveLength(1);
@@ -4108,7 +4146,7 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
   it('addSlider refuses a missing element', () => {
     useStore.getState().addSlider(999, 0, 'Ghost');
     expect(useStore.getState().sliders).toHaveLength(0);
-    expect(useStore.getState().undoStack.length).toBe(0);
+    expect(undoDepth(useStore.getState())).toBe(0);
   });
 
   it('removeSlider drops the slider and its line, one undo step', () => {
@@ -4130,12 +4168,12 @@ v 0 0 0 16 0 2 40 5 5 0 0.5
   it('removeSlider is a no-op for an unknown id', () => {
     const id = addResistor();
     useStore.getState().addSlider(id, 0, 'Resistance');
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().removeSlider(999);
 
     expect(useStore.getState().sliders).toHaveLength(1);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
   });
 
   it('setSliderElement records the scoped dialog target and can clear it', () => {
@@ -4202,7 +4240,7 @@ describe('convert wires to routed', () => {
     const a = addWire(0, 0, 80, 0);
     const b = addWire(80, 0, 160, 0);
     const c = addWire(160, 0, 160, 80);
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
     const rev = useStore.getState().revision;
 
     useStore.getState().convertWiresToRouted();
@@ -4221,7 +4259,7 @@ describe('convert wires to routed', () => {
     ]);
     // One commit for the whole command, exactly as upstream pushes once
     // (CommandManager.java:141-145).
-    expect(s.undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(s)).toBe(baseline + 1);
     // The engine reload sees one wire where it saw three, electrically
     // identical because wires merge into nodes by coordinate.
     expect(s.revision).toBe(rev + 1);
@@ -4261,12 +4299,12 @@ describe('convert wires to routed', () => {
     addWire(0, 0, 80, 0);
     addWire(80, 0, 160, 0);
     useStore.getState().convertWiresToRouted();
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
     const rev = useStore.getState().revision;
 
     useStore.getState().convertWiresToRouted();
 
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
     expect(useStore.getState().revision).toBe(rev);
   });
 
@@ -4610,11 +4648,11 @@ describe('wire split on a post drag', () => {
       params: { resistance: 1000 },
     });
     const dragged = addWire(32, 80, 32, 0);
-    useStore.getState().commit();
-    const baseline = useStore.getState().undoStack.length;
+    commit();
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().autoSplitAt({ x: 32, y: 0 }, dragged);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
 
     useStore.getState().undo();
 
@@ -4627,19 +4665,24 @@ describe('wire split on a post drag', () => {
     const crossed = addWire(0, 0, 160, 0);
     const dragged = addWire(80, 80, 80, 0);
     // What a post drag does: commit the baseline, move the post, then split.
-    useStore.getState().commit();
+    commit();
     useStore.getState().updateElement(dragged, { x2: 80, y2: 0 });
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().autoSplitAt({ x: 80, y: 0 }, dragged);
-    expect(useStore.getState().undoStack.length).toBe(baseline);
+    expect(undoDepth(useStore.getState())).toBe(baseline);
 
     useStore.getState().undo();
 
     // One step takes the move and the split back together.
     const s = useStore.getState();
     expect(s.elements).toHaveLength(2);
-    expect(s.elements.find((e) => e.id === crossed)).toMatchObject({ x1: 0, y1: 0, x2: 160, y2: 0 });
+    expect(s.elements.find((e) => e.id === crossed)).toMatchObject({
+      x1: 0,
+      y1: 0,
+      x2: 160,
+      y2: 0,
+    });
   });
 
   it('splits a routed wire the post landed on, into two routed halves', () => {
@@ -4718,7 +4761,7 @@ describe('a drawn wire connects where it crosses junction posts', () => {
     useStore
       .getState()
       .addElement({ kind: 'ground', x1: 80, y1: 0, x2: 80, y2: 32, flags: 0, params: {} });
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().addWires([{ x1: 80, y1: -96, x2: 80, y2: 96 }]);
 
@@ -4727,7 +4770,7 @@ describe('a drawn wire connects where it crosses junction posts', () => {
     expect(spans()).toContainEqual([80, -96, 80, 0]);
     expect(spans()).toContainEqual([80, 0, 80, 96]);
     // The gesture pushed exactly one entry, and it takes everything back.
-    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(useStore.getState())).toBe(baseline + 1);
     useStore.getState().undo();
     expect(spans()).toEqual([
       [0, 0, 80, 0],
@@ -4819,14 +4862,14 @@ describe('a drawn wire connects where it crosses junction posts', () => {
     });
 
     useStore.getState().addWires([{ x1: 0, y1: 0, x2: 160, y2: 0 }]);
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().addWires([{ x1: 80, y1: -64, x2: 80, y2: 64 }]);
 
     expect(spans()).toContainEqual([80, -64, 80, 64]);
     expect(spans()).toContainEqual([0, 0, 160, 0]);
     expect(useStore.getState().elements.filter((e) => e.kind === 'wire')).toHaveLength(2);
-    expect(useStore.getState().undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(useStore.getState())).toBe(baseline + 1);
   });
 
   it('returns no ids when every piece of a drawn leg duplicates existing parts', () => {
@@ -4859,9 +4902,7 @@ describe('a drawn wire connects where it crosses junction posts', () => {
 
     const [drawn] = useStore.getState().addWires([{ x1: 80, y1: -96, x2: 80, y2: 96 }]);
 
-    const piece = useStore
-      .getState()
-      .elements.find((e) => e.id === drawn && e.kind === 'wire');
+    const piece = useStore.getState().elements.find((e) => e.id === drawn && e.kind === 'wire');
     expect(piece).toBeDefined();
     expect([piece!.x1, piece!.y1, piece!.x2, piece!.y2]).toEqual([80, -96, 80, 0]);
   });
@@ -4896,7 +4937,7 @@ describe('manual wire split (Split Wire Manually)', () => {
 
   it('splits a wire at the snapped interior point into two halves, one undo step', () => {
     const id = addWire(0, 0, 64, 0);
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
     const rev = useStore.getState().revision;
 
     useStore.getState().splitWireAt(id, { x: 33, y: 1 });
@@ -4910,7 +4951,7 @@ describe('manual wire split (Split Wire Manually)', () => {
     const sorted = [...wires].sort((p, q) => p.x1 - q.x1);
     expect(sorted[0]).toMatchObject({ x1: 0, y1: 0, x2: 32, y2: 0 });
     expect(sorted[1]).toMatchObject({ x1: 32, y1: 0, x2: 64, y2: 0 });
-    expect(s.undoStack.length).toBe(baseline + 1);
+    expect(undoDepth(s)).toBe(baseline + 1);
     expect(s.revision).toBe(rev + 1);
 
     s.undo();
@@ -4934,19 +4975,19 @@ describe('manual wire split (Split Wire Manually)', () => {
       params: { resistance: 1000 },
     });
     const before = useStore.getState().elements.length;
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().splitWireAt(resistor, { x: 16, y: 0 });
 
     const s = useStore.getState();
     expect(s.elements.length).toBe(before);
     expect(s.elements.some((e) => e.id === id)).toBe(true);
-    expect(s.undoStack.length).toBe(baseline);
+    expect(undoDepth(s)).toBe(baseline);
   });
 
   it('refuses an endpoint, which is an ordinary connection not a split', () => {
     const id = addWire(0, 0, 64, 0);
-    const baseline = useStore.getState().undoStack.length;
+    const baseline = undoDepth(useStore.getState());
 
     useStore.getState().splitWireAt(id, { x: 0, y: 0 });
 
@@ -4954,7 +4995,7 @@ describe('manual wire split (Split Wire Manually)', () => {
     expect(s.elements).toHaveLength(1);
     expect(s.elements[0].id).toBe(id);
     expect(s.elements[0].x2).toBe(64);
-    expect(s.undoStack.length).toBe(baseline);
+    expect(undoDepth(s)).toBe(baseline);
   });
 
   it('refuses a point off the span', () => {
@@ -5029,7 +5070,7 @@ describe('resetElementToDefaults', () => {
     expect(el.modelName).toBeUndefined();
     expect(el.keyShortcut).toBeUndefined();
     expect(after.revision).toBe(before.revision + 1);
-    expect(after.undoStack.length).toBe(before.undoStack.length + 1);
+    expect(undoDepth(after)).toBe(undoDepth(before) + 1);
 
     useStore.getState().undo();
     const undone = useStore.getState().elements.find((e) => e.id === id)!;
@@ -5045,7 +5086,7 @@ describe('resetElementToDefaults', () => {
 
     const after = useStore.getState();
     expect(after.revision).toBe(before.revision);
-    expect(after.undoStack.length).toBe(before.undoStack.length);
+    expect(undoDepth(after)).toBe(undoDepth(before));
   });
 
   it('refuses an element that is not in the document', () => {

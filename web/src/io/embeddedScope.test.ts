@@ -8,7 +8,7 @@ import { defFor } from '../model/registry';
 import { SvgRecorder } from '../render/svg';
 import { makeTheme } from '../render/draw';
 import { useStore } from '../state/store';
-import { fresh } from '../state/store.test-helpers';
+import { fresh, commit } from '../state/store.test-helpers';
 import { decodeEmbeddedScope } from './embeddedScope';
 import { parseCircuit, serializeCircuit } from './netlist';
 
@@ -57,9 +57,8 @@ describe('decodeEmbeddedScope units', () => {
   });
 
   it('resolves per-element value tokens through the kind callback', () => {
-    const decoded = decodeEmbeddedScope(
-      '13_64_6_4099_20_0.05_0_2_10_6',
-      (i) => (i === 13 || i === 10 ? 'transistor' : null),
+    const decoded = decodeEmbeddedScope('13_64_6_4099_20_0.05_0_2_10_6', (i) =>
+      i === 13 || i === 10 ? 'transistor' : null,
     );
     expect(decoded!.plots).toEqual([
       { elementIndex: 13, value: 'vce' },
@@ -383,11 +382,10 @@ describe('store integration', () => {
     const before = useStore.getState().elements.find((e) => e.kind === 'scope')!.embedded!;
     // A gesture baseline pushes a clone of the loaded document; the undo back
     // to it must hand back an equal but independent copy.
-    useStore.getState().commit();
-    useStore.getState().updateElement(
-      useStore.getState().elements.find((e) => e.kind !== 'scope')!.id,
-      { x1: 4 },
-    );
+    commit();
+    useStore
+      .getState()
+      .updateElement(useStore.getState().elements.find((e) => e.kind !== 'scope')!.id, { x1: 4 });
     useStore.getState().undo();
     const after = useStore.getState().elements.find((e) => e.kind === 'scope')!.embedded!;
     expect(after).toEqual(before);

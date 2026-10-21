@@ -57,10 +57,7 @@ export function SliderPanel({ elementId }: { elementId?: number }) {
         return (
           <label key={slider.id} className="field">
             <span>
-              {label}{' '}
-              <em>
-                {formatValue(value, resolved.field.unit ?? '', 3)}
-              </em>
+              {label} <em>{formatValue(value, resolved.field.unit ?? '', 3)}</em>
             </span>
             <input
               type="range"
@@ -70,8 +67,8 @@ export function SliderPanel({ elementId }: { elementId?: number }) {
               // Pointer-down lands before the first change event, so a drag
               // opens one edit session and is one undo step, exactly like the
               // edit dialog's range fields.
-              onPointerDown={beginEdit}
-              onFocus={beginEdit}
+              onPointerDown={() => beginEdit(`Edit ${slider.text || 'Slider'}`)}
+              onFocus={() => beginEdit(`Edit ${slider.text || 'Slider'}`)}
               onChange={(e) => {
                 const pos = Number(e.target.value);
                 const v = sliderPositionToValue(

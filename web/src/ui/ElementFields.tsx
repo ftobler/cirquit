@@ -43,7 +43,7 @@ function Field({
   label: string;
   value: number | string;
   onChange: (v: number | string | FileList | null) => boolean | void;
-  onBeginEdit: () => void;
+  onBeginEdit: (label: string) => void;
   onDownload?: () => void;
   /** Only the contents row uses it: the external-write token that drops an
    *  open draft when a binary file load lands. */
@@ -61,11 +61,11 @@ function Field({
   const armCellRef = useRef<FieldArmCell>({ id: elementId, armed: false });
   const armOnFocus = () => {
     armCellRef.current = { id: elementId, armed: true };
-    onBeginEdit();
+    onBeginEdit(label);
   };
   const armOnChange = () => {
     const decision = changeArmsBaseline(armedForElement(armCellRef.current, elementId));
-    if (decision.arm) onBeginEdit();
+    if (decision.arm) onBeginEdit(label);
     armCellRef.current = { id: elementId, armed: decision.armed };
   };
 
@@ -95,10 +95,7 @@ function Field({
     return (
       <label className="field">
         <span>{label}</span>
-        <input
-          type="file"
-          onChange={(e) => onChange(e.target.files)}
-        />
+        <input type="file" onChange={(e) => onChange(e.target.files)} />
       </label>
     );
   }
@@ -130,7 +127,7 @@ function Field({
             value={String(value ?? '')}
             // Focus opens the edit session, so the whole typing session is one
             // undo entry; commit's dedup drops a focus that changed nothing.
-            onFocus={onBeginEdit}
+            onFocus={() => onBeginEdit(label)}
             onChange={(e) => onChange(e.target.value)}
           />
         </label>
@@ -144,7 +141,7 @@ function Field({
           value={String(value ?? '')}
           // Focus opens the edit session, so the whole typing session is one
           // undo entry; commit's dedup drops a focus that changed nothing.
-          onFocus={onBeginEdit}
+          onFocus={() => onBeginEdit(label)}
           onChange={(e) => onChange(e.target.value)}
         />
       </label>
@@ -266,7 +263,7 @@ function Field({
           min={field.min}
           max={field.max}
           step={1}
-          onFocus={onBeginEdit}
+          onFocus={() => onBeginEdit(label)}
           onChange={(e) => {
             const n = Number(e.target.value);
             // An empty box reads as NaN mid-edit; leave the value alone until
@@ -294,8 +291,8 @@ function Field({
           // drag opens one edit session and is one undo step. Focus covers
           // tab-to + arrow-key edits with the same bracketing; the dedup makes
           // the two calls a harmless no-op when both fire.
-          onPointerDown={onBeginEdit}
-          onFocus={onBeginEdit}
+          onPointerDown={() => onBeginEdit(label)}
+          onFocus={() => onBeginEdit(label)}
           onChange={(e) => onChange(Number(e.target.value))}
         />
       </label>
@@ -310,7 +307,7 @@ function Field({
       <UnitNumberInput
         label={`${label} (${field.unit})`}
         value={v}
-        onFocus={onBeginEdit}
+        onFocus={() => onBeginEdit(label)}
         onCommit={(n) => onChange(n)}
       />
     );
@@ -318,14 +315,12 @@ function Field({
 
   return (
     <label className="field">
-      <span>
-        {label}
-      </span>
+      <span>{label}</span>
       <input
         type="number"
         value={v}
         step="any"
-        onFocus={onBeginEdit}
+        onFocus={() => onBeginEdit(label)}
         onChange={(e) => {
           const n = Number(e.target.value);
           if (Number.isFinite(n)) onChange(n);
@@ -356,7 +351,7 @@ function ContentsField({
 }: {
   label: string;
   value: string;
-  onBeginEdit: () => void;
+  onBeginEdit: (label: string) => void;
   onCommit: (text: string) => boolean | void;
   resetToken?: number;
 }) {
@@ -371,7 +366,7 @@ function ContentsField({
         rows={5}
         value={text}
         onFocus={() => {
-          onBeginEdit();
+          onBeginEdit(label);
           // Seed the draft only when there is none: after a failed commit the
           // bad text must survive a refocus so the user can fix it. A stale
           // cell (its token bumped under it) seeds fresh like no draft at all.
@@ -436,12 +431,9 @@ function loadFileInto(
     reader.onabort = reader.onerror;
     reader.onload = () => {
       onBinaryLoaded();
-      commitBinaryFile(
-        e,
-        new Uint8Array(reader.result as ArrayBuffer),
-        window.alert,
-        { setMemoryContents },
-      );
+      commitBinaryFile(e, new Uint8Array(reader.result as ArrayBuffer), window.alert, {
+        setMemoryContents,
+      });
     };
     reader.readAsArrayBuffer(file);
     return;
@@ -616,7 +608,7 @@ export function ElementFields({ element, engine }: Props) {
             label={label}
             value={value}
             elementId={element.id}
-            onBeginEdit={beginEdit}
+            onBeginEdit={(label) => beginEdit(`Edit ${label}`)}
             resetToken={field.type === 'contents' ? contentsReset : undefined}
             onDownload={
               field.type === 'download'

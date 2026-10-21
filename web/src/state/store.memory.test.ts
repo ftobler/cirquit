@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { hasUnsavedChanges, useStore } from './store';
-import { fresh } from './store.test-helpers';
+import { fresh, undoDepth } from './store.test-helpers';
 
 beforeEach(() => useStore.setState(fresh()));
 
@@ -10,11 +10,9 @@ const NETLIST = [
   '',
 ].join('\n');
 
-const ROM_NETLIST = [
-  '$ 1 0.000005 10 50 5 50 5e-11',
-  '436 0 0 64 0 0 2 2 1 2 -1 -2',
-  '',
-].join('\n');
+const ROM_NETLIST = ['$ 1 0.000005 10 50 5 50 5e-11', '436 0 0 64 0 0 2 2 1 2 -1 -2', ''].join(
+  '\n',
+);
 
 const sramId = () => useStore.getState().elements[0].id;
 
@@ -55,7 +53,7 @@ describe('setMemoryContents', () => {
     expect(after.val2).toBe(9);
     // The action's baseline commit is the whole edit: one undo restores the
     // exact pre-edit state.
-    expect(useStore.getState().undoStack).toHaveLength(1);
+    expect(undoDepth(useStore.getState())).toBe(1);
     useStore.getState().undo();
     expect(useStore.getState().elements[0].params).toEqual(before);
   });
@@ -112,10 +110,10 @@ describe('setMemoryContents', () => {
     ]);
     const after = useStore.getState();
     expect(after.revision).toBe(s.revision);
-    expect(after.undoStack).toHaveLength(0);
+    expect(undoDepth(after)).toBe(0);
   });
 
-  it('editing contents then serialising keeps memoryDump\'s grouped token stream', () => {
+  it("editing contents then serialising keeps memoryDump's grouped token stream", () => {
     useStore.getState().loadNetlist(NETLIST);
     useStore.getState().setMemoryContents(sramId(), [
       [0, 1],

@@ -15,7 +15,11 @@ import {
   type LibraryGroup,
 } from '../io/library';
 import { parsesToElements } from '../io/importSummary';
-import { canMirrorSelection as canMirrorSel, canRotate, canRotateSelection as canRotateSel } from '../model/transform';
+import {
+  canMirrorSelection as canMirrorSel,
+  canRotate,
+  canRotateSelection as canRotateSel,
+} from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
 import { makeGhostElement, useStore } from '../state/store';
@@ -301,8 +305,8 @@ export function Menubar({ engine }: Props) {
   const mouseWheelEdit = useStore((s) => s.settings.mouseWheelEdit);
   // Derived selectors: commit replaces the stack arrays wholesale, so
   // subscribing to the length picks up each undo/redo boundary.
-  const canUndo = useStore((s) => s.undoStack.length > 0);
-  const canRedo = useStore((s) => s.redoStack.length > 0);
+  const canUndo = useStore((s) => s.history.undo.length > 0);
+  const canRedo = useStore((s) => s.history.redo.length > 0);
   const conventional = useStore((s) => s.settings.conventional);
   const euroResistors = useStore((s) => s.settings.euroResistors);
   const euroGates = useStore((s) => s.settings.euroGates);
@@ -497,10 +501,7 @@ export function Menubar({ engine }: Props) {
   // context menu's canPaste, since parsing on every render is wasteful. The
   // probe is guarded: stored bytes survive a reload, and a hostile string
   // must degrade to greyed rows, never crash this first render.
-  const canPaste = useMemo(
-    () => clipboard !== null && parsesToElements(clipboard),
-    [clipboard],
-  );
+  const canPaste = useMemo(() => clipboard !== null && parsesToElements(clipboard), [clipboard]);
 
   // The logo is the favicon file itself, so the tab icon and the brand mark
   // can never drift apart. BASE_URL carries the deploy base, like the docs

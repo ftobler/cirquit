@@ -1,12 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  anyPlotOverrides,
-  effectiveMeasurements,
-  plotOverridesScope,
-} from '../engine/scopeModel';
+import { anyPlotOverrides, effectiveMeasurements, plotOverridesScope } from '../engine/scopeModel';
 import { SimEngine } from '../engine/simulator';
 import { useStore } from './store';
-import { addResistor, fresh } from './store.test-helpers';
+import { addResistor, fresh, undoDepth } from './store.test-helpers';
 import { SCOPE_DEFAULTS_STORAGE_KEY } from './scopeDefaults';
 import type { StorageLike } from './appPrefs';
 
@@ -31,7 +27,6 @@ const injectStorage = (blob: string | null): StorageLike & { restore: () => void
     },
   };
 };
-
 
 describe('scope line display-field fidelity', () => {
   // Flags 266244 = showMax off (bit 4) + FLAG_PLOTS + FLAG_PERPLOTFLAGS, so
@@ -587,11 +582,11 @@ describe('the Show Vce vs Ic action', () => {
 
   it('pushes one undo entry and treats a repeat click as a no-op', () => {
     const { scopeId } = addTransistorScope();
-    const depth = useStore.getState().undoStack.length;
+    const depth = undoDepth(useStore.getState());
     useStore.getState().setScopeVceIc(scopeId);
-    expect(useStore.getState().undoStack.length).toBe(depth + 1);
+    expect(undoDepth(useStore.getState())).toBe(depth + 1);
     useStore.getState().setScopeVceIc(scopeId);
-    expect(useStore.getState().undoStack.length).toBe(depth + 1);
+    expect(undoDepth(useStore.getState())).toBe(depth + 1);
   });
 
   it('unchecking leaves the pair as stacked traces and the save keeps both tokens', () => {
@@ -642,9 +637,9 @@ describe('per-channel measurement flags', () => {
     const scope = combinedScope();
     const pa = scope.plots[0];
     useStore.getState().setPlotMeasurementFlag(pa.id, 'showFreq', true);
-    const depth = useStore.getState().undoStack.length;
+    const depth = undoDepth(useStore.getState());
     useStore.getState().setPlotMeasurementFlag(pa.id, 'showFreq', true);
-    expect(useStore.getState().undoStack.length).toBe(depth);
+    expect(undoDepth(useStore.getState())).toBe(depth);
   });
 
   it('the badge condition tracks masks that differ from the scope word only', () => {
@@ -688,9 +683,9 @@ describe('per-channel measurement flags', () => {
     useStore.getState().clearPlotMeasurementOverrides(scope.id);
     expect(useStore.getState().scopes[0].plots.every((p) => p.measurements === null)).toBe(true);
     // Clearing with nothing overridden is a no-op: no undo entry.
-    const depth = useStore.getState().undoStack.length;
+    const depth = undoDepth(useStore.getState());
     useStore.getState().clearPlotMeasurementOverrides(scope.id);
-    expect(useStore.getState().undoStack.length).toBe(depth);
+    expect(undoDepth(useStore.getState())).toBe(depth);
   });
 
   it('one undo restores both traces after their overrides were cleared', () => {
@@ -744,9 +739,7 @@ describe('per-channel measurement flags', () => {
     useStore.getState().setPlotMeasurementFlag(scope.plots[0].id, 'showMax', false);
     const mask = useStore.getState().scopes[0].plots[0].measurements!;
     expect(mask.showMax).toBe(false);
-    expect(
-      Object.values(mask).every((v) => v === false),
-    ).toBe(true);
+    expect(Object.values(mask).every((v) => v === false)).toBe(true);
     const saved = useStore.getState().toNetlist();
     // The token is the bare sentinel: hex '400'.
     expect(saved).toContain('o 0 64 0 266243 20 0.05 0 2 400 0 0 3');
@@ -790,9 +783,7 @@ describe('per-channel measurement flags', () => {
     const scope = useStore.getState().scopes[0];
     useStore.getState().setPlotMeasurementFlag(scope.plots[0].id, 'showFreq', true);
     useStore.getState().resetScopeToDefaults(scope.id);
-    expect(
-      useStore.getState().scopes[0].plots.every((p) => p.measurements === null),
-    ).toBe(true);
+    expect(useStore.getState().scopes[0].plots.every((p) => p.measurements === null)).toBe(true);
   });
 });
 

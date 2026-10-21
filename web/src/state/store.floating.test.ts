@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { addResistor, fresh } from './store.test-helpers';
+import { addResistor, fresh, undoDepth } from './store.test-helpers';
 import { useStore } from './store';
 import { dockedScopes } from '../ui/scopeStrip';
 
@@ -31,10 +31,10 @@ describe('floating scope panels', () => {
   it('is not an edit: no undo entry and the file is unchanged', () => {
     const [a] = twoScopes();
     const before = useStore.getState().toNetlist();
-    const depth = useStore.getState().undoStack.length;
+    const depth = undoDepth(useStore.getState());
     useStore.getState().floatScope(a, rect);
     useStore.getState().setFloatRect(a, { ...rect, x: 99 });
-    expect(useStore.getState().undoStack.length).toBe(depth);
+    expect(undoDepth(useStore.getState())).toBe(depth);
     expect(useStore.getState().toNetlist()).toBe(before);
   });
 
@@ -43,8 +43,7 @@ describe('floating scope panels', () => {
     useStore.getState().floatScope(a, rect);
     useStore.getState().floatScope(b);
     const ids = () => useStore.getState().floating.map((f) => f.id);
-    const top = () =>
-      [...useStore.getState().floating].sort((p, q) => q.z - p.z)[0].id;
+    const top = () => [...useStore.getState().floating].sort((p, q) => q.z - p.z)[0].id;
     expect(top()).toBe(b);
     useStore.getState().raiseFloatingScope(a);
     // The DOM order is the array order; a reorder would drop the pointer
@@ -109,7 +108,7 @@ describe('floating scope panels', () => {
 
   it('a drop moves a scope as one undo step and docks a floating one', () => {
     const [a, b] = twoScopes();
-    const depth = useStore.getState().undoStack.length;
+    const depth = undoDepth(useStore.getState());
     useStore.getState().floatScope(b, rect);
     useStore.getState().moveScope(b, { kind: 'stack', withId: a });
     const st = useStore.getState();
@@ -118,7 +117,7 @@ describe('floating scope panels', () => {
       [a, 0],
       [b, 0],
     ]);
-    expect(st.undoStack.length).toBe(depth + 1);
+    expect(undoDepth(st)).toBe(depth + 1);
     useStore.getState().undo();
     expect(useStore.getState().scopes.map((s) => s.position)).toEqual([0, 1]);
   });
@@ -126,9 +125,9 @@ describe('floating scope panels', () => {
   it('a no-op drop pushes no undo entry, but still docks a floating scope', () => {
     const [, b] = twoScopes();
     useStore.getState().floatScope(b, rect);
-    const depth = useStore.getState().undoStack.length;
+    const depth = undoDepth(useStore.getState());
     useStore.getState().moveScope(b, { kind: 'column', beforeId: null });
-    expect(useStore.getState().undoStack.length).toBe(depth);
+    expect(undoDepth(useStore.getState())).toBe(depth);
     expect(useStore.getState().floating).toEqual([]);
   });
 });

@@ -1,11 +1,6 @@
 /** Application state. Everything the UI reads or mutates lives here. */
 
-import type {
-  PlotMeasurementKey,
-  Scope,
-  ScopeTrigger,
-  ScopeValue,
-} from '../engine/scopeModel';
+import type { PlotMeasurementKey, Scope, ScopeTrigger, ScopeValue } from '../engine/scopeModel';
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { FloatRect } from '../ui/floatingScopes';
 import type { ScopeDropTarget } from './scopeLayout';
@@ -17,6 +12,7 @@ import type { ScrollValueSession } from '../model/scrollValue';
 import type { CircuitElement, Point, SimSettings } from '../model/types';
 import type { WireSegment } from '../model/wirePlacement';
 import type { SampleCacheSnapshot } from '../model/sampleCache';
+import type { History, HistorySource } from './history';
 
 export interface ViewTransform {
   /** Circuit-space coordinate at the canvas origin. */
@@ -73,13 +69,13 @@ export interface SubcircuitStackEntry {
    *  so any wholesale stack reset (a mid-drill load, New) drops it too, and
    *  nothing stale can ever be restored onto the wrong document. */
   session: DrillSessionSnapshot;
-  /** The enclosing level's suspended undo histories, restored on exit because
-   *  both loads of the round trip wipe the live stacks (upstream stashes them
-   *  in pushContext/popContext, CirSim.java:476-500). They travel with the
-   *  entry for the same reason `session` does: a mid-drill load or New drops
-   *  them with it, so nothing stale restores onto the wrong document. */
-  undo: Snapshot[];
-  redo: Snapshot[];
+  /** The enclosing level's suspended undo history, restored on exit because
+   *  both loads of the round trip wipe the live history (upstream stashes its
+   *  stacks in pushContext/popContext, CirSim.java:476-500). It travels with
+   *  the entry for the same reason `session` does: a mid-drill load or New
+   *  drops it with the entry, so nothing stale restores onto the wrong
+   *  document. */
+  history: History;
   /** Whether the enclosing document read clean against `lastSaved` at enter,
    *  by the app's own non-live comparison (App.tsx's beforeunload guard). The
    *  exit reload bakes live reactive charge into the restored params, so on a
@@ -220,24 +216,24 @@ export interface AppState {
    *  node). It flashes and clears itself; nothing here is waiting on the
    *  user. */
   notice: string | null;
-  undoStack: Snapshot[];
-  redoStack: Snapshot[];
-  /** True while a scope editing gesture (a plot-Y drag or a speed wheel burst)
-   *  is in progress. The scope setters skip their per-call `commit()` while it
-   *  holds, so the whole gesture collapses into one undo entry. Transient: it
-   *  is not part of `Snapshot`, so it never touches undo dedup. */
-  scopeGesture: boolean;
+  /** The undo past, the redo future and the open transaction. The stacks hold
+   *  labelled entries, and every document step is created through `transact`
+   *  (or the gesture form `beginTransaction`/`endTransaction`), so nothing
+   *  else in the store has to reason about undo boundaries. */
+  history: History;
   /** The in-flight canvas pointer gesture, mirrored from the canvas drag ref so
    *  the keyboard path can act on the grabbed element. `place` carries the
    *  anchor-relative quarter turns Space has applied, which the placement's
    *  pointer-move re-applies to the cursor-derived endpoint. Transient: not
-   *  part of `Snapshot`, so it never reaches the undo stack or `snapshotKey`. */
+   *  part of `Snapshot`, so it never reaches the undo stack or `snapshotKey`.
+   *  Its only job is the placement's banked turns and the rotate dispatch;
+   *  the undo boundary is the open transaction, not this flag. */
   elementGesture: { kind: 'place' | 'move'; placeTurns: number } | null;
   /** Quarter turns applied to the armed tool's ghost, before any press. Reset
    *  by `setTool`, so arming a part always starts flat and the counter cannot
    *  survive into the next placement. Transient: not part of `Snapshot`, so it
    *  never reaches the undo stack or `snapshotKey`, exactly like
-   *  `elementGesture` and `scopeGesture`. */
+   *  `elementGesture`. */
   toolTurns: number;
   /** Bumped by every undo, redo and revertToBaseline, and by every wholesale
    *  document replacement (`loadNetlist`, and `newCircuit` which does not
@@ -521,14 +517,10 @@ export interface AppState {
   /** Opens or closes the options drawer (the mobile overlay). Opening it
    *  closes the toolbox drawer, since only one mobile drawer shows at a time. */
   setPanelOpen(open: boolean): void;
-  /** skipCommit is set by the placement-cancel path (a zero-length drop):
-   *  the deleted element's own creation is already the gesture's undo
-   *  baseline, so this must not push a second one. Every other caller
-   *  omits it and gets the normal pre-delete commit, except while an
-   *  element gesture is in flight: there the deletion folds into that
-   *  gesture's baseline instead of splitting it across two entries,
-   *  exactly as a mid-drag rotate does. */
-  deleteSelected(skipCommit?: boolean): void;
+  /** Deletes the selection as one `Delete` step. Called while a placement or
+   *  move transaction is open (the zero-length drop and the context menu
+   *  alike), the deletion joins that transaction instead of splitting it. */
+  deleteSelected(): void;
   /** Rotates the selection 90 degrees about each element's midpoint, one undo
    *  entry. Under an `elementGesture` it skips the commit (the gesture's
    *  pointer-down commit is the baseline) and a placement turns about its press
@@ -643,7 +635,7 @@ export interface AppState {
   unblowFuses(): void;
   /** Kills the redo future without touching the undo past. Every entry-free
    *  run-mode mutation (a keyboard throw, a momentary release, a settings
-   *  write) must end with its future dead the way a commit leaves it: switch
+   *  write) must end with its future dead the way a checkpoint leaves it: switch
    *  throws, fuse state and settings all ride the snapshots, so a future left
    *  standing would silently rewind the mutation on Ctrl+Shift+Z. */
   discardRedoFuture(): void;
@@ -767,34 +759,36 @@ export interface AppState {
    *  row stays enabled, so exiting then clicking again recovers. */
   recoverAutoSave(): void;
 
-  /** Begins a scope editing gesture: commits the pre-gesture baseline once,
-   *  then raises `scopeGesture` so the scope setters stop committing until
-   *  `endScopeGesture`. Mirrors `beginEdit` for element drags. */
-  beginScopeGesture(): void;
-  /** Ends a scope editing gesture, lowering `scopeGesture` so the scope setters
-   *  resume committing. The gesture's whole edit is one undo entry. */
-  endScopeGesture(): void;
+  /** Runs `fn` as one labelled undo step: the pre-state is checkpointed on
+   *  begin, `fn` mutates the store freely, and the transaction closes in a
+   *  `finally` so a throw leaves no half-open entry. Nested calls join the
+   *  outer transaction, so a command that calls another command is still one
+   *  step. This is the only way store actions create undo steps. */
+  transact<T>(label: string, fn: () => T, source?: HistorySource): T;
+  /** Opens a transaction for a gesture that spans many pointer or wheel
+   *  events. Every `beginTransaction` owes an `endTransaction`; a revert
+   *  aborts instead, so a transaction never outlives its baseline. */
+  beginTransaction(label: string, source?: HistorySource): void;
+  /** Closes the innermost transaction. A transaction whose document state
+   *  never moved off its own baseline is popped again, so a click that only
+   *  selected leaves no dead undo entry. */
+  endTransaction(): void;
   /** Begins a canvas pointer gesture on an element: raises `elementGesture` so
-   *  a keyboard rotate mid-drag folds into the gesture's single undo entry.
-   *  Unlike `beginScopeGesture` this does not commit: both callers (a placement
-   *  arm and a move arm) have already committed their own baseline. */
+   *  a keyboard rotate mid-drag knows which grabbed part it is turning. The
+   *  undo boundary itself is the transaction the pointer-down path opened. */
   beginElementGesture(kind: 'place' | 'move'): void;
-  /** Ends the canvas pointer gesture, lowering `elementGesture` so the next
-   *  command commits normally again. Every drag teardown owes this call. */
+  /** Ends the canvas pointer gesture, lowering `elementGesture` and closing the
+   *  gesture's transaction. Every drag teardown owes this call. */
   endElementGesture(): void;
-  /** Records the current state so the next change can be undone. */
-  commit(): void;
-  /** Marks the start of an edit session (a field focus or a pointer-down on a
-   *  slider). One undo entry per session; a session that changes nothing is
-   *  deduped away by commit. */
-  beginEdit(): void;
+  /** Records the current state so the next change can be undone. Used by
+   *  field-edit sessions, where the label is the edited field's own name. */
+  beginEdit(label?: string): void;
   undo(): void;
   redo(): void;
 
   /** Opens the wheel value popover session. Pushes no undo entry: the wheel
-   *  path commits its baseline before calling this, upstream's constructor
-   *  pushUndo (ScrollValuePopup.java:59), and a second commit here would
-   *  split the session across two undo steps. */
+   *  path opens its transaction before the first step, upstream's constructor
+   *  pushUndo (ScrollValuePopup.java:59), and the popover's close ends it. */
   openScrollValuePopover(popover: ScrollValuePopover): void;
   /** Steps the open session by one wheel event's normalized pixels, writing
    *  the stepped value through `setParam` so it stays live. A no-op when no
