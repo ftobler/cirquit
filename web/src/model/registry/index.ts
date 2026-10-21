@@ -391,7 +391,21 @@ export interface ToolboxEntry {
    *  push switch rests open at position 1, upstream's momentary constructor
    *  (SwitchElm.java:33-38), while every other interactive kind rests at 0. */
   state?: number;
+  /** Whether the element currently carries this entry's variant identity.
+   *  Only the tools sharing their kind with a base entry need it: a PNP, an
+   *  AC source, a push switch and the swapped op-amp all dump as their base
+   *  kind, so their identity lives in one param or flag bit rather than in
+   *  `kind`. The reset-to-defaults path uses it to restore that tool's
+   *  defaults instead of converting the part into the base kind. Runtime
+   *  values (a switch's position) are deliberately not part of the test, so
+   *  a toggle does not stop the part from being recognised. */
+  matches?: (e: CircuitElement) => boolean;
 }
+
+/** The write sign is the P-flavour identity for every split semiconductor
+ *  (TransistorElm.java:58-75): a file with -1 reloads as that tool's kind
+ *  again, while a non-negative sign (including the legacy 0) is the N base. */
+const isPnpPart = (e: CircuitElement): boolean => (e.params.pnp ?? 1) === -1;
 
 const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
   {
@@ -409,6 +423,7 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
     category: 'Semiconductors',
     shortcut: 'p',  // PTransistorElm.java
     defaults: { pnp: -1, beta: 100 },
+    matches: isPnpPart,
   },
   {
     id: 'nmos',
@@ -425,6 +440,7 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
     category: 'Semiconductors',
     shortcut: 'P',  // PMosfetElm.java
     defaults: { pnp: -1, beta: 0.02, threshold: 1.5 },
+    matches: isPnpPart,
   },
   {
     id: 'njfet',
@@ -439,6 +455,7 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
     label: 'P-JFET',
     category: 'Semiconductors',
     defaults: { pnp: -1, beta: 0.00125, threshold: -4 },
+    matches: isPnpPart,
   },
   {
     id: 'npndarlington',
@@ -453,6 +470,7 @@ const SPLIT_SEMICONDUCTORS: ToolboxEntry[] = [
     label: 'PNP Darlington',
     category: 'Semiconductors',
     defaults: { pnp: -1 },
+    matches: isPnpPart,
   },
 ];
 
@@ -468,6 +486,7 @@ const SWAPPED_OPAMPS: ToolboxEntry[] = [
     category: 'Active',
     shortcut: 'A',  // OpAmpSwapElm.java getShortcut
     flags: OPAMP_SWAP,
+    matches: (e) => (e.flags & OPAMP_SWAP) !== 0,
   },
 ];
 
@@ -484,6 +503,10 @@ const PUSH_SWITCHES: ToolboxEntry[] = [
     category: 'Basics',
     defaults: { position: 1, momentary: 1 },
     state: 1,
+    // The momentary param is the identity; position is runtime state and is
+    // deliberately not consulted, so a pressed or released switch still
+    // resets as a push switch.
+    matches: (e) => (e.params.momentary ?? 0) !== 0,
   },
 ];
 
@@ -495,6 +518,11 @@ const PUSH_SWITCHES: ToolboxEntry[] = [
  *  (ACRailElm's getShortcut returns 0). */
 const AC_PEAK_VOLTAGE = 120 * Math.sqrt(2);
 
+/** Waveform 1 is WF_AC, the token that makes a voltage or rail source an AC
+ *  tool on reload (VoltageElm.java waveform constants); the peak and frequency
+ *  are ordinary settings, so only the waveform identifies the variant. */
+const isAcSource = (e: CircuitElement): boolean => (e.params.waveform ?? 0) === 1;
+
 const ENTRIES_AFTER_KIND: Record<string, ToolboxEntry[]> = {
   voltage: [
     {
@@ -503,6 +531,7 @@ const ENTRIES_AFTER_KIND: Record<string, ToolboxEntry[]> = {
       label: 'AC Voltage Source',
       category: 'Sources',
       defaults: { waveform: 1, maxVoltage: AC_PEAK_VOLTAGE, frequency: 60 },
+      matches: isAcSource,
     },
   ],
   rail: [
@@ -512,6 +541,7 @@ const ENTRIES_AFTER_KIND: Record<string, ToolboxEntry[]> = {
       label: 'AC Voltage Rail',
       category: 'Sources',
       defaults: { waveform: 1, maxVoltage: AC_PEAK_VOLTAGE, frequency: 60 },
+      matches: isAcSource,
     },
   ],
 };
@@ -539,6 +569,17 @@ const TOOLBOX_BY_ID = new Map(TOOLBOX.map((t) => [t.id, t]));
 /** The toolbox entry backing a tool id, falling back to the kind itself. */
 export function toolboxEntry(tool: string): ToolboxEntry {
   return TOOLBOX_BY_ID.get(tool) ?? { id: tool, kind: tool, label: tool, category: 'Other' };
+}
+
+/** The variant tool an element currently is, or undefined for a part that
+ *  matches no variant of its kind. Several tools share one `kind`, so a file
+ *  carries only the identity trait each `matches` reads (the PNP sign, WF_AC,
+ *  the momentary param, FLAG_SWAP); this recovers which tool placed the part
+ *  without storing a tool id on the element. Used by the reset-to-defaults
+ *  path, which must not turn a PNP into an NPN or a push switch into a
+ *  latching one. */
+export function variantEntryFor(e: CircuitElement): ToolboxEntry | undefined {
+  return TOOLBOX.find((t) => t.kind === e.kind && t.matches !== undefined && t.matches(e));
 }
 
 /** The element definition behind a tool id, for defaults and geometry. */

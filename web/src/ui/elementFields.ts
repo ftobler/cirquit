@@ -4,7 +4,7 @@
  *  belongs inside a React component). The `.tsx` beside this file owns the
  *  controls; this module owns the rows and the store dispatch. */
 
-import { defFor } from '../model/registry';
+import { defFor, variantEntryFor } from '../model/registry';
 import { DEFAULT_MODEL_NAME } from '../model/registry/elements/customComposite';
 import { modelFamilyFor, userModel } from '../model/deviceModels';
 import { bytesToHexRun, contentsToText, parseContentsText } from '../model/memoryContents';
@@ -313,4 +313,58 @@ export function applyFieldChange(
   // unit divided back into the stored param's unit (percent into the 0..1
   // fraction), the inverse of the `fieldValue` multiply.
   actions.setParam(e.id, f.name, value / (f.scale ?? 1));
+}
+
+/** The element a "reset to defaults" produces: `e` with every default-bearing
+ *  field put back to what a freshly placed part of its tool carries, the way
+ *  `makeElement` / `makeToolElement` build it. A variant sharing its kind with
+ *  a base entry (a PNP, an AC source, a push switch, the swapped op-amp) is
+ *  recognised by its identity trait and resets to that tool's defaults, so the
+ *  button never converts the part into a different type. Geometry, identity,
+ *  the routed polyline and the embedded-scope interpretation are not settings
+ *  and survive untouched. The file-carried device-model name and the
+ *  session-only keyboard shortcut are dropped too, because a fresh part
+ *  carries neither, and an interactive part returns to its rest position. */
+export function elementDefaults(e: CircuitElement): CircuitElement {
+  const def = defFor(e.kind);
+  const variant = variantEntryFor(e);
+  const next: CircuitElement = {
+    ...e,
+    flags: (def?.defaultFlags ?? 0) | (variant?.flags ?? 0),
+    params: { ...(def?.defaults ?? {}), ...(variant?.defaults ?? {}) },
+  };
+  if (def?.defaultText !== undefined) next.text = def.defaultText;
+  else delete next.text;
+  if (def?.defaultModel !== undefined) next.model = def.defaultModel;
+  else delete next.model;
+  if (def?.interactive) next.state = variant?.state ?? 0;
+  else delete next.state;
+  delete next.modelName;
+  delete next.keyShortcut;
+  return next;
+}
+
+/** True when `elementDefaults(e)` would leave `e` unchanged, the guard that
+ *  keeps a no-op reset from pushing an undo entry or rebuilding the engine.
+ *  `model` is compared by reference, matching `patchChangesElement`, because
+ *  the producer hands back the def's own string rather than a fresh blob.
+ *  `state` compares with a missing value read as 0: a non-interactive part
+ *  that loaded an explicit `state: 0` (a fuse) is already at rest, and the
+ *  reset deleting the key is not a change worth an undo entry. */
+export function elementResetChanged(from: CircuitElement, to: CircuitElement): boolean {
+  if (
+    from.flags !== to.flags ||
+    (from.state ?? 0) !== (to.state ?? 0) ||
+    from.text !== to.text ||
+    from.model !== to.model ||
+    from.modelName !== to.modelName ||
+    from.keyShortcut !== to.keyShortcut
+  ) {
+    return true;
+  }
+  const a = from.params;
+  const b = to.params;
+  if (Object.keys(a).length !== Object.keys(b).length) return true;
+  for (const k of Object.keys(a)) if (a[k] !== b[k]) return true;
+  return false;
 }

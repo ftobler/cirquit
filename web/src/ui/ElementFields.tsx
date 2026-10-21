@@ -568,6 +568,25 @@ function CompositeEditModelButton({ element }: { element: CircuitElement }) {
   );
 }
 
+/** The "reset to defaults" row under the property list: puts the element's
+ *  editable surface back to what a fresh part of its kind carries. Only shown
+ *  when there are rows to reset, so an element with no editable properties
+ *  never offers a button that does nothing. */
+function ResetElementButton({ element }: { element: CircuitElement }) {
+  const resetElementToDefaults = useStore((s) => s.resetElementToDefaults);
+  return (
+    <div className="row">
+      <button
+        type="button"
+        title="Put this element's properties back to the defaults for its type"
+        onClick={() => resetElementToDefaults(element.id)}
+      >
+        Reset to defaults
+      </button>
+    </div>
+  );
+}
+
 /** The def's property rows for one element. Every control writes through a
  *  store action, so undo bracketing, the revision bump and the engine rebuild
  *  behave the same wherever this list is mounted. */
@@ -586,10 +605,11 @@ export function ElementFields({ element, engine }: Props) {
   // Bumped when a binary file load lands, dropping any open contents draft so
   // the stale text cannot be committed over the loaded pairs on blur.
   const [contentsReset, bumpContentsReset] = useState(0);
+  const rows = fieldRows(element);
 
   return (
     <>
-      {fieldRows(element).map(({ field, label, value }) => (
+      {rows.map(({ field, label, value }) => (
         <Fragment key={field.name}>
           <Field
             field={field}
@@ -656,6 +676,7 @@ export function ElementFields({ element, engine }: Props) {
           )}
         </Fragment>
       ))}
+      {rows.length > 0 && <ResetElementButton element={element} />}
     </>
   );
 }

@@ -425,6 +425,15 @@ export interface AppState {
   select(ids: number[]): void;
   addElement(e: Omit<CircuitElement, 'id'>): number;
   updateElement(id: number, patch: Partial<CircuitElement>): void;
+  /** Puts the element's editable surface back to what a freshly placed part of
+   *  its tool carries (`elementDefaults`): default flags, params, text and
+   *  model, a cleared file-carried model name and session-only shortcut, and
+   *  the rest state. A variant sharing its kind with the base entry (a PNP,
+   *  an AC source, a push switch, the swapped op-amp) keeps its variant's
+   *  defaults rather than turning into the base type. Geometry and the routed
+   *  polyline survive. One undo entry, and a no-op that changes nothing pushes
+   *  neither. */
+  resetElementToDefaults(id: number): void;
   /** Finishes a wire placement: records the snapped end and, when it lands on
    *  another wire's interior, splits that wire so the two connect. */
   placeWireEnd(id: number, x: number, y: number): void;

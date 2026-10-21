@@ -3,7 +3,7 @@ import { matchShortcut } from '../input/shortcuts';
 import { modalSurface } from '../input/modalSurface';
 import { DEFAULT_SETTINGS, GRID_SIZE, type SimSettings } from '../model/types';
 import { LOGIC_INPUT_TERNARY } from '../model/registry/flags';
-import { postsOf } from '../model/registry';
+import { defFor, postsOf } from '../model/registry';
 import { hitTestElement } from '../render/geometry';
 import { scopePlotsToSpecs } from '../engine/scopeModel';
 import { scaleStateFor, setScaleState } from '../scope/scale';
@@ -4995,5 +4995,65 @@ describe('manual wire split (Split Wire Manually)', () => {
       [80, 80],
       [160, 0],
     ]);
+  });
+});
+
+describe('resetElementToDefaults', () => {
+  it('restores a tweaked part, pushes one undo entry and reloads the engine', () => {
+    const id = useStore.getState().addElement({
+      kind: 'voltage',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 64,
+      flags: 16 | 32,
+      params: {
+        maxVoltage: 12,
+        frequency: 100,
+        dutyCycle: 0.5,
+        phaseShift: 0,
+        bias: 0,
+        riseTime: 0,
+      },
+      modelName: '1N4148',
+      keyShortcut: 'a',
+    });
+    const before = useStore.getState();
+
+    useStore.getState().resetElementToDefaults(id);
+
+    const after = useStore.getState();
+    const el = after.elements.find((e) => e.id === id)!;
+    expect(el.flags).toBe(defFor('voltage')!.defaultFlags);
+    expect(el.params).toEqual(defFor('voltage')!.defaults);
+    expect(el.modelName).toBeUndefined();
+    expect(el.keyShortcut).toBeUndefined();
+    expect(after.revision).toBe(before.revision + 1);
+    expect(after.undoStack.length).toBe(before.undoStack.length + 1);
+
+    useStore.getState().undo();
+    const undone = useStore.getState().elements.find((e) => e.id === id)!;
+    expect(undone.params.maxVoltage).toBe(12);
+    expect(undone.modelName).toBe('1N4148');
+  });
+
+  it('is a no-op that pushes no undo entry when the part already holds its defaults', () => {
+    const id = useStore.getState().addElement(makeElement('resistor', 0, 0, 160, 0));
+    const before = useStore.getState();
+
+    useStore.getState().resetElementToDefaults(id);
+
+    const after = useStore.getState();
+    expect(after.revision).toBe(before.revision);
+    expect(after.undoStack.length).toBe(before.undoStack.length);
+  });
+
+  it('refuses an element that is not in the document', () => {
+    const before = useStore.getState();
+
+    useStore.getState().resetElementToDefaults(9999);
+
+    expect(useStore.getState().revision).toBe(before.revision);
+    expect(useStore.getState().elements).toEqual(before.elements);
   });
 });

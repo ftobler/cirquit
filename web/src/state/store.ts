@@ -137,7 +137,7 @@ import {
   undockedWindow,
   undockedWindowOuterSize,
 } from '../undocked/opener';
-import { clampInteger } from '../ui/elementFields';
+import { clampInteger, elementDefaults, elementResetChanged } from '../ui/elementFields';
 
 /** The element kinds whose `inputCount` `setParam` normalises on edit: the
  *  controlled sources and the six basic gates, all of whose engines truncate
@@ -1116,6 +1116,25 @@ function createAppStore() {
         ...bumpRevision(s),
       };
     }),
+
+  // Puts one element's editable surface back to the defaults a fresh part of
+  // its kind carries, through the pure `elementDefaults` so the rule lives one
+  // place (testable without a store). A reset that would change nothing is a
+  // no-op: no undo entry, no engine rebuild. Flags, params, text and model can
+  // all change the build, so the reset always reloads rather than riding the
+  // live set_param fast path; the rebuild clears any queued value edits.
+  resetElementToDefaults: (id) => {
+    const s = get();
+    const target = s.elements.find((e) => e.id === id);
+    if (!target || defFor(target.kind) === undefined) return;
+    const next = elementDefaults(target);
+    if (!elementResetChanged(target, next)) return;
+    s.commit();
+    set((st) => ({
+      elements: st.elements.map((e) => (e.id === id ? next : e)),
+      ...bumpRevision(st),
+    }));
+  },
 
   addWires: (segments) => {
     if (segments.length === 0) return [];

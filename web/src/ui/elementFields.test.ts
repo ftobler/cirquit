@@ -15,6 +15,8 @@ import {
   compositeEditModelState,
   deviceModelButtons,
   draftForToken,
+  elementDefaults,
+  elementResetChanged,
   fieldRows,
   fieldValue,
   visibleFields,
@@ -946,5 +948,98 @@ describe('Safari checkbox and select baseline fallback', () => {
     expect(entries).toBe(2);
     flip(2);
     expect(entries).toBe(2);
+  });
+});
+
+describe('reset to defaults', () => {
+  it('restores a tweaked part to the def defaults a fresh part carries', () => {
+    const fresh = elm(makeToolElement('voltage', 0, 0, 0, 64));
+    const tweaked = {
+      ...fresh,
+      flags: fresh.flags | 32,
+      params: { ...fresh.params, maxVoltage: 12, frequency: 100 },
+      modelName: '1N4148',
+      keyShortcut: 'a',
+    };
+    const reset = elementDefaults(tweaked);
+    expect(reset.flags).toBe(fresh.flags);
+    expect(reset.params).toEqual(fresh.params);
+    expect(reset.modelName).toBeUndefined();
+    expect(reset.keyShortcut).toBeUndefined();
+    // Identity and geometry are not settings and survive.
+    expect(reset.id).toBe(tweaked.id);
+    expect([reset.x1, reset.y1, reset.x2, reset.y2]).toEqual([0, 0, 0, 64]);
+  });
+
+  it('drops the default-bearing fields a fresh part does not carry', () => {
+    // A loaded resistor can carry a text annotation and a model name; a fresh
+    // resistor has neither, so the reset removes them.
+    const reset = elementDefaults(
+      elm({ kind: 'resistor', text: 'load', modelName: 'x', params: { resistance: 4700 } }),
+    );
+    expect(reset.params).toEqual(defFor('resistor')!.defaults);
+    expect(reset.text).toBeUndefined();
+    expect(reset.modelName).toBeUndefined();
+    expect(reset.model).toBeUndefined();
+  });
+
+  it('keeps the def default text and model when the kind declares them', () => {
+    // A relay coil seeds "label" and a battery its SOC table; the reset must
+    // put those back, not clear them.
+    const coil = elementDefaults(elm({ kind: 'relayCoil', text: 'coil A' }));
+    expect(coil.text).toBe('label');
+    const battery = elementDefaults(elm({ kind: 'battery', model: 'tweaked' }));
+    expect(battery.model).toBe(defFor('battery')!.defaultModel);
+  });
+
+  it('returns a switch to its rest position and a non-interactive part stateless', () => {
+    const thrown = elementDefaults(elm({ kind: 'switch', state: 1, params: { position: 1 } }));
+    expect(thrown.state).toBe(0);
+    // A resistor has no interactive state to reset.
+    const r = elementDefaults(elm({ kind: 'resistor', state: 5 }));
+    expect(r.state).toBeUndefined();
+  });
+
+  it('keeps the toolbox variant a part was placed as', () => {
+    // These tools share their kind with a base entry, so nothing but the
+    // identity trait (momentary, pnp sign, WF_AC, FLAG_SWAP) records which
+    // one placed the part. Resetting must not quietly convert it.
+    const push = elm(makeToolElement('pushSwitch', 0, 0, 32, 0));
+    const pressed = elementDefaults({ ...push, params: { ...push.params, position: 0 }, state: 0 });
+    expect(pressed.params).toEqual(push.params);
+    expect(pressed.state).toBe(1);
+
+    const pnp = elm(makeToolElement('pnp', 0, 0, 0, 64));
+    const pnpReset = elementDefaults({ ...pnp, params: { ...pnp.params, beta: 20 } });
+    expect(pnpReset.params).toEqual(pnp.params);
+
+    const ac = elm(makeToolElement('acVoltage', 0, 0, 0, 64));
+    const acReset = elementDefaults({ ...ac, params: { ...ac.params, maxVoltage: 10 } });
+    expect(acReset.params).toEqual(ac.params);
+
+    const swapped = elm(makeToolElement('opampSwap', 0, 0, 0, 64));
+    const swappedReset = elementDefaults({ ...swapped, params: { ...swapped.params, gain: 42 } });
+    expect(swappedReset.params).toEqual(swapped.params);
+    expect(swappedReset.flags).toBe(swapped.flags);
+  });
+
+  it('preserves the routed polyline and the embedded-scope interpretation', () => {
+    const routed = elm({ kind: 'wire', route: [[0, 0], [32, 0], [32, 64]] });
+    expect(elementDefaults(routed).route).toEqual(routed.route);
+  });
+
+  it('reports whether a reset would change anything', () => {
+    const fresh = elm(makeToolElement('resistor', 0, 0, 160, 0));
+    expect(elementResetChanged(fresh, elementDefaults(fresh))).toBe(false);
+    const tweaked = { ...fresh, params: { resistance: 4700 }, flags: 1 };
+    expect(elementResetChanged(tweaked, elementDefaults(tweaked))).toBe(true);
+    // A dropped optional key is a change even though it is absent from the next
+    // element: the guard must not miss it by comparing only the carried keys.
+    const named = { ...fresh, modelName: '1N4148' };
+    expect(elementResetChanged(named, elementDefaults(named))).toBe(true);
+    // A non-interactive part carrying an explicit rest state 0 is already at
+    // defaults; deleting the key is not a change worth an undo entry.
+    const fuse = { ...elm(makeToolElement('fuse', 0, 0, 32, 0)), state: 0 };
+    expect(elementResetChanged(fuse, elementDefaults(fuse))).toBe(false);
   });
 });
