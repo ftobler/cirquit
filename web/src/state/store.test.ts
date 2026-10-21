@@ -812,7 +812,7 @@ describe('switch keyboard shortcuts', () => {
     // The precedence is App.tsx order (switch keyShortcut before matchShortcut),
     // but the store half of it is that the switch path fires regardless of what
     // the overlay binds to the same key (UIManager.java:1178 vs 1248).
-    useStore.getState().setShortcuts({ copy: 'k' });
+    useStore.getState().setShortcuts({ 'clipboard.copy': 'k' });
     expect(useStore.getState().toggleSwitchByKey('k')).toBe(true);
     expect(useStore.getState().elements[0].state).toBe(1);
   });
@@ -1424,8 +1424,8 @@ describe('switch keyboard shortcuts', () => {
 
   it('setShortcuts replaces the overlay without touching the circuit', () => {
     const id = addSwitch();
-    useStore.getState().setShortcuts({ copy: 'Ctrl+z', toggleRunning: 'p' });
-    expect(useStore.getState().shortcuts).toEqual({ copy: 'Ctrl+z', toggleRunning: 'p' });
+    useStore.getState().setShortcuts({ 'clipboard.copy': 'Ctrl+z', 'sim.toggle': 'p' });
+    expect(useStore.getState().shortcuts).toEqual({ 'clipboard.copy': 'Ctrl+z', 'sim.toggle': 'p' });
     expect(useStore.getState().elements[0].id).toBe(id);
   });
 });

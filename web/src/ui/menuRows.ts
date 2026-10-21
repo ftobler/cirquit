@@ -2,6 +2,13 @@
  *  deferred-row construction is node-testable; the menubar fills in the live
  *  commands and the store actions behind them. */
 
+import { commandById } from '../commands/registry';
+import { commandState } from '../commands/execute';
+import type { AppState } from '../state/types';
+import { canRedo, canUndo, redoLabel, undoLabel } from '../state/history';
+
+export { dcOutcomeReport } from '../commands/circuit';
+
 export interface MenuItemDef {
   label: string;
   shortcut?: string;
@@ -53,6 +60,61 @@ export function toggleFullScreenRow(onToggle: () => void): MenuItemDef {
   };
 }
 
+/** A menu row built from a command definition: the label, disabled state and
+ *  disabled reason all come from the registry, never a second copy in the
+ *  menubar. `run` is the caller's `fire()` wrapper around execute. */
+export function commandRow(
+  id: string,
+  env: {
+    state: AppState;
+    args?: unknown;
+    shortcut?: string;
+    /** Overrides the def label, for a row that names its target. */
+    label?: string;
+    run: () => void;
+    sepBefore?: boolean;
+  },
+): MenuItemDef {
+  const def = commandById(id);
+  const check = commandState(id, env.args ?? {}, env.state);
+  return {
+    label: env.label ?? def?.label ?? id,
+    shortcut: env.shortcut,
+    disabled: !check.enabled,
+    disabledTitle: check.reason,
+    onClick: env.run,
+    ...(env.sepBefore === undefined ? {} : { sepBefore: env.sepBefore }),
+  };
+}
+
+/** Edit > Undo/Redo, naming the step from the history entry: `Undo Add
+ *  Resistor` rather than a bare `Undo`. A plain label is kept when the stack is
+ *  empty so the disabled row still says what it would do. **Diverges from
+ *  upstream**, whose Undo row never names the step. */
+export function historyRow(
+  kind: 'undo' | 'redo',
+  state: Pick<AppState, 'history' | 'settings'>,
+  onRun: () => void,
+): MenuItemDef {
+  const undo = kind === 'undo';
+  const available = undo ? canUndo(state.history) : canRedo(state.history);
+  const step = undo ? undoLabel(state.history) : redoLabel(state.history);
+  const base = undo ? 'Undo' : 'Redo';
+  return {
+    label: step === null ? base : `${base} ${step}`,
+    shortcut: undo ? 'Ctrl+Z' : 'Ctrl+Y',
+    disabled: !state.settings.editable || !available,
+    disabledTitle: !state.settings.editable
+      ? 'Editing disabled. Re-enable from the Options menu.'
+      : available
+        ? undefined
+        : undo
+          ? 'Nothing to undo'
+          : 'Nothing to redo',
+    onClick: onRun,
+  };
+}
+
 /** The File menu's last two rows: Print, then the Full Screen toggle after a
  *  separator like upstream's addSeparator call (Menus.java:139-141). About
  *  is not here: it lives under Help. Built here rather than inline so the
@@ -71,22 +133,8 @@ export function fileMenuTailRows(tail: {
  *  transient notice, "degraded" means the nonlinear iteration converged on
  *  nothing and says so in the same channel, anything else is the engine's
  *  own message and joins the sticky problem banner like a build failure.
- *  Pure, so the wording and routing stay node-testable. */
-export function dcOutcomeReport(result: string | null): {
-  notice: string | null;
-  problem: string | null;
-} {
-  if (result === null) {
-    return { notice: 'Found the DC operating point', problem: null };
-  }
-  if (result === 'degraded') {
-    return {
-      notice: 'No DC operating point exists; the circuit restarted uncharged',
-      problem: null,
-    };
-  }
-  return { notice: null, problem: result };
-}
+ *  Re-exported from commands/circuit.ts so the command and the menu share one
+ *  wording table. */
 
 /** The Help > About row, which opens the About dialog. Sits after the docs
  *  pages behind a separator. */

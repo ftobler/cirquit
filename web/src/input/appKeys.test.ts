@@ -38,6 +38,7 @@ const recordingHost = (): AppKeyHost & { calls: string[] } => {
     alert: (message) => void calls.push(`alert:${message}`),
     openPalette: () => void calls.push('palette'),
     stateAfter: () => useStore.getState(),
+    store: useStore,
   };
 };
 

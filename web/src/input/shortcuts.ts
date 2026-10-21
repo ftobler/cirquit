@@ -8,33 +8,53 @@
  *  command chord can. */
 
 import { PLACEMENT_BY_CHAR, toolboxEntry } from '../model/registry';
+import { GRID_SIZE } from '../model/types';
 import type { StorageLike } from '../state/appPrefs';
 
-export type ShortcutAction =
-  | { type: 'undo' }
-  | { type: 'redo' }
-  | { type: 'delete' }
+/** A command-backed shortcut. The id is the registry's stable public name;
+ *  `args` is the same argument object a menu or agent would pass. */
+export interface CommandShortcutAction {
+  type: 'command';
+  command: string;
+  args?: unknown;
+}
+
+/** Actions that stay on the host: browser effects with no store action (the
+ *  file picker, print, the palette menu), pure UI modes, and the Save dialog.
+ *  `place` arms a toolbox tool rather than editing the document. */
+export type HostShortcutAction =
   | { type: 'escape' }
   | { type: 'selectMode' }
-  | { type: 'nudge'; dx: number; dy: number }
-  | { type: 'zoomIn' }
-  | { type: 'zoomOut' }
-  | { type: 'zoomReset' }
-  | { type: 'save' }
   | { type: 'open' }
-  | { type: 'copy' }
-  | { type: 'cut' }
-  | { type: 'paste' }
-  | { type: 'duplicate' }
-  | { type: 'selectAll' }
-  | { type: 'rotate' }
-  | { type: 'mirror' }
-  | { type: 'mirrorVertical' }
-  | { type: 'swap' }
-  | { type: 'toggleRunning' }
   | { type: 'print' }
   | { type: 'openPalette' }
+  | { type: 'save' }
   | { type: 'place'; kind: string };
+
+export type ShortcutAction = CommandShortcutAction | HostShortcutAction;
+
+/** The host action names, used to tell a command id from a host name when one
+ *  comes back out of the user shortcut overlay. */
+export const HOST_SHORTCUT_TYPES = [
+  'escape',
+  'selectMode',
+  'open',
+  'print',
+  'openPalette',
+  'save',
+] as const;
+
+export type HostShortcutType = (typeof HOST_SHORTCUT_TYPES)[number];
+
+export function isHostShortcutType(action: string): action is HostShortcutType {
+  return (HOST_SHORTCUT_TYPES as readonly string[]).includes(action);
+}
+
+const cmd = (command: string, args?: unknown): CommandShortcutAction => ({
+  type: 'command',
+  command,
+  ...(args === undefined ? {} : { args }),
+});
 
 export interface KeyEventLike {
   key: string;
@@ -66,14 +86,14 @@ export const SHORTCUTS: ShortcutEntry[] = [
   // (UIManager.java:1198). The shift-specific rows keep Ctrl+Shift+Z
   // distinguishable from Ctrl+Z, and a shifted Ctrl chord is unbound so
   // browser chords (Ctrl+Shift+S) pass through.
-  { mod: true, shift: false, key: 'z', action: { type: 'undo' } },
-  { mod: true, shift: true, key: 'z', action: { type: 'redo' } },
-  { mod: true, shift: false, key: 'y', action: { type: 'redo' } },
-  { mod: true, shift: false, key: 'c', action: { type: 'copy' } },
-  { mod: true, shift: false, key: 'x', action: { type: 'cut' } },
-  { mod: true, shift: false, key: 'v', action: { type: 'paste' } },
-  { mod: true, shift: false, key: 'd', action: { type: 'duplicate' } },
-  { mod: true, shift: false, key: 'a', action: { type: 'selectAll' } },
+  { mod: true, shift: false, key: 'z', action: cmd('history.undo') },
+  { mod: true, shift: true, key: 'z', action: cmd('history.redo') },
+  { mod: true, shift: false, key: 'y', action: cmd('history.redo') },
+  { mod: true, shift: false, key: 'c', action: cmd('clipboard.copy') },
+  { mod: true, shift: false, key: 'x', action: cmd('clipboard.cut') },
+  { mod: true, shift: false, key: 'v', action: cmd('clipboard.paste') },
+  { mod: true, shift: false, key: 'd', action: cmd('clipboard.duplicate') },
+  { mod: true, shift: false, key: 'a', action: cmd('selection.all') },
   { mod: true, shift: false, key: 's', action: { type: 'save' } },
   { mod: true, shift: false, key: 'o', action: { type: 'open' } },
   // Ctrl+P prints the schematic image, not the page (CommandManager.java:73).
@@ -81,34 +101,33 @@ export const SHORTCUTS: ShortcutEntry[] = [
 
   // Plain keys. Delete and Backspace both delete (UIManager.java:1134) and
   // the arrows nudge by one grid step per press (UIManager.java:1153). The
-  // delta is a unit-less step count: the matcher has no store access, so
-  // App.tsx resolves it against the constant grid step (GRID_SIZE = 16) at
-  // dispatch.
+  // step is resolved here from the shared grid constant, because the matcher
+  // has no store access and the command takes circuit units.
   // Ctrl+Delete / Ctrl+Backspace pass through to the browser: the mod combos
   // above are exclusive, so a held ctrl unmatches these plain rows, which is
   // the deliberate consequence of the exact-match matcher.
   { mod: false, key: 'Escape', action: { type: 'escape' } },
-  { mod: false, key: 'Delete', action: { type: 'delete' } },
-  { mod: false, key: 'Backspace', action: { type: 'delete' } },
-  { mod: false, key: 'ArrowUp', action: { type: 'nudge', dx: 0, dy: -1 } },
-  { mod: false, key: 'ArrowDown', action: { type: 'nudge', dx: 0, dy: 1 } },
-  { mod: false, key: 'ArrowLeft', action: { type: 'nudge', dx: -1, dy: 0 } },
-  { mod: false, key: 'ArrowRight', action: { type: 'nudge', dx: 1, dy: 0 } },
+  { mod: false, key: 'Delete', action: cmd('element.delete') },
+  { mod: false, key: 'Backspace', action: cmd('element.delete') },
+  { mod: false, key: 'ArrowUp', action: cmd('element.move', { dx: 0, dy: -GRID_SIZE }) },
+  { mod: false, key: 'ArrowDown', action: cmd('element.move', { dx: 0, dy: GRID_SIZE }) },
+  { mod: false, key: 'ArrowLeft', action: cmd('element.move', { dx: -GRID_SIZE, dy: 0 }) },
+  { mod: false, key: 'ArrowRight', action: cmd('element.move', { dx: GRID_SIZE, dy: 0 }) },
 
   // Zoom keys. '+' and '=' both zoom in and the numpad variants zoom too,
   // which is what upstream's charCode path produces for a numpad
   // (UIManager.java:1091-1099). '0' resets to exactly 100%.
-  { mod: false, key: '-', action: { type: 'zoomOut' } },
-  { mod: false, key: 'Subtract', action: { type: 'zoomOut' } },
-  { mod: false, key: '+', action: { type: 'zoomIn' } },
-  { mod: false, key: '=', action: { type: 'zoomIn' } },
-  { mod: false, key: 'Add', action: { type: 'zoomIn' } },
-  { mod: false, key: '0', action: { type: 'zoomReset' } },
+  { mod: false, key: '-', action: cmd('view.zoomOut') },
+  { mod: false, key: 'Subtract', action: cmd('view.zoomOut') },
+  { mod: false, key: '+', action: cmd('view.zoomIn') },
+  { mod: false, key: '=', action: cmd('view.zoomIn') },
+  { mod: false, key: 'Add', action: cmd('view.zoomIn') },
+  { mod: false, key: '0', action: cmd('view.reset') },
   // Numpad 0 reports the same key '0' as the top row in every modern browser,
   // so this row is never hit; kept for parity with the Add/Subtract rows,
   // which do carry distinct keys ('NumpadAdd'/'NumpadSubtract' are legacy key
   // values some engines still emit).
-  { mod: false, key: 'Numpad0', action: { type: 'zoomReset' } },
+  { mod: false, key: 'Numpad0', action: cmd('view.reset') },
 
   // Geometry commands, the landed editing-gestures keys. The plain r and t
   // were surrendered to upstream placement parity: upstream has no plain-key
@@ -122,19 +141,19 @@ export const SHORTCUTS: ShortcutEntry[] = [
   // or selected. Upstream's Space (temporary select mode) is dropped, because
   // Escape already returns to select mode and Space would otherwise be the one
   // overloaded key in this table. It sits before the Alt+r row so
-  // defaultBindingFor('rotate') reports Space; Alt+r stays a second default.
-  // The shift guard keeps Shift+Space unbound, like the letter rows.
-  { mod: false, shift: false, key: ' ', action: { type: 'rotate' } },
-  { mod: false, alt: true, shift: false, key: 'r', action: { type: 'rotate' } },
+  // defaultBindingFor('element.rotate') reports Space; Alt+r stays a second
+  // default. The shift guard keeps Shift+Space unbound, like the letter rows.
+  { mod: false, shift: false, key: ' ', action: cmd('element.rotate') },
+  { mod: false, alt: true, shift: false, key: 'r', action: cmd('element.rotate') },
   // Alt+H and Alt+V mirror left-right and top-bottom. Alt+H sits first so
-  // defaultBindingFor('mirror') reports it; Alt+M stays as the older alias.
-  // While a move drag holds the selection, plain h and v mirror too
+  // defaultBindingFor('element.mirror') reports it; Alt+M stays as the older
+  // alias. While a move drag holds the selection, plain h and v mirror too
   // (appKeys.ts): v otherwise arms the DC voltage source, which a drag
   // cannot use, so the plain letters are free exactly then.
-  { mod: false, alt: true, shift: false, key: 'h', action: { type: 'mirror' } },
-  { mod: false, alt: true, shift: false, key: 'm', action: { type: 'mirror' } },
-  { mod: false, alt: true, shift: false, key: 'v', action: { type: 'mirrorVertical' } },
-  { mod: false, alt: true, shift: false, key: 't', action: { type: 'swap' } },
+  { mod: false, alt: true, shift: false, key: 'h', action: cmd('element.mirror') },
+  { mod: false, alt: true, shift: false, key: 'm', action: cmd('element.mirror') },
+  { mod: false, alt: true, shift: false, key: 'v', action: cmd('element.mirrorVertical') },
+  { mod: false, alt: true, shift: false, key: 't', action: cmd('element.swapTerminals') },
 
   // Upstream's '/' opens the Find Component dialog (UIManager.java:1103-1110).
   // The port has no such dialog: the right-click menu already carries the
@@ -146,28 +165,30 @@ export const SHORTCUTS: ShortcutEntry[] = [
 
 /** The commands the ShortcutsDialog can rebind: upstream's assignable menu
  *  items plus the Start/Stop row (ShortcutsDialog.java:72-94). Nudge is
- *  excluded: its binding is the four-arrow chord, not a single key. */
+ *  excluded: its binding is the four-arrow chord, not a single key. The
+ *  command ids are the registry's; `save`, `open`, `escape` and `selectMode`
+ *  are host actions with no document command. */
 export const COMMAND_ACTIONS = [
-  'undo',
-  'redo',
-  'delete',
+  'history.undo',
+  'history.redo',
+  'element.delete',
   'save',
   'open',
-  'copy',
-  'cut',
-  'paste',
-  'duplicate',
-  'selectAll',
-  'rotate',
-  'mirror',
-  'mirrorVertical',
-  'swap',
-  'zoomIn',
-  'zoomOut',
-  'zoomReset',
+  'clipboard.copy',
+  'clipboard.cut',
+  'clipboard.paste',
+  'clipboard.duplicate',
+  'selection.all',
+  'element.rotate',
+  'element.mirror',
+  'element.mirrorVertical',
+  'element.swapTerminals',
+  'view.zoomIn',
+  'view.zoomOut',
+  'view.zoomReset',
   'escape',
   'selectMode',
-  'toggleRunning',
+  'sim.toggle',
 ] as const;
 
 export type CommandAction = (typeof COMMAND_ACTIONS)[number];
@@ -205,26 +226,26 @@ export type AssignableAction = CommandAction | PlacementAction;
 /** The dialog's row labels for the command rows. Placement-row labels come
  *  from the registry via actionLabel, so no second name table exists here. */
 export const ACTION_LABELS: Record<CommandAction, string> = {
-  undo: 'Undo',
-  redo: 'Redo',
-  delete: 'Delete',
+  'history.undo': 'Undo',
+  'history.redo': 'Redo',
+  'element.delete': 'Delete',
   save: 'Save As',
   open: 'Open File',
-  copy: 'Copy',
-  cut: 'Cut',
-  paste: 'Paste',
-  duplicate: 'Duplicate',
-  selectAll: 'Select All',
-  rotate: 'Rotate',
-  mirror: 'Mirror Horizontally',
-  mirrorVertical: 'Mirror Vertically',
-  swap: 'Swap',
-  zoomIn: 'Zoom In',
-  zoomOut: 'Zoom Out',
-  zoomReset: 'Zoom 100%',
+  'clipboard.copy': 'Copy',
+  'clipboard.cut': 'Cut',
+  'clipboard.paste': 'Paste',
+  'clipboard.duplicate': 'Duplicate',
+  'selection.all': 'Select All',
+  'element.rotate': 'Rotate',
+  'element.mirror': 'Mirror Horizontally',
+  'element.mirrorVertical': 'Mirror Vertically',
+  'element.swapTerminals': 'Swap',
+  'view.zoomIn': 'Zoom In',
+  'view.zoomOut': 'Zoom Out',
+  'view.zoomReset': 'Zoom 100%',
   escape: 'Escape to select mode',
   selectMode: 'Select mode',
-  toggleRunning: 'Start/Stop Simulation',
+  'sim.toggle': 'Start/Stop Simulation',
 };
 
 /** The dialog's row label for any assignable action: the command table for
@@ -341,7 +362,8 @@ export function matchShortcut(
   const assigned = actionForChord(overlay, chordOf(ev));
   if (assigned !== null) {
     if (isPlacementAction(assigned)) return { type: 'place', kind: placementToolOf(assigned) };
-    return { type: assigned } as ShortcutAction;
+    if (isHostShortcutType(assigned)) return { type: assigned };
+    return { type: 'command', command: assigned };
   }
   // Letters match on the lowercase form (Shift+r is still r), punctuation and
   // named keys on the exact char.
@@ -391,9 +413,15 @@ export function defaultBindingFor(type: AssignableAction): string {
   const seeded = PLACE_DEFAULT_CHORDS.get(type);
   if (seeded !== undefined) return seeded;
   for (const entry of SHORTCUTS) {
-    if (entry.action.type === type) return chordFromEntry(entry);
+    if (actionMatches(entry.action, type)) return chordFromEntry(entry);
   }
   return '';
+}
+
+/** True when a table action is the given assignable action: a command row
+ *  names its registry id, a host row its own type. */
+function actionMatches(action: ShortcutAction, type: AssignableAction): boolean {
+  return action.type === 'command' ? action.command === type : action.type === type;
 }
 
 function chordFromEntry(entry: ShortcutEntry): string {
@@ -532,11 +560,40 @@ function isValidChord(chord: string): boolean {
   return NAMED_KEY.test(key) && !NON_ASSIGNABLE_KEYS.has(key);
 }
 
+/** The pre-registry storage names. A saved overlay from before commands
+ *  carries these keys; load migrates each to the command id it now denotes.
+ *  Host names without a command (save, open, escape, selectMode) map to
+ *  themselves and need no entry. */
+const LEGACY_ACTION_MAP: Readonly<Record<string, AssignableAction>> = {
+  undo: 'history.undo',
+  redo: 'history.redo',
+  delete: 'element.delete',
+  copy: 'clipboard.copy',
+  cut: 'clipboard.cut',
+  paste: 'clipboard.paste',
+  duplicate: 'clipboard.duplicate',
+  selectAll: 'selection.all',
+  rotate: 'element.rotate',
+  mirror: 'element.mirror',
+  mirrorVertical: 'element.mirrorVertical',
+  swap: 'element.swapTerminals',
+  zoomIn: 'view.zoomIn',
+  zoomOut: 'view.zoomOut',
+  zoomReset: 'view.zoomReset',
+  toggleRunning: 'sim.toggle',
+};
+
+export function migrateShortcutAction(action: string): AssignableAction | null {
+  if (isAssignableAction(action)) return action;
+  return LEGACY_ACTION_MAP[action] ?? null;
+}
+
 /** Reads the stored overlay. A missing, corrupt or wrong-typed blob yields {},
  *  and unknown actions or malformed chords are dropped, so a stale entry from
  *  an older build can never bind a key the matcher would not produce.
  *  Upstream alerts and falls back on a corrupt entry; the port is quiet, same
- *  result. */
+ *  result. A pre-registry blob migrates its old action names on read; an
+ *  already-new key wins over a legacy key that maps to the same command. */
 export function loadShortcutOverlay(
   storage: StorageLike | undefined = defaultStorage(),
 ): ShortcutOverlay {
@@ -556,10 +613,19 @@ export function loadShortcutOverlay(
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
   const out: ShortcutOverlay = {};
-  for (const [type, chord] of Object.entries(parsed)) {
-    if (isAssignableAction(type) && typeof chord === 'string' && isValidChord(chord)) {
-      out[type] = chord;
-    }
+  const entries = Object.entries(parsed).filter(
+    (entry): entry is [string, string] => typeof entry[1] === 'string',
+  );
+  // New keys first, so a blob holding both spellings keeps the explicit new
+  // assignment; then legacy keys fill only what is still unset.
+  for (const [type, chord] of entries) {
+    if (isAssignableAction(type) && isValidChord(chord)) out[type] = chord;
+  }
+  for (const [type, chord] of entries) {
+    const migrated = migrateShortcutAction(type);
+    if (migrated === null || migrated === type) continue;
+    if (out[migrated] !== undefined || !isValidChord(chord)) continue;
+    out[migrated] = chord;
   }
   return out;
 }

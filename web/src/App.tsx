@@ -123,6 +123,7 @@ export default function App() {
         useStore.getState().openContextMenu(at.client.x, at.client.y, null, at.circuit, true);
       },
       stateAfter: () => useStore.getState(),
+      store: useStore,
     };
     const onKey = (ev: KeyboardEvent) => {
       const target = ev.target as HTMLElement | null;

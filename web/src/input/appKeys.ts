@@ -3,8 +3,9 @@
  *  early return and the preventDefault bookkeeping; everything between lives
  *  here against plain state objects. */
 
-import { GRID_SIZE } from '../model/types';
 import type { AppState } from '../state/types';
+import { execute } from '../commands/execute';
+import type { CommandStore } from '../commands/types';
 import {
   chordOf,
   hasChord,
@@ -15,24 +16,12 @@ import {
 } from './shortcuts';
 import { modalSurface } from './modalSurface';
 
-/** Shortcut actions that edit the circuit. Dropped whole when Disable Editing
- *  is on; everything else (zoom, file, view) stays live. */
-const EDIT_ACTIONS = new Set<ShortcutAction['type']>([
-  'undo',
-  'redo',
-  'delete',
-  'nudge',
-  'copy',
-  'cut',
-  'paste',
-  'duplicate',
-  'selectAll',
-  'rotate',
-  'mirror',
-  'mirrorVertical',
-  'swap',
-  'place',
-]);
+/** The status line under Disable Editing, shared by every refused edit door. */
+const EDITING_DISABLED = 'Editing disabled. Re-enable from the Options menu.';
+
+/** The key actions that must act once per press, not at the key-repeat rate:
+ *  a resting thumb on Space or an Alt mirror must not spin the part. */
+const REPEAT_ONCE = new Set(['element.rotate', 'element.mirror', 'element.mirrorVertical']);
 
 /** The side effects a shortcut can need that no store action provides, named
  *  once so tests can record calls instead of touching the browser. */
@@ -48,6 +37,10 @@ export interface AppKeyHost {
   /** Live store state re-read after an action may have replaced it: the
    *  refused-exit path looks for subcircuitError set by exitSubcircuit. */
   stateAfter(): AppState;
+  /** The real store, so command shortcuts go through the same door the menus
+   *  and the later MCP server use. `stateAfter` stays for the paths that read
+   *  a value after a command changed it. */
+  store: CommandStore;
 }
 
 /** A keydown/keyup descriptor: the five fields matching reads plus the auto-
@@ -78,20 +71,14 @@ export function handleAppKeyDown(s: AppState, ev: AppKeyEvent, host: AppKeyHost)
   if (ev.repeat && hasChord(s.shortcuts, chordOf(ev))) return true;
   const action = dragMirrorAction(s, ev) ?? matchShortcut(ev, s.shortcuts);
   if (!action) return false;
-  // With editing disabled the edit keys are dropped, not ignored: the status
-  // bar explains why nothing happened (CommandManager.java:22-24). View and
-  // file commands (zoom, save, open) stay live, and an unmatched key keeps
-  // its browser default, notably Ctrl+= and Ctrl+- page zoom. True still
-  // comes back: the key matched, so the browser default (Space and arrows
-  // scroll the page) must die with the refusal.
-  if (!s.settings.editable && EDIT_ACTIONS.has(action.type)) {
-    s.setStatus('Editing disabled. Re-enable from the Options menu.');
-    return true;
-  }
   // A held rotate or mirror key acts once, not at the key-repeat rate: Space
-  // is rotate now, and a resting thumb would otherwise spin the part. The nudge, delete
-  // and zoom keys keep repeating by design.
-  if (ev.repeat && (action.type === 'rotate' || action.type === 'mirror' || action.type === 'mirrorVertical')) {
+  // is rotate now, and a resting thumb would otherwise spin the part. The
+  // nudge, delete and zoom keys keep repeating by design.
+  if (
+    ev.repeat &&
+    action.type === 'command' &&
+    REPEAT_ONCE.has(action.command)
+  ) {
     return true;
   }
   applyShortcut(s, action, host);
@@ -107,8 +94,8 @@ function dragMirrorAction(s: AppState, ev: AppKeyEvent): ShortcutAction | null {
   if (s.elementGesture?.kind !== 'move') return null;
   if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) return null;
   const key = ev.key.toLowerCase();
-  if (key === 'h') return { type: 'mirror' };
-  if (key === 'v') return { type: 'mirrorVertical' };
+  if (key === 'h') return { type: 'command', command: 'element.mirror' };
+  if (key === 'v') return { type: 'command', command: 'element.mirrorVertical' };
   return null;
 }
 
@@ -125,19 +112,21 @@ export function handleAppKeyUp(s: AppState, ev: KeyEventLike): boolean {
   return s.releaseMomentaryByKey(ev.key);
 }
 
-/** The command table behind matchShortcut: one-line store calls except where
- *  a browser has to help, which arrives through the host. */
+/** The command table behind matchShortcut: command ids go through execute,
+ *  host-only effects through the interface the app injects. */
 export function applyShortcut(s: AppState, action: ShortcutAction, host: AppKeyHost): void {
+  if (action.type === 'command') {
+    const result = execute(action.command, action.args, {
+      store: host.store,
+      source: 'user',
+    });
+    // A refused command still consumes the key: the status explains why
+    // nothing happened, exactly as the old editing gate did
+    // (CommandManager.java:22-24), and Space/arrows stop scrolling the page.
+    if (!result.ok) s.setStatus(result.message);
+    return;
+  }
   switch (action.type) {
-    case 'undo':
-      s.undo();
-      break;
-    case 'redo':
-      s.redo();
-      break;
-    case 'delete':
-      s.deleteSelected();
-      break;
     case 'escape':
       // Upstream's Escape returns to select mode and leaves the selection
       // alone (UIManager.java:1145-1151); do not deselect here. Inside a
@@ -159,23 +148,13 @@ export function applyShortcut(s: AppState, action: ShortcutAction, host: AppKeyH
       // button and the palette menu use: upstream's MODE_ADD_ELM
       // (UIManager.java:1273-1284). The split semiconductors carry their
       // toolbox id here (pnp, pmos), so the N/P flavour arms exactly.
+      // Placement is an edit mode, so Disable Editing drops it with the same
+      // status line every refused command uses.
+      if (!s.settings.editable) {
+        s.setStatus(EDITING_DISABLED);
+        break;
+      }
       s.setTool(action.kind);
-      break;
-    case 'nudge':
-      // The matcher reports a unit-less step count; the grid size resolves
-      // it here so a nudge moves one grid square, like upstream's
-      // app.gridSize (UIManager.java:1153). The step is always 16: the
-      // small-grid option is removed, so there is one spacing.
-      s.nudgeSelection(action.dx * GRID_SIZE, action.dy * GRID_SIZE);
-      break;
-    case 'zoomIn':
-      s.zoomIn();
-      break;
-    case 'zoomOut':
-      s.zoomOut();
-      break;
-    case 'zoomReset':
-      s.zoomReset();
       break;
     case 'save':
       // Ctrl+S and the File>Save row open the Save As dialog, one behavior
@@ -185,38 +164,6 @@ export function applyShortcut(s: AppState, action: ShortcutAction, host: AppKeyH
       break;
     case 'open':
       host.openFile();
-      break;
-    case 'copy':
-      s.copySelection();
-      break;
-    case 'cut':
-      s.cutSelection();
-      break;
-    case 'paste':
-      s.pasteFromClipboard();
-      break;
-    case 'duplicate':
-      s.duplicateSelection();
-      break;
-    case 'selectAll':
-      s.selectAll();
-      break;
-    case 'rotate':
-      s.rotateSelection();
-      break;
-    case 'mirror':
-      s.mirrorSelection('horizontal');
-      break;
-    case 'mirrorVertical':
-      s.mirrorSelection('vertical');
-      break;
-    case 'swap':
-      s.swapTerminals();
-      break;
-    case 'toggleRunning':
-      // Only reachable through a user-assigned shortcut: run/pause has no
-      // default key upstream (CommandManager.java:100-101).
-      s.toggleRunning();
       break;
     case 'print':
       // Prints just the schematic image, white background, not the page
