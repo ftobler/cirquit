@@ -65,6 +65,12 @@ export const editCommands: CommandDef[] = [
       type: 'object',
       properties: {
         kind: { type: 'string', minLength: 1 },
+        tool: {
+          type: 'string',
+          minLength: 1,
+          description: 'Toolbox tool id, when the placement carries its own defaults (pnp, pmos).',
+        },
+        turns: { type: 'integer', minimum: 0, maximum: 3 },
         x1: { type: 'number' },
         y1: { type: 'number' },
         x2: { type: 'number' },
@@ -83,6 +89,8 @@ export const editCommands: CommandDef[] = [
     run: (ctx, raw) => {
       const a = raw as {
         kind: string;
+        tool?: string;
+        turns?: number;
         x1: number;
         y1: number;
         x2: number;
@@ -92,10 +100,20 @@ export const editCommands: CommandDef[] = [
         text?: string;
         state?: number;
       };
-      if (!defFor(a.kind)) {
+      // A tool id is the placement path: its toolbox entry is the source of
+      // the kind (the PNP/PMOS splits), and the synthetic tool ids the canvas
+      // tests use are not registry kinds, so only the plain kind form is
+      // validated here.
+      if (!a.tool && !defFor(a.kind)) {
         throw new CommandFailure('invalid-args', `args.kind: unknown element kind "${a.kind}"`);
       }
-      const base = makeElement(a.kind, a.x1, a.y1, a.x2, a.y2);
+      // A placement carries its toolbox tool's own defaults (the PNP/PMOS
+      // splits) and its banked quarter turns; makeGhostElement is the one
+      // builder the canvas ghost and the drop share, so the part cannot shift
+      // under the cursor when the click lands.
+      const base = a.tool
+        ? makeGhostElement(a.tool, a.x1, a.y1, a.turns ?? 0)
+        : makeElement(a.kind, a.x1, a.y1, a.x2, a.y2);
       const element = {
         ...base,
         ...(a.flags !== undefined ? { flags: a.flags } : {}),
@@ -122,6 +140,7 @@ export const editCommands: CommandDef[] = [
         text: { type: 'string' },
         flags: { type: 'integer' },
         model: { type: 'string' },
+        modelName: { type: 'string' },
         keyShortcut: { type: 'string' },
       },
       required: ['id'],
@@ -142,6 +161,7 @@ export const editCommands: CommandDef[] = [
         text?: string;
         flags?: number;
         model?: string;
+        modelName?: string;
         keyShortcut?: string;
       };
       const s = ctx.store.getState();
@@ -150,6 +170,7 @@ export const editCommands: CommandDef[] = [
       if (a.text !== undefined) s.setText(a.id, a.text);
       if (a.flags !== undefined) s.updateElement(a.id, { flags: a.flags });
       if (a.model !== undefined) s.updateElement(a.id, { model: a.model });
+      if (a.modelName !== undefined) s.setModelName(a.id, a.modelName);
       if (a.keyShortcut !== undefined) s.setKeyShortcut(a.id, a.keyShortcut);
       return a.id;
     },
