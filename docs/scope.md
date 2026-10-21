@@ -263,6 +263,21 @@ column splitters and the edge-opens-a-column drop zones; tabs and grid pass
 insertion point. The tabs layout shows one column at a time and clamps its
 active index in `clampActiveTab`, since positions are renumbered by every move.
 
+## Meter link
+
+**Port extension, session-only.** The voltmeter (`probe`) draws which scope
+traces are reading it, each in its frame colour, with a coloured dot and a
+short `Scope N <unit>` label under the disc. `meterTracesByElement`
+(`web/src/scope/meterLink.ts`) builds one map per frame from the scopes and the
+theme (so per-trace colour overrides apply); the canvas passes it to every
+`DrawContext` and only the meter reads it. Export and icon paths leave it
+unset.
+
+The meter's own "Label" field writes `e.text`, which the probe's `dump` does
+not write: upstream's probe line has no label token, so the label and the link
+markers are session-only and a reload starts clean. The `o` line is untouched
+by either.
+
 ## Floating scopes
 
 **Owner decision 2026-10-02:** undocking a scope from the dock means an

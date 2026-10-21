@@ -18,6 +18,7 @@ import { scopeWidth } from '../../scope/geometry';
 import { traceScopes } from '../../scope/embedded';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
 import { pruneScopeViews } from '../../scope/view';
+import { meterTracesByElement } from '../../scope/meterLink';
 import { pruneXYPersistence } from '../../scope/xyPersistence';
 import { GRID_SIZE } from '../../model/types';
 import { wireSegments } from '../../model/wirePlacement';
@@ -557,6 +558,9 @@ export function useFrameLoop(
           }
 
           const theme = makeTheme(state.dark, state.settings);
+          // Which scope traces read each element, in their frame colours: one
+          // map per frame, read only by the meter symbols.
+          const meterTraces = meterTracesByElement(allScopes, theme);
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
           ctx.fillStyle = theme.background;
           ctx.fillRect(0, 0, width, height);
@@ -751,6 +755,7 @@ export function useFrameLoop(
               // same trace rings and display settings the docked panels use;
               // every other element def ignores it.
               scopeDraw,
+              meterTraces,
               busWidth:
                 e.kind === 'wire'
                   ? Math.max(busWidths.get(e.id) ?? 1, storedBusWidth(e))

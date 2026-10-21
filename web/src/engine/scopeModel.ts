@@ -49,6 +49,16 @@ export interface ScopeTrigger {
   sourcePlotId: number | null;
 }
 
+/** One scope trace that reads an element's meter, for the in-schematic link
+ *  marker: the trace's frame colour, the scope it belongs to and its unit. */
+export interface MeterTrace {
+  plotId: number;
+  scopeId: number;
+  color: string;
+  label: string;
+  unit: string;
+}
+
 /** The trigger a trace spec carries: the engine knows Normal/Auto/FreeRun
  *  only, so single-shot already arrived as Normal here. */
 export type EngineTrigger = Omit<ScopeTrigger, 'mode' | 'sourcePlotId'> & {
