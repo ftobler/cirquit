@@ -29,3 +29,4 @@ tmp/
 scratch/
 # agent worktree scratch space
 /temp/
+/.worktrees/

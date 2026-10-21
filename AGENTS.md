@@ -108,8 +108,8 @@ committed to this repo. One file per feature, plus an index.
 - Write a detailed plan, including test specs.
 - Put it in `feature/<topic>.md`.
 - Do **not** execute the plan or touch any other file.
-- Keep `feature/overview.md` current: the features and the order to apply them
-  in. Very short, one line per feature.
+- Add a `pending` entry to `feature/overview.md` (see below) at the position
+  it should be applied in.
 
 **When asked to plan something "light" or "quick":**
 
@@ -122,10 +122,38 @@ committed to this repo. One file per feature, plus an index.
 
 - Consult `feature/overview.md` to find the next feature in sequence.
 - Read `feature/<topic>.md` and execute according to its content.
+- Work in a worktree at `.worktrees/<topic>` on branch `feature/<topic>`,
+  unless the owner says to work directly on `dev` or another branch. Whoever
+  creates the worktree flips the entry to `in_flight`.
 - Always write tests, especially for bugs.
 - Code review using a subagent.
-- When done, mark it complete in `feature/overview.md` and delete the
-  `feature/<topic>.md` you implemented from.
+- When done, flip the entry in `feature/overview.md` to `shipped` and delete
+  the `feature/<topic>.md` you implemented from.
+
+### feature/overview.md
+
+An index or a kanban board, not a history. Its job is to be scannable in
+seconds.
+
+- One line per entry, always. No continuation lines, no paragraph prose.
+- Every entry starts with its state: `pending`, `in_flight`, `shipped` or
+  `deferred`. In special circumstances `review`, `merge` or `blocked` are
+  allowed, but avoid them.
+- Findings, rationale and detail live in the plan, the knowledge base or git,
+  never here. A plan file is deleted once shipped, so the one-liner is all that
+  remains.
+- Formats:
+  - `- [pending] topic (feature/<topic>.md): one-line intent.`
+  - `- [in_flight] topic (feature/<topic>.md): one-line intent.` Some agent is
+    working on it. Agents are ephemeral and have no name to track.
+  - `- [shipped] <hash> topic (~~feature/<topic>.md~~): one-line outcome.` The
+    hash is the tip commit on `dev`, or the batch tip for a multi-commit entry.
+    In this state the worktree is removed and the branch merged to `dev`;
+    cleanup is the job of whoever merges it.
+  - `- [deferred] topic (feature/<topic>.md): one-line note.`
+- Auto-prune: on every touch, collapse the file back to one line per entry and
+  move anything that needs a second sentence into the plan, the knowledge base
+  or git.
 
 ## Knowledge base
 
