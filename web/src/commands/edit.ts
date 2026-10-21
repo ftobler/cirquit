@@ -304,7 +304,7 @@ export const editCommands: CommandDef[] = [
   },
   {
     id: 'element.mirror',
-    label: 'Mirror',
+    label: 'Mirror Horizontally',
     description:
       'Mirrors the named elements, or the selection, left to right across the ' +
       "set's shared vertical axis.",

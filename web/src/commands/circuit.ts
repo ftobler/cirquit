@@ -148,7 +148,7 @@ export const circuitCommands: CommandDef[] = [
   },
   {
     id: 'circuit.createTest',
-    label: 'Create Test Harness',
+    label: 'Create Test',
     description:
       'Builds a logic input per input pin and a logic output per output pin around ' +
       'the selected chip, or the chip named by `id`.',

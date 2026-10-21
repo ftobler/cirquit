@@ -181,10 +181,10 @@ export const scopeCommands: CommandDef[] = [
     },
   },
   ...[
-    ['scope.stackAll', 'Stack All Scopes', 'Puts every scope in one column.', 'stackAllScopes'],
-    ['scope.unstackAll', 'Unstack All Scopes', 'Gives every scope its own column.', 'unstackAllScopes'],
-    ['scope.combineAll', 'Combine All Scopes', 'Folds every scope into the first panel.', 'combineAllScopes'],
-    ['scope.separateAll', 'Separate All Scopes', 'Splits every panel into one per trace.', 'separateAllScopes'],
+    ['scope.stackAll', 'Stack All', 'Puts every scope in one column.', 'stackAllScopes'],
+    ['scope.unstackAll', 'Unstack All', 'Gives every scope its own column.', 'unstackAllScopes'],
+    ['scope.combineAll', 'Combine All', 'Folds every scope into the first panel.', 'combineAllScopes'],
+    ['scope.separateAll', 'Separate All', 'Splits every panel into one per trace.', 'separateAllScopes'],
   ].map(([id, label, description, action]): CommandDef => ({
     id,
     label,
