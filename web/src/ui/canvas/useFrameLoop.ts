@@ -458,6 +458,22 @@ export function useFrameLoop(
             if (running && !wasRunningRef.current) {
               engine.clearStops();
             }
+            // Single-shot records its baseline before this frame advances, so
+            // a trigger arriving in this very frame is the one that captures.
+            const armBeforeRun = useStore.getState().singleShotArmed;
+            if (running && armBeforeRun !== null && armBeforeRun.since === null) {
+              const target = state.scopes.find((x) => x.id === armBeforeRun.scopeId);
+              if (target && target.trigger.mode === 'single') {
+                const index = triggerSourceIndex(target, (plotId) =>
+                  engine.scopeIndexOf(plotId),
+                );
+                if (index !== undefined) {
+                  const info = engine.triggerInfo(index, scopeWidth(target.id) ?? 500);
+                  useStore.getState().stepSingleShot(target.id, info.time);
+                  info.free();
+                }
+              }
+            }
             if (running) {
               const stats = engine.run(settings.stepsPerFrame);
               if (!stats.converged && stats.error) {
