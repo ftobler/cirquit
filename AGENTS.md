@@ -127,6 +127,7 @@ committed to this repo. One file per feature, plus an index.
   creates the worktree flips the entry to `in_flight`.
 - Always write tests, especially for bugs.
 - Code review using a subagent.
+- Move lasting findings into `docs/` (see Knowledge tracking).
 - When done, flip the entry in `feature/overview.md` to `shipped` and delete
   the `feature/<topic>.md` you implemented from.
 
@@ -139,8 +140,8 @@ seconds.
 - Every entry starts with its state: `pending`, `in_flight`, `shipped` or
   `deferred`. In special circumstances `review`, `merge` or `blocked` are
   allowed, but avoid them.
-- Findings, rationale and detail live in the plan, the knowledge base or git,
-  never here. A plan file is deleted once shipped, so the one-liner is all that
+- Findings, rationale and detail live in the plan, `docs/` or git, never
+  here. A plan file is deleted once shipped, so the one-liner is all that
   remains.
 - Formats:
   - `- [pending] topic (feature/<topic>.md): one-line intent.`
@@ -152,20 +153,78 @@ seconds.
     cleanup is the job of whoever merges it.
   - `- [deferred] topic (feature/<topic>.md): one-line note.`
 - Auto-prune: on every touch, collapse the file back to one line per entry and
-  move anything that needs a second sentence into the plan, the knowledge base
-  or git.
+  move anything that needs a second sentence into the plan, `docs/` or git.
 
-## Knowledge base
+## Knowledge tracking
 
-Two files, both under `feature/`:
+Knowledge lives in three places, split by who needs it and how long it stays
+true:
 
-- `feature/knowledgebase.user.md` holds the owner's statements and decisions,
-  condensed: not every utterance, not word for word. Meaning must stay
-  accurate, and one-off bug reports that have landed belong in the git log,
-  not here. Do not record statements verbatim at length.
-- `feature/knowledgebase.agent.md` is where the idea, knowledge and code flow
-  come together. Keep it detailed: actual code references, file paths, values,
-  and anything worth remembering later.
+| Where                          | Tracked | Holds                                           |
+| ------------------------------ | ------- | ----------------------------------------------- |
+| `docs/`                        | yes     | Lasting project knowledge, for any contributor. |
+| `feature/<topic>.md`           | no      | Working notes for one feature while in flight.  |
+| `feature/knowledgebase.user.md` | no     | The owner's own statements, condensed.          |
+
+Git history is the fourth place: what changed and when belongs in commit
+messages, not in any file.
+
+### docs/
+
+The project's memory for contributors. If someone cloning the repo would need
+it to avoid breaking something or re-hunting a question, it goes here.
+[docs/README.md](docs/README.md) lists the files and what each one covers;
+read it before writing.
+
+What belongs:
+
+- Invariants and rules future work must respect, with the failure they prevent.
+- Deliberate divergences from upstream: what the port does, what upstream does
+  (file and line in `reference/circuitjs1`), and why the port differs. Tag the
+  entry **Diverges from upstream** so it can be searched.
+- Non-obvious mechanisms: how a flow works across files, with real paths and
+  symbol names (`web/src/state/store.ts` `loadNetlist`, not "the store").
+- Values with a reason: tolerances, caps, magic constants, and where they come
+  from.
+- Traps: things that look wrong but are right, or look right but break.
+- Owner policy decisions and open owner calls, in `docs/decisions.md`.
+
+What does not belong:
+
+- History. No batch logs, dates of landing, review rounds, test counts or
+  "this used to be". Git holds that. A date is fine only on a decision.
+- Process notes about agents, worktrees or loops.
+- Anything `OVERVIEW.md` already says. Link to it instead; `OVERVIEW.md` stays
+  the entry point for architecture, status, roadmap and the file format table.
+- Restating what the code says. Say why, not what.
+
+How to write it:
+
+- Organise by topic, never by date. Find the section the knowledge belongs to
+  and edit it in place; add a new section only when none fits.
+- Present tense, current truth. When code changes make an entry false, fix or
+  delete the entry in the same commit as the code.
+- Short entries: a heading or a bold lead, then a few sentences. Code
+  references as `path` plus symbol; line numbers only for upstream Java, which
+  does not move.
+- Same style rules as the rest of the repo: no em or en dashes.
+
+When to write it:
+
+- Implementing a feature: before marking it `shipped`, move every lasting
+  finding from the plan and your working notes into `docs/`, in the same
+  commit series as the code. The plan file is then deleted, so anything not
+  moved is lost.
+- Fixing a bug whose cause was non-obvious: add the trap to the topic file.
+- Reviewing: a reviewer who finds a doc entry the change made false flags it.
+
+### feature/knowledgebase.user.md
+
+The owner's statements and decisions, condensed: not every utterance, not word
+for word. Meaning must stay accurate, and one-off bug reports that have landed
+belong in the git log, not here. Do not record statements verbatim at length.
+When a statement sets project policy, also record the policy in
+`docs/decisions.md`, without the conversation around it.
 
 ## Testing
 
