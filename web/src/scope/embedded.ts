@@ -77,7 +77,7 @@ export function embeddedScopeOf(e: CircuitElement): Scope | null {
     showV: d.showV,
     scaleV: d.scaleV,
     scaleA: d.scaleA,
-    trigger: { mode: 'freeRun', edge: 'rising', level: 0 },
+    trigger: { mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
   };
 }
 

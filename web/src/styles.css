@@ -1791,6 +1791,46 @@ input[type='range'] {
   gap: 1px;
 }
 
+/* Tabs layout: a tab bar over one full-width column. */
+.scopes.tabs {
+  flex-direction: column;
+}
+
+.scope-dock-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  padding: 2px 4px;
+  background: var(--md-outline-variant);
+}
+
+.scope-dock-tab {
+  padding: 2px 10px;
+  border: none;
+  border-radius: var(--md-shape-sm);
+  background: color-mix(in srgb, var(--text) 8%, var(--menu-surface));
+  color: var(--muted);
+  font: var(--md-type-label-large);
+  cursor: pointer;
+}
+
+.scope-dock-tab.current {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+
+/* Grid layout: columns wrap into rows, each at least a readable width. */
+.scopes.grid {
+  flex-wrap: wrap;
+  align-content: stretch;
+}
+
+.scopes.grid .scope-col {
+  flex: 1 1 240px;
+  min-height: 60px;
+}
+
 /* The info area next to the scope strip, upstream's `infoWidth = 160`
    (CirSim.java:57): a canvas the frame loop paints the sim stats and the
    hovered element's readout into, at the theme background so it reads as the
@@ -2306,6 +2346,19 @@ input[type='range'] {
   padding: 0 4px 0 8px;
   border-radius: var(--md-shape-sm);
   background: color-mix(in srgb, var(--text) 5%, var(--menu-surface));
+}
+
+/* A trace's colour swatch: a compact native colour input, so keyboard and
+   screen-reader users get the platform picker. */
+.scope-props .sp-color {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--md-outline);
+  border-radius: var(--md-shape-sm);
+  background: transparent;
+  cursor: pointer;
 }
 
 .sp-channel-name {

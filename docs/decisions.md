@@ -73,6 +73,9 @@ agents. Do not "fix" these without an owner decision.
   upstream shows whichever source solved last.
 - **Negative-ratio transformer saturation.** The port scales by |n| and
   saturates; upstream loses secondary saturation.
+- **Paused scope gesture split.** A plain drag pans the paused capture and
+  Shift+drag keeps the two-cursor measurement. The owner may prefer panning
+  behind a modifier, a middle-button drag, or a separate cursor mode.
 - **Scope trace count cap.** An absolute engine trace cap is a number to pick.
 - **Comment quote injection.** A decoded `&quot;` re-emits unescaped into
   preserved-tag and trace comments; inert unless comments are ever re-parsed.

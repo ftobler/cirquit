@@ -252,6 +252,11 @@ pub struct TriggerSpec {
     pub edge: TriggerEdge,
     #[serde(default)]
     pub level: f64,
+    /// Extra columns the tracker waits after a trigger, on top of the display
+    /// width it already holds for. The text `o` line carries no trigger state,
+    /// so this is a session-only acquisition setting.
+    #[serde(default)]
+    pub holdoff: u32,
 }
 
 impl Default for TriggerSpec {
@@ -260,6 +265,7 @@ impl Default for TriggerSpec {
             mode: TriggerMode::FreeRun,
             edge: TriggerEdge::Rising,
             level: 0.0,
+            holdoff: 0,
         }
     }
 }

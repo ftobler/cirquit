@@ -11,12 +11,16 @@ import {
   scopeParamsFingerprint,
   scopePlotsToSpecs,
   sharedPlotElement,
+  triggerSourceIndex,
+  triggerSourcePlot,
 } from './scopeModel';
 
 const trigger = (mode: ScopeTrigger['mode'] = 'freeRun'): ScopeTrigger => ({
   mode,
   edge: 'rising',
   level: 0,
+  holdoff: 0,
+  sourcePlotId: null,
 });
 
 function makeScope(over: Partial<Scope> = {}): Scope {
@@ -236,8 +240,7 @@ describe('scopeModel pure helpers', () => {
       expect(specs.map((s) => s.plotId)).toEqual([100, 103]);
     });
 
-    it('uses scopeSpeed and the resolved width for the ring, doubling when triggered', () => {
-      const widthOf = (id: number) => (id === 1 ? 300 : undefined);
+    it('uses scopeSpeed and the resolved width for the ring, always keeping history behind the window', () => {
       const free = makeScope({
         id: 1,
         speed: 64,
@@ -250,12 +253,20 @@ describe('scopeModel pure helpers', () => {
         trigger: trigger('normal'),
         plots: [makePlot({ id: 20, elementId: 2, value: 'current' })],
       });
-      const specs = scopePlotsToSpecs([free, trig], {} as never, widthOf);
-      // 300 -> next pow2 512; 500 default -> 512.
-      expect(specs[0].columns).toBe(512);
+      // A very wide canvas would ask for 8192 * 2, clamped at the engine cap.
+      const huge = makeScope({
+        id: 3,
+        plots: [makePlot({ id: 30, elementId: 3, value: 'voltage' })],
+      });
+      const specs = scopePlotsToSpecs([free, trig, huge], {} as never, (id) =>
+        id === 1 ? 300 : id === 3 ? 8192 : undefined,
+      );
+      // Free and triggered scopes both keep a display-width-and-a-half of
+      // history: 300 -> next pow2 512, doubled to 1024.
+      expect(specs[0].columns).toBe(1024);
       expect(specs[0].stepsPerColumn).toBe(64);
-      // Triggered scope doubles the ring, clamped at 8192.
       expect(specs[1].columns).toBe(1024);
+      expect(specs[2].columns).toBe(8192);
     });
 
     it('round-trips the static spec fields from each plot', () => {
@@ -272,7 +283,36 @@ describe('scopeModel pure helpers', () => {
         acCoupled: true,
         displayWidth: 500,
       });
-      expect(spec.trigger).toEqual(trigger('freeRun'));
+      // The spec carries the engine's trigger shape: single-shot already
+      // arrived as normal and the source plot stays in the UI.
+      expect(spec.trigger).toEqual({ mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0 });
+    });
+  });
+
+  describe('trigger source', () => {
+    it('defaults to the first visible samplable plot', () => {
+      const hidden = makeScope({
+        showV: false,
+        plots: [
+          makePlot({ id: 1, elementId: 9, value: 'voltage' }),
+          makePlot({ id: 2, elementId: 9, value: 'current' }),
+        ],
+      });
+      expect(triggerSourcePlot(hidden)?.id).toBe(2);
+      expect(triggerSourceIndex(hidden, (id) => (id === 2 ? 7 : undefined))).toBe(7);
+    });
+
+    it('uses an explicit source plot and falls back when it is gone', () => {
+      const scope = makeScope({
+        trigger: { ...trigger('normal'), sourcePlotId: 3 },
+        plots: [
+          makePlot({ id: 1, elementId: 9, value: 'voltage' }),
+          makePlot({ id: 3, elementId: 9, value: 'current' }),
+        ],
+      });
+      expect(triggerSourcePlot(scope)?.id).toBe(3);
+      const stale = { ...scope, trigger: { ...scope.trigger, sourcePlotId: 99 } };
+      expect(triggerSourcePlot(stale)?.id).toBe(1);
     });
   });
 

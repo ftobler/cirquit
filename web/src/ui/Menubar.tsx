@@ -26,6 +26,7 @@ import { makeGhostElement, useStore } from '../state/store';
 import { PROJECT_GITHUB_URL } from './about';
 import { runFullScreenToggle } from './fullscreen';
 import { menubarButtonClass } from './controlClasses';
+import { SCOPE_LAYOUT_MODES } from './scopeLayoutMode';
 import { useMenuKeyboard } from './menuKeyboard';
 import {
   dcOutcomeReport,
@@ -301,6 +302,8 @@ export function Menubar({ engine }: Props) {
   const scale = useStore((s) => s.view.scale);
 
   const dark = useStore((s) => s.dark);
+  const scopeLayout = useStore((s) => s.scopeLayout);
+  const setScopeLayout = useStore((s) => s.setScopeLayout);
   const editable = useStore((s) => s.settings.editable);
   const mouseWheelEdit = useStore((s) => s.settings.mouseWheelEdit);
   // Derived selectors: commit replaces the stack arrays wholesale, so
@@ -820,6 +823,17 @@ export function Menubar({ engine }: Props) {
           onClose={closeMenus}
         >
           {menu(scopesItems)}
+          {/* The dock layout is a per-viewer choice, so these are
+              menu-itemcheckboxes rather than command rows. */}
+          <div className="menu-sep" role="separator" />
+          {SCOPE_LAYOUT_MODES.map((m) => (
+            <CheckItem
+              key={m.id}
+              label={`${m.label} Layout`}
+              checked={scopeLayout === m.id}
+              onClick={fire(() => setScopeLayout(m.id))}
+            />
+          ))}
         </Dropdown>
 
         <Dropdown

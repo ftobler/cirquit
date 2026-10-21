@@ -141,6 +141,60 @@ Scope readouts use the long-format `decimalDigits`.
   and turns X-Y on (Scope.java:1312-1317). **Diverges**: unchecking turns X-Y
   off and keeps the pair; upstream re-applies either way.
 
+## Paused pan and zoom, vertical zoom
+
+**Port extension.** The scope capture ring is now sized at `min(8192,
+2 * scopeColumnCount(widthPx))` for every scope, not only triggered ones
+(`web/src/engine/scopeModel.ts` `scopePlotsToSpecs`): the paused viewer needs
+history behind the live window. Drawing still shows the newest width; a
+triggered scope's pre-trigger history is unchanged.
+
+- **Ctrl/Cmd+wheel** on a plot switches the scope to manual scale (seeding any
+  trace without a hand-set scale) and steps the hovered plot's manScale up or
+  down the 1-2-5 series (`wheelManScale` in `web/src/scope/scale.ts`). The
+  burst is one undo entry through `beginScopeGesture`.
+- **While paused**, plain drag pans and plain wheel zooms time about the
+  pointer. Both live in `web/src/scope/view.ts` (module map keyed by scope id,
+  like the sticky scale state), are session-only, and never touch the saved
+  `speed` token or clear the ring. `zoom` is pixels per column;
+  `offsetColumns` is how far the right edge sits behind the newest capture.
+  `drawScope` receives the view through `DrawScopeOptions.view` and derives the
+  effective seconds per column and right-edge time, so `xToTime`/`timeToX` and
+  the grid keep working unchanged. The embedded 403 windows and the undocked
+  popup never pass a view; a fired trigger anchor wins over the view; resuming
+  the simulation resets it. Shift+drag still measures with the two cursors
+  while paused.
+- **Two measurement cursors**: the existing hover cursor and the drag-anchor
+  cursor, read as a pair. The readout shows `Δt`, `1/Δt` (frequency) and `dV`
+  (the sample step in the trace's unit), from the pure `cursorReadout` helper.
+
+## Trigger controls
+
+**Port extensions, all session-only.** The text `o` line carries no trigger
+state (FLAG_TRIGGER is not read), so every field below lives in
+`Scope.trigger` only.
+
+- **Drag the level**: a press within 5 px of the dashed trigger line starts a
+  level drag. The preview writes `ScopeCursor.triggerLevel` and the store is
+  updated once on release, so dragging never rebuilds the engine or wipes the
+  capture mid-gesture. `triggerLineY` / `triggerLevelAtY` in `scope/draw.ts`
+  hit-test and invert the first drawable trace's transform; the line itself
+  maps through the trigger source trace when it is visible.
+- **Source plot**: `sourcePlotId` names the plot whose trace fires the
+  trigger. `triggerSourcePlot` falls back to the first visible samplable plot
+  when the selection is null or stale, which preserves the pre-selector
+  behaviour (a voltage trace hidden by showV was never the anchor's source).
+  `triggerTimeAnchor` and the drawn trigger window read that same source.
+- **Holdoff**: `holdoff` is extra captured columns the engine waits after a
+  trigger on top of the display width (`TriggerSpec.holdoff`,
+  `engine/core/src/scope.rs`). 0 keeps the old one-screen-width hold-off.
+- **Single shot**: `mode: 'single'` is the UI's own mode; the engine still
+  receives Normal acquisition. `armSingleShot` records the tracker's last
+  trigger time through `stepSingleShot`, and the frame loop pauses the run
+  when a newer trigger time appears, holding the capture. A latched old trigger
+  therefore cannot capture on the arm frame. Leaving single mode, removing the
+  scope, a load or New drops the arm.
+
 ## Per-trace measurements
 
 **Port extension.** Upstream's readout flags are scope-level and its per-plot
@@ -162,12 +216,67 @@ token holds only the AC bit.
   side. Phase Angle draws when any visible trace enables it (it reads V and I
   together).
 
+## Trace colour overrides and math traces
+
+**Port extensions, session-only.**
+
+- `ScopePlot.colorOverride` replaces the positional colour for one trace in
+  `plotColors` without moving its siblings: the positional counter still
+  advances, so the next trace keeps the colour it had. `setPlotColor` accepts
+  a six-digit hex or null, is display-only (no engine revision) and is not on
+  the `o` line.
+- `ScopePlot.math` names a derived trace: `add`, `sub`, `mul` or `derivative`
+  over source plot ids. `web/src/scope/math.ts` computes the interleaved
+  min/max ring from the two source rings (`mathScopeSource` decorates the
+  engine's `ScopeDrawSource` with a synthetic index per math plot), so no
+  engine trace is registered and the capture is untouched. The derivative
+  differentiates the column midlines against `speed * timeStep`.
+- File purity: `filePlots(scope)` in `web/src/io/scopeLine.ts` filters math
+  traces out of `encodeScopeLine`, `scopeLineMatches` and the store's
+  `serializeDocument`, so adding or removing one leaves the `o` line
+  byte-identical. Math traces are appended at the end of the plot list.
+- The properties dialog's Traces section carries a native colour swatch per
+  channel plus a Math chip row; `canRemovePlot` and `removePlot` allow a math
+  trace while still protecting raw-only plots.
+
 ## Stacked scopes and channels
 
 The properties dialog shows one tab per scope sharing a column (`stackTabs`,
 `web/src/ui/scopeTabs.ts`), keyed by scope id so a tab switch remounts the
 text inputs. The Channels fieldset selects a trace; coupling and manual scale
 edits target it.
+
+## Dock layouts
+
+**Port extension, per viewer.** The Scopes menu offers three ways to arrange
+the docked columns: `strip` (the historical row), `tabs` (one column visible,
+a tab per column) and `grid` (columns wrap into rows). The choice lives under
+`scopeStrip.layout` (`web/src/ui/scopeLayoutMode.ts`) and in the store's
+`scopeLayout`, never on the `o` line or in the undo Snapshot, so a load or an
+undo cannot change it and a saved circuit repaints the same for every viewer.
+
+`ScopePanel` groups the docked scopes into columns with `scopeColumns` and
+renders one column per stacking position. Only the strip layout draws the
+column splitters and the edge-opens-a-column drop zones; tabs and grid pass
+`wrap` to `dropDecisionAt`, which stacks onto the column under the pointer
+(or the nearest one) because a wrapped column's edge does not name an
+insertion point. The tabs layout shows one column at a time and clamps its
+active index in `clampActiveTab`, since positions are renumbered by every move.
+
+## Meter link
+
+**Port extension, session-only.** The voltmeter (`probe`) draws which scope
+traces are reading it, each in its frame colour, with a coloured dot and a
+short `Scope N <unit>` label under the disc. `meterTracesByElement`
+(`web/src/scope/meterLink.ts`) builds one map per frame from the scopes and the
+theme (so per-trace colour overrides apply); the canvas passes it to every
+`DrawContext` and only the meter reads it. Export and icon paths leave it
+unset.
+
+The meter's own "Label" field writes `e.text`, which the probe's `dump` does
+not write: upstream's probe line has no label token, so the label and the link
+markers are session-only and a reload starts clean. The `o` line is untouched
+by either.
 
 ## Floating scopes
 

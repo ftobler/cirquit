@@ -20,10 +20,35 @@ import {
   seedManScale,
   setScaleState,
   setXYScale,
+  valueAtY,
+  wheelManScale,
   xyScaleFor,
 } from './scale';
 
 beforeEach(() => pruneScaleStates([]));
+
+describe('valueAtY', () => {
+  it('inverts the pixel mapping, position offset included', () => {
+    const t = { gridMid: 1, gridMult: 10, positionOffset: 2 };
+    // y = maxy - gridMult * (v - gridMid + offset)
+    expect(valueAtY(t, 50, 50)).toBe(-1);
+    expect(valueAtY(t, 50, 20)).toBe(2);
+    expect(valueAtY(t, 50, 50 - 10 * (4 - 1 + 2))).toBe(4);
+    expect(valueAtY({ ...t, gridMult: 0 }, 50, 20)).toBe(0);
+  });
+});
+
+describe('wheel vertical zoom', () => {
+  it('steps up and down the 1-2-5 series', () => {
+    expect(wheelManScale(5, 1)).toBe(10);
+    expect(wheelManScale(5, -1)).toBe(2);
+    expect(wheelManScale(0.5, 1)).toBe(1);
+    expect(wheelManScale(1, -1)).toBe(0.5);
+    // A flattened scale recovers from upstream's 5 V/div seed.
+    expect(wheelManScale(0, 1)).toBe(10);
+    expect(wheelManScale(NaN, -1)).toBe(2);
+  });
+});
 
 describe('scale grid series', () => {
   it('gridStep returns the smallest 1-2-5-10 value >= the target', () => {

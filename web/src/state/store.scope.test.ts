@@ -372,7 +372,13 @@ describe('reset a scope to the defaults', () => {
     expect(reset.fftPlot).toBe(false);
     expect(reset.label).toBe('');
     expect(reset.speed).toBe(64);
-    expect(reset.trigger).toEqual({ mode: 'freeRun', edge: 'rising', level: 0 });
+    expect(reset.trigger).toEqual({
+      mode: 'freeRun',
+      edge: 'rising',
+      level: 0,
+      holdoff: 0,
+      sourcePlotId: null,
+    });
     // The traces survive: a reset changes how the panel draws, not what it
     // watches.
     expect(reset.plots.map((p) => p.id)).toEqual(scope.plots.map((p) => p.id));
@@ -897,5 +903,113 @@ describe('scope-combining actions drop an orphaned Scope Properties dialog', () 
 
     expect(useStore.getState().scopeProperties).toBeNull();
     expect(useStore.getState().scopes.some((x) => x.id === sa.id)).toBe(false);
+  });
+});
+
+describe('single-shot trigger arm', () => {
+  it('arms only a single-mode scope and records the trigger baseline once', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scope = useStore.getState().scopes[0];
+
+    // Normal mode is not single-shot; arming is a no-op.
+    useStore.getState().setScopeTrigger(scope.id, { mode: 'normal' });
+    useStore.getState().armSingleShot(scope.id);
+    expect(useStore.getState().singleShotArmed).toBeNull();
+
+    useStore.getState().setScopeTrigger(scope.id, { mode: 'single' });
+    useStore.getState().armSingleShot(scope.id);
+    expect(useStore.getState().singleShotArmed).toEqual({ scopeId: scope.id, since: null });
+    // The first armed frame records the tracker's last trigger time.
+    expect(useStore.getState().stepSingleShot(scope.id, 12)).toBe('waiting');
+    expect(useStore.getState().singleShotArmed).toEqual({ scopeId: scope.id, since: 12 });
+    // The same trigger does not capture.
+    expect(useStore.getState().stepSingleShot(scope.id, 12)).toBe('waiting');
+    // A newer one does, and clears the arm.
+    expect(useStore.getState().stepSingleShot(scope.id, 13)).toBe('captured');
+    expect(useStore.getState().singleShotArmed).toBeNull();
+  });
+
+  it('leaving single mode disarms, and so does removing the scope', () => {
+    const a = addResistor();
+    const b = addResistor();
+    useStore.getState().addScope(a, 'voltage');
+    const sa = useStore.getState().scopes[0];
+    useStore.getState().addScope(b, 'voltage');
+    const sb = useStore.getState().scopes[1];
+
+    useStore.getState().setScopeTrigger(sa.id, { mode: 'single' });
+    useStore.getState().armSingleShot(sa.id);
+    useStore.getState().setScopeTrigger(sa.id, { mode: 'normal' });
+    expect(useStore.getState().singleShotArmed).toBeNull();
+
+    useStore.getState().setScopeTrigger(sb.id, { mode: 'single' });
+    useStore.getState().armSingleShot(sb.id);
+    useStore.getState().removeScope(sb.id);
+    expect(useStore.getState().singleShotArmed).toBeNull();
+  });
+
+  it('keeps the source plot and holdoff session-only, never in the o line', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    const source = scope.plots[1];
+    const before = useStore.getState().toNetlist();
+    useStore.getState().setScopeTrigger(scope.id, { holdoff: 40, sourcePlotId: source.id });
+    // The trigger is not part of the file: the line stays byte-identical and
+    // a reload starts from the defaults.
+    const line = useStore.getState().toNetlist();
+    expect(line).toBe(before);
+    useStore.getState().loadNetlist(line);
+    const reloaded = useStore.getState().scopes[0];
+    expect(reloaded.trigger.holdoff).toBe(0);
+    expect(reloaded.trigger.sourcePlotId).toBeNull();
+  });
+});
+
+describe('trace colour overrides and math plots', () => {
+  it('sets and clears a session-only colour override', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const plotId = useStore.getState().scopes[0].plots[0].id;
+    useStore.getState().setPlotColor(plotId, '#123456');
+    expect(useStore.getState().scopes[0].plots[0].colorOverride).toBe('#123456');
+    // Garbage clears rather than reaching the canvas as an invalid style.
+    useStore.getState().setPlotColor(plotId, 'not-a-colour');
+    expect(useStore.getState().scopes[0].plots[0].colorOverride).toBeNull();
+    useStore.getState().setPlotColor(plotId, '#abcdef');
+    useStore.getState().undo();
+    expect(useStore.getState().scopes[0].plots[0].colorOverride).toBeNull();
+  });
+
+  it('adds a math plot from the first two sources without touching the o line', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const before = useStore.getState().toNetlist();
+    const scope = useStore.getState().scopes[0];
+    const [a, b] = scope.plots;
+    useStore.getState().addMathPlot(scope.id, 'add');
+    const math = useStore.getState().scopes[0].plots[2];
+    expect(math.math).toEqual({ op: 'add', a: a.id, b: b.id });
+    expect(math.elementId).toBeNull();
+    // A derived trace is not a file plot: the o line is byte-identical.
+    expect(useStore.getState().toNetlist()).toBe(before);
+    // It can be removed again, and the save stays stable throughout.
+    useStore.getState().removePlot(scope.id, math.id);
+    expect(useStore.getState().scopes[0].plots).toHaveLength(2);
+    expect(useStore.getState().toNetlist()).toBe(before);
+  });
+
+  it('adds a derivative from one source and refuses what it cannot derive', () => {
+    const r = addResistor();
+    useStore.getState().addScope(r, 'voltage');
+    const scope = useStore.getState().scopes[0];
+    useStore.getState().addMathPlot(scope.id, 'derivative');
+    const math = useStore.getState().scopes[0].plots[2];
+    expect(math.math?.op).toBe('derivative');
+    expect(math.math?.b).toBe(-1);
+    // No scope at all is a no-op.
+    useStore.getState().addMathPlot(999, 'add');
+    expect(useStore.getState().scopes[0].plots).toHaveLength(3);
   });
 });

@@ -14,7 +14,7 @@ import type {
   ScopeValue,
   TriggerInfoLike,
 } from '../engine/scopeModel';
-import { effectiveMeasurements } from '../engine/scopeModel';
+import { effectiveMeasurements, triggerSourceIndex, triggerSourcePlot } from '../engine/scopeModel';
 import { canvasFont, formatValue, makeTheme, parseRgb } from '../render/draw';
 import type { Theme, ThemeColors } from '../model/types';
 import { MIN_SETTINGS_WHEEL_SIZE, scopeSpeed, timeToX } from './geometry';
@@ -33,6 +33,7 @@ import {
   seedManScale,
   setScaleState,
   setXYScale,
+  valueAtY,
   xyScaleFor,
 } from './scale';
 import { average, dutyCycle, estimateFrequency, maxValue, minValue, rms } from './measure';
@@ -42,6 +43,7 @@ import { drawInfo, type InfoLine } from './info';
 import { drawFFT, drawPhaseBand } from './spectrum';
 import { xyPersistenceFor } from './xyPersistence';
 import { UNIT } from './units';
+import { cursorReadout, isPanned, viewRightTime, viewSpeed, type ScopeView } from './view';
 
 // The units table lives in units.ts so scale.ts can key sticky scales by the
 // same family without importing this module; re-exported for the dialog rows
@@ -69,6 +71,10 @@ export interface ScopeCursor {
    *  which colours it like a hovered element. The panel sets it from the
    *  pointer position, the draw loop reads it per frame. */
   hoverSettingsWheel: boolean;
+  /** Live trigger level while its marker is being dragged. The store is only
+   *  written on release, so a drag does not rebuild the engine (and wipe the
+   *  capture) on every pixel. Null when not dragging. */
+  triggerLevel: number | null;
 }
 
 export function emptyCursor(): ScopeCursor {
@@ -83,6 +89,7 @@ export function emptyCursor(): ScopeCursor {
     dragPlotYStart: 0,
     dragPlotYInitial: 0,
     hoverSettingsWheel: false,
+    triggerLevel: null,
   };
 }
 
@@ -90,10 +97,12 @@ export const MAN_DIVISIONS = 8;
 
 const TRIGGER_COLOR = '#ff8000';
 
+/** A plot the renderer can draw: a real element trace, or a session-only math
+ *  trace (which has no element but carries its source's unit family). */
 export const isDrawable = (plot: ScopePlot): plot is DrawablePlot =>
-  plot.elementId !== null && plot.value !== null;
+  plot.value !== null && (plot.elementId !== null || Boolean(plot.math));
 
-export type DrawablePlot = ScopePlot & { elementId: number; value: ScopeValue };
+export type DrawablePlot = ScopePlot & { value: ScopeValue };
 
 /** Caption shown when a trace has dropped non-finite samples (a diverged
  *  node), so a frozen trace reads as a warning instead of a healthy flatline.
@@ -182,9 +191,13 @@ export function plotColors(scope: Scope, theme: Theme): Map<number, string> {
   let otherCount = 0;
   for (const p of visiblePlotsOf(scope)) {
     if (p.value === null) continue;
-    if (p.value === 'voltage') colors.set(p.id, assignColor(p.value, voltageCount++, theme));
-    else if (p.value === 'current') colors.set(p.id, assignColor(p.value, currentCount++, theme));
-    else colors.set(p.id, assignColor(p.value, otherCount++, theme));
+    // An explicit override paints this trace without moving the positional
+    // colour any sibling gets, which is why the counter still advances.
+    let color: string;
+    if (p.value === 'voltage') color = assignColor(p.value, voltageCount++, theme);
+    else if (p.value === 'current') color = assignColor(p.value, currentCount++, theme);
+    else color = assignColor(p.value, otherCount++, theme);
+    colors.set(p.id, p.colorOverride ?? color);
   }
   return colors;
 }
@@ -205,17 +218,33 @@ function traceColor(colors: Map<number, string>, plot: ScopePlot, theme: Theme):
 interface Window {
   count: number;
   xOffset: number;
+  /** Pixels per captured column: 1 while running, the paused view's zoom when
+   *  the trace is panned or magnified. */
+  stepX: number;
   posOf: (k: number) => number;
 }
 
-function plainWindow(data: Float32Array, w: number): Window {
+function plainWindow(data: Float32Array, w: number, view?: ScopeView): Window {
   const columns = data.length / 2;
-  const count = Math.min(columns, w);
-  const start = columns > w ? columns - w : 0;
+  const zoom = view && view.zoom > 0 ? view.zoom : 1;
+  const offset = view ? Math.max(0, view.offsetColumns) : 0;
+  const visible = Math.max(0, Math.min(columns, w / zoom));
+  const count = Math.floor(visible);
+  // The window's right edge sits `offset` columns behind the newest capture.
+  const end = Math.max(0, columns - offset);
+  const start = Math.max(0, Math.min(end, end - visible));
   // Right-anchor before the ring wraps: the newest column draws at pixel
   // w - 1, matching the grid's timeToX (right edge is sim time). Once the
   // ring is full the newest w columns fill the canvas and xOffset is 0.
-  return { count, xOffset: w - count, posOf: (k) => start + k };
+  return {
+    count,
+    xOffset: w - count * zoom,
+    stepX: zoom,
+    posOf: (k) => {
+      const pos = Math.floor(start) + k;
+      return pos >= 0 && pos < end && pos < columns ? pos : -1;
+    },
+  };
 }
 
 function triggerWindow(data: Float32Array, info: TriggerInfoLike, w: number): Window {
@@ -225,6 +254,7 @@ function triggerWindow(data: Float32Array, info: TriggerInfoLike, w: number): Wi
   return {
     count,
     xOffset: 0,
+    stepX: 1,
     posOf: (k) => {
       const ring = (info.start_index + k) % cap;
       const pos = (ring + cap - info.snapshot_start) % cap;
@@ -352,7 +382,7 @@ function drawTrace(
     if (pos < 0) continue;
     const lo = yOf(t, maxy, data[pos * 2]);
     const hi = yOf(t, maxy, data[pos * 2 + 1]);
-    const x = win.xOffset + k + 0.5;
+    const x = win.xOffset + (k + 0.5) * win.stepX;
     if (hi === lo) {
       ctx.moveTo(x, lo);
       ctx.lineTo(x, lo + 0.5);
@@ -437,19 +467,68 @@ export function triggerTimeAnchor(
   w: number,
 ): { time: number } | null {
   if (scope.trigger.mode === 'freeRun') return null;
-  // The anchored window is drawn from the first visible trace (drawScope),
-  // so the cursor time conversion must anchor off that same trace: with plot 0
-  // hidden by showV/showI, `scope.plots[0]` is a different trace's ring and
-  // the cursor dot would sit a column off the pointer.
-  const index = visiblePlotsOf(scope)
-    .filter(isDrawable)
-    .map((plot) => engine.scopeIndexOf(plot.id))
-    .find((i): i is number => i !== undefined);
+  // The anchored window is drawn from the trigger source trace (drawScope),
+  // so the cursor time conversion must anchor off that same trace. The source
+  // is the user's chosen plot, else the first samplable one.
+  const index = triggerSourceIndex(scope, (plotId) => engine.scopeIndexOf(plotId));
   if (index === undefined) return null;
   const trig = engine.triggerInfo(index, w);
   const anchor = trig.triggered ? { time: trig.time } : null;
   trig.free();
   return anchor;
+}
+
+/** The first drawable trace's vertical transform, the one the grid, trigger
+ *  line and pointer hit-tests read while the frame's real scale state is not
+ *  at hand. Pure given the engine lookup, like `selectPlotAt`. */
+function firstTraceTransform(
+  engine: ScopeDrawSource,
+  scope: Scope,
+  h: number,
+): PlotTransform | null {
+  const plots = visiblePlotsOf(scope)
+    .filter(isDrawable)
+    .map((plot) => ({ plot, index: engine.scopeIndexOf(plot.id) }))
+    .filter((p): p is { plot: DrawablePlot; index: number } => p.index !== undefined);
+  if (plots.length === 0) return null;
+  return transformFor(
+    scope,
+    plots[0].plot,
+    scaleStateFor(scope.id, plots[0].plot.value),
+    0,
+    0,
+    h,
+    sameUnits(plots.map((p) => p.plot)),
+  );
+}
+
+/** The canvas y of the trigger level line, or null when the trigger is off or
+ *  the scope has no drawable trace. The pointer handler uses it for the
+ *  level-drag hit test. */
+export function triggerLineY(
+  engine: ScopeDrawSource,
+  scope: Scope,
+  _w: number,
+  h: number,
+): number | null {
+  if (scope.trigger.mode === 'freeRun') return null;
+  const t = firstTraceTransform(engine, scope, h);
+  if (!t) return null;
+  return yOf(t, Math.floor((h - 1) / 2), scope.trigger.level);
+}
+
+/** The trigger level a pointer at `y` would set, the inverse of
+ *  `triggerLineY`. Null when there is no drawable trace to map against. */
+export function triggerLevelAtY(
+  engine: ScopeDrawSource,
+  scope: Scope,
+  _w: number,
+  h: number,
+  y: number,
+): number | null {
+  const t = firstTraceTransform(engine, scope, h);
+  if (!t) return null;
+  return valueAtY(t, Math.floor((h - 1) / 2), y);
 }
 
 /** One manual-scale /div bullet: the plot it colours by and its centre. */
@@ -766,7 +845,7 @@ function drawCursor(
 
   const lines: InfoLine[] = [];
   let y = -10;
-  const k = Math.round(x) - selected.win.xOffset;
+  const k = Math.round((x - selected.win.xOffset) / selected.win.stepX);
   const cursorValue = k >= 0 && k < selected.count ? selected.max[k] : null;
   if (cursorValue !== null) {
     const dotY = yOf(selected.transform, maxy, cursorValue);
@@ -791,15 +870,22 @@ function drawCursor(
       ctx.moveTo(dragX, 0);
       ctx.lineTo(dragX, h);
       ctx.stroke();
-      const dragK = Math.round(dragX) - selected.win.xOffset;
+      const dragK = Math.round((dragX - selected.win.xOffset) / selected.win.stepX);
       const startValue = dragK >= 0 && dragK < selected.count ? selected.max[dragK] : null;
-      const deltaT = cursor.cursorTime - cursor.dragStartTime;
-      lines.push({ text: `Δt=${formatValue(Math.abs(deltaT), 's', decimalDigits)}`, y: (y += 15) });
-      if (startValue !== null && cursorValue !== null) {
+      // Two cursors, read as a pair: the time between them, the frequency that
+      // implies, and the voltage/current step between their samples.
+      const readout = cursorReadout(cursor.dragStartTime, cursor.cursorTime, startValue, cursorValue);
+      lines.push({ text: `Δt=${formatValue(readout.dt, 's', decimalDigits)}`, y: (y += 15) });
+      if (readout.hz !== null) {
+        lines.push({ text: `1/Δt=${formatValue(readout.hz, 'Hz', decimalDigits)}`, y: (y += 15) });
+      }
+      if (readout.dv !== null) {
         lines.push({
-          text: `Δ=${formatValue(cursorValue - startValue, UNIT[selected.plot.value], decimalDigits)}`,
+          text: `dV=${formatValue(readout.dv, UNIT[selected.plot.value], decimalDigits)}`,
           y: (y += 15),
         });
+      }
+      if (cursorValue !== null) {
         lines.push({
           text: formatValue(cursorValue, UNIT[selected.plot.value], decimalDigits),
           y: (y += 15),
@@ -1147,10 +1233,11 @@ function drawTrigger(
   trig: { state: number; triggered: boolean; waiting: boolean } | null,
   w: number,
   h: number,
+  level = scope.trigger.level,
 ): void {
   if (scope.trigger.mode === 'freeRun') return;
   const maxy = Math.floor((h - 1) / 2);
-  const trigY = yOf(t, maxy, scope.trigger.level);
+  const trigY = yOf(t, maxy, level);
   if (trigY >= 0 && trigY < h) {
     ctx.strokeStyle = TRIGGER_COLOR;
     ctx.lineWidth = 1;
@@ -1232,6 +1319,11 @@ export interface DrawScopeOptions {
    *  window has no pointer handling at all, so it draws without the gear
    *  rather than advertising a click that does nothing. Default true. */
   settingsWheel?: boolean;
+  /** The paused viewer's zoom and pan through captured history. Omitted by
+   *  the embedded and undocked windows, which always draw the live window.
+   *  Ignored while a trigger has fired, where the trigger anchor owns the
+   *  horizontal placement. */
+  view?: ScopeView;
 }
 
 /** The per-frame entry point: draws one scope canvas. `dark` follows the White
@@ -1257,7 +1349,7 @@ export function drawScope(
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, w, h);
   if (w < 2 || h < 2) return;
-  const speed = scopeSpeed(scope.speed);
+  const baseSpeed = scopeSpeed(scope.speed);
 
   // A diverged trace captions the frozen signal instead of passing it off as
   // a healthy flatline. Drawn after the background fill but before the XY and
@@ -1315,12 +1407,12 @@ export function drawScope(
         scope,
         transform,
         infoPlot,
-        speed,
+        baseSpeed,
         timeStep,
         w,
         h,
         decimalDigits,
-        elmInfo ? elmInfo(infoPlot.elementId) : null,
+        elmInfo && infoPlot.elementId !== null ? elmInfo(infoPlot.elementId) : null,
         textMeasurer(ctx),
       );
       clippedToViewport(ctx, w, h, () => paintHeader(ctx, header, scope, h, theme, traceColors));
@@ -1329,9 +1421,13 @@ export function drawScope(
   }
   if (plots.length === 0) return;
 
-  // The trigger anchor comes from the first trace; all traces share the
-  // scope's ring geometry.
-  const trig = scope.trigger.mode !== 'freeRun' ? engine.triggerInfo(plots[0].index, w) : null;
+  // The trigger anchor comes from the selected source trace (or the first
+  // samplable one); all traces share the scope's ring geometry.
+  const trigIndex = triggerSourceIndex(scope, (plotId) => engine.scopeIndexOf(plotId));
+  const trig =
+    scope.trigger.mode !== 'freeRun' && trigIndex !== undefined
+      ? engine.triggerInfo(trigIndex, w)
+      : null;
   const trigInfo = trig
     ? {
         start_index: trig.start_index,
@@ -1349,11 +1445,23 @@ export function drawScope(
 
   const allSameUnits = sameUnits(plots.map((p) => p.plot));
 
+  // The paused view applies only to the live window. A fired trigger owns the
+  // horizontal placement, so panning never fights the trigger anchor.
+  const view = trigInfo && trigInfo.triggered ? undefined : options?.view;
+  const panned = view !== undefined && isPanned(view);
+  // Magnifying or panning changes the seconds per column and the time at the
+  // right edge, never the saved speed token or the capture itself.
+  const speed = panned ? viewSpeed(view, baseSpeed) : baseSpeed;
+  const drawTime = panned ? viewRightTime(simTime, view, baseSpeed, timeStep) : simTime;
+
   const states: MeasurableState[] = plots.map(({ plot, index }) => {
     const data = engine.scopeData(index);
     // The anchored trigger window applies only once a trigger has fired;
     // before that (and in auto-run) the plain most-recent window is shown.
-    const win = trigInfo && trigInfo.triggered ? triggerWindow(data, trigInfo, w) : plainWindow(data, w);
+    const win =
+      trigInfo && trigInfo.triggered
+        ? triggerWindow(data, trigInfo, w)
+        : plainWindow(data, w, panned && view ? view : undefined);
     const { maxSample, minSample } = scanWindow(data, win);
     const state = scaleStateFor(scope.id, plot.value);
     const opts = { maxScale: scope.maxScale && !scope.manualScale, allSameUnits };
@@ -1387,7 +1495,7 @@ export function drawScope(
     first.transform,
     w,
     h,
-    simTime,
+    drawTime,
     speed,
     timeStep,
     allSameUnits,
@@ -1395,7 +1503,20 @@ export function drawScope(
     theme,
     triggerAnchor,
   );
-  drawTrigger(ctx, scope, first.transform, trigInfo, w, h);
+  // The level line is in the source trace's units and scale, so map it
+  // through that trace's transform when it is visible; a hidden source falls
+  // back to the first trace.
+  const sourceId = triggerSourcePlot(scope)?.id;
+  const triggerState = states.find((s) => s.plot.id === sourceId) ?? first;
+  drawTrigger(
+    ctx,
+    scope,
+    triggerState.transform,
+    trigInfo,
+    w,
+    h,
+    cursor.triggerLevel ?? scope.trigger.level,
+  );
 
   const maxy = Math.floor((h - 1) / 2);
 
@@ -1449,7 +1570,7 @@ export function drawScope(
     w,
     h,
     decimalDigits,
-    elmInfo ? elmInfo(first.plot.elementId) : null,
+    elmInfo && first.plot.elementId !== null ? elmInfo(first.plot.elementId) : null,
     textMeasurer(ctx),
   );
   clippedToViewport(ctx, w, h, () => {
@@ -1474,7 +1595,7 @@ export function drawScope(
     ctx,
     cursor,
     states,
-    simTime,
+    drawTime,
     speed,
     timeStep,
     w,
@@ -1515,7 +1636,7 @@ export function selectPlotAt(
     // against plots[0]'s samples resolved the wrong plot on mixed scopes.
     const data = engine.scopeData(index);
     const win = plainWindow(data, w);
-    const k = Math.round(x) - win.xOffset;
+    const k = Math.round((x - win.xOffset) / win.stepX);
     const state = scaleStateFor(scope.id, plot.value);
     const t = transformFor(scope, plot, state, 0, 0, h, allSameUnits);
     const pos = win.posOf(k);

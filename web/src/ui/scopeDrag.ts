@@ -13,6 +13,10 @@ export interface ColumnBox {
   ids: number[];
   left: number;
   right: number;
+  /** Screen rows of the box. Only the wrap layouts need them: the strip's
+   *  single row makes them redundant, so callers may omit them there. */
+  top?: number;
+  bottom?: number;
 }
 
 export interface StripBox {
@@ -48,6 +52,10 @@ export function dropDecisionAt(
   dragged: number,
   strip: StripBox | null,
   columns: readonly ColumnBox[],
+  /** 'strip' keeps the edge-opens-a-column rule; 'wrap' is the grid and tabs
+   *  layouts, where rows make an insertion bar meaningless, so a drop stacks
+   *  onto the column under the pointer (or the nearest one). */
+  mode: 'strip' | 'wrap' = 'strip',
 ): DropDecision {
   const inStrip =
     strip !== null && x >= strip.left && x <= strip.right && y >= strip.top && y <= strip.bottom;
@@ -57,6 +65,27 @@ export function dropDecisionAt(
   // found. A column holding only the dragged scope still names itself, and
   // that drop is the no-op it should be.
   const nameOf = (c: ColumnBox) => c.ids.find((id) => id !== dragged) ?? c.ids[0];
+  if (mode === 'wrap') {
+    let nearest = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < columns.length; i++) {
+      const c = columns[i];
+      const inRow = c.top === undefined || (y >= c.top && y <= (c.bottom ?? c.top));
+      if (inRow && x >= c.left && x <= c.right) {
+        return { kind: 'dock', target: { kind: 'stack', withId: nameOf(c) }, marker: { type: 'column', index: i } };
+      }
+      const dist = Math.abs(x - (c.left + c.right) / 2);
+      if (dist < bestDist) {
+        bestDist = dist;
+        nearest = i;
+      }
+    }
+    return {
+      kind: 'dock',
+      target: { kind: 'stack', withId: nameOf(columns[nearest]) },
+      marker: { type: 'column', index: nearest },
+    };
+  }
   for (let i = 0; i < columns.length; i++) {
     const c = columns[i];
     if (x < c.left || x > c.right) continue;

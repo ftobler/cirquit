@@ -121,9 +121,13 @@ impl TriggerTracker {
                 }
             }
             TriggerState::Triggered => {
-                // Hold the display for one screen width, then re-arm.
+                // Hold the display for one screen width plus the user's
+                // holdoff, then re-arm. The screen width is the minimum that
+                // keeps a just-fired trigger from re-arming inside its own
+                // window; the holdoff is the scope properties dialog's extra
+                // quiet columns.
                 self.holdoff += 1;
-                if self.holdoff >= rect_width.max(1) as u32 {
+                if self.holdoff >= (rect_width.max(1) as u32).saturating_add(spec.holdoff) {
                     self.state = TriggerState::Armed;
                     self.holdoff = 0;
                 }
@@ -888,6 +892,41 @@ mod tests {
         let info = t.trigger_info(64);
         assert_eq!(info.state, 1);
         assert!(info.triggered);
+    }
+
+    #[test]
+    fn user_holdoff_delays_rearming_past_the_screen_width() {
+        // display_width is 16, so the tracker would normally re-arm after 16
+        // columns. A holdoff of 20 keeps it triggered for 36 columns instead,
+        // and an edge inside that window must not update the anchor time.
+        let mut s = trigger_spec(1, 64, TriggerMode::Normal, 2.0);
+        s.display_width = 16;
+        s.trigger.holdoff = 20;
+        let mut t = ScopeTrace::new(s, Some(0));
+        for (k, v) in [0.0, 0.0, 0.0].into_iter().enumerate() {
+            t.push(v, 1.0 + k as f64);
+        }
+        for (k, v) in [3.0, 3.0, 3.0].into_iter().enumerate() {
+            t.push(v, 4.0 + k as f64);
+        }
+        let first = t.trigger_info(16).time;
+        assert_eq!(first, 4.0, "the first above-level column fired");
+        // A falling then rising edge 10 columns after the trigger: still held.
+        for k in 0..10 {
+            t.push(if k < 5 { 0.0 } else { 3.0 }, 10.0 + k as f64);
+        }
+        assert_eq!(t.trigger_info(16).state, 1);
+        assert_eq!(t.trigger_info(16).time, first);
+        // Past the 16 + 20 column holdoff the tracker re-arms, and the next
+        // rising edge fires a new trigger with a later anchor.
+        for k in 0..30 {
+            t.push(if k < 25 { 3.0 } else { 0.0 }, 100.0 + k as f64);
+        }
+        for k in 0..5 {
+            t.push(3.0, 200.0 + k as f64);
+        }
+        let info = t.trigger_info(16);
+        assert!(info.time > first, "holdoff let a new trigger through");
     }
 
     #[test]

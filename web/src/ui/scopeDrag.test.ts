@@ -70,4 +70,36 @@ describe('scope drop zones', () => {
     expect(dropDecisionAt(12, y, 2, strip, narrow)).toMatchObject({ target: { kind: 'column' } });
     expect(dropDecisionAt(30, y, 2, strip, narrow)).toMatchObject({ target: { kind: 'stack' } });
   });
+
+  describe('wrap layouts', () => {
+    // Two rows of two columns, each 500 px wide and 75 px tall.
+    const wrapped: ColumnBox[] = [
+      { ids: [1], left: 0, right: 500, top: 600, bottom: 675 },
+      { ids: [2], left: 500, right: 1000, top: 600, bottom: 675 },
+      { ids: [3], left: 0, right: 500, top: 675, bottom: 750 },
+      { ids: [4], left: 500, right: 1000, top: 675, bottom: 750 },
+    ];
+
+    it('stacks onto the column under the pointer, whatever the row', () => {
+      expect(dropDecisionAt(250, 700, 2, strip, wrapped, 'wrap')).toMatchObject({
+        kind: 'dock',
+        target: { kind: 'stack', withId: 3 },
+        marker: { type: 'column', index: 2 },
+      });
+      expect(dropDecisionAt(750, 620, 3, strip, wrapped, 'wrap')).toMatchObject({
+        target: { kind: 'stack', withId: 2 },
+      });
+    });
+
+    it('falls back to the nearest column past the last one', () => {
+      // x past every column but still inside the strip (the info area).
+      expect(dropDecisionAt(1100, 680, 1, strip, wrapped, 'wrap')).toMatchObject({
+        target: { kind: 'stack', withId: 2 },
+      });
+    });
+
+    it('still floats outside the strip', () => {
+      expect(dropDecisionAt(300, 200, 1, strip, wrapped, 'wrap')).toEqual({ kind: 'float' });
+    });
+  });
 });

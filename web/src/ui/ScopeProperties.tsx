@@ -11,7 +11,11 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PlotMeasurementKey, Scope, ScopePlot, ScopeValue } from '../engine/scopeModel';
-import { effectiveMeasurements, sharedPlotElement } from '../engine/scopeModel';
+import {
+  effectiveMeasurements,
+  sharedPlotElement,
+  triggerSourcePlot,
+} from '../engine/scopeModel';
 import {
   barToSpeed,
   clearScaleStates,
@@ -33,6 +37,7 @@ import {
   visiblePlotsOf,
 } from '../scope/draw';
 import { defFor } from '../model/registry';
+import { MATH_OPS, mathSourceCount } from '../scope/math';
 import { isVceIcRow, plotAxisLabel, plotValueRows } from './scopePlotRows';
 import { saveScopeDefaults } from '../state/scopeDefaults';
 import { useStore } from '../state/store';
@@ -46,6 +51,7 @@ import {
   initialReadoutTarget,
   nextEnabledIndex,
   parseDivisions,
+  parseHoldoff,
   parseManScale,
   parseValue,
   scopeDisplayName,
@@ -520,6 +526,10 @@ function TracesSection({
   const shared = sharedPlotElement(scope.plots);
   const kind =
     shared === null ? null : (st.elements.find((e) => e.id === shared)?.kind ?? null);
+  // Samplable real traces a math channel can derive from.
+  const sources = scope.plots.filter(
+    (p) => !p.math && p.elementId !== null && p.value !== null,
+  ).length;
   // Upstream's Show Vce vs Ic checked state (isShowingVceAndIc, Scope.java:
   // 1258-1260): the 2D plot on and exactly the VCE/IC pair showing.
   const showingVceIc =
@@ -573,20 +583,43 @@ function TracesSection({
             <span className="sp-channel-source" title={c.source}>
               {c.source}
             </span>
-            <Segmented
-              label={`${c.name} coupling`}
-              value={c.plot.acCoupled ? 'ac' : 'dc'}
-              options={[
-                { value: 'dc', label: 'DC' },
-                {
-                  value: 'ac',
-                  label: 'AC',
-                  disabled: !c.acAllowed,
-                  title: c.acAllowed ? 'Block the DC part' : 'AC coupling applies to voltage only',
-                },
-              ]}
-              onChange={(v) => st.setPlotCoupling(scope.id, c.plot.id, v === 'ac')}
+            {/* The colour swatch is the trace's own colour, session-only; the
+                clear button returns it to the positional palette. */}
+            <input
+              type="color"
+              className="sp-color"
+              aria-label={`${c.name} colour`}
+              title="Trace colour"
+              value={c.color}
+              onChange={(e) => st.setPlotColor(c.plot.id, e.target.value)}
             />
+            {c.colorOverridden && (
+              <button
+                type="button"
+                className="sp-icon"
+                aria-label={`Automatic colour for ${c.name}`}
+                title="Use the automatic colour"
+                onClick={() => st.setPlotColor(c.plot.id, null)}
+              >
+                ⟲
+              </button>
+            )}
+            {c.math === null && (
+              <Segmented
+                label={`${c.name} coupling`}
+                value={c.plot.acCoupled ? 'ac' : 'dc'}
+                options={[
+                  { value: 'dc', label: 'DC' },
+                  {
+                    value: 'ac',
+                    label: 'AC',
+                    disabled: !c.acAllowed,
+                    title: c.acAllowed ? 'Block the DC part' : 'AC coupling applies to voltage only',
+                  },
+                ]}
+                onChange={(v) => st.setPlotCoupling(scope.id, c.plot.id, v === 'ac')}
+              />
+            )}
             <button
               type="button"
               className="sp-icon"
@@ -599,6 +632,34 @@ function TracesSection({
             </button>
           </div>
         ))}
+      </div>
+      <div className="sp-subhead">Math</div>
+      <div className="sp-chips">
+        {MATH_OPS.map((m) => {
+          const enough = sources >= mathSourceCount(m.op);
+          return (
+            <Chip
+              key={m.op}
+              checked={scope.plots.some((p) => p.math?.op === m.op)}
+              disabled={!enough}
+              title={
+                enough
+                  ? `Add a ${m.label} trace from the first ${mathSourceCount(m.op)} channels`
+                  : `Needs ${mathSourceCount(m.op)} channels`
+              }
+              onChange={(on) => {
+                if (on) {
+                  st.addMathPlot(scope.id, m.op);
+                  return;
+                }
+                const existing = scope.plots.find((p) => p.math?.op === m.op);
+                if (existing) st.removePlot(scope.id, existing.id);
+              }}
+            >
+              {m.label}
+            </Chip>
+          );
+        })}
       </div>
       <div className="sp-subhead">Plots</div>
       <div className="sp-chips">
@@ -745,12 +806,16 @@ function VerticalSection({ scope, channels }: { scope: Scope; channels: ChannelR
 
 function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }) {
   const st = useStore.getState();
+  const armed = useStore((s) => (s.singleShotArmed?.scopeId === scope.id ? s.singleShotArmed : null));
   const bar = speedToBar(scope.speed);
   const setBar = (b: number) => st.setScopeSpeed(scope.id, barToSpeed(Math.max(0, Math.min(10, b))));
   const triggered = scope.trigger.mode !== 'freeRun';
-  // The level is in the first drawn channel's unit, the trace the trigger
-  // watches.
-  const firstValue = visiblePlotsOf(scope)[0]?.value ?? 'voltage';
+  const single = scope.trigger.mode === 'single';
+  // The level is in the trigger source's unit, the trace the trigger watches.
+  const source = triggerSourcePlot(scope);
+  const firstValue = source?.value ?? 'voltage';
+  const kindOf = (elementId: number | null) =>
+    elementId === null ? null : (st.elements.find((e) => e.id === elementId)?.kind ?? null);
   return (
     <>
       <Row label="Time/div">
@@ -781,9 +846,61 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
             { value: 'freeRun', label: 'Free run', title: 'No trigger: the trace scrolls' },
             { value: 'normal', label: 'Normal', title: 'Draw only on a trigger' },
             { value: 'auto', label: 'Auto', title: 'Trigger, or free run when none comes' },
+            {
+              value: 'single',
+              label: 'Single',
+              title: 'Capture one trigger, then pause and hold it',
+            },
           ]}
-          onChange={(mode) => st.setScopeTrigger(scope.id, { mode })}
+          onChange={(mode) => {
+            st.setScopeTrigger(scope.id, { mode });
+            if (mode === 'single') {
+              // Selecting the mode is also the arm gesture, and arming a
+              // paused scope would wait forever.
+              st.armSingleShot(scope.id);
+              st.setRunning(true);
+            } else {
+              st.disarmSingleShot();
+            }
+          }}
         />
+      </Row>
+      {single && (
+        <Row label="Single shot">
+          <button
+            type="button"
+            className="sp-chip"
+            onClick={() => {
+              st.armSingleShot(scope.id);
+              st.setRunning(true);
+            }}
+          >
+            {armed ? 'Armed' : 'Arm'}
+          </button>
+          <span className="sp-muted">
+            {armed ? 'waiting for the next trigger' : 'captures one trigger, then holds'}
+          </span>
+        </Row>
+      )}
+      <Row label="Source">
+        <label className="sp-select">
+          <span>Trigger source</span>
+          <select
+            value={scope.trigger.sourcePlotId ?? ''}
+            onChange={(e) =>
+              st.setScopeTrigger(scope.id, {
+                sourcePlotId: e.target.value === '' ? null : Number(e.target.value),
+              })
+            }
+          >
+            <option value="">First trace</option>
+            {scope.plots.map((p) => (
+              <option key={p.id} value={p.id}>
+                {plotAxisLabel(kindOf(p.elementId), p.value)}
+              </option>
+            ))}
+          </select>
+        </label>
       </Row>
       <Row label="Edge">
         <Segmented
@@ -810,6 +927,20 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
           }}
         />
         <span className="sp-muted">{firstValue === null ? '' : UNIT[firstValue]}</span>
+      </Row>
+      <Row label="Holdoff">
+        <ValueField
+          className="sp-field-narrow"
+          label="Trigger holdoff"
+          disabled={!triggered}
+          value={String(scope.trigger.holdoff)}
+          parse={parseHoldoff}
+          onCommit={(t) => {
+            const n = parseHoldoff(t);
+            if (n !== null) st.setScopeTrigger(scope.id, { holdoff: n });
+          }}
+        />
+        <span className="sp-muted">columns</span>
       </Row>
     </>
   );

@@ -3,7 +3,7 @@
 
 import type { CompositeEngineSpec, CustomLogicModel } from '../io/netlist/types';
 import type { EmbeddedScopeState } from '../io/embeddedScope';
-import type { ScopeDrawSource } from '../engine/scopeModel';
+import type { MeterTrace, ScopeDrawSource } from '../engine/scopeModel';
 
 export interface Point {
   x: number;
@@ -489,6 +489,10 @@ export interface DrawContext {
    *  read, plus the display settings that shape it. Present only in the live
    *  canvas renderer; export and icon paths leave it unset, so those draw the
    *  placeholder frame instead of pretending to have samples. */
+  /** Scope traces reading this element, keyed by element id, for the meter
+   *  link marker. Built once per frame from the scopes and theme; absent on
+   *  the export and icon paths, which have no scopes. */
+  meterTraces?: ReadonlyMap<number, readonly MeterTrace[]>;
   scopeDraw?: {
     source: ScopeDrawSource;
     simTime: number;

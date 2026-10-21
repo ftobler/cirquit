@@ -400,6 +400,13 @@ export function decodeScopeLine(
   };
 }
 
+/** The plots the `o` line describes: everything except session-only math
+ *  traces. The save path and the byte-match check walk this list, so a math
+ *  trace cannot shift a token or force a regeneration. */
+export function filePlots(scope: Scope): ScopePlot[] {
+  return scope.plots.filter((p) => !p.math);
+}
+
 /** Regenerates a new-style `o` line's tokens (after the element index) from the
  *  scope state, matching upstream's `undump` shape (ScopeSerializer.java:213-256).
  *  `indexOf` resolves a plot's store element id to its file ordinal, -1 for a
@@ -414,13 +421,17 @@ export function encodeScopeLine(
   indexOf: (elementId: number) => number | undefined,
   kinds: (string | null)[],
 ): string[] {
-  const first = scope.plots[0];
+  // A math trace is a session-only derivation, not a plot upstream can read:
+  // leave it out of the line entirely, which keeps the count and every
+  // per-plot token aligned with the file.
+  const plots = filePlots(scope);
+  const first = plots[0];
   const manual = scope.manualScale;
   const flags = scopeDisplayFlags(scope);
   // The token rides for every plot once any of them carries one, upstream's
   // all-or-nothing FLAG_PERPLOTFLAGS shape: a mask or an AC bit anywhere
   // turns the word's bit on.
-  const anyPlotFlags = scope.plots.some((p) => p.acCoupled || p.measurements !== null);
+  const anyPlotFlags = plots.some((p) => p.acCoupled || p.measurements !== null);
 
   // A W, C or Ω plot carries a scale token (ScopeSerializer.java:221-223).
   // Charge and resistance need the explicit value check for a plot whose kind
@@ -444,14 +455,14 @@ export function encodeScopeLine(
     String(scope.scaleV),
     String(scope.scaleA),
     String(scope.position),
-    String(scope.plots.length),
+    String(plots.length),
   ];
   // The divisions token sits between the plot count and the first plot's
   // per-unit scale, exactly where undump reads it (ScopeSerializer.java:219-220).
   if (manual) tokens.push(String(scope.manDivisions));
   if (needsScaleToken(first.value, kinds[0] ?? null)) tokens.push('20');
-  for (let i = 0; i < scope.plots.length; i++) {
-    const p = scope.plots[i];
+  for (let i = 0; i < plots.length; i++) {
+    const p = plots[i];
     // Hex, matching the decoder's parseInt(_, 16); single-digit values come
     // out as '0'/'1' exactly like the AC-only tokens always written.
     if (anyPlotFlags) tokens.push(measurementTokenBits(p.acCoupled, p.measurements).toString(16));
@@ -510,7 +521,8 @@ export function scopeLineMatches(
   kinds: (string | null)[],
   positionFallback: number,
 ): boolean {
-  const decoded = decodeScopeLine(raw, scope.plots, kinds, positionFallback);
+  const plots = filePlots(scope);
+  const decoded = decodeScopeLine(raw, plots, kinds, positionFallback);
   return (
     decoded.position === scope.position &&
     decoded.showI === scope.showI &&
@@ -543,13 +555,13 @@ export function scopeLineMatches(
     decoded.label === scope.label &&
     decoded.scaleV === scope.scaleV &&
     decoded.scaleA === scope.scaleA &&
-    decoded.perPlot.length === scope.plots.length &&
+    decoded.perPlot.length === plots.length &&
     decoded.perPlot.every(
       (d, i) =>
-        d.acCoupled === scope.plots[i].acCoupled &&
-        d.manScale === scope.plots[i].manScale &&
-        d.manVPosition === scope.plots[i].manVPosition &&
-        sameMeasurements(d.measurements, scope.plots[i].measurements),
+        d.acCoupled === plots[i].acCoupled &&
+        d.manScale === plots[i].manScale &&
+        d.manVPosition === plots[i].manVPosition &&
+        sameMeasurements(d.measurements, plots[i].measurements),
     )
   );
 }

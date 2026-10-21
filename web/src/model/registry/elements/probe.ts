@@ -57,6 +57,10 @@ export const PROBE_DEF: ElementDef = {
       ],
     },
     { name: 'resistance', label: 'Series resistance', unit: 'Ω' },
+    // A viewer label, not a file token: ProbeElm has none, so this rides
+    // `e.text`, which the probe's dump ignores (the line stays byte-stable)
+    // and a reload starts empty. Session-only like the scope link markers.
+    { name: 'label', label: 'Label', type: 'text', target: 'text' },
   ],
   // The 12-radius disc is a solid pick zone, the same circleSize as the
   // ammeter's circular symbol (ProbeElm.java:239, AmmeterElm.java:204).
@@ -92,8 +96,44 @@ export const PROBE_DEF: ElementDef = {
     // it auto-scaled, so a saved non-auto scale still shows the auto reading.
     const meter = e.params.meter ?? 0;
     label(g, e, meterCaption(meter, g.value, g.valueDigits), 18);
+    // The viewer's own name for this meter, above the disc. Not a file token,
+    // so it disappears on reload exactly like the scope markers below.
+    if (e.text) {
+      g.ctx.fillStyle = g.theme.text;
+      g.ctx.font = canvasFont(9);
+      g.ctx.textAlign = 'center';
+      g.ctx.textBaseline = 'bottom';
+      g.ctx.fillText(e.text, mid.x, mid.y - 14);
+    }
+    // Which scope traces are reading this meter, in their own colours: the
+    // link from the schematic back to the dock. The map is built once a frame
+    // and absent on the export/icon paths.
+    const traces = g.meterTraces?.get(e.id) ?? [];
+    if (traces.length > 0) {
+      const marks = meterTraceMarkers(mid, traces.length);
+      g.ctx.font = canvasFont(9);
+      g.ctx.textBaseline = 'middle';
+      traces.forEach((trace, i) => {
+        const at = marks[i];
+        g.ctx.fillStyle = trace.color;
+        g.ctx.beginPath();
+        g.ctx.arc(at.x - 5, at.y, 2.5, 0, Math.PI * 2);
+        g.ctx.fill();
+        g.ctx.textAlign = 'left';
+        g.ctx.fillText(`${trace.label} ${trace.unit}`, at.x, at.y);
+      });
+    }
   },
 };
+
+/** Marker positions under a meter's disc, one per trace. Exported so the
+ *  stacking is testable without a canvas. */
+export function meterTraceMarkers(mid: Point, count: number): Point[] {
+  return Array.from({ length: count }, (_, i) => ({
+    x: mid.x,
+    y: mid.y + 18 + i * 11,
+  }));
+}
 
 /** Where the probe's + mark sits: on the post-0 side, 4 units clear of the
  *  24-unit circle and 10 units off the axis on the dsign side. */

@@ -72,7 +72,10 @@ export const isVceIcRow = (
  *  re-emit its o line tokens on save, and a single-plot panel must not empty. */
 export function canRemovePlot(plots: ScopePlot[], plotId: number): boolean {
   const plot = plots.find((p) => p.id === plotId);
-  if (!plot || plot.value === null || plot.elementId === null) return false;
+  if (!plot) return false;
+  // A math trace is removable; a raw-only plot is protected because its only
+  // job is re-emitting the o line tokens it was loaded with.
+  if (!plot.math && (plot.value === null || plot.elementId === null)) return false;
   return plots.length > 1;
 }
 

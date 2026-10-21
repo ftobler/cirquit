@@ -5,8 +5,9 @@
  * ScopeProperties.tsx only lays these out and wires the store actions.
  */
 
-import type { Scope, ScopePlot, ScopeValue } from '../engine/scopeModel';
+import type { MathOp, Scope, ScopePlot, ScopeValue } from '../engine/scopeModel';
 import { plotOverridesScope } from '../engine/scopeModel';
+import { mathOpLabel } from '../scope/math';
 import { UNIT } from '../scope/units';
 import { canRemovePlot } from './scopePlotRows';
 import { parseUnits } from '../model/units';
@@ -60,6 +61,10 @@ export interface ChannelRow {
   removable: boolean;
   /** The channel carries its own readout mask that differs from the scope's. */
   overrides: boolean;
+  /** The math operation this channel derives, or null for a real trace. */
+  math: MathOp | null;
+  /** The channel has a session-only colour override. */
+  colorOverridden: boolean;
 }
 
 /**
@@ -74,17 +79,23 @@ export function channelRows(
   colorOf: (plotId: number) => string | undefined,
   fallbackColor: string,
 ): ChannelRow[] {
-  return visible.map((plot, i) => ({
-    plot,
-    name: `CH ${i + 1}`,
-    letter: channelLetter(plot.value),
-    unit: plot.value === null ? '?' : UNIT[plot.value],
-    source: labelOf(plot.elementId) ?? 'missing element',
-    color: colorOf(plot.id) ?? fallbackColor,
-    acAllowed: plot.value === 'voltage',
-    removable: canRemovePlot(scope.plots, plot.id),
-    overrides: plotOverridesScope(scope, plot),
-  }));
+  return visible.map((plot, i) => {
+    const math = plot.math?.op ?? null;
+    return {
+      plot,
+      name: `CH ${i + 1}`,
+      // A math channel reads as its operation, not its source family's letter.
+      letter: math !== null ? 'ƒ' : channelLetter(plot.value),
+      unit: plot.value === null ? '?' : UNIT[plot.value],
+      source: math !== null ? `Math ${mathOpLabel(math)}` : (labelOf(plot.elementId) ?? 'missing element'),
+      color: colorOf(plot.id) ?? fallbackColor,
+      acAllowed: plot.value === 'voltage',
+      removable: canRemovePlot(scope.plots, plot.id),
+      overrides: plotOverridesScope(scope, plot),
+      math,
+      colorOverridden: (plot.colorOverride ?? null) !== null,
+    };
+  });
 }
 
 /** The dialog's title: the scope's own label, or the "Scope N" name the
@@ -119,6 +130,19 @@ export function parseDivisions(text: string): number | null {
 export function parseManScale(text: string): number | null {
   const v = parseValue(text);
   return v !== null && v > 0 ? v : null;
+}
+
+/** Most holdoff columns the trigger field accepts, a screen's worth at the
+ *  engine's 8192-column cap. */
+export const MAX_HOLDOFF = 8192;
+
+/** A trigger holdoff as typed: a whole number of captured columns in
+ *  0..MAX_HOLDOFF, or null for anything else. */
+export function parseHoldoff(text: string): number | null {
+  const v = parseValue(text);
+  if (v === null) return null;
+  const n = Math.round(v);
+  return n >= 0 && n <= MAX_HOLDOFF ? n : null;
 }
 
 /** Which readout word the Readouts section edits: every trace (the scope

@@ -12,7 +12,7 @@
 /web/src/wasm/
 
 # node
-node_modules/
+node_modules
 /web/dist/
 *.tsbuildinfo
 

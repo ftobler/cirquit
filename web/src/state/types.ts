@@ -1,8 +1,15 @@
 /** Application state. Everything the UI reads or mutates lives here. */
 
-import type { PlotMeasurementKey, Scope, ScopeTrigger, ScopeValue } from '../engine/scopeModel';
+import type {
+  MathOp,
+  PlotMeasurementKey,
+  Scope,
+  ScopeTrigger,
+  ScopeValue,
+} from '../engine/scopeModel';
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { FloatRect } from '../ui/floatingScopes';
+import type { ScopeLayoutMode } from '../ui/scopeLayoutMode';
 import type { ScopeDropTarget } from './scopeLayout';
 import type { LiveState } from '../io/liveState';
 import type { RenameOutcome } from '../io/subcircuits';
@@ -301,6 +308,12 @@ export interface AppState {
   scopeMenu: { x: number; y: number; scopeId: number; plotId: number } | null;
   /** Scope id whose properties dialog is open, or null. */
   scopeProperties: number | null;
+  /** The scope waiting for its next trigger in single-shot mode, with the
+   *  trigger time seen when it armed (`null` until the first armed frame
+   *  records one). The frame loop pauses the simulation once a newer trigger
+   *  time appears and clears this, holding the capture. Transient like
+   *  `floating`: never in the undo Snapshot and never in the file. */
+  singleShotArmed: { scopeId: number; since: number | null } | null;
   /** True while a menubar dropdown (File/Edit/Scopes/Options/Tools/Help/
    *  Circuits) or the mobile burger panel is open. Upstream's Swing menus are
    *  modal grabs: keys never reach the canvas behind an open menu. One of the
@@ -359,6 +372,12 @@ export interface AppState {
    *  floating scope dropped on the dock docks there. A no-op drop pushes no
    *  undo entry. */
   moveScope(id: number, target: ScopeDropTarget): void;
+  /** How the dock arranges its scope columns (strip, tabs, grid). Per-viewer
+   *  and session-only: persisted to localStorage by the setter, never in the
+   *  circuit file and never in the undo Snapshot. */
+  scopeLayout: ScopeLayoutMode;
+  /** Changes the dock layout and persists the choice. */
+  setScopeLayout(mode: ScopeLayoutMode): void;
   /** Puts a floating scope back in the dock. */
   dockScope(id: number): void;
   /** Moves or resizes a floating panel (already clamped by the caller). */
@@ -659,6 +678,18 @@ export interface AppState {
   /** Changes the horizontal zoom without rewinding the simulation. */
   setScopeSpeed(id: number, speed: number): void;
   setScopeTrigger(id: number, patch: Partial<ScopeTrigger>): void;
+  /** Arms single-shot acquisition on `id`: the frame loop records the current
+   *  trigger time, waits for a newer one, then pauses the run to hold the
+   *  capture. A no-op while the scope's trigger mode is not `single`. */
+  armSingleShot(id: number): void;
+  /** The frame loop's half of the single-shot wait: records the baseline on
+   *  the first armed frame, then reports whether a newer trigger has arrived.
+   *  `triggerTime` is the source trace's last trigger time. Returns 'captured'
+   *  once, which also clears the arm. */
+  stepSingleShot(id: number, triggerTime: number): 'idle' | 'waiting' | 'captured';
+  /** Drops the single-shot arm, e.g. leaving single mode or resetting the
+   *  scope. */
+  disarmSingleShot(): void;
   /** Display flags (overlays, scale mode, FFT/X-Y); never forces a reload. */
   setScopeFlags(id: number, patch: Partial<Omit<Scope, 'id' | 'raw' | 'plots' | 'trigger'>>): void;
   /** Puts one scope's display settings, speed and trigger back to what a
@@ -674,6 +705,13 @@ export interface AppState {
   setPlotCoupling(scopeId: number, plotId: number, acCoupled: boolean): void;
   setPlotManScale(plotId: number, manScale: number | null): void;
   setPlotManPosition(plotId: number, manVPosition: number): void;
+  /** Sets or clears one trace's session-only colour override. Display-only:
+   *  no engine revision, never written to the `o` line. */
+  setPlotColor(plotId: number, color: string | null): void;
+  /** Appends a session-only math trace derived from the scope's first (two)
+   *  samplable plots. A no-op when not enough sources exist. It never
+   *  registers an engine trace, so the run and the capture are untouched. */
+  addMathPlot(scopeId: number, op: MathOp): void;
   /** Sets one plot's per-trace measurement readout, the properties dialog's
    *  per-channel checkbox path. The plot's mask is seeded from the scope word
    *  on first use; display-only, like setScopeFlags. */

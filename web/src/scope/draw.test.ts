@@ -76,7 +76,7 @@ const scopeOf = (plots: ScopePlot[], overrides: Partial<Scope> = {}): Scope => (
   showV: true,
   scaleV: 20,
   scaleA: 0.05,
-  trigger: { mode: 'freeRun', edge: 'rising', level: 0 },
+  trigger: { mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
   ...overrides,
 });
 
@@ -172,7 +172,7 @@ describe('triggerTimeAnchor', () => {
     const { engine, called } = anchorEngine((id) => (id === 1 ? 5 : 0));
     const scope = scopeOf([plot(1, 'voltage'), plot(2, 'current')], {
       showV: false,
-      trigger: { mode: 'normal', edge: 'rising', level: 0 },
+      trigger: { mode: 'normal', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
     });
     expect(triggerTimeAnchor(engine, scope, 100)).toEqual({ time: 42 });
     expect(called).toEqual([0]);
@@ -183,7 +183,7 @@ describe('triggerTimeAnchor', () => {
     // registered; the anchor must land on the first drawable trace after it.
     const { engine, called } = anchorEngine((id) => (id === 2 ? 0 : undefined));
     const scope = scopeOf([plot(1, null), plot(2, 'voltage'), plot(3, 'current')], {
-      trigger: { mode: 'normal', edge: 'rising', level: 0 },
+      trigger: { mode: 'normal', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
     });
     expect(scope.plots[0].id).toBe(1);
     expect(triggerTimeAnchor(engine, scope, 100)).toEqual({ time: 42 });
@@ -812,6 +812,20 @@ describe('plotColors', () => {
     expect([...a.values()]).toEqual([...b.values()]);
   });
 
+  it('lets one trace override its colour without shifting its siblings', () => {
+    const scope = scopeOf([
+      { ...plot(1, 'voltage'), colorOverride: '#123456' },
+      plot(2, 'voltage'),
+      plot(3, 'current'),
+    ]);
+    const colors = plotColors(scope, dark);
+    expect(colors.get(1)).toBe('#123456');
+    // The override still consumed the first voltage slot, so the next voltage
+    // trace keeps its usual second-slot colour.
+    expect(colors.get(2)).toBe('#ff0000');
+    expect(colors.get(3)).toBe('#ffff00');
+  });
+
   it('assigns a colour to every plot in X-Y mode', () => {
     // Upstream's 2D branch skips assignColor and leaves plot.color null
     // (Scope.java:311-314), which its own manual-scale bullets would then
@@ -916,7 +930,7 @@ const trigEngine = (): SimEngine =>
 
 const trigScope = () =>
   scopeOf([plot(1, 'voltage')], {
-    trigger: { mode: 'normal', edge: 'rising', level: 0 },
+    trigger: { mode: 'normal', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
   });
 
 describe('drawScope trigger colours', () => {

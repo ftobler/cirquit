@@ -10,6 +10,7 @@ import {
   effectiveReadoutTarget,
   initialReadoutTarget,
   parseDivisions,
+  parseHoldoff,
   parseManScale,
   parseValue,
   scopeDisplayName,
@@ -64,7 +65,7 @@ function scopeOf(plots: ScopePlot[], patch: Partial<Scope> = {}): Scope {
     showV: true,
     scaleV: 20,
     scaleA: 0.05,
-    trigger: { mode: 'freeRun', edge: 'rising', level: 0 },
+    trigger: { mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
     ...patch,
   };
 }
@@ -114,6 +115,30 @@ describe('scope properties model', () => {
     expect(rows.map((r) => r.acAllowed)).toEqual([true, false]);
     expect(rows.every((r) => r.removable)).toBe(true);
     expect(rows.map((r) => r.overrides)).toEqual([false, false]);
+    expect(rows.map((r) => r.math)).toEqual([null, null]);
+    expect(rows.map((r) => r.colorOverridden)).toEqual([false, false]);
+  });
+
+  it('names a math channel by its operation and marks a colour override', () => {
+    const real = plot(1, 'voltage');
+    const math = {
+      ...plot(2, 'voltage', null),
+      math: { op: 'add' as const, a: 1, b: 1 },
+      colorOverride: '#123456',
+    };
+    const rows = channelRows(
+      scopeOf([real, math]),
+      [real, math],
+      (id) => (id === 5 ? 'Resistor' : null),
+      () => undefined,
+      '#ffffff',
+    );
+    expect(rows[1].letter).toBe('ƒ');
+    expect(rows[1].source).toBe('Math A+B');
+    expect(rows[1].math).toBe('add');
+    expect(rows[1].colorOverridden).toBe(true);
+    // A math trace can be removed like a real one.
+    expect(rows[1].removable).toBe(true);
   });
 
   it('flags a channel whose own readouts differ from the scope', () => {
@@ -198,6 +223,22 @@ describe('dialog drag clamp', () => {
     expect(clampDialogOffset({ x: 0, y: 0 }, rect, 0, 5000, view).y).toBe(800 - 40 - 200);
     expect(clampDialogOffset({ x: 0, y: 0 }, rect, -5000, 0, view).x).toBe(120 - 400 - 300);
     expect(clampDialogOffset({ x: 10, y: 0 }, rect, 5000, 0, view).x).toBe(10 + 1000 - 120 - 300);
+  });
+});
+
+describe('trigger holdoff parsing', () => {
+  it('accepts a whole number of columns in range', () => {
+    expect(parseHoldoff('0')).toBe(0);
+    expect(parseHoldoff('12')).toBe(12);
+    expect(parseHoldoff('2k')).toBe(2000);
+    expect(parseHoldoff('12.4')).toBe(12);
+  });
+
+  it('refuses negatives, overflow and nonsense', () => {
+    expect(parseHoldoff('-1')).toBeNull();
+    expect(parseHoldoff('9000')).toBeNull();
+    expect(parseHoldoff('abc')).toBeNull();
+    expect(parseHoldoff('')).toBeNull();
   });
 });
 

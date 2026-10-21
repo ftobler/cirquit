@@ -49,7 +49,7 @@ const loadedScope = (decoded: DecodedScopeLine, plots: ScopePlot[]): Scope => {
       manVPosition: perPlot[i].manVPosition,
       measurements: perPlot[i].measurements,
     })),
-    trigger: { mode: 'freeRun', edge: 'rising', level: 0 },
+    trigger: { mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null },
     ...fields,
   };
 };

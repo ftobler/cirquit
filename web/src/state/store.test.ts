@@ -3547,7 +3547,13 @@ describe('scope mutator coverage', () => {
 
     useStore.getState().setScopeTrigger(scopeId, { mode: 'normal', edge: 'falling', level: 2.5 });
     let s = useStore.getState();
-    expect(s.scopes[0].trigger).toEqual({ mode: 'normal', edge: 'falling', level: 2.5 });
+    expect(s.scopes[0].trigger).toEqual({
+      mode: 'normal',
+      edge: 'falling',
+      level: 2.5,
+      holdoff: 0,
+      sourcePlotId: null,
+    });
     // The trigger is part of the engine spec, so it must reload.
     expect(s.revision).toBe(before + 1);
 
@@ -3557,6 +3563,8 @@ describe('scope mutator coverage', () => {
       mode: 'normal',
       edge: 'rising',
       level: 2.5,
+      holdoff: 0,
+      sourcePlotId: null,
     });
 
     const rev = useStore.getState().revision;

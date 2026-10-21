@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Scope, ScopePlot, ScopeTrigger, ScopeValue } from '../engine/scopeModel';
+import type { MathOp, Scope, ScopePlot, ScopeTrigger, ScopeValue } from '../engine/scopeModel';
 import { measurementsFromScope } from '../engine/scopeModel';
 import { scopeSpeed, DEFAULT_SCOPE_WIDTH } from '../scope/geometry';
 import { positionToOffset } from '../scope/scale';
@@ -13,7 +13,7 @@ import {
   type ScopeConfig,
 } from '../io/netlist';
 import { overlayLiveState } from '../io/liveState';
-import { decodeScopeLine, encodeScopeLine, scopeLineMatches } from '../io/scopeLine';
+import { decodeScopeLine, encodeScopeLine, filePlots, scopeLineMatches } from '../io/scopeLine';
 import { buildModelFromSelection, describeBuildFailure } from '../io/subcircuitBuild';
 import {
   clearSessionModels,
@@ -133,6 +133,7 @@ import {
   type History,
 } from './history';
 import { moveScopeTo } from './scopeLayout';
+import { loadScopeLayout, saveScopeLayout } from '../ui/scopeLayoutMode';
 import { APP_PREF_KEYS, loadAppPrefs, saveAppPrefs, touchesAppPrefs } from './appPrefs';
 import { loadStoredClipboard, saveStoredClipboard } from './clipboardStorage';
 import { loadScopeDefaults } from './scopeDefaults';
@@ -236,9 +237,12 @@ function serializeDocument(elements: CircuitElement[]): string {
   const indexById = new Map(elements.map((e, i) => [e.id, i]));
   const kindById = new Map(s.elements.map((e) => [e.id, e.kind]));
   const scopeConfigs: ScopeConfig[] = s.scopes.map((x) => {
-    const first = x.plots[0];
+    // Math traces are session-only derivations; the file describes only real
+    // plots, so every token walk and the writer's per-plot list start here.
+    const plots = filePlots(x);
+    const first = plots[0];
     const speedToken = String(x.speed);
-    const kinds = x.plots.map((p) =>
+    const kinds = plots.map((p) =>
       p.elementId === null ? null : (kindById.get(p.elementId) ?? null),
     );
     // An unedited loaded line saves byte-for-byte: only the speed token
@@ -256,10 +260,10 @@ function serializeDocument(elements: CircuitElement[]): string {
       id: x.id,
       // Recomputed by the writer from where the element lands in the file;
       // this is only the fallback for a plot with no element left.
-      elementIndex: indexById.get(first.elementId ?? -1) ?? -1,
-      elementId: first.elementId ?? undefined,
+      elementIndex: indexById.get(first?.elementId ?? -1) ?? -1,
+      elementId: first?.elementId ?? undefined,
       raw,
-      plots: x.plots.map((p) => ({
+      plots: plots.map((p) => ({
         id: p.id,
         elementIndex: indexById.get(p.elementId ?? -1) ?? -1,
         elementId: p.elementId ?? undefined,
@@ -327,6 +331,27 @@ function makePlot(
     measurements: null,
     origValueToken,
     origElementIndex,
+    math: null,
+    colorOverride: null,
+  };
+}
+
+/** A session-only math plot on `scopeId`: derived from the first `count`
+ *  samplable plots (A, B) at add time. It carries A's unit family so units,
+ *  scale keys and the colour palette work without engine involvement. */
+function makeMathPlot(scope: Scope, op: MathOp): ScopePlot | null {
+  const sources = scope.plots.filter(
+    (p) => !p.math && p.elementId !== null && p.value !== null,
+  );
+  const need = op === 'derivative' ? 1 : 2;
+  if (sources.length < need) return null;
+  const a = sources[0];
+  const b = need === 2 ? sources[1] : null;
+  // B's id is -1 for the derivative; the type is explicit about the ignored
+  // source so every consumer can keep reading `b` without a branch.
+  return {
+    ...makePlot(allocateId(), null, a.value),
+    math: { op, a: a.id, b: b?.id ?? -1 },
   };
 }
 
@@ -366,7 +391,7 @@ const RESETTABLE_SETTINGS = [
 ] as const satisfies readonly (keyof SimSettings)[];
 
 function defaultTrigger(): ScopeTrigger {
-  return { mode: 'freeRun', edge: 'rising', level: 0 };
+  return { mode: 'freeRun', edge: 'rising', level: 0, holdoff: 0, sourcePlotId: null };
 }
 
 /** A scope panel with the full field set. Position defaults to its own column,
@@ -671,6 +696,7 @@ function createAppStore() {
   running: true,
   tool: null,
   dark: true,
+  scopeLayout: loadScopeLayout(),
   view: { x: 0, y: 0, scale: 1 },
   viewSize: { w: 800, h: 600 },
   centerRequest: 0,
@@ -694,6 +720,7 @@ function createAppStore() {
   contextMenu: null,
   scopeMenu: null,
   scopeProperties: null,
+  singleShotArmed: null,
   menubarOpen: false,
   scrollValuePopover: null,
   partsOpen: defaultPartsOpen(),
@@ -749,6 +776,12 @@ function createAppStore() {
   setProblem: (problem) => set({ problem }),
   setNotice: (notice) => set({ notice }),
   setDark: (dark) => set({ dark }),
+  setScopeLayout: (mode) => {
+    // A per-viewer convenience like the strip height: persist it and move on.
+    // No undo entry, no engine revision, no change to the file.
+    saveScopeLayout(mode);
+    set({ scopeLayout: mode });
+  },
   openDialog: (dialog) => set({ dialog }),
   closeDialog: () => set({ dialog: null }),
   setMenubarOpen: (open) => set((s) => (s.menubarOpen === open ? s : { menubarOpen: open })),
@@ -2238,6 +2271,7 @@ function createAppStore() {
         // scope's removal leaves the open dialog alone: the stack tabs can
         // still reach it.
         scopeProperties: s.scopeProperties === id ? null : s.scopeProperties,
+        singleShotArmed: s.singleShotArmed?.scopeId === id ? null : s.singleShotArmed,
         ...bumpRevision(s),
       })),
     );
@@ -2272,21 +2306,58 @@ function createAppStore() {
     if (!scope) return;
     const trigger = { ...scope.trigger, ...patch };
     // A patch that changes nothing must not reload the engine or push an undo
-    // entry; the three fields are the whole ScopeTrigger.
+    // entry; these are the whole ScopeTrigger.
     if (
       trigger.mode === scope.trigger.mode &&
       trigger.edge === scope.trigger.edge &&
-      trigger.level === scope.trigger.level
+      trigger.level === scope.trigger.level &&
+      trigger.holdoff === scope.trigger.holdoff &&
+      trigger.sourcePlotId === scope.trigger.sourcePlotId
     ) {
       return;
     }
     s.transact('Edit Scope Trigger', () =>
       set((st) => ({
         scopes: st.scopes.map((x) => (x.id === id ? { ...x, trigger } : x)),
+        // Leaving single mode abandons any arm: the trigger is no longer the
+        // one the user asked to capture.
+        singleShotArmed:
+          trigger.mode === 'single' || st.singleShotArmed?.scopeId !== id
+            ? st.singleShotArmed
+            : null,
         // The trigger is part of the engine spec, so it must reload.
         ...bumpRevision(st),
       })),
     );
+  },
+
+  armSingleShot: (id) => {
+    const scope = get().scopes.find((x) => x.id === id);
+    // Arming is only meaningful for a scope whose mode is single. The mode and
+    // the arm are one user gesture in the dialog, so this tolerates the mode
+    // write landing after the arm call.
+    if (!scope || scope.trigger.mode !== 'single') return;
+    set({ singleShotArmed: { scopeId: id, since: null } });
+  },
+
+  stepSingleShot: (id, triggerTime) => {
+    const armed = get().singleShotArmed;
+    if (armed === null || armed.scopeId !== id) return 'idle';
+    if (armed.since === null) {
+      // The first armed frame records what the tracker already has, so a
+      // latched old trigger cannot capture immediately.
+      set({ singleShotArmed: { scopeId: id, since: triggerTime } });
+      return 'waiting';
+    }
+    if (triggerTime > armed.since) {
+      set({ singleShotArmed: null });
+      return 'captured';
+    }
+    return 'waiting';
+  },
+
+  disarmSingleShot: () => {
+    if (get().singleShotArmed !== null) set({ singleShotArmed: null });
   },
 
   setScopeFlags: (id, patch) => {
@@ -2500,6 +2571,39 @@ function createAppStore() {
     );
   },
 
+  setPlotColor: (plotId, color) => {
+    const s = get();
+    const plot = s.scopes.flatMap((x) => x.plots).find((p) => p.id === plotId);
+    if (!plot) return;
+    // Only a six-digit hex is meaningful to the canvas; null clears back to
+    // the positional colour. A repeat is a no-op and pushes no undo entry.
+    const next = color === null ? null : /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : null;
+    if ((plot.colorOverride ?? null) === next) return;
+    s.transact('Edit Scope Colour', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) => ({
+          ...x,
+          plots: x.plots.map((p) => (p.id === plotId ? { ...p, colorOverride: next } : p)),
+        })),
+      })),
+    );
+  },
+
+  addMathPlot: (scopeId, op) => {
+    const s = get();
+    const scope = s.scopes.find((x) => x.id === scopeId);
+    if (!scope) return;
+    const plot = makeMathPlot(scope, op);
+    if (!plot) return;
+    s.transact('Add Math Trace', () =>
+      set((st) => ({
+        scopes: st.scopes.map((x) => (x.id === scopeId ? { ...x, plots: [...x.plots, plot] } : x)),
+        // No revision bump: a math trace has no engine trace, so adding one
+        // must not rebuild the circuit or wipe the capture it derives from.
+      })),
+    );
+  },
+
   togglePlot: (scopeId, value) => {
     const scope = get().scopes.find((x) => x.id === scopeId);
     if (!scope) return;
@@ -2551,7 +2655,9 @@ function createAppStore() {
     const plot = scope?.plots.find((p) => p.id === plotId);
     // A stale id (the menu outlived its plot) must not commit a no-op.
     if (!plot) return;
-    if (plot.value === null || plot.elementId === null) return;
+    // A math trace is removable like any real one; a raw-only plot is not,
+    // because it exists only to carry its o line tokens into the next save.
+    if (!plot.math && (plot.value === null || plot.elementId === null)) return;
     // Removing must never empty the panel.
     if (!scope || scope.plots.length <= 1) return;
     s.transact('Remove Plot', () => {
@@ -3056,8 +3162,10 @@ function createAppStore() {
 
     set((s) => ({
       // Floating panels belong to the document on screen: a fresh one starts
-      // with every scope docked, like upstream's.
+      // with every scope docked, like upstream's. A single-shot arm names a
+      // scope id from the old document, so it goes too.
       floating: [],
+      singleShotArmed: null,
       elements: resolved,
       scopes,
       sliders: parsed.sliders.map((c): Slider => ({ ...c })),
@@ -3368,6 +3476,7 @@ function createAppStore() {
     get().closeUndockedScope();
     set((s) => ({
       floating: [],
+      singleShotArmed: null,
       elements: [],
       scopes: [],
       sliders: [],

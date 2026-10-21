@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { SimEngine } from '../../engine/simulator';
 import type { Scope } from '../../engine/scopeModel';
-import { scopeParamsFingerprint } from '../../engine/scopeModel';
+import { scopeParamsFingerprint, triggerSourceIndex } from '../../engine/scopeModel';
 import { defFor, postsOf, toolDef } from '../../model/registry';
 import { cachedBusWidths, postsForRender } from '../../model/busWidths';
 import { storedBusWidth } from '../../model/registry/elements/wire';
@@ -17,6 +17,8 @@ import { cachedDragHints, dragHintsActive } from '../../render/junctionHints';
 import { scopeWidth } from '../../scope/geometry';
 import { traceScopes } from '../../scope/embedded';
 import { pruneScaleStates, pruneXYScales } from '../../scope/scale';
+import { pruneScopeViews } from '../../scope/view';
+import { meterTracesByElement } from '../../scope/meterLink';
 import { pruneXYPersistence } from '../../scope/xyPersistence';
 import { GRID_SIZE } from '../../model/types';
 import { wireSegments } from '../../model/wirePlacement';
@@ -295,6 +297,7 @@ export function useFrameLoop(
               : (liveScopeIdsRef.current = { scopes: allScopes, ids: allScopes.map((s) => s.id) }).ids;
           pruneScaleStates(liveScopeIds);
           pruneXYScales(liveScopeIds);
+          pruneScopeViews(liveScopeIds);
           // Same rule for the X-Y persistence canvases: an embedded window has
           // no docked panel to clear its entry on unmount, so a deleted 403
           // element (or another document load) would leak one canvas each.
@@ -455,6 +458,22 @@ export function useFrameLoop(
             if (running && !wasRunningRef.current) {
               engine.clearStops();
             }
+            // Single-shot records its baseline before this frame advances, so
+            // a trigger arriving in this very frame is the one that captures.
+            const armBeforeRun = useStore.getState().singleShotArmed;
+            if (running && armBeforeRun !== null && armBeforeRun.since === null) {
+              const target = state.scopes.find((x) => x.id === armBeforeRun.scopeId);
+              if (target && target.trigger.mode === 'single') {
+                const index = triggerSourceIndex(target, (plotId) =>
+                  engine.scopeIndexOf(plotId),
+                );
+                if (index !== undefined) {
+                  const info = engine.triggerInfo(index, scopeWidth(target.id) ?? 500);
+                  useStore.getState().stepSingleShot(target.id, info.time);
+                  info.free();
+                }
+              }
+            }
             if (running) {
               const stats = engine.run(settings.stepsPerFrame);
               if (!stats.converged && stats.error) {
@@ -505,6 +524,25 @@ export function useFrameLoop(
               }
             }
 
+            // Single-shot: the arm records the tracker's last trigger time and
+            // the first newer one pauses the run, holding the capture on the
+            // canvas. A latched old trigger therefore cannot capture at once.
+            const armed = useStore.getState().singleShotArmed;
+            if (running && armed !== null) {
+              const target = state.scopes.find((x) => x.id === armed.scopeId);
+              if (target && target.trigger.mode === 'single') {
+                const index = triggerSourceIndex(target, (plotId) =>
+                  engine.scopeIndexOf(plotId),
+                );
+                if (index !== undefined) {
+                  const info = engine.triggerInfo(index, scopeWidth(target.id) ?? 500);
+                  const outcome = useStore.getState().stepSingleShot(target.id, info.time);
+                  info.free();
+                  if (outcome === 'captured') useStore.getState().setRunning(false);
+                }
+              }
+            }
+
             // Remember the running state for the next frame's pause -> run edge
             // detection. `running` is this frame's snapshot, so the frame that
             // pauses below still records true; the pause is seen next frame.
@@ -536,6 +574,9 @@ export function useFrameLoop(
           }
 
           const theme = makeTheme(state.dark, state.settings);
+          // Which scope traces read each element, in their frame colours: one
+          // map per frame, read only by the meter symbols.
+          const meterTraces = meterTracesByElement(allScopes, theme);
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
           ctx.fillStyle = theme.background;
           ctx.fillRect(0, 0, width, height);
@@ -730,6 +771,7 @@ export function useFrameLoop(
               // same trace rings and display settings the docked panels use;
               // every other element def ignores it.
               scopeDraw,
+              meterTraces,
               busWidth:
                 e.kind === 'wire'
                   ? Math.max(busWidths.get(e.id) ?? 1, storedBusWidth(e))

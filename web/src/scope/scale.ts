@@ -370,6 +370,16 @@ export function seedManScale(gridMax: number, divisions: number): number {
   return nextHighestScale((2 * gridMax) / divisions);
 }
 
+/** Ctrl+wheel vertical zoom of one plot: the next 1-2-5 checkpoint up (`dir`
+ *  1) or down (-1). Using the series rather than a smooth multiply keeps the
+ *  /div label legible and matches the dialog's own stepper, so the wheel and
+ *  the buttons cannot disagree about what the next zoom step is. A non-positive
+ *  or non-finite current scale falls back to upstream's 5 V/div seed. */
+export function wheelManScale(current: number, dir: 1 | -1): number {
+  const base = Number.isFinite(current) && current > 0 ? current : 5;
+  return dir > 0 ? nextHighestScale(base) : nextLowestScale(base);
+}
+
 /** Vertical-position clamp, upstream's `+-V_POSITION_STEPS` span
  *  (Scope.java:1227-1228). */
 export function positionToOffset(v: number): number {
@@ -381,4 +391,16 @@ export function dragPlotYPosition(initial: number, dy: number, maxy: number): nu
   const maxySafe = Math.max(1, maxy);
   const next = initial - Math.round((dy * 200) / (2 * maxySafe));
   return positionToOffset(next);
+}
+
+/** The value at canvas `y`, the inverse of `yOf` (draw.ts). Lets a pointer
+ *  drag on the trigger level line write a value back into the transform. Pure,
+ *  so the round trip is testable without a canvas. */
+export function valueAtY(
+  t: { gridMid: number; gridMult: number; positionOffset: number },
+  maxy: number,
+  y: number,
+): number {
+  if (!(t.gridMult > 0)) return 0;
+  return t.gridMid + (maxy - y) / t.gridMult - t.positionOffset;
 }
