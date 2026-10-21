@@ -231,13 +231,69 @@ square per turn. A placement drag passes its press anchor as the pivot.
 Upstream rotate is flipXY then flipY, and the switch families override each
 flip with a throw reversal, so a rigid turn needs no position compensation.
 
+**Chip rotation is not post-rigid.** `chipFrame` re-anchors a chip at its
+leftmost endpoint, so a quarter turn moves the local origin to the other end
+and the pins do not land on their rotated positions even though the stored
+endpoints turn correctly. The rigid-turn property test skips the chip family
+for that reason. Making chips rigid needs the upstream flip bits plus an
+anchor-preserving frame, a separate representation change.
+
 ## Rotate and mirror flag bookkeeping
 
-The op-amp `FLAG_SWAP` and transistor "Swap E/C" are the same bit 1.
-`web/src/model/transform.ts` flips it once on a horizontal rotate (twice, net
-zero, on a vertical one) and only on a vertical mirror; otherwise terminals
-diverge from upstream's flipXY-then-flipY and flipX. Draw functions share the
+Every transform must land each post on the turned or reflected position of
+that same post; switch throws may trade places when the lever follows
+(`switch2`, `dpdtSwitch`). `web/src/model/transform.ts` owns the per-kind side
+bookkeeping in `rotateFlags` and `mirrorElement`. There are two shapes:
+
+- A `dsign`-driven offset (transistor, MOSFET, opamp, JFET, darlington, OTA
+  inputs, realistic op-amp rails) flips sign with a horizontal part's mirror
+  and with a quarter turn from horizontal, so its bit toggles on a horizontal
+  quarter turn and on a vertical mirror.
+- An absolute offset (`scr`/`triac` gate, `crossSwitch` fan, OTA bias pin,
+  wattmeter and transmission line side, potentiometer wiper) has no axis sign
+  to compensate, so its bit toggles on every horizontal mirror; a rotation
+  leaves it alone unless the kind's own `ds`/`dir` formula changes (the
+  wattmeter and transmission line toggle on a vertical pre-turn).
+
+The op-amp `FLAG_SWAP` and transistor "Swap E/C" are the same bit 1. The plain
+op-amp toggles it once on a horizontal rotate (twice, net zero, on a vertical
+one) and only on a vertical mirror. The realistic op-amp keeps the user's
+"Swap Inputs" choice and carries the rail side in `OPAMPREAL_BODY_FLIP`
+instead, so a turn never rewrites the checkbox. Draw functions share the
 offset helpers so leads and labels follow.
+
+Several kinds upstream never turns or mirrors (`threePhaseMotor`,
+`motorProtectionSwitch`, `ota`, `wattmeter`, `transmissionLine`) because its
+`canFlipX`/`canFlipY` gates refuse them; the darlington refuses only flipY
+(`DarlingtonElm.java:161`), which upstream also uses to disable rotate. The
+port allows the commands on every part with at least two draggable posts, so
+those kinds carry port-only side bits in the common flags word
+(`MOTOR_PHASE_FLIP`,
+`MPS_ORIENT_MASK`, `DARLINGTON_FLIP`, `OTA_HS_FLIP`, `OTA_ABS_FLIP`,
+`OPAMPREAL_BODY_FLIP`, `SCR_FLIP`, `TRIAC_FLIP`, `CROSS_SWITCH_FLIP`,
+`TRANSMISSION_LINE_FLIP`, `WATTMETER_FLIP`; `MOSFET_FLIP` doubles as the JFET
+side on bit 8). **Diverges from upstream** in the file, not the format: the
+bits are ordinary flags tokens upstream reads and writes but ignores. A
+rotated or mirrored part saved by the port therefore loads upstream with its
+old absolute geometry, so the port's own transform results are not portable
+back. A freshly loaded unrotated part has state 0 and keeps upstream's exact
+coordinates.
+
+For the darlington, the port deliberately offers Mirror Vertically even though
+upstream's `canFlipY` returns false; `DARLINGTON_FLIP` carries the collector
+and emitter side through it. The JFET is the other side of the same call:
+upstream allows the transform but its `hasSwapDS` false makes the result
+non-rigid, so the port uses the same bit it otherwise reads as FLAG_FLIP.
+
+The motor protection switch needs a full dihedral state rather than one side
+bit: its body always extends in fixed local +x/+y directions, so
+`MPS_ORIENT_MASK` stores two quarter-turn bits and a mirror bit. Transform
+composition follows `R D = R^(r+1) M^m` and `M D = R^-r M^(m+1)`.
+
+The custom transformer's frame follows the stored axis instead of forcing
+`point2.y = point1.y`, which is what lets a quarter turn keep its node columns
+rigid. Horizontal and legacy diagonal parts keep the old geometry; vertical
+parts use the turned frame.
 
 ## Group mirror
 
@@ -246,6 +302,13 @@ truncated like Java's division (CommandManager.java:408-417; centres
 :385-405). Rounding instead would drift odd-span selections by a square. A
 post-only annotation's stray second point is ignored for the box. Vertical
 mirror (`mirrorElementVertical`) has its own centre.
+
+`groupMirrorable` admits a multi-post part only when `canMirror` is true. The
+SCR, triac, cross switch, motor protection switch, transmission line,
+wattmeter, OTA and both analog switches gained rigid flip bookkeeping, so they
+now join groups; gates, the MBB switch and the three-phase motor still refuse
+the whole selection, because a bare reflection would move their hanging posts
+to the wrong side.
 
 ## Mirroring chips
 

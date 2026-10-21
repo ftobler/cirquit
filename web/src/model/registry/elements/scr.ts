@@ -17,6 +17,13 @@ import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types
 const SCR_GATE_FIX = 1; // SCRElm.java:37
 const HS = 8; // SCRElm.java:101
 
+/** Port extension: the gate side after a horizontal mirror. The gate's `dir`
+ *  is derived from the axis direction and is already rotation-invariant; a
+ *  reflection flips the perpendicular without changing `dir`, so this bit
+ *  restores the reflected side. Upstream has no flip flag (its flipX calls
+ *  fixEnds and the base reflection); the port mirrors rigidly instead. */
+export const SCR_FLIP = 2;
+
 /** Negate a phase for the post-anchored runs, keeping the TOO_FAST sentinel
  *  positive so currentDotsFrom still draws the flow line. */
 function negPhase(phase: number): number {
@@ -56,7 +63,8 @@ export function scrGeometry(e: CircuitElement): ScrGeometry {
   // the lead length, and with it the gate geometry, stays sane on a
   // near-diagonal drag (SCRElm.java:115-122).
   const dn = gateFix ? Math.abs(vertical ? dy : dx) : Math.hypot(dx, dy);
-  const dir = (vertical ? Math.sign(dy) * Math.sign(dx) : -Math.sign(dx) * Math.sign(dy)) || 1;
+  const baseDir = (vertical ? Math.sign(dy) * Math.sign(dx) : -Math.sign(dx) * Math.sign(dy)) || 1;
+  const dir = (e.flags & SCR_FLIP) !== 0 ? -baseDir : baseDir;
   const lead1 = dn < 16 ? p1 : interp(p1, p2, (dn - 16) / (2 * dn));
   const lead2 = dn < 16 ? p2 : interp(p1, p2, (dn + 16) / (2 * dn));
   const leadlen = (dn - 16) / 2;
@@ -140,6 +148,7 @@ export const SCR_DEF: ElementDef = {
     const geo = scrGeometry(e);
     return [geo.p1, geo.p2, geo.gate1];
   },
+  canMirror: true,  // port extension; upstream flips via fixEnds, the port rigidly
   // The gate-fix bit is set on a fresh part and left to the file by the
   // token constructor, exactly like upstream's two constructors (SCRElm.java:
   // 44, :47-49).

@@ -29,26 +29,37 @@ import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types
  *  composite state upstream never writes. */
 export const DEFAULT_Q_STATE = '0_1_0_0_100';
 
+/** Port extension: the collector/emitter side after an odd number of quarter
+ *  turns. The darlington's geometry is upstream's absolute-side `dsign` rule,
+ *  and upstream forbids flipY (which disables rotate too), so it has no flip
+ *  bit of its own. The port allows turning a two-point part; this bit records
+ *  that the hanging pair has been turned onto the other side of the axis.
+ *  Bit 1 is the composite's FLAG_ESCAPE, so the port bit sits above it. */
+export const DARLINGTON_FLIP = 2;
+
 /** Terminal posts, mirroring DarlingtonElm.setPoints (DarlingtonElm.java:
  *  128-134, :155-157): the base at `point1`, the collector and emitter at
  *  `point2` offset `+hs2` and `-hs2`, where `hs2 = 16*dsign*pnp`. There is no
  *  FLAG_FLIP term: the darlington's bit 1 is the composite's FLAG_ESCAPE, not
- *  a flip flag, and the file sign in `params.pnp` drives the hanging side. */
+ *  a flip flag, and the file sign in `params.pnp` drives the hanging side.
+ *  DARLINGTON_FLIP negates the side after a turn. */
 function darlingtonPosts(e: CircuitElement): Point[] {
   const [p1, p2] = endpoints(e);
   const pnp = (e.params.pnp ?? 1) === -1 ? -1 : 1;
-  const [coll, emit] = interp2(p1, p2, 1, 16 * dsign(p1, p2) * pnp);
+  const flip = (e.flags & DARLINGTON_FLIP) !== 0 ? -1 : 1;
+  const [coll, emit] = interp2(p1, p2, 1, 16 * dsign(p1, p2) * pnp * flip);
   return [p1, coll, emit];
 }
 
 /** Signed side factor: `dsign*pnp`, the whole `hs2` scaling upstream applies
  *  (DarlingtonElm.java:129). Distinct from the transistor's
- *  `transistorSideFactor`, which folds FLAG_FLIP in; the darlington has no
- *  such flag. */
+ *  `transistorSideFactor`, which folds FLAG_FLIP in; the darlington's own
+ *  flip lives in DARLINGTON_FLIP. */
 function darlingtonSideFactor(e: CircuitElement): number {
   const [p1, p2] = endpoints(e);
   const pnp = (e.params.pnp ?? 1) === -1 ? -1 : 1;
-  return dsign(p1, p2) * pnp;
+  const flip = (e.flags & DARLINGTON_FLIP) !== 0 ? -1 : 1;
+  return dsign(p1, p2) * pnp * flip;
 }
 
 function drawDarlington(g: DrawContext, e: CircuitElement): void {

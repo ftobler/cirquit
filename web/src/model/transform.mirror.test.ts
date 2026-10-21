@@ -10,7 +10,9 @@ import { ELEMENT_DEFS, chipExtentsOf, postsOf } from './registry';
 import {
   canMirror,
   canMirrorSelection,
+  canRotate,
   canRotateSelection,
+  mirrorElement,
   mirrorElementVertical,
   mirrorInGroup,
   mirrorVerticalInGroup,
@@ -19,22 +21,9 @@ import {
   selectionMirrorCentre,
   selectionMirrorCentreY,
   turnPivot,
+  turnPointAbout,
 } from './transform';
 import type { CircuitElement, Point } from './types';
-
-/** Kinds whose own turn or mirror already lands pins off their reflection,
- *  before any group logic: their per-kind orientation bookkeeping is missing
- *  in rotateFlags/mirrorElement (feature/rigid-transforms.md). The vertical
- *  mirror is composed from those two, so it inherits the defect. Listed, not
- *  silently skipped, so fixing one means deleting it here. */
-const KNOWN_NON_RIGID = new Set([
-  'potentiometer',
-  'tappedTransformer',
-  'customTransformer',
-  'jfet',
-  'darlington',
-  'opampReal',
-]);
 
 /** Switches mirror by reversing the lever with the throws: the throw posts
  *  trade places and the lever follows, so the circuit is electrically
@@ -42,7 +31,17 @@ const KNOWN_NON_RIGID = new Set([
  *  set of positions. */
 const THROW_SWAPPING = new Set(['switch2', 'dpdtSwitch']);
 
-const KINDS = ELEMENT_DEFS.filter((d) => d.canMirror === true && !KNOWN_NON_RIGID.has(d.kind)).map((d) => d.kind);
+const KINDS = ELEMENT_DEFS.filter((d) => d.canMirror === true).map((d) => d.kind);
+
+/** Plain two-point kinds for the quarter-turn property. The chip family is
+ *  out: its rotate stores a vertical segment, the port's own portrait form,
+ *  and its pin frame is rebuilt from that anchor rather than turned rigidly.
+ *  A chip's post rigidity is a separate representation question, not a
+ *  missing `rotateFlags` bit. */
+const ROTATE_KINDS = ELEMENT_DEFS.filter((d) => {
+  const e: CircuitElement = { ...makeElement(d.kind, 96, 160, 192, 160), id: 1 };
+  return canRotate(e) && chipExtentsOf(e) === undefined;
+}).map((d) => d.kind);
 
 const sorted = (ps: Point[]) => [...ps].sort((a, b) => a.x - b.x || a.y - b.y);
 /** The posts in order, or as a set for the throw-swapping switches. */
@@ -106,6 +105,50 @@ describe('horizontal group mirror keeps every post on its reflection', () => {
   }
 });
 
+describe('quarter turn keeps every post on its turn', () => {
+  it('covers a real set of kinds', () => {
+    expect(ROTATE_KINDS.length).toBeGreaterThan(20);
+  });
+
+  for (const kind of ROTATE_KINDS) {
+    it(kind, () => {
+      const flat: CircuitElement = { ...makeElement(kind, 96, 160, 192, 160), id: 1 };
+      // Two turns: the second exercises the case where a kind's orientation
+      // bookkeeping flips instead of staying put.
+      let e = flat;
+      for (let turn = 0; turn < 2; turn++) {
+        const pivot = turnPivot([e])!;
+        const turned = rotateElement(e);
+        expect(postsOf(turned), `turn ${turn + 1}, ${e.x1},${e.y1} ${e.x2},${e.y2}`).toEqual(
+          postsOf(e).map((p) => turnPointAbout(p, pivot, 1)),
+        );
+        e = turned;
+      }
+    });
+  }
+});
+
+describe('fixed kinds mirror rigidly', () => {
+  it('keeps the potentiometer wiper on the reflected side', () => {
+    const pot: CircuitElement = { ...makeElement('potentiometer', 96, 160, 192, 160), id: 1 };
+    expect(postsOf(pot)[2]).toEqual({ x: 144, y: 144 });
+    // A horizontal mirror reflects x and leaves the wiper's side alone.
+    expect(postsOf(mirrorElement(pot))[2]).toEqual({ x: 144, y: 144 });
+    // A vertical mirror reflects y, so the wiper moves below the axis.
+    expect(postsOf(mirrorElementVertical(pot))[2]).toEqual({ x: 144, y: 176 });
+    // In a group the shared centre scales the same reflection.
+    const cx = selectionMirrorCentre([pot, partner])!;
+    expect(postsOf(mirrorInGroup(pot, cx))[2]).toEqual({ x: 2 * cx - 144, y: 144 });
+  });
+
+  it('keeps an op-amp real input swap setting through a mirror', () => {
+    const op: CircuitElement = { ...makeElement('opampReal', 96, 160, 192, 160), id: 1 };
+    const swapped = { ...op, flags: op.flags ^ 2 };
+    const mirrored = mirrorInGroup(swapped, selectionMirrorCentre([swapped, partner])!);
+    expect(mirrored.flags & 2).toBe(2);
+  });
+});
+
 describe('group mirror of plain parts', () => {
   const r: CircuitElement = { id: 1, kind: 'resistor', x1: 0, y1: 0, x2: 64, y2: 0, flags: 0, params: {} };
   const w: CircuitElement = { id: 2, kind: 'wire', x1: 64, y1: 0, x2: 64, y2: 48, flags: 0, params: {} };
@@ -117,9 +160,12 @@ describe('group mirror of plain parts', () => {
     // A lone two-terminal part keeps the old rule: its mirror is a swap.
     expect(canMirrorSelection([r])).toBe(false);
     // A part with hanging posts and no mirror bookkeeping refuses the group:
-    // a bare reflection would put the SCR's gate on the wrong side.
-    const scr: CircuitElement = { ...makeElement('scr', 96, 160, 160, 160), id: 5 };
-    expect(canMirrorSelection([r, scr])).toBe(false);
+    // a bare reflection would put a gate's pins on the wrong side.
+    const gate: CircuitElement = { ...makeElement('andGate', 96, 160, 160, 160), id: 5 };
+    expect(canMirrorSelection([r, gate])).toBe(false);
+    // The SCR gained its gate-side bookkeeping, so it now joins a group.
+    const scr: CircuitElement = { ...makeElement('scr', 96, 160, 160, 160), id: 6 };
+    expect(canMirrorSelection([r, scr])).toBe(true);
     // Annotations alone have nothing to turn.
     expect(canRotateSelection([label, { ...label, id: 4 }])).toBe(false);
   });

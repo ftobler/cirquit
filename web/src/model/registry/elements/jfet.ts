@@ -10,18 +10,21 @@ import {
   polygon,
   voltageColor,
 } from '../../../render/draw';
-import { MOSFET_PNP } from '../flags';
+import { MOSFET_FLIP, MOSFET_PNP } from '../flags';
 import { elementColor, postsBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 /** Terminal posts, mirroring JfetElm.setPoints (JfetElm.java:86-98): the gate
  *  at `point1`, the source and drain at `point2` offset `-hs2` and `+hs2`
- *  respectively, where `hs2 = 16*dsign`. Unlike the mosfet there is no
- *  FLAG_FLIP term: a JFET's `hasSwapDS()` is false, so its `setPoints`
- *  recomputes `hs2 = hs*dsign` and ignores the bit (MosfetElm.java:722). */
+ *  respectively, where `hs2 = 16*dsign`. Upstream's JFET ignores MOSFET_FLIP
+ *  because `hasSwapDS()` is false (MosfetElm.java:722), but the port uses the
+ *  same bit to record the hanging side after a quarter turn: upstream cannot
+ *  turn a JFET (its inherited flip gate refuses), while the port turns every
+ *  two-point part and needs the bit to keep each post on its rigid image. */
 function jfetPosts(e: CircuitElement): Point[] {
   const [p1, p2] = endpoints(e);
-  const hs2 = 16 * dsign(p1, p2);
+  const flip = (e.flags & MOSFET_FLIP) !== 0 ? -1 : 1;
+  const hs2 = 16 * dsign(p1, p2) * flip;
   const [src, drn] = interp2(p1, p2, 1, -hs2);
   return [p1, src, drn];
 }
@@ -36,7 +39,7 @@ function drawJfet(g: DrawContext, e: CircuitElement): void {
   const posts = jfetPosts(e);
   const pnp = (e.params.pnp ?? 1) === -1;
   const dn = elementLength(e);
-  const hs2 = 16 * dsign(p1, p2);
+  const hs2 = 16 * dsign(p1, p2) * ((e.flags & MOSFET_FLIP) !== 0 ? -1 : 1);
 
   // Source and drain rails, each two segments from the post to the channel
   // stub beside the gate bar (JfetElm.java:94-96, drawn at :55-59).

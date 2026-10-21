@@ -14,13 +14,29 @@ import { GRID_SIZE } from '../../types';
 import { readParams, writeParams, boxOfPoints } from '../shared';
 import type { CircuitElement, ElementDef, Point } from '../../types';
 
+/** Port extension: negates the offset side. Upstream gates turning and
+ *  mirroring on orientation (canFlipX only when horizontal, canFlipY only when
+ *  vertical), so its plain `ds` side never has to survive both. The port
+ *  allows both transforms; this bit keeps the bottom pair on the rigid image
+ *  through the second quarter turn and through a vertical part's mirror. */
+export const WATTMETER_FLIP = 1;
+
+/** Upstream's `ds` side sign (WattmeterElm.java:95-114), negated by
+ *  WATTMETER_FLIP so a turned or mirrored meter keeps its posts on their own
+ *  side of the axis. */
+function wattmeterDs(e: CircuitElement): number {
+  const [p1, p2] = endpoints(e);
+  const side = p2.y === p1.y ? Math.sign(p2.x - p1.x) : -Math.sign(p2.y - p1.y);
+  return (e.flags & WATTMETER_FLIP) !== 0 ? -side : side;
+}
+
 /** Posts for a stored width, upstream's setPoints (WattmeterElm.java:95-114):
  *  the two bottom stubs are offset perpendicular by `width` from the two axis
  *  ends, ordered so the lower-numbered (bottom) posts come first and get
  *  auto-grounded when unconnected. */
 export function wattmeterPosts(e: CircuitElement): Point[] {
   const [p1, p2] = endpoints(e);
-  const ds = p2.y === p1.y ? Math.sign(p2.x - p1.x) : -Math.sign(p2.y - p1.y);
+  const ds = wattmeterDs(e);
   const width = e.params.width ?? GRID_SIZE;
   const p3 = interp(p1, p2, 0, -width * ds);
   const p4 = interp(p1, p2, 1, -width * ds);
@@ -43,6 +59,7 @@ export const WATTMETER_DEF: ElementDef = {
   dumpCode: '420',
   postCount: 4,
   posts: wattmeterPosts,
+  canMirror: true,  // port extension; upstream's flip gates are orientation-only
   defaults: { width: GRID_SIZE, meter: 0 },  // width >= gridSize (WattmeterElm.java:78-79)
   parse: (t, e) => readParams(t, e, ['width', 'meter']),
   dump: writeParams(['width', 'meter']),
@@ -67,7 +84,7 @@ export const WATTMETER_DEF: ElementDef = {
     const [p1, p2] = endpoints(e);
     const dn = elementLength(e);
     if (dn === 0) return { x0: 0, y0: 0, x1: 0, y1: 0 };
-    const ds = p2.y === p1.y ? Math.sign(p2.x - p1.x) : -Math.sign(p2.y - p1.y);
+    const ds = wattmeterDs(e);
     const width = e.params.width ?? GRID_SIZE;
     const r1 = interp(p1, p2, GRID_SIZE / dn, ds * GRID_SIZE);
     const r2 = interp(p1, p2, 1 - GRID_SIZE / dn, ds * GRID_SIZE);
@@ -80,7 +97,7 @@ export const WATTMETER_DEF: ElementDef = {
     const dn = elementLength(e);
     if (dn === 0) return;
     const sep = GRID_SIZE;
-    const ds = p2.y === p1.y ? Math.sign(p2.x - p1.x) : -Math.sign(p2.y - p1.y);
+    const ds = wattmeterDs(e);
     const width = e.params.width ?? GRID_SIZE;
     const posts = wattmeterPosts(e);
 

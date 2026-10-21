@@ -22,6 +22,12 @@ const HS = 16;
  *  136-139). */
 const ARROW_HS = 8;
 
+/** Port extension: the gate side after a horizontal mirror. The gate's `dir`
+ *  is derived from the axis direction and is already rotation-invariant; a
+ *  reflection flips the perpendicular without changing `dir`, so this bit
+ *  restores the reflected side. Upstream offers no flip override. */
+export const TRIAC_FLIP = 1;
+
 /** Negate a phase for the post-anchored runs, keeping the TOO_FAST sentinel
  *  positive so currentDotsFrom still draws the flow line. */
 function negPhase(phase: number): number {
@@ -58,7 +64,8 @@ export function triacGeometry(e: CircuitElement): TriacGeometry {
   // the perpendicular offsets below stay perpendicular.
   const p2 = vertical ? { x: p1.x, y: p2raw.y } : { x: p2raw.x, y: p1.y };
   const dn = Math.abs(vertical ? dy : dx);
-  const dir = (vertical ? Math.sign(dy) * Math.sign(dx) : -Math.sign(dx) * Math.sign(dy)) || 1;
+  const baseDir = (vertical ? Math.sign(dy) * Math.sign(dx) : -Math.sign(dx) * Math.sign(dy)) || 1;
+  const dir = (e.flags & TRIAC_FLIP) !== 0 ? -baseDir : baseDir;
   const lead1 = dn < 16 ? p1 : interp(p1, p2, (dn - 16) / (2 * dn));
   const lead2 = dn < 16 ? p2 : interp(p1, p2, (dn + 16) / (2 * dn));
   const leadlen = (dn - 16) / 2;
@@ -157,6 +164,7 @@ export const TRIAC_DEF: ElementDef = {
     const geo = triacGeometry(e);
     return [geo.p1, geo.p2, geo.gate1];
   },
+  canMirror: true,  // port extension; upstream offers no flip override
   // Defaults from `setDefaults` (TriacElm.java:59-63). The latch state is 0
   // (off) on a fresh part; the file carries it as a "true"/"false" token.
   defaults: { triggerI: 0.01, holdingI: 0.0082, cresistance: 100 },

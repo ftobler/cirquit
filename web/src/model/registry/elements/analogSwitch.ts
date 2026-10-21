@@ -8,18 +8,31 @@ import {
   calcLeads,
   currentDotsPath,
   drawLeads,
-  dsign,
   endpoints,
   interp,
   lead,
   line,
   voltageColor,
 } from '../../../render/draw';
+import { GRID_SIZE } from '../../types';
 import { OPEN_HS, readParams, writeParams, postsBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
 const FLAG_INVERT = 1;  // AnalogSwitchElm.java:26
 const FLAG_PULLDOWN = 2;  // AnalogSwitchElm.java:27
+
+/** The upstream flip bits (AnalogSwitchElm.java:29-34). They are not simple
+ *  orientation signs: FLAG_FLIP_X/Y only change the lead rounding direction,
+ *  while FLAG_FLIP is the diagonal-flip state, and `openhs` reads all three.
+ *  The port updates them in transform.ts exactly as flipX/flipY/flipXY do. */
+export const ANALOG_SWITCH_FLIP_X = 4;
+export const ANALOG_SWITCH_FLIP_Y = 8;
+export const ANALOG_SWITCH_FLIP = 16;
+
+/** Upstream's `snapGrid` (CirSim.java:536-538, gridRound = gridSize/2 - 1). */
+function snapGrid(x: number): number {
+  return Math.floor((x + GRID_SIZE / 2 - 1) / GRID_SIZE) * GRID_SIZE;
+}
 
 interface AnalogSwitchGeometry {
   p1: Point;
@@ -32,14 +45,23 @@ interface AnalogSwitchGeometry {
 }
 
 /** The signal leads and the control stub, matching AnalogSwitchElm.setPoints
- *  (AnalogSwitchElm.java:83-92). `openhs` is ±16 on the `dsign`-determined
- *  side, exactly like the relay contact's throw offset; the control post and
- *  its stub hang off the opposite sign, and the open lever lifts onto
- *  `openhs`. */
+ *  (AnalogSwitchElm.java:83-92). `openhs` is ±16 determined by the three flip
+ *  bits, exactly upstream's expression; `adjustLeadsToGrid` then shifts the
+ *  leads by the rounding direction so an odd-span part keeps the control post
+ *  on the same column it drew before the flip. */
 function analogSwitchGeometry(e: CircuitElement): AnalogSwitchGeometry {
   const [p1, p2] = endpoints(e);
-  const [lead1, lead2] = calcLeads(e, 32);
-  const openhs = dsign(p1, p2) * OPEN_HS;
+  let [lead1, lead2] = calcLeads(e, 32);
+  const flipX = (e.flags & ANALOG_SWITCH_FLIP_X) !== 0;
+  const flipY = (e.flags & ANALOG_SWITCH_FLIP_Y) !== 0;
+  const flipped = (e.flags & ANALOG_SWITCH_FLIP) !== 0;
+  const cx = (p1.x + p2.x) / 2;
+  const cy = (p1.y + p2.y) / 2;
+  const adjx = snapGrid(cx + (flipX ? 1 : -1)) - cx;
+  const adjy = snapGrid(cy + (flipY ? 1 : -1)) - cy;
+  lead1 = { x: lead1.x + adjx, y: lead1.y + adjy };
+  lead2 = { x: lead2.x + adjx, y: lead2.y + adjy };
+  const openhs = (flipX !== flipY) !== flipped ? -OPEN_HS : OPEN_HS;
   return {
     p1,
     p2,
@@ -92,6 +114,7 @@ export const ANALOG_SWITCH_DEF: ElementDef = {
   dumpCode: '159',
   postCount: 3,
   posts: analogSwitchPosts,
+  canMirror: true,  // port extension; upstream's flipX is the base reflection
   noDiagonal: true,  // AnalogSwitchElm.java:42
   defaultFlags: FLAG_PULLDOWN,  // the fresh constructor sets it (AnalogSwitchElm.java:43)
   defaults: {

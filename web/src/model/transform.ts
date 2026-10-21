@@ -6,14 +6,45 @@
  * posts are never stored: a quarter turn of `(x1,y1,x2,y2)` is all any element
  * needs, because the registry's `posts()` functions re-derive op-amp inputs,
  * pot wipers, transistor collector/emitter and SPDT throws from the new axis
- * and its perpendicular. The remaining per-type work is the op-amp and
- * transistor orientation flag, kept in step with upstream's `dsign` term so a
- * rotated or mirrored part's terminal coordinates match the original exactly.
+ * and its perpendicular. The remaining per-type work is orientation
+ * bookkeeping, kept in step with upstream's flip overrides so a rotated or
+ * mirrored part's terminal coordinates match the original exactly. Kinds
+ * upstream refuses to flip, or flips without rigid bookkeeping, carry
+ * port-only side bits in the common flags word; see docs/editor.md.
  */
 
-import { FLAG_SWAP, chipExtentsOf, defFor, MOSFET_FLIP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP, UJT_FLIP, postCountOf } from './registry';
+import {
+  ANALOG_SWITCH_FLIP,
+  ANALOG_SWITCH_FLIP_X,
+  ANALOG_SWITCH_FLIP_Y,
+  CROSS_SWITCH_FLIP,
+  DARLINGTON_FLIP,
+  FLAG_SWAP,
+  MOTOR_PHASE_FLIP,
+  MPS_MIRROR,
+  MPS_ORIENT_MASK,
+  MPS_ROTATION_MASK,
+  OTA_ABS_FLIP,
+  OTA_HS_FLIP,
+  OPAMPREAL_BODY_FLIP,
+  SCR_FLIP,
+  TRANSMISSION_LINE_FLIP,
+  TRIAC_FLIP,
+  WATTMETER_FLIP,
+  chipExtentsOf,
+  defFor,
+  MOSFET_FLIP,
+  TRANSFORMER_FLIP,
+  TRANSFORMER_VERTICAL,
+  TAPPED_FLIP,
+  TRIODE_DSIGN_FIX,
+  TRIODE_FLIP,
+  TRI_STATE_FLIP,
+  UJT_FLIP,
+  postCountOf,
+} from './registry';
 import { CHIP_FLIP_X, CHIP_FLIP_XY, CHIP_FLIP_Y } from './registry/elements/dFlipFlop';
-import { COMPARATOR_SWAP, SWITCH2_CENTER_OFF } from './registry/flags';
+import { COMPARATOR_SWAP, POT_FLIP_OFFSET, SWITCH2_CENTER_OFF } from './registry/flags';
 import { GRID_SIZE, type CircuitElement, type Point } from './types';
 
 /** Whether the element can turn a quarter turn. A stem-bearing one-post part
@@ -253,8 +284,10 @@ export function rotateElement(e: CircuitElement, pivot?: Point): CircuitElement 
  * The basic transformer is upstream's flipXY then flipY too
  * (TransformerElm.java:385-400): flipXY toggles FLAG_VERTICAL, and flipY
  * toggles FLAG_FLIP only when the part is now horizontal, i.e. when it was
- * vertical before the turn. The tapped and custom transformers toggle
- * FLAG_FLIP twice through the same two flips, so a rotate leaves them alone.
+ * vertical before the turn. The tapped transformer overrides flipXY and flipY
+ * with the same FLAG_FLIP toggle, so a rotate toggles twice and leaves it
+ * alone; the custom transformer overrides only flipX and flipY, but the port's
+ * axis-following frame makes its rotate rigid with no flag change either.
  */
 function rotateFlags(e: CircuitElement): number {
   if (e.kind === 'transformer') {
@@ -292,6 +325,58 @@ function rotateFlags(e: CircuitElement): number {
     let flags = e.flags ^ COMPARATOR_SWAP;
     if (e.x1 === e.x2) flags ^= COMPARATOR_SWAP;
     return flags;
+  }
+  // dsign-driven hanging sides: dsign flips through a quarter turn exactly
+  // when the part was horizontal before it, so toggling the side bit then
+  // keeps `dsign * side` invariant and every post on its rigid image.
+  // Upstream refuses these transforms for the darlington, OTA and realistic
+  // op-amp (canFlipY gates) and has no flip bookkeeping for the JFET
+  // (hasSwapDS is false, so its setPoints ignores the bit), so the port's
+  // extra bit lives in the common flags word where upstream ignores it.
+  if (e.kind === 'jfet') {
+    return e.x1 !== e.x2 ? e.flags ^ MOSFET_FLIP : e.flags;
+  }
+  if (e.kind === 'darlington') {
+    return e.x1 !== e.x2 ? e.flags ^ DARLINGTON_FLIP : e.flags;
+  }
+  if (e.kind === 'ota') {
+    // Only the hs family needs the turn toggle; the bias pin's absolute
+    // offsets are rotation-invariant.
+    return e.x1 !== e.x2 ? e.flags ^ OTA_HS_FLIP : e.flags;
+  }
+  if (e.kind === 'opampReal') {
+    // The rails and triangle ride dsign through OPAMPREAL_BODY_FLIP. The
+    // input swap sits on top of that side, so compensating the body keeps the
+    // user's swap choice intact and still lands both input posts rigidly.
+    return e.x1 !== e.x2 ? e.flags ^ OPAMPREAL_BODY_FLIP : e.flags;
+  }
+  if (e.kind === 'threePhaseMotor') {
+    // The phase stack follows the absolute axis; a quarter turn reverses it
+    // unless the span is exactly diagonal (the owner rule keeps the body
+    // axis-aligned, so that case is only a hand-edited netlist).
+    const dx = Math.abs(e.x2 - e.x1);
+    const dy = Math.abs(e.y2 - e.y1);
+    return dx === dy ? e.flags : e.flags ^ MOTOR_PHASE_FLIP;
+  }
+  if (e.kind === 'motorProtectionSwitch') {
+    // The body state is D = R^r M^m; a turn composes R on the left, so the
+    // quarter count advances and the mirror bit stays.
+    const state = e.flags & MPS_ORIENT_MASK;
+    const turns = ((state & MPS_ROTATION_MASK) + 1) & MPS_ROTATION_MASK;
+    const mirror = state & MPS_MIRROR;
+    return (e.flags & ~MPS_ORIENT_MASK) | turns | mirror;
+  }
+  if (e.kind === 'analogSwitch' || e.kind === 'analogSwitch2') {
+    // Upstream's rotate is flipXY then flipY (AnalogSwitchElm.java:108-112),
+    // and both overrides toggle their bit unconditionally, so every turn
+    // toggles FLAG_FLIPPED and FLAG_FLIPPED_Y together.
+    return e.flags ^ ANALOG_SWITCH_FLIP ^ ANALOG_SWITCH_FLIP_Y;
+  }
+  if (e.kind === 'transmissionLine') {
+    return e.x1 === e.x2 ? e.flags ^ TRANSMISSION_LINE_FLIP : e.flags;
+  }
+  if (e.kind === 'wattmeter') {
+    return e.x1 === e.x2 ? e.flags ^ WATTMETER_FLIP : e.flags;
   }
   if (e.kind !== 'opamp' && e.kind !== 'transistor') return e.flags;
   let flags = e.flags ^ FLAG_SWAP;
@@ -334,10 +419,17 @@ function mirrorChip(e: CircuitElement, cx: number, sharedCentre: boolean): Circu
  * moves the hanging terminals to the true mirror side; only a vertical part
  * (whose axis direction is unchanged) needs its orientation flag flipped. The
  * transformers follow upstream's `flipX` (TransformerElm.java:385-389), which
- * toggles FLAG_FLIP exactly when the part is vertical. The triode differs: a
- * legacy (no FLAG_DSIGN_FIX) horizontal part needs the flip too, because
- * without the bit its electrode side is a fixed 1 rather than dsign
+ * toggles FLAG_FLIP exactly when the part is vertical; the tapped and custom
+ * transformers override flipX with an unconditional toggle. The triode
+ * differs: a legacy (no FLAG_DSIGN_FIX) horizontal part needs the flip too,
+ * because without the bit its electrode side is a fixed 1 rather than dsign
  * (TriodeElm.java:251-255).
+ *
+ * The port also mirrors kinds upstream refuses or reflects non-rigidly. Their
+ * side bits follow the same rule the transform proves: a `dsign`-driven
+ * offset needs no toggle on a horizontal part (dsign flips with the
+ * reflection) and does on a vertical one, while an absolute offset needs the
+ * opposite pattern, because the reflection flips the perpendicular either way.
  */
 export function mirrorElement(e: CircuitElement, centre?: number): CircuitElement {
   if (!canMirror(e)) return e;
@@ -346,35 +438,26 @@ export function mirrorElement(e: CircuitElement, centre?: number): CircuitElemen
   }
   const cx = centre ?? (e.x1 + e.x2) / 2;
   const vertical = e.x1 === e.x2;
+  const reflect = (flags: number): CircuitElement => ({
+    ...withoutRoute(e),
+    x1: 2 * cx - e.x1,
+    y1: e.y1,
+    x2: 2 * cx - e.x2,
+    y2: e.y2,
+    flags,
+  });
   // The tri-state's control offset is absolute (a fixed sign, TriStateElm.java:
   // 122), so a mirror must flip FLAG_FLIP unconditionally, unlike the
   // dsign-driven parts where a horizontal mirror only needs dsign to move the
   // hanging posts (TriStateElm.java:319-322).
-  if (e.kind === 'triState') {
-    return {
-      ...withoutRoute(e),
-      x1: 2 * cx - e.x1,
-      y1: e.y1,
-      x2: 2 * cx - e.x2,
-      y2: e.y2,
-      flags: e.flags ^ TRI_STATE_FLIP,
-    };
-  }
+  if (e.kind === 'triState') return reflect(e.flags ^ TRI_STATE_FLIP);
   if (e.kind === 'triode') {
     // Upstream flipX toggles FLAG_FLIP for a vertical part and for a legacy
     // (no FLAG_DSIGN_FIX) horizontal part (TriodeElm.java:251-255). A fresh
     // horizontal part keeps the bit: the dsign term alone moves the plate and
     // cathode posts to the true mirror side.
     const legacy = (e.flags & TRIODE_DSIGN_FIX) === 0;
-    const flags = vertical || legacy ? e.flags ^ TRIODE_FLIP : e.flags;
-    return {
-      ...withoutRoute(e),
-      x1: 2 * cx - e.x1,
-      y1: e.y1,
-      x2: 2 * cx - e.x2,
-      y2: e.y2,
-      flags,
-    };
+    return reflect(vertical || legacy ? e.flags ^ TRIODE_FLIP : e.flags);
   }
   if (e.kind === 'dpdtSwitch') {
     // Upstream DPDTSwitchElm.flipX runs its own flip() first: the throw
@@ -413,15 +496,63 @@ export function mirrorElement(e: CircuitElement, centre?: number): CircuitElemen
       y2: e.y2,
     });
   }
+  // PotElm.flipX toggles FLAG_FLIP_OFFSET unconditionally: the wiper's
+  // fallback side is absolute, so a reflected pot needs the side bit flipped
+  // to keep the wiper on the mirror image of its old side.
+  if (e.kind === 'potentiometer') return reflect(e.flags ^ POT_FLIP_OFFSET);
+  // dsign-driven hanging sides: a horizontal reflection flips dsign, which
+  // is already the negation the offset needs; a vertical one leaves dsign
+  // alone and needs the side bit toggled instead.
+  if (e.kind === 'jfet') return reflect(vertical ? e.flags ^ MOSFET_FLIP : e.flags);
+  if (e.kind === 'darlington') {
+    return reflect(vertical ? e.flags ^ DARLINGTON_FLIP : e.flags);
+  }
+  if (e.kind === 'opampReal') {
+    // The rails and triangle ride dsign through OPAMPREAL_BODY_FLIP; the
+    // input swap rides on top of the same side and stays put.
+    return reflect(vertical ? e.flags ^ OPAMPREAL_BODY_FLIP : e.flags);
+  }
+  if (e.kind === 'ota') {
+    // The bias pin's offsets are absolute and always need the negation; the
+    // hs family is dsign-driven and only needs it on a vertical part.
+    let flags = e.flags ^ OTA_ABS_FLIP;
+    if (vertical) flags ^= OTA_HS_FLIP;
+    return reflect(flags);
+  }
+  if (e.kind === 'transmissionLine') {
+    // `ds` flips with a horizontal part's reflection and stays put for a
+    // vertical one, so only the vertical case needs the side bit.
+    return reflect(vertical ? e.flags ^ TRANSMISSION_LINE_FLIP : e.flags);
+  }
+  if (e.kind === 'wattmeter') {
+    return reflect(vertical ? e.flags ^ WATTMETER_FLIP : e.flags);
+  }
+  // Absolute-offset kinds: the reflection flips the perpendicular with no
+  // axis sign to compensate, so every mirror toggles their side bit.
+  if (e.kind === 'scr') return reflect(e.flags ^ SCR_FLIP);
+  if (e.kind === 'triac') return reflect(e.flags ^ TRIAC_FLIP);
+  if (e.kind === 'crossSwitch') return reflect(e.flags ^ CROSS_SWITCH_FLIP);
+  if (e.kind === 'analogSwitch' || e.kind === 'analogSwitch2') {
+    return reflect(e.flags ^ ANALOG_SWITCH_FLIP_X);
+  }
+  if (e.kind === 'motorProtectionSwitch') {
+    // M D = R^-r M^(m+1): the mirror reverses the quarter count and toggles
+    // the mirror bit, so the whole body lands on its reflection.
+    const state = e.flags & MPS_ORIENT_MASK;
+    const turns = (4 - (state & MPS_ROTATION_MASK)) & MPS_ROTATION_MASK;
+    const mirror = (state & MPS_MIRROR) ^ MPS_MIRROR;
+    return reflect((e.flags & ~MPS_ORIENT_MASK) | turns | mirror);
+  }
   let flipBit = 0;
   if (e.kind === 'mosfet' || e.kind === 'relay') flipBit = MOSFET_FLIP;
   else if (e.kind === 'transformer') flipBit = TRANSFORMER_FLIP;
   else if (e.kind === 'opamp' || e.kind === 'transistor') flipBit = FLAG_SWAP;
   else if (e.kind === 'comparator') flipBit = COMPARATOR_SWAP;
-  else if (e.kind === 'tappedTransformer' || e.kind === 'customTransformer') flipBit = TAPPED_FLIP;
-  else if (e.kind === 'unijunction') flipBit = UJT_FLIP;
-  const flags = vertical && flipBit !== 0 ? e.flags ^ flipBit : e.flags;
-  return { ...withoutRoute(e), x1: 2 * cx - e.x1, y1: e.y1, x2: 2 * cx - e.x2, y2: e.y2, flags };
+  else if (e.kind === 'tappedTransformer' || e.kind === 'customTransformer') {
+    // Upstream flipX toggles FLAG_FLIP for both, with no vertical test.
+    return reflect(e.flags ^ TAPPED_FLIP);
+  } else if (e.kind === 'unijunction') flipBit = UJT_FLIP;
+  return reflect(vertical && flipBit !== 0 ? e.flags ^ flipBit : e.flags);
 }
 
 /** Exchange the two ends of a two-terminal part. */

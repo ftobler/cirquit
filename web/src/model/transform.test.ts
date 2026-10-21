@@ -527,14 +527,16 @@ describe('opampReal transforms carry no flag', () => {
     ]);
   });
 
-  it('mirrors a vertical part without toggling anything', () => {
+  it('mirrors a vertical part, flipping only the body side', () => {
+    // The swap bit is the user's choice and stays put; the rails' side rides
+    // the port's OPAMPREAL_BODY_FLIP so both rail posts reflect rigidly.
     const e = element('opampReal', 48, -48, 48, 48, 2);
-    expect(mirrorElement(e).flags).toBe(2);
+    expect(mirrorElement(e).flags).toBe(2 | 4);
   });
 
   it('rotates without touching the swap bit, in either axis', () => {
     const horizontal = element('opampReal', 0, 0, 96, 0, 2);
-    expect(rotateElement(horizontal).flags).toBe(2);
+    expect(rotateElement(horizontal).flags).toBe(2 | 4);
     const vertical = element('opampReal', 48, -48, 48, 48, 2);
     expect(rotateElement(vertical).flags).toBe(2);
   });

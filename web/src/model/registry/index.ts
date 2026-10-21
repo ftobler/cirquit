@@ -136,6 +136,17 @@ import { DECORATION_DEF } from './elements/decoration';
 import type { CircuitElement, ElementDef, Point } from '../types';
 
 export { FLAG_SWAP, MOSFET_FLIP, MOSFET_PNP, TRANSFORMER_FLIP, TRANSFORMER_VERTICAL, TAPPED_FLIP, TRIODE_DSIGN_FIX, TRIODE_FLIP, TRI_STATE_FLIP };
+export { MOTOR_PHASE_FLIP } from './elements/threePhaseMotor';
+export { MPS_ORIENT_MASK, MPS_ROTATION_MASK, MPS_MIRROR } from './elements/motorProtectionSwitch';
+export { DARLINGTON_FLIP } from './elements/darlington';
+export { OTA_HS_FLIP, OTA_ABS_FLIP } from './elements/ota';
+export { OPAMPREAL_BODY_FLIP } from './elements/opampReal';
+export { ANALOG_SWITCH_FLIP, ANALOG_SWITCH_FLIP_X, ANALOG_SWITCH_FLIP_Y } from './elements/analogSwitch';
+export { SCR_FLIP } from './elements/scr';
+export { TRIAC_FLIP } from './elements/triac';
+export { CROSS_SWITCH_FLIP } from './elements/crossSwitch';
+export { TRANSMISSION_LINE_FLIP } from './elements/transmissionLine';
+export { WATTMETER_FLIP } from './elements/wattmeter';
 export { switchLever, switchLeverTip, switchIecPoints, groundBars };
 export { opampInputSign, opAmpInputAnchors, opAmpLabelAnchors } from './elements/opamp';
 export { otaGeometry } from './elements/ota';
