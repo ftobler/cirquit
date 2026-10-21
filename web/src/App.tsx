@@ -26,6 +26,7 @@ import { SliderPanel } from './ui/SliderPanel';
 import { SubcircuitManagerDialog } from './ui/SubcircuitManagerDialog';
 import { Toolbox } from './ui/Toolbox';
 import { useAutoPause } from './ui/useAutoPause';
+import { createBrowserSimHost } from './ui/canvas/browserSimHost';
 import { hasUnsavedChanges, useStore } from './state/store';
 import { noteUndockedHello } from './undocked/opener';
 import { UNDOCKED_HELLO_TYPE } from './undocked/protocol';
@@ -71,6 +72,9 @@ export default function App() {
         // Point the store at the engine's token reader so saveNetlist and the
         // rebuild path can overlay live state onto a copy of the elements.
         useStore.getState().setLiveStateProvider(() => e.elementStateTokens());
+        // The read-side host the queries and sim.step go through. It reads the
+        // frame loop's per-frame cache; the loop remains the only builder.
+        useStore.getState().setSimHost(createBrowserSimHost(e, useStore));
         await loadStartupCircuit({
           load: (text) => useStore.getState().loadNetlist(text),
           setStatus: (message) => useStore.getState().setStatus(message),

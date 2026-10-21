@@ -232,6 +232,25 @@ vector first, so repeated switch throws do not accumulate copies.
 previous circuit. Element state tokens key off element id, never positional
 zip.
 
+## Read-side host and the node-number mirror
+
+Live values reach the read side through `SimHost`
+(`web/src/engine/simHost.ts`), never through a `SimEngine` held in the store.
+The browser host (`web/src/ui/canvas/browserSimHost.ts`) reads the frame loop's
+per-frame cache; step 4's headless runner owns its own build and synchronous
+step. The store holds the host under `simHost`, set through `setSimHost`.
+
+`SimHost` exposes `nodeVoltages()` indexed by the engine's node number but not
+the post-to-node map, so `web/src/model/nets.ts` `assignNodes` mirrors the
+engine's `assign_nodes`: terminals merge on coordinate plus bus bit, a labeled
+node joins same-named labels, wires, closed switches and bus splitters merge as
+ideal shorts, every ground pins its component to node 0, and with no ground and
+no one-post voltage source the first node becomes the reference. This is a
+deliberate duplication of engine logic, and
+`web/src/commands/queries.engine.test.ts` pins the mirror against the engine's
+own `elementNodes()` for a real build, so a divergence fails a test rather than
+silently mis-numbering a net.
+
 ## Ground fallback
 
 With no ground symbol, upstream's `setGroundNode` falls back to the first

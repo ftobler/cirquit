@@ -50,6 +50,7 @@ export const fresh = () => ({
   lastSaved: null,
   hasRecovery: false,
   liveStateProvider: null,
+  simHost: null,
   document: 0,
   subcircuitStack: [],
   undocked: null,

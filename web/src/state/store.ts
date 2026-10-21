@@ -734,6 +734,7 @@ function createAppStore() {
   clipboard: loadStoredClipboard(),
   lastSaved: null,
   liveStateProvider: null,
+  simHost: null,
   document: 0,
   subcircuitStack: [],
   undocked: null,
@@ -3295,6 +3296,8 @@ function createAppStore() {
   },
 
   setLiveStateProvider: (provider) => set({ liveStateProvider: provider }),
+
+  setSimHost: (host) => set({ simHost: host }),
 
   enterSubcircuit: (name) => {
     const s = get();

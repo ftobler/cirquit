@@ -497,6 +497,35 @@ export function scopePlotsToSpecs(
   return out;
 }
 
+/**
+ * The most recent captured columns of one trace ring as a single value per
+ * column plus its simulated time, oldest first. The engine's ring is
+ * interleaved min/max pairs per column; the value reported is the column's
+ * upper envelope, which is the drawn peak and the least lossy single number
+ * when a column aggregates several solver steps. `written` is
+ * `scopeColumnsWritten`, capped here at the ring's own capacity. Pure, so the
+ * read side can be unit tested without wasm.
+ */
+export function sampleTraceRing(
+  data: Float32Array,
+  written: number,
+  limit: number,
+  secondsPerColumn: number,
+  simTime: number,
+): { t: number[]; values: number[] } {
+  const columns = Math.floor(data.length / 2);
+  const available = Math.max(0, Math.min(written, columns));
+  const n = Math.max(0, Math.min(available, limit));
+  const t: number[] = new Array(n);
+  const values: number[] = new Array(n);
+  for (let j = 0; j < n; j++) {
+    const pos = columns - n + j;
+    values[j] = data[pos * 2 + 1] ?? 0;
+    t[j] = simTime - (n - 1 - j) * secondsPerColumn;
+  }
+  return { t, values };
+}
+
 /** Fingerprint of the scope capture params the engine should hold. */
 export function scopeParamsFingerprint(
   scopes: Scope[],

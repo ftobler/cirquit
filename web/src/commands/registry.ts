@@ -66,6 +66,7 @@ export const NON_COMMAND_STORE_ACTIONS: Readonly<Record<string, string>> = {
   disarmSingleShot: 'Disarms the session-only single-shot capture; the dialog gesture owns it.',
   stepSingleShot: 'Single-shot capture state machine driven by the frame loop, not a document edit.',
   setLiveStateProvider: 'Host wiring for live-state readback.',
+  setSimHost: 'Host wiring for engine readback (queries and sim.step).',
   markSaved: 'Marks the export baseline clean; the file IO is host-bound.',
   beginTransaction: 'Gesture undo boundary helper.',
   endTransaction: 'Gesture undo boundary helper.',

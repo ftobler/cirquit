@@ -115,6 +115,7 @@ describe('command table', () => {
       'subcircuit.exit',
       'sim.run',
       'sim.pause',
+      'sim.step',
       'sim.reset',
       'sim.dcOperatingPoint',
       'settings.update',

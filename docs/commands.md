@@ -102,3 +102,73 @@ mutating action cannot be added silently.
 - Canvas gestures stay one open transaction. A click-place ends in
   `element.add` (with the toolbox tool id and banked turns, so the drop and an
   agent placement share the ghost builder) and a wire drag ends in `wire.add`.
+
+## Queries
+
+`web/src/commands/queries.ts` is the read side: `QueryDef` (id, label,
+description, `args`, `run`) is `CommandDef` minus `history`, `edits` and the
+gates, and `run` returns JSON-safe data. `query(id, args, ctx)` mirrors
+`execute`: an unknown id, bad args or a refusal come back as a `QueryResult`,
+never as a throw.
+
+**A query is pure, and a test enforces it.** `queries.test.ts` runs every id
+with valid sample args and asserts the snapshot fingerprint (`snapshotKey` and
+the WeakMap-cached `cachedSnapshotKey`), `revision`, `paramRevision` and both
+history stacks are unchanged. A query never calls `set`, never opens a
+transaction and never returns a live view into the store (params and scope
+records are copied).
+
+The inventory: `kinds.list`, `kind.describe`, `circuit.netlist`,
+`circuit.summary`, `elements.list`, `element.get`, `nodes.list`,
+`element.readings`, `scopes.list`, `scope.samples`, `sim.state`, `history.list`
+and `schematic.svg`. They reuse the existing paths rather than re-implementing
+them: `saveNetlist` for the text, the registry defs and `postsOf` for geometry,
+`render/infoBox.ts` `infoLines` for the readout, `engine/scopeModel.ts` for the
+scope model, and `render/svg.ts` `renderCircuitToSvg` for the export.
+
+## SimHost and why the engine stays out of the store
+
+Live values belong to the engine, and the store never holds a `SimEngine`.
+`web/src/engine/simHost.ts` defines `SimHost` (sync, time, running, step,
+nodeVoltages, elementReadings, infoLines, scopeSamples), and the store holds one
+under `simHost`, set through `setSimHost` exactly as `liveStateProvider` is set
+through `setLiveStateProvider`. A query that needs live values calls
+`requireEngine`, which refuses with `{ ok: false, error: 'no-engine' }` when no
+host is attached, instead of reporting a stale zero. Those queries are
+`element.readings`, `scope.samples` and `sim.state`.
+
+The browser host (`web/src/ui/canvas/browserSimHost.ts`, wired in `App.tsx`
+beside the live-state provider) reads the frame loop's per-frame cache for the
+operating-point triple, so a query never pays a second wasm crossing for what
+the renderer already fetched this frame; node voltages, per-post currents and
+the scope rings are one crossing per call, never per element. It deliberately
+does not build or step: the frame loop is the single builder (it rebuilds on
+every revision change within a frame) and the single stepper while the run is
+live, so the browser host's `sync` is a no-op and its `step` refuses while
+running. Step 4's headless runner provides the other implementation, where
+`sync` builds and `step` advances synchronously.
+
+`sim.step` is a command (`history: 'none'`) because it needs `SimHost`. It is
+disabled while the run is live with the reason `pause the simulation first`;
+the browser host refuses the same way, so a direct call cannot race the loop.
+
+## Units and caps
+
+Every measured number is reported in SI base units beside a `unit` string, and
+the human-readable `formatValue` output rides a separate `display` field. The
+display never replaces the number: an agent computes on `value`, a person reads
+`display`. This covers `element.readings` (V, A, W), `scope.samples` (s per
+point, V/A/... per trace), `sim.state` (s) and the quantities in
+`circuit.summary` and `element.get`.
+
+Coordinates are circuit units, and `circuit.summary` reports `gridSize` (16) so
+a caller can place terminals on grid multiples; `kind.describe` says the same
+and returns the reference-orientation terminal offsets. Terminal geometry must
+match upstream exactly or loaded wires do not connect.
+
+Three reads can be large, so each has a named cap with a `truncated: true`
+flag: `circuit.netlist` (`MAX_NETLIST_CHARS`), `scope.samples`
+(`MAX_SCOPE_SAMPLES` points) and `schematic.svg` (`MAX_SVG_CHARS`). The caps
+are sized well above any real document and only bound one generated or corrupt
+payload. A truncated text payload is a prefix and, for the SVG, is not valid
+XML.
