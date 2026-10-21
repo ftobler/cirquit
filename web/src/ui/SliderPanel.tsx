@@ -2,6 +2,7 @@
  *  element's parameter. Rendered inside the Sliders dialog; nothing is shown
  *  when the circuit has no resolvable slider. */
 
+import { execute } from '../commands/execute';
 import { useStore } from '../state/store';
 import { resolveParam, sliderPositionToValue, sliderValueToPosition } from '../model/sliders';
 import { fieldLabel, type CircuitElement } from '../model/types';
@@ -27,7 +28,11 @@ export function SliderPanel({ elementId }: { elementId?: number }) {
   const sliders = useStore((s) => s.sliders);
   const elements = useStore((s) => s.elements);
   const beginEdit = useStore((s) => s.beginEdit);
-  const setSliderValue = useStore((s) => s.setSliderValue);
+
+  const runCommand = (id: string, args: unknown) => {
+    const result = execute(id, args, { store: useStore, source: 'user' });
+    if (!result.ok) useStore.getState().setStatus(result.message);
+  };
 
   // File order is the store order; a slider whose element is gone or whose
   // parameter cannot be resolved renders nothing but still round-trips. The
@@ -78,7 +83,7 @@ export function SliderPanel({ elementId }: { elementId?: number }) {
                   slider.logarithmic,
                   slider.step,
                 );
-                setSliderValue(slider.id, v);
+                runCommand('slider.set', { sliderId: slider.id, value: v });
               }}
             />
           </label>

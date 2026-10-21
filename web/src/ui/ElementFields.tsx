@@ -5,6 +5,7 @@
  *  node-tested; this file is the controls and the file-picker plumbing. */
 
 import { Fragment, useRef, useState } from 'react';
+import { execute } from '../commands/execute';
 import type { SimEngine } from '../engine/simulator';
 import { AUDIO_DECODE_ERROR, decodeAudioFile } from '../model/audioFile';
 import { parseDataFile } from '../model/dataFile';
@@ -535,7 +536,6 @@ function ModelButtonRow({
  *  successful enter closes the properties dialog, as upstream's edit dialog
  *  closes on entry. */
 function CompositeEditModelButton({ element }: { element: CircuitElement }) {
-  const enterSubcircuit = useStore((s) => s.enterSubcircuit);
   const closeElementProperties = useStore((s) => s.closeElementProperties);
   if (compositeEditModelState(element) === 'none') return null;
   return (
@@ -549,9 +549,11 @@ function CompositeEditModelButton({ element }: { element: CircuitElement }) {
           }
           const name = element.text ?? '';
           // A refusal (an unresolvable name, a child kind the port cannot
-          // build) leaves the reason in subcircuitError; the user stays put.
-          if (enterSubcircuit(name)) closeElementProperties();
-          else window.alert(useStore.getState().subcircuitError);
+          // build) comes back as the command's failed message; the user stays
+          // put.
+          const result = execute('subcircuit.enter', { name }, { store: useStore, source: 'user' });
+          if (result.ok) closeElementProperties();
+          else window.alert(result.message);
         }}
       >
         Edit Model
@@ -565,13 +567,19 @@ function CompositeEditModelButton({ element }: { element: CircuitElement }) {
  *  when there are rows to reset, so an element with no editable properties
  *  never offers a button that does nothing. */
 function ResetElementButton({ element }: { element: CircuitElement }) {
-  const resetElementToDefaults = useStore((s) => s.resetElementToDefaults);
   return (
     <div className="row">
       <button
         type="button"
         title="Put this element's properties back to the defaults for its type"
-        onClick={() => resetElementToDefaults(element.id)}
+        onClick={() => {
+          const result = execute(
+            'element.resetDefaults',
+            { id: element.id },
+            { store: useStore, source: 'user' },
+          );
+          if (!result.ok) useStore.getState().setStatus(result.message);
+        }}
       >
         Reset to defaults
       </button>
@@ -584,20 +592,38 @@ function ResetElementButton({ element }: { element: CircuitElement }) {
  *  behave the same wherever this list is mounted. */
 export function ElementFields({ element, engine }: Props) {
   const timeStep = useStore((s) => s.settings.timeStep);
-  const setParam = useStore((s) => s.setParam);
-  const setText = useStore((s) => s.setText);
-  const setKeyShortcut = useStore((s) => s.setKeyShortcut);
-  const setModelName = useStore((s) => s.setModelName);
-  const setMemoryContents = useStore((s) => s.setMemoryContents);
   const beginEdit = useStore((s) => s.beginEdit);
-  const updateElement = useStore((s) => s.updateElement);
-  const loadAudioFile = useStore((s) => s.loadAudioFile);
-  const loadDataFile = useStore((s) => s.loadDataFile);
   const openDeviceModelEditor = useStore((s) => s.openDeviceModelEditor);
   // Bumped when a binary file load lands, dropping any open contents draft so
   // the stale text cannot be committed over the loaded pairs on blur.
   const [contentsReset, bumpContentsReset] = useState(0);
   const rows = fieldRows(element);
+
+  /** Run one element command through the shared door and surface a refusal in
+   *  the status line. */
+  const runCommand = (id: string, args: unknown) => {
+    const result = execute(id, args, { store: useStore, source: 'user' });
+    if (!result.ok) useStore.getState().setStatus(result.message);
+    return result;
+  };
+
+  // The pure field-change dispatcher keeps its own action interface; every
+  // method here is the matching command, so a dialog edit is the same step an
+  // agent would make.
+  const fieldActions = {
+    setParam: (id: number, name: string, value: number) =>
+      runCommand('element.update', { id, params: { [name]: value } }),
+    setText: (id: number, text: string) => runCommand('element.update', { id, text }),
+    setKeyShortcut: (id: number, key: string) =>
+      runCommand('element.update', { id, keyShortcut: key }),
+    setModelName: (id: number, name: string) => runCommand('element.update', { id, modelName: name }),
+    updateElement: (id: number, patch: Partial<CircuitElement>) =>
+      runCommand('element.update', { id, ...patch }),
+  };
+  const contentsActions = {
+    setMemoryContents: (id: number, pairs: [number, number][]) =>
+      runCommand('element.setMemoryContents', { id, pairs }),
+  };
 
   return (
     <>
@@ -628,14 +654,15 @@ export function ElementFields({ element, engine }: Props) {
             onChange={(v) => {
               if (field.type === 'file' && field.fileLoad !== undefined) {
                 // `v` is the FileList; the read and decode are asynchronous
-                // and land through the store action once ready.
+                // and land through the command once ready.
                 loadFileInto(
                   element,
                   field.fileLoad,
                   v as FileList | null,
-                  loadAudioFile,
-                  loadDataFile,
-                  setMemoryContents,
+                  (id, samples, samplingRate, fileName) =>
+                    runCommand('element.loadAudio', { id, samples, samplingRate, fileName }),
+                  (id, samples, fileName) => runCommand('element.loadData', { id, samples, fileName }),
+                  contentsActions.setMemoryContents,
                   () => bumpContentsReset((n) => n + 1),
                 );
                 return;
@@ -644,17 +671,9 @@ export function ElementFields({ element, engine }: Props) {
                 // The commit owns the parse and the alert; its boolean tells
                 // the textarea whether the change landed, so a parse error
                 // keeps the bad draft on screen for fixing.
-                return commitContentsField(element, String(v), window.alert, {
-                  setMemoryContents,
-                });
+                return commitContentsField(element, String(v), window.alert, contentsActions);
               }
-              applyFieldChange(element, field, v as number | string, {
-                setParam,
-                setText,
-                setKeyShortcut,
-                setModelName,
-                updateElement,
-              });
+              applyFieldChange(element, field, v as number | string, fieldActions);
             }}
           />
           {field.type === 'modelChoice' && (

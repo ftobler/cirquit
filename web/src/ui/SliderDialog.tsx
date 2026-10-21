@@ -4,6 +4,7 @@
  *  field, upstream's SliderDialog capability (SliderDialog.java:91-165). Every
  *  change is a store action, so the dialog, menu and file format agree. */
 
+import { execute } from '../commands/execute';
 import { defFor } from '../model/registry';
 import { adjustableFields, resolveParam } from '../model/sliders';
 import { fieldLabel } from '../model/types';
@@ -16,8 +17,11 @@ export function SliderDialog() {
   const elements = useStore((s) => s.elements);
   const sliderElementId = useStore((s) => s.sliderElementId);
   const closeDialog = useStore((s) => s.closeDialog);
-  const addSlider = useStore((s) => s.addSlider);
-  const removeSlider = useStore((s) => s.removeSlider);
+
+  const runCommand = (id: string, args: unknown) => {
+    const result = execute(id, args, { store: useStore, source: 'user' });
+    if (!result.ok) useStore.getState().setStatus(result.message);
+  };
 
   const target = sliderElementId === null ? undefined : elements.find((e) => e.id === sliderElementId);
   const fields = target ? adjustableFields(target.kind) : [];
@@ -57,9 +61,13 @@ export function SliderDialog() {
                     checked={existing !== undefined}
                     onChange={(e) => {
                       if (e.target.checked) {
-                        addSlider(target.id, editItem, fieldLabel(target, field));
+                        runCommand('slider.add', {
+                          elementId: target.id,
+                          editItem,
+                          caption: fieldLabel(target, field),
+                        });
                       } else if (existing) {
-                        removeSlider(existing.id);
+                        runCommand('slider.remove', { sliderId: existing.id });
                       }
                     }}
                   />

@@ -16,6 +16,7 @@ go deeper on one area each.
 | [buses.md](buses.md)               | Multi-bit buses across engine and frontend.                            |
 | [scope.md](scope.md)               | Scope capture, the `o` line, scope drawing and windows.                |
 | [editor.md](editor.md)             | Store, undo, gestures, placement, splitting, transforms.               |
+| [commands.md](commands.md)         | The command registry: the public mutation API and its doors.           |
 | [keyboard.md](keyboard.md)         | Shortcut matching, assignable keys, precedence.                        |
 | [rendering.md](rendering.md)       | Canvas drawing conventions, symbols, dots and overlays.                |
 | [ui.md](ui.md)                     | React UI, dialogs, menus, preferences, docs pages, deployment.         |

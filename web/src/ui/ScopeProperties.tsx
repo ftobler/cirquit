@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { execute } from '../commands/execute';
 import type { PlotMeasurementKey, Scope, ScopePlot, ScopeValue } from '../engine/scopeModel';
 import {
   effectiveMeasurements,
@@ -87,6 +88,13 @@ const READOUTS: { label: string; key: PlotMeasurementKey }[] = [
 // next scope should not throw it back to the centre and the first section.
 let lastSection: ScopePropsSection = 'traces';
 let lastOffset = { x: 0, y: 0 };
+
+/** Every scope setting edit goes through the command door, so the dialog and
+ *  an agent make the same step. A refusal lands in the status line. */
+function runScopeCommand(id: string, args: unknown): void {
+  const result = execute(id, args, { store: useStore, source: 'user' });
+  if (!result.ok) useStore.getState().setStatus(result.message);
+}
 
 // ─── Small controls ───
 
@@ -482,7 +490,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
         <button
           type="button"
           title="Put this scope's display settings, speed and trigger back to the default"
-          onClick={() => st.resetScopeToDefaults(scope.id)}
+          onClick={() => runScopeCommand('scope.resetDefaults', { scopeId: scope.id })}
         >
           Reset to default
         </button>
@@ -493,7 +501,7 @@ export function ScopeProperties({ scopeId, onClose }: Props) {
             // The sticky scales are per (scope, units family): wiping the
             // scope's whole entry covers every trace, like the menu's Reset.
             clearScaleStates([scope.id]);
-            st.resetScope(scope.id);
+            runScopeCommand('scope.reset', { scopeId: scope.id });
           }}
         >
           Clear trace
@@ -552,8 +560,8 @@ function TracesSection({
         disabled={disabled}
         onChange={(on) =>
           value === 'voltage' || value === 'current'
-            ? st.setScopeShowValue(scope.id, value, on)
-            : st.togglePlot(scope.id, value)
+            ? runScopeCommand('scope.setShowValue', { scopeId: scope.id, value, show: on })
+            : runScopeCommand('scope.togglePlot', { scopeId: scope.id, value })
         }
       >
         {label}
@@ -569,7 +577,7 @@ function TracesSection({
           placeholder={`Scope ${scopes.indexOf(scope) + 1}`}
           value={scope.label}
           parse={(t) => t}
-          onCommit={(t) => st.setScopeFlags(scope.id, { label: t.trim() })}
+          onCommit={(t) => runScopeCommand('scope.setFlags', { scopeId: scope.id, flags: { label: t.trim() } })}
         />
       </Row>
       <div className="sp-subhead">Channels</div>
@@ -591,7 +599,9 @@ function TracesSection({
               aria-label={`${c.name} colour`}
               title="Trace colour"
               value={c.color}
-              onChange={(e) => st.setPlotColor(c.plot.id, e.target.value)}
+              onChange={(e) =>
+                runScopeCommand('scope.setPlotColor', { plotId: c.plot.id, color: e.target.value })
+              }
             />
             {c.colorOverridden && (
               <button
@@ -599,7 +609,7 @@ function TracesSection({
                 className="sp-icon"
                 aria-label={`Automatic colour for ${c.name}`}
                 title="Use the automatic colour"
-                onClick={() => st.setPlotColor(c.plot.id, null)}
+                onClick={() => runScopeCommand('scope.setPlotColor', { plotId: c.plot.id, color: null })}
               >
                 ⟲
               </button>
@@ -617,7 +627,13 @@ function TracesSection({
                     title: c.acAllowed ? 'Block the DC part' : 'AC coupling applies to voltage only',
                   },
                 ]}
-                onChange={(v) => st.setPlotCoupling(scope.id, c.plot.id, v === 'ac')}
+                onChange={(v) =>
+                  runScopeCommand('scope.setPlotCoupling', {
+                    scopeId: scope.id,
+                    plotId: c.plot.id,
+                    acCoupled: v === 'ac',
+                  })
+                }
               />
             )}
             <button
@@ -626,7 +642,7 @@ function TracesSection({
               aria-label={`Remove ${c.name}`}
               title={c.removable ? 'Remove this trace' : 'The last trace cannot be removed'}
               disabled={!c.removable}
-              onClick={() => st.removePlot(scope.id, c.plot.id)}
+              onClick={() => runScopeCommand('scope.removePlot', { scopeId: scope.id, plotId: c.plot.id })}
             >
               ×
             </button>
@@ -671,7 +687,7 @@ function TracesSection({
               key="vce-ic"
               checked={showingVceIc}
               onChange={(on) =>
-                on ? st.setScopeVceIc(scope.id) : st.setScopeFlags(scope.id, { plotXY: false })
+                on ? runScopeCommand('scope.setVceIc', { scopeId: scope.id }) : runScopeCommand('scope.setFlags', { scopeId: scope.id, flags: { plotXY: false } })
               }
             >
               {row.label}
@@ -686,7 +702,7 @@ function TracesSection({
 }
 
 function VerticalSection({ scope, channels }: { scope: Scope; channels: ChannelRow[] }) {
-  const st = useStore.getState();
+
   const divisions = scope.manDivisions || MAN_DIVISIONS;
   const mode = scope.manualScale ? 'manual' : scope.maxScale ? 'max' : 'auto';
   const setMode = (m: 'auto' | 'max' | 'manual') => {
@@ -696,12 +712,12 @@ function VerticalSection({ scope, channels }: { scope: Scope; channels: ChannelR
       for (const plot of scope.plots) {
         if (plot.manScale === null) {
           const gridMax = scaleStateFor(scope.id, plot.value).gridMax;
-          st.setPlotManScale(plot.id, seedManScale(gridMax, divisions));
+          runScopeCommand('scope.setPlotManScale', { plotId: plot.id, manScale: seedManScale(gridMax, divisions) });
         }
       }
-      st.setScopeFlags(scope.id, { manualScale: true, maxScale: false });
+      runScopeCommand('scope.setFlags', { scopeId: scope.id, flags: { manualScale: true, maxScale: false } });
     } else {
-      st.setScopeFlags(scope.id, { manualScale: false, maxScale: m === 'max' });
+      runScopeCommand('scope.setFlags', { scopeId: scope.id, flags: { manualScale: false, maxScale: m === 'max' } });
     }
   };
   /** Up steps to the next 1-2-5-10 checkpoint, down to the previous one
@@ -709,7 +725,7 @@ function VerticalSection({ scope, channels }: { scope: Scope; channels: ChannelR
   const step = (plot: ScopePlot, dir: 1 | -1) => {
     const current = plot.manScale ?? seedManScale(5, divisions);
     const next = dir > 0 ? nextHighestScale(current) : nextLowestScale(current);
-    if (next > 0 && next !== current) st.setPlotManScale(plot.id, next);
+    if (next > 0 && next !== current) runScopeCommand('scope.setPlotManScale', { plotId: plot.id, manScale: next });
   };
   return (
     <>
@@ -734,7 +750,7 @@ function VerticalSection({ scope, channels }: { scope: Scope; channels: ChannelR
           disabled={!scope.manualScale}
           onCommit={(t) => {
             const n = parseDivisions(t);
-            if (n !== null) st.setScopeFlags(scope.id, { manDivisions: n });
+            if (n !== null) runScopeCommand('scope.setFlags', { scopeId: scope.id, flags: { manDivisions: n } });
           }}
         />
       </Row>
@@ -759,7 +775,7 @@ function VerticalSection({ scope, channels }: { scope: Scope; channels: ChannelR
                   parse={parseManScale}
                   onCommit={(t) => {
                     const v = parseManScale(t);
-                    if (v !== null) st.setPlotManScale(c.plot.id, v);
+                    if (v !== null) runScopeCommand('scope.setPlotManScale', { plotId: c.plot.id, manScale: v });
                   }}
                 />
                 <button
@@ -779,7 +795,7 @@ function VerticalSection({ scope, channels }: { scope: Scope; channels: ChannelR
                 min={-200}
                 max={200}
                 value={c.plot.manVPosition}
-                onChange={(e) => st.setPlotManPosition(c.plot.id, Number(e.target.value))}
+                onChange={(e) => runScopeCommand('scope.setPlotPosition', { plotId: c.plot.id, position: Number(e.target.value) })}
               />
               <button
                 type="button"
@@ -787,7 +803,7 @@ function VerticalSection({ scope, channels }: { scope: Scope; channels: ChannelR
                 aria-label={`Centre ${c.name}`}
                 title="Centre"
                 disabled={c.plot.manVPosition === 0}
-                onClick={() => st.setPlotManPosition(c.plot.id, 0)}
+                onClick={() => runScopeCommand('scope.setPlotPosition', { plotId: c.plot.id, position: 0 })}
               >
                 ⟲
               </button>
@@ -808,7 +824,7 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
   const st = useStore.getState();
   const armed = useStore((s) => (s.singleShotArmed?.scopeId === scope.id ? s.singleShotArmed : null));
   const bar = speedToBar(scope.speed);
-  const setBar = (b: number) => st.setScopeSpeed(scope.id, barToSpeed(Math.max(0, Math.min(10, b))));
+  const setBar = (b: number) => runScopeCommand('scope.setSpeed', { scopeId: scope.id, speed: barToSpeed(Math.max(0, Math.min(10, b))) });
   const triggered = scope.trigger.mode !== 'freeRun';
   const single = scope.trigger.mode === 'single';
   // The level is in the trigger source's unit, the trace the trigger watches.
@@ -853,7 +869,7 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
             },
           ]}
           onChange={(mode) => {
-            st.setScopeTrigger(scope.id, { mode });
+            runScopeCommand('scope.setTrigger', { scopeId: scope.id, mode });
             if (mode === 'single') {
               // Selecting the mode is also the arm gesture, and arming a
               // paused scope would wait forever.
@@ -911,7 +927,7 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
             { value: 'rising', label: '↗ Rising' },
             { value: 'falling', label: '↘ Falling' },
           ]}
-          onChange={(edge) => st.setScopeTrigger(scope.id, { edge })}
+          onChange={(edge) => runScopeCommand('scope.setTrigger', { scopeId: scope.id, edge })}
         />
       </Row>
       <Row label="Level">
@@ -923,7 +939,7 @@ function TimebaseSection({ scope, timeStep }: { scope: Scope; timeStep: number }
           parse={parseValue}
           onCommit={(t) => {
             const v = parseValue(t);
-            if (v !== null) st.setScopeTrigger(scope.id, { level: v });
+            if (v !== null) runScopeCommand('scope.setTrigger', { scopeId: scope.id, level: v });
           }}
         />
         <span className="sp-muted">{firstValue === null ? '' : UNIT[firstValue]}</span>
@@ -957,14 +973,14 @@ function ReadoutsSection({
   target: ReadoutTarget;
   onTarget: (t: ReadoutTarget) => void;
 }) {
-  const st = useStore.getState();
+
   const channel = target === 'all' ? null : (channels.find((c) => c.plot.id === target) ?? null);
   const isOn = (key: PlotMeasurementKey) =>
     channel ? effectiveMeasurements(scope, channel.plot)[key] : scope[key];
   const set = (key: PlotMeasurementKey, on: boolean) =>
     channel
-      ? st.setPlotMeasurementFlag(channel.plot.id, key, on)
-      : st.setScopeFlags(scope.id, { [key]: on } as FlagPatch);
+      ? runScopeCommand('scope.setPlotMeasurement', { plotId: channel.plot.id, key, on })
+      : runScopeCommand('scope.setFlags', { scopeId: scope.id, flags: { [key]: on } as FlagPatch });
   return (
     <>
       {channels.length > 1 && (
@@ -993,7 +1009,7 @@ function ReadoutsSection({
             onChange={(t) => {
               // Back to all traces drops every channel's own mask, so no
               // stale override hides behind the shared chips.
-              if (t === 'all') st.clearPlotMeasurementOverrides(scope.id);
+              if (t === 'all') runScopeCommand('scope.clearPlotMeasurements', { scopeId: scope.id });
               onTarget(t);
             }}
           />
@@ -1019,7 +1035,7 @@ type XYKey = 'plotX' | 'plotY' | 'plotBrightness' | 'plotColorR' | 'plotColorG' 
 
 function DisplaySection({ scope, timeStep }: { scope: Scope; timeStep: number }) {
   const st = useStore.getState();
-  const flag = (patch: FlagPatch) => st.setScopeFlags(scope.id, patch);
+  const flag = (patch: FlagPatch) => runScopeCommand('scope.setFlags', { scopeId: scope.id, flags: patch });
   const kindOf = (elementId: number | null) =>
     elementId === null ? null : (st.elements.find((e) => e.id === elementId)?.kind ?? null);
   /** One X-Y list: the axis lists have no None, the modulators do (-1)

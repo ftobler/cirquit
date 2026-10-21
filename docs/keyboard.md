@@ -5,8 +5,11 @@ Shortcut matching, user-assignable keys and precedence.
 ## Matching
 
 All key matching lives in `web/src/input/shortcuts.ts`, pure and DOM-free:
-`matchShortcut(KeyEventLike)` over the enumerable `SHORTCUTS` table. App code
-keeps only the focus guard, the match call and one-line store dispatch.
+`matchShortcut(KeyEventLike)` over the enumerable `SHORTCUTS` table. A row
+carries a command id and its arguments (`{ type: 'command', command, args }`)
+or one of the small host actions (`open`, `print`, `openPalette`, `escape`,
+`selectMode`, `save`, `place`). App code keeps only the focus guard, the match
+call and one-line dispatch through `execute` (`docs/commands.md`).
 
 - Mod combos match `ctrl||meta` and `!alt`; shift is exact-match per row, so
   Ctrl+Shift+Z is distinct from Ctrl+Z. **Diverges from upstream**, which
@@ -30,7 +33,9 @@ keeps only the focus guard, the match call and one-line store dispatch.
   user 'z' never swallows Ctrl+Shift+Z.
 - Persisted as JSON under `shortcuts.v1` (upstream uses `1;char=command;...`
   under `shortcuts`, UIManager.java:1506-1514). Unknown actions and malformed
-  chords drop on load. Not an undo entry.
+  chords drop on load; a pre-registry blob migrates its old action names
+  (`undo` to `history.undo`) on read, and an explicit new key wins over a
+  legacy key for the same command. Not an undo entry.
 - The dialog stores only real overrides (`overlayFromRows` skips defaults);
   persisting defaults would arm the repeat guard on keys that must repeat.
   Enter, Tab, Escape, arrows and Backspace/Delete are not assignable, as

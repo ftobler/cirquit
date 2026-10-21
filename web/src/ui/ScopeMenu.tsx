@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
+import { execute } from '../commands/execute';
 import type { SimEngine } from '../engine/simulator';
 import type { DrawablePlot } from '../scope/draw';
 import { exportScopeCsv } from '../scope/draw';
@@ -77,6 +78,11 @@ export function ScopeMenu({ engine, nameOf }: Props) {
     action();
   };
 
+  const runCommand = (id: string, args: unknown) => {
+    const result = execute(id, args, { store: useStore, source: 'user' });
+    if (!result.ok) useStore.getState().setStatus(result.message);
+  };
+
   const scopeIndex = scopes.findIndex((x) => x.id === scope.id);
   const previous = scopeIndex > 0 ? scopes[scopeIndex - 1] : undefined;
 
@@ -116,14 +122,14 @@ export function ScopeMenu({ engine, nameOf }: Props) {
       downloadTextFile(csv, 'scope-data.csv');
     },
     commands: {
-      removeScope: st.removeScope,
-      setScopeFlags: st.setScopeFlags,
-      stackScope: st.stackScope,
-      unstackScope: st.unstackScope,
-      combineScopes: st.combineScopes,
-      removePlot: st.removePlot,
+      removeScope: (id) => runCommand('scope.remove', { scopeId: id }),
+      setScopeFlags: (id, patch) => runCommand('scope.setFlags', { scopeId: id, flags: patch }),
+      stackScope: (id) => runCommand('scope.stack', { scopeId: id }),
+      unstackScope: (id) => runCommand('scope.unstack', { scopeId: id }),
+      combineScopes: (intoId, fromId) => runCommand('scope.combine', { intoId, fromId }),
+      removePlot: (scopeId, plotId) => runCommand('scope.removePlot', { scopeId, plotId }),
       clearScaleStates,
-      resetScope: st.resetScope,
+      resetScope: (id) => runCommand('scope.reset', { scopeId: id }),
       openScopeProperties: st.openScopeProperties,
       floatScope: st.floatScope,
       dockScope: st.dockScope,

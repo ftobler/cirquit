@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { denyGlobalStorage } from '../../test/denyGlobalStorage';
 import { ELEMENT_DEFS, PLACEMENT_BY_CHAR, TOOLBOX } from '../model/registry';
+import { GRID_SIZE } from '../model/types';
 import type { StorageLike } from '../state/appPrefs';
 import {
   actionLabel,
@@ -24,6 +25,9 @@ import {
   type ShortcutRow,
 } from './shortcuts';
 
+const command = (id: string, args?: unknown) =>
+  args === undefined ? { type: 'command' as const, command: id } : { type: 'command' as const, command: id, args };
+
 const ev = (partial: Partial<KeyEventLike>): KeyEventLike => ({
   key: '',
   ctrlKey: false,
@@ -35,25 +39,25 @@ const ev = (partial: Partial<KeyEventLike>): KeyEventLike => ({
 
 describe('modifier combos', () => {
   it('Ctrl+Z undoes, Ctrl+Shift+Z and Ctrl+Y redo', () => {
-    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }))).toEqual({ type: 'undo' });
-    expect(matchShortcut(ev({ key: 'z', ctrlKey: true, shiftKey: true }))).toEqual({
-      type: 'redo',
-    });
-    expect(matchShortcut(ev({ key: 'y', ctrlKey: true }))).toEqual({ type: 'redo' });
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }))).toEqual(command('history.undo'));
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true, shiftKey: true }))).toEqual(
+      command('history.redo'),
+    );
+    expect(matchShortcut(ev({ key: 'y', ctrlKey: true }))).toEqual(command('history.redo'));
   });
 
   it('Meta acts as ctrl, like upstream getMetaKey()', () => {
-    expect(matchShortcut(ev({ key: 'z', metaKey: true }))).toEqual({ type: 'undo' });
+    expect(matchShortcut(ev({ key: 'z', metaKey: true }))).toEqual(command('history.undo'));
     expect(matchShortcut(ev({ key: 's', metaKey: true }))).toEqual({ type: 'save' });
   });
 
   it('Ctrl/Cmd+C, X, V, D, A map to copy, cut, paste, duplicate, selectAll', () => {
-    expect(matchShortcut(ev({ key: 'c', ctrlKey: true }))).toEqual({ type: 'copy' });
-    expect(matchShortcut(ev({ key: 'x', ctrlKey: true }))).toEqual({ type: 'cut' });
-    expect(matchShortcut(ev({ key: 'v', ctrlKey: true }))).toEqual({ type: 'paste' });
-    expect(matchShortcut(ev({ key: 'd', ctrlKey: true }))).toEqual({ type: 'duplicate' });
-    expect(matchShortcut(ev({ key: 'a', ctrlKey: true }))).toEqual({ type: 'selectAll' });
-    expect(matchShortcut(ev({ key: 'c', metaKey: true }))).toEqual({ type: 'copy' });
+    expect(matchShortcut(ev({ key: 'c', ctrlKey: true }))).toEqual(command('clipboard.copy'));
+    expect(matchShortcut(ev({ key: 'x', ctrlKey: true }))).toEqual(command('clipboard.cut'));
+    expect(matchShortcut(ev({ key: 'v', ctrlKey: true }))).toEqual(command('clipboard.paste'));
+    expect(matchShortcut(ev({ key: 'd', ctrlKey: true }))).toEqual(command('clipboard.duplicate'));
+    expect(matchShortcut(ev({ key: 'a', ctrlKey: true }))).toEqual(command('selection.all'));
+    expect(matchShortcut(ev({ key: 'c', metaKey: true }))).toEqual(command('clipboard.copy'));
   });
 
   it('Ctrl+S and Ctrl+O map to save and open', () => {
@@ -98,8 +102,8 @@ describe('modifier exclusivity', () => {
 
 describe('delete keys', () => {
   it('Delete and Backspace both delete', () => {
-    expect(matchShortcut(ev({ key: 'Delete' }))).toEqual({ type: 'delete' });
-    expect(matchShortcut(ev({ key: 'Backspace' }))).toEqual({ type: 'delete' });
+    expect(matchShortcut(ev({ key: 'Delete' }))).toEqual(command('element.delete'));
+    expect(matchShortcut(ev({ key: 'Backspace' }))).toEqual(command('element.delete'));
   });
 });
 
@@ -113,7 +117,7 @@ describe('space, P and Escape', () => {
     // Space (temporary select mode) is dropped because Escape already does
     // that job. Space must never mean run/pause here, upstream has no key for
     // it at all (UIManager.java:1285-1291).
-    expect(matchShortcut(ev({ key: ' ' }))).toEqual({ type: 'rotate' });
+    expect(matchShortcut(ev({ key: ' ' }))).toEqual(command('element.rotate'));
   });
 
   it('space with a modifier is unbound, so browser and app chords stay apart', () => {
@@ -144,10 +148,10 @@ describe('space, P and Escape', () => {
 
 describe('nudge magnitude and sign', () => {
   it('arrows nudge by one unit-less grid step, resolved by the app against the grid size', () => {
-    expect(matchShortcut(ev({ key: 'ArrowUp' }))).toEqual({ type: 'nudge', dx: 0, dy: -1 });
-    expect(matchShortcut(ev({ key: 'ArrowDown' }))).toEqual({ type: 'nudge', dx: 0, dy: 1 });
-    expect(matchShortcut(ev({ key: 'ArrowLeft' }))).toEqual({ type: 'nudge', dx: -1, dy: 0 });
-    expect(matchShortcut(ev({ key: 'ArrowRight' }))).toEqual({ type: 'nudge', dx: 1, dy: 0 });
+    expect(matchShortcut(ev({ key: 'ArrowUp' }))).toEqual(command('element.move', { dx: 0, dy: -GRID_SIZE }));
+    expect(matchShortcut(ev({ key: 'ArrowDown' }))).toEqual(command('element.move', { dx: 0, dy: GRID_SIZE }));
+    expect(matchShortcut(ev({ key: 'ArrowLeft' }))).toEqual(command('element.move', { dx: -GRID_SIZE, dy: 0 }));
+    expect(matchShortcut(ev({ key: 'ArrowRight' }))).toEqual(command('element.move', { dx: GRID_SIZE, dy: 0 }));
   });
 });
 
@@ -155,13 +159,13 @@ describe('zoom keys', () => {
   it('-, +, = and 0 zoom out, in and reset, with numpad variants', () => {
     // '+' only exists behind Shift on most layouts, so the matcher must not
     // treat shift as a modifier here.
-    expect(matchShortcut(ev({ key: '-', shiftKey: false }))).toEqual({ type: 'zoomOut' });
-    expect(matchShortcut(ev({ key: 'Subtract' }))).toEqual({ type: 'zoomOut' });
-    expect(matchShortcut(ev({ key: '+', shiftKey: true }))).toEqual({ type: 'zoomIn' });
-    expect(matchShortcut(ev({ key: '=' }))).toEqual({ type: 'zoomIn' });
-    expect(matchShortcut(ev({ key: 'Add' }))).toEqual({ type: 'zoomIn' });
-    expect(matchShortcut(ev({ key: '0' }))).toEqual({ type: 'zoomReset' });
-    expect(matchShortcut(ev({ key: 'Numpad0' }))).toEqual({ type: 'zoomReset' });
+    expect(matchShortcut(ev({ key: '-', shiftKey: false }))).toEqual(command('view.zoomOut'));
+    expect(matchShortcut(ev({ key: 'Subtract' }))).toEqual(command('view.zoomOut'));
+    expect(matchShortcut(ev({ key: '+', shiftKey: true }))).toEqual(command('view.zoomIn'));
+    expect(matchShortcut(ev({ key: '=' }))).toEqual(command('view.zoomIn'));
+    expect(matchShortcut(ev({ key: 'Add' }))).toEqual(command('view.zoomIn'));
+    expect(matchShortcut(ev({ key: '0' }))).toEqual(command('view.reset'));
+    expect(matchShortcut(ev({ key: 'Numpad0' }))).toEqual(command('view.reset'));
   });
 
   it('with ctrl held the zoom keys return null, so the browser page still zooms', () => {
@@ -271,8 +275,8 @@ describe('element placement chars', () => {
   });
 
   it('a user-assigned shortcut beats placement for the same char', () => {
-    const overlay: ShortcutOverlay = { undo: 'w' };
-    expect(matchShortcut(ev({ key: 'w' }), overlay)).toEqual({ type: 'undo' });
+    const overlay: ShortcutOverlay = { 'history.undo': 'w' };
+    expect(matchShortcut(ev({ key: 'w' }), overlay)).toEqual(command('history.undo'));
     expect(matchShortcut(ev({ key: 'w' }))).toEqual({ type: 'place', kind: 'wire' });
   });
 
@@ -310,9 +314,9 @@ describe('element placement chars', () => {
 
 describe('alt geometry chords', () => {
   it('Alt+r, Alt+m and Alt+t rotate, mirror and swap', () => {
-    expect(matchShortcut(ev({ key: 'r', altKey: true }))).toEqual({ type: 'rotate' });
-    expect(matchShortcut(ev({ key: 'm', altKey: true }))).toEqual({ type: 'mirror' });
-    expect(matchShortcut(ev({ key: 't', altKey: true }))).toEqual({ type: 'swap' });
+    expect(matchShortcut(ev({ key: 'r', altKey: true }))).toEqual(command('element.rotate'));
+    expect(matchShortcut(ev({ key: 'm', altKey: true }))).toEqual(command('element.mirror'));
+    expect(matchShortcut(ev({ key: 't', altKey: true }))).toEqual(command('element.swapTerminals'));
   });
 
   it('Alt+Shift+r is excluded and other Alt+letter chords pass through', () => {
@@ -326,39 +330,15 @@ describe('alt geometry chords', () => {
   });
 
   it('a user-assigned Alt chord fires like any other overlay entry', () => {
-    const overlay: ShortcutOverlay = { copy: 'Alt+r' };
-    expect(matchShortcut(ev({ key: 'r', altKey: true }), overlay)).toEqual({ type: 'copy' });
+    const overlay: ShortcutOverlay = { 'clipboard.copy': 'Alt+r' };
+    expect(matchShortcut(ev({ key: 'r', altKey: true }), overlay)).toEqual(command('clipboard.copy'));
     // Without the assignment the table default wins.
-    expect(matchShortcut(ev({ key: 'r', altKey: true }))).toEqual({ type: 'rotate' });
+    expect(matchShortcut(ev({ key: 'r', altKey: true }))).toEqual(command('element.rotate'));
   });
 });
 
 describe('no conflicts in the SHORTCUTS table', () => {
-  const VALID_TYPES = new Set([
-    'mirrorVertical',
-    'undo',
-    'redo',
-    'delete',
-    'escape',
-    'selectMode',
-    'nudge',
-    'zoomIn',
-    'zoomOut',
-    'zoomReset',
-    'save',
-    'open',
-    'copy',
-    'cut',
-    'paste',
-    'duplicate',
-    'selectAll',
-    'rotate',
-    'mirror',
-    'swap',
-    'print',
-    'openPalette',
-    'place',
-  ]);
+  const VALID_HOST_TYPES = new Set(['escape', 'selectMode', 'save', 'open', 'print', 'openPalette', 'place']);
 
   it('every (modifier, alt, key) triple binds to exactly one action', () => {
     const seen = new Set<string>();
@@ -367,16 +347,22 @@ describe('no conflicts in the SHORTCUTS table', () => {
       // A duplicate chord would make the earlier row dead; fail loudly.
       expect(seen.has(signature)).toBe(false);
       seen.add(signature);
-      expect(VALID_TYPES.has(entry.action.type)).toBe(true);
+      if (entry.action.type === 'command') {
+        // Command rows name a registry id; the registry test owns the full
+        // table, this only catches a typo-shaped value.
+        expect(entry.action.command).toMatch(/^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/);
+      } else {
+        expect(VALID_HOST_TYPES.has(entry.action.type)).toBe(true);
+      }
     }
   });
 
   it('every nudge binding carries a finite delta of exactly one grid step', () => {
     for (const entry of SHORTCUTS) {
-      if (entry.action.type !== 'nudge') continue;
-      const n = entry.action;
-      expect([n.dx, n.dy].every(Number.isFinite)).toBe(true);
-      expect([Math.abs(n.dx), Math.abs(n.dy)]).toContain(1);
+      if (entry.action.type !== 'command' || entry.action.command !== 'element.move') continue;
+      const args = entry.action.args as { dx: number; dy: number };
+      expect([args.dx, args.dy].every(Number.isFinite)).toBe(true);
+      expect([Math.abs(args.dx), Math.abs(args.dy)]).toContain(GRID_SIZE);
     }
   });
 });
@@ -390,57 +376,57 @@ describe("repeat is the caller's concern", () => {
     const first = matchShortcut(ev({ key: 'ArrowRight' }));
     const second = matchShortcut(ev({ key: 'ArrowRight' }));
     expect(first).toEqual(second);
-    expect(first).toEqual({ type: 'nudge', dx: 1, dy: 0 });
+    expect(first).toEqual(command('element.move', { dx: GRID_SIZE, dy: 0 }));
   });
 });
 
 describe('the user-assigned overlay', () => {
   it('a user-assigned chord overrides the hardcoded combo', () => {
-    const overlay: ShortcutOverlay = { copy: 'Ctrl+z' };
-    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), overlay)).toEqual({ type: 'copy' });
+    const overlay: ShortcutOverlay = { 'clipboard.copy': 'Ctrl+z' };
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), overlay)).toEqual(command('clipboard.copy'));
     // Meta counts as ctrl, exactly like the hardcoded rows.
-    expect(matchShortcut(ev({ key: 'z', metaKey: true }), overlay)).toEqual({ type: 'copy' });
+    expect(matchShortcut(ev({ key: 'z', metaKey: true }), overlay)).toEqual(command('clipboard.copy'));
   });
 
   it('a user-assigned plain key fires where nothing hardcoded was bound', () => {
-    const overlay: ShortcutOverlay = { undo: 'g' };
-    expect(matchShortcut(ev({ key: 'g' }), overlay)).toEqual({ type: 'undo' });
+    const overlay: ShortcutOverlay = { 'history.undo': 'g' };
+    expect(matchShortcut(ev({ key: 'g' }), overlay)).toEqual(command('history.undo'));
     // Shift is its own chord dimension for a letter, like the hardcoded rows:
     // a user-assigned 'g' does not swallow Shift+G.
     expect(matchShortcut(ev({ key: 'G', shiftKey: true }), overlay)).toBeNull();
   });
 
   it('an assignment does not leak into other rows', () => {
-    const overlay: ShortcutOverlay = { copy: 'x' };
+    const overlay: ShortcutOverlay = { 'clipboard.copy': 'x' };
     // Plain x is the assignment; Ctrl+x is untouched and still hardcoded cut,
     // and an unrelated key stays unbound.
-    expect(matchShortcut(ev({ key: 'x' }), overlay)).toEqual({ type: 'copy' });
-    expect(matchShortcut(ev({ key: 'x', ctrlKey: true }), overlay)).toEqual({ type: 'cut' });
+    expect(matchShortcut(ev({ key: 'x' }), overlay)).toEqual(command('clipboard.copy'));
+    expect(matchShortcut(ev({ key: 'x', ctrlKey: true }), overlay)).toEqual(command('clipboard.cut'));
     expect(matchShortcut(ev({ key: 'q' }), overlay)).toBeNull();
   });
 
   it('clearing a binding restores the hardcoded one', () => {
-    const overlay: ShortcutOverlay = { copy: 'Ctrl+z' };
-    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), overlay)).toEqual({ type: 'copy' });
-    const cleared: ShortcutOverlay = { ...overlay, copy: '' };
-    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), cleared)).toEqual({ type: 'undo' });
+    const overlay: ShortcutOverlay = { 'clipboard.copy': 'Ctrl+z' };
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), overlay)).toEqual(command('clipboard.copy'));
+    const cleared: ShortcutOverlay = { ...overlay, 'clipboard.copy': '' };
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), cleared)).toEqual(command('history.undo'));
   });
 
   it('the overlay is pure data: an empty one changes nothing', () => {
-    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), {})).toEqual({ type: 'undo' });
-    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }))).toEqual({ type: 'undo' });
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), {})).toEqual(command('history.undo'));
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }))).toEqual(command('history.undo'));
   });
 
   it('a user-assigned Ctrl+z does not swallow Ctrl+Shift+Z', () => {
-    const overlay: ShortcutOverlay = { copy: 'Ctrl+z' };
-    expect(matchShortcut(ev({ key: 'z', ctrlKey: true, shiftKey: true }), overlay)).toEqual({
-      type: 'redo',
-    });
+    const overlay: ShortcutOverlay = { 'clipboard.copy': 'Ctrl+z' };
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true, shiftKey: true }), overlay)).toEqual(
+      command('history.redo'),
+    );
   });
 
   it('a user-assigned toggleRunning is the only way run/pause binds a key', () => {
-    const overlay: ShortcutOverlay = { toggleRunning: 'p' };
-    expect(matchShortcut(ev({ key: 'p' }), overlay)).toEqual({ type: 'toggleRunning' });
+    const overlay: ShortcutOverlay = { 'sim.toggle': 'p' };
+    expect(matchShortcut(ev({ key: 'p' }), overlay)).toEqual(command('sim.toggle'));
     // Without the assignment, p is the PNP placement char.
     expect(matchShortcut(ev({ key: 'p' }))).toEqual({ type: 'place', kind: 'pnp' });
   });
@@ -448,21 +434,21 @@ describe('the user-assigned overlay', () => {
   it('a user assignment to / beats the hardcoded palette row', () => {
     // The overlay is consulted before the table, so assigning '/' to another
     // command wins over the default search binding (UIManager.java:1174).
-    const overlay: ShortcutOverlay = { copy: '/' };
-    expect(matchShortcut(ev({ key: '/' }), overlay)).toEqual({ type: 'copy' });
+    const overlay: ShortcutOverlay = { 'clipboard.copy': '/' };
+    expect(matchShortcut(ev({ key: '/' }), overlay)).toEqual(command('clipboard.copy'));
     // Without the assignment the default still opens the search.
     expect(matchShortcut(ev({ key: '/' }))).toEqual({ type: 'openPalette' });
   });
 
   it('an empty-string assignment is unassigned, never a binding', () => {
-    // The old matcher guarded with truthiness, so {undo:''} fell through to
+    // The old matcher guarded with truthiness, so {'history.undo':''} fell through to
     // the defaults; the guard now lives in actionForChord so every caller
     // sees the same rule, the App.tsx repeat guard included. Storage never
     // persists an empty chord, but nothing stops one arriving in memory.
-    const overlay: ShortcutOverlay = { undo: '', copy: 'x', 'place:wire': '' };
-    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), overlay)).toEqual({ type: 'undo' });
+    const overlay: ShortcutOverlay = { 'history.undo': '', 'clipboard.copy': 'x', 'place:wire': '' };
+    expect(matchShortcut(ev({ key: 'z', ctrlKey: true }), overlay)).toEqual(command('history.undo'));
     expect(matchShortcut(ev({ key: 'w' }), overlay)).toEqual({ type: 'place', kind: 'wire' });
-    expect(matchShortcut(ev({ key: 'x' }), overlay)).toEqual({ type: 'copy' });
+    expect(matchShortcut(ev({ key: 'x' }), overlay)).toEqual(command('clipboard.copy'));
     expect(hasChord(overlay, 'Ctrl+z')).toBe(false);
     // No event produces the empty chord, but the query API must still refuse
     // to report an empty assignment as bound.
@@ -493,60 +479,60 @@ describe('chord signatures', () => {
 
   it('rowsFromOverlay shows the table default when nothing is assigned', () => {
     const rows = rowsFromOverlay({});
-    expect(rows.find((r) => r.action === 'undo')?.chord).toBe('Ctrl+z');
+    expect(rows.find((r) => r.action === 'history.undo')?.chord).toBe('Ctrl+z');
     // Space became rotate, so select mode shows an empty assignable row like
     // toggleRunning does.
     expect(rows.find((r) => r.action === 'selectMode')?.chord).toBe('');
     // Rotate has two table rows, Space first and Alt+r behind it; the dialog
     // names the first.
-    expect(rows.find((r) => r.action === 'rotate')?.chord).toBe('Space');
+    expect(rows.find((r) => r.action === 'element.rotate')?.chord).toBe('Space');
     // Mirror has Alt+h first and the older Alt+m alias behind it.
-    expect(rows.find((r) => r.action === 'mirror')?.chord).toBe('Alt+h');
-    expect(rows.find((r) => r.action === 'mirrorVertical')?.chord).toBe('Alt+v');
-    expect(rows.find((r) => r.action === 'swap')?.chord).toBe('Alt+t');
-    expect(rows.find((r) => r.action === 'toggleRunning')?.chord).toBe('');
+    expect(rows.find((r) => r.action === 'element.mirror')?.chord).toBe('Alt+h');
+    expect(rows.find((r) => r.action === 'element.mirrorVertical')?.chord).toBe('Alt+v');
+    expect(rows.find((r) => r.action === 'element.swapTerminals')?.chord).toBe('Alt+t');
+    expect(rows.find((r) => r.action === 'sim.toggle')?.chord).toBe('');
   });
 
   it('overlayFromRows skips unassigned rows and hasDuplicateChords flags clashes', () => {
     const rows = [
-      { action: 'undo' as const, chord: 'g' },
-      { action: 'copy' as const, chord: 'g' },
-      { action: 'redo' as const, chord: '' },
+      { action: 'history.undo' as const, chord: 'g' },
+      { action: 'clipboard.copy' as const, chord: 'g' },
+      { action: 'history.redo' as const, chord: '' },
     ];
     expect(hasDuplicateChords(rows)).toBe(true);
     const deduped = [
-      { action: 'undo' as const, chord: 'g' },
-      { action: 'copy' as const, chord: '' },
+      { action: 'history.undo' as const, chord: 'g' },
+      { action: 'clipboard.copy' as const, chord: '' },
     ];
     expect(hasDuplicateChords(deduped)).toBe(false);
-    expect(overlayFromRows(deduped)).toEqual({ undo: 'g' });
+    expect(overlayFromRows(deduped)).toEqual({ 'history.undo': 'g' });
   });
 
   it('overlayFromRows keeps only genuine overrides, never a default row', () => {
-    // A no-op OK must not write delete:'Delete', zoomIn:'+', zoomOut:'-',
-    // zoomReset:'0' etc into the overlay: those would trip the App.tsx repeat
+    // A no-op OK must not write 'element.delete':'Delete', 'view.zoomIn':'+', 'view.zoomOut':'-',
+    // 'view.reset':'0' etc into the overlay: those would trip the App.tsx repeat
     // guard (ev.repeat && hasChord) on keys that must repeat. A row showing
     // its table default is an override of nothing and is omitted.
     const rows = [
-      { action: 'delete' as const, chord: 'Delete' },  // the default
-      { action: 'zoomIn' as const, chord: '+' },  // the default
-      { action: 'rotate' as const, chord: 'Space' },  // the default
-      { action: 'undo' as const, chord: 'Ctrl+y' },  // a real override
-      { action: 'toggleRunning' as const, chord: 'p' },
-      { action: 'redo' as const, chord: '' },
+      { action: 'element.delete' as const, chord: 'Delete' },  // the default
+      { action: 'view.zoomIn' as const, chord: '+' },  // the default
+      { action: 'element.rotate' as const, chord: 'Space' },  // the default
+      { action: 'history.undo' as const, chord: 'Ctrl+y' },  // a real override
+      { action: 'sim.toggle' as const, chord: 'p' },
+      { action: 'history.redo' as const, chord: '' },
     ];
-    expect(overlayFromRows(rows)).toEqual({ undo: 'Ctrl+y', toggleRunning: 'p' });
+    expect(overlayFromRows(rows)).toEqual({ 'history.undo': 'Ctrl+y', 'sim.toggle': 'p' });
   });
 });
 
 describe('default bindings and the Default button', () => {
   it('defaultBindingFor returns the table binding, or an empty string when none', () => {
-    expect(defaultBindingFor('delete')).toBe('Delete');
-    expect(defaultBindingFor('undo')).toBe('Ctrl+z');
-    expect(defaultBindingFor('toggleRunning')).toBe('');
+    expect(defaultBindingFor('element.delete')).toBe('Delete');
+    expect(defaultBindingFor('history.undo')).toBe('Ctrl+z');
+    expect(defaultBindingFor('sim.toggle')).toBe('');
     // Two rotate rows, Space first: the dialog names the first, and Alt+r
     // stays a live second default that no row advertises.
-    expect(defaultBindingFor('rotate')).toBe('Space');
+    expect(defaultBindingFor('element.rotate')).toBe('Space');
     // Select mode lost its table row when Space became rotate, so it reads as
     // unassigned and an empty row for it is at its default.
     expect(defaultBindingFor('selectMode')).toBe('');
@@ -556,13 +542,13 @@ describe('default bindings and the Default button', () => {
   it('isDefaultBinding reports a row at its default and rejects a genuine override', () => {
     // The delete row's default is the Delete key, so the empty chord is an
     // override, not a no-op: Default is the only way back once cleared.
-    expect(isDefaultBinding({ action: 'delete', chord: 'Delete' })).toBe(true);
-    expect(isDefaultBinding({ action: 'delete', chord: '' })).toBe(false);
-    expect(isDefaultBinding({ action: 'undo', chord: 'Ctrl+z' })).toBe(true);
-    expect(isDefaultBinding({ action: 'undo', chord: 'Ctrl+y' })).toBe(false);
+    expect(isDefaultBinding({ action: 'element.delete', chord: 'Delete' })).toBe(true);
+    expect(isDefaultBinding({ action: 'element.delete', chord: '' })).toBe(false);
+    expect(isDefaultBinding({ action: 'history.undo', chord: 'Ctrl+z' })).toBe(true);
+    expect(isDefaultBinding({ action: 'history.undo', chord: 'Ctrl+y' })).toBe(false);
     // An action with no table binding is at default when unassigned.
-    expect(isDefaultBinding({ action: 'toggleRunning', chord: '' })).toBe(true);
-    expect(isDefaultBinding({ action: 'toggleRunning', chord: 'p' })).toBe(false);
+    expect(isDefaultBinding({ action: 'sim.toggle', chord: '' })).toBe(true);
+    expect(isDefaultBinding({ action: 'sim.toggle', chord: 'p' })).toBe(false);
   });
 });
 
@@ -579,14 +565,44 @@ describe('shortcut overlay persistence', () => {
 
   it('round-trips through injected storage', () => {
     const storage = fakeStorage();
-    saveShortcutOverlay({ copy: 'Ctrl+z', toggleRunning: 'p' }, storage);
-    expect(loadShortcutOverlay(storage)).toEqual({ copy: 'Ctrl+z', toggleRunning: 'p' });
+    saveShortcutOverlay({ 'clipboard.copy': 'Ctrl+z', 'sim.toggle': 'p' }, storage);
+    expect(loadShortcutOverlay(storage)).toEqual({ 'clipboard.copy': 'Ctrl+z', 'sim.toggle': 'p' });
   });
 
   it('an Alt chord round-trips through storage like any other', () => {
     const storage = fakeStorage();
-    saveShortcutOverlay({ rotate: 'Alt+r' }, storage);
-    expect(loadShortcutOverlay(storage)).toEqual({ rotate: 'Alt+r' });
+    saveShortcutOverlay({ 'element.rotate': 'Alt+r' }, storage);
+    expect(loadShortcutOverlay(storage)).toEqual({ 'element.rotate': 'Alt+r' });
+  });
+
+  it('migrates pre-registry action names on read', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      'shortcuts.v1',
+      JSON.stringify({
+        undo: 'Ctrl+u',
+        delete: 'q',
+        selectAll: 'Ctrl+Shift+a',
+        toggleRunning: 'p',
+        save: 'Ctrl+Shift+s',
+      }),
+    );
+    expect(loadShortcutOverlay(storage)).toEqual({
+      'history.undo': 'Ctrl+u',
+      'element.delete': 'q',
+      'selection.all': 'Ctrl+Shift+a',
+      'sim.toggle': 'p',
+      save: 'Ctrl+Shift+s',
+    });
+  });
+
+  it('keeps an explicit new key over a legacy key that means the same command', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      'shortcuts.v1',
+      JSON.stringify({ undo: 'Ctrl+u', 'history.undo': 'Ctrl+j' }),
+    );
+    expect(loadShortcutOverlay(storage)).toEqual({ 'history.undo': 'Ctrl+j' });
   });
 
   it('a corrupt blob is a fallback, not a crash', () => {
@@ -599,9 +615,9 @@ describe('shortcut overlay persistence', () => {
     const storage = fakeStorage();
     storage.setItem(
       'shortcuts.v1',
-      JSON.stringify({ copy: 'Ctrl+z', bogus: 'x', undo: 'not a chord!!', redo: '' }),
+      JSON.stringify({ 'clipboard.copy': 'Ctrl+z', bogus: 'x', 'history.undo': 'not a chord!!', 'history.redo': '' }),
     );
-    expect(loadShortcutOverlay(storage)).toEqual({ copy: 'Ctrl+z' });
+    expect(loadShortcutOverlay(storage)).toEqual({ 'clipboard.copy': 'Ctrl+z' });
   });
 
   it('drops host-reserved named keys so a hand-edited blob cannot persist them', () => {
@@ -609,11 +625,11 @@ describe('shortcut overlay persistence', () => {
     storage.setItem(
       'shortcuts.v1',
       JSON.stringify({
-        undo: 'Enter',
-        copy: 'ArrowUp',
-        redo: 'Ctrl+Enter',
-        paste: 'Escape',
-        selectAll: 'Shift+Tab',
+        'history.undo': 'Enter',
+        'clipboard.copy': 'ArrowUp',
+        'history.redo': 'Ctrl+Enter',
+        'clipboard.paste': 'Escape',
+        'selection.all': 'Shift+Tab',
       }),
     );
     expect(loadShortcutOverlay(storage)).toEqual({});
@@ -628,14 +644,14 @@ describe('shortcut overlay persistence', () => {
     storage.setItem(
       'shortcuts.v1',
       JSON.stringify({
-        undo: 'Shift',
-        copy: 'Control',
-        cut: 'Alt',
-        paste: 'Meta',
-        redo: 'Ctrl+Shift',
-        duplicate: 'CapsLock',
-        selectAll: 'Dead',
-        rotate: 'Unidentified',
+        'history.undo': 'Shift',
+        'clipboard.copy': 'Control',
+        'clipboard.cut': 'Alt',
+        'clipboard.paste': 'Meta',
+        'history.redo': 'Ctrl+Shift',
+        'clipboard.duplicate': 'CapsLock',
+        'selection.all': 'Dead',
+        'element.rotate': 'Unidentified',
       }),
     );
     expect(loadShortcutOverlay(storage)).toEqual({});
@@ -643,8 +659,8 @@ describe('shortcut overlay persistence', () => {
 
   it('keeps Space assignable through storage', () => {
     const storage = fakeStorage();
-    storage.setItem('shortcuts.v1', JSON.stringify({ toggleRunning: 'Space' }));
-    expect(loadShortcutOverlay(storage)).toEqual({ toggleRunning: 'Space' });
+    storage.setItem('shortcuts.v1', JSON.stringify({ 'sim.toggle': 'Space' }));
+    expect(loadShortcutOverlay(storage)).toEqual({ 'sim.toggle': 'Space' });
   });
 
   it('an F-key assignment survives save and reload', () => {
@@ -652,23 +668,23 @@ describe('shortcut overlay persistence', () => {
     // UIManager.java:1179-1180); the named-key grammar used to reject digits,
     // so an assignment worked all session and silently vanished on reload.
     const storage = fakeStorage();
-    saveShortcutOverlay({ zoomIn: 'F5' }, storage);
-    expect(loadShortcutOverlay(storage)).toEqual({ zoomIn: 'F5' });
+    saveShortcutOverlay({ 'view.zoomIn': 'F5' }, storage);
+    expect(loadShortcutOverlay(storage)).toEqual({ 'view.zoomIn': 'F5' });
 
     const handEdited = fakeStorage();
     handEdited.setItem(
       'shortcuts.v1',
-      JSON.stringify({ toggleRunning: 'F3', undo: 'Ctrl+F9' }),
+      JSON.stringify({ 'sim.toggle': 'F3', 'history.undo': 'Ctrl+F9' }),
     );
-    expect(loadShortcutOverlay(handEdited)).toEqual({ toggleRunning: 'F3', undo: 'Ctrl+F9' });
+    expect(loadShortcutOverlay(handEdited)).toEqual({ 'sim.toggle': 'F3', 'history.undo': 'Ctrl+F9' });
   });
 
   it('a Delete chord is not assignable, so the Default button is the only way back', () => {
     // Delete stays a dialog-reserved clear key (NON_ASSIGNABLE_KEYS), so not
-    // even a hand-edited delete:'Delete' blob persists. Restoring the cleared
+    // even a hand-edited 'element.delete':'Delete' blob persists. Restoring the cleared
     // delete row is the Default button's job, a pure dialog affordance.
     const storage = fakeStorage();
-    storage.setItem('shortcuts.v1', JSON.stringify({ delete: 'Delete' }));
+    storage.setItem('shortcuts.v1', JSON.stringify({ 'element.delete': 'Delete' }));
     expect(loadShortcutOverlay(storage)).toEqual({});
   });
 
@@ -684,8 +700,8 @@ describe('shortcut overlay persistence', () => {
         throw new Error('quota');
       },
     } as StorageLike;
-    expect(() => saveShortcutOverlay({ undo: 'g' }, throwing)).not.toThrow();
-    expect(() => saveShortcutOverlay({ undo: 'g' }, undefined)).not.toThrow();
+    expect(() => saveShortcutOverlay({ 'history.undo': 'g' }, throwing)).not.toThrow();
+    expect(() => saveShortcutOverlay({ 'history.undo': 'g' }, undefined)).not.toThrow();
   });
 });
 
@@ -705,7 +721,7 @@ describe('denied-storage browsers', () => {
   });
 
   it('saveShortcutOverlay is quiet when the storage access itself throws', () => {
-    expect(() => saveShortcutOverlay({ undo: 'g' })).not.toThrow();
+    expect(() => saveShortcutOverlay({ 'history.undo': 'g' })).not.toThrow();
   });
 });
 
@@ -781,7 +797,7 @@ describe('rebindable element-placement keys', () => {
   });
 
   it('a placement assignment sharing another row’s chord flags duplicates in the dialog', () => {
-    const rows = rowsFromOverlay({ undo: 'g' });
+    const rows = rowsFromOverlay({ 'history.undo': 'g' });
     expect(rows.find((r) => r.action === 'place:ground')?.chord).toBe('g');
     expect(hasDuplicateChords(rows)).toBe(true);
   });
@@ -824,7 +840,7 @@ describe('rebindable element-placement keys', () => {
   });
 
   it('row labels come from the registry defs, not a second name table', () => {
-    expect(actionLabel('undo')).toBe('Undo');
+    expect(actionLabel('history.undo')).toBe('Undo');
     expect(actionLabel('place:npn')).toBe('NPN');
     expect(actionLabel('place:opampSwap')).toBe('Swapped Op-Amp');
     expect(actionLabel('place:resistor')).toBe(

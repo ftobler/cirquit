@@ -3,8 +3,10 @@
  *  the context menu and the keyboard cannot diverge. Rows whose commands other
  *  features still own render disabled with a tooltip, never live-looking. */
 
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { SimEngine } from '../engine/simulator';
+import { execute } from '../commands/execute';
+import type { SimControls } from '../commands/types';
 import { DOC_PAGES } from '../docs/pages';
 import { openCircuit } from '../io/fileIO';
 import {
@@ -14,26 +16,21 @@ import {
   type LibraryEntry,
   type LibraryGroup,
 } from '../io/library';
-import { parsesToElements } from '../io/importSummary';
-import {
-  canMirrorSelection as canMirrorSel,
-  canRotate,
-  canRotateSelection as canRotateSel,
-} from '../model/transform';
 import { renderCircuitToCanvas } from '../render/export';
 import { printCircuit } from '../render/print';
-import { makeGhostElement, useStore } from '../state/store';
+import { useStore } from '../state/store';
 import { PROJECT_GITHUB_URL } from './about';
 import { runFullScreenToggle } from './fullscreen';
 import { menubarButtonClass } from './controlClasses';
 import { SCOPE_LAYOUT_MODES } from './scopeLayoutMode';
 import { useMenuKeyboard } from './menuKeyboard';
 import {
-  dcOutcomeReport,
+  commandRow,
   fileMenuTailRows,
   helpAboutRow,
   helpGithubRow,
   findDcOperatingPointRow,
+  historyRow,
   type MenuItemDef,
 } from './menuRows';
 
@@ -282,22 +279,12 @@ function Dropdown({
 
 export function Menubar({ engine }: Props) {
   const running = useStore((s) => s.running);
-  const tool = useStore((s) => s.tool);
-  const toggleRunning = useStore((s) => s.toggleRunning);
   const status = useStore((s) => s.status);
-  const newCircuit = useStore((s) => s.newCircuit);
   const loadNetlist = useStore((s) => s.loadNetlist);
-  const undo = useStore((s) => s.undo);
-  const redo = useStore((s) => s.redo);
   const setStatus = useStore((s) => s.setStatus);
   const setNotice = useStore((s) => s.setNotice);
   const setDark = useStore((s) => s.setDark);
-  const updateSettings = useStore((s) => s.updateSettings);
   const openDialog = useStore((s) => s.openDialog);
-  const centerCircuit = useStore((s) => s.centerCircuit);
-  const zoomIn = useStore((s) => s.zoomIn);
-  const zoomOut = useStore((s) => s.zoomOut);
-  const zoomReset = useStore((s) => s.zoomReset);
   // Only the factor, not the whole view: a pan must not re-render the menubar.
   const scale = useStore((s) => s.view.scale);
 
@@ -310,14 +297,12 @@ export function Menubar({ engine }: Props) {
   // subscribing to the length picks up each undo/redo boundary.
   const canUndo = useStore((s) => s.history.undo.length > 0);
   const canRedo = useStore((s) => s.history.redo.length > 0);
+  const undoLabel = useStore((s) => s.history.undo[s.history.undo.length - 1]?.label ?? null);
+  const redoLabel = useStore((s) => s.history.redo[s.history.redo.length - 1]?.label ?? null);
   const conventional = useStore((s) => s.settings.conventional);
   const euroResistors = useStore((s) => s.settings.euroResistors);
   const euroGates = useStore((s) => s.settings.euroGates);
   const showHitboxes = useStore((s) => s.settings.showHitboxes);
-  const elements = useStore((s) => s.elements);
-  const selectedIds = useStore((s) => s.selectedIds);
-  const clipboard = useStore((s) => s.clipboard);
-  const hasRecovery = useStore((s) => s.hasRecovery);
   const partsOpen = useStore((s) => s.partsOpen);
   const setPartsOpen = useStore((s) => s.setPartsOpen);
   const panelOpen = useStore((s) => s.panelOpen);
@@ -405,6 +390,57 @@ export function Menubar({ engine }: Props) {
     action();
   };
 
+  // Host-bound run controls the commands cannot reach on their own.
+  const sim: SimControls = {
+    reset: () => engine?.reset(),
+    dcOperatingPoint: () => engine?.findDcOperatingPoint(),
+  };
+
+  /** The one dispatch for a menu row or button: close the menus, run the
+   *  command through the same door the keyboard and an agent use, and surface
+   *  a refusal in the status line. */
+  const runCommand = (id: string, args?: unknown) => {
+    const result = execute(id, args, { store: useStore, source: 'user', sim });
+    if (!result.ok) setStatus(result.message);
+    return result;
+  };
+
+  /** A menu row whose label, disabled state and reason come from the command
+   *  definition. */
+  const cmdRow = (
+    id: string,
+    opts: {
+      args?: unknown;
+      shortcut?: string;
+      label?: string;
+      sepBefore?: boolean;
+    } = {},
+  ): MenuItemDef =>
+    commandRow(id, {
+      state: useStore.getState(),
+      args: opts.args,
+      shortcut: opts.shortcut,
+      label: opts.label,
+      sepBefore: opts.sepBefore,
+      run: fire(() => runCommand(id, opts.args)),
+    });
+
+  /** A command row that still alerts on refusal, for the two rows whose
+   *  failure the user must see (no chip selected, a selection that cannot
+   *  become a model). */
+  const alertingRow = (id: string, args?: unknown): MenuItemDef =>
+    commandRow(id, {
+      state: useStore.getState(),
+      args,
+      run: fire(() => {
+        const result = execute(id, args, { store: useStore, source: 'user', sim });
+        if (!result.ok) {
+          setStatus(result.message);
+          window.alert(result.message);
+        }
+      }),
+    });
+
   const openLibraryCircuit = async (file: string, title: string) => {
     try {
       // A refused load reports through the banner, not this catch (which is
@@ -484,28 +520,6 @@ export function Menubar({ engine }: Props) {
     printCircuit(s.elements, s.settings, false, engine);
   };
 
-  const selected = elements.filter((e) => selectedIds.includes(e.id));
-  const hasSelection = selectedIds.length > 0;
-  // A plain wire is one with no route; a routed one is already converted.
-  const plainWires = elements.filter((e) => e.kind === 'wire' && !e.route);
-  const canConvertWires = hasSelection
-    ? plainWires.some((e) => selectedIds.includes(e.id))
-    : plainWires.length > 0;
-  // A ghost the armed tool is about to drop counts as rotatable, and takes
-  // precedence over the selection exactly as Space does (store.rotateSelection):
-  // arming a tool does not clear the selection, so the row must not go grey
-  // while the key still turns something, nor turn the old selection when the
-  // key turns the ghost.
-  const canRotateGhost = tool !== null && canRotate({ ...makeGhostElement(tool, 0, 0, 0), id: -1 });
-  const canRotateSelection = canRotateGhost || canRotateSel(selected);
-  const canMirrorSelection = canMirrorSel(selected);
-  // The clipboard only ever holds text this app serialised, but guard anyway:
-  // a manually-set garbage string must grey out Paste. Memoized like the
-  // context menu's canPaste, since parsing on every render is wasteful. The
-  // probe is guarded: stored bytes survive a reload, and a hostile string
-  // must degrade to greyed rows, never crash this first render.
-  const canPaste = useMemo(() => clipboard !== null && parsesToElements(clipboard), [clipboard]);
-
   // The logo is the favicon file itself, so the tab icon and the brand mark
   // can never drift apart. BASE_URL carries the deploy base, like the docs
   // links below.
@@ -520,7 +534,7 @@ export function Menubar({ engine }: Props) {
     // window over the running app (CommandManager.java:35-37), which a
     // single-window static site cannot do, so it is omitted rather than shown
     // disabled.
-    { label: 'New Blank Circuit', onClick: fire(newCircuit) },
+    cmdRow('circuit.new'),
     {
       label: 'Open File…',
       onClick: fire(() =>
@@ -546,46 +560,19 @@ export function Menubar({ engine }: Props) {
     { label: 'Save As Image…', onClick: fire(() => openDialog('exportAsImage')) },
     { label: 'Copy Circuit Image to Clipboard', onClick: () => void copyImage() },
     { label: 'Save As SVG…', onClick: fire(() => openDialog('exportAsSvg')) },
-    {
-      label: 'Create Subcircuit…',
-      disabled: !editable,
-      onClick: fire(() => {
-        // The command aborts (with a browser alert from the caller) when the
-        // selection holds a kind the composite cannot represent, has no
-        // labeled nodes to expose as pins, or labels a net that is grounded or
-        // unused, like upstream's guards (EditCompositeModelDialog.java:70-75,
-        // SimulationManager.java:1588-1591, 1663-1668). The store leaves the
-        // reason behind, so the alert says which one it was; every false comes
-        // with one, so there is no second copy of the wording here to drift.
-        if (!useStore.getState().createSubcircuit()) {
-          window.alert(useStore.getState().subcircuitError);
-        }
-      }),
-    },
+    // The command builds the model and opens the naming dialog; a refusal
+    // (an unsupported kind, no labeled nodes, a grounded or unused net) is
+    // worth an alert because nothing visible changes otherwise.
+    alertingRow('subcircuit.create'),
     // Run-mode command like Reset, so it stays enabled with editing disabled
     // (upstream gates it behind no read-only check either). The command
-    // resets every element engine-side, so the store drops its live fuse
-    // copies exactly as the Reset button does; then the outcome routes
-    // through the two banner channels per dcOutcomeReport.
-    findDcOperatingPointRow(
-      fire(() => {
-        const result = engine?.findDcOperatingPoint();
-        if (result === undefined) return;
-        const report = dcOutcomeReport(result);
-        const s = useStore.getState();
-        if (report.problem !== null) s.setProblem(report.problem);
-        else if (report.notice !== null) s.setNotice(report.notice);
-        s.unblowFuses();
-      }),
-    ),
+    // un-blows the store's fuse copies and routes its outcome through the two
+    // banner channels itself.
+    findDcOperatingPointRow(fire(() => runCommand('sim.dcOperatingPoint'))),
     // Enabled only while a recovery exists (UIManager.java:170); the flag is
     // set once at store init and cleared by the recover, so the row stays
     // disabled for the session even though autosave keeps writing.
-    {
-      label: 'Recover Auto-Save',
-      disabled: !hasRecovery,
-      onClick: fire(() => useStore.getState().recoverAutoSave()),
-    },
+    cmdRow('circuit.recoverAutoSave'),
     // The File tail: Print, then the Full Screen toggle after a separator. The command toggles the browser
     // surface on the document element and re-fits the circuit afterwards
     // (CommandManager.java:305-311). The fit goes through requestCenter, whose
@@ -599,96 +586,35 @@ export function Menubar({ engine }: Props) {
   ];
 
   const editItems: MenuItemDef[] = [
-    { label: 'Undo', shortcut: 'Ctrl+Z', disabled: !editable, onClick: fire(undo) },
-    { label: 'Redo', shortcut: 'Ctrl+Y', disabled: !editable, onClick: fire(redo) },
-    {
-      label: 'Cut',
-      shortcut: 'Ctrl+X',
-      disabled: !editable || !hasSelection,
-      onClick: fire(() => useStore.getState().cutSelection()),
-    },
-    {
-      label: 'Copy',
-      shortcut: 'Ctrl+C',
-      disabled: !editable || !hasSelection,
-      onClick: fire(() => useStore.getState().copySelection()),
-    },
-    {
-      label: 'Paste',
-      shortcut: 'Ctrl+V',
-      disabled: !editable || !canPaste,
-      onClick: fire(() => useStore.getState().pasteFromClipboard()),
-    },
-    {
-      label: 'Duplicate',
-      shortcut: 'Ctrl+D',
-      disabled: !editable || !hasSelection,
-      onClick: fire(() => useStore.getState().duplicateSelection()),
-    },
-    {
-      label: 'Select All',
-      shortcut: 'Ctrl+A',
-      disabled: !editable || elements.length === 0,
-      onClick: fire(() => useStore.getState().selectAll()),
-    },
+    historyRow('undo', useStore.getState(), fire(() => runCommand('history.undo'))),
+    historyRow('redo', useStore.getState(), fire(() => runCommand('history.redo'))),
+    cmdRow('clipboard.cut', { shortcut: 'Ctrl+X' }),
+    cmdRow('clipboard.copy', { shortcut: 'Ctrl+C' }),
+    cmdRow('clipboard.paste', { shortcut: 'Ctrl+V' }),
+    cmdRow('clipboard.duplicate', { shortcut: 'Ctrl+D' }),
+    cmdRow('selection.all', { shortcut: 'Ctrl+A' }),
     // A view command, so it works with editing disabled like the zoom keys do.
     // The three zoom commands are not rows: they share the ZoomItem control
     // rendered after this list.
-    { label: 'Center Circuit', onClick: fire(centerCircuit) },
-    {
-      label: 'Rotate',
-      shortcut: 'Space',
-      disabled: !editable || !canRotateSelection,
-      onClick: fire(() => useStore.getState().rotateSelection()),
-    },
-    {
-      label: 'Mirror Horizontally',
-      shortcut: 'Alt+H',
-      disabled: !editable || !canMirrorSelection,
-      onClick: fire(() => useStore.getState().mirrorSelection('horizontal')),
-    },
-    {
-      label: 'Mirror Vertically',
-      shortcut: 'Alt+V',
-      disabled: !editable || !canMirrorSelection,
-      onClick: fire(() => useStore.getState().mirrorSelection('vertical')),
-    },
+    cmdRow('view.center'),
+    cmdRow('element.rotate', { shortcut: 'Space' }),
+    cmdRow('element.mirror', { shortcut: 'Alt+H' }),
+    cmdRow('element.mirrorVertical', { shortcut: 'Alt+V' }),
   ];
 
   const scopesItems: MenuItemDef[] = [
     // Upstream's read-only guard blocks the scopes menu too
     // (CommandManager.java:22-24), so stacking is off while editing is.
-    {
-      label: 'Stack All',
-      disabled: !editable,
-      onClick: fire(() => useStore.getState().stackAllScopes()),
-    },
-    {
-      label: 'Unstack All',
-      disabled: !editable,
-      onClick: fire(() => useStore.getState().unstackAllScopes()),
-    },
-    {
-      label: 'Combine All',
-      disabled: !editable,
-      onClick: fire(() => useStore.getState().combineAllScopes()),
-    },
-    {
-      label: 'Separate All',
-      disabled: !editable,
-      onClick: fire(() => useStore.getState().separateAllScopes()),
-    },
+    cmdRow('scope.stackAll'),
+    cmdRow('scope.unstackAll'),
+    cmdRow('scope.combineAll'),
+    cmdRow('scope.separateAll'),
   ];
 
   const toolsItems: MenuItemDef[] = [
-    // Enabled only when a plain wire is selected or present: a circuit that is
-    // already fully routed has nothing to merge (upstream greys nothing, the
-    // port ties the row to what the command can actually do).
-    {
-      label: 'Convert Wires to Routed Wires',
-      disabled: !editable || !canConvertWires,
-      onClick: fire(() => useStore.getState().convertWiresToRouted()),
-    },
+    // A circuit that is already fully routed has nothing to merge, so the
+    // command's enabled reason greys the row.
+    cmdRow('wire.convertToRouted'),
     {
       label: 'Subcircuit Manager',
       disabled: !editable,
@@ -703,19 +629,10 @@ export function Menubar({ engine }: Props) {
         useStore.getState().openDialog('sliders');
       }),
     },
-    {
-      label: 'Create Test',
-      disabled: !editable,
-      onClick: fire(() => {
-        // The command builds a harness around the selected chip; when no
-        // single chip is selected it aborts with the same alert upstream's
-        // TestCreator shows (TestCreator.java:27-30), rather than placing
-        // anything wrong.
-        if (!useStore.getState().createTest()) {
-          window.alert('Select a single chip element first.');
-        }
-      }),
-    },
+    // The command builds a harness around a single chip; when there is none it
+    // fails with the same alert upstream's TestCreator shows
+    // (TestCreator.java:27-30), rather than placing anything wrong.
+    alertingRow('circuit.createTest'),
   ];
 
   const menu = (items: MenuItemDef[]) => items.map((m) => <MenuItem key={m.label} {...m} />);
@@ -739,9 +656,9 @@ export function Menubar({ engine }: Props) {
           type="button"
           className="menubar-btn icon-btn"
           disabled={!editable || !canUndo}
-          onClick={fire(undo)}
-          title="Undo"
-          aria-label="Undo"
+          onClick={fire(() => runCommand('history.undo'))}
+          title={undoLabel === null ? 'Undo' : `Undo ${undoLabel}`}
+          aria-label={undoLabel === null ? 'Undo' : `Undo ${undoLabel}`}
         >
           <span className="material-icons" aria-hidden="true">
             undo
@@ -751,9 +668,9 @@ export function Menubar({ engine }: Props) {
           type="button"
           className="menubar-btn icon-btn"
           disabled={!editable || !canRedo}
-          onClick={fire(redo)}
-          title="Redo"
-          aria-label="Redo"
+          onClick={fire(() => runCommand('history.redo'))}
+          title={redoLabel === null ? 'Redo' : `Redo ${redoLabel}`}
+          aria-label={redoLabel === null ? 'Redo' : `Redo ${redoLabel}`}
         >
           <span className="material-icons" aria-hidden="true">
             redo
@@ -811,7 +728,12 @@ export function Menubar({ engine }: Props) {
         >
           {menu(editItems)}
           <div className="menu-sep" role="separator" />
-          <ZoomItem scale={scale} onIn={zoomIn} onOut={zoomOut} onReset={zoomReset} />
+          <ZoomItem
+            scale={scale}
+            onIn={() => runCommand('view.zoomIn')}
+            onOut={() => runCommand('view.zoomOut')}
+            onReset={() => runCommand('view.reset')}
+          />
         </Dropdown>
 
         <Dropdown
@@ -852,22 +774,22 @@ export function Menubar({ engine }: Props) {
           <CheckItem
             label="European Resistors"
             checked={euroResistors}
-            onClick={fire(() => updateSettings({ euroResistors: !euroResistors }))}
+            onClick={fire(() => runCommand('settings.update', { euroResistors: !euroResistors }))}
           />
           <CheckItem
             label="IEC Gates"
             checked={euroGates}
-            onClick={fire(() => updateSettings({ euroGates: !euroGates }))}
+            onClick={fire(() => runCommand('settings.update', { euroGates: !euroGates }))}
           />
           <CheckItem
             label="Conventional Current Motion"
             checked={conventional}
-            onClick={fire(() => updateSettings({ conventional: !conventional }))}
+            onClick={fire(() => runCommand('settings.update', { conventional: !conventional }))}
           />
           <CheckItem
             label="Disable Editing"
             checked={!editable}
-            onClick={fire(() => updateSettings({ editable: !editable }))}
+            onClick={fire(() => runCommand('settings.update', { editable: !editable }))}
           />
           <CheckItem
             label="Toolbar"
@@ -877,7 +799,7 @@ export function Menubar({ engine }: Props) {
           <CheckItem
             label="Edit Values With Mouse Wheel"
             checked={mouseWheelEdit}
-            onClick={fire(() => updateSettings({ mouseWheelEdit: !mouseWheelEdit }))}
+            onClick={fire(() => runCommand('settings.update', { mouseWheelEdit: !mouseWheelEdit }))}
           />
           <div className="menu-sep" role="separator" />
           {/* A diagnostic with no upstream counterpart, in its own group so it
@@ -887,7 +809,7 @@ export function Menubar({ engine }: Props) {
           <CheckItem
             label="Show Hitboxes"
             checked={showHitboxes}
-            onClick={fire(() => updateSettings({ showHitboxes: !showHitboxes }))}
+            onClick={fire(() => runCommand('settings.update', { showHitboxes: !showHitboxes }))}
           />
           <div className="menu-sep" role="separator" />
           {menu([
@@ -995,7 +917,7 @@ export function Menubar({ engine }: Props) {
         <button
           type="button"
           className={running ? 'primary running icon-btn' : 'primary icon-btn'}
-          onClick={toggleRunning}
+          onClick={fire(() => runCommand(running ? 'sim.pause' : 'sim.run'))}
           title="Run/Pause"
           aria-label={running ? 'Pause' : 'Run'}
         >
@@ -1006,17 +928,7 @@ export function Menubar({ engine }: Props) {
         <button
           type="button"
           className="menubar-btn icon-btn"
-          onClick={() => {
-            // engine.reset() rewinds runtime state in place: fuse heat/blown,
-            // capacitor charge, inductor current, lamp temperature, matching
-            // upstream's reset (CircuitElm.reset, FuseElm.reset). The old
-            // netlist self-reload re-injected a popped fuse's `blown true`
-            // token, which is why a fuse survived Reset; unblowFuses drops the
-            // store's live copies and queued pop-confirms so they cannot
-            // re-apply it a frame later.
-            engine?.reset();
-            useStore.getState().unblowFuses();
-          }}
+          onClick={fire(() => runCommand('sim.reset'))}
           title="Reset"
           aria-label="Reset"
         >

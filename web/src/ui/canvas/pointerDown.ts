@@ -30,6 +30,7 @@ export function collapsedToPoint(e: CircuitElement): boolean {
 }
 import { turnPointAbout } from '../../model/transform';
 import { grabbedHandle, nearestPost } from '../../render/geometry';
+import { execute } from '../../commands/execute';
 import { makeGhostElement, nextSwitchState, snap, useStore } from '../../state/store';
 import type { AppState } from '../../state/types';
 
@@ -239,8 +240,21 @@ export function finishWireDrag(drag: Drag, state: AppState): void {
   // No latched axis means the pointer never left the anchor cell: a click with
   // the wire tool armed draws nothing rather than dropping a default-length
   // wire, because a wire's length is the whole of what the user is choosing.
-  const ids =
-    drag.axis === null ? [] : state.addWires(wireSegments(drag.start, drag.current, drag.axis));
+  let ids: number[] = [];
+  if (drag.axis !== null) {
+    // The drag's 0, 1 or 2 never-diagonal segments become the polyline the
+    // wire.add command takes, so a drag ending and an agent wire run share one
+    // insertion path.
+    const segments = wireSegments(drag.start, drag.current, drag.axis);
+    if (segments.length > 0) {
+      const points: [number, number][] = [
+        [segments[0].x1, segments[0].y1],
+        ...segments.map((seg): [number, number] => [seg.x2, seg.y2]),
+      ];
+      const result = execute('wire.add', { points }, { store: useStore, source: 'user' });
+      ids = result.ok ? (result.value as number[]) : [];
+    }
+  }
   if (ids.length > 0) state.select(ids);
   // Placing one run then returning to select mode, like every other placement.
   state.setTool(null);
@@ -466,8 +480,8 @@ export function beginPointerGesture(
   // Alt+Shift sweeps every stored endpoint on the row, Alt+Meta the column;
   // checked before pan so the modifiers win (MouseManager.java:1087-1090).
   // Editing is refused first: these are edits, so a published read-only
-  // circuit may not be reshaped from them, exactly as EDIT_ACTIONS drops
-  // nudge and rotate on the keyboard path.
+  // circuit may not be reshaped from them, exactly as an edit command's
+  // `edits` gate drops nudge and rotate on the keyboard path.
   if (ev.button === 0 && ev.altKey && ev.shiftKey) {
     if (refuseEditing(state)) return;
     startRowCol('row', ev.button, p, state, dragRef);
@@ -582,9 +596,29 @@ export function beginPointerGesture(
     // the cursor when the click lands, and every kind now gets a length: the
     // ~150 defs that declare none used to place as a point and be deleted
     // again by finishPlacement, which is what made a click look like nothing
-    // happened.
+    // happened. The drop goes through the element.add command, so a click-place
+    // and an agent placement are one code path; the open transaction below is
+    // still this gesture's whole undo baseline.
     state.beginTransaction(`Add ${toolDef(state.tool)?.label ?? 'Element'}`);
-    const id = state.addElement(makeGhostElement(state.tool, x, y, state.toolTurns));
+    const placed = makeGhostElement(state.tool, x, y, state.toolTurns);
+    const result = execute(
+      'element.add',
+      {
+        kind: placed.kind,
+        tool: state.tool,
+        turns: state.toolTurns,
+        x1: x,
+        y1: y,
+        x2: x,
+        y2: y,
+      },
+      { store: useStore, source: 'user' },
+    );
+    if (!result.ok) {
+      state.setStatus(result.message);
+      return;
+    }
+    const id = result.value as number;
     dragRef.current = { mode: 'place', start: { x, y }, id, button: ev.button };
     // The transaction opened before addElement is this gesture's whole undo
     // baseline, so raise the gesture flag before anything else can checkpoint:

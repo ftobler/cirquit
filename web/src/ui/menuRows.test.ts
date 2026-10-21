@@ -1,14 +1,31 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_SETTINGS } from '../model/types';
+import type { HistoryEntry } from '../state/history';
+import type { AppState } from '../state/types';
 import {
+  commandRow,
   dcOutcomeReport,
   deferred,
   fileMenuTailRows,
   helpAboutRow,
   helpGithubRow,
   findDcOperatingPointRow,
+  historyRow,
   toggleFullScreenRow,
   type MenuItemDef,
 } from './menuRows';
+
+const stateWith = (undo: HistoryEntry[], redo: HistoryEntry[] = []) =>
+  ({
+    history: { undo, redo, open: null },
+    settings: DEFAULT_SETTINGS,
+  }) as Pick<AppState, 'history' | 'settings'>;
+
+const entry = (label: string): HistoryEntry => ({
+  snap: {} as HistoryEntry['snap'],
+  label,
+  source: 'user',
+});
 
 // The upstream menu rows the port does not implement, label and reason exactly
 // as the menubar renders them. Pinning the list in the test keeps the Menus.java
@@ -133,6 +150,72 @@ describe('helpAboutRow', () => {
     expect(row.sepBefore).toBe(true);
     row.onClick();
     expect(ran).toBe(true);
+  });
+});
+
+describe('historyRow', () => {
+  it('names the step in the Undo and Redo rows', () => {
+    const undo = historyRow('undo', stateWith([entry('Add Resistor')]), () => undefined);
+    expect(undo.label).toBe('Undo Add Resistor');
+    expect(undo.disabled).toBe(false);
+    expect(undo.shortcut).toBe('Ctrl+Z');
+
+    const redo = historyRow(
+      'redo',
+      stateWith([], [{ ...entry('Move'), source: 'agent' }]),
+      () => undefined,
+    );
+    expect(redo.label).toBe('Redo Move');
+    expect(redo.disabled).toBe(false);
+  });
+
+  it('stays labelled plain and disabled with no history', () => {
+    const undo = historyRow('undo', stateWith([]), () => undefined);
+    expect(undo.label).toBe('Undo');
+    expect(undo.disabled).toBe(true);
+    expect(undo.disabledTitle).toBe('Nothing to undo');
+
+    const redo = historyRow('redo', stateWith([]), () => undefined);
+    expect(redo.label).toBe('Redo');
+    expect(redo.disabled).toBe(true);
+    expect(redo.disabledTitle).toBe('Nothing to redo');
+  });
+
+  it('is refused while editing is disabled, whatever the stack holds', () => {
+    const state = stateWith([entry('Add Resistor')]);
+    state.settings = { ...state.settings, editable: false };
+    const row = historyRow('undo', state, () => undefined);
+    expect(row.disabled).toBe(true);
+    expect(row.disabledTitle).toBe('Editing disabled. Re-enable from the Options menu.');
+  });
+
+  it('runs its handler when clicked', () => {
+    let ran = false;
+    historyRow('undo', stateWith([entry('Add Resistor')]), () => {
+      ran = true;
+    }).onClick();
+    expect(ran).toBe(true);
+  });
+});
+
+describe('commandRow', () => {
+  it('takes its label and enabled state from the command definition', () => {
+    const state = stateWith([]);
+    const row = commandRow('view.zoomIn', { state: state as AppState, run: () => undefined });
+    expect(row.label).toBe('Zoom In');
+    expect(row.disabled).toBe(false);
+    expect(row.disabledTitle).toBeUndefined();
+  });
+
+  it('shows the command own reason when it is disabled', () => {
+    const state = stateWith([]);
+    const row = commandRow('history.undo', {
+      state: state as AppState,
+      run: () => undefined,
+      label: 'Undo',
+    });
+    expect(row.disabled).toBe(true);
+    expect(row.disabledTitle).toBe('Nothing to undo.');
   });
 });
 

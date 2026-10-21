@@ -7,13 +7,12 @@
  * entries with real icons and a search box, instead of category submenus.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { parsesToElements } from '../io/importSummary';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { execute, commandState } from '../commands/execute';
 import { defFor, type ToolboxEntry } from '../model/registry';
 import { toolShortcut } from '../model/search';
 import type { SimSettings } from '../model/types';
-import { canMirrorSelection as canMirrorSel, canRotate, canRotateSelection as canRotateSel, canSwap } from '../model/transform';
-import { makeGhostElement, useStore } from '../state/store';
+import { useStore } from '../state/store';
 import { canCreateSlider, canSplitWire, elementScopeCommands, paletteGroups } from './contextMenuRows';
 import { ToolIcon } from './ToolIcon';
 
@@ -31,10 +30,7 @@ interface MenuItem {
 
 export function ContextMenu() {
   const contextMenu = useStore((s) => s.contextMenu);
-  const clipboard = useStore((s) => s.clipboard);
   const closeContextMenu = useStore((s) => s.closeContextMenu);
-  const selectedIds = useStore((s) => s.selectedIds);
-  const tool = useStore((s) => s.tool);
   const elements = useStore((s) => s.elements);
   const scopes = useStore((s) => s.scopes);
   const editable = useStore((s) => s.settings.editable);
@@ -102,37 +98,26 @@ export function ContextMenu() {
     };
   }, [contextMenu, closeContextMenu]);
 
-  // The clipboard only ever holds text this app serialised, but guard anyway:
-  // a manually-set garbage string must grey out Paste, not paste nothing. The
-  // probe is guarded, so stored garbage degrades to a greyed row instead of
-  // throwing out of this render.
-  const canPaste = useMemo(
-    () => clipboard !== null && parsesToElements(clipboard),
-    [clipboard],
-  );
-
   if (!contextMenu) return null;
 
   const { target, circuit } = contextMenu;
   const targetElement = target !== null ? elements.find((e) => e.id === target) : undefined;
   const targetDef = targetElement ? defFor(targetElement.kind) : undefined;
-  const hasSelection = selectedIds.length > 0;
-  const selected = elements.filter((e) => selectedIds.includes(e.id));
-  // A command is enabled only when every selected element can do it, matching
-  // the store actions, which refuse a mixed or unsupported selection.
-  // A ghost the armed tool is about to drop counts as rotatable, and takes
-  // precedence over the selection exactly as Space does (store.rotateSelection):
-  // arming a tool does not clear the selection, so the row must not go grey
-  // while the key still turns something, nor turn the old selection when the
-  // key turns the ghost.
-  const canRotateGhost = tool !== null && canRotate({ ...makeGhostElement(tool, 0, 0, 0), id: -1 });
-  const canRotateSelection = canRotateGhost || canRotateSel(selected);
-  const canMirrorSelection = canMirrorSel(selected);
-  const canSwapSelection = selected.length > 0 && selected.every(canSwap);
-
   const run = (action: () => void) => {
     closeContextMenu();
     action();
+  };
+
+  const runCommand = (id: string, args?: unknown) => {
+    const result = execute(id, args, { store: useStore, source: 'user' });
+    if (!result.ok) useStore.getState().setStatus(result.message);
+  };
+
+  /** Disabled state and its tooltip from the command definition, so the menu
+   *  cannot grey a different set from the keyboard. */
+  const availability = (id: string, args?: unknown) => {
+    const check = commandState(id, args ?? {}, useStore.getState());
+    return { disabled: !check.enabled, disabledTitle: check.reason };
   };
 
   const item = (m: MenuItem) => (
@@ -167,10 +152,13 @@ export function ContextMenu() {
         undockedOpen,
         commands: {
           edit: () => useStore.getState().requestEdit(target),
-          viewInScope: () => useStore.getState().addScope(target, 'voltage'),
+          viewInScope: () => runCommand('scope.add', { elementId: target, value: 'voltage' }),
+          // The undocked window is host-bound presentation on top of a scope
+          // create, so it stays a store action rather than a command.
           viewUndocked: () => useStore.getState().openUndockedScope(target),
-          addTo: (scopeId) => useStore.getState().addToScope(target, scopeId, 'voltage'),
-          addCurrent: () => useStore.getState().addScope(target, 'current'),
+          addTo: (scopeId) =>
+            runCommand('scope.addTo', { elementId: target, scopeId, value: 'voltage' }),
+          addCurrent: () => runCommand('scope.add', { elementId: target, value: 'current' }),
         },
       }).map((row) => ({
         label: row.label,
@@ -186,56 +174,56 @@ export function ContextMenu() {
     {
       label: 'Cut',
       shortcut: 'Ctrl+X',
-      disabled: !editable || !hasSelection,
-      action: () => useStore.getState().cutSelection(),
+      ...availability('clipboard.cut'),
+      action: () => runCommand('clipboard.cut'),
     },
     {
       label: 'Copy',
       shortcut: 'Ctrl+C',
-      disabled: !editable || !hasSelection,
-      action: () => useStore.getState().copySelection(),
+      ...availability('clipboard.copy'),
+      action: () => runCommand('clipboard.copy'),
     },
     {
       label: 'Paste',
       shortcut: 'Ctrl+V',
-      disabled: !editable || !canPaste,
-      action: () => useStore.getState().pasteFromClipboard(),
+      ...availability('clipboard.paste'),
+      action: () => runCommand('clipboard.paste'),
     },
     {
       label: 'Delete',
       shortcut: 'Delete',
-      disabled: !editable || !hasSelection,
-      action: () => useStore.getState().deleteSelected(),
+      ...availability('element.delete'),
+      action: () => runCommand('element.delete'),
     },
     {
       label: 'Duplicate',
       shortcut: 'Ctrl+D',
-      disabled: !editable || !hasSelection,
-      action: () => useStore.getState().duplicateSelection(),
+      ...availability('clipboard.duplicate'),
+      action: () => runCommand('clipboard.duplicate'),
     },
     {
       label: 'Swap Terminals',
       shortcut: 'Alt+T',
-      disabled: !editable || !canSwapSelection,
-      action: () => useStore.getState().swapTerminals(),
+      ...availability('element.swapTerminals'),
+      action: () => runCommand('element.swapTerminals'),
     },
     {
       label: 'Rotate',
       shortcut: 'Space',
-      disabled: !editable || !canRotateSelection,
-      action: () => useStore.getState().rotateSelection(),
+      ...availability('element.rotate'),
+      action: () => runCommand('element.rotate'),
     },
     {
       label: 'Mirror Horizontally',
       shortcut: 'Alt+H',
-      disabled: !editable || !canMirrorSelection,
-      action: () => useStore.getState().mirrorSelection('horizontal'),
+      ...availability('element.mirror'),
+      action: () => runCommand('element.mirror'),
     },
     {
       label: 'Mirror Vertically',
       shortcut: 'Alt+V',
-      disabled: !editable || !canMirrorSelection,
-      action: () => useStore.getState().mirrorSelection('vertical'),
+      ...availability('element.mirrorVertical'),
+      action: () => runCommand('element.mirrorVertical'),
     },
   ];
 
@@ -249,10 +237,10 @@ export function ContextMenu() {
       // No shortcut hint: upstream's Ctrl+click on a wire is the dragpost
       // gesture here (pointerDown.ts:235), not a split, so advertising it
       // would claim a key that does the wrong thing.
-      disabled: !editable,
+      ...availability('wire.split', { id: target, x: circuit.x, y: circuit.y }),
       // The menu opened over the wire, so the click point is the split point;
-      // the store action snaps it to the grid (MouseManager.java:586-593).
-      action: () => useStore.getState().splitWireAt(target, circuit),
+      // the command snaps it to the grid (MouseManager.java:586-593).
+      action: () => runCommand('wire.split', { id: target, x: circuit.x, y: circuit.y }),
     });
   }
   if (isElementMenu) {
@@ -278,29 +266,30 @@ export function ContextMenu() {
     {
       label: 'Undo',
       shortcut: 'Ctrl+Z',
-      disabled: !editable,
-      action: () => useStore.getState().undo(),
+      ...availability('history.undo'),
+      action: () => runCommand('history.undo'),
     },
     {
       label: 'Redo',
       shortcut: 'Ctrl+Shift+Z',
-      disabled: !editable,
-      action: () => useStore.getState().redo(),
+      ...availability('history.redo'),
+      action: () => runCommand('history.redo'),
     },
     {
       label: 'Paste',
       shortcut: 'Ctrl+V',
-      disabled: !editable || !canPaste,
-      action: () => useStore.getState().pasteFromClipboard(),
+      ...availability('clipboard.paste'),
+      action: () => runCommand('clipboard.paste'),
     },
     {
       label: 'Select All',
-      disabled: !editable,
-      action: () => useStore.getState().selectAll(),
+      ...availability('selection.all'),
+      action: () => runCommand('selection.all'),
     },
     {
       label: 'New',
-      action: () => useStore.getState().newCircuit(),
+      ...availability('circuit.new'),
+      action: () => runCommand('circuit.new'),
     },
     // Upstream's Select/Drag Sel mode (space). The port's select mode is
     // `tool === null`; the other Drag modes (All/Row/Column/Post) are

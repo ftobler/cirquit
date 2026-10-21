@@ -1312,9 +1312,8 @@ function createAppStore() {
 
   requestCenter: () => set((s) => ({ centerRequest: s.centerRequest + 1 })),
 
-    deleteSelected: () => {
-      const { selectedIds } = get();
-    if (selectedIds.length === 0) return;
+    deleteElements: (ids) => {
+    if (ids.length === 0) return;
     // A command landing while a pointer gesture owns the selection folds into
     // that gesture's open transaction, exactly as a mid-drag rotate does, so
     // one drag never splits across two undo entries. The placement-cancel path
@@ -1326,7 +1325,7 @@ function createAppStore() {
         // A scope goes when any of its plots names a deleted element, matching
         // upstream's cleanup of scopes whose element is gone.
         const scopes = s.scopes.filter(
-          (x) => !x.plots.some((p) => p.elementId !== null && selectedIds.includes(p.elementId)),
+          (x) => !x.plots.some((p) => p.elementId !== null && ids.includes(p.elementId)),
         );
         return {
           // One pass over the survivors of the delete: an embedded window whose
@@ -1335,12 +1334,12 @@ function createAppStore() {
           // The window element and its raw config token stay, so undo puts the
           // traces back.
           elements: s.elements
-            .filter((e) => !selectedIds.includes(e.id))
+            .filter((e) => !ids.includes(e.id))
             .map((e) => {
               if (e.kind !== 'scope' || !e.embedded) return e;
               if (
                 !e.embedded.plots.some(
-                  (p) => p.elementId !== null && selectedIds.includes(p.elementId),
+                  (p) => p.elementId !== null && ids.includes(p.elementId),
                 )
               ) {
                 return e;
@@ -1350,7 +1349,7 @@ function createAppStore() {
                 embedded: {
                   ...e.embedded,
                   plots: e.embedded.plots.map((p) =>
-                    p.elementId !== null && selectedIds.includes(p.elementId)
+                    p.elementId !== null && ids.includes(p.elementId)
                       ? { ...p, elementId: null }
                       : p,
                   ),
@@ -1372,9 +1371,9 @@ function createAppStore() {
           // resolves it, and an undo restores both and puts the line back in
           // place.
           sliders: s.sliders.filter(
-            (x) => x.elementId === undefined || !selectedIds.includes(x.elementId),
+            (x) => x.elementId === undefined || !ids.includes(x.elementId),
           ),
-          selectedIds: [],
+          selectedIds: s.selectedIds.filter((id) => !ids.includes(id)),
           // A deleted element can be the one the slider dialog is open on, so its
           // target id drops the same way a bound slider does above; leaving it
           // points the panel at a vanished part.
@@ -1390,6 +1389,21 @@ function createAppStore() {
     });
   },
 
+    deleteSelected: () => get().deleteElements(get().selectedIds),
+
+  rotateElements: (ids) => {
+    if (ids.length === 0) return;
+    const selected = get().elements.filter((e) => ids.includes(e.id));
+    const pivot = turnPivot(selected);
+    if (pivot === undefined) return;
+    transformElements(
+      ids,
+      'Rotate',
+      canRotateSelection,
+      selected.length === 1 ? (e) => rotateElement(e, pivot) : (e) => rotateInGroup(e, pivot),
+    );
+  },
+
   rotateSelection: () => {
     const { elementGesture: gesture, tool } = get();
     // An armed tool with nothing grabbed turns its ghost, ahead of the
@@ -1403,25 +1417,49 @@ function createAppStore() {
     }
     // Nothing grabbed: the settled-selection command, one undo entry.
     if (gesture === null) {
-        rotateGroup('Rotate');
+      get().rotateElements(get().selectedIds);
       return;
     }
     if (gesture.kind === 'move') {
-        // The drag's open transaction is this gesture's whole baseline, so the
-        // turn joins it: one Ctrl+Z undoes the move and the turns together. The
-        // grabbed group turns as one body, like a settled one: a per-part pivot
-        // would tear every wire between the parts apart.
-        rotateGroup('Rotate');
+      // The drag's open transaction is this gesture's whole baseline, so the
+      // turn joins it: one Ctrl+Z undoes the move and the turns together. The
+      // grabbed group turns as one body, like a settled one: a per-part pivot
+      // would tear every wire between the parts apart.
+      get().rotateElements(get().selectedIds);
       return;
     }
     // A placement turns about its own (x1,y1), which is the press anchor: the
     // place branch only ever writes (x2,y2), so the anchor stays under the
     // point the user pressed. The turn is banked so the next pointer-move
     // re-applies it to the cursor-derived endpoint instead of erasing it.
-      const turned = transformSelected('Rotate', everyOf(canRotate), (e) =>
-        rotateElement(e, { x: e.x1, y: e.y1 }),
-      );
+    const turned = transformElements(
+      get().selectedIds,
+      'Rotate',
+      everyOf(canRotate),
+      (e) => rotateElement(e, { x: e.x1, y: e.y1 }),
+    );
     if (turned) set({ elementGesture: { ...gesture, placeTurns: (gesture.placeTurns + 1) % 4 } });
+  },
+  mirrorElements: (ids, axis = 'horizontal') => {
+    if (ids.length === 0) return;
+    const selected = get().elements.filter((e) => ids.includes(e.id));
+    if (axis === 'vertical') {
+      const centre = selectionMirrorCentreY(selected);
+      transformElements(
+        ids,
+        'Mirror',
+        canMirrorSelection,
+        centre === undefined ? (e) => mirrorElementVertical(e) : (e) => mirrorVerticalInGroup(e, centre),
+      );
+      return;
+    }
+    const centre = selectionMirrorCentre(selected);
+    transformElements(
+      ids,
+      'Mirror',
+      canMirrorSelection,
+      centre === undefined ? (e) => mirrorElement(e) : (e) => mirrorInGroup(e, centre),
+    );
   },
   mirrorSelection: (axis = 'horizontal') => {
     const { elementGesture: gesture } = get();
@@ -1430,41 +1468,25 @@ function createAppStore() {
     // pointer-move rewrites the free endpoint from the cursor, so an applied
     // mirror would be silently erased mid-drag; refuse until the drop settles.
     if (gesture?.kind === 'place') return;
-    // The analogous shared axis: upstream reflects every selected part across
-    // the one bbox centre (CommandManager.java:408-417), so the group mirrors
-    // as a body instead of each part folding about its own centre. A lone
-    // element mirrors about its own centre.
-    const selected = selectedElements();
-    if (axis === 'vertical') {
-      const centre = selectionMirrorCentreY(selected);
-      transformSelected(
-          'Mirror',
-        canMirrorSelection,
-          centre === undefined
-            ? (e) => mirrorElementVertical(e)
-            : (e) => mirrorVerticalInGroup(e, centre),
-      );
-      return;
-    }
-    const centre = selectionMirrorCentre(selected);
-    transformSelected(
-        'Mirror',
-      canMirrorSelection,
-      centre === undefined ? (e) => mirrorElement(e) : (e) => mirrorInGroup(e, centre),
-    );
+    get().mirrorElements(get().selectedIds, axis);
+  },
+  swapTerminalsOf: (ids) => {
+    if (ids.length === 0) return;
+    transformElements(ids, 'Swap Terminals', everyOf(canSwap), swapTerminalOrder);
   },
   swapTerminals: () => {
-      // Mirror's gesture dispatch: a move drag's open transaction absorbs the
-      // swap, and a placement is refused because its next pointer-move would
-      // rewrite the swapped endpoints.
+    // Mirror's gesture dispatch: a move drag's open transaction absorbs the
+    // swap, and a placement is refused because its next pointer-move would
+    // rewrite the swapped endpoints.
     const { elementGesture: gesture } = get();
     if (gesture?.kind === 'place') return;
-      return transformSelected('Swap Terminals', everyOf(canSwap), swapTerminalOrder);
+    get().swapTerminalsOf(get().selectedIds);
   },
 
-  convertWiresToRouted: () => {
+  convertWiresToRouted: (ids) => {
     const s = get();
-    const converted = convertWires(s.elements, s.selectedIds);
+    const targetIds = ids ?? s.selectedIds;
+    const converted = convertWires(s.elements, targetIds);
     // Nothing to convert: the returned list is the same elements, so no undo
     // entry and no revision bump (a repeated click on a converted circuit is
     // a no-op, matching the menu's disabled state).
@@ -1493,12 +1515,16 @@ function createAppStore() {
     });
   },
 
-  createTest: () => {
+  createTest: (chipId) => {
     // The command aborts (with a browser alert from the caller) when no
     // single chip is selected, the same guard as upstream
     // (TestCreator.java:27-30). The alert is a UI concern, so the action
-    // reports the outcome and the menubar shows it.
-    const chip = selectHarnessChip(get().elements, get().selectedIds);
+    // reports the outcome and the menubar shows it. An explicit chip id skips
+    // the selection lookup but keeps the same single-chip rule.
+    const chip =
+      chipId === undefined
+        ? selectHarnessChip(get().elements, get().selectedIds)
+        : get().elements.find((e) => e.id === chipId && chipPinsOf(e) !== null);
     if (!chip) return false;
     // selectHarnessChip already proved the chip's pin table exists, so this
     // lookup cannot miss; the pins and the posts share index order because
@@ -1543,15 +1569,17 @@ function createAppStore() {
     return true;
   },
 
-  createSubcircuit: () => {
+  createSubcircuit: (ids) => {
     // Builds the model from the selection and parks it in `subcircuitDraft`
     // for the naming dialog, mirroring upstream's doCreateSubcircuit, which
     // derives the model and then asks for a name (CommandManager.java:69-70,
     // EditCompositeModelDialog.createModel). Every refusal carries its own
     // text (an unsupported kind, a labeled node on ground or on an unused net,
     // no labeled nodes at all), left in `subcircuitError` for the caller's
-    // alert instead of the one fixed string every failure used to share.
-    const built = buildModelFromSelection(get().elements, get().selectedIds);
+    // alert instead of the one fixed string every failure used to share. An
+    // explicit id list lets the command path name its elements; the whole
+    // circuit remains the omitted default for the File menu row.
+    const built = buildModelFromSelection(get().elements, ids ?? get().selectedIds);
     if (built.model === null) {
       set({ subcircuitError: describeBuildFailure(built) });
       return false;
@@ -2181,6 +2209,17 @@ function createAppStore() {
     get().undo();
       set((s) => ({ history: clearFuture(s.history) }));
   },
+
+  revertBatch: (snapshot, history) =>
+    set((s) => ({
+      ...snapshot,
+      // App preferences stay live through a batch abort for the same reason an
+      // undo keeps them: they are not rewound by the stacks.
+      settings: withLiveAppPrefs(snapshot.settings, s.settings),
+      // The one teardown list, so a failed batch cannot strand a dialog or a
+      // gesture on elements it just removed.
+      ...applyRevert(s, { scopes: snapshot.scopes }, history),
+    })),
 
   clearPending: () =>
     set((s) =>
@@ -3665,10 +3704,10 @@ function createAppStore() {
 
   selectAll: () => set((s) => ({ selectedIds: s.elements.map((e) => e.id) })),
 
-  copySelection: () => {
+  copyElements: (ids) => {
     const s = get();
-    if (s.selectedIds.length === 0) return;
-    const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
+    if (ids.length === 0) return;
+    const selected = s.elements.filter((e) => ids.includes(e.id));
     // A selected 410 needs the `.` line that defines its model in the
     // clipboard, or a paste loses the model. Only the lines backing the
     // selection travel: copying a resistor must not drag the file's whole
@@ -3682,25 +3721,30 @@ function createAppStore() {
     set({ clipboard: text });
   },
 
-  cutSelection: () => {
-    // Put the selection on the clipboard first, then let the delete remove it
+  copySelection: () => get().copyElements(get().selectedIds),
+
+  cutElements: (ids) => {
+    if (ids.length === 0) return;
+    // Put the elements on the clipboard first, then let the delete remove them
     // inside the same transaction, so cut is one labelled undo step.
     get().transact('Cut', () => {
-      get().copySelection();
-      get().deleteSelected();
+      get().copyElements(ids);
+      get().deleteElements(ids);
     });
   },
 
-  pasteFromClipboard: () => {
+  cutSelection: () => get().cutElements(get().selectedIds),
+
+  pasteFromClipboard: (at) => {
     const text = get().clipboard;
     if (text === null) return;
-      insertElementsFromText(text, 'Paste');
+      insertElementsFromText(text, 'Paste', at);
   },
 
-  duplicateSelection: () => {
+  duplicateElements: (ids) => {
     const s = get();
-    if (s.selectedIds.length === 0) return;
-    const selected = s.elements.filter((e) => s.selectedIds.includes(e.id));
+    if (ids.length === 0) return;
+    const selected = s.elements.filter((e) => ids.includes(e.id));
     // The same serialise-then-insert path as paste, but without touching the
     // clipboard, so Ctrl+D cannot clobber what the user copied. A duplicated
     // element's `.` line is already in the document (the part came from here),
@@ -3708,6 +3752,8 @@ function createAppStore() {
     // the model from the library for the fresh id.
       insertElementsFromText(serializeCircuit(selected, s.settings), 'Duplicate');
   },
+
+  duplicateSelection: () => get().duplicateElements(get().selectedIds),
   }));
 }
 
@@ -3798,10 +3844,15 @@ function elementsBounds(elements: readonly CircuitElement[]): {
 function pasteOffset(
   existing: readonly CircuitElement[],
   incoming: readonly CircuitElement[],
+  at?: Point,
 ): { dx: number; dy: number } {
   const oldbb = elementsBounds(existing);
   const newbb = elementsBounds(incoming);
-  if (!oldbb || !newbb) return { dx: 0, dy: 0 };
+  if (!newbb) return { dx: 0, dy: 0 };
+  // An explicit landing point overrides the fan-out entirely: the command path
+  // says where the copy goes, and snapping keeps it on the grid.
+  if (at) return { dx: snap(at.x - newbb.x), dy: snap(at.y - newbb.y) };
+  if (!oldbb) return { dx: 0, dy: 0 };
   const s = useStore.getState();
   const spacew = s.viewSize.w / s.view.scale - oldbb.w - newbb.w;
   const spaceh = s.viewSize.h / s.view.scale - oldbb.h - newbb.h;
@@ -3828,7 +3879,7 @@ function pasteOffset(
  *  clipboard can hold bytes another app wrote or a user edited by hand, a
  *  paste replaces nothing, and the memos that gate Paste grey it out first,
  *  so there is no banner to raise here either. */
-function insertElementsFromText(text: string, label: string): void {
+function insertElementsFromText(text: string, label: string, at?: Point): void {
   let parsed: ParsedCircuit;
   try {
     parsed = parseCircuit(text);
@@ -3851,7 +3902,7 @@ function insertElementsFromText(text: string, label: string): void {
   // One shared offset for the whole copy, derived from the bounding boxes the
   // way upstream's doPaste does, so the duplicate never sits on top of the
   // original and a repeat paste lands beyond the last one.
-  const { dx, dy } = pasteOffset(state.elements, parsed.elements);
+  const { dx, dy } = pasteOffset(state.elements, parsed.elements, at);
   const added = parsed.elements
     .map((e) => ({
       ...e,
@@ -3951,34 +4002,28 @@ function modelLinesFor(s: AppState, elements: CircuitElement[]): string[] {
   return lines;
 }
 
-/** The current selection in document order, the list the geometry commands
- *  and their shared-pivot computation both walk. */
-function selectedElements(): CircuitElement[] {
-  const s = useStore.getState();
-  return s.elements.filter((e) => s.selectedIds.includes(e.id));
-}
-
 /**
- * One-undo-step geometry command over the selection. `guard` judges the
- * whole selection, and is the same predicate the menu uses to grey the item
- * out, so the menu's disabled state and the keyboard path cannot diverge: a
- * refused selection is a no-op here. Returns whether it applied, so a
- * caller banking gesture state (the placement's quarter turns) does not count
- * a refused command.
+ * One-undo-step geometry command over an explicit id list. `guard` judges the
+ * whole set, and is the same predicate the menu uses to grey the item out, so
+ * the menu's disabled state and the keyboard path cannot diverge: a refused
+ * set is a no-op here. Returns whether it applied, so a caller banking gesture
+ * state (the placement's quarter turns) does not count a refused command.
  */
-function transformSelected(
+function transformElements(
+  ids: number[],
   label: string,
   guard: (selected: CircuitElement[]) => boolean,
   apply: (e: CircuitElement) => CircuitElement,
 ): boolean {
-  const selected = selectedElements();
+  const selected = useStore.getState().elements.filter((e) => ids.includes(e.id));
   if (selected.length === 0 || !guard(selected)) return false;
+  const targets = new Set(ids);
   // Always a transaction: a settled command opens its own step, while a turn
   // landing mid-drag joins the gesture's open transaction, so the drag stays
   // one entry without a separate skip flag.
   useStore.getState().transact(label, () =>
   useStore.setState((st) => ({
-    elements: st.elements.map((e) => (st.selectedIds.includes(e.id) ? apply(e) : e)),
+    elements: st.elements.map((e) => (targets.has(e.id) ? apply(e) : e)),
     ...bumpRevision(st),
     })),
   );
@@ -3990,20 +4035,6 @@ const everyOf =
   (guard: (e: CircuitElement) => boolean) =>
   (selected: CircuitElement[]): boolean =>
     selected.every(guard);
-
-/** The settled and in-drag group turn: one pivot for the whole selection, so a
- *  multi-select comes out rigid and four turns close the cycle (see
- *  turnPivot). Under a move drag the turn joins the drag's own transaction. */
-function rotateGroup(label: string): void {
-  const selected = selectedElements();
-  const pivot = turnPivot(selected);
-  if (pivot === undefined) return;
-  transformSelected(
-    label,
-    canRotateSelection,
-    selected.length === 1 ? (e) => rotateElement(e, pivot) : (e) => rotateInGroup(e, pivot),
-  );
-}
 
 export type { AppState, ViewTransform };
 export {
