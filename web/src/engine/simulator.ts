@@ -397,6 +397,13 @@ export class SimEngine {
     return this.sim.scopeData(index);
   }
 
+  /** Total columns ever written to one scope trace, capped at the ring
+   *  capacity. The read side uses it to know how much of `scopeData` holds
+   *  real samples before the ring wrapped. */
+  scopeColumnsWritten(index: number): number {
+    return this.sim.scopeColumnsWritten(index);
+  }
+
   /** Engine-side index of a scope trace, or undefined if it was not
    *  registered. Keyed on the store plot id, which is what ScopePanel draws. */
   scopeIndexOf(plotId: number): number | undefined {

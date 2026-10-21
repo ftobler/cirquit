@@ -7,6 +7,7 @@ import type {
   ScopeTrigger,
   ScopeValue,
 } from '../engine/scopeModel';
+import type { SimHost } from '../engine/simHost';
 import type { CompositeModel, NetlistLine, ScopeConfig } from '../io/netlist';
 import type { FloatRect } from '../ui/floatingScopes';
 import type { ScopeLayoutMode } from '../ui/scopeLayoutMode';
@@ -336,6 +337,11 @@ export interface AppState {
    *  the engine is up. `saveNetlist` falls back to the non-live document
    *  without it. A provider keeps the engine out of the store's data flow. */
   liveStateProvider: (() => LiveState) | null;
+  /** The read-side engine surface the queries and `sim.step` use, or null
+   *  until a host is attached. Like `liveStateProvider` it keeps the engine
+   *  out of the store's data flow: the browser host reads the frame loop's
+   *  per-frame cache, step 4's headless runner owns its own build and step. */
+  simHost: SimHost | null;
   /** Bumped by `loadNetlist` and `newCircuit` so the frame loop can refuse to
    *  inject the previous document's live charges into the next one. Undo and
    *  redo do not bump it. */
@@ -802,6 +808,8 @@ export interface AppState {
   exitSubcircuit(): void;
   /** Points the store at the engine's token reader, or clears it. */
   setLiveStateProvider(provider: (() => LiveState) | null): void;
+  /** Points the store at the read-side engine host, or clears it. */
+  setSimHost(host: SimHost | null): void;
   /** Marks the current document clean: `lastSaved` is set to the non-live
    *  `toNetlist`, the same baseline a load or New records, so the F5 and
    *  autosave checks compare like against like. The live overlay a save wrote

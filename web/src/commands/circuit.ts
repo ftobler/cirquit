@@ -327,6 +327,35 @@ export const circuitCommands: CommandDef[] = [
     },
   },
   {
+    id: 'sim.step',
+    label: 'Step Simulation',
+    description:
+      'Advances the simulation by `seconds` of simulated time, up to `maxSteps` ' +
+      'solver steps. The browser refuses while the run is live (pause first); a ' +
+      'headless host steps synchronously. Returns the time reached and the steps taken.',
+    args: {
+      type: 'object',
+      properties: {
+        seconds: { type: 'number', minimum: 0 },
+        maxSteps: { type: 'integer', minimum: 1 },
+      },
+      additionalProperties: false,
+    },
+    history: 'none',
+    edits: false,
+    enabled: (s) => {
+      if (s.simHost === null) return 'No simulation engine is attached.';
+      return s.running ? 'pause the simulation first' : true;
+    },
+    run: (ctx, raw) => {
+      const a = raw as { seconds?: number; maxSteps?: number };
+      const s = ctx.store.getState();
+      const host = s.simHost;
+      if (host === null) throw new CommandFailure('failed', 'No simulation engine is attached.');
+      return host.step(a.seconds ?? s.settings.timeStep, a.maxSteps ?? 100_000);
+    },
+  },
+  {
     id: 'settings.update',
     label: 'Update Settings',
     description:
