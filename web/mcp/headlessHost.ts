@@ -140,9 +140,9 @@ export function createHeadlessSimHost(engine: SimEngine, store: CommandStore): S
       // A param the engine cannot patch live (an unknown id or name) would
       // otherwise read as a dead edit, so rebuild the whole circuit. The
       // rebuild keeps the live charges under the same document gate as the
-      // revision branch. Like the frame loop, this path does not pin a failed
-      // rebuild: the gate only guards the revision branch, and the queue is
-      // consumed below, so there is nothing left to retry here.
+      // revision branch. Deliberately unlike that branch, a failed forced
+      // rebuild is not pinned: `failedRevision` only gates the revision check,
+      // and the queue is consumed below, so a pin here would guard nothing.
       rebuild(s, shouldInjectLiveState(builtDocument, s.document));
     }
     // The queues are coalesced Maps, not a log: every entry was either applied

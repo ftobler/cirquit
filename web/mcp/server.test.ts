@@ -114,6 +114,47 @@ async function buildSeries(client: Client): Promise<{ resistorId: number; switch
   return { resistorId: resistor.result as number, switchId: toggle.result as number };
 }
 
+/** The diode loop the forced-rebuild test measures: a 10 V source, a 1 kOhm
+ *  resistor and a forward-biased diode back to ground. The source's post 0 is
+ *  its negative terminal, so the diode's anode sits on the ground rail and its
+ *  cathode on the resistor. */
+async function buildDiodeLoop(
+  client: Client,
+): Promise<{ resistorId: number; diodeId: number }> {
+  await callOk(client, 'element_add', {
+    kind: 'voltage',
+    x1: 0,
+    y1: 0,
+    x2: 0,
+    y2: 64,
+    params: { maxVoltage: 10 },
+  });
+  const resistor = await callOk(client, 'element_add', {
+    kind: 'resistor',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    params: { resistance: 1000 },
+  });
+  const diode = await callOk(client, 'element_add', {
+    kind: 'diode',
+    x1: 128,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+  });
+  await callOk(client, 'wire_add', {
+    points: [
+      [128, 0],
+      [128, 64],
+      [0, 64],
+    ],
+  });
+  await callOk(client, 'element_add', { kind: 'ground', x1: 0, y1: 64, x2: 0, y2: 128 });
+  return { resistorId: resistor.result as number, diodeId: diode.result as number };
+}
+
 beforeEach(() => useStore.setState(fresh()));
 
 describe('tools/list round trip', () => {
@@ -260,6 +301,56 @@ describe('value-only edits reach the engine', () => {
     // Open: the resistor's far end floats and only the engine's gmin leakage
     // flows, far below the 10 mA the closed loop carried.
     expect(await postCurrent(client, resistorId)).toBeLessThan(1e-6);
+  });
+
+  it('reports the previous solve on a read before a parameter edit is applied', async () => {
+    const { client } = await connect();
+    const { resistorId } = await buildSeries(client);
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    const before = await readingsOf(client, resistorId);
+    expect(Math.abs(Math.abs(before.currents[0]) - 0.01)).toBeLessThan(1e-6);
+
+    // No step between the edit and the read: the read must not patch the
+    // engine, so it reports the coherent 1 kOhm solve, not the edited value.
+    await callOk(client, 'element_update', { id: resistorId, params: { resistance: 2000 } });
+    const after = await readingsOf(client, resistorId);
+    expect(after).toEqual(before);
+    const drop = Math.abs(after.voltages[0] - after.voltages[1]);
+    expect(Math.abs(drop - 10)).toBeLessThan(1e-6);
+    expect(Math.abs(drop - Math.abs(after.currents[0]) * 1000)).toBeLessThan(1e-6);
+
+    // The step applies the queue, so the same part now carries 5 mA.
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    const stepped = await readingsOf(client, resistorId);
+    expect(Math.abs(Math.abs(stepped.currents[0]) - 0.005)).toBeLessThan(1e-6);
+  });
+
+  it('applies a refused parameter through the forced rebuild without rewinding the clock', async () => {
+    const { client } = await connect();
+    const { resistorId, diodeId } = await buildDiodeLoop(client);
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    const before = (await callOk(client, 'sim_state', {})).time as { value: number };
+    const first = await postCurrent(client, resistorId);
+    // A 10 V source into 1 kOhm plus the diode's junction drop: about 9 mA.
+    expect(first).toBeGreaterThan(8e-3);
+    expect(first).toBeLessThan(1.1e-2);
+
+    // `seriesResistance` changes the diode's internal node count, so the
+    // engine refuses the live patch and returns false. The host must rebuild
+    // the whole circuit for the edit to reach the solve at all.
+    await callOk(client, 'element_update', { id: diodeId, params: { seriesResistance: 1000 } });
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+
+    // The series resistor is now in the loop with the 1 kOhm part, so the
+    // current roughly halves.
+    const second = await postCurrent(client, resistorId);
+    expect(second).toBeLessThan(first * 0.65);
+    expect(second).toBeGreaterThan(first * 0.35);
+    // The forced rebuild continues the same document, so it keeps the clock:
+    // a rewind would leave the time at one step, not two.
+    const after = (await callOk(client, 'sim_state', {})).time as { value: number };
+    expect(after.value).toBeGreaterThan(before.value);
+    expect(after.value).toBeCloseTo(before.value + 0.001, 6);
   });
 
   it('keeps the previous solve coherent on a read before the throw is applied', async () => {

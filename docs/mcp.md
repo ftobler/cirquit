@@ -73,10 +73,12 @@ throw.
 
 Headless reads build the current document before reading: a revision change is
 rebuilt with the same live-state gate and refused-build pinning the browser
-frame loop uses, so `element_readings` or `sim_state` right after a structural
-edit sees the new circuit instead of an empty engine. Every engine read
-(`nodeVoltages`, `elementReadings`, `infoLines`, `scopeSamples`, `time`) takes
-that document-only path; `running()` reads the store flag and syncs nothing.
+frame loop uses, so `element_readings` after a structural edit finds the new
+element instead of no element at all. A rebuild alone does not solve the
+transient, so those readings are the rebuilt but unsolved values until a
+`sim.step` or run control runs the solver. Every engine read (`nodeVoltages`,
+`elementReadings`, `infoLines`, `scopeSamples`, `time`) takes that
+document-only path; `running()` reads the store flag and syncs nothing.
 
 Value-only edits (`element.update`, `slider.set`, `element.setState`,
 `element.toggleSwitch`) bump only `paramRevision`, so they reach the engine on
