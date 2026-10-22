@@ -176,12 +176,37 @@ point gmin cancels: converged well-posed results are gmin-invariant. Do not
 write tests asserting droop at tau = C/gmin; real hold drains linearly at
 Is/C.
 
+## MOSFET legacy body terminal
+
+- **Upstream parity:** a MOSFET has four posts only when the legacy flags word
+  sets bit 32 (body diode) and bit 64 (body terminal) and clears both bit 4
+  (digital) and bit 16 (hide bulk) (MosfetElm.java:106-142). Flags 96 and 97 in
+  the bundled corpus (`cmostransgate.txt`, `mux.txt`, `samplenhold.txt`,
+  `switchfilter.txt`) select it; a fresh part and every other word stay three
+  posts.
+- The body post is the midpoint of the source and drain posts, upstream's
+  `body[0]`, which is the element's `point2` (MosfetElm.java:391-413). The
+  frontend derives it in `mosfetPosts` and the engine from the same rule;
+  `postCountOf` in `web/src/model/registry/elements/mosfet.ts` and
+  `Mosfet::post_count` in `engine/core/src/elements/mosfet.rs` must agree, or
+  `Circuit::set_circuit` rejects the post-count mismatch.
+- **Upstream parity:** the four-post form simulates two body diodes from the
+  body post to posts 1 and 2, N-channel body to each channel terminal and
+  P-channel each channel terminal to the body (MosfetElm.java:496-515). Post 3
+  reports `-(diodeCurrent1 + diodeCurrent2)`, post 1 adds the first, post 2
+  the second, and the reported power adds both diode terms to the channel term
+  (MosfetElm.java:560-562, :805-825). The three-post form keeps its single
+  source-to-drain diode.
+- The legacy bits stay in the saved flags word, so a save and reload keeps the
+  fourth post. The model-table structural flags (`sb`, `bd`, `bt`, `sbd`,
+  `dsy`) remain unmodelled; only the file-format bits above are honoured.
+
 ## MOSFET and JFET convergence
 
 `convergence_ladder(beta, subiter, last, now)` is shared (JfetElm extends
 MosfetElm): beta > 1 multiplies the difference by 100 before every branch, a
 relative pass after subiter 10, loosening after 100. MOSFET
-`restore_committed` re-anchors its body diode like the JFET.
+`restore_committed` re-anchors its body diodes like the JFET.
 
 ## Tunnel diode
 
@@ -241,9 +266,10 @@ the Chip base (no outputs).
   then the built-in table by exact case-sensitive name, else `undefined`
   (defaults kept, name round-trips). Diode family writes the four params plus
   derived `forwardVoltage`; transistor writes `saturationCurrent` and
-  `betaReverse`; MOSFET/JFET only `threshold` and `beta` (structural flags
-  like showBulk have no engine params). `default-jfet` equals the engine's
-  JFET defaults.
+  `betaReverse`; MOSFET/JFET only `threshold` and `beta`. The MOSFET model
+  table's structural flags stay unmodelled: the legacy body-terminal bits are
+  read from the element flags, never from the model row. `default-jfet` equals
+  the engine's JFET defaults.
 - Pickers (`FieldDef` `type: 'modelChoice'`) list `selectableModels(family)`
   sorted like upstream's `getModelList`, plus "(default)"; a loaded unknown
   name shows as a disabled option so it is never lost. `setModelName` bumps
