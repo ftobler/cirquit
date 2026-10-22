@@ -1,31 +1,43 @@
 import {
   arrowHead,
+  canvasFont,
   currentDots,
   dsign,
   elementLength,
   endpoints,
   interp,
   interp2,
+  isHighlighted,
   lead,
+  limbColor,
   line,
   voltageColor,
 } from '../../../render/draw';
-import { MOSFET_FLIP, MOSFET_PNP } from '../flags';
+import { MOSFET_FLIP, MOSFET_PNP, hasMosfetBodyTerminal } from '../flags';
 import { postsBox } from '../shared';
 import type { CircuitElement, DrawContext, ElementDef, Point } from '../../types';
 
-/** Terminal posts, mirroring MosfetElm.setPoints (MosfetElm.java:391-402):
+/** Terminal posts, mirroring MosfetElm.setPoints (MosfetElm.java:391-413):
  *  the gate at `point1`, the source and drain at `point2` offset `-hs2` and
  *  `+hs2` respectively, where `hs2 = 16*dsign` flipped by FLAG_FLIP (bit 8).
  *  The source/drain labels swap with the channel type but the coordinates do
  *  not, exactly as upstream's `src`/`drn` arrays stay put while only the
- *  arrow and labels change. */
+ *  arrow and labels change. A legacy four-post part appends the body at the
+ *  midpoint of the source and drain, which is `point2` exactly. */
 function mosfetPosts(e: CircuitElement): Point[] {
   const [p1, p2] = endpoints(e);
   let hs2 = 16 * dsign(p1, p2);
   if ((e.flags & MOSFET_FLIP) !== 0) hs2 = -hs2;
   const [src, drn] = interp2(p1, p2, 1, -hs2);
-  return [p1, src, drn];
+  const posts = [p1, src, drn];
+  if (hasMosfetBodyTerminal(e)) posts.push(interp(src, drn, 0.5));
+  return posts;
+}
+
+/** The body terminal is a fourth post only for the legacy flag word; every
+ *  other part keeps the three-post default (MosfetElm.java:361-372). */
+function mosfetPostCount(e: CircuitElement): number {
+  return hasMosfetBodyTerminal(e) ? 4 : 3;
 }
 
 /**
@@ -38,6 +50,7 @@ function drawMosfet(g: DrawContext, e: CircuitElement): void {
   const [p1, p2] = endpoints(e);
   const posts = mosfetPosts(e);
   const pnp = (e.params.pnp ?? 1) === -1;
+  const bodyTerminal = hasMosfetBodyTerminal(e);
   const dn = elementLength(e);
   let hs2 = 16 * dsign(p1, p2);
   if ((e.flags & MOSFET_FLIP) !== 0) hs2 = -hs2;
@@ -67,18 +80,33 @@ function drawMosfet(g: DrawContext, e: CircuitElement): void {
   line(g, src1, src2, voltageColor(g, g.voltages[1]));
   line(g, drn1, drn2, voltageColor(g, g.voltages[2]));
 
-  // The bulk connection: the body ties to the source for an N-channel and the
-  // drain for a P-channel, then the body line runs back toward the gate
-  // (MosfetElm.java:409-413, :257-262).
+  // The bulk connection: a three-post body ties to the source for an
+  // N-channel and the drain for a P-channel, then the body line runs back
+  // toward the gate. A four-post body is its own terminal at `body0`, so the
+  // tie is absent and the bulk takes that post's voltage
+  // (MosfetElm.java:257-262, :409-413).
   const body0 = interp(posts[1], posts[2], 0.5);
   const body1 = interp(src1, drn1, 0.5);
-  const bodyColor = voltageColor(g, g.voltages[pnp ? 2 : 1]);
-  line(g, pnp ? posts[2] : posts[1], body0, bodyColor);
+  const bodyColor = voltageColor(g, g.voltages[bodyTerminal ? 3 : pnp ? 2 : 1]);
+  if (!bodyTerminal) line(g, pnp ? posts[2] : posts[1], body0, bodyColor);
   line(g, body0, body1, bodyColor);
 
   // The arrow on the body distinguishes the channel type: N points from the
   // source side toward the drain side, P the reverse (MosfetElm.java:416-426).
   arrowHead(g, pnp ? body1 : body0, pnp ? body0 : body1, 12, bodyColor);
+
+  // Upstream labels the body pin B while the part is highlighted, with its
+  // position nudged off the post by the axis direction (MosfetElm.java:
+  // 350-357).
+  if (bodyTerminal && isHighlighted(g)) {
+    const dsx = Math.sign(p2.x - p1.x);
+    const dsyn = p2.y - p1.y === 0 ? 0 : 1;
+    g.ctx.fillStyle = limbColor(g, g.theme.text);
+    g.ctx.font = canvasFont(10);
+    g.ctx.textAlign = 'left';
+    g.ctx.textBaseline = 'alphabetic';
+    g.ctx.fillText('B', body0.x - 3 + 9 * (dsx - dsyn * (pnp ? -1 : 1)), body0.y + 4);
+  }
 
   // Gate lead and bar (MosfetElm.java:406-408).
   const gate0 = interp(p1, p2, 1 - 28 / dn, hs2 / 2);
@@ -106,6 +134,7 @@ export const MOSFET_DEF: ElementDef = {
   category: 'Semiconductors',
   dumpCode: 'f',
   postCount: 3,
+  postCountOf: mosfetPostCount,
   posts: mosfetPosts,
   canMirror: true,
   noDiagonal: true,  // MosfetElm.java:92

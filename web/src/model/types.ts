@@ -214,12 +214,13 @@ export interface ElementDef {
    *  key. Absent means the element is not reachable from the keyboard. */
   shortcut?: string;
   postCount: number;
-  /** Per-element terminal count overriding the static `postCount`. Only the
-   *  custom composite defines it: its post count comes from the resolved model,
-   *  which is unknown when the def is written, so the rotate, drag-post and
-   *  collapsed-axis gates read this to treat a resolved multi-pin part as the
-   *  part it is rather than as its fallback stub. Absent (every other def)
-   *  means `postCount` is exact. */
+  /** Per-element terminal count overriding the static `postCount`. The custom
+   *  composite defines it because its post count comes from the resolved
+   *  model, which is unknown when the def is written; the MOSFET defines it
+   *  because a legacy flag word adds a fourth body post. The rotate,
+   *  drag-post and collapsed-axis gates read this to treat a resolved
+   *  multi-pin part as the part it is rather than as its fallback stub.
+   *  Absent (every other def) means `postCount` is exact. */
   postCountOf?(e: CircuitElement): number;
   /** How many stored endpoints (`x1,y1`, `x2,y2`) the user can drag
    *  independently. Differs from `postCount` only for parts whose free end is
