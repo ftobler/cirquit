@@ -1,4 +1,10 @@
-//! Quadratic MOSFET model with a body diode.
+//! Quadratic MOSFET model with one or two body diodes.
+//!
+//! Upstream's default part is a three-post device whose body is tied to one
+//! channel terminal, so a single diode across the source and drain models the
+//! only junction that can conduct. Legacy file flags can instead ask for a
+//! fourth body post, and then both junctions exist: one from the body to each
+//! channel terminal (MosfetElm.java:32-33, :106-142).
 
 use std::collections::HashMap;
 
@@ -17,9 +23,28 @@ const MIN_CHANNEL_G: f64 = 1e-8;
 /// anti-divergence role the BJT's junction limiting plays (MosfetElm.java:573-580).
 const MAX_STEP_V: f64 = 0.5;
 
+/// Legacy load-time flag bits, stripped from the element flags once decoded
+/// upstream (MosfetElm.java:32-33, :106-127). A word with both 32 and 64 set,
+/// and neither bulk-hiding bit, asks for a fourth body post.
+const FLAG_DIGITAL_LEGACY: i64 = 4;
+const FLAG_HIDE_BULK_LEGACY: i64 = 16;
+const FLAG_BODY_DIODE_LEGACY: i64 = 32;
+const FLAG_BODY_TERMINAL_LEGACY: i64 = 64;
+
+/// Whether a legacy flag word selects the four-post form: the bulk must be
+/// shown, the body diode simulated and the body terminal requested
+/// (MosfetElm.java:118-122).
+fn mosfet_has_body_terminal(flags: i64) -> bool {
+    let show_bulk = flags & (FLAG_DIGITAL_LEGACY | FLAG_HIDE_BULK_LEGACY) == 0;
+    let body_diode = flags & FLAG_BODY_DIODE_LEGACY != 0;
+    let body_terminal = flags & FLAG_BODY_TERMINAL_LEGACY != 0;
+    show_bulk && body_diode && body_terminal
+}
+
 /// Quadratic MOSFET, upstream's default model: `vt = 1.5`, `beta = 0.02`,
-/// `lambda = 0`, no gate caps, body diode simulated and tied to one of the
-/// channel terminals.
+/// `lambda = 0`, no gate caps, body diode simulated. A plain part has three
+/// posts and its body is tied to one channel terminal; a legacy flag word can
+/// ask for a fourth body post, which is then a normal conducting terminal.
 ///
 /// Posts are gate, source and drain for an N-channel; the P-channel swaps the
 /// source/drain *labels*, but the engine never needs to know which physical
@@ -35,19 +60,34 @@ pub struct Mosfet {
     vt: f64,
     /// Transconductance parameter `beta`, in A/V^2.
     beta: f64,
-    /// The body diode, anode at post 1 and cathode at post 2 for both channel
-    /// types, matching upstream's `diodeB1.stamp(nodes[1], nodes[2])`
-    /// (MosfetElm.java:504-515). Post 1 is the source post for an N-channel
-    /// and the drain post for a P-channel, so the diode blocks while the
-    /// channel conducts in the normal direction and conducts when that
-    /// terminal is raised above the other, which is exactly the parasitic
-    /// body diode. One diode suffices because the body is tied to one of the
-    /// channel terminals, so only one junction can ever be forward biased;
-    /// the other junction is shorted by the tie.
+    /// True when the legacy flag word asks for the fourth body post. Decides
+    /// both the post count and which body-diode wiring is used.
+    has_body_terminal: bool,
+    /// The first body diode. In the three-post form its anode is post 1 and
+    /// its cathode post 2 for both channel types, matching upstream's
+    /// `diodeB1.stamp(nodes[1], nodes[2])` (MosfetElm.java:504-515). Post 1
+    /// is the source post for an N-channel and the drain post for a
+    /// P-channel, so the diode blocks while the channel conducts in the
+    /// normal direction and conducts when that terminal is raised above the
+    /// other, which is exactly the parasitic body diode. One diode suffices
+    /// there because the body is tied to one channel terminal, so only one
+    /// junction can ever be forward biased; the other is shorted by the tie.
+    /// In the four-post form this diode runs between the body post and post
+    /// 1 (MosfetElm.java:507-515).
     diode: Diode,
-    /// Current through the body diode, positive anode to cathode, for the
-    /// per-node current report.
+    /// The second body diode, used only in the four-post form, between the
+    /// body post and post 2. Kept allocated in the three-post form so both
+    /// paths share the reset and restore plumbing.
+    diode2: Diode,
+    /// Current through the three-post body diode, positive anode to cathode,
+    /// for the per-node current report.
     diode_current: f64,
+    /// Four-post body-diode currents in upstream's sign convention:
+    /// `diodeCurrent1` and `diodeCurrent2` are positive from the body post
+    /// toward posts 1 and 2, so the polarity fold is already applied
+    /// (MosfetElm.java:592-596). Post 3 reports `-(d1 + d2)`.
+    body_diode_current_1: f64,
+    body_diode_current_2: f64,
     /// Limited source/drain voltages from the previous iteration, feeding the
     /// per-iteration clamp and the convergence report.
     last_v0: f64,
@@ -62,18 +102,22 @@ impl Mosfet {
     pub fn new(spec: &ElementSpec) -> Self {
         // The file sign is the type: +1 is N-channel, -1 is P-channel, and any
         // non-negative token (including the absent one) reads as N
-        // (MosfetElm.java:91). The body diode is upstream's default model too.
-        let diode = Diode::new(&ElementSpec {
-            id: 0,
-            kind: "diode".into(),
-            posts: Vec::new(),
-            params: HashMap::new(),
-            label: None,
-            model: None,
-            flags: 0,
-        });
+        // (MosfetElm.java:91). The body diodes are upstream's default model
+        // too (MosfetElm.java:98-104).
+        let default_diode = || {
+            Diode::new(&ElementSpec {
+                id: 0,
+                kind: "diode".into(),
+                posts: Vec::new(),
+                params: HashMap::new(),
+                label: None,
+                model: None,
+                flags: 0,
+            })
+        };
+        let has_body_terminal = mosfet_has_body_terminal(spec.flags);
         Self {
-            base: Base::with_posts(3),
+            base: Base::with_posts(if has_body_terminal { 4 } else { 3 }),
             polarity: if spec.param("pnp", 1.0) < 0.0 {
                 -1.0
             } else {
@@ -81,8 +125,12 @@ impl Mosfet {
             },
             vt: spec.param("threshold", 1.5),
             beta: spec.param("beta", 0.02).max(1e-6),
-            diode,
+            has_body_terminal,
+            diode: default_diode(),
+            diode2: default_diode(),
             diode_current: 0.0,
+            body_diode_current_1: 0.0,
+            body_diode_current_2: 0.0,
             last_v0: 0.0,
             last_v1: 0.0,
             last_v2: 0.0,
@@ -132,17 +180,21 @@ impl Mosfet {
         (source == 2 && p == 1.0) || (source == 1 && p == -1.0)
     }
 
-    /// Points the embedded body `Diode` at its posts and the current terminal
-    /// voltages, so its own `do_step`, `calculate_current` and
-    /// `restore_iteration` read the right nodes. The diode's `Base` is
+    /// Points the embedded body `Diode`s at their posts and the current
+    /// terminal voltages, so their own `do_step`, `calculate_current` and
+    /// `restore_iteration` read the right nodes. Each diode's `Base` is
     /// invisible to the circuit, so it must be re-pointed on every call,
     /// exactly like the JFET's gate diode. No joint mosfet/jfet helper fits:
     /// the JFET picks its orientation through polarity logic
-    /// (jfet.rs `gate_diode_posts`), while this body diode is fixed at posts
-    /// (1, 2) for both channel types.
+    /// (jfet.rs `gate_diode_posts`), while these body diodes are fixed by the
+    /// channel type.
     fn wire_body_diode(&mut self) {
-        // Anode at post 1, cathode at post 2, identical for both channel
-        // types (MosfetElm.java:504-515).
+        if self.has_body_terminal {
+            self.wire_four_post_body_diodes();
+            return;
+        }
+        // Three posts: anode at post 1, cathode at post 2, identical for both
+        // channel types (MosfetElm.java:504-515).
         let d = self.diode.base_mut();
         d.nodes[0] = self.base.nodes[1];
         d.nodes[1] = self.base.nodes[2];
@@ -150,11 +202,46 @@ impl Mosfet {
         d.volts[1] = self.base.volts[2];
     }
 
-    /// Stamps the body diode between its anode and cathode posts, using the
-    /// mosfet's own node assignments and the current node voltages.
+    /// Four posts: the body post (3) is the common side of both junctions.
+    /// An N-channel's body is the anode of each diode and a P-channel's is
+    /// the cathode (MosfetElm.java:507-515).
+    fn wire_four_post_body_diodes(&mut self) {
+        let (n1, n2, nb) = (self.base.nodes[1], self.base.nodes[2], self.base.nodes[3]);
+        let (v1, v2, vb) = (self.base.volts[1], self.base.volts[2], self.base.volts[3]);
+        if self.polarity > 0.0 {
+            let d1 = self.diode.base_mut();
+            d1.nodes[0] = nb;
+            d1.nodes[1] = n1;
+            d1.volts[0] = vb;
+            d1.volts[1] = v1;
+            let d2 = self.diode2.base_mut();
+            d2.nodes[0] = nb;
+            d2.nodes[1] = n2;
+            d2.volts[0] = vb;
+            d2.volts[1] = v2;
+        } else {
+            let d1 = self.diode.base_mut();
+            d1.nodes[0] = n1;
+            d1.nodes[1] = nb;
+            d1.volts[0] = v1;
+            d1.volts[1] = vb;
+            let d2 = self.diode2.base_mut();
+            d2.nodes[0] = n2;
+            d2.nodes[1] = nb;
+            d2.volts[0] = v2;
+            d2.volts[1] = vb;
+        }
+    }
+
+    /// Stamps every body diode, using the mosfet's own node assignments and
+    /// the current node voltages. The three-post form stamps one, the
+    /// four-post form both.
     fn stamp_body_diode(&mut self, ctx: &SimCtx, s: &mut Stamper) {
         self.wire_body_diode();
         self.diode.do_step(ctx, s);
+        if self.has_body_terminal {
+            self.diode2.do_step(ctx, s);
+        }
     }
 }
 
@@ -169,7 +256,11 @@ impl Element for Mosfet {
         &mut self.base
     }
     fn post_count(&self) -> usize {
-        3
+        if self.has_body_terminal {
+            4
+        } else {
+            3
+        }
     }
     fn nonlinear(&self) -> bool {
         true
@@ -252,15 +343,37 @@ impl Element for Mosfet {
         };
         self.base.current = self.ids;
 
-        // The body diode's own current at the solved voltages, for the
+        // The body diodes' own currents at the solved voltages, for the
         // per-node report.
         self.wire_body_diode();
         self.diode.calculate_current(ctx);
-        self.diode_current = self.diode.base().current;
+        if self.has_body_terminal {
+            self.diode2.calculate_current(ctx);
+            // Upstream folds the polarity into the reported diode currents
+            // (MosfetElm.java:592-596), so both read positive when current
+            // leaves the body post toward that channel terminal.
+            self.body_diode_current_1 = self.polarity * self.diode.base().current;
+            self.body_diode_current_2 = self.polarity * self.diode2.base().current;
+        } else {
+            self.diode_current = self.diode.base().current;
+        }
     }
 
     fn current_into_node(&self, post: usize) -> f64 {
-        // `ids` flows from drain to source; the body diode always conducts
+        if self.has_body_terminal {
+            // The body post carries both diode currents and the channel
+            // current never touches it (MosfetElm.java:805-825).
+            let d1 = self.body_diode_current_1;
+            let d2 = self.body_diode_current_2;
+            return match post {
+                0 => 0.0,
+                1 => self.ids + d1,
+                2 => -self.ids + d2,
+                3 => -d1 - d2,
+                _ => 0.0,
+            };
+        }
+        // `ids` flows from drain to source; the single body diode conducts
         // post 1 to post 2 (MosfetElm.java:800-820), so node 1 receives
         // `-diode_current` and node 2 `+diode_current`. The gate carries
         // nothing without gate caps.
@@ -271,6 +384,21 @@ impl Element for Mosfet {
             2 => -self.ids - d1,
             _ => 0.0,
         }
+    }
+
+    /// Upstream's `getPower` (MosfetElm.java:560-562): the channel term plus
+    /// each body diode's terminal voltage times its current. The three-post
+    /// form keeps the trait default, because its body is tied to a channel
+    /// terminal and the existing single-diode report is the established
+    /// behaviour.
+    fn power(&self) -> f64 {
+        if !self.has_body_terminal {
+            return self.voltage_diff() * self.base.current;
+        }
+        let v = &self.base.volts;
+        self.ids * (v[2] - v[1])
+            - self.body_diode_current_1 * (v[1] - v[3])
+            - self.body_diode_current_2 * (v[2] - v[3])
     }
 
     fn voltage_diff(&self) -> f64 {
@@ -306,14 +434,17 @@ impl Element for Mosfet {
     fn reset(&mut self) {
         self.base.reset();
         self.diode_current = 0.0;
+        self.body_diode_current_1 = 0.0;
+        self.body_diode_current_2 = 0.0;
         self.last_v0 = 0.0;
         self.last_v1 = 0.0;
         self.last_v2 = 0.0;
         self.ids = 0.0;
         self.diode.reset();
+        self.diode2.reset();
     }
 
-    /// Re-anchors the clamped source/drain move and the body diode from the
+    /// Re-anchors the clamped source/drain move and both body diodes from the
     /// restored node voltages, so a rejected step cannot leave the per-step
     /// state stuck mid-iteration on the retry. Mirrors the JFET's identical
     /// treatment of its gate diode (jfet.rs `restore_iteration`): without it
@@ -326,6 +457,9 @@ impl Element for Mosfet {
         self.last_v2 = self.base.volts[2];
         self.wire_body_diode();
         self.diode.restore_iteration();
+        if self.has_body_terminal {
+            self.diode2.restore_iteration();
+        }
     }
 }
 #[cfg(test)]
