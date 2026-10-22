@@ -43,7 +43,7 @@ export const TRIODE_FLIP = 1;            // TriodeElm.java:26
 export const TRIODE_DSIGN_FIX = 2;       // TriodeElm.java:27
 export const MOSFET_PNP = 1;            // MosfetElm.java:35
 export const MOSFET_FLIP = 8;           // MosfetElm.java:37
-/** Load-time legacy bits of the MOSFET family (MosfetElm.java:32-33). The
+/** Load-time legacy bits of the MOSFET family (MosfetElm.java:41-44). The
  *  digital and hide-bulk bits suppress the bulk entirely; the other two ask
  *  for a simulated body diode and a fourth connectable body post. A part with
  *  bits 32 and 64 set and neither 4 nor 16 is upstream's four-post form, which
@@ -55,7 +55,7 @@ export const MOSFET_BODY_TERMINAL_LEGACY = 64;
 
 /** Whether the legacy flag word selects upstream's four-post MOSFET: the bulk
  *  shown, the body diode simulated and the body terminal requested
- *  (MosfetElm.java:118-122). The engine decodes the same rule in
+ *  (MosfetElm.java:115-118). The engine decodes the same rule in
  *  `engine/core/src/elements/mosfet.rs`, so the post count and the terminal
  *  list cannot disagree. */
 export function hasMosfetBodyTerminal(e: CircuitElement): boolean {

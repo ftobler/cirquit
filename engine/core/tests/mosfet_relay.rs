@@ -425,14 +425,19 @@ fn mosfet_legacy_body_terminal_builds_four_posts() {
     // The post-count guard in circuit.rs rejects a spec whose post list does
     // not match the element's count, so this also pins that the flag decode and
     // the frontend's dynamic postCountOf agree on the same rule.
-    let four = elm_flags(
-        3,
-        "mosfet",
-        &[[200, 100], [100, 0], [100, 100], [100, 50]],
-        &[("pnp", 1.0)],
-        96,
-    );
-    assert_eq!(Mosfet::new(&four).post_count(), 4);
+    let four_posts = [[200, 100], [100, 0], [100, 100], [100, 50]];
+    let with_flags = |flags| elm_flags(3, "mosfet", &four_posts, &[("pnp", 1.0)], flags);
+    assert_eq!(Mosfet::new(&with_flags(96)).post_count(), 4);
+    assert_eq!(Mosfet::new(&with_flags(97)).post_count(), 4);
+    // Hide bulk (16), digital (4) and a body diode without the terminal bit
+    // all stay three posts.
+    for flags in [36, 112, 32] {
+        assert_eq!(
+            Mosfet::new(&with_flags(flags)).post_count(),
+            3,
+            "flags {flags} must stay three posts"
+        );
+    }
 
     let three = elm(
         3,
@@ -441,9 +446,10 @@ fn mosfet_legacy_body_terminal_builds_four_posts() {
         &[("pnp", 1.0)],
     );
     assert_eq!(Mosfet::new(&three).post_count(), 3);
-    // And the three-post spec still builds through the guard.
-    let c = n_mosfet_body_clamp(false);
-    assert_eq!(c.element_nodes().len(), 2 + 2 + 3 + 2 + 2 + 1 + 1 + 1);
+    // The three-post spec still builds: build() calls set_circuit and panics
+    // if the post-count guard rejects it.
+    let three_post = n_mosfet_body_clamp(false);
+    assert_eq!(three_post.element_count(), 8);
 }
 
 #[test]
@@ -478,13 +484,12 @@ fn mosfet_body_terminal_diode_clamps_the_drain_below_the_body() {
         "body diode current {} does not match the 1 k current {resistor_current}",
         diode_current(-drain)
     );
-    // Both diode currents leave the body post, so the per-post report is
-    // KCL-clean and post 3 reads negative.
-    let currents: f64 = c.element_post_currents()[4..8].iter().sum();
-    assert!(currents.abs() < 1e-9, "post currents sum to {currents}");
+    // The body post sources exactly the current the 1 k pulls from -5 V, so
+    // the per-post report is not just KCL-clean but carries the right value.
+    let body_current = c.element_post_currents()[4 + 3];
     assert!(
-        c.element_post_currents()[4 + 3] < 0.0,
-        "the body post should source current into the diode"
+        close(body_current, -resistor_current, 1e-6),
+        "body post current {body_current} does not match -{resistor_current}"
     );
 
     let control = &mut n_mosfet_body_clamp(false);
@@ -503,12 +508,76 @@ fn mosfet_body_terminal_diode_clamps_the_drain_below_the_body() {
 }
 
 #[test]
-fn p_mosfet_body_terminal_diode_clamps_the_drain_above_the_body() {
-    // The P-channel mirror: body and source sit on a 5 V rail, the gate is tied
-    // there too so Vsg = 0 and the channel is off, and the drain is pulled to
-    // 10 V through 1 k. The drain-to-body diode conducts, clamping the drain one
-    // drop above the body. This pins the reversed diode orientation that the
-    // P-channel needs; with the N-channel wiring the drain would sit near 10 V.
+fn mosfet_body_terminal_first_diode_clamps_post_one_below_the_body() {
+    // Post 1 is pulled to -5 V through 1 k while the body and post 2 are
+    // grounded. With the gate at ground the channel is off, so the
+    // body-to-post-1 diode is the only conducting path and clamps post 1 near
+    // -0.53 V. This is the mirror of the diode-2 test and the case that
+    // discriminates the two diodes; with the N-channel wiring reversed post 1
+    // would sit near -5 V instead.
+    let c = &mut build(
+        vec![
+            elm(
+                1,
+                "voltage",
+                &[[300, 100], [300, 0]],
+                &[("maxVoltage", -5.0)],
+            ),
+            elm(
+                2,
+                "resistor",
+                &[[100, 0], [300, 0]],
+                &[("resistance", 1000.0)],
+            ),
+            elm_flags(
+                3,
+                "mosfet",
+                &[[200, 100], [100, 0], [100, 100], [100, 50]],
+                &[("pnp", 1.0), ("threshold", 1.5), ("beta", 0.02)],
+                96,
+            ),
+            elm(4, "ground", &[[100, 100]], &[]),
+            elm(5, "ground", &[[200, 100]], &[]),
+            elm(6, "ground", &[[100, 50]], &[]),
+            elm(7, "ground", &[[300, 100]], &[]),
+        ],
+        opts(1e-5, true),
+    );
+    let report = c.run(20);
+    assert!(report.converged, "did not converge: {:?}", report.error);
+    let nodes = c.element_nodes();
+    let post_one = c.node_voltages()[nodes[4 + 1] as usize];
+    let post_two = c.node_voltages()[nodes[4 + 2] as usize];
+    assert!(
+        (-1.0..-0.3).contains(&post_one),
+        "body-to-post-1 diode should clamp post 1 near -0.5 V, got {post_one}"
+    );
+    assert!(
+        post_two.abs() < 1e-9,
+        "post 2 is grounded and its diode must not conduct, got {post_two}"
+    );
+    let resistor_current = (post_one + 5.0) / 1000.0;
+    assert!(
+        close(diode_current(-post_one), resistor_current, 1e-6),
+        "first body diode current {} does not match the 1 k current {resistor_current}",
+        diode_current(-post_one)
+    );
+    let body_current = c.element_post_currents()[4 + 3];
+    assert!(
+        close(body_current, -resistor_current, 1e-6),
+        "body post current {body_current} does not match -{resistor_current}"
+    );
+}
+
+#[test]
+fn p_mosfet_body_terminal_diode_clamps_the_source_above_the_body() {
+    // The P-channel mirror: post 1 (the drain) and the body sit on a 5 V rail,
+    // the gate is tied there too, and post 2 (the source) is pulled to 10 V
+    // through 1 k. The source-to-body diode conducts, clamping the source one
+    // drop above the body. The clamped Vsg is about 0.53 V, still below the
+    // 1.5 V threshold, so the channel stays off. This pins the reversed diode
+    // orientation that the P-channel needs; with the N-channel wiring the
+    // source would sit near 10 V.
     let c = &mut build(
         vec![
             elm(1, "voltage", &[[0, 100], [0, 0]], &[("maxVoltage", 10.0)]),
@@ -542,24 +611,27 @@ fn p_mosfet_body_terminal_diode_clamps_the_drain_above_the_body() {
     let report = c.run(20);
     assert!(report.converged, "did not converge: {:?}", report.error);
     let nodes = c.element_nodes();
-    let drain = c.node_voltages()[nodes[4 + 2] as usize];
+    let source = c.node_voltages()[nodes[4 + 2] as usize];
     let body = c.node_voltages()[nodes[4 + 3] as usize];
     assert!(
-        (5.3..6.0).contains(&drain),
-        "P-channel body diode should clamp the drain near +5.5 V, got {drain}"
+        (5.3..6.0).contains(&source),
+        "P-channel body diode should clamp the source near +5.5 V, got {source}"
     );
     assert!(
         close(body, 5.0, 1e-6),
         "the body post should sit at 5 V, got {body}"
     );
-    let resistor_current = (10.0 - drain) / 1000.0;
+    let resistor_current = (10.0 - source) / 1000.0;
     assert!(
-        close(diode_current(drain - body), resistor_current, 1e-6),
+        close(diode_current(source - body), resistor_current, 1e-6),
         "P body diode current {} does not match the 1 k current {resistor_current}",
-        diode_current(drain - body)
+        diode_current(source - body)
     );
-    let currents: f64 = c.element_post_currents()[4..8].iter().sum();
-    assert!(currents.abs() < 1e-9, "post currents sum to {currents}");
+    let body_current = c.element_post_currents()[4 + 3];
+    assert!(
+        close(body_current, resistor_current, 1e-6),
+        "body post current {body_current} does not match {resistor_current}"
+    );
 }
 
 #[test]

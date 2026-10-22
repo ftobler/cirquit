@@ -180,26 +180,33 @@ Is/C.
 
 - **Upstream parity:** a MOSFET has four posts only when the legacy flags word
   sets bit 32 (body diode) and bit 64 (body terminal) and clears both bit 4
-  (digital) and bit 16 (hide bulk) (MosfetElm.java:106-142). Flags 96 and 97 in
-  the bundled corpus (`cmostransgate.txt`, `mux.txt`, `samplenhold.txt`,
-  `switchfilter.txt`) select it; a fresh part and every other word stay three
-  posts.
+  (digital) and bit 16 (hide bulk) (MosfetElm.java:115-118, :126-137). Flags 96
+  and 97 in the bundled corpus (`cmostransgate.txt`, `mux.txt`,
+  `samplenhold.txt`, `switchfilter.txt`) select it; a fresh part and every other
+  word stay three posts.
 - The body post is the midpoint of the source and drain posts, upstream's
   `body[0]`, which is the element's `point2` (MosfetElm.java:391-413). The
-  frontend derives it in `mosfetPosts` and the engine from the same rule;
-  `postCountOf` in `web/src/model/registry/elements/mosfet.ts` and
+  frontend derives that coordinate in `mosfetPosts`; the engine only decodes the
+  same flag rule to size its post list and receives the coordinates from the
+  spec. `postCountOf` in `web/src/model/registry/elements/mosfet.ts` and
   `Mosfet::post_count` in `engine/core/src/elements/mosfet.rs` must agree, or
   `Circuit::set_circuit` rejects the post-count mismatch.
 - **Upstream parity:** the four-post form simulates two body diodes from the
   body post to posts 1 and 2, N-channel body to each channel terminal and
-  P-channel each channel terminal to the body (MosfetElm.java:496-515). Post 3
-  reports `-(diodeCurrent1 + diodeCurrent2)`, post 1 adds the first, post 2
-  the second, and the reported power adds both diode terms to the channel term
-  (MosfetElm.java:560-562, :805-825). The three-post form keeps its single
-  source-to-drain diode.
-- The legacy bits stay in the saved flags word, so a save and reload keeps the
-  fourth post. The model-table structural flags (`sb`, `bd`, `bt`, `sbd`,
-  `dsy`) remain unmodelled; only the file-format bits above are honoured.
+  P-channel each channel terminal to the body (MosfetElm.java:493-515). Post 3
+  reports `-(diodeCurrent1 + diodeCurrent2)`, post 1 adds the first, post 2 the
+  second, and the reported power adds both diode terms to the channel term
+  (MosfetElm.java:369-371, :800-819). The three-post form keeps its single diode
+  between posts 1 and 2.
+- **Diverges from upstream:** the port keeps the legacy bits in the saved flags
+  word, so a save and reload keeps the fourth post; upstream strips them from
+  the element flags after decoding. The port uses bits 4 and 16 only to reject
+  the four-post form, so their digital-symbol and hide-bulk drawing meanings
+  remain unmodelled, as do the model-table structural flags (`sb`, `bd`, `bt`,
+  `sbd`, `dsy`).
+- **Diverges from upstream:** the three-post power expression remains the port's
+  pre-existing channel-only `Vds*Ids`; upstream's `getPower` adds a body-diode
+  term there too.
 
 ## MOSFET and JFET convergence
 

@@ -4,7 +4,7 @@
 //! channel terminal, so a single diode across the source and drain models the
 //! only junction that can conduct. Legacy file flags can instead ask for a
 //! fourth body post, and then both junctions exist: one from the body to each
-//! channel terminal (MosfetElm.java:32-33, :106-142).
+//! channel terminal (MosfetElm.java:41-44, :115-118).
 
 use std::collections::HashMap;
 
@@ -24,7 +24,7 @@ const MIN_CHANNEL_G: f64 = 1e-8;
 const MAX_STEP_V: f64 = 0.5;
 
 /// Legacy load-time flag bits, stripped from the element flags once decoded
-/// upstream (MosfetElm.java:32-33, :106-127). A word with both 32 and 64 set,
+/// upstream (MosfetElm.java:41-44, :115-118). A word with both 32 and 64 set,
 /// and neither bulk-hiding bit, asks for a fourth body post.
 const FLAG_DIGITAL_LEGACY: i64 = 4;
 const FLAG_HIDE_BULK_LEGACY: i64 = 16;
@@ -33,7 +33,7 @@ const FLAG_BODY_TERMINAL_LEGACY: i64 = 64;
 
 /// Whether a legacy flag word selects the four-post form: the bulk must be
 /// shown, the body diode simulated and the body terminal requested
-/// (MosfetElm.java:118-122).
+/// (MosfetElm.java:115-118).
 fn mosfet_has_body_terminal(flags: i64) -> bool {
     let show_bulk = flags & (FLAG_DIGITAL_LEGACY | FLAG_HIDE_BULK_LEGACY) == 0;
     let body_diode = flags & FLAG_BODY_DIODE_LEGACY != 0;
@@ -65,7 +65,7 @@ pub struct Mosfet {
     has_body_terminal: bool,
     /// The first body diode. In the three-post form its anode is post 1 and
     /// its cathode post 2 for both channel types, matching upstream's
-    /// `diodeB1.stamp(nodes[1], nodes[2])` (MosfetElm.java:504-515). Post 1
+    /// `diodeB1.stamp(nodes[1], nodes[2])` (MosfetElm.java:493-515). Post 1
     /// is the source post for an N-channel and the drain post for a
     /// P-channel, so the diode blocks while the channel conducts in the
     /// normal direction and conducts when that terminal is raised above the
@@ -73,7 +73,7 @@ pub struct Mosfet {
     /// there because the body is tied to one channel terminal, so only one
     /// junction can ever be forward biased; the other is shorted by the tie.
     /// In the four-post form this diode runs between the body post and post
-    /// 1 (MosfetElm.java:507-515).
+    /// 1 (MosfetElm.java:493-515).
     diode: Diode,
     /// The second body diode, used only in the four-post form, between the
     /// body post and post 2. Kept allocated in the three-post form so both
@@ -85,7 +85,7 @@ pub struct Mosfet {
     /// Four-post body-diode currents in upstream's sign convention:
     /// `diodeCurrent1` and `diodeCurrent2` are positive from the body post
     /// toward posts 1 and 2, so the polarity fold is already applied
-    /// (MosfetElm.java:592-596). Post 3 reports `-(d1 + d2)`.
+    /// (MosfetElm.java:631-637, :540-543). Post 3 reports `-(d1 + d2)`.
     body_diode_current_1: f64,
     body_diode_current_2: f64,
     /// Limited source/drain voltages from the previous iteration, feeding the
@@ -194,7 +194,7 @@ impl Mosfet {
             return;
         }
         // Three posts: anode at post 1, cathode at post 2, identical for both
-        // channel types (MosfetElm.java:504-515).
+        // channel types (MosfetElm.java:493-515).
         let d = self.diode.base_mut();
         d.nodes[0] = self.base.nodes[1];
         d.nodes[1] = self.base.nodes[2];
@@ -204,7 +204,7 @@ impl Mosfet {
 
     /// Four posts: the body post (3) is the common side of both junctions.
     /// An N-channel's body is the anode of each diode and a P-channel's is
-    /// the cathode (MosfetElm.java:507-515).
+    /// the cathode (MosfetElm.java:493-515).
     fn wire_four_post_body_diodes(&mut self) {
         let (n1, n2, nb) = (self.base.nodes[1], self.base.nodes[2], self.base.nodes[3]);
         let (v1, v2, vb) = (self.base.volts[1], self.base.volts[2], self.base.volts[3]);
@@ -350,7 +350,7 @@ impl Element for Mosfet {
         if self.has_body_terminal {
             self.diode2.calculate_current(ctx);
             // Upstream folds the polarity into the reported diode currents
-            // (MosfetElm.java:592-596), so both read positive when current
+            // (MosfetElm.java:631-637, :540-543), so both read positive when current
             // leaves the body post toward that channel terminal.
             self.body_diode_current_1 = self.polarity * self.diode.base().current;
             self.body_diode_current_2 = self.polarity * self.diode2.base().current;
@@ -362,7 +362,7 @@ impl Element for Mosfet {
     fn current_into_node(&self, post: usize) -> f64 {
         if self.has_body_terminal {
             // The body post carries both diode currents and the channel
-            // current never touches it (MosfetElm.java:805-825).
+            // current never touches it (MosfetElm.java:800-819).
             let d1 = self.body_diode_current_1;
             let d2 = self.body_diode_current_2;
             return match post {
@@ -374,7 +374,7 @@ impl Element for Mosfet {
             };
         }
         // `ids` flows from drain to source; the single body diode conducts
-        // post 1 to post 2 (MosfetElm.java:800-820), so node 1 receives
+        // post 1 to post 2 (MosfetElm.java:800-819), so node 1 receives
         // `-diode_current` and node 2 `+diode_current`. The gate carries
         // nothing without gate caps.
         let d1 = -self.diode_current;
@@ -386,11 +386,11 @@ impl Element for Mosfet {
         }
     }
 
-    /// Upstream's `getPower` (MosfetElm.java:560-562): the channel term plus
+    /// Upstream's `getPower` (MosfetElm.java:369-371): the channel term plus
     /// each body diode's terminal voltage times its current. The three-post
-    /// form keeps the trait default, because its body is tied to a channel
-    /// terminal and the existing single-diode report is the established
-    /// behaviour.
+    /// branch keeps the trait default to preserve the port's pre-change
+    /// behaviour; upstream still adds a diode term there, so that branch is a
+    /// deliberate simplification rather than an equivalent expression.
     fn power(&self) -> f64 {
         if !self.has_body_terminal {
             return self.voltage_diff() * self.base.current;

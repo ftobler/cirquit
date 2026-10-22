@@ -502,6 +502,11 @@ describe('mosfet posts', () => {
     expect(postCountOf(m(0, 0, 32, 0))).toBe(3);
     expect(postCountOf(m(0, 0, 32, 0, 96))).toBe(4);
     expect(postCountOf(m(0, 0, 32, 0, 97))).toBe(4);
+    // Body diode without the terminal bit, the digital bit and the hide-bulk
+    // bit all stay three posts even when the body bits are present.
+    expect(postCountOf(m(0, 0, 32, 0, 32))).toBe(3);
+    expect(postCountOf(m(0, 0, 32, 0, 36))).toBe(3);
+    expect(postCountOf(m(0, 0, 32, 0, 112))).toBe(3);
     expect(postsOf(m(0, 0, 32, 0, 96))).toEqual([
       { x: 0, y: 0 },
       { x: 32, y: 16 },
@@ -511,9 +516,10 @@ describe('mosfet posts', () => {
   });
 
   it('pins the real corpus line to the same four posts', () => {
-    // `switchfilter.txt` and friends carry this exact line: a vertical
-    // N-channel with flags 97. The body must land on point2 or the wire drawn
-    // to it in the file would dangle.
+    // `cmostransgate.txt` carries this exact line, and `mux.txt` the same
+    // coordinates and flags with a `.02` beta token: a vertical P-channel
+    // with flags 97. The body must land on point2 or the wire drawn to it in
+    // the file would dangle.
     const [e] = parseCircuit('f 256 176 256 224 97 1.5 0.02').elements;
     expect(e.kind).toBe('mosfet');
     expect(postCountOf(e)).toBe(4);
