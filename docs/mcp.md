@@ -69,6 +69,39 @@ thin wrappers over `circuit.netlist` and `kinds.list` for hosts that prefer a
 resource read over a tool call. A failed read comes back as error text, never a
 throw.
 
+## Value-only edits and run control
+
+Headless reads build the current document before reading: a revision change is
+rebuilt with the same live-state gate and refused-build pinning the browser
+frame loop uses, so `element_readings` after a structural edit finds the new
+element instead of no element at all. A rebuild alone does not solve the
+transient, so those readings are the rebuilt but unsolved values until a
+`sim.step` or run control runs the solver. Every engine read (`nodeVoltages`,
+`elementReadings`, `infoLines`, `scopeSamples`, `time`) takes that
+document-only path; `running()` reads the store flag and syncs nothing.
+
+Value-only edits (`element.update`, `slider.set`, `element.setState`,
+`element.toggleSwitch`) bump only `paramRevision`, so they reach the engine on
+the next `sim.step` or run control (`sim.reset`, `sim.dcOperatingPoint`). That
+full sync drains `pendingParams` and `pendingStates` through `engine.setParam`
+and `engine.setState`, rebuilds once if a call refuses, then calls
+`clearPending`. Without that drain the engine keeps solving the old value while
+the store reports the new one, so a step or a run control would answer from a
+stale part.
+
+A read issued between the edit and that step reports the previous solve on
+purpose. Applying a state edit runs the engine's `reanalyze`, which zeroes the
+node voltages while the elements keep their last currents, and the browser only
+avoids that mixed snapshot because `run()` follows in the same frame. A read has
+no run to follow it, so it must not apply the queue; it presents the coherent
+pre-edit solve until a step or run control does.
+
+The two run-control commands (`sim.reset`, `sim.dcOperatingPoint`) call
+`simHost.sync()` before touching the engine (`createSimControls` in
+`web/mcp/server.ts`). Without it, a command issued after `circuit_loadText`
+resets or solves the previous document, because nothing else had built the new
+one yet.
+
 ## The step budget
 
 `sim_step` advances simulated time synchronously, in chunks, and honours two

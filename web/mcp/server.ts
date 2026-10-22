@@ -23,6 +23,8 @@ import {
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { query } from '../src/commands/queries';
+import type { SimControls } from '../src/commands/types';
+import type { SimHost } from '../src/engine/simHost';
 import { SimEngine } from '../src/engine/simulator';
 import { useStore } from '../src/state/store';
 import { bootWasm } from './boot';
@@ -120,19 +122,33 @@ function parseLoadArg(argv: string[]): string | null {
   return file;
 }
 
+/** The run-control half of the tool host. Both commands sync the headless host
+ *  first: the engine is built lazily on the first read, so a Reset or a DC solve
+ *  issued right after a document change would otherwise act on the previous
+ *  circuit. This is the full sync, so a queued value-only edit is applied before
+ *  the control runs too. It is a no-op when nothing changed. Exported so the
+ *  server test drives the same wiring the process uses. */
+export function createSimControls(engine: SimEngine, simHost: SimHost): SimControls {
+  return {
+    reset: () => {
+      simHost.sync();
+      engine.reset();
+    },
+    dcOperatingPoint: () => {
+      simHost.sync();
+      return engine.findDcOperatingPoint();
+    },
+  };
+}
+
 export async function main(argv: string[]): Promise<void> {
   const loadFile = parseLoadArg(argv);
   await bootWasm();
   const engine = await SimEngine.create();
   const store = useStore;
-  const host: ToolHost = {
-    store,
-    sim: {
-      reset: () => engine.reset(),
-      dcOperatingPoint: () => engine.findDcOperatingPoint(),
-    },
-  };
-  store.getState().setSimHost(createHeadlessSimHost(engine, store));
+  const simHost = createHeadlessSimHost(engine, store);
+  const host: ToolHost = { store, sim: createSimControls(engine, simHost) };
+  store.getState().setSimHost(simHost);
   // Headless starts paused: `sim.run` and `sim.pause` only move this flag, and
   // nothing advances the clock except `sim.step`, which refuses while it is set.
   store.getState().setRunning(false);

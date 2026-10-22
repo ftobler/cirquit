@@ -14,7 +14,7 @@ import { useStore } from '../src/state/store';
 import { fresh } from '../src/state/store.test-helpers';
 import { bootWasm } from './boot';
 import { createHeadlessSimHost } from './headlessHost';
-import { createCirquitServer, KINDS_URI, NETLIST_URI } from './server';
+import { createCirquitServer, createSimControls, KINDS_URI, NETLIST_URI } from './server';
 import type { ToolCallResult } from './tools';
 
 /** One live client/server pair with the wasm engine attached. */
@@ -22,16 +22,16 @@ async function connect(): Promise<{ client: Client; engine: SimEngine }> {
   await bootWasm();
   const engine = await SimEngine.create();
   const store = useStore;
-  store.getState().setSimHost(createHeadlessSimHost(engine, store));
+  const simHost = createHeadlessSimHost(engine, store);
+  store.getState().setSimHost(simHost);
   // The headless server starts paused, and so does this harness: `sim.step` is
   // refused while the run is live.
   store.getState().setRunning(false);
   const server = createCirquitServer({
     store,
-    sim: {
-      reset: () => engine.reset(),
-      dcOperatingPoint: () => engine.findDcOperatingPoint(),
-    },
+    // The same run-control wiring `main` uses, so the sync-before-reset and
+    // sync-before-DC-solve behaviour is what this harness exercises.
+    sim: createSimControls(engine, simHost),
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
@@ -50,6 +50,109 @@ async function callOk(
   expect(result.isError, `${name} failed: ${JSON.stringify(result.content)}`).toBeUndefined();
   expect(result.structuredContent).toBeDefined();
   return result.structuredContent as Record<string, unknown>;
+}
+
+/** The live terminal voltages and currents of a two-terminal element, read
+ *  through the tool surface. */
+async function readingsOf(
+  client: Client,
+  id: number,
+): Promise<{ voltages: number[]; currents: number[] }> {
+  const readings = await callOk(client, 'element_readings', { ids: [id] });
+  const first = (readings.readings as {
+    posts: { voltage: { value: number }; current: { value: number } }[];
+  }[])[0];
+  return {
+    voltages: first.posts.map((p) => p.voltage.value),
+    currents: first.posts.map((p) => p.current.value),
+  };
+}
+
+/** The current one terminal of a two-terminal element exchanges with its node.
+ *  The sign depends on which way the part is drawn, so every assertion uses the
+ *  magnitude. */
+async function postCurrent(client: Client, id: number): Promise<number> {
+  return Math.abs((await readingsOf(client, id)).currents[0]);
+}
+
+/** The series loop the edit tests measure: a 10 V source, a 1 kOhm resistor
+ *  and a closed switch back to ground. Closed, the loop carries 10 mA; an open
+ *  switch leaves the resistor's far end floating, so its current collapses to
+ *  the engine's gmin leakage. */
+async function buildSeries(client: Client): Promise<{ resistorId: number; switchId: number }> {
+  await callOk(client, 'element_add', {
+    kind: 'voltage',
+    x1: 0,
+    y1: 0,
+    x2: 0,
+    y2: 64,
+    params: { maxVoltage: 10 },
+  });
+  const resistor = await callOk(client, 'element_add', {
+    kind: 'resistor',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    params: { resistance: 1000 },
+  });
+  const toggle = await callOk(client, 'element_add', {
+    kind: 'switch',
+    x1: 64,
+    y1: 0,
+    x2: 128,
+    y2: 0,
+  });
+  await callOk(client, 'wire_add', {
+    points: [
+      [128, 0],
+      [128, 64],
+      [0, 64],
+    ],
+  });
+  await callOk(client, 'element_add', { kind: 'ground', x1: 0, y1: 64, x2: 0, y2: 128 });
+  return { resistorId: resistor.result as number, switchId: toggle.result as number };
+}
+
+/** The diode loop the forced-rebuild test measures: a 10 V source, a 1 kOhm
+ *  resistor and a forward-biased diode back to ground. The source's post 0 is
+ *  its negative terminal, so the diode's anode sits on the ground rail and its
+ *  cathode on the resistor. */
+async function buildDiodeLoop(
+  client: Client,
+): Promise<{ resistorId: number; diodeId: number }> {
+  await callOk(client, 'element_add', {
+    kind: 'voltage',
+    x1: 0,
+    y1: 0,
+    x2: 0,
+    y2: 64,
+    params: { maxVoltage: 10 },
+  });
+  const resistor = await callOk(client, 'element_add', {
+    kind: 'resistor',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    params: { resistance: 1000 },
+  });
+  const diode = await callOk(client, 'element_add', {
+    kind: 'diode',
+    x1: 128,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+  });
+  await callOk(client, 'wire_add', {
+    points: [
+      [128, 0],
+      [128, 64],
+      [0, 64],
+    ],
+  });
+  await callOk(client, 'element_add', { kind: 'ground', x1: 0, y1: 64, x2: 0, y2: 128 });
+  return { resistorId: resistor.result as number, diodeId: diode.result as number };
 }
 
 beforeEach(() => useStore.setState(fresh()));
@@ -167,6 +270,163 @@ describe('reads build the circuit on demand', () => {
     const readings = await callOk(client, 'element_readings', { ids: [added.result as number] });
     const first = (readings.readings as { posts: unknown[] }[])[0];
     expect(first.posts).toHaveLength(2);
+  });
+});
+
+describe('value-only edits reach the engine', () => {
+  it('applies a resistor edit before the next step and read', async () => {
+    const { client } = await connect();
+    const { resistorId } = await buildSeries(client);
+
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    expect(Math.abs((await postCurrent(client, resistorId)) - 0.01)).toBeLessThan(1e-6);
+
+    // A value-only edit bumps `paramRevision`, never `revision`: the engine has
+    // to patch the part through its fast path or it keeps solving 1 kOhm.
+    await callOk(client, 'element_update', { id: resistorId, params: { resistance: 2000 } });
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    expect(Math.abs((await postCurrent(client, resistorId)) - 0.005)).toBeLessThan(1e-6);
+  });
+
+  it('applies a queued switch throw before the next step and read', async () => {
+    const { client } = await connect();
+    const { resistorId, switchId } = await buildSeries(client);
+
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    expect(Math.abs((await postCurrent(client, resistorId)) - 0.01)).toBeLessThan(1e-6);
+
+    // The throw is queued in `pendingStates` and bumps `paramRevision` only.
+    await callOk(client, 'element_toggleSwitch', { id: switchId });
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    // Open: the resistor's far end floats and only the engine's gmin leakage
+    // flows, far below the 10 mA the closed loop carried.
+    expect(await postCurrent(client, resistorId)).toBeLessThan(1e-6);
+  });
+
+  it('reports the previous solve on a read before a parameter edit is applied', async () => {
+    const { client } = await connect();
+    const { resistorId } = await buildSeries(client);
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    const before = await readingsOf(client, resistorId);
+    expect(Math.abs(Math.abs(before.currents[0]) - 0.01)).toBeLessThan(1e-6);
+
+    // No step between the edit and the read: the read must not patch the
+    // engine, so it reports the coherent 1 kOhm solve, not the edited value.
+    await callOk(client, 'element_update', { id: resistorId, params: { resistance: 2000 } });
+    const after = await readingsOf(client, resistorId);
+    expect(after).toEqual(before);
+    const drop = Math.abs(after.voltages[0] - after.voltages[1]);
+    expect(Math.abs(drop - 10)).toBeLessThan(1e-6);
+    expect(Math.abs(drop - Math.abs(after.currents[0]) * 1000)).toBeLessThan(1e-6);
+
+    // The step applies the queue, so the same part now carries 5 mA.
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    const stepped = await readingsOf(client, resistorId);
+    expect(Math.abs(Math.abs(stepped.currents[0]) - 0.005)).toBeLessThan(1e-6);
+  });
+
+  it('applies a refused parameter through the forced rebuild without rewinding the clock', async () => {
+    const { client } = await connect();
+    const { resistorId, diodeId } = await buildDiodeLoop(client);
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    const before = (await callOk(client, 'sim_state', {})).time as { value: number };
+    const first = await postCurrent(client, resistorId);
+    // A 10 V source into 1 kOhm plus the diode's junction drop: about 9 mA.
+    expect(first).toBeGreaterThan(8e-3);
+    expect(first).toBeLessThan(1.1e-2);
+
+    // `seriesResistance` changes the diode's internal node count, so the
+    // engine refuses the live patch and returns false. The host must rebuild
+    // the whole circuit for the edit to reach the solve at all.
+    await callOk(client, 'element_update', { id: diodeId, params: { seriesResistance: 1000 } });
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+
+    // The series resistor is now in the loop with the 1 kOhm part, so the
+    // current roughly halves.
+    const second = await postCurrent(client, resistorId);
+    expect(second).toBeLessThan(first * 0.65);
+    expect(second).toBeGreaterThan(first * 0.35);
+    // The forced rebuild continues the same document, so it keeps the clock:
+    // a rewind would leave the time at one step, not two.
+    const after = (await callOk(client, 'sim_state', {})).time as { value: number };
+    expect(after.value).toBeGreaterThan(before.value);
+    expect(after.value).toBeCloseTo(before.value + 0.001, 6);
+  });
+
+  it('keeps the previous solve coherent on a read before the throw is applied', async () => {
+    const { client } = await connect();
+    const { resistorId, switchId } = await buildSeries(client);
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    const before = await readingsOf(client, resistorId);
+
+    // No step between the throw and the read. Applying the queued state here
+    // would run the engine's reanalyze, which zeroes the node voltages while
+    // the elements keep the previous solve's currents: the read would report
+    // 0 V across a part carrying 10 mA.
+    await callOk(client, 'element_toggleSwitch', { id: switchId });
+    const after = await readingsOf(client, resistorId);
+
+    expect(after).toEqual(before);
+    // The snapshot it does report is the coherent pre-throw solve: 10 V across
+    // 1 kOhm is 10 mA, and the two agree.
+    const drop = Math.abs(after.voltages[0] - after.voltages[1]);
+    const current = Math.abs(after.currents[0]);
+    expect(Math.abs(drop - 10)).toBeLessThan(1e-6);
+    expect(Math.abs(current - 0.01)).toBeLessThan(1e-9);
+    expect(Math.abs(drop - current * 1000)).toBeLessThan(1e-6);
+  });
+});
+
+describe('run controls sync before touching the engine', () => {
+  // A 20 V copy of the series loop, in the file format, so `circuit_loadText`
+  // replaces the document without going through the editing commands.
+  const TWENTY_VOLTS = [
+    '$ 1 0.000005 10.20027730826997 50 5 43 5e-11',
+    'v 0 0 0 64 0 0 60 20 0 0 0.5',
+    'r 0 0 64 0 0 1000',
+    'w 64 0 64 64 0',
+    'w 64 64 0 64 0',
+    'g 0 64 0 128 0',
+    '',
+  ].join('\n');
+
+  it('solves the DC operating point of the document loaded last', async () => {
+    const { client } = await connect();
+    await buildSeries(client);
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+
+    await callOk(client, 'circuit_loadText', { text: TWENTY_VOLTS });
+    await callOk(client, 'sim_dcOperatingPoint', {});
+
+    // The loaded resistor is the only one in the new document; its drop must
+    // be the 20 V the document holds, not the 10 V circuit the engine was
+    // still carrying when the solve ran.
+    const resistor = useStore.getState().elements.find((e) => e.kind === 'resistor');
+    expect(resistor).toBeDefined();
+    const readings = await callOk(client, 'element_readings', { ids: [resistor?.id as number] });
+    const first = (readings.readings as { posts: { voltage: { value: number } }[] }[])[0];
+    const drop = Math.abs(first.posts[0].voltage.value - first.posts[1].voltage.value);
+    expect(Math.abs(drop - 20)).toBeLessThan(1e-6);
+  });
+});
+
+describe('unchanged reads are inert', () => {
+  it('repeats readings without moving the clock', async () => {
+    const { client } = await connect();
+    const { resistorId } = await buildSeries(client);
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+
+    const before = await callOk(client, 'sim_state', {});
+    const first = await postCurrent(client, resistorId);
+    const again = await postCurrent(client, resistorId);
+    const after = await callOk(client, 'sim_state', {});
+
+    // A non-zero clock makes the equality below meaningful: a stuck clock at
+    // zero would satisfy it without proving anything.
+    const beforeTime = (before.time as { value: number }).value;
+    expect(beforeTime).toBeGreaterThan(0);
+    expect(again).toBe(first);
+    expect((after.time as { value: number }).value).toBe(beforeTime);
   });
 });
 
