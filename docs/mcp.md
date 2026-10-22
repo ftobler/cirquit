@@ -71,6 +71,17 @@ throw.
 
 ## Value-only edits and run control
 
+`sync` in `web/mcp/headlessHost.ts` does two jobs, mirroring the two engine
+paths the browser frame loop drives. A revision change rebuilds the circuit. A
+value-only edit (`element.update`, `slider.set`, `element.setState` or
+`element.toggleSwitch`) bumps only `paramRevision`, so `sync` drains
+`pendingParams` and `pendingStates` through `engine.setParam` and
+`engine.setState`, with one full rebuild if a call refuses, then calls
+`clearPending`. Without that drain the engine keeps solving the old value while
+the store reports the new one, so `sim_step` and `element_readings` answer from
+a stale part. Sync runs before every read, step and run control, and is a no-op
+when nothing changed, so repeated reads neither rebuild nor move the clock.
+
 The two run-control commands (`sim.reset`, `sim.dcOperatingPoint`) call
 `simHost.sync()` before touching the engine (`createSimControls` in
 `web/mcp/server.ts`). Without it, a command issued after `circuit_loadText`

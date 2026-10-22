@@ -52,6 +52,15 @@ async function callOk(
   return result.structuredContent as Record<string, unknown>;
 }
 
+/** The current one terminal of a two-terminal element exchanges with its node,
+ *  read through the tool surface. The sign depends on which way the part is
+ *  drawn, so every assertion uses the magnitude. */
+async function postCurrent(client: Client, id: number): Promise<number> {
+  const readings = await callOk(client, 'element_readings', { ids: [id] });
+  const first = (readings.readings as { posts: { current: { value: number } }[] }[])[0];
+  return Math.abs(first.posts[0].current.value);
+}
+
 /** The series loop the edit tests measure: a 10 V source, a 1 kOhm resistor
  *  and a closed switch back to ground. Closed, the loop carries 10 mA; an open
  *  switch leaves the resistor's far end floating, so its current collapses to
@@ -209,6 +218,37 @@ describe('reads build the circuit on demand', () => {
   });
 });
 
+describe('value-only edits reach the engine', () => {
+  it('applies a resistor edit before the next step and read', async () => {
+    const { client } = await connect();
+    const { resistorId } = await buildSeries(client);
+
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    expect(Math.abs((await postCurrent(client, resistorId)) - 0.01)).toBeLessThan(1e-6);
+
+    // A value-only edit bumps `paramRevision`, never `revision`: the engine has
+    // to patch the part through its fast path or it keeps solving 1 kOhm.
+    await callOk(client, 'element_update', { id: resistorId, params: { resistance: 2000 } });
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    expect(Math.abs((await postCurrent(client, resistorId)) - 0.005)).toBeLessThan(1e-6);
+  });
+
+  it('applies a queued switch throw before the next step and read', async () => {
+    const { client } = await connect();
+    const { resistorId, switchId } = await buildSeries(client);
+
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    expect(Math.abs((await postCurrent(client, resistorId)) - 0.01)).toBeLessThan(1e-6);
+
+    // The throw is queued in `pendingStates` and bumps `paramRevision` only.
+    await callOk(client, 'element_toggleSwitch', { id: switchId });
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    // Open: the resistor's far end floats and only the engine's gmin leakage
+    // flows, far below the 10 mA the closed loop carried.
+    expect(await postCurrent(client, resistorId)).toBeLessThan(1e-6);
+  });
+});
+
 describe('run controls sync before touching the engine', () => {
   // A 20 V copy of the series loop, in the file format, so `circuit_loadText`
   // replaces the document without going through the editing commands.
@@ -239,6 +279,22 @@ describe('run controls sync before touching the engine', () => {
     const first = (readings.readings as { posts: { voltage: { value: number } }[] }[])[0];
     const drop = Math.abs(first.posts[0].voltage.value - first.posts[1].voltage.value);
     expect(Math.abs(drop - 20)).toBeLessThan(1e-6);
+  });
+});
+
+describe('unchanged reads are inert', () => {
+  it('repeats readings without moving the clock', async () => {
+    const { client } = await connect();
+    const { resistorId } = await buildSeries(client);
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+
+    const before = await callOk(client, 'sim_state', {});
+    const first = await postCurrent(client, resistorId);
+    const again = await postCurrent(client, resistorId);
+    const after = await callOk(client, 'sim_state', {});
+
+    expect(again).toBe(first);
+    expect((after.time as { value: number }).value).toBe((before.time as { value: number }).value);
   });
 });
 
