@@ -69,6 +69,14 @@ thin wrappers over `circuit.netlist` and `kinds.list` for hosts that prefer a
 resource read over a tool call. A failed read comes back as error text, never a
 throw.
 
+## Value-only edits and run control
+
+The two run-control commands (`sim.reset`, `sim.dcOperatingPoint`) call
+`simHost.sync()` before touching the engine (`createSimControls` in
+`web/mcp/server.ts`). Without it, a command issued after `circuit_loadText`
+resets or solves the previous document, because nothing else had built the new
+one yet.
+
 ## The step budget
 
 `sim_step` advances simulated time synchronously, in chunks, and honours two

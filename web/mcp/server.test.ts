@@ -14,7 +14,7 @@ import { useStore } from '../src/state/store';
 import { fresh } from '../src/state/store.test-helpers';
 import { bootWasm } from './boot';
 import { createHeadlessSimHost } from './headlessHost';
-import { createCirquitServer, KINDS_URI, NETLIST_URI } from './server';
+import { createCirquitServer, createSimControls, KINDS_URI, NETLIST_URI } from './server';
 import type { ToolCallResult } from './tools';
 
 /** One live client/server pair with the wasm engine attached. */
@@ -22,16 +22,16 @@ async function connect(): Promise<{ client: Client; engine: SimEngine }> {
   await bootWasm();
   const engine = await SimEngine.create();
   const store = useStore;
-  store.getState().setSimHost(createHeadlessSimHost(engine, store));
+  const simHost = createHeadlessSimHost(engine, store);
+  store.getState().setSimHost(simHost);
   // The headless server starts paused, and so does this harness: `sim.step` is
   // refused while the run is live.
   store.getState().setRunning(false);
   const server = createCirquitServer({
     store,
-    sim: {
-      reset: () => engine.reset(),
-      dcOperatingPoint: () => engine.findDcOperatingPoint(),
-    },
+    // The same run-control wiring `main` uses, so the sync-before-reset and
+    // sync-before-DC-solve behaviour is what this harness exercises.
+    sim: createSimControls(engine, simHost),
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
@@ -50,6 +50,45 @@ async function callOk(
   expect(result.isError, `${name} failed: ${JSON.stringify(result.content)}`).toBeUndefined();
   expect(result.structuredContent).toBeDefined();
   return result.structuredContent as Record<string, unknown>;
+}
+
+/** The series loop the edit tests measure: a 10 V source, a 1 kOhm resistor
+ *  and a closed switch back to ground. Closed, the loop carries 10 mA; an open
+ *  switch leaves the resistor's far end floating, so its current collapses to
+ *  the engine's gmin leakage. */
+async function buildSeries(client: Client): Promise<{ resistorId: number; switchId: number }> {
+  await callOk(client, 'element_add', {
+    kind: 'voltage',
+    x1: 0,
+    y1: 0,
+    x2: 0,
+    y2: 64,
+    params: { maxVoltage: 10 },
+  });
+  const resistor = await callOk(client, 'element_add', {
+    kind: 'resistor',
+    x1: 0,
+    y1: 0,
+    x2: 64,
+    y2: 0,
+    params: { resistance: 1000 },
+  });
+  const toggle = await callOk(client, 'element_add', {
+    kind: 'switch',
+    x1: 64,
+    y1: 0,
+    x2: 128,
+    y2: 0,
+  });
+  await callOk(client, 'wire_add', {
+    points: [
+      [128, 0],
+      [128, 64],
+      [0, 64],
+    ],
+  });
+  await callOk(client, 'element_add', { kind: 'ground', x1: 0, y1: 64, x2: 0, y2: 128 });
+  return { resistorId: resistor.result as number, switchId: toggle.result as number };
 }
 
 beforeEach(() => useStore.setState(fresh()));
@@ -167,6 +206,39 @@ describe('reads build the circuit on demand', () => {
     const readings = await callOk(client, 'element_readings', { ids: [added.result as number] });
     const first = (readings.readings as { posts: unknown[] }[])[0];
     expect(first.posts).toHaveLength(2);
+  });
+});
+
+describe('run controls sync before touching the engine', () => {
+  // A 20 V copy of the series loop, in the file format, so `circuit_loadText`
+  // replaces the document without going through the editing commands.
+  const TWENTY_VOLTS = [
+    '$ 1 0.000005 10.20027730826997 50 5 43 5e-11',
+    'v 0 0 0 64 0 0 60 20 0 0 0.5',
+    'r 0 0 64 0 0 1000',
+    'w 64 0 64 64 0',
+    'w 64 64 0 64 0',
+    'g 0 64 0 128 0',
+    '',
+  ].join('\n');
+
+  it('solves the DC operating point of the document loaded last', async () => {
+    const { client } = await connect();
+    await buildSeries(client);
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+
+    await callOk(client, 'circuit_loadText', { text: TWENTY_VOLTS });
+    await callOk(client, 'sim_dcOperatingPoint', {});
+
+    // The loaded resistor is the only one in the new document; its drop must
+    // be the 20 V the document holds, not the 10 V circuit the engine was
+    // still carrying when the solve ran.
+    const resistor = useStore.getState().elements.find((e) => e.kind === 'resistor');
+    expect(resistor).toBeDefined();
+    const readings = await callOk(client, 'element_readings', { ids: [resistor?.id as number] });
+    const first = (readings.readings as { posts: { voltage: { value: number } }[] }[])[0];
+    const drop = Math.abs(first.posts[0].voltage.value - first.posts[1].voltage.value);
+    expect(Math.abs(drop - 20)).toBeLessThan(1e-6);
   });
 });
 
