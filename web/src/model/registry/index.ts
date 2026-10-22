@@ -306,9 +306,10 @@ export function postsOf(e: CircuitElement): Point[] {
   return defFor(e.kind)?.posts(e) ?? [];
 }
 
-/** The terminal count a def actually has. Only the custom composite defines
- *  `postCountOf`, because its post count is set by the resolved model rather
- *  than by the def; every other def's static `postCount` is exact and is the
+/** The terminal count a def actually has. The custom composite defines
+ *  `postCountOf` because its post count is set by the resolved model rather
+ *  than by the def; the MOSFET defines it because a legacy flag word adds a
+ *  fourth body post. Every other def's static `postCount` is exact and is the
  *  fallback. The rotate, drag-post and collapsed-axis gates read this so a
  *  resolved composite is treated as the part it is instead of as its fallback
  *  stub. */

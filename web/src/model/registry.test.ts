@@ -483,6 +483,57 @@ describe('mosfet posts', () => {
       { x: 16, y: -32 },
     ]);
   });
+
+  it('labels the body post B only when a four-post part is highlighted', () => {
+    const ctx = mkCtx();
+    const mos = element('mosfet', 0, 0, 160, 0, 96, { pnp: 1, beta: 0.02, threshold: 1.5 });
+    defFor('mosfet')?.draw(context(ctx, { selected: true, voltages: [0, 0, 0, 0] }), mos);
+    expect(ctx.fillText).toHaveBeenCalledWith('B', expect.any(Number), expect.any(Number));
+
+    const plain = mkCtx();
+    const three = element('mosfet', 0, 0, 160, 0, 0, { pnp: 1, beta: 0.02, threshold: 1.5 });
+    defFor('mosfet')?.draw(context(plain, { selected: true }), three);
+    expect(plain.fillText).not.toHaveBeenCalledWith('B', expect.any(Number), expect.any(Number));
+  });
+
+  it('adds the body post only for the legacy four-post flag word', () => {
+    // A fresh part keeps the three-post default; the bundled corpus files
+    // carry 96 or 97, the only words that select the fourth post.
+    expect(postCountOf(m(0, 0, 32, 0))).toBe(3);
+    expect(postCountOf(m(0, 0, 32, 0, 96))).toBe(4);
+    expect(postCountOf(m(0, 0, 32, 0, 97))).toBe(4);
+    expect(postsOf(m(0, 0, 32, 0, 96))).toEqual([
+      { x: 0, y: 0 },
+      { x: 32, y: 16 },
+      { x: 32, y: -16 },
+      { x: 32, y: 0 },  // the body at point2, the midpoint of source and drain
+    ]);
+  });
+
+  it('pins the real corpus line to the same four posts', () => {
+    // `switchfilter.txt` and friends carry this exact line: a vertical
+    // N-channel with flags 97. The body must land on point2 or the wire drawn
+    // to it in the file would dangle.
+    const [e] = parseCircuit('f 256 176 256 224 97 1.5 0.02').elements;
+    expect(e.kind).toBe('mosfet');
+    expect(postCountOf(e)).toBe(4);
+    expect(postsOf(e)).toEqual([
+      { x: 256, y: 176 },
+      { x: 240, y: 224 },
+      { x: 272, y: 224 },
+      { x: 256, y: 224 },
+    ]);
+  });
+
+  it('round-trips the legacy flag word and keeps the four posts', () => {
+    const parsed = parseCircuit('f 256 176 256 224 97 1.5 0.02');
+    const saved = serializeCircuit(parsed.elements, { ...DEFAULT_SETTINGS });
+    const [back] = parseCircuit(saved).elements;
+    expect(back.flags & 96).toBe(96);
+    expect(postCountOf(back)).toBe(4);
+    expect(postsOf(back)[3]).toEqual({ x: 256, y: 224 });
+    expect(saved).toContain('f 256 176 256 224 97 ');
+  });
 });
 
 describe('ota draw', () => {
