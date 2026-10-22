@@ -125,7 +125,8 @@ function parseLoadArg(argv: string[]): string | null {
 /** The run-control half of the tool host. Both commands sync the headless host
  *  first: the engine is built lazily on the first read, so a Reset or a DC solve
  *  issued right after a document change would otherwise act on the previous
- *  circuit. Sync is a no-op when the revision has not moved. Exported so the
+ *  circuit. This is the full sync, so a queued value-only edit is applied before
+ *  the control runs too. It is a no-op when nothing changed. Exported so the
  *  server test drives the same wiring the process uses. */
 export function createSimControls(engine: SimEngine, simHost: SimHost): SimControls {
   return {

@@ -71,16 +71,28 @@ throw.
 
 ## Value-only edits and run control
 
-`sync` in `web/mcp/headlessHost.ts` does two jobs, mirroring the two engine
-paths the browser frame loop drives. A revision change rebuilds the circuit. A
-value-only edit (`element.update`, `slider.set`, `element.setState` or
-`element.toggleSwitch`) bumps only `paramRevision`, so `sync` drains
-`pendingParams` and `pendingStates` through `engine.setParam` and
-`engine.setState`, with one full rebuild if a call refuses, then calls
+Headless reads build the current document before reading: a revision change is
+rebuilt with the same live-state gate and refused-build pinning the browser
+frame loop uses, so `element_readings` or `sim_state` right after a structural
+edit sees the new circuit instead of an empty engine. Every engine read
+(`nodeVoltages`, `elementReadings`, `infoLines`, `scopeSamples`, `time`) takes
+that document-only path; `running()` reads the store flag and syncs nothing.
+
+Value-only edits (`element.update`, `slider.set`, `element.setState`,
+`element.toggleSwitch`) bump only `paramRevision`, so they reach the engine on
+the next `sim.step` or run control (`sim.reset`, `sim.dcOperatingPoint`). That
+full sync drains `pendingParams` and `pendingStates` through `engine.setParam`
+and `engine.setState`, rebuilds once if a call refuses, then calls
 `clearPending`. Without that drain the engine keeps solving the old value while
-the store reports the new one, so `sim_step` and `element_readings` answer from
-a stale part. Sync runs before every read, step and run control, and is a no-op
-when nothing changed, so repeated reads neither rebuild nor move the clock.
+the store reports the new one, so a step or a run control would answer from a
+stale part.
+
+A read issued between the edit and that step reports the previous solve on
+purpose. Applying a state edit runs the engine's `reanalyze`, which zeroes the
+node voltages while the elements keep their last currents, and the browser only
+avoids that mixed snapshot because `run()` follows in the same frame. A read has
+no run to follow it, so it must not apply the queue; it presents the coherent
+pre-edit solve until a step or run control does.
 
 The two run-control commands (`sim.reset`, `sim.dcOperatingPoint`) call
 `simHost.sync()` before touching the engine (`createSimControls` in

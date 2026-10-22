@@ -52,13 +52,27 @@ async function callOk(
   return result.structuredContent as Record<string, unknown>;
 }
 
-/** The current one terminal of a two-terminal element exchanges with its node,
- *  read through the tool surface. The sign depends on which way the part is
- *  drawn, so every assertion uses the magnitude. */
-async function postCurrent(client: Client, id: number): Promise<number> {
+/** The live terminal voltages and currents of a two-terminal element, read
+ *  through the tool surface. */
+async function readingsOf(
+  client: Client,
+  id: number,
+): Promise<{ voltages: number[]; currents: number[] }> {
   const readings = await callOk(client, 'element_readings', { ids: [id] });
-  const first = (readings.readings as { posts: { current: { value: number } }[] }[])[0];
-  return Math.abs(first.posts[0].current.value);
+  const first = (readings.readings as {
+    posts: { voltage: { value: number }; current: { value: number } }[];
+  }[])[0];
+  return {
+    voltages: first.posts.map((p) => p.voltage.value),
+    currents: first.posts.map((p) => p.current.value),
+  };
+}
+
+/** The current one terminal of a two-terminal element exchanges with its node.
+ *  The sign depends on which way the part is drawn, so every assertion uses the
+ *  magnitude. */
+async function postCurrent(client: Client, id: number): Promise<number> {
+  return Math.abs((await readingsOf(client, id)).currents[0]);
 }
 
 /** The series loop the edit tests measure: a 10 V source, a 1 kOhm resistor
@@ -247,6 +261,29 @@ describe('value-only edits reach the engine', () => {
     // flows, far below the 10 mA the closed loop carried.
     expect(await postCurrent(client, resistorId)).toBeLessThan(1e-6);
   });
+
+  it('keeps the previous solve coherent on a read before the throw is applied', async () => {
+    const { client } = await connect();
+    const { resistorId, switchId } = await buildSeries(client);
+    await callOk(client, 'sim_step', { seconds: 0.001 });
+    const before = await readingsOf(client, resistorId);
+
+    // No step between the throw and the read. Applying the queued state here
+    // would run the engine's reanalyze, which zeroes the node voltages while
+    // the elements keep the previous solve's currents: the read would report
+    // 0 V across a part carrying 10 mA.
+    await callOk(client, 'element_toggleSwitch', { id: switchId });
+    const after = await readingsOf(client, resistorId);
+
+    expect(after).toEqual(before);
+    // The snapshot it does report is the coherent pre-throw solve: 10 V across
+    // 1 kOhm is 10 mA, and the two agree.
+    const drop = Math.abs(after.voltages[0] - after.voltages[1]);
+    const current = Math.abs(after.currents[0]);
+    expect(Math.abs(drop - 10)).toBeLessThan(1e-6);
+    expect(Math.abs(current - 0.01)).toBeLessThan(1e-9);
+    expect(Math.abs(drop - current * 1000)).toBeLessThan(1e-6);
+  });
 });
 
 describe('run controls sync before touching the engine', () => {
@@ -293,8 +330,12 @@ describe('unchanged reads are inert', () => {
     const again = await postCurrent(client, resistorId);
     const after = await callOk(client, 'sim_state', {});
 
+    // A non-zero clock makes the equality below meaningful: a stuck clock at
+    // zero would satisfy it without proving anything.
+    const beforeTime = (before.time as { value: number }).value;
+    expect(beforeTime).toBeGreaterThan(0);
     expect(again).toBe(first);
-    expect((after.time as { value: number }).value).toBe((before.time as { value: number }).value);
+    expect((after.time as { value: number }).value).toBe(beforeTime);
   });
 });
 
